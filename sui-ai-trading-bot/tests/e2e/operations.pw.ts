@@ -180,15 +180,13 @@ test("shows Japanese rate-limit monitoring and keeps recovery separate from rest
     ),
   ).toBeVisible();
   await expect(
-    page.getByText(/バックオフ解除後も自動再開しません/),
+    page.getByText(/再試行待機解除後も自動再開しません/),
   ).toBeVisible();
-  const card = page
-    .locator("article")
-    .filter({
-      has: page.getByRole("heading", { name: "GeckoTerminal", exact: true }),
-    });
-  await expect(card).toContainText("バックオフ中");
-  await expect(card).toContainText("リトライ：1回");
+  const card = page.locator("article").filter({
+    has: page.getByRole("heading", { name: "GeckoTerminal", exact: true }),
+  });
+  await expect(card).toContainText("再試行待機中");
+  await expect(card).toContainText("再試行：1回");
   await expect(card).toContainText("429：2件");
   expect(api.writes).toEqual([]);
 });

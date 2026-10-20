@@ -1,8 +1,58 @@
 :root {
-  font-family: Inter, "Segoe UI", sans-serif;
+  font-family: "Noto Sans JP", "Yu Gothic", Meiryo, "Segoe UI", sans-serif;
   color: #dce8f0;
   background: #0b111b;
   font-synthesis: none;
+}
+main,
+header,
+footer {
+  overflow-wrap: anywhere;
+}
+.cards {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.cards > * {
+  min-width: 0;
+}
+button,
+summary {
+  min-height: 44px;
+}
+button,
+input,
+select {
+  max-width: 100%;
+}
+summary {
+  cursor: pointer;
+  padding: 10px 0;
+}
+.error-code {
+  margin-top: 6px;
+  font-size: 11px;
+}
+td p {
+  white-space: normal;
+  min-width: 160px;
+  max-width: 420px;
+}
+td details {
+  white-space: normal;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 800px) {
+  .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 450px) {
+  .cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 * {
   box-sizing: border-box;
