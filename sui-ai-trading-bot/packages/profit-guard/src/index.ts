@@ -60,7 +60,8 @@ const decimal = (v: string) => {
   return x;
 };
 const qty = (v: string) => {
-  if (!/^\d+$/.test(v) || BigInt(v) <= 0n) throw new Error("INVALID_QUANTITY");
+  if (typeof v !== "string" || !/^\d+$/.test(v) || BigInt(v) <= 0n)
+    throw new Error("INVALID_QUANTITY");
   return new D(v);
 };
 export const expense = (v: string) =>
@@ -164,22 +165,24 @@ function validQuote(
   from: string,
   to: string,
 ): asserts q is QuoteResult {
+  if (!q) throw new Error("QUOTE_UNAVAILABLE");
   if (
-    !q ||
     coin(q.from) !== from ||
     coin(q.to) !== to ||
     !Number.isFinite(now) ||
     !Number.isFinite(q.createdAt) ||
     !Number.isFinite(q.expiresAt) ||
     q.createdAt > now ||
-    q.expiresAt <= now ||
+    q.expiresAt <= q.createdAt ||
     q.expiresAt - q.createdAt > 15000 ||
     !q.liquid ||
+    !Array.isArray(q.route) ||
     !q.route.length ||
     !Number.isFinite(q.referencePrice) ||
     q.referencePrice <= 0
   )
-    throw new Error("UNKNOWN_QUOTE");
+    throw new Error("INVALID_QUOTE");
+  if (q.expiresAt <= now) throw new Error("QUOTE_EXPIRED");
   qty(q.amountIn);
   qty(q.amountOut);
   qty(q.minAmountOut);
@@ -220,7 +223,7 @@ export function evaluateSell(r: {
   config: ProfitConfig;
   now: number;
 }): ProfitReport {
-  const out = report(r.config, r.now, "SELL_QUOTE");
+  const out = report(r.config ?? profitDefaults, r.now, "SELL_QUOTE");
   out.purpose = r.purpose;
   const bypass = [
     "STOP_LOSS",
@@ -228,12 +231,22 @@ export function evaluateSell(r: {
     "EMERGENCY_EXIT",
     "RISK_REDUCTION",
   ].includes(r.purpose);
+  let failure = "INVALID_PROFIT_CONFIG";
   try {
     profitConfigSchema.parse(r.config);
+    failure = "INVALID_QUOTE";
     validQuote(r.quote, r.now, SUI, USDC);
-    const q = r.quote,
-      c = knownCosts(r.costs),
-      allocation = allocateCost(r.position, q.amountIn),
+    const q = r.quote;
+    failure = "UNKNOWN_COSTS";
+    const c = knownCosts(r.costs);
+    failure = "INVALID_POSITION";
+    const holding = qty(r.position.quantityAtomic);
+    decimal(r.position.costUsdc);
+    if (new D(q.amountIn).gt(holding)) {
+      failure = "INSUFFICIENT_POSITION";
+      throw new Error("INSUFFICIENT_POSITION");
+    }
+    const allocation = allocateCost(r.position, q.amountIn),
       basis = new D(allocation.allocatedCostUsdc),
       gross = new D(q.minAmountOut).div(1e6),
       fee = new D(c.additionalFeeUsdc!),
@@ -262,13 +275,15 @@ export function evaluateSell(r: {
           : out.allowed
             ? "MINIMUM_NET_PROFIT_MET"
             : "MINIMUM_NET_PROFIT_NOT_MET";
-  } catch {
-    out.reason = !r.quote
-      ? "QUOTE_UNAVAILABLE"
-      : bypass
-        ? "PROTECTIVE_EXIT_PROFIT_DATA_UNAVAILABLE"
-        : "PROFIT_DATA_UNKNOWN";
-    out.allowed = bypass;
+  } catch (error) {
+    // Only emit fixed reason codes, never external exception messages or payloads.
+    out.reason =
+      failure === "INVALID_QUOTE" &&
+      error instanceof Error &&
+      ["QUOTE_UNAVAILABLE", "QUOTE_EXPIRED"].includes(error.message)
+        ? error.message
+        : failure;
+    out.allowed = false;
   }
   out.action = out.allowed ? "SELL" : "WAIT";
   return out;

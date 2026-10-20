@@ -190,7 +190,7 @@ describe("ProfitGuard contract (test-first)", () => {
       }).allowed,
     ).toBe(false);
   });
-  it("does not turn missing profit data into an additional stop-loss veto", () => {
+  it("rejects missing profit data even for stop-loss", () => {
     expect(
       evaluateSell({
         position,
@@ -200,7 +200,7 @@ describe("ProfitGuard contract (test-first)", () => {
         config: profitDefaults,
         now,
       }).allowed,
-    ).toBe(true);
+    ).toBe(false);
   });
   it("allocates partial average basis without losing residual micro-USDC", () => {
     const a = allocateCost({ quantityAtomic: "3", costUsdc: "1.000000" }, "1");
@@ -403,4 +403,94 @@ describe("ProfitGuard contract (test-first)", () => {
       ).allocatedCostUsdc,
     ).toBe("5.045000");
   });
+  it.each([
+    ["STOP_LOSS", null, position, costs, profitDefaults, "QUOTE_UNAVAILABLE"],
+    [
+      "STOP_LOSS",
+      { ...sell(), createdAt: now - 15000, expiresAt: now },
+      position,
+      costs,
+      profitDefaults,
+      "QUOTE_EXPIRED",
+    ],
+    [
+      "EMERGENCY_EXIT",
+      sell(),
+      position,
+      { ...costs, gasUsdc: null },
+      profitDefaults,
+      "UNKNOWN_COSTS",
+    ],
+    [
+      "RISK_REDUCTION",
+      { ...sell(), amountIn: "-1" },
+      position,
+      costs,
+      profitDefaults,
+      "INVALID_QUOTE",
+    ],
+    [
+      "STRATEGY_EXIT",
+      sell(),
+      { ...position, costUsdc: "NaN" },
+      costs,
+      profitDefaults,
+      "INVALID_POSITION",
+    ],
+    [
+      "STOP_LOSS",
+      { ...sell(), amountIn: "2500000001" },
+      position,
+      costs,
+      profitDefaults,
+      "INSUFFICIENT_POSITION",
+    ],
+    [
+      "STOP_LOSS",
+      sell(),
+      position,
+      costs,
+      { ...profitDefaults, minProfitPct: "NaN" },
+      "INVALID_PROFIT_CONFIG",
+    ],
+    [
+      "STOP_LOSS",
+      { ...sell(), from: USDC, to: SUI },
+      position,
+      costs,
+      profitDefaults,
+      "INVALID_QUOTE",
+    ],
+    [
+      "STOP_LOSS",
+      { ...sell(), minAmountOut: "999999999" },
+      position,
+      costs,
+      profitDefaults,
+      "INVALID_QUOTE",
+    ],
+    [
+      "STOP_LOSS",
+      sell(),
+      position,
+      { ...costs, additionalFeeUsdc: null },
+      profitDefaults,
+      "UNKNOWN_COSTS",
+    ],
+  ] as const)(
+    "P0 fails closed for %s with invalid safety inputs",
+    (purpose, quote, position, costs, config, reason) => {
+      const result = evaluateSell({
+        purpose,
+        quote,
+        position,
+        costs,
+        config,
+        now,
+      });
+      expect(result.allowed).toBe(false);
+      expect(result.action).toBe("WAIT");
+      expect(result.reason).toBe(reason);
+    },
+  );
 });
