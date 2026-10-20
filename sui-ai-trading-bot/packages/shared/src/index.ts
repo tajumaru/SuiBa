@@ -71,6 +71,12 @@ export interface TradingDecision {
   stopLossPct: number | null;
   takeProfitPct: number | null;
   timestamp: string;
+  sellPurpose?:
+    | "TAKE_PROFIT"
+    | "STOP_LOSS"
+    | "STRATEGY_EXIT"
+    | "RISK_REDUCTION"
+    | "EMERGENCY_EXIT";
 }
 export interface MarketContext {
   candles: Candle[];
@@ -99,6 +105,7 @@ export interface QuoteResult extends QuoteRequest {
   expiresAt: number;
   route: string[];
   source: string;
+  dexFeeUsdc?: string | null;
 }
 export interface DexRouter {
   getQuote(request: QuoteRequest): Promise<QuoteResult>;
@@ -114,7 +121,33 @@ export interface Portfolio {
   day: string;
   dayStartEquity: number;
   dailyBought: number;
+  quantityAtomic?: string;
+  costBasisUsdc?: string;
 }
+export const profitConfigSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    minProfitUsdc: z
+      .string()
+      .regex(/^\d+(\.\d{1,6})?$/)
+      .refine((v) => new Decimal(v).lte(5)),
+    minProfitPct: z
+      .string()
+      .regex(/^\d+(\.\d{1,6})?$/)
+      .refine((v) => new Decimal(v).lte(1)),
+    targetProfitPct: z
+      .string()
+      .regex(/^\d+(\.\d{1,6})?$/)
+      .refine((v) => new Decimal(v).gt(0) && new Decimal(v).lte(1)),
+  })
+  .strict();
+export const profitDefaults = {
+  enabled: true,
+  minProfitUsdc: "0.05",
+  minProfitPct: "0.01",
+  targetProfitPct: "0.04",
+};
+export type ProfitConfig = z.infer<typeof profitConfigSchema>;
 export interface Runtime {
   running: boolean;
   emergency: boolean;
@@ -137,6 +170,9 @@ export const settingsSchema = z
     maxVolumeChange: z.number().positive().max(20),
     feeRate: z.number().min(0).max(0.01),
     gasUsdc: z.number().positive().max(1),
+    profitGuardEnabled: z.boolean().default(true),
+    minNetProfitUsdc: z.number().min(0).max(5).default(0.05),
+    minNetProfitPct: z.number().min(0).max(1).default(0.01),
   })
   .strict();
 export type Settings = z.infer<typeof settingsSchema>;
@@ -155,6 +191,9 @@ export const defaults: Settings = {
   maxVolumeChange: 4,
   feeRate: 0.003,
   gasUsdc: 0.03,
+  profitGuardEnabled: true,
+  minNetProfitUsdc: 0.05,
+  minNetProfitPct: 0.01,
 };
 export const dayKey = (now: number) => new Date(now).toISOString().slice(0, 10); // UTC trading day
 export async function bounded<T>(fn: () => Promise<T>, ms = 10000): Promise<T> {
@@ -178,3 +217,10 @@ export async function jsonFetch(url: string) {
   if (!r.ok) throw new Error("UPSTREAM_HTTP_" + r.status);
   return r.json() as Promise<unknown>;
 }
+
+export const profitConfigOf = (s: Settings): ProfitConfig => ({
+  enabled: s.profitGuardEnabled,
+  minProfitUsdc: String(s.minNetProfitUsdc),
+  minProfitPct: String(s.minNetProfitPct),
+  targetProfitPct: String(s.takeProfitPct),
+});

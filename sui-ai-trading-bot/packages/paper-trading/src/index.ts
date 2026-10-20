@@ -6,6 +6,13 @@ import {
   type QuoteResult,
   type Settings,
 } from "../../shared/src/index.ts";
+import {
+  recordAcquisition,
+  allocateCost,
+  positionOf,
+  paperCosts,
+  type Costs,
+} from "../../profit-guard/src/index.ts";
 export interface Fill {
   orderId: string;
   side: "BUY" | "SELL";
@@ -16,6 +23,10 @@ export interface Fill {
   pnl: number | null;
   slippage: number;
   priceImpact: number;
+  costs?: Costs;
+  acquisition?: ReturnType<typeof recordAcquisition>;
+  allocatedCostUsdc?: string;
+  realizedProfitUsdc?: string;
 }
 export interface TradingExecutor {
   readonly mode: "PAPER";
@@ -43,22 +54,45 @@ export class PaperTrading implements TradingExecutor {
       output = units(q.minAmountOut, q.to),
       quantity = side === "BUY" ? output : input,
       notional = side === "BUY" ? input : output,
-      fee = notional * s.feeRate + s.gasUsdc;
+      costs = paperCosts(q, s),
+      fee = new Decimal(costs.additionalFeeUsdc!)
+        .plus(costs.gasUsdc!)
+        .toNumber();
     const next = { ...p, fees: p.fees + fee };
     let pnl: number | null = null;
+    let acquisition: ReturnType<typeof recordAcquisition> | undefined;
+    let allocatedCostUsdc: string | undefined;
     if (side === "BUY") {
+      acquisition = recordAcquisition({
+        ...costs,
+        quantityAtomic: q.minAmountOut,
+        inputUsdc: new Decimal(q.amountIn).div(1e6).toString(),
+      });
+      next.quantityAtomic = new Decimal(positionOf(p).quantityAtomic)
+        .plus(q.minAmountOut)
+        .toFixed(0);
+      next.costBasisUsdc = new Decimal(positionOf(p).costUsdc)
+        .plus(acquisition.totalCostUsdc)
+        .toFixed(6);
       next.usdc = new Decimal(p.usdc).minus(input).minus(fee).toNumber();
-      next.sui = new Decimal(p.sui).plus(output).toNumber();
-      next.costBasis = p.costBasis + input + fee;
+      next.sui = new Decimal(next.quantityAtomic).div(1e9).toNumber();
+      next.costBasis = Number(next.costBasisUsdc);
       next.dailyBought += input;
     } else {
       if (input > p.sui) throw new Error("INSUFFICIENT_BALANCE");
-      const basis = p.sui ? (p.costBasis * input) / p.sui : 0;
-      pnl = output - fee - basis;
+      const allocation = allocateCost(positionOf(p), q.amountIn);
+      allocatedCostUsdc = allocation.allocatedCostUsdc;
+      pnl = new Decimal(q.minAmountOut)
+        .div(1e6)
+        .minus(fee)
+        .minus(allocatedCostUsdc)
+        .toNumber();
+      next.quantityAtomic = allocation.remainingQuantityAtomic;
+      next.costBasisUsdc = allocation.remainingCostUsdc;
       next.usdc = new Decimal(p.usdc).plus(output).minus(fee).toNumber();
-      next.sui = Math.max(0, new Decimal(p.sui).minus(input).toNumber());
-      next.costBasis = Math.max(0, p.costBasis - basis);
-      next.realized += pnl;
+      next.sui = new Decimal(next.quantityAtomic).div(1e9).toNumber();
+      next.costBasis = Number(next.costBasisUsdc);
+      next.realized = new Decimal(p.realized).plus(pnl).toNumber();
     }
     if (
       next.usdc < 0 ||
@@ -78,6 +112,11 @@ export class PaperTrading implements TradingExecutor {
         pnl,
         slippage: q.slippage,
         priceImpact: q.priceImpact,
+        costs,
+        acquisition,
+        allocatedCostUsdc,
+        realizedProfitUsdc:
+          pnl === null ? undefined : new Decimal(pnl).toFixed(6),
       } satisfies Fill,
     };
   }

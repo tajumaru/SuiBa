@@ -71,6 +71,8 @@ importers:
 
   packages/portfolio: {}
 
+  packages/profit-guard: {}
+
   packages/risk-engine: {}
 
   packages/shared: {}
