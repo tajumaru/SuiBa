@@ -9,6 +9,8 @@ import { CetusRouter } from "../../../packages/dex-router/src/index.ts";
 import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
 import { settingsSchema } from "../../../packages/shared/src/index.ts";
 import { BotEngine } from "./engine.ts";
+import { backtestMetadata, savedComparison } from "./backtest-service.ts";
+import { comparisonOptionsSchema } from "../../../packages/backtest-engine/src/index.ts";
 if (process.env.MODE && process.env.MODE !== "PAPER")
   throw new Error("ONLY_PAPER_SUPPORTED");
 const token = process.env.ADMIN_TOKEN;
@@ -25,6 +27,7 @@ const sui = new ReadOnlySuiClient(process.env.SUI_GRPC_URL),
     sui,
   );
 let stopping = false;
+let backtestBusy = false;
 async function loop() {
   if (stopping) return;
   await engine.tick();
@@ -101,6 +104,10 @@ const server = createServer(async (req, res) => {
       );
       return;
     }
+    if (req.method === "GET" && url.pathname === "/api/backtest") {
+      send(200, backtestMetadata(db));
+      return;
+    }
     if (req.method !== "POST") {
       send(404, {});
       return;
@@ -115,6 +122,42 @@ const server = createServer(async (req, res) => {
       }
     }
     const body = text ? JSON.parse(text) : {};
+    if (url.pathname === "/api/backtest") {
+      if (backtestBusy) {
+        send(409, { error: "BACKTEST_BUSY" });
+        return;
+      }
+      const parsed = comparisonOptionsSchema.safeParse(body);
+      if (!parsed.success) {
+        send(400, { error: "INVALID_BACKTEST_OPTIONS" });
+        return;
+      }
+      backtestBusy = true;
+      try {
+        const result = await savedComparison(db, parsed.data);
+        send(200, result);
+      } catch (error) {
+        const allowed = new Set([
+          "INSUFFICIENT_HISTORY_63_CANDLES",
+          "INSUFFICIENT_WARMUP_61_CANDLES",
+          "PERIOD_OUTSIDE_SAVED_HISTORY",
+          "INSUFFICIENT_CANDLES",
+          "INVALID_CANDLE",
+          "CANDLE_GAP",
+          "PRICE_OUTLIER",
+          "MIXED_DATA_SOURCES",
+        ]);
+        send(400, {
+          error:
+            error instanceof Error && allowed.has(error.message)
+              ? error.message
+              : "BACKTEST_FAILED",
+        });
+      } finally {
+        backtestBusy = false;
+      }
+      return;
+    }
     if (url.pathname === "/api/settings") {
       const settings = settingsSchema.parse(body);
       db.updateSettings(settings);

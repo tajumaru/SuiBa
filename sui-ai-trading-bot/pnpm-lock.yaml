@@ -59,6 +59,8 @@ importers:
 
   apps/worker: {}
 
+  packages/backtest-engine: {}
+
   packages/database: {}
 
   packages/dex-router: {}

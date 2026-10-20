@@ -5,6 +5,7 @@ import { calculate, ema } from "../../../packages/indicators/src/index.ts";
 import type { Candle } from "../../../packages/shared/src/index.ts";
 import "./style.css";
 import { SettingsPage } from "./SettingsPage.tsx";
+import { BacktestComparison } from "./BacktestComparison.tsx";
 type State = ReturnType<BotEngine["snapshot"]>;
 const money = (v: number | null | undefined) =>
   v == null
@@ -382,6 +383,7 @@ function App() {
               "Strategy",
               "Trading History",
               "Settings",
+              "バックテスト比較",
             ].map((t) => (
               <button
                 className={tab === t ? "active" : ""}
@@ -584,6 +586,9 @@ function App() {
                       <pre>{JSON.stringify(data.orders, null, 2)}</pre>
                     </section>
                   </>
+                )}
+                {tab === "バックテスト比較" && (
+                  <BacktestComparison token={token} settings={data.settings} />
                 )}
                 {tab === "Settings" && (
                   <SettingsPage

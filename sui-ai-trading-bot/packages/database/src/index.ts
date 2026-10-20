@@ -22,6 +22,7 @@ const eventTables = [
   "risk_events",
   "bot_settings",
   "profit_assessments",
+  "backtest_runs",
 ] as const;
 type EventTable = (typeof eventTables)[number];
 export class BotDatabase {
