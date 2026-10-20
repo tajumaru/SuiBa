@@ -13,6 +13,8 @@ import {
   type Indicators,
 } from "../../shared/src/index.ts";
 import { initialPortfolio, type Fill } from "../../paper-trading/src/index.ts";
+import type { CandidateAudit } from "../../shared/src/operations.ts";
+import type { AccountingCheck } from "../../paper-trading/src/reconciliation.ts";
 const eventTables = [
   "technical_indicators",
   "strategy_decisions",
@@ -23,6 +25,9 @@ const eventTables = [
   "bot_settings",
   "profit_assessments",
   "backtest_runs",
+  "operation_candidates",
+  "operation_events",
+  "paper_checks",
 ] as const;
 type EventTable = (typeof eventTables)[number];
 export class BotDatabase {
@@ -39,6 +44,16 @@ export class BotDatabase {
     for (const t of eventTables)
       this.db.exec(
         `CREATE TABLE IF NOT EXISTS ${t}(id TEXT PRIMARY KEY,timestamp INTEGER NOT NULL,json TEXT NOT NULL);`,
+      );
+    for (const t of [
+      "operation_candidates",
+      "operation_events",
+      "paper_checks",
+      "paper_trades",
+      "portfolio_snapshots",
+    ] as const)
+      this.db.exec(
+        `CREATE INDEX IF NOT EXISTS ${t}_timestamp ON ${t}(timestamp);`,
       );
     this.db.exec(
       "CREATE UNIQUE INDEX IF NOT EXISTS trade_order_unique ON paper_trades(id);",
@@ -129,6 +144,66 @@ export class BotDatabase {
   hasOrder(id: string) {
     return !!this.db.prepare("SELECT id FROM paper_orders WHERE id=?").get(id);
   }
+  range<T>(table: EventTable, from: number, until: number): T[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT json FROM ${table} WHERE timestamp>=? AND timestamp<=? ORDER BY timestamp,id`,
+        )
+        .all(from, until) as { json: string }[]
+    ).map((row) => JSON.parse(row.json));
+  }
+  before<T>(table: EventTable, at: number): T | null {
+    const row = this.db
+      .prepare(
+        `SELECT json FROM ${table} WHERE timestamp<? ORDER BY timestamp DESC,id DESC LIMIT 1`,
+      )
+      .get(at) as { json: string } | undefined;
+    return row ? JSON.parse(row.json) : null;
+  }
+  putCandidate(candidate: CandidateAudit) {
+    this.db
+      .prepare(
+        "INSERT INTO operation_candidates VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET timestamp=excluded.timestamp,json=excluded.json",
+      )
+      .run(candidate.id, candidate.timestamp, JSON.stringify(candidate));
+  }
+  operationCounts(from = 0, until = Number.MAX_SAFE_INTEGER) {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) candidates, COALESCE(SUM(json_extract(json,'$.finalAction')='BUY'),0) buys, COALESCE(SUM(json_extract(json,'$.finalAction')='SELL'),0) sells, COALESCE(SUM(json_extract(json,'$.finalAction')='WAIT'),0) waits, COALESCE(SUM(json_extract(json,'$.profitGuard.evaluated')=1 AND json_extract(json,'$.profitGuard.allowed')=0),0) profitRejected, COALESCE(SUM(json_extract(json,'$.risk.status')='REJECTED'),0) riskRejected FROM operation_candidates WHERE timestamp>=? AND timestamp<=?`,
+      )
+      .get(from, until) as {
+      candidates: number;
+      buys: number;
+      sells: number;
+      waits: number;
+      profitRejected: number;
+      riskRejected: number;
+    };
+    const waits = this.db
+      .prepare(
+        "SELECT COUNT(*) n FROM operation_events WHERE timestamp>=? AND timestamp<=? AND json_extract(json,'$.kind')='WAIT'",
+      )
+      .get(from, until) as { n: number };
+    return { ...row, waits: row.waits + waits.n };
+  }
+  interruptPending(now: number) {
+    const rows = this.db
+      .prepare(
+        "SELECT json FROM operation_candidates WHERE json_extract(json,'$.finalAction')='PENDING'",
+      )
+      .all() as { json: string }[];
+    for (const row of rows) {
+      const c = JSON.parse(row.json) as CandidateAudit;
+      this.putCandidate({
+        ...c,
+        timestamp: now,
+        finalAction: "SAFE_STOP",
+        reasons: ["PROCESS_RESTART_INTERRUPTED"],
+      });
+    }
+  }
   saveCandles(c: Candle[]) {
     this.transaction(() => {
       const st = this.db.prepare(
@@ -168,9 +243,18 @@ export class BotDatabase {
     portfolio: Portfolio,
     trade: Fill,
     runtime: Runtime,
+    verification?: {
+      audit: CandidateAudit;
+      check: AccountingCheck;
+      markPrice: number;
+    },
   ) {
     this.transaction(() => {
       if (this.hasOrder(id)) throw new Error("DUPLICATE_ORDER");
+      if (this.db.prepare("SELECT id FROM paper_trades WHERE id=?").get(id))
+        throw new Error("DUPLICATE_ORDER");
+      if (verification && !verification.check.ok)
+        throw new Error("PAPER_RECONCILIATION_FAILED");
       const current = this.runtime();
       if (!current.running || current.emergency || current.error)
         throw new Error("BOT_STOPPED");
@@ -178,6 +262,23 @@ export class BotDatabase {
       this.append("paper_trades", id, trade, trade.timestamp);
       this.set("portfolio", portfolio);
       this.set("runtime", runtime);
+      if (verification) {
+        this.putCandidate(verification.audit);
+        this.append("paper_checks", id, verification.check, trade.timestamp);
+        this.append(
+          "portfolio_snapshots",
+          `valuation:${id}`,
+          {
+            timestamp: trade.timestamp,
+            equity: portfolio.usdc + portfolio.sui * verification.markPrice,
+            realized: portfolio.realized,
+            unrealized:
+              portfolio.sui * verification.markPrice - portfolio.costBasis,
+            fees: portfolio.fees,
+          },
+          trade.timestamp,
+        );
+      }
     });
   }
   updateSettings(s: Settings, now = Date.now()) {
