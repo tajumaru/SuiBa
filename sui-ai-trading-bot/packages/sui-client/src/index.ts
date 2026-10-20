@@ -1,6 +1,7 @@
+import { apiFetch } from "../../shared/src/api.ts";
 import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { isValidSuiAddress, isValidTransactionDigest } from "@mysten/sui/utils";
-import { coin, decimals, SUI, USDC, bounded } from "../../shared/src/index.ts";
+import { coin, decimals, SUI, USDC } from "../../shared/src/index.ts";
 export class ReadOnlySuiClient {
   private client: SuiGrpcClient;
   status: { healthy: boolean; checkedAt: number; failures: number } = {
@@ -13,33 +14,24 @@ export class ReadOnlySuiClient {
     this.client = new SuiGrpcClient({
       network: "mainnet",
       baseUrl: url,
-      fetch: (input, init) =>
-        fetch(input, {
-          ...init,
-          signal: AbortSignal.any([
-            AbortSignal.timeout(9000),
-            ...(init?.signal ? [init.signal] : []),
-          ]),
-        }),
+      fetch: (input, init) => apiFetch("Sui gRPC", input, init),
     });
   }
   private async read<T>(fn: () => Promise<T>): Promise<T> {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        const r = await bounded(fn);
-        this.status = { healthy: true, checkedAt: Date.now(), failures: 0 };
-        return r;
-      } catch {
-        this.status = {
-          healthy: false,
-          checkedAt: Date.now(),
-          failures: this.status.failures + 1,
-        };
-        if (attempt >= 2) throw new Error("SUI_READ_FAILED");
-        await new Promise((r) => setTimeout(r, 250 * 2 ** attempt));
-      }
+    try {
+      const r = await fn();
+      this.status = { healthy: true, checkedAt: Date.now(), failures: 0 };
+      return r;
+    } catch {
+      this.status = {
+        healthy: false,
+        checkedAt: Date.now(),
+        failures: this.status.failures + 1,
+      };
+      throw new Error("SUI_READ_FAILED");
     }
   }
+
   async balance(owner: string, type: string) {
     if (!isValidSuiAddress(owner)) throw new Error("INVALID_ADDRESS");
     const t = coin(type);
@@ -74,6 +66,8 @@ export class ReadOnlySuiClient {
     });
   }
   async health() {
+    if (this.status.healthy && Date.now() - this.status.checkedAt < 120000)
+      return this.status;
     await Promise.all([this.metadata(SUI), this.metadata(USDC)]);
     return this.status;
   }

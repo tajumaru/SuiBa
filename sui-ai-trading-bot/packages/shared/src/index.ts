@@ -1,3 +1,4 @@
+import { apiFetch } from "./api.ts";
 import { z } from "zod";
 import { Decimal } from "decimal.js";
 import { normalizeStructTag } from "@mysten/sui/utils";
@@ -6,6 +7,10 @@ export { Decimal };
 export function safeFailure(error: unknown) {
   const allowed = new Set([
     "SUI_READ_FAILED",
+    "API_BACKOFF",
+    "API_RETRIES_EXHAUSTED",
+    "API_CANCELLED",
+    "QUOTE_EXPIRED",
     "UPSTREAM_TIMEOUT",
     "UPSTREAM_HTTP_429",
     "UPSTREAM_HTTP_500",
@@ -210,10 +215,14 @@ export async function bounded<T>(fn: () => Promise<T>, ms = 10000): Promise<T> {
   }
 }
 export async function jsonFetch(url: string) {
-  const r = await fetch(url, {
-    signal: AbortSignal.timeout(10000),
-    headers: { accept: "application/json" },
-  });
+  const r = await apiFetch(
+    "GeckoTerminal",
+    url,
+    {
+      headers: { accept: "application/json" },
+    },
+    url.includes("/ohlcv/") ? 20000 : 300000,
+  );
   if (!r.ok) throw new Error("UPSTREAM_HTTP_" + r.status);
   return r.json() as Promise<unknown>;
 }

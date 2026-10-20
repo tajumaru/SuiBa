@@ -1,3 +1,4 @@
+import { sdkRequests } from "../../shared/src/sdk-requests.ts";
 import { AggregatorClient } from "@cetusprotocol/aggregator-sdk";
 import { randomUUID } from "node:crypto";
 import {
@@ -5,7 +6,6 @@ import {
   coin,
   units,
   SUI,
-  bounded,
   type DexRouter,
   type QuoteRequest,
   type QuoteResult,
@@ -27,7 +27,7 @@ export class CetusRouter implements DexRouter {
     )
       throw new Error("INVALID_QUOTE_REQUEST");
     const started = Date.now();
-    const q = await bounded(() =>
+    const q = await sdkRequests(() =>
       this.client.findRouters({
         from,
         target: to,
