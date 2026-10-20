@@ -1,6 +1,6 @@
 # Sui Paper Lab — Sui AI Trading Bot v1.0
 
-SUI / Native USDC のMainnet市場データで、ルール戦略を検証する独立したPAPER専用Botです。**署名鍵の読込・署名・トランザクション構築・送信・実スワップは実装していません。** AI SDK・AI APIも使用しません。利益や24時間の安定運用は検証済みではありません。
+SUI / Native USDC のMainnet市場データで、ルール戦略を検証する独立したBotです。通常WorkerはPAPER専用です。別パッケージに[Phase 1〜3のLIVE基盤](docs/LIVE_PHASES_1_3.md)を追加していますが、**署名・送信・実スワップは実装していません。** AI SDK・AI APIも使用しません。利益や24時間の安定運用は検証済みではありません。[セキュリティレビュー](docs/SECURITY_REVIEW_PHASES_1_3.md)も参照してください。
 
 ## 起動
 
@@ -74,7 +74,7 @@ EMAはSMAで初期化、RSI14とATR14はWilder平滑化。MACDはEMA12−EMA26 /
 | worker          | データ→戦略→リスク→PAPER実行、認証管理API                |
 | dashboard       | Overview / Chart / Strategy / History / Settings         |
 
-依存は shared → 純粋計算・アダプター → database / worker の方向（表記は利用される順）です。UIはWorkerの型のみを参照し、サーバーコードをバンドルしません。将来のAIは `TradingStrategy` を実装してRegistryへ登録し、設定スキーマと選択UIを拡張します。DeepSeekのキー・SDK・通信コードはありません。`TradingExecutor` は現段階でPAPERのみを許可します。将来Liveを追加する際にこの契約を明示的に拡張し、別の実装と検証を追加する必要があります。
+依存は shared → 純粋計算・アダプター → database / worker の方向（表記は利用される順）です。UIはWorkerの型のみを参照し、サーバーコードをバンドルしません。将来のAIは `TradingStrategy` を実装してRegistryへ登録し、設定スキーマと選択UIを拡張します。DeepSeekのキー・SDK・通信コードはありません。`TradingExecutor` はPAPER約定とLIVE未署名プレビューを型で分離します。LIVEの署名・送信は実装しておらず、通常Workerの実行方式はPAPERのみです。
 
 ## DB / API
 
