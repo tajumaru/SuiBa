@@ -119,7 +119,7 @@ node docker/verify-paper.mjs
 
 最後はDocker専用の任意テストです。プロジェクトルート（この手順の `sui-ai-trading-bot`）で実行します。専用イメージ・ランダム名の新規ボリュームとコンテナを作り、Linux起動、ヘルス、再起動時停止、緊急停止・履歴保持を確認します。ネットワーク異常下で動かし、実市場売買はしません。終了時に専用コンテナだけ削除し、検証用ボリュームとイメージは残して名前を表示します。実運用ボリュームは触りません。
 
-この実装環境にはDocker CLI/Desktopがなく、Dockerビルド・Linux起動・容量枯渇の実機試験は未検証です。Windows上のNodeプロセスでの起動・再起動とSQLite保持の回帰テスト、模擬HTTPサーバーの429・タイムアウト、ブラウザー表示を検証します。実APIの割当枠は共有IPや提供者側の変更で変わります。複数プロセス間の同時接続制限は共有しません。
+初回実装時はDocker未導入でしたが、追加検証でDocker Desktopによるビルド・Linux起動・Compose運用・小容量tmpfsでの容量不足試験まで成功しました。WindowsおよびLinuxコンテナ内のNodeプロセスで、再起動とSQLite保持、模擬HTTPの429・タイムアウトを検証済みです。実APIの割当枠は共有IPや提供者側の変更で変わります。複数プロセス間の同時接続制限は共有しません。
 
 ## 今回の検証結果
 
@@ -131,10 +131,10 @@ node docker/verify-paper.mjs
 | `pnpm test` | 11ファイル・160件成功。API関連15件、約定直前の停止・期限境界3件を追加 |
 | `pnpm run test:e2e` | Chromium、375/390/430/1280pxで52件成功。429表示4件を追加 |
 | `node --check docker/verify-paper.mjs` | 構文検証成功 |
-| Dockerビルド・コンテナ再起動・永続ボリューム | Docker未導入のため未実施。任意統合スクリプトを追加 |
+| Dockerビルド・コンテナ再起動・永続ボリューム | Docker Desktopで追加検証成功。Composeで再作成、SIGTERM、緊急停止、設定・履歴保持、WALとバックアップを確認 |
 | Profit Guard / RiskEngine / PAPER専用 | 既存回帰テスト成功。LIVE起動拒否も確認 |
 
-要求された安全性の対応：429検出・Retry-After・指数待機・ジッター上限・最大試行・集約・キャッシュ期限は `api-access.test.ts`。古い足・古い見積もり・停止・緊急停止は `core.test.ts` / `operations.test.ts`。API復旧後の停止維持は `api-access.test.ts`。プロセス再起動とSQLite履歴は `settings-api.test.ts` / `operations.test.ts`。Docker固有の停止維持・履歴保持はスクリプト追加までで、実行成功とはしていません。
+要求された安全性の対応：429検出・Retry-After・指数待機・ジッター上限・最大試行・集約・キャッシュ期限は `api-access.test.ts`。古い足・古い見積もり・停止・緊急停止は `core.test.ts` / `operations.test.ts`。API復旧後の停止維持は `api-access.test.ts`。プロセス再起動とSQLite履歴は `settings-api.test.ts` / `operations.test.ts`。Docker固有の停止維持・履歴保持は `verify-paper.mjs` / `verify-compose.mjs` の実行でも成功しました。
 
 ## 変更ファイル
 
@@ -156,7 +156,59 @@ node docker/verify-paper.mjs
 | `tests/api-access.test.ts` | API制御と実HTTPの15件 |
 | `tests/core.test.ts` | 最終非同期検証中の停止・期限切れ3件 |
 | `tests/e2e/operations.pw.ts` | 429のブラウザー表示 |
-| `docker/verify-paper.mjs` | 実運用データから隔離した任意Docker統合検証 |
+| `docker/verify-paper.mjs` / `docker/verify-compose.mjs` | 実運用データから隔離したDockerおよびCompose統合検証 |
 | `docs/API_DOCKER_V1_1.md` / `README.md` | 運用手順、調査根拠、仕様、検証範囲 |
 
 既存 `docker/compose.yaml` とDockerfileは調査のうえ変更不要と判断しました。Linux用Node 24イメージ、非root実行、データディレクトリ全体のボリューム、init、30秒終了猶予、ヘルス、ログローテーション、localhost公開を維持しています。今回の改善はWorkerのシグナル処理・SQLite書込み・運用検証に限定しています。
+
+## Docker追加検証（2026-10-21）
+
+作業場所は `D:\Source\SuiBa\sui-ai-trading-bot`。Docker Desktopの一時停止を解除して実施しました。
+
+| 項目                                               | 実行結果                                                                                                                              |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Docker Client / Engine                             | 29.9.1 / 29.9.1、desktop-linux                                                                                                        |
+| Docker Compose                                     | v5.6.0                                                                                                                                |
+| コンテナOS / Node                                  | linux/amd64、Node.js v24.22.0                                                                                                         |
+| 既存Dockerfileのビルド                             | 成功。依存インストール・型検査・Vite本番ビルドを含む                                                                                  |
+| Compose / localhost公開 / 非root / init / ログ設定 | 成功。既存Composeを新規プロジェクトで実行し、実コンテナの設定を確認                                                                   |
+| ヘルスチェック / ダッシュボード / 認証             | 成功。Dockerのhealthy判定、HTML/JS配信、未認証401を確認                                                                               |
+| 永続化                                             | WAL/SHMの存在とWALモード、設定・履歴を確認                                                                                            |
+| SIGTERM                                            | 終了コード0。停止状態の永続化と停止中のDBコピーによるバックアップ成功                                                                 |
+| 強制終了・再作成                                   | SIGKILL後の起動とforce-recreate後もPAPER停止、緊急停止、設定・履歴を保持                                                              |
+| Linux内の回帰テスト                                | Vitest 11ファイル・160件すべて成功。429・停止・期限・Profit Guard・RiskEngineを含む                                                   |
+| 実コンテナのブラウザー                             | Chromiumで認証・運用検証画面・日本語API監視を確認。ページ例外なし。管理トークンがコンテナログに含まれないことも確認                                                                     |
+| LIVE                                               | ボリュームを付けない専用コンテナでLIVE起動拒否を確認                                                                                  |
+| 容量不足                                           | 1MiBの専用tmpfsでSQLite未確定書込みのロールバックと既存行保持を確認。データ領域が満杯のWorkerは起動失敗し、売買を開始しないことを確認 |
+
+### 再実行
+
+Docker DesktopをLinuxコンテナモードで起動し、「一時停止中」の場合はResume/再開します。インストール直後にdockerコマンドが見つからない場合はターミナル/Codexを開き直してください。
+
+```powershell
+cd D:\Source\SuiBa\sui-ai-trading-bot
+node docker/verify-paper.mjs
+node docker/verify-compose.mjs
+```
+
+Chromiumで実画面も検証する場合は、ローカルの依存パッケージとChromiumを用意して実行します。
+
+```powershell
+pnpm exec playwright install chromium
+node docker/verify-compose.mjs --browser
+```
+
+既にビルド済みのイメージを再利用する場合は `node docker/verify-compose.mjs <イメージ名> --browser` と指定できます。今回の検証では `suiba-verify:d5ebcafbe94c` を使用しました。
+
+スクリプトは実際のComposeを継承しますが、検証専用にenv_fileを解除し、一時トークン、到達しないgRPC接続先、localhostの動的ポートに置き換えます。PAPER開始操作は行いません。新規プロジェクト名・新規ボリュームを使い、実運用のDB/.envを変更しません。コンテナだけを終了・削除し、検証用イメージとボリュームは保持します。down -vは実行しません。一時バックアップはコピー成功確認後に削除します。
+
+検証用に保持したボリューム：
+
+- `suiba-verify-d5ebcafbe94c-data`
+- `suiba-compose-verify-5c94bf214a61_paper-data`
+- `suiba-compose-verify-c549c3c22e37_paper-data`
+- `suiba-compose-verify-3cffbaae1cb3_paper-data`
+
+ブラウザー確認画像は `test-results/docker-compose-dashboard.png` に保存しています。既存の52件の画面回帰テストは前回成功しており、今回はそれとは別に実Docker配信の画面を確認しました。
+
+残る未検証は、実市場での24時間/7日間運用、実ホスト全体の容量枯渇や停電・ディスク破損、提供APIの実レート枠です。今回の容量不足検証は専用tmpfs内に限定しています。実市場APIへの追加疎通・PAPER連続運用開始は行っていません。

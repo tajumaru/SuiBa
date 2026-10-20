@@ -30,7 +30,7 @@ pnpm backtest  # SQLiteに保存済みの5分足で検証、data/backtests/にJS
 docker compose -f docker/compose.yaml up --build -d
 ```
 
-Dockerはこの開発環境に未導入のため、コンテナの起動検証は未実施です。Node組込みSQLiteを採用しており、Node 24では実験的APIの警告が出ます。Windows / OneDriveでのパッケージリンク問題を避けるためpnpmはhoisted方式です。
+Docker DesktopのLinuxコンテナでビルド・Compose起動・再起動後の停止/緊急停止・SQLite履歴保持を検証済みです。Linux内の160件の回帰テストと実コンテナへのChromium接続も成功しました。検証範囲と再実行方法は[API安定化・Docker運用 1.1](docs/API_DOCKER_V1_1.md)を参照してください。Node組込みSQLiteを採用しており、Node 24では実験的APIの警告が出ます。Windows / OneDriveでのパッケージリンク問題を避けるためpnpmはhoisted方式です。
 
 ## 安全動作
 
