@@ -28,6 +28,11 @@ const sui = new ReadOnlySuiClient(process.env.SUI_GRPC_URL),
 // Monitoring boot closes the previous uptime segment and never resumes trading.
 engine.monitor.boot();
 apiAccess.restoreCooldowns(db.get("api_cooldowns") ?? []);
+// Log only allowlisted metadata; never raw errors, headers, bodies or credentials.
+apiAccess.onFailure = (failure) =>
+  console.warn(
+    JSON.stringify({ event: "UPSTREAM_REQUEST_FAILED", ...failure }),
+  );
 const watchdog = setInterval(() => {
   try {
     engine.monitor.watchdog();

@@ -86,6 +86,51 @@ export function OperationsView({
         {(data.apis ?? []).map((a) => (
           <article key={a.api}>
             <h4>{a.api}</h4>
+            {a.lastFailure && (
+              <div className="warning">
+                <p>
+                  最終通信障害：{operationReason(a.lastFailure.code)} ／{" "}
+                  {a.lastFailure.elapsedMs}ms
+                </p>
+                <p>
+                  処理：
+                  {(
+                    {
+                      POOL_METADATA: "プール情報",
+                      POOL_DISCOVERY: "プール探索",
+                      OHLCV_5M: "5分足取得",
+                      OHLCV_15M: "15分足取得",
+                      OHLCV_1H: "1時間足取得",
+                      SUI_GRPC_READ: "Sui読み取り",
+                      CETUS_HTTP_READ: "Cetus取得",
+                      HTTP_READ: "外部データ取得",
+                    } as Record<string, string>
+                  )[a.lastFailure.operation] ?? "外部データ取得"}{" "}
+                  ／ ホスト：
+                  {a.lastFailure.host} ／ 段階：
+                  {
+                    {
+                      HEADERS_OR_CONNECT:
+                        "接続・応答ヘッダー待ち（詳細未確定）",
+                      CONNECT: "接続",
+                      DNS: "名前解決",
+                      TLS: "TLS",
+                      BODY: "応答本文",
+                      HTTP: "HTTP応答",
+                    }[a.lastFailure.phase]
+                  }
+                </p>
+                <p>
+                  HTTP：{a.lastFailure.status ?? "応答前"} ／ 原因コード：
+                  {a.lastFailure.causeCode ?? "不明"} ／ 発生：
+                  {date(a.lastFailure.occurredAt)}
+                </p>
+                <p style={{ overflowWrap: "anywhere" }}>
+                  URL（秘密情報を除外）：{a.lastFailure.url}
+                </p>
+              </div>
+            )}
+
             <p>
               リクエスト：{a.requests}件 ／ 直近1分：{a.requestsPerMinute}件 ／
               429：{a.rateLimits}件 ／ リトライ：{a.retries}回

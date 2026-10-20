@@ -1,5 +1,16 @@
 export function operationReason(code: string): string {
   const labels: Record<string, string> = {
+    UPSTREAM_TIMEOUT: "接続または応答ヘッダー待ちが時間切れです（段階未確定）",
+    UPSTREAM_CONNECT_TIMEOUT: "外部APIへの接続が時間切れです",
+    UPSTREAM_HEADERS_TIMEOUT: "外部APIの応答ヘッダー待ちが時間切れです",
+    UPSTREAM_BODY_TIMEOUT: "外部APIの応答本文の受信が時間切れです",
+    UPSTREAM_DNS_FAILED: "外部APIの名前解決に失敗しました",
+    UPSTREAM_TLS_FAILED: "外部APIのTLS接続または証明書検証に失敗しました",
+    UPSTREAM_NETWORK_FAILED:
+      "外部APIとの接続が拒否・切断されたか通信に失敗しました",
+    UPSTREAM_HTTP_404: "外部APIの対象URLが見つかりません（HTTP 404）",
+    UPSTREAM_HTTP_500: "外部APIのサーバーエラーです（HTTP 500）",
+    UPSTREAM_HTTP_503: "外部APIが一時的に利用できません（HTTP 503）",
     UPSTREAM_HTTP_429: "APIの利用制限に達したため安全停止しています",
     API_BACKOFF: "APIの再試行待機中です。PAPERは停止しています",
     API_RETRIES_EXHAUSTED:
