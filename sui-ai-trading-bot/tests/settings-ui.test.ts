@@ -154,3 +154,30 @@ it.each([
     expect(html).toContain("1.5");
   },
 );
+
+it.each([defaults, { ...defaults, maxOrder: 3, gasUsdc: 0.08 }])(
+  "shows a non-modal recommendation for default and existing custom settings without guessing first use",
+  (settings) => {
+    const api = vi.fn(),
+      control = vi.fn();
+    const data = {
+      settings,
+      runtime: { running: false, emergency: false, error: null },
+      profitGuard: null,
+    } as unknown as Parameters<typeof SettingsPage>[0]["data"];
+    const html = renderToStaticMarkup(
+      React.createElement(SettingsPage, {
+        data,
+        api,
+        control,
+        onSaved: async () => {},
+      }),
+    );
+    expect(html).toContain("安全重視をおすすめ");
+    expect(html).toContain("安全重視の設定を確認する");
+    expect(html).not.toContain('role="dialog"');
+    expect(html).not.toContain("適用済み：");
+    expect(api).not.toHaveBeenCalled();
+    expect(control).not.toHaveBeenCalled();
+  },
+);

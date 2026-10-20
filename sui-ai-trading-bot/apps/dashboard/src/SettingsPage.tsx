@@ -1,15 +1,21 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useReducer, useRef } from "react";
 import {
   settingsSchema,
   type Settings,
 } from "../../../packages/shared/src/index.ts";
 import type { BotEngine } from "../../worker/src/engine.ts";
 import {
-  applySafePreset,
+  presetKeys,
   presetName,
   saveSettings,
   type SettingsApi,
 } from "./settingsPresets.ts";
+import {
+  createEditor,
+  settingsEditor,
+  sameSettings,
+  type Mode,
+} from "./settingsEditor.ts";
 type State = ReturnType<BotEngine["snapshot"]>;
 type Field = {
   key: keyof Settings;
@@ -161,6 +167,7 @@ function Inputs({
           {f.label} {f.unit && `(${f.unit})`}
           <input
             type="number"
+            inputMode="decimal"
             step="any"
             required
             value={
@@ -276,6 +283,50 @@ export function ProfitGuardSummary({ data }: { data: State }) {
     </div>
   );
 }
+export function SettingsChanges({
+  before,
+  after,
+  keys,
+}: {
+  before: Settings;
+  after: Settings;
+  keys?: readonly (keyof Settings)[];
+}) {
+  const changed =
+    keys ??
+    (Object.keys(after) as (keyof Settings)[]).filter(
+      (key) => !Object.is(before[key], after[key]),
+    );
+  return changed.length ? (
+    <ul className="settings-diff">
+      {changed.map((key) => {
+        const field = fields.find((f) => f.key === key);
+        const display = (s: Settings) =>
+          field
+            ? format(s, field)
+            : key === "profitGuardEnabled"
+              ? s[key]
+                ? "有効"
+                : "無効"
+              : String(s[key]);
+        return (
+          <li key={key}>
+            <span>
+              {field?.label ??
+                (key === "profitGuardEnabled" ? "利益保護" : "戦略")}
+            </span>
+            <span>
+              {display(before)} → <strong>{display(after)}</strong>
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  ) : (
+    <p>保存済み設定からの変更はありません。</p>
+  );
+}
+const modeLabel = (mode: Mode) => (mode === "safe" ? "安全重視" : "カスタム");
 export function SettingsPage({
   data,
   api,
@@ -287,142 +338,216 @@ export function SettingsPage({
   onSaved: () => Promise<void>;
   control: (c: string) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState<Settings>(() => ({ ...data.settings }));
-  const [selected, setSelected] = useState(presetName(data.settings));
-  const [pendingPreset, setPendingPreset] = useState(false);
-  const [pending, setPending] = useState<Settings | null>(null);
-  const [busy, setBusy] = useState(false),
-    [message, setMessage] = useState(""),
-    [error, setError] = useState("");
+  const [editor, dispatch] = useReducer(
+    settingsEditor,
+    data.settings,
+    createEditor,
+  );
+  const { saved, draft, selected, review, switchTo, status, error, conflict } =
+    editor;
+  const busy = status === "saving",
+    dirty = !sameSettings(saved, draft);
   const lock = useRef(false);
-  const edit = (s: Settings) => {
-    setDraft(s);
-    setPending(null);
-    setMessage("");
-    setSelected(presetName(s));
-  };
-  const changes = (candidate: Settings) =>
-    Object.keys(candidate).filter(
-      (k) =>
-        candidate[k as keyof Settings] !== data.settings[k as keyof Settings],
-    );
-  async function save(candidate: Settings) {
-    if (lock.current) return;
-    lock.current = true;
-    setBusy(true);
-    setError("");
-    setMessage("");
-    try {
-      const saved = await saveSettings(api, candidate);
-      setDraft(saved);
-      setSelected(presetName(saved));
-      setPending(null);
-      await onSaved();
-      setMessage("設定を保存し、サーバーで確認しました。");
-    } catch {
-      setError(
-        "設定を保存・再確認できませんでした。入力値と接続を確認してください。",
-      );
-    } finally {
-      lock.current = false;
-      setBusy(false);
-    }
-  }
-  const preview = (candidate: Settings, isPreset = false) => {
-    setPendingPreset(isPreset);
-    const result = settingsSchema.safeParse(candidate);
-    setMessage("");
+  useEffect(() => {
+    dispatch({ type: "sync", settings: data.settings });
+  }, [data.settings]);
+  const choose = (mode: Mode) => dispatch({ type: "select", mode });
+  const edit = (next: Settings) => dispatch({ type: "edit", draft: next });
+  function confirm() {
+    const result = settingsSchema.safeParse(draft);
     if (!result.success) {
-      setError("設定値が不正です。各項目の説明と安全上限を確認してください。");
+      dispatch({
+        type: "failed",
+        message: "設定値が不正です。各項目の説明と安全上限を確認してください。",
+      });
       return;
     }
-    setError("");
-    setPending(result.data);
-  };
+    dispatch({ type: "review" });
+  }
+  async function save() {
+    if (lock.current || !review || switchTo || conflict) return;
+    lock.current = true;
+    dispatch({ type: "saving" });
+    try {
+      const result = await saveSettings(api, draft);
+      await onSaved();
+      dispatch({ type: "saved", settings: result });
+    } catch {
+      dispatch({
+        type: "failed",
+        message:
+          "設定を保存・再確認できませんでした。入力値と接続を確認して再試行してください。",
+      });
+    } finally {
+      lock.current = false;
+    }
+  }
   return (
-    <section className="easy-settings">
+    <section className="easy-settings" aria-busy={busy}>
       <h2>かんたん設定</h2>
-      <p>PAPER運用 · 仮想売買のみ</p>
+      <p>PAPER専用 · 仮想売買のみ</p>
       <fieldset disabled={busy}>
         <legend>
-          運用スタイル（保存済み：
-          {presetName(data.settings) === "safe" ? "安全重視" : "カスタム"}）
+          運用スタイル（保存済み：{modeLabel(presetName(saved))}）
         </legend>
-        <PresetSelector
-          value={selected}
-          onChange={(v) => {
-            setSelected(v);
-            setPending(null);
-            setMessage("");
-          }}
-        />
-        {selected === "safe" && (
-          <div>
+        <small>
+          選択しただけでは保存されません。PAPER運用には保存済みの設定を使います。
+        </small>
+        {selected === "custom" && (
+          <aside className="settings-tip" aria-label="安全重視のおすすめ">
+            <strong>安全重視をおすすめ</strong>
             <p>
-              安全重視：最大2 USDC、日次10
-              USDC、価格ずれ0.3%以下、利益保護有効、純利益0.05
-              USDC・1.5%。収益性は未検証の仮設定です。
+              初めての方には安全重視がおすすめです。少額の仮想売買でSuiBaの動作を確認できます。
+            </p>
+            <button type="button" onClick={() => choose("safe")}>
+              安全重視の設定を確認する
+            </button>
+          </aside>
+        )}
+        <PresetSelector value={selected} onChange={choose} />
+        <p>
+          選択中の運用スタイル：<strong>{modeLabel(selected)}</strong>
+        </p>
+        {switchTo && (
+          <div
+            className="settings-review"
+            role="group"
+            aria-label="未保存変更の確認"
+          >
+            <h3>未保存の変更があります</h3>
+            <p>
+              {modeLabel(switchTo)}
+              に切り替えると、現在の未保存変更は破棄されます。保存済み設定を基準に切り替えます。
             </p>
             <button
-              onClick={() => preview(applySafePreset(data.settings), true)}
+              type="button"
+              onClick={() => dispatch({ type: "discard-switch" })}
             >
-              安全重視の変更内容を確認
+              未保存の変更を破棄して切り替える
+            </button>
+            <button
+              type="button"
+              onClick={() => dispatch({ type: "cancel-switch" })}
+            >
+              編集を続ける
             </button>
           </div>
         )}
+        <div className="settings-preview" aria-label="適用予定の設定">
+          <h3>
+            適用予定：{modeLabel(selected)}
+            {dirty ? "（未保存）" : "（保存済み値と同じ）"}
+          </h3>
+          {selected === "safe" && (
+            <p>
+              純利益0.05
+              USDC・1.5%以上を目標にする仮設定です。収益性は未検証です。選択だけでは保存・起動されません。
+            </p>
+          )}
+          <small>保存済み → 適用予定</small>
+          <SettingsChanges
+            before={saved}
+            after={draft}
+            keys={selected === "safe" ? presetKeys : undefined}
+          />
+        </div>
+        <h3>適用予定の数値を編集</h3>
+        <small>数値を編集すると選択中のスタイルはカスタムになります。</small>
         <BasicSettings draft={draft} setDraft={edit} />
-        <ProfitGuardSummary data={data} />
         <AdvancedSettings draft={draft} setDraft={edit} />
-        <button onClick={() => preview(draft)}>設定の変更内容を確認</button>
-        {pending && (
-          <div className="settings-review">
-            <h3>保存前の確認</h3>
-            {changes(pending).length ? (
-              <ul>
-                {changes(pending).map((k) => {
-                  const f = fields.find((f) => f.key === k);
-                  return (
-                    <li key={k}>
-                      {f?.label ?? "利益保護"}：
-                      {f
-                        ? format(data.settings, f)
-                        : data.settings.profitGuardEnabled
-                          ? "有効"
-                          : "無効"}{" "}
-                      →{" "}
-                      {f
-                        ? format(pending, f)
-                        : pending.profitGuardEnabled
-                          ? "有効"
-                          : "無効"}
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p>変更はありません。</p>
-            )}
-            <p>表示以外の項目は保持します。Botは起動しません。</p>
-            <button onClick={() => void save(pending)}>
-              {pendingPreset ? "安全重視を適用" : "変更を保存"}
+        {dirty && (
+          <p className="unsaved-note">
+            未保存の変更があります。保存するまでPAPER運用には反映されません。
+          </p>
+        )}
+        <div className="controls">
+          <button
+            type="button"
+            disabled={!!switchTo || conflict || !dirty}
+            onClick={confirm}
+          >
+            変更内容を確認
+          </button>
+          {(dirty || conflict) && (
+            <button type="button" onClick={() => dispatch({ type: "restore" })}>
+              未保存の変更を破棄して保存済みに戻す
             </button>
-            <button onClick={() => setPending(null)}>キャンセル</button>
+          )}
+        </div>
+        {review && (
+          <div
+            className="settings-review"
+            role="group"
+            aria-label="保存前の変更内容確認"
+          >
+            <h3>保存前の確認</h3>
+            <p>適用予定：{modeLabel(selected)}</p>
+            <SettingsChanges before={saved} after={draft} />
+            <p>
+              ここに表示されない設定は保持します。設定の保存だけではBotは起動しません。
+            </p>
+            <button type="button" onClick={() => void save()}>
+              {selected === "safe" ? "安全重視を適用" : "変更を保存"}
+            </button>
+            <button
+              type="button"
+              onClick={() => dispatch({ type: "cancel-review" })}
+            >
+              編集に戻る
+            </button>
           </div>
         )}
       </fieldset>
-      {busy && <p role="status">保存・再確認中…</p>}
-      {message && <p role="status">{message}</p>}
+      {busy && (
+        <p className="settings-saving" role="status">
+          保存・サーバーへの再確認中です。完了までお待ちください…
+        </p>
+      )}
+      {status === "applied" && (
+        <p className="settings-success" role="status">
+          適用済み：{modeLabel(selected)}
+          。保存完了後の設定をサーバーで確認しました。PAPER運用の開始は下のボタンから行ってください。
+        </p>
+      )}
       {error && (
         <p className="error" role="alert">
           {error}
         </p>
       )}
+      <div className="settings-saved" aria-label="保存済みの設定">
+        <h3>保存済みの設定</h3>
+        <p>
+          最大取引額：{saved.maxOrder} USDC ／ 1日の購入上限：
+          {saved.dailyBuyLimit} USDC
+        </p>
+        <ProfitGuardSummary data={{ ...data, settings: saved }} />
+      </div>
       <hr />
-      <h3>PAPER運用 {data.runtime.running ? "稼働中" : "停止中"}</h3>
+      <h3
+        className={`paper-operation ${data.runtime.running ? "running" : "stopped"}`}
+      >
+        PAPER運用：
+        {data.runtime.emergency
+          ? "緊急停止中"
+          : data.runtime.error
+            ? "安全停止中"
+            : data.runtime.running
+              ? "運用中"
+              : "停止中"}
+      </h3>
+      <p>
+        {dirty || conflict
+          ? "未保存の変更を保存するか、保存済みに戻してから開始してください。"
+          : "開始すると、上の保存済み設定で仮想売買を行います。"}
+      </p>
       <div className="controls">
         <button
+          type="button"
           disabled={
             busy ||
+            dirty ||
+            conflict ||
+            !!switchTo ||
             data.runtime.running ||
             data.runtime.emergency ||
             !!data.runtime.error
@@ -431,13 +556,15 @@ export function SettingsPage({
         >
           PAPER運用開始
         </button>
-        <button onClick={() => void control("stop")}>PAPER運用停止</button>
+        <button type="button" onClick={() => void control("stop")}>
+          PAPER運用停止
+        </button>
       </div>
       {(data.runtime.emergency || data.runtime.error) && (
         <details>
           <summary>停止状態の解除</summary>
           <p>原因を確認後に解除してください。再開は別途手動です。</p>
-          <button onClick={() => void control("reset")}>
+          <button type="button" onClick={() => void control("reset")}>
             停止解除（再開は手動）
           </button>
         </details>

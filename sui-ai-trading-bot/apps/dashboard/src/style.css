@@ -292,3 +292,110 @@ footer {
     flex-wrap: wrap;
   }
 }
+/* Settings 1.1: wrap content instead of clipping it on narrow screens. */
+.easy-settings {
+  overflow-wrap: anywhere;
+}
+.easy-settings fieldset,
+.easy-settings legend,
+.easy-settings input {
+  max-width: 100%;
+  min-width: 0;
+}
+.easy-settings legend {
+  line-height: 1.8;
+}
+.easy-settings button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.easy-settings input {
+  min-height: 44px;
+  font-size: 16px;
+}
+.settings-tip {
+  padding: 14px;
+  margin: 16px 0;
+  border-left: 3px solid #64b5ff;
+  background: #142536;
+  border-radius: 6px;
+}
+.settings-tip p {
+  font-size: 13px;
+  line-height: 1.8;
+}
+.settings-preview,
+.settings-saved {
+  padding: 16px;
+  border: 1px solid #344e65;
+  border-radius: 8px;
+  margin: 18px 0;
+  min-width: 0;
+}
+.settings-diff {
+  padding: 0;
+  margin: 12px 0;
+  list-style: none;
+}
+.settings-diff li {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding: 12px 0;
+  border-bottom: 1px solid #263448;
+}
+.settings-diff li span {
+  min-width: 0;
+  max-width: 100%;
+}
+.unsaved-note {
+  color: #edc980;
+}
+.settings-saving,
+.settings-success {
+  padding: 14px;
+  border-radius: 8px;
+  line-height: 1.8;
+  background: #173448;
+}
+.settings-success,
+.paper-operation.running {
+  color: #43dfb2;
+}
+.paper-operation.stopped {
+  color: #edc980;
+}
+@media (max-width: 600px) {
+  nav {
+    flex-wrap: wrap;
+    overflow: visible;
+    gap: 4px;
+  }
+  nav button,
+  header button {
+    min-height: 44px;
+  }
+  .easy-settings .controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .easy-settings .controls button {
+    width: 100%;
+  }
+  .settings-preview,
+  .settings-review,
+  .settings-saved {
+    padding: 12px;
+  }
+  .settings-diff li {
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+.easy-settings .preset-cards button {
+  min-height: 84px;
+  width: 100%;
+  margin: 0;
+}
