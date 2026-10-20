@@ -1,3 +1,10 @@
+import {
+  classifyHttpFailure,
+  requestIdentity,
+  HttpStatusFailure,
+  type ApiFailure,
+  type RequestPhase,
+} from "./http-errors.ts";
 export const apiLimits = {
   timeoutMs: 10000,
   maxWaitMs: 60000,
@@ -41,6 +48,7 @@ type Stats = {
   active: boolean;
   failed: boolean;
   recent: number[];
+  lastFailure: ApiFailure | null;
 };
 export class ApiAccess {
   private states = new Map<string, Stats>();
@@ -49,6 +57,11 @@ export class ApiAccess {
   private tails = new Map<string, Promise<unknown>>();
   private controller = new AbortController();
   onRateLimit: (api: string) => void = () => {};
+  onFailure: (failure: ApiFailure) => void = () => {};
+  recordFailure(failure: ApiFailure) {
+    this.state(failure.api).lastFailure = failure;
+    this.onFailure(failure);
+  }
   restoreCooldowns(
     values: { api: string; nextRetryAt: number | null; exhausted: boolean }[],
   ) {
@@ -70,6 +83,7 @@ export class ApiAccess {
         active: false,
         failed: false,
         recent: [],
+        lastFailure: null,
       });
     return this.states.get(api)!;
   }
@@ -231,32 +245,54 @@ export async function apiFetch(
     api,
     key,
     async (signal) => {
-      let response: Response;
+      const started = performance.now();
+      let phase: RequestPhase = "HEADERS_OR_CONNECT";
+      let status: number | null = null;
+      const combined = AbortSignal.any([
+        signal,
+        ...(init?.signal
+          ? [init.signal]
+          : input instanceof Request
+            ? [input.signal]
+            : []),
+      ]);
       try {
-        response = await rawFetch(input, {
-          ...init,
-          signal: AbortSignal.any([
-            signal,
-            ...(init?.signal ? [init.signal] : []),
-          ]),
+        const response = await rawFetch(input, { ...init, signal: combined });
+        status = response.status;
+        if (!response.ok) {
+          phase = "HTTP";
+          await response.body?.cancel().catch(() => {});
+          if (status === 429)
+            throw new RateLimited(response.headers.get("retry-after"));
+          throw new HttpStatusFailure(status);
+        }
+        phase = "BODY";
+        const bytes = await response.arrayBuffer();
+        return {
+          bytes,
+          status: response.status,
+          headers: [...response.headers.entries()],
+        };
+      } catch (error) {
+        const classification =
+          error instanceof RateLimited || error instanceof HttpStatusFailure
+            ? { code: error.message, phase: "HTTP" as const, causeCode: null }
+            : classifyHttpFailure(error, phase, combined);
+        apiAccess.recordFailure({
+          ...requestIdentity(
+            api,
+            url,
+            init?.method ?? (input instanceof Request ? input.method : "GET"),
+          ),
+          ...classification,
+          status,
+          elapsedMs: Math.round(performance.now() - started),
+          occurredAt: Date.now(),
         });
-      } catch {
-        throw new Error("UPSTREAM_TIMEOUT");
+        if (error instanceof RateLimited || error instanceof HttpStatusFailure)
+          throw error;
+        throw new Error(classification.code);
       }
-      if (response.status === 429) {
-        await response.body?.cancel();
-        throw new RateLimited(response.headers.get("retry-after"));
-      }
-      if (!response.ok) {
-        await response.body?.cancel();
-        throw new Error("UPSTREAM_HTTP_" + response.status);
-      }
-      const bytes = await response.arrayBuffer();
-      return {
-        bytes,
-        status: response.status,
-        headers: [...response.headers.entries()],
-      };
     },
     ttl,
   );
