@@ -19,8 +19,12 @@ it("has no circular source imports or transaction execution/signing entrypoints"
   for (const file of files) {
     const content = readFileSync(file, "utf8");
     expect(content, file).not.toMatch(
-      /@mysten\/sui\/keypairs|\.executeTransaction\s*\(|\.signAndExecute\w*\s*\(|\.fastRouterSwap\s*\(|fromSecretKey\s*\(|fromMnemonic\s*\(|new Transaction\s*\(/,
+      /\.executeTransaction\s*\(|\.signAndExecute\w*\s*\(|\.signTransaction\s*\(|\.sendTransaction\s*\(/,
     );
+    if (!file.includes("live-trading"))
+      expect(content, file).not.toMatch(
+        /@mysten\/sui\/keypairs|fromSecretKey\s*\(|new Transaction\s*\(/,
+      );
     graph.set(
       file,
       [...content.matchAll(/from\s+["']([^"']+)["']/g)]

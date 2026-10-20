@@ -17,7 +17,20 @@ export interface Fill {
   slippage: number;
   priceImpact: number;
 }
-export interface TradingExecutor {
+import type { TradingExecutor as ExecutorContract } from "../../shared/src/execution.ts";
+export type PaperRequest = {
+  orderId: string;
+  side: "BUY" | "SELL";
+  quote: QuoteResult;
+  portfolio: Portfolio;
+  settings: Settings;
+  now: number;
+};
+export interface TradingExecutor extends ExecutorContract<
+  "PAPER",
+  PaperRequest,
+  { portfolio: Portfolio; trade: Fill }
+> {
   readonly mode: "PAPER";
   fill(
     orderId: string,
@@ -30,6 +43,16 @@ export interface TradingExecutor {
 }
 export class PaperTrading implements TradingExecutor {
   readonly mode = "PAPER" as const;
+  async prepare(r: PaperRequest) {
+    return this.fill(
+      r.orderId,
+      r.side,
+      r.quote,
+      r.portfolio,
+      r.settings,
+      r.now,
+    );
+  }
   fill(
     orderId: string,
     side: "BUY" | "SELL",
