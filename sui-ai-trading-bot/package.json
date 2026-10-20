@@ -15,7 +15,8 @@
     "smoke": "tsx apps/worker/src/smoke.ts",
     "verify:runtime": "tsx apps/worker/src/verify-runtime.ts",
     "format": "prettier --write apps packages tests README.md tsconfig.json package.json docker pnpm-workspace.yaml",
-    "backtest:sample": "tsx apps/worker/src/backtest-sample.ts"
+    "backtest:sample": "tsx apps/worker/src/backtest-sample.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@cetusprotocol/aggregator-sdk": "1.7.5",
@@ -27,6 +28,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
