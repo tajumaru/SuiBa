@@ -236,3 +236,59 @@ footer {
     font-size: 10px;
   }
 }
+.easy-settings fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.preset-cards,
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.preset-cards button {
+  min-height: 84px;
+  text-align: left;
+}
+.preset-cards button[aria-pressed="true"] {
+  border: 2px solid #41d9b0;
+  background: #173448;
+}
+.easy-settings button,
+.easy-settings summary {
+  min-height: 44px;
+  margin: 6px 6px 6px 0;
+}
+.easy-settings summary {
+  cursor: pointer;
+  padding: 12px 0;
+}
+.easy-settings input[type="checkbox"] {
+  display: inline-block;
+  width: auto;
+  margin-right: 12px;
+}
+.profit-summary,
+.settings-review {
+  padding: 16px;
+  margin: 16px 0;
+  border: 1px solid #344e65;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+.easy-settings small {
+  line-height: 1.7;
+}
+@media (max-width: 600px) {
+  .settings-grid,
+  .preset-cards {
+    grid-template-columns: 1fr;
+  }
+  .easy-settings {
+    padding: 16px;
+  }
+  header {
+    flex-wrap: wrap;
+  }
+}

@@ -4,6 +4,7 @@ import type { BotEngine } from "../../worker/src/engine.ts";
 import { calculate, ema } from "../../../packages/indicators/src/index.ts";
 import type { Candle } from "../../../packages/shared/src/index.ts";
 import "./style.css";
+import { SettingsPage } from "./SettingsPage.tsx";
 type State = ReturnType<BotEngine["snapshot"]>;
 const money = (v: number | null | undefined) =>
   v == null
@@ -294,14 +295,7 @@ function App() {
     [data, setData] = useState<State | null>(null),
     [error, setError] = useState(""),
     [tab, setTab] = useState("Overview"),
-    [timeframe, setTimeframe] = useState<300 | 900 | 3600>(300),
-    [draft, setDraft] = useState("");
-  let draftSettings: Partial<State["settings"]> = {};
-  try {
-    const parsed: unknown = JSON.parse(draft || "{}");
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
-      draftSettings = parsed;
-  } catch {}
+    [timeframe, setTimeframe] = useState<300 | 900 | 3600>(300);
   async function api(path: string, body?: unknown) {
     const r = await fetch("/api/" + path, {
       headers: {
@@ -394,8 +388,6 @@ function App() {
                 key={t}
                 onClick={() => {
                   setTab(t);
-                  if (t === "Settings" && data)
-                    setDraft(JSON.stringify(data.settings, null, 2));
                 }}
               >
                 {t}
@@ -594,119 +586,12 @@ function App() {
                   </>
                 )}
                 {tab === "Settings" && (
-                  <section>
-                    <h3>Bot操作</h3>
-                    <div className="controls">
-                      <button onClick={() => void control("start")}>
-                        開始
-                      </button>
-                      <button onClick={() => void control("stop")}>停止</button>
-                      <button onClick={() => void control("reset")}>
-                        停止解除（再開は手動）
-                      </button>
-                    </div>
-                    <p>
-                      日次区切り：UTC 00:00。設定の上限は初期安全値までです。
-                    </p>
-                    <p>
-                      ProfitGuardは初期状態で有効、最低純利益0.05
-                      USDC・最低利益率1%です。BUYの想定上昇率はtakeProfitPctを使います。損切り・戦略退出・リスク削減は利益条件で妨げません。
-                    </p>
-                    <label>
-                      戦略
-                      <select disabled value="rule-based">
-                        <option>rule-based</option>
-                        <option disabled>deepseek（未実装）</option>
-                      </select>
-                    </label>
-                    <label>
-                      パラメータ
-                      <div className="cards">
-                        <label>
-                          Profit Guard 有効{" "}
-                          <input
-                            type="checkbox"
-                            checked={draftSettings.profitGuardEnabled ?? true}
-                            onChange={(e) =>
-                              setDraft(
-                                JSON.stringify(
-                                  {
-                                    ...draftSettings,
-                                    profitGuardEnabled: e.target.checked,
-                                  },
-                                  null,
-                                  2,
-                                ),
-                              )
-                            }
-                          />
-                        </label>
-                        <label>
-                          最低利益額 USDC{" "}
-                          <input
-                            type="number"
-                            min="0"
-                            max="5"
-                            step="0.000001"
-                            value={draftSettings.minNetProfitUsdc ?? 0.05}
-                            onChange={(e) =>
-                              setDraft(
-                                JSON.stringify(
-                                  {
-                                    ...draftSettings,
-                                    minNetProfitUsdc: Number(e.target.value),
-                                  },
-                                  null,
-                                  2,
-                                ),
-                              )
-                            }
-                          />
-                        </label>
-                        <label>
-                          最低利益率（0.01 = 1%）
-                          <input
-                            type="number"
-                            min="0"
-                            max="1"
-                            step="0.001"
-                            value={draftSettings.minNetProfitPct ?? 0.01}
-                            onChange={(e) =>
-                              setDraft(
-                                JSON.stringify(
-                                  {
-                                    ...draftSettings,
-                                    minNetProfitPct: Number(e.target.value),
-                                  },
-                                  null,
-                                  2,
-                                ),
-                              )
-                            }
-                          />
-                        </label>
-                      </div>
-                      <textarea
-                        rows={22}
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                      />
-                    </label>
-                    <button
-                      onClick={async () => {
-                        try {
-                          await api("settings", JSON.parse(draft));
-                          await refresh();
-                        } catch {
-                          setError(
-                            "設定を拒否しました。形式と安全上限を確認してください。",
-                          );
-                        }
-                      }}
-                    >
-                      設定を保存
-                    </button>
-                  </section>
+                  <SettingsPage
+                    data={data}
+                    api={api}
+                    onSaved={refresh}
+                    control={control}
+                  />
                 )}
               </>
             )}
