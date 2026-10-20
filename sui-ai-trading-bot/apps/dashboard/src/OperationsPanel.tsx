@@ -1,0 +1,409 @@
+import React, { useEffect, useState } from "react";
+import type { OperationMonitor } from "../../worker/src/operations.ts";
+import type { SettingsApi } from "./settingsPresets.ts";
+import { operationReason } from "./operationLabels.ts";
+export type OperationsSnapshot = ReturnType<OperationMonitor["snapshot"]>;
+const date = (v: number | null) =>
+  v == null ? "未取得" : new Date(v).toLocaleString("ja-JP");
+const number = (v: number | null) =>
+  v == null
+    ? "未評価"
+    : new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 6 }).format(v);
+const usdc = (v: string | number | null) => (v == null ? "不明" : `${v} USDC`);
+const statusLabels: Record<string, string> = {
+  STOPPED: "停止中",
+  RUNNING: "正常稼働中",
+  DATA_DELAYED: "データ遅延",
+  ABNORMAL_STOP: "異常停止",
+};
+export function OperationsView({
+  data,
+  stale = false,
+}: {
+  data: OperationsSnapshot;
+  stale?: boolean;
+}) {
+  const latest = data.accounting.latest,
+    ledger = data.accounting.ledger;
+  return (
+    <div className="operation-validation">
+      <section>
+        <h2>運用検証</h2>
+        <p
+          className={`operation-state ${!stale && data.status === "RUNNING" ? "healthy" : "warning"}`}
+        >
+          PAPER専用 ·{" "}
+          {stale
+            ? "接続状態不明（最終取得時点の記録を表示）"
+            : (statusLabels[data.status] ?? "状態を確認中")}
+        </p>
+        <p>
+          監視開始：{date(data.observedSince)}
+          。実資金の売買・署名・送信は行いません。
+        </p>
+        {data.stopReason && (
+          <p className="error">停止理由：{operationReason(data.stopReason)}</p>
+        )}
+        <div className="cards">
+          {[
+            [
+              "PAPER運用時間",
+              `${Math.floor(data.runningMs / 3600000)}時間 ${Math.floor(data.runningMs / 60000) % 60}分`,
+            ],
+            ["市場データ最終取得", date(data.lastMarketAt)],
+            ["見積もり最終取得", date(data.lastQuoteAt)],
+            ["最終売買", date(data.lastTradeAt)],
+            [
+              "BUY / SELL / WAIT（最終アクション累計）",
+              `${data.actions.buys} / ${data.actions.sells} / ${data.actions.waits}`,
+            ],
+            ["Profit Guardによる拒否", String(data.actions.profitRejected)],
+            ["RiskEngineによる拒否", String(data.actions.riskRejected)],
+            ["APIエラー", String(data.apiErrors)],
+            ["連続エラー", String(data.consecutiveErrors)],
+            ["最終正常動作", date(data.lastHealthyAt)],
+          ].map(([label, value]) => (
+            <div key={label}>
+              <small>{label}</small>
+              <p>{value}</p>
+            </div>
+          ))}
+        </div>
+        <small>
+          運用時間は手動開始から停止までの確認済み時間。最終アクションは監視開始後の集計です。表示用の利益試算は拒否回数に含めません。
+        </small>
+      </section>
+      <section>
+        <h3>24時間・7日間の検証レポート</h3>
+        <p>
+          取引ゼロ件も正常な検証結果です。売買がなくても条件を自動で緩めません。
+        </p>
+        <div className="operation-reports">
+          {data.reports.map((r) => (
+            <article
+              key={r.hours}
+              aria-label={r.hours === 24 ? "24時間レポート" : "7日間レポート"}
+            >
+              <h3>{r.hours === 24 ? "24時間" : "7日間"}</h3>
+              <small>
+                {date(r.from)} 〜 {date(r.until)}
+              </small>
+              {!r.fullMonitoringCoverage && (
+                <p>監視記録は{date(r.observedFrom)}からの一部期間です。</p>
+              )}
+              <dl>
+                {[
+                  [
+                    "取引回数",
+                    `${r.tradeCount}件（BUY ${r.buyCount} / SELL ${r.sellCount}）`,
+                  ],
+                  [
+                    "勝率（売却単位）",
+                    r.winRate == null
+                      ? "売却なし"
+                      : `${number(r.winRate * 100)}%`,
+                  ],
+                  [
+                    "純損益（保有分の評価損益を含む）",
+                    r.netPnl == null
+                      ? "評価データ不足"
+                      : `${number(r.netPnl)} USDC`,
+                  ],
+                  [
+                    "最大ドローダウン",
+                    r.maxDrawdown == null
+                      ? "評価データ不足"
+                      : `${number(r.maxDrawdown * 100)}%`,
+                  ],
+                  ["利益保護による見送り", `${r.profitGuardSkipped}件`],
+                  ["リスク制限による見送り", `${r.riskSkipped}件`],
+                  ["エラー / 異常検出", `${r.errors} / ${r.anomalies}件`],
+                  ["累計手数料（ガスを含む）", usdc(r.costs.feesUsdc)],
+                  ["ガス代", usdc(r.costs.gasUsdc)],
+                ].map(([label, value]) => (
+                  <React.Fragment key={label}>
+                    <dt>{label}</dt>
+                    <dd>{value}</dd>
+                  </React.Fragment>
+                ))}
+              </dl>
+              <small>
+                損益の比較開始：{date(r.valuationBaselineAt)}
+                。期間開始前の評価がない場合は、最初に取得した評価との比較です。DEX手数料は見積もり内に含み、二重加算しません。
+              </small>
+              <details>
+                <summary>運用停止理由（{r.stopReasons.length}件）</summary>
+                <ul>
+                  {r.stopReasons.map((s, i) => (
+                    <li key={i}>
+                      {date(s.timestamp)}：{operationReason(s.reason)}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </article>
+          ))}
+        </div>
+      </section>
+      <section>
+        <h3>残高・損益の整合性</h3>
+        <div className="cards">
+          {Object.entries(data.accounting.current).map(([key, value]) => (
+            <div key={key}>
+              <small>
+                {
+                  (
+                    {
+                      usdc: "USDC残高",
+                      sui: "SUI残高",
+                      costBasis: "取得原価（USDC）",
+                      realized: "実現損益（USDC）",
+                      unrealized: "未実現損益（USDC）",
+                      fees: "累計手数料・ガス（USDC）",
+                      equity: "総資産評価額（USDC）",
+                      price: "評価価格（USDC / SUI）",
+                    } as Record<string, string>
+                  )[key]
+                }
+              </small>
+              <p>{number(value)}</p>
+            </div>
+          ))}
+        </div>
+        {(!ledger.ok || (latest && !latest.ok)) && (
+          <p className="error" role="alert">
+            不整合を検出しました。PAPER運用を停止し、記録を確認してください。
+          </p>
+        )}
+        <p>
+          {latest
+            ? latest.ok && ledger.ok
+              ? "直近約定の照合：一致"
+              : "直近約定の照合：不一致"
+            : "約定後の照合記録はまだありません。"}
+        </p>
+        <p>
+          照合済み約定：{ledger.verifiedFills}件 ／ 監視導入前の約定：
+          {ledger.legacyFills}件
+        </p>
+        <p>
+          累計手数料（ガス込み）：{usdc(data.accounting.totals.feesUsdc)} ／
+          累計ガス代：{usdc(data.accounting.totals.gasUsdc)}
+        </p>
+        {data.accounting.totals.unknownGasTrades > 0 && (
+          <p>
+            ガス代不明の旧約定が{data.accounting.totals.unknownGasTrades}
+            件あります。確認できたガス代の小計：
+            {usdc(data.accounting.totals.knownGasUsdc)}。
+          </p>
+        )}
+        <p>
+          ガス照合：期待値{usdc(ledger.expectedGasUsdc)} ／ 約定記録
+          {usdc(ledger.actualGasUsdc)}
+        </p>
+        <p>
+          許容誤差：SUI 0.000000001（9桁）、USDC
+          0.000001（6桁）。資産評価額はUSDC 1最小単位＋価格×SUI 1最小単位です。
+        </p>
+        {ledger.reasons.map((reason) => (
+          <p className="error" key={reason}>
+            {operationReason(reason)}
+          </p>
+        ))}
+        {latest && (
+          <details>
+            <summary>直近約定の照合詳細 · {date(latest.timestamp)}</summary>
+            <div className="scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>項目</th>
+                    <th>独立した計算結果</th>
+                    <th>約定後の記録</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.keys(latest.expected).map((key) => (
+                    <tr key={key}>
+                      <td>
+                        {(
+                          {
+                            usdc: "USDC残高",
+                            sui: "SUI残高",
+                            quantityAtomic: "SUI最小単位の数量",
+                            costBasis: "取得原価",
+                            costBasisUsdc: "取得原価の精密値",
+                            realized: "実現損益",
+                            unrealized: "未実現損益",
+                            fees: "累計手数料（ガスを含む）",
+                            tradeFee: "今回の手数料",
+                            quantity: "今回のSUI数量",
+                            equity: "総資産評価額",
+                            pnlMovement: "損益の変化",
+                            gasUsdc: "今回のガス代",
+                            modeledGas: "設定から計算したガス代",
+                            modeledAdditionalFee: "設定から計算した追加手数料",
+                            tradePrice: "今回の約定価格",
+                            acquisitionCost: "今回の取得原価",
+                            allocatedCost: "部分売却の取得原価",
+                            tradeRealized: "今回の実現損益",
+                          } as Record<string, string>
+                        )[key] ?? "照合項目"}
+                      </td>
+                      <td>{latest.expected[key] ?? "不明"}</td>
+                      <td>{latest.actual[key] ?? "不明"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {latest.reasons.map((r) => (
+              <p key={r}>{operationReason(r)}</p>
+            ))}
+          </details>
+        )}
+      </section>
+      <section>
+        <h3>売買候補ごとの検証記録（直近50件）</h3>
+        {data.candidates.length === 0 && (
+          <p>売買候補はまだありません。WAITが続いても正常です。</p>
+        )}
+        {data.candidates.map((c) => (
+          <details className="operation-candidate" key={c.id}>
+            <summary>
+              {date(c.createdAt)} · {c.side}候補 →{" "}
+              {c.finalAction === "SAFE_STOP"
+                ? "安全停止"
+                : c.finalAction === "PENDING"
+                  ? "処理中"
+                  : c.finalAction}
+            </summary>
+            <dl>
+              {[
+                [
+                  "売買予定数量",
+                  c.quantityAtomic
+                    ? `${Number(c.quantityAtomic) / 1e9} SUI`
+                    : "見積もり未取得",
+                ],
+                [
+                  "見積もり価格（最低受取額から計算）",
+                  c.quotePriceUsdc ? `${c.quotePriceUsdc} USDC / SUI` : "不明",
+                ],
+                ["見積もり有効期限", date(c.quoteExpiresAt)],
+                ["取得原価", usdc(c.acquisitionCostUsdc)],
+                [
+                  "予想売却額",
+                  `${usdc(c.expectedSaleUsdc)}${c.saleModel === "PROJECTED_TARGET" ? "（想定利確時）" : ""}`,
+                ],
+                [
+                  "DEX手数料",
+                  c.dexFeeUsdc == null
+                    ? "内訳不明（見積もりに含む）"
+                    : usdc(c.dexFeeUsdc),
+                ],
+                ["PAPERガス代", usdc(c.gasUsdc)],
+                [
+                  "想定売却時の追加手数料",
+                  usdc(c.projectedSaleFeeUsdc ?? null),
+                ],
+                [
+                  "想定売却時のガス代（分割回数込み）",
+                  usdc(c.projectedSaleGasUsdc ?? null),
+                ],
+                ["追加手数料", usdc(c.additionalFeeUsdc)],
+                ["想定純利益", usdc(c.netProfitUsdc)],
+                [
+                  "最低利益条件",
+                  `${c.minProfitUsdc} USDC / ${Number(c.minProfitPct) * 100}%`,
+                ],
+                [
+                  "Profit Guard判定",
+                  !c.profitGuard.evaluated
+                    ? "未評価"
+                    : c.profitGuard.allowed
+                      ? "許可"
+                      : "拒否",
+                ],
+                [
+                  "RiskEngine判定",
+                  c.risk.status === "NOT_EVALUATED"
+                    ? "未評価（前段の条件未通過または処理中）"
+                    : c.risk.status === "ALLOWED"
+                      ? "許可"
+                      : "拒否",
+                ],
+              ].map(([label, value]) => (
+                <React.Fragment key={label}>
+                  <dt>{label}</dt>
+                  <dd>{value}</dd>
+                </React.Fragment>
+              ))}
+            </dl>
+            {c.profitGuard.reason && (
+              <p>利益保護：{operationReason(c.profitGuard.reason)}</p>
+            )}
+            {c.reasons.map((reason, i) => (
+              <p key={i}>{operationReason(reason)}</p>
+            ))}
+          </details>
+        ))}
+      </section>
+      <section>
+        <h3>異常・停止などの記録（直近50件）</h3>
+        {data.events.length === 0 ? (
+          <p>記録はまだありません。</p>
+        ) : (
+          <ul>
+            {data.events.map((e, i) => (
+              <li key={i}>
+                {date(e.timestamp)}：{operationReason(e.code)}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+export function OperationsPanel({ api }: { api: SettingsApi }) {
+  const [data, setData] = useState<OperationsSnapshot | null>(null),
+    [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try {
+        const response = await api("operations");
+        if (active) {
+          setData(response as OperationsSnapshot);
+          setError("");
+        }
+      } catch {
+        if (active)
+          setError(
+            "運用検証データを取得できません。表示済みの情報は最新とは限りません。接続状態を確認してください。",
+          );
+      }
+    };
+    void refresh();
+    const timer = setInterval(() => void refresh(), 10000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [api]);
+  return (
+    <>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      {data ? (
+        <OperationsView data={data} stale={!!error} />
+      ) : (
+        <p role="status">運用検証データを取得しています…</p>
+      )}
+    </>
+  );
+}

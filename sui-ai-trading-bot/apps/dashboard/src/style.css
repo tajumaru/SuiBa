@@ -399,3 +399,69 @@ footer {
   width: 100%;
   margin: 0;
 }
+.operation-validation {
+  overflow-wrap: anywhere;
+}
+.operation-validation summary {
+  cursor: pointer;
+  min-height: 44px;
+  padding: 12px 0;
+}
+.operation-validation dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: 12px;
+}
+.operation-validation dd {
+  margin: 0;
+  min-width: 0;
+}
+.operation-validation dt {
+  color: #8fa7b9;
+  min-width: 0;
+}
+.operation-reports {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.operation-reports article {
+  padding: 16px;
+  border: 1px solid #344e65;
+  border-radius: 8px;
+  min-width: 0;
+}
+.operation-state {
+  font-weight: 600;
+  padding: 12px;
+  border: 1px solid #344e65;
+  border-radius: 8px;
+}
+.operation-state.healthy {
+  color: #43dfb2;
+}
+.operation-state.warning {
+  color: #edc980;
+}
+.operation-candidate {
+  border-top: 1px solid #344e65;
+  padding: 8px 0;
+}
+.operation-validation .cards > div {
+  min-width: 0;
+}
+@media (max-width: 700px) {
+  .operation-reports {
+    grid-template-columns: 1fr;
+  }
+  .operation-validation dl {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .operation-validation dd {
+    margin-bottom: 12px;
+  }
+  .operation-validation section {
+    padding: 16px;
+  }
+}
