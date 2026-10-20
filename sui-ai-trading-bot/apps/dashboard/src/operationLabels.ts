@@ -1,5 +1,10 @@
 export function operationReason(code: string): string {
   const labels: Record<string, string> = {
+    UPSTREAM_HTTP_429: "APIの利用制限に達したため安全停止しています",
+    API_BACKOFF: "APIの再試行待機中です。PAPERは停止しています",
+    API_RETRIES_EXHAUSTED:
+      "APIの再試行上限に到達しました。時刻を確認し手動解除してください",
+    API_CANCELLED: "終了処理のためAPI取得を中断しました",
     PROCESS_RESTART_STOPPED: "再起動のため停止。開始は手動です",
     PROCESS_SHUTDOWN: "プロセス終了による停止",
     PROCESS_RESTART_INTERRUPTED: "処理中に再起動したため約定せず停止",

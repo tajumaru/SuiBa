@@ -6,6 +6,7 @@ import type { CandidateAudit } from "../../packages/shared/src/operations.ts";
 async function open(
   page: Page,
   status: "STOPPED" | "RUNNING" | "DATA_DELAYED" | "ABNORMAL_STOP",
+  limited = false,
 ) {
   const db = new BotDatabase(":memory:");
   db.set("runtime", {
@@ -62,6 +63,18 @@ async function open(
   db.putCandidate(candidate);
   const state = engine.snapshot(),
     operations = engine.monitor.snapshot();
+  if (limited) {
+    operations.stopReason = "UPSTREAM_HTTP_429";
+    operations.apis[1] = {
+      ...operations.apis[1],
+      requests: 7,
+      rateLimits: 2,
+      retries: 1,
+      backoff: true,
+      nextRetryAt: Date.now() + 30000,
+      failed: true,
+    };
+  }
   db.close();
   let fail = false;
   const writes: string[] = [];
@@ -153,5 +166,29 @@ test("does not show stale information as healthy after a monitoring API error", 
   );
   await expect(page.locator(".operation-state")).toContainText("接続状態不明");
   await expect(page.locator(".operation-state.healthy")).toHaveCount(0);
+  expect(api.writes).toEqual([]);
+});
+
+test("shows Japanese rate-limit monitoring and keeps recovery separate from restart", async ({
+  page,
+}) => {
+  const api = await open(page, "ABNORMAL_STOP", true);
+  await expect(
+    page.getByText(
+      "APIの利用制限に達しました。安全のためPAPER取引を停止しています。再試行可能時刻を確認してください。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/バックオフ解除後も自動再開しません/),
+  ).toBeVisible();
+  const card = page
+    .locator("article")
+    .filter({
+      has: page.getByRole("heading", { name: "GeckoTerminal", exact: true }),
+    });
+  await expect(card).toContainText("バックオフ中");
+  await expect(card).toContainText("リトライ：1回");
+  await expect(card).toContainText("429：2件");
   expect(api.writes).toEqual([]);
 });

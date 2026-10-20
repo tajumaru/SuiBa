@@ -1,3 +1,4 @@
+import { apiAccess } from "../../../packages/shared/src/api.ts";
 import { randomUUID } from "node:crypto";
 import {
   atomic,
@@ -52,6 +53,10 @@ export class BotEngine {
     readonly sui: Pick<ReadOnlySuiClient, "health" | "status">,
   ) {
     this.monitor = new OperationMonitor(db);
+    apiAccess.onRateLimit = () => {
+      this.monitor.stop("UPSTREAM_HTTP_429");
+      db.set("api_cooldowns", apiAccess.snapshot());
+    };
   }
   private async getQuote(request: QuoteRequest) {
     const quote = await this.monitor.request("QUOTE", () =>
@@ -383,7 +388,43 @@ export class BotEngine {
         this.reject(id, reasons, decision, fresh, last.timestamp);
         return;
       }
-      const fill = this.paper.fill(id, side, q, p, executionSettings, fresh);
+      if (!(await this.router.validateQuote(q)))
+        throw new Error("QUOTE_EXPIRED");
+      const executionNow = Date.now();
+      const finalRuntime = this.db.runtime();
+      if (
+        !finalRuntime.running ||
+        finalRuntime.emergency ||
+        finalRuntime.error
+      ) {
+        const reasons = [
+          finalRuntime.error ??
+            (finalRuntime.emergency ? "EMERGENCY_STOP" : "BOT_STOPPED"),
+        ];
+        this.monitor.finishCandidate({
+          ...audit,
+          risk: { status: "REJECTED", reasons },
+          finalAction: "WAIT",
+          reasons,
+        });
+        this.reject(id, reasons, decision, executionNow, last.timestamp);
+        return;
+      }
+      if (apiAccess.blocked()) throw new Error("API_BACKOFF");
+      validateCandles(c, 300, executionNow);
+      if (
+        q.expiresAt <= executionNow ||
+        (reverse && reverse.expiresAt <= executionNow)
+      )
+        throw new Error("QUOTE_EXPIRED");
+      const fill = this.paper.fill(
+        id,
+        side,
+        q,
+        p,
+        executionSettings,
+        executionNow,
+      );
       const check = reconcileFill(
         p,
         fill.portfolio,

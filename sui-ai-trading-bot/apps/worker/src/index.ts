@@ -1,3 +1,4 @@
+import { apiAccess } from "../../../packages/shared/src/api.ts";
 import "dotenv/config";
 import { createServer } from "node:http";
 import { timingSafeEqual } from "node:crypto";
@@ -26,6 +27,7 @@ const sui = new ReadOnlySuiClient(process.env.SUI_GRPC_URL),
   );
 // Monitoring boot closes the previous uptime segment and never resumes trading.
 engine.monitor.boot();
+apiAccess.restoreCooldowns(db.get("api_cooldowns") ?? []);
 const watchdog = setInterval(() => {
   try {
     engine.monitor.watchdog();
@@ -37,9 +39,11 @@ const watchdog = setInterval(() => {
 watchdog.unref();
 let stopping = false;
 let backtestBusy = false;
+let activeTick: Promise<void> | undefined;
 async function loop() {
   if (stopping) return;
-  await engine.tick();
+  activeTick = engine.tick();
+  await activeTick;
   if (!stopping) setTimeout(loop, db.settings().intervalMs).unref();
 }
 const server = createServer(async (req, res) => {
@@ -192,14 +196,20 @@ const server = createServer(async (req, res) => {
       if (command === "emergency")
         db.set("runtime", { ...r, running: false, emergency: true });
       else if (command === "stop") db.set("runtime", { ...r, running: false });
-      else if (command === "reset")
+      else if (command === "reset") {
+        apiAccess.reset();
+        db.set("api_cooldowns", apiAccess.snapshot());
         db.set("runtime", {
           ...r,
           running: false,
           emergency: false,
           error: null,
         });
-      else if (command === "start") {
+      } else if (command === "start") {
+        if (apiAccess.blocked()) {
+          send(409, { error: "API_BACKOFF" });
+          return;
+        }
         if (r.emergency || r.error) {
           send(409, { error: "RESET_REQUIRED" });
           return;
@@ -244,9 +254,17 @@ server.listen(
 );
 for (const signal of ["SIGINT", "SIGTERM"] as const)
   process.on(signal, () => {
+    if (stopping) return;
     stopping = true;
+    apiAccess.cancel();
     clearInterval(watchdog);
     db.set("runtime", { ...db.runtime(), running: false });
     engine.monitor.transition("PROCESS_SHUTDOWN");
-    server.close(() => process.exit(0));
+    server.close(() => {
+      void Promise.resolve(activeTick).finally(() => {
+        db.close();
+        process.exit(0);
+      });
+    });
+    setTimeout(() => process.exit(0), 25000).unref();
   });

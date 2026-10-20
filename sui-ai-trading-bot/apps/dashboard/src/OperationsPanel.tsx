@@ -74,6 +74,46 @@ export function OperationsView({
         </small>
       </section>
       <section>
+        <h3>外部API接続（このプロセスの集計）</h3>
+        {data.stopReason === "UPSTREAM_HTTP_429" && (
+          <p className="error">
+            APIの利用制限に達しました。安全のためPAPER取引を停止しています。再試行可能時刻を確認してください。
+          </p>
+        )}
+        <p>
+          バックオフ解除後も自動再開しません。異常解除とPAPER開始を個別に操作してください。
+        </p>
+        {(data.apis ?? []).map((a) => (
+          <article key={a.api}>
+            <h4>{a.api}</h4>
+            <p>
+              リクエスト：{a.requests}件 ／ 直近1分：{a.requestsPerMinute}件 ／
+              429：{a.rateLimits}件 ／ リトライ：{a.retries}回
+            </p>
+            <p>
+              接続：
+              {a.exhausted
+                ? "再試行上限・手動解除が必要"
+                : a.backoff
+                  ? "バックオフ中"
+                  : a.active
+                    ? "取得中"
+                    : a.failed
+                      ? "通信異常"
+                      : a.lastSuccessAt
+                        ? "接続正常"
+                        : "未確認"}{" "}
+              ／ データ：
+              {a.delayed ? "遅延・未取得" : "取得済み（売買時に鮮度を再検証）"}
+            </p>
+            <p>
+              次回再試行可能：{date(a.nextRetryAt)} ／ 最終正常取得：
+              {date(a.lastSuccessAt)}
+            </p>
+          </article>
+        ))}
+      </section>
+      <section>
         <h3>24時間・7日間の検証レポート</h3>
         <p>
           取引ゼロ件も正常な検証結果です。売買がなくても条件を自動で緩めません。

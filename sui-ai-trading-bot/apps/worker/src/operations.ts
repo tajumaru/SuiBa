@@ -1,3 +1,4 @@
+import { apiAccess } from "../../../packages/shared/src/api.ts";
 import { randomUUID } from "node:crypto";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
 import {
@@ -395,6 +396,7 @@ export class OperationMonitor {
       now - s.lastMarketAt > monitoringLimits.marketDelayedMs ||
       now - s.lastMarketClosedAt > monitoringLimits.marketStaleMs;
     return {
+      apis: apiAccess.snapshot(now),
       mode: "PAPER" as const,
       status:
         r.emergency || r.error

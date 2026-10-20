@@ -313,7 +313,10 @@ describe("strategy and historical chronology", () => {
 });
 
 describe("worker execution boundaries", () => {
-  function setup(onQuote?: (db: BotDatabase) => void) {
+  function setup(
+    onQuote?: (db: BotDatabase) => void,
+    onValidate?: (db: BotDatabase, call: number, q: QuoteResult) => void,
+  ) {
     const db = new BotDatabase(":memory:");
     db.set("runtime", {
       running: true,
@@ -328,6 +331,7 @@ describe("worker execution boundaries", () => {
       timestamp: timestamp - (69 - i) * 300,
     }));
     let calls = 0;
+    let validations = 0;
     const router: DexRouter = {
       getQuote: async (request) => {
         calls++;
@@ -341,7 +345,10 @@ describe("worker execution boundaries", () => {
           expiresAt: Date.now() + 15000,
         };
       },
-      validateQuote: async () => true,
+      validateQuote: async (q) => {
+        onValidate?.(db, ++validations, q);
+        return true;
+      },
     };
     const engine = new BotEngine(db, { candles: async () => c }, router, {
       health: async () => ({
@@ -370,6 +377,32 @@ describe("worker execution boundaries", () => {
     await t.engine.tick();
     expect(t.db.history("paper_trades")).toHaveLength(0);
     expect(JSON.stringify(t.db.history("risk_events"))).toContain("MAX_ORDER");
+    t.db.close();
+  });
+  it.each([false, true])(
+    "rechecks stop/emergency=%s after the final async quote validation",
+    async (emergency) => {
+      const t = setup(undefined, (db, call) => {
+        if (call === 3)
+          db.set("runtime", { ...db.runtime(), running: false, emergency });
+      });
+      await t.engine.tick();
+      expect(t.db.history("paper_trades")).toHaveLength(0);
+      expect(t.db.runtime()).toMatchObject({
+        running: false,
+        emergency,
+        error: null,
+      });
+      t.db.close();
+    },
+  );
+  it("rejects a quote that expires during final validation even if the router returns true", async () => {
+    const t = setup(undefined, (_, call, q) => {
+      if (call === 3) q.expiresAt = Date.now() - 1;
+    });
+    await t.engine.tick();
+    expect(t.db.history("paper_trades")).toHaveLength(0);
+    expect(t.db.runtime().error).toBe("QUOTE_EXPIRED");
     t.db.close();
   });
   it("serializes ticks and processes each closed candle at most once", async () => {
