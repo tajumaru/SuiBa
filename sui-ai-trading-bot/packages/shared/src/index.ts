@@ -1,0 +1,180 @@
+import { z } from "zod";
+import { Decimal } from "decimal.js";
+import { normalizeStructTag } from "@mysten/sui/utils";
+export { Decimal };
+// Never persist raw upstream exceptions, which may contain URLs or credentials.
+export function safeFailure(error: unknown) {
+  const allowed = new Set([
+    "SUI_READ_FAILED",
+    "UPSTREAM_TIMEOUT",
+    "UPSTREAM_HTTP_429",
+    "UPSTREAM_HTTP_500",
+    "UPSTREAM_HTTP_502",
+    "UPSTREAM_HTTP_503",
+    "NATIVE_USDC_POOL_NOT_FOUND",
+    "INSUFFICIENT_CANDLES",
+    "INVALID_CANDLE",
+    "CANDLE_GAP",
+    "PRICE_OUTLIER",
+    "STALE_CANDLES",
+    "UNKNOWN_PRICE_IMPACT",
+    "NO_LIQUID_ROUTE_OR_UNMODELED_FEE",
+  ]);
+  return error instanceof Error && allowed.has(error.message)
+    ? error.message
+    : "DATA_OR_EXECUTION_FAILURE";
+}
+export const SUI = "0x2::sui::SUI";
+export const USDC =
+  "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC";
+export function coin(type: string): typeof SUI | typeof USDC {
+  const normalized = normalizeStructTag(type);
+  for (const allowed of [SUI, USDC] as const)
+    if (normalizeStructTag(allowed) === normalized) return allowed;
+  throw new Error("COIN_NOT_ALLOWED");
+}
+export const decimals = (type: string) => (coin(type) === SUI ? 9 : 6);
+export const atomic = (amount: string | number, type: string) =>
+  new Decimal(amount)
+    .mul(new Decimal(10).pow(decimals(type)))
+    .floor()
+    .toFixed(0);
+export const units = (amount: string, type: string) =>
+  new Decimal(amount).div(new Decimal(10).pow(decimals(type))).toNumber();
+export type Timeframe = 300 | 900 | 3600;
+export interface Candle {
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  source: string;
+  timeframe: Timeframe;
+}
+export interface Indicators {
+  ema20: number;
+  ema50: number;
+  rsi: number;
+  macd: number;
+  signal: number;
+  histogram: number;
+  atr: number;
+  volumeChange: number;
+  priceChange: number;
+}
+export type TradingAction = "BUY" | "SELL" | "WAIT";
+export interface TradingDecision {
+  action: TradingAction;
+  confidence: number;
+  reason: string;
+  stopLossPct: number | null;
+  takeProfitPct: number | null;
+  timestamp: string;
+}
+export interface MarketContext {
+  candles: Candle[];
+  current: Indicators;
+  previous: Indicators;
+  entryPrice: number | null;
+  now: number;
+}
+export interface TradingStrategy {
+  analyze(context: MarketContext): Promise<TradingDecision>;
+}
+export interface QuoteRequest {
+  from: string;
+  to: string;
+  amountIn: string;
+  slippage: number;
+  referencePrice: number;
+}
+export interface QuoteResult extends QuoteRequest {
+  id: string;
+  amountOut: string;
+  minAmountOut: string;
+  priceImpact: number;
+  liquid: boolean;
+  createdAt: number;
+  expiresAt: number;
+  route: string[];
+  source: string;
+}
+export interface DexRouter {
+  getQuote(request: QuoteRequest): Promise<QuoteResult>;
+  validateQuote(quote: QuoteResult): Promise<boolean>;
+}
+export interface Portfolio {
+  usdc: number;
+  sui: number;
+  costBasis: number;
+  realized: number;
+  fees: number;
+  initialEquity: number;
+  day: string;
+  dayStartEquity: number;
+  dailyBought: number;
+}
+export interface Runtime {
+  running: boolean;
+  emergency: boolean;
+  error: string | null;
+  lastCandle: number | null;
+}
+export const settingsSchema = z
+  .object({
+    maxOrder: z.number().positive().max(5),
+    dailyBuyLimit: z.number().positive().max(20),
+    dailyLossPct: z.number().positive().max(0.01),
+    maxSlippage: z.number().positive().max(0.003),
+    maxHoldingRatio: z.number().positive().max(0.2),
+    intervalMs: z.number().int().min(30000).max(3600000),
+    strategy: z.literal("rule-based"),
+    oversold: z.number().min(10).max(45),
+    overbought: z.number().min(55).max(90),
+    stopLossPct: z.number().positive().max(0.1),
+    takeProfitPct: z.number().positive().max(0.3),
+    maxVolumeChange: z.number().positive().max(20),
+    feeRate: z.number().min(0).max(0.01),
+    gasUsdc: z.number().positive().max(1),
+  })
+  .strict();
+export type Settings = z.infer<typeof settingsSchema>;
+export const defaults: Settings = {
+  maxOrder: 5,
+  dailyBuyLimit: 20,
+  dailyLossPct: 0.01,
+  maxSlippage: 0.003,
+  maxHoldingRatio: 0.2,
+  intervalMs: 60000,
+  strategy: "rule-based",
+  oversold: 30,
+  overbought: 70,
+  stopLossPct: 0.02,
+  takeProfitPct: 0.04,
+  maxVolumeChange: 4,
+  feeRate: 0.003,
+  gasUsdc: 0.03,
+};
+export const dayKey = (now: number) => new Date(now).toISOString().slice(0, 10); // UTC trading day
+export async function bounded<T>(fn: () => Promise<T>, ms = 10000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  try {
+    return await Promise.race([
+      fn(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("UPSTREAM_TIMEOUT")), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+export async function jsonFetch(url: string) {
+  const r = await fetch(url, {
+    signal: AbortSignal.timeout(10000),
+    headers: { accept: "application/json" },
+  });
+  if (!r.ok) throw new Error("UPSTREAM_HTTP_" + r.status);
+  return r.json() as Promise<unknown>;
+}

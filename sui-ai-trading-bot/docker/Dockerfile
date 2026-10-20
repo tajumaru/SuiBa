@@ -1,0 +1,12 @@
+FROM node:24-bookworm-slim
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@9.12.3 --activate
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY apps ./apps
+COPY packages ./packages
+COPY tsconfig.json ./
+RUN pnpm install --frozen-lockfile && pnpm build && mkdir -p /app/data && chown -R node:node /app/data
+ENV HOST=0.0.0.0 MODE=PAPER DATABASE_PATH=/app/data/bot.sqlite
+USER node
+EXPOSE 3100
+CMD ["pnpm","dev"]

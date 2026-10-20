@@ -1,0 +1,238 @@
+:root {
+  font-family: Inter, "Segoe UI", sans-serif;
+  color: #dce8f0;
+  background: #0b111b;
+  font-synthesis: none;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 23px 5%;
+  border-bottom: 1px solid #243146;
+  background: #101a27;
+}
+header strong {
+  font-size: 21px;
+}
+small {
+  display: block;
+  color: #8fa7b9;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+header small {
+  margin-top: 5px;
+}
+.badge {
+  margin-left: auto;
+  border: 1px solid #41d9b0;
+  color: #41d9b0;
+  padding: 7px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+}
+button {
+  cursor: pointer;
+  color: #c9dbe8;
+  background: #1c3043;
+  border: 1px solid #314b61;
+  border-radius: 7px;
+  padding: 10px 17px;
+  font: inherit;
+  font-size: 13px;
+}
+button:hover {
+  background: #294b65;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.danger {
+  color: #ffb3bd;
+  border-color: #773c4a;
+  background: #351c29;
+}
+nav {
+  display: flex;
+  gap: 8px;
+  padding: 22px 5%;
+  overflow: auto;
+}
+nav button {
+  background: transparent;
+  border-color: transparent;
+  white-space: nowrap;
+}
+nav .active {
+  background: #173448;
+  color: #72d1ff;
+}
+main {
+  max-width: 1400px;
+  margin: auto;
+  padding: 12px 5% 80px;
+}
+.title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 0 26px;
+}
+h1 {
+  font-size: 32px;
+  margin: 8px 0;
+}
+h2 {
+  font-size: 26px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+h3 {
+  font-size: 16px;
+  font-weight: 500;
+  margin: 0 0 18px;
+}
+h3 small {
+  display: inline;
+  margin-left: 14px;
+}
+em {
+  font-size: 12px;
+  font-style: normal;
+  color: #8fa7b9;
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 15px;
+}
+section {
+  background: #111d2b;
+  border: 1px solid #263448;
+  border-radius: 12px;
+  padding: 22px;
+  margin-bottom: 18px;
+  min-width: 0;
+}
+section svg {
+  width: 100%;
+  height: auto;
+}
+.status {
+  font-size: 13px;
+  color: #9ac7c0;
+}
+.error {
+  padding: 15px;
+  background: #3d2028;
+  color: #ffbac4;
+  border-radius: 8px;
+}
+pre {
+  font-size: 12px;
+  line-height: 1.7;
+  overflow: auto;
+  max-height: 500px;
+  color: #a7c5d9;
+}
+.controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+label {
+  display: block;
+  margin: 18px 0;
+  color: #a7c5d9;
+  font-size: 13px;
+}
+input,
+textarea,
+select {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  margin-top: 9px;
+  background: #0c1520;
+  border: 1px solid #344e65;
+  color: #dce8f0;
+  border-radius: 6px;
+}
+textarea {
+  font-family: monospace;
+  max-width: 700px;
+}
+.login {
+  max-width: 600px;
+  padding-top: 100px;
+}
+.login p {
+  color: #93adbf;
+  line-height: 1.8;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+  text-align: left;
+  font-size: 13px;
+}
+td,
+th {
+  padding: 14px;
+  border-bottom: 1px solid #263448;
+}
+.scroll {
+  overflow: auto;
+}
+.empty {
+  height: 200px;
+  display: grid;
+  place-items: center;
+  color: #8196a8;
+}
+footer {
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+  padding: 12px;
+  background: #0c1622;
+  border-top: 1px solid #263448;
+  color: #8fa7b9;
+  font-size: 11px;
+  text-align: center;
+}
+@media (max-width: 800px) {
+  .cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  header {
+    gap: 10px;
+  }
+  .title {
+    display: block;
+  }
+  .status {
+    display: block;
+    margin-top: 15px;
+  }
+}
+@media (max-width: 450px) {
+  .cards {
+    grid-template-columns: 1fr;
+  }
+  header strong {
+    font-size: 16px;
+  }
+  .badge {
+    font-size: 10px;
+  }
+}

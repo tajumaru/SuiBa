@@ -1,0 +1,98 @@
+# Sui Paper Lab — Sui AI Trading Bot v1.0
+
+SUI / Native USDC のMainnet市場データで、ルール戦略を検証する独立したPAPER専用Botです。**署名鍵の読込・署名・トランザクション構築・送信・実スワップは実装していません。** AI SDK・AI APIも使用しません。利益や24時間の安定運用は検証済みではありません。
+
+## 起動
+
+Node.js 24 LTS / pnpm 9.12.3。プロジェクトディレクトリで実行します。
+
+```powershell
+pnpm install --frozen-lockfile
+Copy-Item .env.example .env
+# 次のコマンドでトークンを生成し、.env の ADMIN_TOKEN に設定
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+pnpm build
+pnpm dev
+```
+
+[管理画面](http://127.0.0.1:3100)を開き、管理トークンを入力します。トークンはブラウザのメモリにのみ保持し、再読込時には再入力します。`.env` はGit・Dockerビルド対象外です。初期仮想残高は100 USDC / 0 SUI。Workerは停止状態で起動し、市場データを取得します。接続を確認してSettingsの「開始」を押すとPAPER売買を開始します。
+
+```powershell
+pnpm dashboard # 開発用Vite、/apiを3100へプロキシ
+pnpm test
+pnpm verify:runtime # 認証・3時間足取得・緊急停止の再起動後復元を確認
+pnpm smoke     # 公開Mainnetへの読み取り専用疎通。実送信なし
+pnpm backtest  # SQLiteに保存済みの5分足で検証、data/backtests/にJSON保存
+docker compose -f docker/compose.yaml up --build -d
+```
+
+Dockerはこの開発環境に未導入のため、コンテナの起動検証は未実施です。Node組込みSQLiteを採用しており、Node 24では実験的APIの警告が出ます。Windows / OneDriveでのパッケージリンク問題を避けるためpnpmはhoisted方式です。
+
+## 安全動作
+
+- `MODE=PAPER` のみ。ほかの値は起動拒否。ウォレット接続UIや秘密鍵設定はありません。
+- 管理APIはGETも含めBearer認証必須。32文字以上のトークンがないと起動拒否。初期bindは127.0.0.1、Docker公開もloopback限定。外部公開する場合はTLSと別途アクセス制御を用意してください。
+- 初回・再起動時とも停止状態。緊急停止フラグ・異常理由・前回処理足・残高・平均取得費・設定はSQLiteに永続化します。異常後は「停止解除」、続いて「開始」の2操作で再開します。
+- 同時処理は1件。注文IDはデータソース・時間足・確定足時刻・方向により固定。注文と約定と残高を `BEGIN IMMEDIATE` 内で保存し、一意制約で再処理を拒否します。APIから直接注文する機能はありません。
+- 5 / 15 / 60分足すべてを検証。未確定足を除外し、欠損・重複・時刻ずれ・非数・OHLC不整合・30%超の価格ジャンプ・古いデータは拒否。必要な履歴がない場合も停止します。欠損を都合よく補間しません。
+- gRPCは読取タイムアウト・最大3回の試行・指数バックオフを実施。最終失敗、履歴データ障害、見積もり失敗、会計エラーは停止状態とrisk_eventsを保存します。生の外部エラーや認証情報はログに出しません。
+- Coin TypeはSDKの正規化後にSUI / Native USDCと完全一致で検証。名前の部分一致やブリッジUSDCの代用はしません。
+- 最大注文5 USDC、UTC日次買付20 USDC、日次損失1%、スリッページ0.3%、保有比率20%。Settingsでは初期安全上限より厳しくできます。借入・空売り・レバレッジなし。日次損失到達後のBUYを止め、残高内のSELLは可能です。
+
+## データと仮想約定の意味
+
+履歴ソースは[GeckoTerminal Public API](https://apiguide.geckoterminal.com/)のSuiプールOHLCVです。対象2トークンをメタデータで照合し、24時間取引高が最大のペアを選択します。`MARKET_POOL`で固定も可能です。1プールの履歴であり、Sui DEX市場全体の統合足ではありません。`currency=token` とSUI側の `token` を指定し、価格はNative USDC建てで取得します。出典は各足に保存します。Public APIはBetaで、利用上限・提供範囲・可用性は保証されません。
+
+見積もりは[Cetus公式Aggregator V3 SDK](https://github.com/CetusProtocol/aggregator)の `findRouters`（exact input）のみを使います。SUI→USDC / USDC→SUIに対応し、最適ルート選択はAggregatorに委ねます。Aftermath独自アダプターは未実装です。SDKには実行機能も含まれますが、このアプリから呼び出すのは見積もりだけです。
+
+通常の見積もりはサービス側の約定保証・統一された有効期限を持ちません。**ローカルで取得開始から15秒を上限**とし、期限内でもオンチェーン約定できる保証とは扱いません。`validateQuote` は期限・流動性・数量・price impactを確認します。price impactは最新確定足との価格差の絶対値とSDKの `deviationRatio` の絶対値の最大値で、純粋なAMM価格影響を分離測定したものではありません。価格乖離も保守的に拒否します。
+
+PAPERでは、見積もりの出力（ルート手数料と流動性影響を含む）からさらに最大スリッページを差し引いた最低受取量を約定量にします。追加で検証用手数料0.3%とガス0.03 USDCを徴収し、手数料の重複も許容する保守的モデルです。ガスはUSDC相当で課金するモデルであり、実際のガスコイン選択・dry-run・MEV・ネットワーク競争を再現しません。SDKが追加DEEP費用を報告したルートは、費用をモデル化できないため拒否します。**実約定可能性は証明していません。**
+
+## 指標・戦略・バックテスト
+
+EMAはSMAで初期化、RSI14とATR14はWilder平滑化。MACDはEMA12−EMA26 / signal EMA9。最低61本の確定足が必要です。EMA上昇・RSI売られすぎから回復・MACD histogram改善でBUY候補。逆条件でSELL候補。取得費基準の損切り2% / 利確4%を優先します。出来高変化率の絶対値が上限超ならWAIT。前の足または現在足の出来高がゼロの場合もWAITにします。
+
+バックテストは保存済み5分足の前60%を調整用として分離し、後40%で評価します。実際のパラメータ学習処理はありません。テスト期間前の足は指標のウォームアップにのみ使用。判断の次の足の始値で執行し、その足の出来高は参照しません。前の足の出来高の0.1%を注文上限とし、固定impact 0.1%・最大スリッページ・手数料・ガスを課金します。**過去の実DEX見積もりは復元できないため、履歴約定はモデル推定です。**
+
+損益・勝率・最大DD・profit factor・年率換算Sharpe（暗号資産365日、無リスク金利0）・約定数・手数料・完了した保有期間の平均・コスト控除Buy & Hold比較を出力します。含み損益を最終資産に含め、期末強制決済はしません。勝率とPFはSELL約定単位。損失がない場合PFはnull。未完了の保有時間は平均から除外。設定変更はbot_settingsに追記、検証ごとのパラメータと期間も結果JSONに保存します。短期の結果から収益性を結論づけないでください。
+
+## モジュール
+
+| モジュール      | 責務                                                     |
+| --------------- | -------------------------------------------------------- |
+| shared          | 共通型、Coin許可リスト、設定スキーマ、数量変換           |
+| sui-client      | Mainnet gRPC読み取り、残高・decimals・取引情報、接続状態 |
+| market-data     | 実ペア選定、3時間足の履歴足、外部応答・鮮度検証          |
+| dex-router      | DexRouter共通契約、Cetus見積もりアダプター               |
+| indicators      | 確定足の指標計算                                         |
+| strategy-engine | TradingStrategy / TradingDecision、ルール戦略、登録機構  |
+| risk-engine     | 実行から独立した注文可否の判定                           |
+| paper-trading   | TradingExecutor、仮想約定と会計、バックテスト            |
+| portfolio       | 時価評価、勝率・PF・DD                                   |
+| database        | 全SQLiteアクセス、スキーマ、トランザクション             |
+| worker          | データ→戦略→リスク→PAPER実行、認証管理API                |
+| dashboard       | Overview / Chart / Strategy / History / Settings         |
+
+依存は shared → 純粋計算・アダプター → database / worker の方向（表記は利用される順）です。UIはWorkerの型のみを参照し、サーバーコードをバンドルしません。将来のAIは `TradingStrategy` を実装してRegistryへ登録し、設定スキーマと選択UIを拡張します。DeepSeekのキー・SDK・通信コードはありません。`TradingExecutor` は現段階でPAPERのみを許可します。将来Liveを追加する際にこの契約を明示的に拡張し、別の実装と検証を追加する必要があります。
+
+## DB / API
+
+9つの指定テーブルを作成します。`market_candles`は時間足・時刻・ソースが複合主キー。その他のイベントテーブルはID・時刻・JSON payloadで保存し、`bot_runtime_state`はキー・JSONの状態ストアです。起動時は `CREATE IF NOT EXISTS` を適用。将来の破壊的スキーマ変更用マイグレーションは別途必要です。DBとWAL/SHMは `data/` 配下に置き、ボット停止後にまとめてバックアップします。
+
+| API                | 用途                                                      |
+| ------------------ | --------------------------------------------------------- |
+| GET /api/state     | 市場、PAPER残高、判断、履歴、設定、接続状態               |
+| GET /api/balances  | READ_ONLY_ADDRESSのMainnet残高（仮想残高とは別）          |
+| POST /api/control  | `{ "command": "start" / "stop" / "emergency" / "reset" }` |
+| POST /api/settings | 全設定オブジェクトの検証・保存・履歴追記                  |
+
+## 公式資料の確認先
+
+- [Sui SDK gRPC](https://sdk.mystenlabs.com/sui/clients/grpc) / インストールされたSDKの `docs/llms-index.md` と `docs/clients/querying.md`
+- [Cetus Aggregator getting started](https://cetus-1.gitbook.io/cetus-developer-docs/developer/cetus-aggregator/getting-started)
+- [Cetus機能と入力](https://cetus-1.gitbook.io/cetus-developer-docs/developer/cetus-aggregator/features-available)
+- [GeckoTerminal API仕様](https://api.geckoterminal.com/docs/index.html)
+- [OHLCV引数の公式説明](https://docs.coingecko.com/reference/pool-ohlcv-contract-address)
+
+実装時の固定バージョンはpnpm-lock.yaml参照。Cetus / GeckoTerminalは外部サービスであり、公開API利用の将来の継続・商用条件・SLAを保証しません。専用認証や契約が必要になった場合は、その条件を確認してからアダプターを更新してください。
