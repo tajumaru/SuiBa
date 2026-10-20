@@ -73,6 +73,8 @@ export class CetusRouter implements DexRouter {
       expiresAt: started + 15000,
       route: q.paths.map((p) => p.provider),
       source: "Cetus Aggregator V3",
+      // Embedded route fees cannot be separated into exact USDC by this SDK response.
+      dexFeeUsdc: null,
     };
   }
   async validateQuote(q: QuoteResult) {

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   atomic,
+  profitConfigOf,
   SUI,
   USDC,
   dayKey,
@@ -8,7 +9,16 @@ import {
   type Candle,
   type DexRouter,
   type TradingDecision,
+  type QuoteResult,
 } from "../../../packages/shared/src/index.ts";
+import {
+  evaluateSell,
+  evaluateBuy,
+  paperCosts,
+  positionOf,
+  strategyExitPrice,
+  type ProfitReport,
+} from "../../../packages/profit-guard/src/index.ts";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
 import { calculate } from "../../../packages/indicators/src/index.ts";
 import {
@@ -78,6 +88,43 @@ export class BotEngine {
         { timestamp: now, equity: equity(p, price) },
         now,
       );
+      let sellPreview: QuoteResult | null = null;
+      if (p.sui > 0) {
+        try {
+          sellPreview = await this.router.getQuote({
+            from: SUI,
+            to: USDC,
+            amountIn: atomic(Math.min(p.sui, s.maxOrder / price), SUI),
+            slippage: s.maxSlippage,
+            referencePrice: price,
+          });
+          if (!(await this.router.validateQuote(sellPreview)))
+            sellPreview = null;
+        } catch {
+          sellPreview = null;
+        }
+        const costs = sellPreview
+          ? paperCosts(sellPreview, this.db.settings())
+          : {
+              additionalFeeUsdc: null,
+              gasUsdc: null,
+              dexFeeUsdc: null,
+              source: "PAPER_MODEL" as const,
+            };
+        this.db.recordProfit(
+          evaluateSell({
+            position: positionOf(p),
+            quote: sellPreview,
+            costs,
+            purpose:
+              decision.action === "SELL"
+                ? (decision.sellPurpose ?? "TAKE_PROFIT")
+                : "TAKE_PROFIT",
+            config: profitConfigOf(this.db.settings()),
+            now: Date.now(),
+          }),
+        );
+      }
       if (
         !runtime.running ||
         runtime.emergency ||
@@ -97,16 +144,75 @@ export class BotEngine {
         this.reject(id, ["NO_POSITION"], decision, now, last.timestamp);
         return;
       }
-      const q = await this.router.getQuote({
-        from: side === "BUY" ? USDC : SUI,
-        to: side === "BUY" ? SUI : USDC,
-        amountIn: atomic(amount, side === "BUY" ? USDC : SUI),
-        slippage: s.maxSlippage,
-        referencePrice: price,
-      });
+      const q =
+        side === "SELL" && sellPreview
+          ? sellPreview
+          : await this.router.getQuote({
+              from: side === "BUY" ? USDC : SUI,
+              to: side === "BUY" ? SUI : USDC,
+              amountIn: atomic(amount, side === "BUY" ? USDC : SUI),
+              slippage: s.maxSlippage,
+              referencePrice: price,
+            });
+      let reverse: QuoteResult | null = null;
+      if (side === "BUY") {
+        try {
+          reverse = await this.router.getQuote({
+            from: SUI,
+            to: USDC,
+            amountIn: q.minAmountOut,
+            slippage: this.db.settings().maxSlippage,
+            referencePrice: price,
+          });
+          if (!(await this.router.validateQuote(reverse))) reverse = null;
+        } catch {
+          reverse = null;
+        }
+      }
       const validQuote = await this.router.validateQuote(q);
       const fresh = Date.now();
       const executionSettings = this.db.settings();
+      const costs = paperCosts(q, executionSettings);
+      const profit =
+        side === "SELL"
+          ? evaluateSell({
+              position: positionOf(p),
+              quote: q,
+              costs,
+              purpose: decision.sellPurpose ?? "TAKE_PROFIT",
+              config: profitConfigOf(executionSettings),
+              now: fresh,
+            })
+          : evaluateBuy({
+              buyQuote: q,
+              sellQuote: reverse,
+              buyCosts: costs,
+              sellCosts: reverse
+                ? paperCosts(reverse, executionSettings)
+                : {
+                    additionalFeeUsdc: null,
+                    gasUsdc: null,
+                    dexFeeUsdc: null,
+                    source: "PAPER_MODEL",
+                  },
+              config: profitConfigOf(executionSettings),
+              now: fresh,
+              maxExitUsdc: String(executionSettings.maxOrder),
+              strategyTargetPrice: strategyExitPrice(
+                positionOf(p),
+                q,
+                costs,
+                executionSettings.takeProfitPct,
+              ),
+            });
+      this.db.recordProfit(profit, decision);
+      if (!profit.allowed) {
+        this.db.set("runtime", {
+          ...this.db.runtime(),
+          lastCandle: last.timestamp,
+        });
+        return;
+      }
       const reasons = assessRisk({
         side,
         quote: q,
@@ -127,7 +233,7 @@ export class BotEngine {
       const fill = this.paper.fill(id, side, q, p, executionSettings, fresh);
       this.db.commitFill(
         id,
-        { id, side, status: "FILLED", quote: q },
+        { id, side, status: "FILLED", quote: q, profitGuard: profit },
         fill.portfolio,
         fill.trade,
         { ...this.db.runtime(), lastCandle: last.timestamp },
@@ -205,6 +311,10 @@ export class BotEngine {
       decision: this.db.get("decision") ?? null,
       indicators: this.db.get("indicators") ?? null,
       settings: this.db.settings(),
+      profitGuard: this.db.get<ProfitReport>("profitGuard") ?? null,
+      acquisitionCostUsdc: positionOf(p).costUsdc,
+      acquisitionFees:
+        trades.find((t) => t.side === "BUY")?.acquisition ?? null,
       trades: trades.slice(0, 200),
       orders: this.db.history("paper_orders"),
       riskEvents: this.db.history("risk_events"),

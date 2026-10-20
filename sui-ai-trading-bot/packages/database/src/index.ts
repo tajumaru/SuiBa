@@ -1,8 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
 import {
   defaults,
+  settingsSchema,
   type Settings,
   type Runtime,
   type Portfolio,
@@ -19,6 +21,7 @@ const eventTables = [
   "portfolio_snapshots",
   "risk_events",
   "bot_settings",
+  "profit_assessments",
 ] as const;
 type EventTable = (typeof eventTables)[number];
 export class BotDatabase {
@@ -69,7 +72,33 @@ export class BotDatabase {
     return this.get<Portfolio>("portfolio")!;
   }
   settings() {
-    return this.get<Settings>("settings")!;
+    return settingsSchema.parse(this.get<Settings>("settings"));
+  }
+  recordProfit(
+    report: import("../../profit-guard/src/index.ts").ProfitReport,
+    decision?: TradingDecision,
+  ) {
+    this.transaction(() => {
+      this.append(
+        "profit_assessments",
+        `${report.asOf}:${randomUUID()}`,
+        report,
+        report.asOf,
+      );
+      this.set("profitGuard", report);
+      if (decision)
+        this.set(
+          "decision",
+          report.allowed
+            ? decision
+            : {
+                ...decision,
+                action: "WAIT",
+                confidence: 0,
+                reason: `ProfitGuard: ${report.reason}`,
+              },
+        );
+    });
   }
   transaction<T>(fn: () => T): T {
     this.db.exec("BEGIN IMMEDIATE");
@@ -153,7 +182,7 @@ export class BotDatabase {
   updateSettings(s: Settings, now = Date.now()) {
     this.transaction(() => {
       this.set("settings", s);
-      this.append("bot_settings", `${now}`, s, now);
+      this.append("bot_settings", `${now}:${randomUUID()}`, s, now);
     });
   }
   close() {

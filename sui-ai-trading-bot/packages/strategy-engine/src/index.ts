@@ -13,6 +13,7 @@ export class RuleBasedStrategy implements TradingStrategy {
       price = c.candles.at(-1)!.close;
     let action: TradingDecision["action"] = "WAIT",
       reason = "条件未成立";
+    let sellPurpose: TradingDecision["sellPurpose"];
     if (
       c.entryPrice !== null &&
       (price <= c.entryPrice * (1 - s.stopLossPct) ||
@@ -20,6 +21,10 @@ export class RuleBasedStrategy implements TradingStrategy {
     ) {
       action = "SELL";
       reason = "損切り / 利確条件";
+      sellPurpose =
+        price <= c.entryPrice! * (1 - s.stopLossPct)
+          ? "STOP_LOSS"
+          : "TAKE_PROFIT";
     } else if (
       c.candles.at(-1)!.volume <= 0 ||
       c.candles.at(-2)!.volume <= 0 ||
@@ -42,6 +47,7 @@ export class RuleBasedStrategy implements TradingStrategy {
     ) {
       action = "SELL";
       reason = "EMA下降・RSI反落・MACD悪化";
+      sellPurpose = "STRATEGY_EXIT";
     }
     return {
       action,
@@ -50,6 +56,7 @@ export class RuleBasedStrategy implements TradingStrategy {
       stopLossPct: s.stopLossPct,
       takeProfitPct: s.takeProfitPct,
       timestamp: new Date(c.now).toISOString(),
+      sellPurpose,
     };
   }
 }
