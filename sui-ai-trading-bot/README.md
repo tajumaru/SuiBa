@@ -2,6 +2,8 @@
 
 SUI / Native USDC のMainnet市場データで、ルール戦略を検証する独立したPAPER専用Botです。**署名鍵の読込・署名・トランザクション構築・送信・実スワップは実装していません。** AI SDK・AI APIも使用しません。利益や24時間の安定運用は検証済みではありません。
 
+[ProfitGuard](docs/PROFIT_GUARD.md)で、利確SELLの純利益とBUY前の想定往復コストを追加審査します。損切り・リスク削減は利益条件の対象外です。費用内訳と計算上の制約はリンク先を参照してください。
+
 ## 起動
 
 Node.js 24 LTS / pnpm 9.12.3。プロジェクトディレクトリで実行します。
@@ -96,3 +98,5 @@ EMAはSMAで初期化、RSI14とATR14はWilder平滑化。MACDはEMA12−EMA26 /
 - [OHLCV引数の公式説明](https://docs.coingecko.com/reference/pool-ohlcv-contract-address)
 
 実装時の固定バージョンはpnpm-lock.yaml参照。Cetus / GeckoTerminalは外部サービスであり、公開API利用の将来の継続・商用条件・SLAを保証しません。専用認証や契約が必要になった場合は、その条件を確認してからアダプターを更新してください。
+
+Profit Guardは初期状態で有効です（最低純利益0.05 USDC・最低利益率1%）。Settingsで変更できます。計算・制約は[設計資料](docs/PROFIT_GUARD.md)を参照してください。

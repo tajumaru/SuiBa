@@ -9,6 +9,167 @@ const money = (v: number | null | undefined) =>
   v == null
     ? "—"
     : new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(v);
+const precise = (v: string | null | undefined) =>
+  v == null ? "不明" : `${v} USDC`;
+function ProfitGuardPanel({ data }: { data: State }) {
+  const r = data.profitGuard,
+    acquisition = data.acquisitionFees,
+    stale = r?.validUntil != null && Date.now() >= r.validUntil;
+  return (
+    <section>
+      <h3>ProfitGuard · コスト控除後の利益</h3>
+      <div className="cards">
+        <div>
+          <small>現在の保有分の取得原価</small>
+          <p>
+            {precise(
+              data.acquisitionCostUsdc ?? String(data.portfolio.costBasis),
+            )}
+          </p>
+        </div>
+        <div>
+          <small>平均取得単価 / 現在価格</small>
+          <p>
+            {money(
+              data.portfolio.sui > 0
+                ? data.portfolio.costBasis / data.portfolio.sui
+                : null,
+            )}{" "}
+            / {money(data.price)} USDC
+          </p>
+          <small>見積もり対象数量</small>
+          <p>
+            {r?.quantityAtomic ? `${Number(r.quantityAtomic) / 1e9} SUI` : "—"}
+          </p>
+        </div>
+        <div>
+          <small>対象分の取得原価（按分）</small>
+          <p>{precise(r?.allocatedCostUsdc)}</p>
+        </div>
+        <div>
+          <small>モデル損益分岐価格</small>
+          <p>{r?.breakEvenPrice ? `${r.breakEvenPrice} USDC / SUI` : "不明"}</p>
+        </div>
+      </div>
+      {r ? (
+        <>
+          <p>
+            {r.scope === "BUY_SCENARIO"
+              ? "BUY前の想定利確時純利益"
+              : "最新売却見積もりの予想純利益"}
+            ：<strong>{precise(r.netProfitUsdc)}</strong>
+          </p>
+          <p>
+            利益率：
+            {r.netProfitPct == null
+              ? "不明"
+              : `${Number(r.netProfitPct) * 100}%`}{" "}
+            ／ 判定：
+            {r.reason.startsWith("PROTECTIVE_EXIT")
+              ? "損切り・リスク削減優先"
+              : r.reason === "QUOTE_UNAVAILABLE"
+                ? "見積もり取得失敗"
+                : r.netProfitUsdc === null
+                  ? "計算不能"
+                  : r.allowed
+                    ? "利確可能（試算）"
+                    : "利益不足・WAIT"}{" "}
+            ·{" "}
+            {(
+              {
+                PROFIT_GUARD_DISABLED:
+                  "最低利益条件は無効です。費用・見積もり検証とRiskEngineは継続します",
+                QUOTE_UNAVAILABLE: "最新の有効な見積もりを取得できません",
+                MINIMUM_NET_PROFIT_MET: "最低純利益額・利益率を満たしています",
+                MINIMUM_NET_PROFIT_NOT_MET:
+                  "手数料控除後の利益が最低条件に届きません",
+                PROTECTIVE_EXIT_PROFIT_BYPASS:
+                  "損切り・リスク削減のため利益条件は適用しません",
+                PROTECTIVE_EXIT_PROFIT_DATA_UNAVAILABLE:
+                  "保護的SELLは利益条件の対象外です。見積もり・RiskEngineの確認は別途必要です",
+                PROFIT_DATA_UNKNOWN: "ガス代・見積もり・原価などが不明です",
+                PROJECTED_NET_EXCEEDS_ROUND_TRIP_COST:
+                  "想定利確時の純利益が往復コストを上回ります",
+                PROJECTED_NET_INSUFFICIENT:
+                  "想定利確時の純利益が往復コストまたは最低条件に届きません",
+              } as Record<string, string>
+            )[r.reason] ?? r.reason}
+          </p>
+          <p>
+            <small>
+              利益条件の通過は、Botの開始・RiskEngineの許可・実約定を意味しません。
+            </small>
+          </p>
+          <div className="cards">
+            <div>
+              <small>売却追加手数料</small>
+              <p>{precise(r.costs?.additionalFeeUsdc)}</p>
+            </div>
+            <div>
+              <small>売却ガス相当額</small>
+              <p>{precise(r.costs?.gasUsdc)}</p>
+            </div>
+            <div>
+              <small>DEX手数料（見積もりに含む）</small>
+              <p>
+                {r.costs?.dexFeeUsdc == null
+                  ? "内訳不明・二重加算なし"
+                  : precise(r.costs.dexFeeUsdc)}
+              </p>
+            </div>
+            <div>
+              <small>最低利益額 / 最低利益率</small>
+              <p>
+                {r.minProfitUsdc} USDC / {Number(r.minProfitPct) * 100}%
+              </p>
+            </div>
+          </div>
+          {r.scope === "BUY_SCENARIO" && (
+            <p>
+              購入予定：{precise(r.purchaseInputUsdc)} ／ 費用込み想定取得単価：
+              {r.acquisitionUnitPrice} USDC / SUI ／ 購入追加手数料：
+              {precise(r.buyCosts?.additionalFeeUsdc)} ／ 購入ガス：
+              {precise(r.buyCosts?.gasUsdc)} ／ 想定往復コスト：
+              {precise(r.roundTripCostUsdc)} ／ 想定利確価格：
+              {r.targetPrice} USDC（想定上昇率の上限
+              {Number(r.targetProfitPct) * 100}
+              %、戦略の利確価格が低い場合はそちらを採用）。現在の逆方向見積もりからの推定で、将来の利益を保証しません。
+            </p>
+          )}
+          <small>
+            見積もり日時：{new Date(r.asOf).toLocaleString("ja-JP")} ·{" "}
+            {stale ? "期限切れ（実行には再見積もりが必要）" : "取得時点の推定"}{" "}
+            · {r.source ?? "取得元不明"} ·{" "}
+            {r.costs?.source === "PAPER_MODEL"
+              ? "手数料・ガスはPAPERモデル値"
+              : "費用ソースを確認してください"}
+          </small>
+        </>
+      ) : (
+        <p>
+          利益判定データはまだありません。原価や見積もりを取得できない利益目的の注文は拒否します。
+        </p>
+      )}
+      {acquisition && (
+        <details>
+          <summary>直近BUYの記録（PAPER仮想約定）</summary>
+          <p>
+            数量：{Number(acquisition.quantityAtomic) / 1e9} SUI ／ 支払USDC：
+            {precise(acquisition.inputUsdc)} ／ 総取得原価：
+            {precise(acquisition.totalCostUsdc)}
+          </p>
+          <p>
+            追加手数料：{precise(acquisition.additionalFeeUsdc)} ／ ガス：
+            {precise(acquisition.gasUsdc)} ／ DEX手数料：
+            {acquisition.dexFeeUsdc === null
+              ? "見積もり内に含まれるが内訳不明"
+              : precise(acquisition.dexFeeUsdc)}
+          </p>
+        </details>
+      )}
+    </section>
+  );
+}
 function Chart({
   candles,
   kind,
@@ -129,6 +290,12 @@ function App() {
     [tab, setTab] = useState("Overview"),
     [timeframe, setTimeframe] = useState<300 | 900 | 3600>(300),
     [draft, setDraft] = useState("");
+  let draftSettings: Partial<State["settings"]> = {};
+  try {
+    const parsed: unknown = JSON.parse(draft || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+      draftSettings = parsed;
+  } catch {}
   async function api(path: string, body?: unknown) {
     const r = await fetch("/api/" + path, {
       headers: {
@@ -288,6 +455,7 @@ function App() {
                         </section>
                       ))}
                     </div>
+                    <ProfitGuardPanel data={data} />
                     <section>
                       <h3>
                         SUI / USDC <small>5m · EMA20 / EMA50</small>
@@ -337,17 +505,20 @@ function App() {
                     </section>
                   ))}
                 {tab === "Strategy" && (
-                  <section>
-                    <h3>RuleBasedStrategy</h3>
-                    <p>
-                      EMA20 /
-                      EMA50、RSIの閾値交差、MACD方向、出来高異常を組み合わせます。
-                    </p>
-                    <pre>{JSON.stringify(data.decision, null, 2)}</pre>
-                    <h3>戦略パラメータ</h3>
-                    <pre>{JSON.stringify(data.settings, null, 2)}</pre>
-                    <p>DeepSeek：未実装（拡張用インターフェースのみ）</p>
-                  </section>
+                  <>
+                    <ProfitGuardPanel data={data} />
+                    <section>
+                      <h3>RuleBasedStrategy</h3>
+                      <p>
+                        EMA20 /
+                        EMA50、RSIの閾値交差、MACD方向、出来高異常を組み合わせます。
+                      </p>
+                      <pre>{JSON.stringify(data.decision, null, 2)}</pre>
+                      <h3>戦略パラメータ</h3>
+                      <pre>{JSON.stringify(data.settings, null, 2)}</pre>
+                      <p>DeepSeek：未実装（拡張用インターフェースのみ）</p>
+                    </section>
+                  </>
                 )}
                 {tab === "Trading History" && (
                   <>
@@ -364,6 +535,7 @@ function App() {
                                 "価格",
                                 "手数料",
                                 "実現損益",
+                                "取得原価 / 内訳",
                               ].map((x) => (
                                 <th key={x}>{x}</th>
                               ))}
@@ -382,6 +554,27 @@ function App() {
                                 <td>{money(t.price)}</td>
                                 <td>{money(t.fee)}</td>
                                 <td>{money(t.pnl)}</td>
+                                <td>
+                                  {t.acquisition ? (
+                                    <details>
+                                      <summary>
+                                        {precise(t.acquisition.totalCostUsdc)}
+                                      </summary>
+                                      <p>
+                                        追加手数料{" "}
+                                        {precise(t.costs?.additionalFeeUsdc)} /
+                                        ガス {precise(t.costs?.gasUsdc)} / DEX{" "}
+                                        {t.costs?.dexFeeUsdc == null
+                                          ? "内訳不明（見積もり内）"
+                                          : precise(t.costs.dexFeeUsdc)}
+                                      </p>
+                                    </details>
+                                  ) : t.allocatedCostUsdc ? (
+                                    precise(t.allocatedCostUsdc)
+                                  ) : (
+                                    "旧履歴：内訳不明"
+                                  )}
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -409,6 +602,10 @@ function App() {
                     <p>
                       日次区切り：UTC 00:00。設定の上限は初期安全値までです。
                     </p>
+                    <p>
+                      ProfitGuardは初期状態で有効、最低純利益0.05
+                      USDC・最低利益率1%です。BUYの想定上昇率はtakeProfitPctを使います。損切り・戦略退出・リスク削減は利益条件で妨げません。
+                    </p>
                     <label>
                       戦略
                       <select disabled value="rule-based">
@@ -418,6 +615,71 @@ function App() {
                     </label>
                     <label>
                       パラメータ
+                      <div className="cards">
+                        <label>
+                          Profit Guard 有効{" "}
+                          <input
+                            type="checkbox"
+                            checked={draftSettings.profitGuardEnabled ?? true}
+                            onChange={(e) =>
+                              setDraft(
+                                JSON.stringify(
+                                  {
+                                    ...draftSettings,
+                                    profitGuardEnabled: e.target.checked,
+                                  },
+                                  null,
+                                  2,
+                                ),
+                              )
+                            }
+                          />
+                        </label>
+                        <label>
+                          最低利益額 USDC{" "}
+                          <input
+                            type="number"
+                            min="0"
+                            max="5"
+                            step="0.000001"
+                            value={draftSettings.minNetProfitUsdc ?? 0.05}
+                            onChange={(e) =>
+                              setDraft(
+                                JSON.stringify(
+                                  {
+                                    ...draftSettings,
+                                    minNetProfitUsdc: Number(e.target.value),
+                                  },
+                                  null,
+                                  2,
+                                ),
+                              )
+                            }
+                          />
+                        </label>
+                        <label>
+                          最低利益率（0.01 = 1%）
+                          <input
+                            type="number"
+                            min="0"
+                            max="1"
+                            step="0.001"
+                            value={draftSettings.minNetProfitPct ?? 0.01}
+                            onChange={(e) =>
+                              setDraft(
+                                JSON.stringify(
+                                  {
+                                    ...draftSettings,
+                                    minNetProfitPct: Number(e.target.value),
+                                  },
+                                  null,
+                                  2,
+                                ),
+                              )
+                            }
+                          />
+                        </label>
+                      </div>
                       <textarea
                         rows={22}
                         value={draft}
