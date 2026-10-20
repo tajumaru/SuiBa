@@ -3,3 +3,6 @@ data
 .env
 .git
 **/dist
+.env.*
+**/test-results
+**/playwright-report

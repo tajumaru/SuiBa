@@ -4,11 +4,29 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     env_file: ../.env
+    environment:
+      MODE: PAPER
+      HOST: 0.0.0.0
+      PORT: "3100"
+      DATABASE_PATH: /app/data/bot.sqlite
+      DOTENV_CONFIG_QUIET: "true"
     ports:
       - "127.0.0.1:3100:3100"
     volumes:
       - paper-data:/app/data
+    init: true
     restart: unless-stopped
     stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "node", "docker/healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 volumes:
   paper-data:
