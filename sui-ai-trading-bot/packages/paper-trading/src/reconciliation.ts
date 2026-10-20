@@ -2,6 +2,7 @@ import {
   Decimal,
   type Portfolio,
   type QuoteResult,
+  type Settings,
 } from "../../shared/src/index.ts";
 import type { Fill } from "./index.ts";
 const D = Decimal.clone({ precision: 60 });
@@ -25,6 +26,7 @@ export function reconcileFill(
   trade: Fill,
   q: QuoteResult,
   mark: number,
+  model?: Pick<Settings, "feeRate" | "gasUsdc">,
 ): AccountingCheck {
   const reasons: string[] = [],
     expected: AccountingCheck["expected"] = {},
@@ -72,6 +74,26 @@ export function reconcileFill(
     ).div(1e9);
     const cash = new D(trade.side === "BUY" ? q.amountIn : q.minAmountOut).div(
       1e6,
+    );
+    if (model) {
+      if (!Number.isFinite(model.gasUsdc) || !Number.isFinite(model.feeRate))
+        throw new Error("UNKNOWN_COSTS");
+      compare(
+        "modeledGas",
+        new D(model.gasUsdc).toDecimalPlaces(6, D.ROUND_CEIL),
+        gas,
+      );
+      compare(
+        "modeledAdditionalFee",
+        cash.mul(model.feeRate).toDecimalPlaces(6, D.ROUND_CEIL),
+        additional,
+      );
+    }
+    compare(
+      "tradePrice",
+      cash.div(quantity),
+      trade.price,
+      new D(accountingTolerance.usdc).div(quantity),
     );
     const oldQty = new D(
       before.quantityAtomic ?? new D(before.sui).mul(1e9).floor(),
@@ -153,7 +175,9 @@ export function reconcileFill(
         ),
       equityTolerance,
     );
-    expected.gasUsdc = new D(gas).toString();
+    expected.gasUsdc = model
+      ? new D(model.gasUsdc).toDecimalPlaces(6, D.ROUND_CEIL).toString()
+      : new D(gas).toString();
     actual.gasUsdc = new D(gas).toString();
     if (
       [after.usdc, after.sui, after.costBasis, after.fees].some(

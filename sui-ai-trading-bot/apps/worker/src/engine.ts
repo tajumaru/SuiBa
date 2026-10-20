@@ -10,7 +10,12 @@ import {
   type DexRouter,
   type TradingDecision,
   type QuoteResult,
+  type QuoteRequest,
+  Decimal,
 } from "../../../packages/shared/src/index.ts";
+import type { CandidateAudit } from "../../../packages/shared/src/operations.ts";
+import { reconcileFill } from "../../../packages/paper-trading/src/reconciliation.ts";
+import { OperationMonitor, numericText } from "./operations.ts";
 import {
   evaluateSell,
   evaluateBuy,
@@ -31,32 +36,54 @@ import {
   type Fill,
 } from "../../../packages/paper-trading/src/index.ts";
 import { equity, metrics } from "../../../packages/portfolio/src/index.ts";
-import { GeckoMarketData } from "../../../packages/market-data/src/index.ts";
+import {
+  GeckoMarketData,
+  validateCandles,
+} from "../../../packages/market-data/src/index.ts";
 import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
 export class BotEngine {
   private busy = false;
   private paper = new PaperTrading();
+  readonly monitor: OperationMonitor;
   constructor(
     readonly db: BotDatabase,
     private market: Pick<GeckoMarketData, "candles">,
     private router: DexRouter,
     readonly sui: Pick<ReadOnlySuiClient, "health" | "status">,
-  ) {}
+  ) {
+    this.monitor = new OperationMonitor(db);
+  }
+  private async getQuote(request: QuoteRequest) {
+    const quote = await this.monitor.request("QUOTE", () =>
+      this.router.getQuote(request),
+    );
+    this.monitor.quote(quote);
+    return quote;
+  }
   async tick() {
     if (this.busy) return;
     this.busy = true;
+    let audit: CandidateAudit | null = null;
+    let committed = false;
+    this.monitor.beginCycle();
     try {
       const now = Date.now();
-      await this.sui.health();
+      await this.monitor.request("HEALTH", () => this.sui.health());
       const frames: Record<number, Candle[]> = {};
       for (const tf of [300, 900, 3600] as const) {
-        const c = await this.market.candles(tf, now);
+        const c = await this.monitor.request("MARKET", () =>
+          this.market.candles(tf, now),
+        );
         this.db.saveCandles(c);
         frames[tf] = c;
       }
       const c = frames[300],
         last = c.at(-1)!,
         price = last.close;
+      validateCandles(c, 300, Date.now());
+      this.monitor.market((last.timestamp + 300) * 1000);
+      if (this.db.runtime().running && !this.monitor.ledger().ok)
+        throw new Error("PAPER_RECONCILIATION_FAILED");
       let p = this.db.portfolio();
       if (p.day !== dayKey(now)) {
         p = {
@@ -88,10 +115,11 @@ export class BotEngine {
         { timestamp: now, equity: equity(p, price) },
         now,
       );
+      this.monitor.valuation(price, now);
       let sellPreview: QuoteResult | null = null;
       if (p.sui > 0) {
         try {
-          sellPreview = await this.router.getQuote({
+          sellPreview = await this.getQuote({
             from: SUI,
             to: USDC,
             amountIn: atomic(Math.min(p.sui, s.maxOrder / price), SUI),
@@ -133,6 +161,7 @@ export class BotEngine {
       )
         return;
       if (decision.action === "WAIT") {
+        this.monitor.wait(now);
         this.db.set("runtime", { ...runtime, lastCandle: last.timestamp });
         return;
       }
@@ -140,30 +169,75 @@ export class BotEngine {
         id = `paper:${last.source}:300:${last.timestamp}:${side}`,
         amount =
           side === "BUY" ? s.maxOrder : Math.min(p.sui, s.maxOrder / price);
+      audit = {
+        id: randomUUID(),
+        orderId: id,
+        timestamp: now,
+        createdAt: now,
+        side,
+        requestedInputAtomic: atomic(amount, side === "BUY" ? USDC : SUI),
+        quantityAtomic: null,
+        quotePriceUsdc: null,
+        quoteExpiresAt: null,
+        acquisitionCostUsdc: numericText(p.costBasisUsdc ?? p.costBasis),
+        expectedSaleUsdc: null,
+        saleModel: null,
+        dexFeeUsdc: null,
+        gasUsdc: null,
+        additionalFeeUsdc: null,
+        buyGasUsdc: null,
+        netProfitUsdc: null,
+        minProfitUsdc: String(s.minNetProfitUsdc),
+        minProfitPct: String(s.minNetProfitPct),
+        profitGuard: { evaluated: false, allowed: null, reason: null },
+        risk: { status: "NOT_EVALUATED", reasons: [] },
+        finalAction: "PENDING",
+        reasons: [],
+      };
+      this.db.putCandidate(audit);
       if (amount <= 0) {
+        this.monitor.finishCandidate({
+          ...audit,
+          finalAction: "WAIT",
+          reasons: ["NO_POSITION"],
+        });
         this.reject(id, ["NO_POSITION"], decision, now, last.timestamp);
         return;
       }
       const q =
         side === "SELL" && sellPreview
           ? sellPreview
-          : await this.router.getQuote({
+          : await this.getQuote({
               from: side === "BUY" ? USDC : SUI,
               to: side === "BUY" ? SUI : USDC,
               amountIn: atomic(amount, side === "BUY" ? USDC : SUI),
               slippage: s.maxSlippage,
               referencePrice: price,
             });
+      const quantity = side === "BUY" ? q.minAmountOut : q.amountIn;
+      audit.quantityAtomic = /^\d+$/.test(quantity) ? quantity : null;
+      audit.quoteExpiresAt = Number.isFinite(q.expiresAt) ? q.expiresAt : null;
+      try {
+        audit.quotePriceUsdc = numericText(
+          new Decimal(side === "BUY" ? q.amountIn : q.minAmountOut)
+            .div(1e6)
+            .div(new Decimal(quantity).div(1e9))
+            .toString(),
+        );
+      } catch {}
       let reverse: QuoteResult | null = null;
       if (side === "BUY") {
         try {
-          reverse = await this.router.getQuote({
+          reverse = await this.getQuote({
             from: SUI,
             to: USDC,
             amountIn: q.minAmountOut,
             slippage: this.db.settings().maxSlippage,
             referencePrice: price,
           });
+          audit.reverseQuoteExpiresAt = Number.isFinite(reverse.expiresAt)
+            ? reverse.expiresAt
+            : null;
           if (!(await this.router.validateQuote(reverse))) reverse = null;
         } catch {
           reverse = null;
@@ -206,7 +280,77 @@ export class BotEngine {
               ),
             });
       this.db.recordProfit(profit, decision);
+      Object.assign(audit, {
+        timestamp: fresh,
+        acquisitionCostUsdc: profit.allocatedCostUsdc,
+        netProfitUsdc: profit.netProfitUsdc,
+        minProfitUsdc: profit.minProfitUsdc,
+        minProfitPct: profit.minProfitPct,
+        dexFeeUsdc: costs.dexFeeUsdc,
+        gasUsdc: costs.gasUsdc,
+        additionalFeeUsdc: costs.additionalFeeUsdc,
+        buyGasUsdc: profit.buyCosts?.gasUsdc ?? null,
+        profitGuard: {
+          evaluated: true,
+          allowed: profit.allowed,
+          reason: profit.reason,
+        },
+      });
+      try {
+        audit.expectedSaleUsdc =
+          side === "SELL"
+            ? new Decimal(q.minAmountOut).div(1e6).toString()
+            : reverse && profit.targetPrice
+              ? new Decimal(reverse.minAmountOut)
+                  .div(1e6)
+                  .mul(profit.targetPrice)
+                  .div(q.referencePrice)
+                  .toDecimalPlaces(6, Decimal.ROUND_FLOOR)
+                  .toString()
+              : null;
+        audit.saleModel =
+          side === "SELL" ? "CURRENT_QUOTE" : "PROJECTED_TARGET";
+        if (audit.reverseQuoteExpiresAt != null && audit.quoteExpiresAt != null)
+          audit.quoteExpiresAt = Math.min(
+            audit.quoteExpiresAt,
+            audit.reverseQuoteExpiresAt,
+          );
+        if (
+          side === "BUY" &&
+          profit.targetPrice &&
+          profit.costs?.additionalFeeUsdc != null &&
+          profit.costs.gasUsdc != null
+        ) {
+          const D = Decimal.clone({ precision: 60 }),
+            factor = new D(profit.targetPrice).div(q.referencePrice);
+          const chunks = D.max(
+            1,
+            new D(q.minAmountOut)
+              .div(1e9)
+              .mul(profit.targetPrice)
+              .div(executionSettings.maxOrder)
+              .ceil(),
+          );
+          audit.projectedSaleFeeUsdc = new D(profit.costs.additionalFeeUsdc)
+            .mul(factor)
+            .div(chunks)
+            .toDecimalPlaces(6, D.ROUND_CEIL)
+            .mul(chunks)
+            .toString();
+          audit.projectedSaleGasUsdc = new D(profit.costs.gasUsdc)
+            .mul(chunks)
+            .toString();
+        } else if (side === "SELL") {
+          audit.projectedSaleFeeUsdc = costs.additionalFeeUsdc;
+          audit.projectedSaleGasUsdc = costs.gasUsdc;
+        }
+      } catch {}
       if (!profit.allowed) {
+        this.monitor.finishCandidate({
+          ...audit,
+          finalAction: "WAIT",
+          reasons: [profit.reason],
+        });
         this.reject(
           id,
           [`PROFIT_GUARD_${profit.reason}`],
@@ -229,30 +373,82 @@ export class BotEngine {
         pending: 0,
       });
       if (!validQuote) reasons.push("QUOTE_INVALID");
+      audit.risk = { status: reasons.length ? "REJECTED" : "ALLOWED", reasons };
       if (reasons.length) {
+        this.monitor.finishCandidate({
+          ...audit,
+          finalAction: "WAIT",
+          reasons,
+        });
         this.reject(id, reasons, decision, fresh, last.timestamp);
         return;
       }
       const fill = this.paper.fill(id, side, q, p, executionSettings, fresh);
+      const check = reconcileFill(
+        p,
+        fill.portfolio,
+        fill.trade,
+        q,
+        price,
+        executionSettings,
+      );
+      if (!check.ok) {
+        this.db.append("paper_checks", randomUUID(), check, fresh);
+        throw new Error("PAPER_RECONCILIATION_FAILED");
+      }
       this.db.commitFill(
         id,
         { id, side, status: "FILLED", quote: q, profitGuard: profit },
         fill.portfolio,
         fill.trade,
         { ...this.db.runtime(), lastCandle: last.timestamp },
+        {
+          audit: { ...audit, finalAction: side, reasons: [] },
+          check,
+          markPrice: price,
+        },
       );
+      committed = true;
+      this.monitor.filled(fresh);
+      const persisted = reconcileFill(
+        p,
+        this.db.portfolio(),
+        fill.trade,
+        q,
+        price,
+        executionSettings,
+      );
+      if (!persisted.ok) {
+        this.db.append("paper_checks", randomUUID(), persisted, fresh);
+        throw new Error("PAPER_RECONCILIATION_FAILED");
+      }
     } catch (error) {
-      const code = safeFailure(error);
+      const code =
+        error instanceof Error &&
+        ["PAPER_RECONCILIATION_FAILED", "DUPLICATE_ORDER"].includes(
+          error.message,
+        )
+          ? error.message
+          : safeFailure(error);
+      if (audit && !committed)
+        this.monitor.finishCandidate({
+          ...audit,
+          timestamp: Date.now(),
+          finalAction: "SAFE_STOP",
+          reasons: [code],
+        });
+      this.monitor.failCycle(code);
       this.db.set("runtime", {
         ...this.db.runtime(),
         running: false,
-        error: code,
+        error: this.db.runtime().error ?? code,
       });
       this.db.append("risk_events", randomUUID(), {
         timestamp: Date.now(),
         reasons: [code],
       });
     } finally {
+      this.monitor.healthy();
       this.busy = false;
     }
   }

@@ -17,8 +17,6 @@ const token = process.env.ADMIN_TOKEN;
 if (!token || token.length < 32)
   throw new Error("ADMIN_TOKEN must contain at least 32 characters");
 const db = new BotDatabase(process.env.DATABASE_PATH ?? "data/bot.sqlite");
-// Persist emergency state; an unclean restart never silently resumes trading.
-db.set("runtime", { ...db.runtime(), running: false });
 const sui = new ReadOnlySuiClient(process.env.SUI_GRPC_URL),
   engine = new BotEngine(
     db,
@@ -26,6 +24,17 @@ const sui = new ReadOnlySuiClient(process.env.SUI_GRPC_URL),
     new CetusRouter(),
     sui,
   );
+// Monitoring boot closes the previous uptime segment and never resumes trading.
+engine.monitor.boot();
+const watchdog = setInterval(() => {
+  try {
+    engine.monitor.watchdog();
+  } catch {
+    console.error("PAPER_MONITORING_UNAVAILABLE");
+    process.exit(1);
+  }
+}, 15000);
+watchdog.unref();
 let stopping = false;
 let backtestBusy = false;
 async function loop() {
@@ -46,6 +55,15 @@ const server = createServer(async (req, res) => {
     res.end(JSON.stringify(value));
   };
   try {
+    if (req.method === "GET" && url.pathname === "/healthz") {
+      const healthy =
+        Date.now() - engine.monitor.state().lastHeartbeatAt < 45000;
+      send(healthy ? 200 : 503, {
+        status: healthy ? "ok" : "stale",
+        mode: "PAPER",
+      });
+      return;
+    }
     if (!url.pathname.startsWith("/api/")) {
       if (req.method !== "GET") {
         send(405, { error: "METHOD" });
@@ -86,6 +104,10 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "GET" && url.pathname === "/api/state") {
       send(200, engine.snapshot());
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/operations") {
+      send(200, engine.monitor.snapshot());
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/balances") {
@@ -186,11 +208,24 @@ const server = createServer(async (req, res) => {
           send(409, { error: "HEALTH_CHECK_REQUIRED" });
           return;
         }
+        if (!engine.monitor.ledger().ok) {
+          send(409, { error: "ACCOUNTING_CHECK_REQUIRED" });
+          return;
+        }
         db.set("runtime", { ...r, running: true });
       } else {
         send(400, { error: "UNKNOWN_COMMAND" });
         return;
       }
+      engine.monitor.transition(
+        command === "start"
+          ? "MANUAL_START"
+          : command === "stop"
+            ? "MANUAL_STOP"
+            : command === "emergency"
+              ? "EMERGENCY_STOP"
+              : "MANUAL_RESET",
+      );
       send(200, db.runtime());
       return;
     }
@@ -210,6 +245,8 @@ server.listen(
 for (const signal of ["SIGINT", "SIGTERM"] as const)
   process.on(signal, () => {
     stopping = true;
+    clearInterval(watchdog);
     db.set("runtime", { ...db.runtime(), running: false });
+    engine.monitor.transition("PROCESS_SHUTDOWN");
     server.close(() => process.exit(0));
   });

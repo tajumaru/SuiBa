@@ -85,6 +85,27 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
   }
   try {
     await start();
+    const health = await fetch(`http://127.0.0.1:${port}/healthz`);
+    expect(health.status).toBe(200);
+    expect(await health.json()).toEqual({ status: "ok", mode: "PAPER" });
+    const healthProcess = spawn(process.execPath, ["docker/healthcheck.mjs"], {
+      env: { ...process.env, PORT: String(port) },
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    expect(
+      await new Promise<number | null>((resolve, reject) => {
+        healthProcess.once("exit", resolve);
+        healthProcess.once("error", reject);
+      }),
+    ).toBe(0);
+    expect(
+      (await fetch(`http://127.0.0.1:${port}/api/operations`)).status,
+    ).toBe(401);
+    const monitoring = await api("operations");
+    expect(monitoring.status).toBe(200);
+    expect(monitoring.value.status).toBe("ABNORMAL_STOP");
+    expect(monitoring.value.reports).toHaveLength(2);
     let state = (await api("state")).value;
     expect(state.mode).toBe("PAPER");
     expect(state.runtime).toMatchObject({ running: false, emergency: true });
@@ -114,6 +135,11 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
     await stop();
     await start();
     state = (await api("state")).value;
+    expect(
+      (await api("operations")).value.events.some(
+        (event: { code: string }) => event.code === "PROCESS_RESTART_STOPPED",
+      ),
+    ).toBe(true);
     expect(state.runtime).toMatchObject({ running: false, emergency: true });
     expect(state.settings).toEqual(safe);
     expect(state.trades).toHaveLength(1);
