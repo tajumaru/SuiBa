@@ -207,10 +207,13 @@ export class BotEngine {
             });
       this.db.recordProfit(profit, decision);
       if (!profit.allowed) {
-        this.db.set("runtime", {
-          ...this.db.runtime(),
-          lastCandle: last.timestamp,
-        });
+        this.reject(
+          id,
+          [`PROFIT_GUARD_${profit.reason}`],
+          decision,
+          fresh,
+          last.timestamp,
+        );
         return;
       }
       const reasons = assessRisk({

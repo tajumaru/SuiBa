@@ -80,6 +80,12 @@ function ProfitGuardPanel({ data }: { data: State }) {
                 PROFIT_GUARD_DISABLED:
                   "最低利益条件は無効です。費用・見積もり検証とRiskEngineは継続します",
                 QUOTE_UNAVAILABLE: "最新の有効な見積もりを取得できません",
+                QUOTE_EXPIRED: "見積もりの有効期限が切れています",
+                INVALID_QUOTE: "見積もりの方向・数量・最低受取額などが不正です",
+                UNKNOWN_COSTS: "ガス代または追加手数料が不明・不正です",
+                INVALID_POSITION: "保有数量または取得原価が不正です",
+                INSUFFICIENT_POSITION: "売却数量が保有数量を超えています",
+                INVALID_PROFIT_CONFIG: "Profit Guardの設定値が不正です",
                 MINIMUM_NET_PROFIT_MET: "最低純利益額・利益率を満たしています",
                 MINIMUM_NET_PROFIT_NOT_MET:
                   "手数料控除後の利益が最低条件に届きません",

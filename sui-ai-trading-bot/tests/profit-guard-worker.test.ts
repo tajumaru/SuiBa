@@ -163,3 +163,41 @@ it.each(["allowed", "missing-reverse", "emergency"] as const)(
     }
   },
 );
+
+it.each(["expired", "oversell"] as const)(
+  "never fills a protective SELL rejected for %s",
+  async (mode) => {
+    const t = setup(3);
+    const original = t.getQuote.getMockImplementation()!;
+    t.getQuote.mockImplementation(async (request) => {
+      const q = await original(request);
+      return mode === "expired"
+        ? { ...q, createdAt: Date.now() - 10000, expiresAt: Date.now() - 1 }
+        : { ...q, amountIn: "2000000000" };
+    });
+    try {
+      await t.engine.tick();
+      expect(t.db.history("paper_trades")).toHaveLength(0);
+      expect(t.db.get<{ action: string }>("decision")?.action).toBe("WAIT");
+      expect(
+        t.db.history<{ action: string }>("strategy_decisions")[0].action,
+      ).toBe("SELL");
+      const result = t.db.get<{ allowed: boolean; reason: string }>(
+        "profitGuard",
+      );
+      expect(result?.allowed).toBe(false);
+      expect(result?.reason).toBe(
+        mode === "expired" ? "QUOTE_EXPIRED" : "INSUFFICIENT_POSITION",
+      );
+      expect(t.db.history("profit_assessments").length).toBeGreaterThan(0);
+      expect(
+        t.db.history<{ reasons: string[] }>("risk_events")[0].reasons,
+      ).toContain(`PROFIT_GUARD_${result?.reason}`);
+      expect(t.db.history<{ status: string }>("paper_orders")[0].status).toBe(
+        "REJECTED",
+      );
+    } finally {
+      t.db.close();
+    }
+  },
+);

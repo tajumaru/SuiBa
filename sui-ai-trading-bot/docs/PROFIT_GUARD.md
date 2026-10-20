@@ -59,7 +59,7 @@ Settingsの専用入力とJSONから変更できます。旧設定には読み�
 
 処理順は Strategy → 最新DEX見積もり → ProfitGuard → RiskEngine → PAPER約定です。STRATEGY_EXITは既存の下落シグナルによるリスク削減として、赤字でも利益条件を適用しません。STOP_LOSS・RISK_REDUCTION・EMERGENCY_EXITも同様です。理由文から推測しません。
 
-Overview / Strategyに平均取得単価・現在価格・損益分岐価格・純利益・利益率・費用・判定理由を表示します。計算不能時は利益注文をWAITとし、必要な保護的SELLに追加拒否を与えません。
+Overview / Strategyに平均取得単価・現在価格・損益分岐価格・純利益・利益率・費用・判定理由を表示します。計算不能時はSELL目的にかかわらずWAITとします。保護的SELLが免除できるのは最低利益額・最低利益率のみで、安全性検証は免除しません。
 
 ProfitGuardがWAITへ変更しても、元の戦略判断はstrategy_decisionsに保存します。実効判断と理由はdecision、利益判定履歴はprofit_assessmentsに保存します。既存の同一確定足の重複抑止・一括保存・緊急停止は維持します。
 
@@ -80,3 +80,13 @@ ProfitGuardがWAITへ変更しても、元の戦略判断はstrategy_decisions�
 64件のモックテスト、TypeScript型チェック、Vite本番ビルドを通過。差分レビューでRiskEngineの上限維持、秘密鍵・署名・送信の追加なし、注文直前の緊急停止再検証を確認しました。
 
 実売買前には、ガス実測とUSDC換算、送信結果照合、実残高と取得原価の整合、承認フロー、履歴見積もりを備えたProfitGuard付きバックテストが必要です。今回これらの実売買機能は追加していません。
+
+## P0：保護的SELLの安全性検証
+
+全SELLで設定、最新見積もり、SUI→USDC方向、正のatomic数量、最低受取額、保有数量、取得原価、ガス代・追加費用を検証します。例外時は必ずallowed=false / WAITです。STOP_LOSS・STRATEGY_EXIT・RISK_REDUCTION・EMERGENCY_EXITは検証成功後に限り利益閾値を免除します。Profit Guard無効時も安全性検証を免除しません。
+
+拒否理由はQUOTE_UNAVAILABLE / QUOTE_EXPIRED / INVALID_QUOTE / UNKNOWN_COSTS / INVALID_POSITION / INVALID_PROFIT_CONFIG / INSUFFICIENT_POSITIONに区別します。外部例外のメッセージや応答本文をログへ渡さず、固定コードをprofit_assessmentsに保存します。実行候補の拒否はpaper_ordersとrisk_eventsにも記録します。元のSELL判断はstrategy_decisionsに残し、実効判断はWAITとして保存します。
+
+現行PAPERではProfitGuardを通過した候補も既存RiskEngineで審査します。将来LIVEを追加するときは `Strategy → Quote → ProfitGuard → RiskEngine → TransactionSimulation → Execution` を必須とし、ProfitReport.allowed単独を実行承認として使ってはいけません。シミュレーション未実施・失敗のLIVE実行経路を設けないことが導入条件です。今回LIVE実行経路は追加しません。
+
+回帰テストでは不正データによる拒否と理由コード、有効データでの保護的赤字SELL、Workerの約定ゼロ・元判断/拒否履歴保存を確認します。過去の利益判定履歴は書き換えません。稼働中Workerへの修正適用には再起動が必要です。
