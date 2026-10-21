@@ -254,6 +254,8 @@ for (const [label, change, expected] of [
   ["nonfinite", (r: any) => (r.asks[0][1] = "Infinity"), "INVALID_ORDERBOOK"],
 ] as const)
   it("rejects " + label + " order book", () => {
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now);
     const r = book();
     change(r);
     expect(() => validateBook(r, Date.now(), 5, 0.003)).toThrow(expected);

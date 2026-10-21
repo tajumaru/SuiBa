@@ -6,3 +6,7 @@ data
 .env.*
 **/test-results
 **/playwright-report
+
+docker/secrets
+docker/artifacts
+docker/.env.deepbook-24h

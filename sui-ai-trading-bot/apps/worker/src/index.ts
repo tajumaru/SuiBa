@@ -55,7 +55,17 @@ engine.monitor.boot();
 const validation = validationEnabled ? new ValidationRecorder(db) : undefined;
 engine.validation = validation;
 if (validation) {
-  apiAccess.onAttempt = (event) => validation.attempt(event);
+  validation.boot();
+  apiAccess.onAttempt = (event) => {
+    try {
+      validation.attempt(event);
+    } catch {
+      try {
+        validation.fault("VALIDATION_RECORD_FAILED");
+      } catch {}
+      throw new Error("VALIDATION_RECORD_FAILED");
+    }
+  };
   validation.sample(engine.marketStatus());
 }
 apiAccess.restoreCooldowns(db.get("api_cooldowns") ?? []);
@@ -347,6 +357,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
       void Promise.resolve(activeTick).finally(() => {
         try {
           validationHeartbeat(true);
+          validation?.closed();
         } catch {
           console.error("VALIDATION_EXPORT_FAILED");
         }

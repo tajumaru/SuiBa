@@ -88,7 +88,7 @@ type Event =
   | Sample
   | Cycle
   | ValidationFill
-  | { kind: "api"; at: number; data: ApiAttempt };
+  | { kind: "api"; at: number; data: ApiAttempt; safelyStopped: boolean };
 const pct = (n: number, d: number) => (d ? n / d : null);
 const stats = (values: number[]) => {
   const a = values.filter(Number.isFinite).sort((a, b) => a - b);
@@ -99,9 +99,27 @@ const stats = (values: number[]) => {
     maxMs: a.at(-1) ?? null,
   };
 };
+const quantities = (values: number[]) => {
+  const s = stats(values);
+  return { count: s.count, mean: s.averageMs, p95: s.p95Ms, max: s.maxMs };
+};
 export class ValidationRecorder {
   private cached: { at: number; value: ValidationReport } | null = null;
+  private pendingFault: string | null = null;
   constructor(readonly db: BotDatabase) {}
+  boot() {
+    if (this.session() && this.db.get("validation_clean_shutdown") === false)
+      this.fault("UNCLEAN_RESTART");
+    this.db.set("validation_clean_shutdown", false);
+  }
+  fault(code: string) {
+    this.pendingFault = code;
+    this.db.set("validation_integrity_fault", code);
+  }
+  closed() {
+    this.db.set("validation_clean_shutdown", true);
+  }
+
   session() {
     return this.db.get<ValidationSession>("validation_session") ?? null;
   }
@@ -143,10 +161,18 @@ export class ValidationRecorder {
       event.at > s.targetAt + validationLimits.maxGapMs
     )
       return;
+    if (this.pendingFault)
+      this.db.set("validation_integrity_fault", this.pendingFault);
     this.db.append("validation_events", randomUUID(), event, event.at);
   }
   attempt(data: ApiAttempt) {
-    this.append({ kind: "api", at: data.occurredAt, data });
+    const r = this.db.runtime();
+    this.append({
+      kind: "api",
+      at: data.occurredAt,
+      data,
+      safelyStopped: !r.running && !!(r.error || r.emergency),
+    });
   }
   cycle(
     market: MarketStatus | null,
@@ -259,7 +285,7 @@ export function aggregateValidation(
   const cycles = events.filter((e): e is Cycle => e.kind === "cycle");
   const api = events
     .filter((e): e is Extract<Event, { kind: "api" }> => e.kind === "api")
-    .map((e) => e.data);
+    .map((e) => ({ ...e.data, safelyStopped: e.safelyStopped }));
   const fills = events.filter((e): e is ValidationFill => e.kind === "fill");
   const operations = db.range<OperationEvent>(
     "operation_events",
@@ -267,12 +293,18 @@ export function aggregateValidation(
     end,
   );
   const orders = db.range<unknown>("paper_trades", session.startedAt, end);
+  const orderRequests = db.range<{ status?: string }>(
+    "paper_orders",
+    session.startedAt,
+    end,
+  );
   const checks = db.range<{ ok: boolean }>(
     "paper_checks",
     session.startedAt,
     end,
   );
-  const latest = samples.filter((s) => s.at <= end).at(-1) ?? null;
+  const windowSamples = samples.filter((s) => s.at <= end);
+  const latest = windowSamples.at(-1) ?? null;
   let maxGapMs = 0,
     cursor = session.startedAt;
   for (const s of samples) {
@@ -296,6 +328,7 @@ export function aggregateValidation(
       latency: stats(a.map((x) => x.latencyMs)),
     };
   });
+  const resolved = new Set<number>();
   const gaps = new Set<number>(),
     repaired = new Map<number, Cycle["repairs"][number]>(),
     seen = new Set<number>();
@@ -305,13 +338,19 @@ export function aggregateValidation(
     const q = c.market?.quality?.[300];
     if (q) {
       latestQuality = c.market?.quality;
-      for (const t of q.gapTimestamps ?? []) gaps.add(t);
+      for (const t of q.gapTimestamps ?? []) {
+        gaps.add(t);
+        resolved.delete(t);
+      }
       if (q.unresolved > 0) reconstructionFailures++;
     }
-    for (const t of c.timestamps) seen.add(t);
+    for (const t of c.timestamps) {
+      seen.add(t);
+      resolved.add(t);
+    }
     for (const r of c.repairs) repaired.set(r.timestamp, r);
   }
-  const unresolved = [...gaps].filter((t) => !repaired.has(t));
+  const unresolved = [...gaps].filter((t) => !resolved.has(t));
   const qualities = cycles
     .map((x) => x.market?.quality?.[300])
     .filter((x) => !!x);
@@ -328,7 +367,7 @@ export function aggregateValidation(
   const stopped = operations.filter(
     (x) => x.kind === "STOP" || x.kind === "BOOT",
   );
-  const unauthorizedRuns = samples.filter(
+  const unauthorizedRuns = windowSamples.filter(
     (s) =>
       s.running &&
       (!starts.some((x) => x.timestamp <= s.at) ||
@@ -372,6 +411,9 @@ export function aggregateValidation(
       f.market.diagnostics.bidDepthUsdc < f.maxOrder ||
       f.market.diagnostics.askDepthUsdc == null ||
       f.market.diagnostics.askDepthUsdc < f.maxOrder ||
+      f.market.diagnostics.indexerLagMs == null ||
+      f.market.diagnostics.indexerLagMs < 0 ||
+      f.market.diagnostics.indexerLagMs > limits.maxIndexerLagMs ||
       !f.riskAllowed ||
       !f.profitGuard ||
       !f.profitAllowed,
@@ -391,6 +433,7 @@ export function aggregateValidation(
   );
   const missingSafetyStops = failureApis.filter(
     (a) =>
+      !a.safelyStopped &&
       !operations.some(
         (o) =>
           o.kind === "STOP" &&
@@ -410,7 +453,9 @@ export function aggregateValidation(
   const validCycles = cycles.filter(
     (c) => !c.error && c.market?.healthy && c.market.source === "DeepBook",
   );
+  const integrityFault = db.get<string>("validation_integrity_fault") ?? null;
   const criteria = [
+    { name: "計測保存失敗・未確認の強制終了なし", ok: integrityFault === null },
     {
       name: "24時間の連続計測記録",
       ok:
@@ -465,7 +510,7 @@ export function aggregateValidation(
       name: "Profit Guardを常時維持・Worker周期不変・分析実行あり",
       ok:
         samples.length > 0 &&
-        samples.every(
+        windowSamples.every(
           (s) => s.profitGuard && s.intervalMs === session.intervalMs,
         ) &&
         Object.values(actions).reduce((a, b) => a + b, 0) > 0,
@@ -490,6 +535,7 @@ export function aggregateValidation(
         : "要確認（合格条件未達）",
     session,
     generatedAt: now,
+    integrityFault,
     limits,
     elapsedMs,
     progress: Math.min(1, elapsedMs / limits.durationMs),
@@ -504,7 +550,12 @@ export function aggregateValidation(
       uniqueFiveMinuteBars: seen.size,
       originalMissing: gaps.size,
       reconstructed: repaired.size,
+      restoredOriginal: [...gaps].filter(
+        (t) => resolved.has(t) && !repaired.has(t),
+      ).length,
       reconstructionFailures,
+      failedCandleObservations: qualities.reduce((n, q) => n + q.unresolved, 0),
+      latestRawCount: latestQuality?.[300]?.originalCount ?? null,
       unresolved: unresolved.length,
       unresolvedTimestamps: unresolved,
       missingRate: pct(gaps.size, seen.size + unresolved.length),
@@ -519,19 +570,19 @@ export function aggregateValidation(
           .filter((c) => c.market?.bookAt != null)
           .map((c) => c.at - c.market!.bookAt!),
       ),
-      spread: stats(
+      spread: quantities(
         cycles.flatMap((c) =>
           c.market?.spread == null ? [] : [c.market.spread],
         ),
       ),
-      bidDepthUsdc: stats(
+      bidDepthUsdc: quantities(
         cycles.flatMap((c) =>
           c.market?.diagnostics?.bidDepthUsdc == null
             ? []
             : [c.market.diagnostics.bidDepthUsdc],
         ),
       ),
-      askDepthUsdc: stats(
+      askDepthUsdc: quantities(
         cycles.flatMap((c) =>
           c.market?.diagnostics?.askDepthUsdc == null
             ? []
@@ -549,6 +600,9 @@ export function aggregateValidation(
     paper: {
       analyses: Object.values(actions).reduce((a, b) => a + b, 0),
       actions,
+      orderRequests: orderRequests.length,
+      rejectedOrders: orderRequests.filter((o) => o.status === "REJECTED")
+        .length,
       orders: orders.length,
       pnlUsdc:
         latest?.equity != null && session.initialEquity != null

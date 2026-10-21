@@ -29,7 +29,7 @@ export function validationMarkdown(r: ValidationReport): string {
     p = r.paper!;
   lines.push(
     "## ローソク足品質",
-    `取得5分足（UTC時刻の重複除外）: ${q.uniqueFiveMinuteBars} / 元欠損: ${q.originalMissing} / 欠損率: ${rate(q.missingRate)} / 再構築: ${q.reconstructed} / 成功率: ${rate(q.reconstructionSuccessRate)} / 未解決: ${q.unresolved} / 未解決を観測した取得周期: ${q.reconstructionFailures}`,
+    `取得5分足（UTC時刻の重複除外）: ${q.uniqueFiveMinuteBars} / 元欠損: ${q.originalMissing} / 欠損率: ${rate(q.missingRate)} / 再構築: ${q.reconstructed} / 成功率: ${rate(q.reconstructionSuccessRate)} / 未解決: ${q.unresolved} / 未解決を観測した取得周期: ${q.reconstructionFailures} / 再構築失敗足の観測延べ数: ${q.failedCandleObservations} / 最新生データ本数: ${q.latestRawCount ?? "未取得"}`,
     `再構築時間: ${JSON.stringify(q.reconstructionTime)} / 最新品質: ${JSON.stringify(q.latestQuality)}`,
     "再構築の理由・取得元・取得時刻・証拠:",
     "```json",
@@ -40,7 +40,7 @@ export function validationMarkdown(r: ValidationReport): string {
     JSON.stringify(r.book, null, 2),
     "```",
     "## AI・PAPER",
-    `分析 ${p.analyses} / BUY ${p.actions.BUY} / SELL ${p.actions.SELL} / WAIT ${p.actions.WAIT} / 約定 ${p.orders} / 損益 ${p.pnlUsdc ?? "未評価"} USDC`,
+    `分析 ${p.analyses} / BUY ${p.actions.BUY} / SELL ${p.actions.SELL} / WAIT ${p.actions.WAIT} / PAPER注文記録 ${p.orderRequests}（拒否 ${p.rejectedOrders}） / 約定 ${p.orders} / 損益 ${p.pnlUsdc ?? "未評価"} USDC`,
     `安全停止 ${p.safetyStops.length} / 手動開始 ${p.manualStarts} / 手動再開 ${p.manualResumes} / 再起動 ${p.restarts}`,
     `不正約定証拠 ${p.unsafeFills} / 証拠不足 ${p.missingFillEvidence} / 自動再開違反 ${p.unauthorizedRuns}`,
     `約定時安全経路の実行: ${p.fillChecksExercised ? "あり" : "未行使"} / API異常時停止経路の実行: ${p.errorStopChecksExercised ? "あり" : "未行使"}`,

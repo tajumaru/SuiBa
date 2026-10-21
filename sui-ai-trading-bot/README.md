@@ -104,3 +104,7 @@ EMAはSMAで初期化、RSI14とATR14はWilder平滑化。MACDはEMA12−EMA26 /
 Profit Guardは初期状態で有効です（最低純利益0.05 USDC・最低利益率1%）。Settingsで変更できます。計算・制約は[設計資料](docs/PROFIT_GUARD.md)を参照してください。
 
 DeepBookの実測、Provider設定、品質条件と検証結果は[DeepBook Provider検証](docs/DEEPBOOK_PROVIDER_VALIDATION.md)を参照してください。既定の取得元はGeckoTerminalのままです。
+
+## DeepBook 24時間PAPER検証専用環境
+
+既存環境と分離したCompose・計測・日本語ダッシュボード・JSON/Markdownレポートを利用できます。[Windows 11の起動・停止・確認・バックアップ手順](docs/DEEPBOOK_24H_PAPER.md)を参照してください。24時間未満は「検証途中」で、PAPERの開始・異常後の再開は手動です。標準Providerは変更しません。

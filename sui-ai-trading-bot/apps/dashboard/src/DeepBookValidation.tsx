@@ -147,7 +147,8 @@ export function DeepBookValidation({
             {report.paper?.actions.WAIT ?? 0}
           </p>
           <p>
-            PAPER約定：{report.paper?.orders ?? 0} ／ 評価損益：
+            PAPER注文記録：{report.paper?.orderRequests ?? 0} ／ PAPER約定：
+            {report.paper?.orders ?? 0} ／ 評価損益：
             {report.paper?.pnlUsdc == null
               ? "未評価"
               : number(report.paper.pnlUsdc) + " USDC"}{" "}

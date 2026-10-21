@@ -205,6 +205,16 @@ try {
   );
   docker("cp", "tests", `${cid}:/app/tests`);
   docker("cp", "docs", `${cid}:/app/docs`);
+  docker(
+    "cp",
+    "docker/deepbook-24h.mjs",
+    `${cid}:/app/docker/deepbook-24h.mjs`,
+  );
+  docker(
+    "cp",
+    "docker/deepbook-24h.env.example",
+    `${cid}:/app/docker/deepbook-24h.env.example`,
+  );
   const tests = docker(
     "exec",
     cid,

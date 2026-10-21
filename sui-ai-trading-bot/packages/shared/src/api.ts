@@ -201,20 +201,8 @@ export class ApiAccess {
             s.failed = true;
             const code = error instanceof Error ? error.message : "";
             if (code === "VALIDATION_RECORD_FAILED") throw error;
-            try {
-              this.onAttempt({
-                api,
-                success: false,
-                code: /^[A-Z0-9_]{1,100}$/.test(code)
-                  ? code
-                  : "UNKNOWN_FAILURE",
-                latencyMs: s.lastLatencyMs,
-                attempt,
-                occurredAt: Date.now(),
-              });
-            } catch {
-              throw new Error("VALIDATION_RECORD_FAILED");
-            }
+            const failedLatencyMs = s.lastLatencyMs;
+            const failedAt = Date.now();
             const transient = [
               "UPSTREAM_TIMEOUT",
               "UPSTREAM_NETWORK_FAILED",
@@ -224,7 +212,25 @@ export class ApiAccess {
               "UPSTREAM_HTTP_504",
             ].includes(code);
             if (transient) this.onTransientFailure(api, code);
+            // Stop first: monitoring I/O must never delay the safety callback.
+            const recordFailure = () => {
+              try {
+                this.onAttempt({
+                  api,
+                  success: false,
+                  code: /^[A-Z0-9_]{1,100}$/.test(code)
+                    ? code
+                    : "UNKNOWN_FAILURE",
+                  latencyMs: failedLatencyMs,
+                  attempt,
+                  occurredAt: failedAt,
+                });
+              } catch {
+                throw new Error("VALIDATION_RECORD_FAILED");
+              }
+            };
             if (!(error instanceof RateLimited)) {
+              recordFailure();
               if (
                 !transient ||
                 attempt >= Math.min(2, policy.maxTransientRetries ?? 0)
@@ -245,6 +251,7 @@ export class ApiAccess {
               attempt >= apiLimits.maxRetries ||
               (after !== null && after > apiLimits.maxWaitMs);
             this.onRateLimit(api);
+            recordFailure();
             if (s.exhausted) throw new Error("API_RETRIES_EXHAUSTED");
             await new Promise<void>((resolve, reject) => {
               const signal = this.controller.signal;

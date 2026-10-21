@@ -483,7 +483,7 @@ export class BotEngine {
             this.marketStatus(),
             last.source,
             c,
-            q.expiresAt,
+            audit.quoteExpiresAt ?? q.expiresAt,
             audit.risk.status === "ALLOWED",
             audit.profitGuard.allowed === true,
             executionNow,
@@ -507,9 +507,11 @@ export class BotEngine {
     } catch (error) {
       const code =
         error instanceof Error &&
-        ["PAPER_RECONCILIATION_FAILED", "DUPLICATE_ORDER"].includes(
-          error.message,
-        )
+        [
+          "PAPER_RECONCILIATION_FAILED",
+          "DUPLICATE_ORDER",
+          "VALIDATION_RECORD_FAILED",
+        ].includes(error.message)
           ? error.message
           : safeFailure(error);
       measuredError = code;
@@ -544,6 +546,7 @@ export class BotEngine {
           began,
         );
       } catch {
+        this.validation?.fault("VALIDATION_RECORD_FAILED");
         this.db.set("runtime", {
           ...this.db.runtime(),
           running: false,

@@ -57,22 +57,46 @@ if (command === "init") {
   console.log(
     "専用設定と管理トークンを準備しました。既存ファイルは変更していません。",
   );
-} else if (["up", "stop", "restart", "logs"].includes(command)) {
+} else if (["up", "stop", "restart", "logs", "backup"].includes(command)) {
   if (command === "up") docker(["up", "-d", "--build"]);
 
   if (command === "stop") docker(["stop", "bot"]);
 
   if (command === "restart") docker(["restart", "bot"]);
 
+  if (command === "backup") {
+    docker(["stop", "bot"]);
+    const target = join(
+      dir,
+      "artifacts",
+      "backup-" +
+        new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-"),
+    );
+    mkdirSync(target, { recursive: true });
+    mkdirSync(join(target, "reports"));
+    docker(["cp", "bot:/app/validation/.", target]);
+    docker(["cp", "bot:/app/reports/.", join(target, "reports")]);
+    console.log(
+      "専用Botを停止し、DBディレクトリ全体とレポートを保存しました: " +
+        target +
+        "。自動再開しません。",
+    );
+  }
   if (command === "logs") {
     mkdirSync(join(dir, "artifacts"), { recursive: true });
 
     writeFileSync(
-      join(dir, "artifacts/deepbook-24h.log"),
+      join(
+        dir,
+        "artifacts",
+        "deepbook-24h-" +
+          new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-") +
+          ".log",
+      ),
       docker(["logs", "--no-color", "bot"], true),
     );
 
-    console.log("docker/artifacts/deepbook-24h.log に保存しました。");
+    console.log("docker/artifacts に時刻付きログを保存しました。");
   }
 } else if (["begin", "status", "report"].includes(command)) {
   // Read the credential inside the container; it never appears in CLI arguments/output.
@@ -108,5 +132,5 @@ if (command === "init") {
   } else console.log(JSON.stringify(data, null, 2));
 } else
   throw Error(
-    "使用方法: node docker/deepbook-24h.mjs init|up|begin|status|report|logs|stop|restart",
+    "使用方法: node docker/deepbook-24h.mjs init|up|begin|status|report|logs|backup|stop|restart",
   );

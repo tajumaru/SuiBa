@@ -515,3 +515,14 @@ footer {
     padding: 16px;
   }
 }
+
+.operation-validation pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.operation-validation progress {
+  max-width: 100%;
+  width: 100%;
+}
