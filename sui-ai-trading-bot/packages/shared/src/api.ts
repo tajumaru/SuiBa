@@ -31,7 +31,9 @@ export function retryDelay(
     minimum + Math.max(0, Math.min(1, random)) * Math.min(1000, minimum * 0.25),
   );
 }
+export type ApiPolicy = { timeoutMs?: number; maxTransientRetries?: number };
 type Stats = {
+  lastLatencyMs: number | null;
   requests: number;
   rateLimits: number;
   retries: number;
@@ -49,6 +51,7 @@ export class ApiAccess {
   private tails = new Map<string, Promise<unknown>>();
   private controller = new AbortController();
   onRateLimit: (api: string) => void = () => {};
+  onTransientFailure: (api: string, code: string) => void = () => {};
   restoreCooldowns(
     values: { api: string; nextRetryAt: number | null; exhausted: boolean }[],
   ) {
@@ -61,6 +64,7 @@ export class ApiAccess {
   private state(api: string) {
     if (!this.states.has(api))
       this.states.set(api, {
+        lastLatencyMs: null,
         requests: 0,
         rateLimits: 0,
         retries: 0,
@@ -74,7 +78,9 @@ export class ApiAccess {
     return this.states.get(api)!;
   }
   snapshot(now = Date.now()) {
-    return ["Sui gRPC", "GeckoTerminal", "Cetus"].map((api) => {
+    return [
+      ...new Set(["Sui gRPC", "GeckoTerminal", "Cetus", ...this.states.keys()]),
+    ].map((api) => {
       const s = this.state(api);
       return {
         api,
@@ -104,11 +110,30 @@ export class ApiAccess {
     this.controller.abort();
     this.caches.clear();
   }
+  private wait(until: number) {
+    return new Promise<void>((resolve, reject) => {
+      const signal = this.controller.signal;
+      const abort = () => {
+        clearTimeout(timer);
+        reject(new Error("API_CANCELLED"));
+      };
+      const timer = setTimeout(
+        () => {
+          signal.removeEventListener("abort", abort);
+          resolve();
+        },
+        Math.max(0, until - Date.now()),
+      );
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) abort();
+    });
+  }
   async run<T>(
     api: string,
     key: string,
     fn: (signal: AbortSignal) => Promise<T>,
     ttl = 0,
+    policy: ApiPolicy = {},
   ): Promise<T> {
     const s = this.state(api),
       id = api + ":" + key;
@@ -123,6 +148,7 @@ export class ApiAccess {
       await this.tails.get(api)?.catch(() => {});
       if (this.controller.signal.aborted) throw new Error("API_CANCELLED");
       if (s.exhausted) throw new Error("API_RETRIES_EXHAUSTED");
+      if ((s.nextRetryAt ?? 0) > Date.now()) throw new Error("API_BACKOFF");
       s.active = true;
       try {
         for (let attempt = 0; ; attempt++) {
@@ -133,13 +159,15 @@ export class ApiAccess {
             ...s.recent.filter((t) => t > Date.now() - 60000),
             Date.now(),
           ];
+          const began = Date.now();
           try {
             const result = await fn(
               AbortSignal.any([
                 this.controller.signal,
-                AbortSignal.timeout(apiLimits.timeoutMs),
+                AbortSignal.timeout(policy.timeoutMs ?? apiLimits.timeoutMs),
               ]),
             );
+            s.lastLatencyMs = Date.now() - began;
             s.failed = false;
             s.nextRetryAt = null;
             s.lastSuccessAt = Date.now();
@@ -147,8 +175,28 @@ export class ApiAccess {
               this.caches.set(id, { value: result, until: Date.now() + ttl });
             return result;
           } catch (error) {
+            s.lastLatencyMs = Date.now() - began;
             s.failed = true;
-            if (!(error instanceof RateLimited)) throw error;
+            const code = error instanceof Error ? error.message : "";
+            const transient = [
+              "UPSTREAM_TIMEOUT",
+              "UPSTREAM_NETWORK_FAILED",
+              "UPSTREAM_DNS_FAILED",
+              "UPSTREAM_HTTP_502",
+              "UPSTREAM_HTTP_503",
+              "UPSTREAM_HTTP_504",
+            ].includes(code);
+            if (transient) this.onTransientFailure(api, code);
+            if (!(error instanceof RateLimited)) {
+              if (
+                !transient ||
+                attempt >= Math.min(2, policy.maxTransientRetries ?? 0)
+              )
+                throw error;
+              s.nextRetryAt = Date.now() + retryDelay(attempt, null);
+              await this.wait(s.nextRetryAt);
+              continue;
+            }
             s.rateLimits++;
             this.caches.clear();
             const after = retryAfter(error.after);
@@ -205,6 +253,7 @@ export async function apiFetch(
   input: string | URL | Request,
   init?: RequestInit,
   ttl = 0,
+  policy: ApiPolicy = {},
 ) {
   const url =
     typeof input === "string"
@@ -231,34 +280,55 @@ export async function apiFetch(
     api,
     key,
     async (signal) => {
-      let response: Response;
+      const combined = AbortSignal.any([
+        signal,
+        ...(init?.signal ? [init.signal] : []),
+        ...(input instanceof Request ? [input.signal] : []),
+      ]);
       try {
-        response = await rawFetch(input, {
-          ...init,
-          signal: AbortSignal.any([
-            signal,
-            ...(init?.signal ? [init.signal] : []),
-          ]),
-        });
-      } catch {
-        throw new Error("UPSTREAM_TIMEOUT");
+        const response = await rawFetch(input, { ...init, signal: combined });
+        if (response.status === 429) {
+          await response.body?.cancel();
+          throw new RateLimited(response.headers.get("retry-after"));
+        }
+        if (!response.ok) {
+          await response.body?.cancel();
+          throw new Error("UPSTREAM_HTTP_" + response.status);
+        }
+        const bytes = await response.arrayBuffer();
+        return {
+          bytes,
+          status: response.status,
+          headers: [...response.headers.entries()],
+        };
+      } catch (error) {
+        if (
+          error instanceof RateLimited ||
+          (error instanceof Error &&
+            /^UPSTREAM_HTTP_\d{3}$/.test(error.message))
+        )
+          throw error;
+        if (
+          init?.signal?.aborted ||
+          (input instanceof Request && input.signal.aborted)
+        )
+          throw new Error("API_CANCELLED");
+        if (combined.aborted)
+          throw new Error(
+            combined.reason?.name === "TimeoutError"
+              ? "UPSTREAM_TIMEOUT"
+              : "API_CANCELLED",
+          );
+        const code = (error as { cause?: { code?: string } })?.cause?.code;
+        throw new Error(
+          ["ENOTFOUND", "EAI_AGAIN"].includes(code ?? "")
+            ? "UPSTREAM_DNS_FAILED"
+            : "UPSTREAM_NETWORK_FAILED",
+        );
       }
-      if (response.status === 429) {
-        await response.body?.cancel();
-        throw new RateLimited(response.headers.get("retry-after"));
-      }
-      if (!response.ok) {
-        await response.body?.cancel();
-        throw new Error("UPSTREAM_HTTP_" + response.status);
-      }
-      const bytes = await response.arrayBuffer();
-      return {
-        bytes,
-        status: response.status,
-        headers: [...response.headers.entries()],
-      };
     },
     ttl,
+    policy,
   );
   return new Response(value.bytes.slice(0), {
     status: value.status,
