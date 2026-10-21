@@ -7,3 +7,7 @@ dist/
 coverage/
 test-results/
 playwright-report/
+
+/docker/.env.deepbook-24h
+/docker/secrets/
+/docker/artifacts/

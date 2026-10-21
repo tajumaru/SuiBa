@@ -5,6 +5,7 @@ import "dotenv/config";
 import { createServer } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { resolve, extname } from "node:path";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
 import { GeckoMarketData } from "../../../packages/market-data/src/index.ts";
@@ -16,7 +17,9 @@ import { backtestMetadata, savedComparison } from "./backtest-service.ts";
 import { comparisonOptionsSchema } from "../../../packages/backtest-engine/src/index.ts";
 if (process.env.MODE && process.env.MODE !== "PAPER")
   throw new Error("ONLY_PAPER_SUPPORTED");
-const token = process.env.ADMIN_TOKEN;
+const token = process.env.ADMIN_TOKEN_FILE
+  ? readFileSync(process.env.ADMIN_TOKEN_FILE, "utf8").trim()
+  : process.env.ADMIN_TOKEN;
 if (!token || token.length < 32)
   throw new Error("ADMIN_TOKEN must contain at least 32 characters");
 const marketMode = process.env.MARKET_DATA_PROVIDER ?? "geckoterminal";

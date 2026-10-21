@@ -1,0 +1,45 @@
+name: suiba-deepbook-24h
+services:
+  bot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    env_file: .env.deepbook-24h
+    environment:
+      MODE: PAPER
+      MARKET_DATA_PROVIDER: deepbook
+      DEEPBOOK_RECONSTRUCT_CANDLES: verified
+      DEEPBOOK_VALIDATION: "1"
+      DATABASE_PATH: /app/validation/deepbook-paper.sqlite
+      VALIDATION_REPORT_DIR: /app/reports
+      ADMIN_TOKEN: ""
+      ADMIN_TOKEN_FILE: /run/secrets/validation-admin
+      HOST: 0.0.0.0
+      PORT: "3100"
+    secrets:
+      - validation-admin
+    ports:
+      - "127.0.0.1:${VALIDATION_PORT:-3101}:3100"
+    volumes:
+      - validation-data:/app/validation
+      - validation-reports:/app/reports
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "node", "docker/healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+secrets:
+  validation-admin:
+    file: ./secrets/deepbook-24h-admin.txt
+volumes:
+  validation-data:
+  validation-reports:

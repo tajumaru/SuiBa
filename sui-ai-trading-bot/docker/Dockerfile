@@ -6,7 +6,7 @@ COPY apps ./apps
 COPY packages ./packages
 COPY tsconfig.json ./
 COPY docker/healthcheck.mjs ./docker/healthcheck.mjs
-RUN pnpm install --frozen-lockfile && pnpm build && mkdir -p /app/data && chown -R node:node /app/data
+RUN pnpm install --frozen-lockfile && pnpm build && mkdir -p /app/data /app/validation /app/reports && chown -R node:node /app/data /app/validation /app/reports
 ENV HOST=0.0.0.0 MODE=PAPER DATABASE_PATH=/app/data/bot.sqlite
 USER node
 EXPOSE 3100
