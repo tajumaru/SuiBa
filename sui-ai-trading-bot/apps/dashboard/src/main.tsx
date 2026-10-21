@@ -16,6 +16,7 @@ import { Reason } from "./Reason.tsx";
 import { SettingsPage, SettingsChanges } from "./SettingsPage.tsx";
 import { OperationsPanel } from "./OperationsPanel.tsx";
 import { MarketDataPanel } from "./MarketDataPanel.tsx";
+import { PriceChart } from "./PriceChart.tsx";
 import { BacktestComparison } from "./BacktestComparison.tsx";
 type State = ReturnType<BotEngine["snapshot"]>;
 const money = (v: number | null | undefined) => number(v, 4);
@@ -192,7 +193,7 @@ function ProfitGuardPanel({ data }: { data: State }) {
     </section>
   );
 }
-function Chart({
+function IndicatorChart({
   candles,
   kind,
   trades,
@@ -309,6 +310,17 @@ function Chart({
           );
         })}
     </svg>
+  );
+}
+function Chart(props: {
+  candles: Candle[];
+  kind: string;
+  trades: State["trades"];
+}) {
+  return props.kind === "Price" ? (
+    <PriceChart {...props} />
+  ) : (
+    <IndicatorChart {...props} />
   );
 }
 function DecisionView({ value }: { value: unknown }) {
