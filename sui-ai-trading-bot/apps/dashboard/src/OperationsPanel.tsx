@@ -96,8 +96,12 @@ export function OperationsView({
           <article key={a.api}>
             <h4>{a.api}</h4>
             <p>
-              リクエスト：{a.requests}件 ／ 直近1分：{a.requestsPerMinute}件 ／
-              429：{a.rateLimits}件 ／ 再試行：{a.retries}回
+              最終API応答時間：
+              {a.lastLatencyMs == null
+                ? "不明"
+                : number(a.lastLatencyMs) + " ms"}{" "}
+              ／ リクエスト：{a.requests}件 ／ 直近1分：{a.requestsPerMinute}件
+              ／ 429：{a.rateLimits}件 ／ 再試行：{a.retries}回
             </p>
             <p>
               接続：

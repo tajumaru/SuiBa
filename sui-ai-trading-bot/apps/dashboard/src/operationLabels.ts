@@ -1,5 +1,18 @@
 export function operationReason(code: string): string {
   const labels: Record<string, string> = {
+    MARKET_SOURCE_CHANGED:
+      "市場データの取得元が変わったため停止しています。確認後に手動で再開してください",
+    MARKET_UNAVAILABLE: "市場データを取得できないため停止しています",
+    MARKET_PAIR_MISMATCH: "市場データの取引ペアまたは取得元が一致しません",
+    STALE_ORDERBOOK: "注文板が古いため取引を停止しています",
+    INVALID_ORDERBOOK: "注文板の内容を確認できないため停止しています",
+    SPREAD_TOO_WIDE: "売買気配の差が広いため取引を停止しています",
+    THIN_ORDERBOOK: "注文板の数量が不足するため取引を停止しています",
+    INDEXER_DELAYED: "DeepBookのデータ更新が遅れています",
+    UPSTREAM_HTTP_504: "外部APIの中継先が時間切れです",
+    UPSTREAM_NETWORK_FAILED: "外部APIとの通信が切断されました",
+    UPSTREAM_DNS_FAILED: "外部APIの名前解決に失敗しました",
+
     REQUEST_FAILED: "リクエストを完了できませんでした",
     UNAUTHORIZED:
       "管理トークンを確認できません。ログアウトして正しいトークンで接続してください",

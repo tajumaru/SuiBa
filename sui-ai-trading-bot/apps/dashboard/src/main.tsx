@@ -15,6 +15,7 @@ import {
 import { Reason } from "./Reason.tsx";
 import { SettingsPage, SettingsChanges } from "./SettingsPage.tsx";
 import { OperationsPanel } from "./OperationsPanel.tsx";
+import { MarketDataPanel } from "./MarketDataPanel.tsx";
 import { BacktestComparison } from "./BacktestComparison.tsx";
 type State = ReturnType<BotEngine["snapshot"]>;
 const money = (v: number | null | undefined) => number(v, 4);
@@ -523,6 +524,12 @@ function App() {
                         : "未接続"}
                   </span>
                 </div>
+                {data.marketData && (
+                  <MarketDataPanel
+                    value={data.marketData}
+                    unavailable={!!error}
+                  />
+                )}
                 {data.runtime.emergency && (
                   <p className="error">
                     緊急停止中です。原因と接続状態を確認し、設定の「停止状態の解除」から解除後、PAPER運用を手動で開始してください。
@@ -739,7 +746,10 @@ function App() {
       )}
       <footer>
         PAPER（仮想売買）モード · 仮想売買のみ · 署名 / 取引送信なし ·
-        市場データ提供： GeckoTerminal
+        市場データ提供：
+        {data?.marketData
+          ? (data.marketData.source ?? "未取得")
+          : "GeckoTerminal"}
       </footer>
     </>
   );

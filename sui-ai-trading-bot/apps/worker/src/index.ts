@@ -1,3 +1,5 @@
+import { DeepBookMarketData } from "../../../packages/market-data/src/deepbook.ts";
+import { MarketSelection } from "../../../packages/market-data/src/selection.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
 import "dotenv/config";
 import { createServer } from "node:http";
@@ -17,11 +19,18 @@ if (process.env.MODE && process.env.MODE !== "PAPER")
 const token = process.env.ADMIN_TOKEN;
 if (!token || token.length < 32)
   throw new Error("ADMIN_TOKEN must contain at least 32 characters");
+const marketMode = process.env.MARKET_DATA_PROVIDER ?? "geckoterminal";
+if (!["geckoterminal", "deepbook", "auto"].includes(marketMode))
+  throw new Error("INVALID_MARKET_DATA_PROVIDER");
 const db = new BotDatabase(process.env.DATABASE_PATH ?? "data/bot.sqlite");
 const sui = new ReadOnlySuiClient(process.env.SUI_GRPC_URL),
   engine = new BotEngine(
     db,
-    new GeckoMarketData(process.env.MARKET_POOL || undefined),
+    new MarketSelection(
+      marketMode as "geckoterminal" | "deepbook" | "auto",
+      new GeckoMarketData(process.env.MARKET_POOL || undefined),
+      new DeepBookMarketData(() => db.settings()),
+    ),
     new CetusRouter(),
     sui,
   );

@@ -1,3 +1,4 @@
+import type { MarketDataProvider } from "../../../packages/market-data/src/provider.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
 import { randomUUID } from "node:crypto";
 import {
@@ -37,10 +38,7 @@ import {
   type Fill,
 } from "../../../packages/paper-trading/src/index.ts";
 import { equity, metrics } from "../../../packages/portfolio/src/index.ts";
-import {
-  GeckoMarketData,
-  validateCandles,
-} from "../../../packages/market-data/src/index.ts";
+import { validateCandles } from "../../../packages/market-data/src/index.ts";
 import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
 export class BotEngine {
   private busy = false;
@@ -48,11 +46,12 @@ export class BotEngine {
   readonly monitor: OperationMonitor;
   constructor(
     readonly db: BotDatabase,
-    private market: Pick<GeckoMarketData, "candles">,
+    private market: MarketDataProvider,
     private router: DexRouter,
     readonly sui: Pick<ReadOnlySuiClient, "health" | "status">,
   ) {
     this.monitor = new OperationMonitor(db);
+    apiAccess.onTransientFailure = (_api, code) => this.monitor.stop(code);
     apiAccess.onRateLimit = () => {
       this.monitor.stop("UPSTREAM_HTTP_429");
       db.set("api_cooldowns", apiAccess.snapshot());
@@ -74,13 +73,34 @@ export class BotEngine {
     try {
       const now = Date.now();
       await this.monitor.request("HEALTH", () => this.sui.health());
-      const frames: Record<number, Candle[]> = {};
-      for (const tf of [300, 900, 3600] as const) {
-        const c = await this.monitor.request("MARKET", () =>
-          this.market.candles(tf, now),
-        );
-        this.db.saveCandles(c);
-        frames[tf] = c;
+      const frames: Record<number, Candle[]> = this.market.frames
+        ? await this.monitor.request("MARKET", () => this.market.frames!(now))
+        : {};
+      if (!this.market.frames)
+        for (const tf of [300, 900, 3600] as const)
+          frames[tf] = await this.monitor.request("MARKET", () =>
+            this.market.candles(tf, now),
+          );
+      if (this.market.frames)
+        for (const tf of [300, 900, 3600] as const)
+          validateCandles(frames[tf], tf, Date.now());
+      const source = frames[300][0].source;
+      if (
+        Object.values(frames).some((rows) =>
+          rows.some((x) => x.source !== source),
+        )
+      )
+        throw new Error("MARKET_PAIR_MISMATCH");
+      const previousSource =
+        this.db.get<string>("market_source") ??
+        this.db.candles().at(-1)?.source;
+      for (const rows of Object.values(frames)) this.db.saveCandles(rows);
+      this.db.set("market_source", source);
+      if (previousSource && previousSource !== source) {
+        this.db.set("price", null);
+        this.db.set("indicators", null);
+        this.db.set("profitGuard", null);
+        throw new Error("MARKET_SOURCE_CHANGED");
       }
       const c = frames[300],
         last = c.at(-1)!,
@@ -417,6 +437,7 @@ export class BotEngine {
         (reverse && reverse.expiresAt <= executionNow)
       )
         throw new Error("QUOTE_EXPIRED");
+      this.market.assertReady?.(executionNow);
       const fill = this.paper.fill(
         id,
         side,
@@ -478,6 +499,7 @@ export class BotEngine {
           finalAction: "SAFE_STOP",
           reasons: [code],
         });
+      this.db.set("decision", { action: "WAIT", reason: code, confidence: 0 });
       this.monitor.failCycle(code);
       this.db.set("runtime", {
         ...this.db.runtime(),
@@ -532,6 +554,7 @@ export class BotEngine {
         .reverse()
         .map((x) => x.equity);
     return {
+      marketData: this.market.status?.() ?? null,
       mode: "PAPER",
       runtime: this.db.runtime(),
       connection: this.sui.status,
