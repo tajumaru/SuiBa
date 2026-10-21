@@ -201,7 +201,8 @@ export class ValidationRecorder {
     const session = this.session();
     if (!session || now > session.targetAt) return;
     const s = this.db.settings(),
-      r = this.db.runtime(), last = candles.at(-1)!;
+      r = this.db.runtime(),
+      last = candles.at(-1)!;
     return {
       kind: "fill",
       at: now,
@@ -271,7 +272,7 @@ export function aggregateValidation(
     session.startedAt,
     end,
   );
-  const latest = samples.filter(s=>s.at<=end).at(-1) ?? null;
+  const latest = samples.filter((s) => s.at <= end).at(-1) ?? null;
   let maxGapMs = 0,
     cursor = session.startedAt;
   for (const s of samples) {
@@ -340,7 +341,14 @@ export function aggregateValidation(
             ),
         )),
   );
-  const validPrices = (f: ValidationFill) => {try {validateCandles(f.candles,300,f.at);return f.candles.every(c=>c.source===f.source);} catch {return false;} };
+  const validPrices = (f: ValidationFill) => {
+    try {
+      validateCandles(f.candles, 300, f.at);
+      return f.candles.every((c) => c.source === f.source);
+    } catch {
+      return false;
+    }
+  };
   const unsafeFills = fills.filter(
     (f) =>
       !validPrices(f) ||

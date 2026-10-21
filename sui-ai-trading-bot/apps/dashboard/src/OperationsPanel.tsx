@@ -1,3 +1,5 @@
+import { DeepBookValidation } from "./DeepBookValidation.tsx";
+import type { ValidationReport } from "../../worker/src/validation.ts";
 import React, { useEffect, useState } from "react";
 import type { OperationMonitor } from "../../worker/src/operations.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
@@ -10,7 +12,9 @@ import {
   errorCode,
 } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
-export type OperationsSnapshot = ReturnType<OperationMonitor["snapshot"]>;
+export type OperationsSnapshot = ReturnType<OperationMonitor["snapshot"]> & {
+  validation?: ValidationReport;
+};
 const date = dateTime;
 const number = formatNumber;
 const usdc = (v: string | number | null) =>
@@ -24,14 +28,19 @@ const statusLabels: Record<string, string> = {
 export function OperationsView({
   data,
   stale = false,
+  api,
 }: {
   data: OperationsSnapshot;
   stale?: boolean;
+  api?: SettingsApi;
 }) {
   const latest = data.accounting.latest,
     ledger = data.accounting.ledger;
   return (
     <div className="operation-validation">
+      {data.validation && (
+        <DeepBookValidation report={data.validation} api={api} stale={stale} />
+      )}
       <section>
         <h2>運用検証</h2>
         <p
@@ -469,7 +478,7 @@ export function OperationsPanel({ api }: { api: SettingsApi }) {
         </p>
       )}
       {data ? (
-        <OperationsView data={data} stale={!!error} />
+        <OperationsView data={data} stale={!!error} api={api} />
       ) : (
         <p role="status">運用検証データを取得しています…</p>
       )}
