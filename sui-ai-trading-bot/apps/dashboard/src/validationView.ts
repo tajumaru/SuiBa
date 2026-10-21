@@ -1,8 +1,12 @@
 import type { ValidationReport } from "../../worker/src/validation.ts";
-import type { OperationsSnapshot } from "./OperationsPanel.tsx";
+import type { OperationMonitor } from "../../worker/src/operations.ts";
+export type ValidationOperations = Pick<
+  ReturnType<OperationMonitor["snapshot"]>,
+  "status" | "stopReason" | "timing"
+>;
 export function validationView(
   report: ValidationReport,
-  operations: OperationsSnapshot,
+  operations: ValidationOperations,
   stale = false,
 ) {
   const running = ["RUNNING", "DATA_DELAYED"].includes(operations.status);
@@ -54,7 +58,11 @@ export function validationView(
       : !report.session ||
           !running ||
           operations.status === "DATA_DELAYED" ||
-          report.market?.healthy === false
+          report.market?.healthy !== true ||
+          operations.timing.dataStatus === "STALE" ||
+          operations.timing.dataStatus === "UNKNOWN" ||
+          !!report.candles?.unresolved ||
+          !!report.apis?.some((a) => a.failures > 0)
         ? "warning"
         : "healthy";
   return {

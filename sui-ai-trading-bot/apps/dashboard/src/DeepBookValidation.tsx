@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import type { ValidationReport } from "../../worker/src/validation.ts";
 import { validationMarkdown } from "../../../packages/shared/src/validation-presentation.ts";
-import type { OperationsSnapshot } from "./OperationsPanel.tsx";
+import type { ValidationOperations } from "./validationView.ts";
 import { validationView } from "./validationView.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
 import { dateTime, number, errorCode } from "./presentation.ts";
@@ -60,7 +60,7 @@ export function DeepBookValidation({
   report: ValidationReport;
   api?: SettingsApi;
   stale?: boolean;
-  operations: OperationsSnapshot;
+  operations: ValidationOperations;
 }) {
   const view = validationView(report, operations, stale);
   const requests = report.apis?.reduce((n, a) => n + a.requests, 0) ?? 0;
@@ -103,9 +103,17 @@ export function DeepBookValidation({
         "計測を開始しました。10秒以内に表示を更新します。PAPER運用は別途、手動で開始してください。",
       );
     } catch (e) {
+      const code = errorCode(e);
+      const explanation: Record<string, string> = {
+        STOP_BEFORE_VALIDATION:
+          "Botが稼働中です。既存の操作欄で停止してから計測を開始してください。",
+        PROFIT_GUARD_REQUIRED:
+          "Profit Guardを有効にしてから計測を開始してください。",
+        VALIDATION_ALREADY_STARTED:
+          "計測は開始済みです。既存の記録は上書きしません。表示の更新を待ってください。",
+      };
       setNotice(
-        "計測を開始できません。Botを停止し、Profit Guardを有効にしてください。既存の計測記録は上書きできません。コード：" +
-          errorCode(e),
+        `計測を開始できません。${explanation[code] ?? "接続状態と安全条件を確認してから再操作してください。"} コード：${code}`,
       );
     } finally {
       setBusy(false);

@@ -45,6 +45,9 @@ for (const begun of [false, true])
     await expect(panel).toBeVisible();
     if (begun) {
       await expect(panel).toContainText("検証途中");
+      await panel
+        .getByText("AI判断・PAPER取引・安全停止履歴", { exact: true })
+        .click();
       await expect(panel).toContainText("未行使");
       await expect(
         panel.getByRole("progressbar", { name: "24時間の進捗" }),

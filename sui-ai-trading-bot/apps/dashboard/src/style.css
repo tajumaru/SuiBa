@@ -526,3 +526,180 @@ footer {
   max-width: 100%;
   width: 100%;
 }
+/* DeepBook validation: summary first, technical evidence on demand. */
+.deepbook-validation {
+  overflow-wrap: anywhere;
+}
+.deepbook-validation h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+.validation-overview,
+.validation-action,
+.validation-progress,
+.validation-metric {
+  padding: 20px;
+  border: 1px solid #344e65;
+  border-radius: 10px;
+  background: #101c2a;
+  min-width: 0;
+}
+.validation-overview {
+  border-left: 4px solid #edc980;
+}
+.validation-overview.healthy {
+  border-left-color: #43dfb2;
+}
+.validation-overview.danger {
+  border-left-color: #ff9c9c;
+}
+.validation-session {
+  font-size: clamp(20px, 2.5vw, 26px);
+  font-weight: 700;
+  margin-top: 0;
+}
+.validation-overview.healthy .validation-session {
+  color: #43dfb2;
+}
+.validation-overview.warning .validation-session {
+  color: #edc980;
+}
+.validation-overview.danger .validation-session {
+  color: #ff9c9c;
+}
+.validation-overview p:last-child,
+.validation-action p:last-child {
+  margin-bottom: 0;
+}
+.validation-action {
+  margin-top: 16px;
+  background: #182537;
+}
+.validation-progress {
+  margin: 20px 0;
+}
+.validation-progress-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.validation-progress-heading strong {
+  font-size: 32px;
+}
+.deepbook-validation progress {
+  display: block;
+  width: 100%;
+  height: 16px;
+  margin: 16px 0;
+  accent-color: #43dfb2;
+  border: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #2a3e52;
+}
+.deepbook-validation progress::-webkit-progress-bar {
+  background: #2a3e52;
+}
+.deepbook-validation progress::-webkit-progress-value {
+  background: #43dfb2;
+}
+.deepbook-validation progress::-moz-progress-bar {
+  background: #43dfb2;
+}
+.validation-time-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.validation-time-grid strong {
+  display: block;
+  font-size: 23px;
+  margin-top: 6px;
+}
+.validation-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+  align-items: stretch;
+}
+.validation-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.validation-metric h3,
+.validation-metric p {
+  margin: 0;
+}
+.validation-value {
+  font-size: clamp(22px, 2.2vw, 30px);
+  line-height: 1.4;
+}
+.validation-metric small {
+  margin-top: auto;
+  line-height: 1.7;
+  color: #b0c1cf;
+  letter-spacing: normal;
+}
+.validation-help {
+  color: #b0c1cf;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.validation-warnings {
+  color: #ffbdad;
+}
+.deepbook-validation a {
+  color: #9bd9ff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.deepbook-validation > details {
+  border: 1px solid #344e65;
+  border-radius: 8px;
+  padding: 0 16px;
+  margin: 12px 0;
+  background: #101c2a;
+}
+.deepbook-validation > details > summary {
+  font-weight: 600;
+}
+.deepbook-validation details[open] {
+  padding-bottom: 16px;
+}
+.deepbook-validation :is(button, summary, a):focus-visible {
+  outline: 3px solid #9bd9ff;
+  outline-offset: 4px;
+}
+@media (max-width: 1100px) {
+  .validation-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 600px) {
+  .validation-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .validation-overview,
+  .validation-action,
+  .validation-progress,
+  .validation-metric {
+    padding: 16px;
+  }
+  .validation-value {
+    font-size: 26px;
+  }
+  .validation-time-grid {
+    gap: 12px;
+  }
+  .validation-time-grid strong {
+    font-size: 20px;
+  }
+  .deepbook-validation > details {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
