@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "deepbook-overview": {
+      "source": "mystenlabs/skills",
+      "sourceType": "github",
+      "skillPath": "deepbook-overview/SKILL.md",
+      "computedHash": "a33fa835cf9450b7937a73074cfebf2d91c01ee426a609445b1317774f144e4c"
+    },
+    "deepbook-sdk": {
+      "source": "mystenlabs/skills",
+      "sourceType": "github",
+      "skillPath": "deepbook-sdk/SKILL.md",
+      "computedHash": "f86858eedf171ec162ee1238f729491536e6a3667420f9bcb7b41a98fbf09216"
+    }
+  }
+}
