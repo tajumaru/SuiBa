@@ -1,3 +1,11 @@
+import {
+  gaps,
+  reconstructFiveMinutes,
+  validEmptyProof,
+  type EmptyTradeProof,
+  type CandleQuality,
+  type MarketCandle,
+} from "./reconstruction.ts";
 import { z } from "zod";
 import { apiFetch } from "../../shared/src/api.ts";
 import {
@@ -20,11 +28,11 @@ const row = z.tuple([
   z.ZodNumber,
   z.ZodNumber,
 ]);
-export function normalizeDeepBook(
+export function parseDeepBook(
   raw: unknown,
-  tf: Timeframe,
+  tf: number,
   now: number,
-): Candle[] {
+): MarketCandle[] {
   const rows = z.object({ candles: z.array(row) }).parse(raw).candles;
   const ms = (rows[0]?.[0] ?? 0) >= 1e12;
   if (rows.some((r) => r[0] >= 1e12 !== ms)) throw new Error("INVALID_CANDLE");
@@ -53,12 +61,19 @@ export function normalizeDeepBook(
       x.low > x.high
     )
       throw new Error("INVALID_CANDLE");
-  return validateCandles(
-    c.filter((x) => (x.timestamp + tf) * 1000 <= now),
-    tf,
-    now,
-  );
+  const closed = c.filter((x) => (x.timestamp + tf) * 1000 <= now);
+  if (new Set(closed.map((x) => x.timestamp)).size !== closed.length)
+    throw new Error("INVALID_CANDLE");
+  return closed;
 }
+export function normalizeDeepBook(
+  raw: unknown,
+  tf: Timeframe,
+  now: number,
+): Candle[] {
+  return validateCandles(parseDeepBook(raw, tf, now) as Candle[], tf, now);
+}
+
 const level = z.tuple([z.string().min(1), z.string().min(1)]);
 export interface Book {
   timestamp: number;
@@ -120,6 +135,13 @@ type ReadJson = (path: string, ttl?: number) => Promise<unknown>;
 export class DeepBookMarketData {
   book: Book | null = null;
   private bookRaw: unknown;
+  private qualities: Record<number, CandleQuality> = {};
+  private proofs = new Map<number, EmptyTradeProof>();
+  private needsRefresh = false;
+  private indexedThrough = 0;
+  quality() {
+    return structuredClone(this.qualities);
+  }
   constructor(
     private limits: () => { maxOrder: number; maxSlippage: number },
     private read: ReadJson = async (path, ttl = 0) =>
@@ -132,6 +154,7 @@ export class DeepBookMarketData {
           { timeoutMs: 8000, maxTransientRetries: 2 },
         )
       ).json(),
+    private reconstruct = false,
   ) {}
   async prepare(now = Date.now()) {
     const pools = z
@@ -154,12 +177,24 @@ export class DeepBookMarketData {
       p.quote_asset_decimals !== 6
     )
       throw new Error("MARKET_PAIR_MISMATCH");
+    await this.refresh();
+  }
+  private async refresh() {
     const status = z
       .object({
         status: z.string(),
         current_time_ms: z.number(),
         max_checkpoint_lag: z.number(),
         max_time_lag_seconds: z.number(),
+        pipelines: z
+          .array(
+            z.object({
+              pipeline: z.string(),
+              indexed_timestamp_ms: z.number(),
+              is_backfill: z.boolean().optional(),
+            }),
+          )
+          .optional(),
       })
       .parse(
         await this.read(
@@ -175,8 +210,18 @@ export class DeepBookMarketData {
       Math.abs(checked - status.current_time_ms) > 10000
     )
       throw new Error("INDEXER_DELAYED");
+    this.indexedThrough =
+      status.pipelines?.find(
+        (p) => p.pipeline === "order_fill" && !p.is_backfill,
+      )?.indexed_timestamp_ms ?? 0;
     this.bookRaw = await this.read("/orderbook/SUI_USDC?level=2&depth=10");
     this.assertReady(Date.now());
+  }
+  async finalize() {
+    if (this.needsRefresh) {
+      await this.refresh();
+      this.needsRefresh = false;
+    }
   }
   assertReady(now: number) {
     const limits = this.limits();
@@ -188,14 +233,134 @@ export class DeepBookMarketData {
     );
   }
   async candles(tf: Timeframe, now = Date.now()) {
-    const interval = tf === 300 ? "5m" : tf === 900 ? "15m" : "1h";
-    return normalizeDeepBook(
-      await this.read(
-        "/ohclv/SUI_USDC?interval=" + interval + "&limit=1000",
-        20000,
-      ),
-      tf,
-      Math.max(now, Date.now()),
+    const interval = tf === 300 ? "5m" : tf === 900 ? "15m" : "1h",
+      began = Date.now();
+    const raw = await this.read(
+      "/ohclv/SUI_USDC?interval=" + interval + "&limit=1000",
+      20000,
     );
+    const c = parseDeepBook(raw, tf, Math.max(now, Date.now())) as Candle[];
+    const holes = tf === 300 ? gaps(c) : [];
+    const missingCount =
+      tf === 300
+        ? holes.length
+        : c
+            .slice(1)
+            .reduce(
+              (n, x, i) =>
+                n + Math.max(0, (x.timestamp - c[i].timestamp) / tf - 1),
+              0,
+            );
+    const quality: CandleQuality = {
+      upstream: "DeepBook Indexer",
+      pair: "SUI_USDC",
+      fetchedAt: Date.now(),
+      timeframe: tf,
+      missing: missingCount,
+      reconstructed: 0,
+      unresolved: missingCount,
+      latestClosedAt: c.length ? (c.at(-1)!.timestamp + tf) * 1000 : null,
+      origins: {
+        ORIGINAL: c.length,
+        ONE_MINUTE_AGGREGATE: 0,
+        NO_INDEXED_TRADES: 0,
+      },
+    };
+    this.qualities[tf] = quality;
+    if (this.reconstruct && tf === 300 && holes.length) {
+      this.needsRefresh = true;
+      // Bounded startup work; retry on a later cycle never resumes a stopped bot.
+      if (holes.length > 64) throw new Error("CANDLE_GAP");
+      const minutes: MarketCandle[] = [];
+      let cursor = (c.at(-1)!.timestamp + 300) * 1000 - 1000;
+      for (let page = 0; page < 8; page++) {
+        if (Date.now() - began > 45000) throw new Error("CANDLE_GAP");
+        const rows = parseDeepBook(
+          await this.read(
+            "/ohclv/SUI_USDC?interval=1m&start_time=" +
+              c[0].timestamp * 1000 +
+              "&end_time=" +
+              cursor +
+              "&limit=1000",
+            20000,
+          ),
+          60,
+          Date.now(),
+        );
+        minutes.push(...rows);
+        if (rows.length < 1000) break;
+        const earliest = rows[0].timestamp * 1000;
+        if (earliest >= cursor) throw new Error("INVALID_CANDLE");
+        cursor = earliest - 1000;
+        if (cursor < c[0].timestamp * 1000) break;
+        if (page === 7) throw new Error("CANDLE_GAP");
+      }
+      await this.refresh();
+      const indexedThrough = this.indexedThrough;
+      for (const t of holes) {
+        if (Date.now() - began > 45000) break;
+        if (minutes.some((x) => x.timestamp >= t && x.timestamp < t + 300))
+          continue;
+        if (validEmptyProof(this.proofs.get(t), t, Date.now())) continue;
+        if (
+          (t + 300) * 1000 > Date.now() - 120000 ||
+          indexedThrough < (t + 300) * 1000
+        )
+          continue;
+        const path =
+          "/trades/SUI_USDC?start_time=" +
+          t +
+          "&end_time=" +
+          (t + 300) +
+          "&limit=1000";
+        const trades = z
+          .array(z.object({ timestamp: z.number().int().positive() }))
+          .parse(await this.read(path));
+        if (
+          trades.some(
+            (x) => x.timestamp < t * 1000 || x.timestamp > (t + 300) * 1000,
+          )
+        )
+          throw new Error("INVALID_CANDLE");
+        this.proofs.set(t, {
+          source: "DeepBook Indexer",
+          pair: "SUI_USDC",
+          start: t,
+          end: t + 300,
+          fetchedAt: Date.now(),
+          indexedThrough,
+          complete: trades.length < 1000,
+          tradeCount: trades.filter((x) => x.timestamp < (t + 300) * 1000)
+            .length,
+          path,
+        });
+      }
+      for (const [t, p] of this.proofs)
+        if (Date.now() - p.fetchedAt > 3600000) this.proofs.delete(t);
+      const result = reconstructFiveMinutes(
+        c,
+        minutes,
+        this.proofs,
+        Date.now(),
+        quality.fetchedAt,
+      );
+      this.qualities[tf] = result.quality;
+      return validateCandles(result.candles, tf, Date.now());
+    }
+    const original = c.map((x) => ({
+      ...x,
+      source: this.reconstruct
+        ? "DeepBook:SUI_USDC:USDC:verified-v1"
+        : x.source,
+      provenance: {
+        origin: "ORIGINAL" as const,
+        upstream: "DeepBook Indexer" as const,
+        pair: "SUI_USDC" as const,
+        fetchedAt: quality.fetchedAt,
+        timeframe: tf,
+        evidence: ["/ohclv/SUI_USDC?interval=" + interval + "&limit=1000"],
+      },
+    }));
+    return validateCandles(original, tf, Date.now());
   }
 }

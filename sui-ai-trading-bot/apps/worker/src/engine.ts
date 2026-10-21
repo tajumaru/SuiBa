@@ -511,6 +511,8 @@ export class BotEngine {
         reasons: [code],
       });
     } finally {
+      const quality = this.market.status?.()?.quality;
+      if (quality) this.db.set("market_quality", quality);
       this.monitor.healthy();
       this.busy = false;
     }
@@ -555,6 +557,7 @@ export class BotEngine {
         .map((x) => x.equity);
     return {
       marketData: this.market.status?.() ?? null,
+      marketQuality: this.db.get("market_quality") ?? null,
       mode: "PAPER",
       runtime: this.db.runtime(),
       connection: this.sui.status,

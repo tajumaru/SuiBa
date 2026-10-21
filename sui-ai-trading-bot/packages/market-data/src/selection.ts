@@ -10,6 +10,8 @@ export class MarketSelection implements MarketDataProvider {
     private gecko: MarketDataProvider,
     private deep: MarketDataProvider & {
       prepare(now?: number): Promise<void>;
+      finalize?(): Promise<void>;
+      quality?(): Record<number, import("./reconstruction.ts").CandleQuality>;
       book?: {
         timestamp: number;
         bid: number;
@@ -33,7 +35,7 @@ export class MarketSelection implements MarketDataProvider {
     };
   }
   status() {
-    return { ...this.value };
+    return { ...this.value, quality: this.deep.quality?.() };
   }
   async candles(tf: Timeframe, now = Date.now()) {
     return (await this.frames(now))[tf];
@@ -64,6 +66,7 @@ export class MarketSelection implements MarketDataProvider {
         try {
           await this.deep.prepare(now);
           frames = await this.collect(this.deep, now);
+          await this.deep.finalize?.();
           this.deep.assertReady?.(Date.now());
           this.selected = this.deep;
           this.value.source = "DeepBook";

@@ -22,6 +22,9 @@ if (!token || token.length < 32)
 const marketMode = process.env.MARKET_DATA_PROVIDER ?? "geckoterminal";
 if (!["geckoterminal", "deepbook", "auto"].includes(marketMode))
   throw new Error("INVALID_MARKET_DATA_PROVIDER");
+const reconstruction = process.env.DEEPBOOK_RECONSTRUCT_CANDLES ?? "off";
+if (!["off", "verified"].includes(reconstruction))
+  throw new Error("INVALID_DEEPBOOK_RECONSTRUCTION");
 const db = new BotDatabase(process.env.DATABASE_PATH ?? "data/bot.sqlite");
 const sui = new ReadOnlySuiClient(process.env.SUI_GRPC_URL),
   engine = new BotEngine(
@@ -29,7 +32,11 @@ const sui = new ReadOnlySuiClient(process.env.SUI_GRPC_URL),
     new MarketSelection(
       marketMode as "geckoterminal" | "deepbook" | "auto",
       new GeckoMarketData(process.env.MARKET_POOL || undefined),
-      new DeepBookMarketData(() => db.settings()),
+      new DeepBookMarketData(
+        () => db.settings(),
+        undefined,
+        reconstruction === "verified",
+      ),
     ),
     new CetusRouter(),
     sui,

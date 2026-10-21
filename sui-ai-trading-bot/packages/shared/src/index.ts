@@ -58,7 +58,16 @@ export const atomic = (amount: string | number, type: string) =>
 export const units = (amount: string, type: string) =>
   new Decimal(amount).div(new Decimal(10).pow(decimals(type))).toNumber();
 export type Timeframe = 300 | 900 | 3600;
+export interface CandleProvenance {
+  origin: "ORIGINAL" | "ONE_MINUTE_AGGREGATE" | "NO_INDEXED_TRADES";
+  upstream: "DeepBook Indexer";
+  pair: "SUI_USDC";
+  fetchedAt: number;
+  timeframe: number;
+  evidence: string[];
+}
 export interface Candle {
+  provenance?: CandleProvenance;
   timestamp: number;
   open: number;
   high: number;

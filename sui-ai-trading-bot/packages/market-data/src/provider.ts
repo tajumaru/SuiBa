@@ -1,6 +1,8 @@
+import type { CandleQuality } from "./reconstruction.ts";
 import type { Candle, Timeframe } from "../../shared/src/index.ts";
 export type Frames = Record<number, Candle[]>;
 export interface MarketStatus {
+  quality?: Record<number, CandleQuality>;
   configured: string;
   source: string | null;
   fallback: boolean;

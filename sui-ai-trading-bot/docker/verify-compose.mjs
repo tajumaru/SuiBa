@@ -204,6 +204,7 @@ try {
     "Running complete unit/integration regression suite inside Linux container",
   );
   docker("cp", "tests", `${cid}:/app/tests`);
+  docker("cp", "docs", `${cid}:/app/docs`);
   const tests = docker(
     "exec",
     cid,
