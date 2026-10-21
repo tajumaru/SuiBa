@@ -1,0 +1,32 @@
+{
+  "repo": "https://github.com/MystenLabs/deepbookv3",
+  "commit": "276cca90cdaca2c3bf824cf03c313dda5e0beb8b",
+  "files": [
+    {
+      "file": "upstream-server.rs",
+      "sha256": "52eb8af520ae3c8c76c236d16c639b15c6dfa847aefb313ef9edbd78cb63f37a"
+    },
+    {
+      "file": "upstream-reader.rs",
+      "sha256": "af8b80dde3e8e7077d30504ae9bb3650d28f9803e13e4fd9726515f86db15dd8"
+    },
+    {
+      "file": "upstream-src-live_ohclv.rs",
+      "sha256": "86e281d95e7afc6d030353e1ac30806f77c198cc5af73131f18d7bd596cf8cc4"
+    },
+    {
+      "file": "upstream-2025-09-30-202714-0000_add_ohclv-up.sql",
+      "sha256": "da6ca302eebe2290e1bb035253f6025ce65d8f7f3774b3d5cf262731d43b068b"
+    },
+    {
+      "file": "upstream-2026-08-21-000000-0000_align_ohclv_refresh_windows-up.sql",
+      "sha256": "2bab6c906ec632adb11e192b50b47e29a727fbb109f6a7b0e3bd40c18588a2af"
+    }
+  ],
+  "findings": {
+    "ohclvTimeUnit": "milliseconds in server::ohclv, converted to seconds in Reader::get_ohclv",
+    "tradesTimeUnit": "seconds, ParameterUtil multiplies by 1000",
+    "emptyBuckets": "get_ohclv groups existing ohclv_1m rows; no generate_series or zero-row generation",
+    "liveOverlay": "recent raw fills only; no synthetic empty candles"
+  }
+}

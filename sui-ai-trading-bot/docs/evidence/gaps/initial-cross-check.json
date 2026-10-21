@@ -1,0 +1,930 @@
+{
+  "observedAt": 1792574130279,
+  "requests": [
+    {
+      "label": "gap",
+      "path": "/trades/SUI_USDC?start_time=1792244100&end_time=1792244400&limit=1000",
+      "status": 200,
+      "elapsedMs": 848,
+      "raw": []
+    },
+    {
+      "label": "neighbor",
+      "path": "/trades/SUI_USDC?start_time=1792243800&end_time=1792244100&limit=3",
+      "status": 200,
+      "elapsedMs": 863,
+      "raw": [
+        {
+          "type": "sell",
+          "price": 0.99027,
+          "maker_order_id": "18267275700616431142988926",
+          "quote_volume": 2.277621,
+          "timestamp": 1792244025669,
+          "taker_is_bid": false,
+          "maker_fee_is_deep": false,
+          "taker_fee": 0.021352,
+          "base_volume": 2.3,
+          "digest": "E8bRNsLUFv7XKBJEc2tK7TYYCZFix9yxawWhaNdGp4s6",
+          "taker_client_order_id": "0",
+          "trade_id": "36492658845441468395738076",
+          "maker_client_order_id": "-1",
+          "taker_balance_manager_id": "0x7f661e2e39df0659291530f0a62c8ad7e5de2b027b41eb0f01ce6b4da2abe11a",
+          "maker_fee": 0,
+          "taker_order_id": "170141183460487457114832128753136854878",
+          "taker_fee_is_deep": true,
+          "maker_balance_manager_id": "0xd98ae3b0d38f34ef1a1cc6c36f703f8873d7308a25d4ff88229820753e1fad63",
+          "event_digest": "E8bRNsLUFv7XKBJEc2tK7TYYCZFix9yxawWhaNdGp4s64"
+        },
+        {
+          "base_volume": 3.5,
+          "taker_is_bid": false,
+          "taker_order_id": "170141183460487446046785684527405885271",
+          "taker_fee": 0.032486,
+          "maker_fee": 0,
+          "quote_volume": 3.465245,
+          "taker_client_order_id": "0",
+          "digest": "8MkEbnHYSWUuPwjZHznXc4SSqiJrCBvWHhJjBzkuUDLb",
+          "price": 0.99007,
+          "type": "sell",
+          "maker_fee_is_deep": false,
+          "trade_id": "36477901450182500754445279",
+          "taker_balance_manager_id": "0xbc01308f43eabed45518e33c24f71d7a91a404183cd750cf80da71bf46b4ccc2",
+          "timestamp": 1792244025013,
+          "event_digest": "8MkEbnHYSWUuPwjZHznXc4SSqiJrCBvWHhJjBzkuUDLb3",
+          "taker_fee_is_deep": true,
+          "maker_balance_manager_id": "0xd98ae3b0d38f34ef1a1cc6c36f703f8873d7308a25d4ff88229820753e1fad63",
+          "maker_order_id": "18263586351801689232665736",
+          "maker_client_order_id": "-1"
+        },
+        {
+          "quote_volume": 2048.692516,
+          "maker_fee_is_deep": false,
+          "maker_fee": 0,
+          "digest": "CegQNoMsw5JtfwTXduW9z8FATKnqmBXpv2td4jsccUMq",
+          "taker_fee": 0.512173,
+          "trade_id": "36545416533492277713359821",
+          "taker_is_bid": true,
+          "taker_client_order_id": "0",
+          "maker_balance_manager_id": "0xd335e8aa19d6dc04273d77e364c936bad69db4905a4ab3b2733d644dd2b31e0a",
+          "event_digest": "CegQNoMsw5JtfwTXduW9z8FATKnqmBXpv2td4jsccUMq2",
+          "type": "buy",
+          "taker_fee_is_deep": false,
+          "base_volume": 2068.3,
+          "maker_order_id": "170141183460487503600627194501206927175",
+          "timestamp": 1792244024743,
+          "price": 0.99052,
+          "maker_client_order_id": "-3211687035967760541",
+          "taker_order_id": "18273547593601492390538374",
+          "taker_balance_manager_id": "0xf9fd84455c06287355a3aac71ac9d3ad47c24936c709f639fb7848bc2c965726"
+        }
+      ]
+    },
+    {
+      "label": "minutes",
+      "path": "/ohclv/SUI_USDC?interval=1m&start_time=1792243800000&end_time=1792244700000&limit=1000",
+      "status": 200,
+      "elapsedMs": 754,
+      "raw": {
+        "candles": [
+          [
+            1792244700000,
+            0.98831,
+            0.98831,
+            0.98831,
+            0.98831,
+            9.5
+          ],
+          [
+            1792244520000,
+            0.9878,
+            0.9878,
+            0.98769,
+            0.98769,
+            183.8
+          ],
+          [
+            1792243980000,
+            0.99052,
+            0.9906,
+            0.99007,
+            0.99027,
+            2326.6
+          ],
+          [
+            1792243920000,
+            0.98967,
+            0.98967,
+            0.98967,
+            0.98967,
+            33.6
+          ],
+          [
+            1792243800000,
+            0.98957,
+            0.98957,
+            0.98957,
+            0.98957,
+            71.1
+          ]
+        ]
+      }
+    },
+    {
+      "label": "status",
+      "path": "/status?max_checkpoint_lag=100&max_time_lag_seconds=60",
+      "status": 200,
+      "elapsedMs": 318,
+      "raw": {
+        "status": "OK",
+        "latest_onchain_checkpoint": 336431030,
+        "current_time_ms": 1792574130126,
+        "earliest_checkpoint": 336431026,
+        "max_lag_pipeline": "price_tolerance_updated",
+        "pipelines": [
+          {
+            "pipeline": "loan_repaid@backfill_collateral",
+            "indexed_checkpoint": 237234242,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099590437,
+            "checkpoint_lag": 99196788,
+            "time_lag_seconds": 23474539,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "withdraw_collateral@backfill_collateral",
+            "indexed_checkpoint": 237234240,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099589892,
+            "checkpoint_lag": 99196790,
+            "time_lag_seconds": 23474540,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "loan_borrowed@backfill_collateral",
+            "indexed_checkpoint": 237234240,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099589892,
+            "checkpoint_lag": 99196790,
+            "time_lag_seconds": 23474540,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "asset_withdrawn@backfill_collateral",
+            "indexed_checkpoint": 237234242,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099590437,
+            "checkpoint_lag": 99196788,
+            "time_lag_seconds": 23474539,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "margin_manager_created@backfill_collateral",
+            "indexed_checkpoint": 237234242,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099590437,
+            "checkpoint_lag": 99196788,
+            "time_lag_seconds": 23474539,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "liquidation@backfill_collateral",
+            "indexed_checkpoint": 237234244,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099590948,
+            "checkpoint_lag": 99196786,
+            "time_lag_seconds": 23474539,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "maintainer_cap_updated@backfill_collateral",
+            "indexed_checkpoint": 237234240,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099589892,
+            "checkpoint_lag": 99196790,
+            "time_lag_seconds": 23474540,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "margin_pool_created@backfill_collateral",
+            "indexed_checkpoint": 237234242,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099590437,
+            "checkpoint_lag": 99196788,
+            "time_lag_seconds": 23474539,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "deepbook_pool_config_updated@backfill_collateral",
+            "indexed_checkpoint": 237234242,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099590437,
+            "checkpoint_lag": 99196788,
+            "time_lag_seconds": 23474539,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "asset_supplied@backfill_collateral",
+            "indexed_checkpoint": 237234242,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099590437,
+            "checkpoint_lag": 99196788,
+            "time_lag_seconds": 23474539,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "deepbook_pool_updated@backfill_collateral",
+            "indexed_checkpoint": 237234242,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099590437,
+            "checkpoint_lag": 99196788,
+            "time_lag_seconds": 23474539,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "deepbook_pool_updated_registry@backfill_collateral",
+            "indexed_checkpoint": 237234242,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099590437,
+            "checkpoint_lag": 99196788,
+            "time_lag_seconds": 23474539,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "conditional_order_added@backfill_collateral",
+            "indexed_checkpoint": 237234242,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099590437,
+            "checkpoint_lag": 99196788,
+            "time_lag_seconds": 23474539,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "conditional_order_executed@backfill_collateral",
+            "indexed_checkpoint": 237234242,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099590437,
+            "checkpoint_lag": 99196788,
+            "time_lag_seconds": 23474539,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "interest_params_updated@backfill_collateral",
+            "indexed_checkpoint": 237234242,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099590437,
+            "checkpoint_lag": 99196788,
+            "time_lag_seconds": 23474539,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "deepbook_pool_registered@backfill_collateral",
+            "indexed_checkpoint": 237234240,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099589892,
+            "checkpoint_lag": 99196790,
+            "time_lag_seconds": 23474540,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "supply_referral_minted@backfill_collateral",
+            "indexed_checkpoint": 237234240,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099589892,
+            "checkpoint_lag": 99196790,
+            "time_lag_seconds": 23474540,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "maintainer_fees_withdrawn@backfill_collateral",
+            "indexed_checkpoint": 237234242,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099590437,
+            "checkpoint_lag": 99196788,
+            "time_lag_seconds": 23474539,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "conditional_order_insufficient_funds@backfill_collateral",
+            "indexed_checkpoint": 237234240,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099589892,
+            "checkpoint_lag": 99196790,
+            "time_lag_seconds": 23474540,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "deposit_collateral@backfill_collateral",
+            "indexed_checkpoint": 237234242,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099590437,
+            "checkpoint_lag": 99196788,
+            "time_lag_seconds": 23474539,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "margin_pool_config_updated@backfill_collateral",
+            "indexed_checkpoint": 237234240,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099589892,
+            "checkpoint_lag": 99196790,
+            "time_lag_seconds": 23474540,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "supplier_cap_minted@backfill_collateral",
+            "indexed_checkpoint": 237234240,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099589892,
+            "checkpoint_lag": 99196790,
+            "time_lag_seconds": 23474540,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "pause_cap_updated@backfill_collateral",
+            "indexed_checkpoint": 237234240,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099589892,
+            "checkpoint_lag": 99196790,
+            "time_lag_seconds": 23474540,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "referral_fees_claimed@backfill_collateral",
+            "indexed_checkpoint": 237234242,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099590437,
+            "checkpoint_lag": 99196788,
+            "time_lag_seconds": 23474539,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "protocol_fees_withdrawn@backfill_collateral",
+            "indexed_checkpoint": 237234240,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099589892,
+            "checkpoint_lag": 99196790,
+            "time_lag_seconds": 23474540,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "protocol_fees_increased@backfill_collateral",
+            "indexed_checkpoint": 237234242,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099590437,
+            "checkpoint_lag": 99196788,
+            "time_lag_seconds": 23474539,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "conditional_order_cancelled@backfill_collateral",
+            "indexed_checkpoint": 237234242,
+            "indexed_epoch": 1015,
+            "indexed_timestamp_ms": 1769099590437,
+            "checkpoint_lag": 99196788,
+            "time_lag_seconds": 23474539,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": true
+          },
+          {
+            "pipeline": "maintainer_cap_updated",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "trade_params_update",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "protocol_fees_withdrawn",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "maintainer_fees_withdrawn",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "price_tolerance_updated",
+            "indexed_checkpoint": 336431026,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128125,
+            "checkpoint_lag": 4,
+            "time_lag_seconds": 2,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "deepbook_pool_updated",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "margin_pool_config_updated",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "deep_burned",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "protocol_fees_increased",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "proposals",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "referral_claimed",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "pause_cap_updated",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "referral_fee_events",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "stakes",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "asset_withdrawn",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "current_price_updated",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "supply_referral_minted",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "book_params_updated",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "order_fill",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "deepbook_referral_created_event",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "conditional_order_cancelled",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "withdraw_collateral",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "rebates",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "conditional_order_executed",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "balance_manager_event",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "referral_fees_claimed",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "deepbook_referral_set_event",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "flash_loan",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "deepbook_pool_registered",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "loan_repaid",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "loan_borrowed",
+            "indexed_checkpoint": 336431026,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128125,
+            "checkpoint_lag": 4,
+            "time_lag_seconds": 2,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "pool_created",
+            "indexed_checkpoint": 336431026,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128125,
+            "checkpoint_lag": 4,
+            "time_lag_seconds": 2,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "supplier_cap_minted",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "pool_price",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "rebates_v2",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "interest_params_updated",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "balances",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "conditional_order_added",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "ewma_updates",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "votes",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "margin_pool_created",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "asset_supplied",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "liquidation",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "order_update",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "deposit_collateral",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "margin_manager_created",
+            "indexed_checkpoint": 336431026,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128125,
+            "checkpoint_lag": 4,
+            "time_lag_seconds": 2,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "max_price_age_updated",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "taker_fee_penalty_applied",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "deepbook_pool_config_updated",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "deepbook_pool_updated_registry",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          },
+          {
+            "pipeline": "conditional_order_insufficient_funds",
+            "indexed_checkpoint": 336431028,
+            "indexed_epoch": 1287,
+            "indexed_timestamp_ms": 1792574128584,
+            "checkpoint_lag": 2,
+            "time_lag_seconds": 1,
+            "latest_onchain_checkpoint": 336431030,
+            "is_backfill": false
+          }
+        ],
+        "max_checkpoint_lag": 4,
+        "max_time_lag_seconds": 2
+      }
+    }
+  ]
+}

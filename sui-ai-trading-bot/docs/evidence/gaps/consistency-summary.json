@@ -1,0 +1,10 @@
+{
+  "gaps": 43,
+  "zeroTrades": 43,
+  "gapsWithMinutes": 0,
+  "minuteDuplicate": 0,
+  "minuteFiveMatches": 999,
+  "mismatch": [],
+  "finalStatus": "OK",
+  "lag": 1
+}

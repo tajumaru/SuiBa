@@ -1,0 +1,48 @@
+{
+  "observedAt": 1792575393527,
+  "results": [
+    {
+      "unit": "seconds",
+      "path": "/ohclv/SUI_USDC?interval=5m&start_time=1792243800&end_time=1792244700&limit=1000",
+      "status": 200,
+      "elapsedMs": 1063,
+      "raw": {
+        "candles": []
+      }
+    },
+    {
+      "unit": "milliseconds",
+      "path": "/ohclv/SUI_USDC?interval=5m&start_time=1792243800000&end_time=1792244700000&limit=1000",
+      "status": 200,
+      "elapsedMs": 235,
+      "raw": {
+        "candles": [
+          [
+            1792244700000,
+            0.98831,
+            0.98831,
+            0.98831,
+            0.98831,
+            9.5
+          ],
+          [
+            1792244400000,
+            0.9878,
+            0.9878,
+            0.98769,
+            0.98769,
+            183.8
+          ],
+          [
+            1792243800000,
+            0.98957,
+            0.9906,
+            0.98957,
+            0.99027,
+            2431.3
+          ]
+        ]
+      }
+    }
+  ]
+}

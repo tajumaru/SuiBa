@@ -1,0 +1,536 @@
+{
+  "quality": {
+    "upstream": "DeepBook Indexer",
+    "pair": "SUI_USDC",
+    "fetchedAt": 1792574316622,
+    "timeframe": 300,
+    "missing": 43,
+    "reconstructed": 43,
+    "unresolved": 0,
+    "latestClosedAt": 1792553400000,
+    "origins": {
+      "ORIGINAL": 999,
+      "ONE_MINUTE_AGGREGATE": 0,
+      "NO_INDEXED_TRADES": 43
+    }
+  },
+  "classification": [
+    {
+      "timestamp": 1792244100,
+      "utc": "2026-10-17T13:35:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792245300,
+      "utc": "2026-10-17T13:55:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792249800,
+      "utc": "2026-10-17T15:10:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792251000,
+      "utc": "2026-10-17T15:30:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792252500,
+      "utc": "2026-10-17T15:55:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792253100,
+      "utc": "2026-10-17T16:05:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792257900,
+      "utc": "2026-10-17T17:25:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792263300,
+      "utc": "2026-10-17T18:55:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792263600,
+      "utc": "2026-10-17T19:00:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792265100,
+      "utc": "2026-10-17T19:25:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792266600,
+      "utc": "2026-10-17T19:50:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792266900,
+      "utc": "2026-10-17T19:55:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792270200,
+      "utc": "2026-10-17T20:50:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792270500,
+      "utc": "2026-10-17T20:55:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792276500,
+      "utc": "2026-10-17T22:35:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792281300,
+      "utc": "2026-10-17T23:55:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792283700,
+      "utc": "2026-10-18T00:35:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792288800,
+      "utc": "2026-10-18T02:00:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792291500,
+      "utc": "2026-10-18T02:45:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792294200,
+      "utc": "2026-10-18T03:30:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792295400,
+      "utc": "2026-10-18T03:50:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792297500,
+      "utc": "2026-10-18T04:25:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792303800,
+      "utc": "2026-10-18T06:10:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792305600,
+      "utc": "2026-10-18T06:40:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792306200,
+      "utc": "2026-10-18T06:50:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792309500,
+      "utc": "2026-10-18T07:45:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792309800,
+      "utc": "2026-10-18T07:50:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792311000,
+      "utc": "2026-10-18T08:10:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792311900,
+      "utc": "2026-10-18T08:25:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792312200,
+      "utc": "2026-10-18T08:30:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792312800,
+      "utc": "2026-10-18T08:40:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792313400,
+      "utc": "2026-10-18T08:50:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792329300,
+      "utc": "2026-10-18T13:15:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792341900,
+      "utc": "2026-10-18T16:45:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792344000,
+      "utc": "2026-10-18T17:20:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792344300,
+      "utc": "2026-10-18T17:25:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792347000,
+      "utc": "2026-10-18T18:10:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792347600,
+      "utc": "2026-10-18T18:20:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792347900,
+      "utc": "2026-10-18T18:25:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792350900,
+      "utc": "2026-10-18T19:15:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792374900,
+      "utc": "2026-10-19T01:55:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792446000,
+      "utc": "2026-10-19T21:40:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    },
+    {
+      "timestamp": 1792456800,
+      "utc": "2026-10-20T00:40:00.000Z",
+      "classification": "NO_INDEXED_TRADES",
+      "trades": 0,
+      "minuteCount": 0,
+      "scope": "official Indexer; no exhaustive independent chain absence proof"
+    }
+  ],
+  "beforeIndicators": {
+    "diagnosticOnly": true,
+    "validTradingInput": false,
+    "values": {
+      "ema20": 1.0277514421796314,
+      "ema50": 1.029096385547156,
+      "rsi": 41.783503894406046,
+      "macd": -0.0017150209549186002,
+      "signal": -0.001370768598879277,
+      "histogram": -0.0003442523560393232,
+      "atr": 0.0023924123229137487,
+      "volumeChange": -0.6401682001748616,
+      "priceChange": 0.0007907067551737867
+    }
+  },
+  "afterIndicators": {
+    "ema20": 1.0277514421796314,
+    "ema50": 1.0290963857918631,
+    "rsi": 41.783503894364095,
+    "macd": -0.0017150209549199324,
+    "signal": -0.0013707685988815766,
+    "histogram": -0.0003442523560383559,
+    "atr": 0.002392412322905411,
+    "volumeChange": -0.6401682001748616,
+    "priceChange": 0.0007907067551737867
+  },
+  "difference": {
+    "ema20": 0,
+    "ema50": 2.447071434374948e-10,
+    "rsi": -4.1950443119276315e-11,
+    "macd": -1.3322676295501878e-15,
+    "signal": -2.299592807841755e-15,
+    "histogram": 9.67325178291567e-16,
+    "atr": -8.337514706413529e-15,
+    "volumeChange": 0,
+    "priceChange": 0
+  },
+  "decisions": {
+    "scope": "same UTC decision points, flat position, unchanged default rule-based strategy; invalid original prefix WAIT",
+    "before": {
+      "BUY": 0,
+      "SELL": 0,
+      "WAIT": 981
+    },
+    "after": {
+      "BUY": 0,
+      "SELL": 0,
+      "WAIT": 981
+    }
+  },
+  "fifteenConsistency": {
+    "filledConvention": {
+      "matches": 337,
+      "mismatches": 10
+    },
+    "originalTradeOnlyConvention": {
+      "matches": 347,
+      "mismatches": 0
+    }
+  },
+  "maxDiagnosticDelta": {
+    "ema20": {
+      "absolute": 0.0016513179889187102,
+      "timestamp": 1792266900
+    },
+    "ema50": {
+      "absolute": 0.0013020709221137627,
+      "timestamp": 1792260900
+    },
+    "rsi": {
+      "absolute": 5.266365710011442,
+      "timestamp": 1792314300
+    },
+    "macd": {
+      "absolute": 0.0006223557242670541,
+      "timestamp": 1792270500
+    },
+    "signal": {
+      "absolute": 0.0007607852695988342,
+      "timestamp": 1792263600
+    },
+    "histogram": {
+      "absolute": 0.00045185648682542854,
+      "timestamp": 1792265100
+    },
+    "atr": {
+      "absolute": 0.0006593822490470374,
+      "timestamp": 1792347900
+    },
+    "volumeChange": {
+      "absolute": 8087.538461538461,
+      "timestamp": 1792344000
+    },
+    "priceChange": {
+      "absolute": 0.0035869092966627214,
+      "timestamp": 1792295400
+    }
+  },
+  "backtest": {
+    "before": {
+      "blocked": "CANDLE_GAP"
+    },
+    "after": {
+      "model": "OHLCV_NEXT_OPEN_V2: synthetic quotes, NOT historical executable Cetus/DeepBook prices",
+      "on": {
+        "initialEquity": 100,
+        "finalEquity": 100,
+        "netProfitUsdc": 0,
+        "totalReturnPct": 0,
+        "maxDrawdown": 0,
+        "winRate": 0,
+        "profitFactor": null,
+        "tradeCount": 0,
+        "buyCount": 0,
+        "sellCount": 0,
+        "averageProfit": null,
+        "averageLoss": null,
+        "totalFees": 0,
+        "additionalFees": 0,
+        "dexFees": 0,
+        "totalGas": 0,
+        "profitWaitCount": 0,
+        "safetyRejectCount": 0,
+        "maxLosingStreak": 0,
+        "unrealizedPnl": 0,
+        "realizedPnl": 0,
+        "winRateDefinition": "Each partial SELL is one cost-allocated outcome; zero PnL counts in denominator, resets losing streak. Profit factor=null when losses=0."
+      },
+      "off": {
+        "initialEquity": 100,
+        "finalEquity": 100,
+        "netProfitUsdc": 0,
+        "totalReturnPct": 0,
+        "maxDrawdown": 0,
+        "winRate": 0,
+        "profitFactor": null,
+        "tradeCount": 0,
+        "buyCount": 0,
+        "sellCount": 0,
+        "averageProfit": null,
+        "averageLoss": null,
+        "totalFees": 0,
+        "additionalFees": 0,
+        "dexFees": 0,
+        "totalGas": 0,
+        "profitWaitCount": 0,
+        "safetyRejectCount": 0,
+        "maxLosingStreak": 0,
+        "unrealizedPnl": 0,
+        "realizedPnl": 0,
+        "winRateDefinition": "Each partial SELL is one cost-allocated outcome; zero PnL counts in denominator, resets losing streak. Profit factor=null when losses=0."
+      },
+      "eventsOn": 977
+    }
+  },
+  "paper": {
+    "kind": "single-cycle in-memory PAPER replay; synthetic quotes",
+    "runtime": {
+      "running": true,
+      "emergency": false,
+      "error": null,
+      "lastCandle": 1792553100
+    },
+    "decision": {
+      "action": "WAIT",
+      "confidence": 0,
+      "reason": "条件未成立",
+      "stopLossPct": 0.02,
+      "takeProfitPct": 0.04,
+      "timestamp": "2026-10-21T03:30:00.000Z"
+    },
+    "trades": 0
+  }
+}
