@@ -144,3 +144,7 @@ HTTP成功だけで売買適合とは扱わず、欠損と必要本数を確認�
 - scripts/probe-deepbook.mjs / docs/evidence/deepbook-readonly.json / 本書 / DEEPBOOK_SKILLS.md: 再現診断、公開データの根拠、追加知見。
 
 GeckoTerminalの過去ログの約10秒は応答ヘッダー取得前の期限到達を示すが、接続待ちかCDN/上流応答待ちかまでは確定できない。今回もDNS変更やIPv4強制を根拠なく追加していない。
+
+## 5分足欠損の追加調査
+
+43本のUTC時刻・約定履歴照合・再構築・指標影響・明示設定は[5分足欠損調査](DEEPBOOK_5M_GAP_INVESTIGATION.md)を参照してください。標準Providerは変更していません。

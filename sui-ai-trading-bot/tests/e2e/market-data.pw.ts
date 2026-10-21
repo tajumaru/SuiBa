@@ -26,6 +26,23 @@ test("shows Japanese source fallback and stale state without starting PAPER", as
   const state = {
     ...engine.snapshot(),
     marketData: {
+      quality: {
+        300: {
+          upstream: "DeepBook Indexer",
+          pair: "SUI_USDC",
+          fetchedAt: Date.now(),
+          timeframe: 300,
+          missing: 43,
+          reconstructed: 43,
+          unresolved: 0,
+          latestClosedAt: Math.floor(Date.now() / 300000) * 300000,
+          origins: {
+            ORIGINAL: 999,
+            NO_INDEXED_TRADES: 43,
+            ONE_MINUTE_AGGREGATE: 0,
+          },
+        },
+      },
       configured: "auto",
       source: "GeckoTerminal",
       fallback: true,
@@ -57,6 +74,8 @@ test("shows Japanese source fallback and stale state without starting PAPER", as
   await expect(region).toContainText("代替取得中");
   await expect(region).toContainText("自動再開しません");
   await expect(region).toContainText("350 ms");
+  await expect(region).toContainText("再構築 43本");
+  await expect(region).toContainText("未解決 0本");
   expect(writes).toEqual([]);
   const dims = await page.evaluate(() => ({
     width: innerWidth,

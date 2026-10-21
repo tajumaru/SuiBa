@@ -42,6 +42,22 @@ export function MarketDataPanel({
           最良売気配：{number(v.ask, 6)} ／ スプレッド：{percent(v.spread)}
         </p>
       )}
+      {v.quality?.[300] && (
+        <div aria-label="DeepBook 5分足の品質">
+          <p>
+            DeepBook 5分足の品質：元データ {v.quality[300].origins.ORIGINAL}本
+            ／ 再構築 {v.quality[300].reconstructed}本 ／ 未解決{" "}
+            {v.quality[300].unresolved}本
+          </p>
+          <p>
+            観測時刻：{dateTime(v.quality[300].fetchedAt)} ／ 最新確定足：
+            {dateTime(v.quality[300].latestClosedAt)}
+          </p>
+          <small>
+            再構築の根拠は各足に保存します。約定ゼロの確認範囲は公式Indexerです。
+          </small>
+        </div>
+      )}
       {v.reason && (
         <p>
           <Reason code={v.reason} />
