@@ -77,14 +77,30 @@ export function chartTicks(candles: Candle[], width: number) {
     candles.length > 0 &&
     chartTime(candles[0].timestamp).slice(0, 10) ===
       chartTime(candles.at(-1)!.timestamp).slice(0, 10);
-  return Array.from(
-    { length: count },
-    (_, i) =>
-      candles[Math.round((i * (candles.length - 1)) / Math.max(1, count - 1))],
-  ).map((b) => ({
-    timestamp: b.timestamp,
-    label: sameDay
-      ? chartTime(b.timestamp, false)
-      : chartTime(b.timestamp).slice(5),
-  }));
+  if (!candles.length) return [];
+  const first = candles[0].timestamp,
+    last = candles.at(-1)!.timestamp;
+  const candidates = Array.from({ length: count }, (_, i) => {
+    const target = first + (i * (last - first)) / Math.max(1, count - 1);
+    return candles.reduce((a, b) =>
+      Math.abs(b.timestamp - target) < Math.abs(a.timestamp - target) ? b : a,
+    );
+  });
+  const distinct = [
+    ...new Map(candidates.map((b) => [b.timestamp, b])).values(),
+  ];
+  let previous = -Infinity;
+  return distinct
+    .filter((b) => {
+      const position = ((b.timestamp - first) / (last - first || 1)) * width;
+      if (position - previous < 125) return false;
+      previous = position;
+      return true;
+    })
+    .map((b) => ({
+      timestamp: b.timestamp,
+      label: sameDay
+        ? chartTime(b.timestamp, false)
+        : chartTime(b.timestamp).slice(5),
+    }));
 }

@@ -316,9 +316,13 @@ function Chart(props: {
   candles: Candle[];
   kind: string;
   trades: State["trades"];
+  timeframe?: number;
 }) {
   return props.kind === "Price" ? (
-    <PriceChart {...props} />
+    <PriceChart
+      key={props.timeframe ?? props.candles[0]?.timeframe ?? 300}
+      {...props}
+    />
   ) : (
     <IndicatorChart {...props} />
   );
@@ -642,10 +646,11 @@ function App() {
                   ["Price", "RSI", "MACD"].map((kind) => (
                     <section key={kind}>
                       <h3>
-                        {label(kind) === "未確認" ? kind : label(kind)} · 確定
+                        {label(kind) === "未確認" ? kind : label(kind)} ·
                         {timeframe / 60}分足
                       </h3>
                       <Chart
+                        timeframe={timeframe}
                         candles={data.candlesByTimeframe[timeframe]}
                         kind={kind}
                         trades={data.trades}

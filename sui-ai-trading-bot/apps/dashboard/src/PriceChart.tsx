@@ -165,7 +165,7 @@ export function PriceChart({
           時間の範囲で表示します。追加のAPI取得は行いません。
         </p>
       )}
-      {c.length > 0 && (
+      {data.candles.length > 0 && (
         <>
           <div
             className="chart-controls"
@@ -176,13 +176,13 @@ export function PriceChart({
             <button onClick={() => zoom(1.5)}>縮小</button>
             <button
               onClick={() => move(-Math.min(span, available) / 2)}
-              disabled={start <= first}
+              disabled={end - Math.min(span, available) <= first}
             >
               過去へ
             </button>
             <button
               onClick={() => move(Math.min(span, available) / 2)}
-              disabled={finish >= latestEnd}
+              disabled={end >= latestEnd}
             >
               新しい方へ
             </button>
@@ -195,6 +195,10 @@ export function PriceChart({
               最新データへ戻る
             </button>
           </div>
+        </>
+      )}
+      {c.length > 0 && (
+        <>
           <p className="chart-help">
             横ドラッグで移動、Ctrl＋ホイールで拡大・縮小。キーボードではグラフにフォーカスし、左右キーで移動、＋／−で拡大・縮小、Homeで最新へ。時刻は日本時間です。
           </p>
@@ -289,9 +293,16 @@ export function PriceChart({
                   y={y(Math.max(b.open, b.close))}
                   height={Math.max(1, Math.abs(y(b.open) - y(b.close)))}
                   fill={b.close >= b.open ? "#43dfb2" : "#f77d8f"}
-                  strokeDasharray={reconstructed(b) ? "2 2" : undefined}
+                  strokeDasharray={
+                    (b.timestamp + tf) * 1000 > Date.now()
+                      ? "4 2"
+                      : reconstructed(b)
+                        ? "2 2"
+                        : undefined
+                  }
                 />
-                {reconstructed(b) && (
+                {(reconstructed(b) ||
+                  (b.timestamp + tf) * 1000 > Date.now()) && (
                   <text
                     x={x(b.timestamp + tf / 2)}
                     y="28"
@@ -299,7 +310,7 @@ export function PriceChart({
                     fill="#edc980"
                     fontSize="10"
                   >
-                    ◇
+                    {(b.timestamp + tf) * 1000 > Date.now() ? "○" : "◇"}
                   </text>
                 )}
               </g>
@@ -365,8 +376,8 @@ export function PriceChart({
             ))}
           </svg>
           <p className="chart-help">
-            EMA20（青）／ EMA50（黄）／ ◇
-            再構築足。データのない時間帯は空白で表示します。
+            EMA20（青）／ EMA50（黄）／ ◇ 再構築足、○
+            未確定足。データのない時間帯は空白で表示します。
           </p>
           {chosen && (
             <div className="candle-detail" aria-label="選択したローソク足">
