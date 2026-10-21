@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import type { ValidationReport } from "../../worker/src/validation.ts";
 import { validationMarkdown } from "../../../packages/shared/src/validation-presentation.ts";
+import type { OperationsSnapshot } from "./OperationsPanel.tsx";
+import { validationView } from "./validationView.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
 import { dateTime, number, errorCode } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
@@ -22,11 +24,14 @@ export function DeepBookValidation({
   report,
   api,
   stale = false,
+  operations,
 }: {
   report: ValidationReport;
   api?: SettingsApi;
   stale?: boolean;
+  operations: OperationsSnapshot;
 }) {
+  const view = validationView(report, operations, stale);
   const [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
   const begin = async () => {
@@ -47,17 +52,25 @@ export function DeepBookValidation({
     }
   };
   return (
-    <section aria-label="DeepBook 24時間検証">
+    <section className="deepbook-validation" aria-label="DeepBook 24時間検証">
       <h2>DeepBook 24時間PAPER検証</h2>
-      <p role="status">
-        {report.status}
-        {stale ? "（表示の更新に失敗しています）" : ""}
-      </p>
+      <div className={`validation-overview ${view.tone}`}>
+        <p className="validation-session" role="status">{view.icon} 24時間検証：{view.sessionLabel}</p>
+        <p>PAPER Bot：<strong>{view.botLabel}</strong></p>
+        <p>DeepBook接続：{view.connectionLabel}</p>
+      </div>
+      <div className="validation-action" aria-label="次に行う操作" role={view.tone === "danger" ? "alert" : undefined}>
+        <h3>次に行う操作</h3>
+        <p>{view.action}</p>
+        {operations.stopReason && <p>停止理由：<Reason code={operations.stopReason} /></p>}
+        {stale && <p>表示の更新に失敗しています。接続を確認するまで、表示済みの状態は最新とは限りません。</p>}
+      </div>
+      <p className="validation-help">PAPER：実際のお金を使わない仮想取引。計測開始とPAPER運用開始は別の操作です。</p>
       {!report.session ? (
         <>
           <p>専用環境の記録です。計測開始とPAPER運用開始は別の操作です。</p>
           <button
-            disabled={!api || busy || stale || !!notice}
+            disabled={!api || busy || stale || !!report.session || ["RUNNING", "DATA_DELAYED"].includes(operations.status)}
             onClick={() => void begin()}
           >
             24時間計測を開始

@@ -40,7 +40,7 @@ export function OperationsView({
   return (
     <div className="operation-validation">
       {data.validation && (
-        <DeepBookValidation report={data.validation} api={api} stale={stale} />
+        <DeepBookValidation report={data.validation} operations={data} api={api} stale={stale} />
       )}
       <section>
         <h2>運用検証</h2>
