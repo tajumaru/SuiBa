@@ -10,8 +10,11 @@ const rate = (n: number | null | undefined) =>
   n == null ? "未計測" : `${(n * 100).toFixed(2)}%`;
 const ms = (n: number | null | undefined) =>
   n == null ? "未計測" : `${number(n)} ms`;
-const duration = (n: number | undefined) =>
-  `${((n ?? 0) / 3600000).toFixed(2)} 時間`;
+const duration = (n: number | null | undefined) => n == null ? "未計測" : `${Math.floor(n / 3600000)}時間 ${Math.floor(n / 60000) % 60}分`;
+const count = (n: number | null | undefined) => n == null ? "未計測" : number(n);
+function Metric({ title, value, state, help }: { title: string; value: string; state: string; help: string }) {
+  return <article className="validation-metric" aria-label={title}><h3>{title}</h3><strong className="validation-value">{value}</strong><p>{state}</p><small>{help}</small></article>;
+}
 function download(name: string, text: string, type: string) {
   const url = URL.createObjectURL(new Blob([text], { type })),
     a = document.createElement("a");
@@ -32,6 +35,13 @@ export function DeepBookValidation({
   operations: OperationsSnapshot;
 }) {
   const view = validationView(report, operations, stale);
+  const requests = report.apis?.reduce((n, a) => n + a.requests, 0) ?? 0;
+  const successes = report.apis?.reduce((n, a) => n + a.successes, 0) ?? 0;
+  const quality = report.candles?.latestQuality?.[300];
+  const elapsed = report.session ? Math.max(0, Math.min(report.session.targetAt, report.generatedAt) - report.session.startedAt) : null;
+  const target = report.session ? Math.max(1, report.session.targetAt - report.session.startedAt) : 86400000;
+  const progress = elapsed == null ? null : Math.min(1, elapsed / target);
+  const freshness = stale ? "状態不明" : ({ FRESH: "鮮度確認済み", UPDATING: "確定足の更新待ち", STALE: "データが古い", UNKNOWN: "未計測" }[operations.timing.dataStatus] ?? "未計測");
   const [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
   const begin = async () => {
@@ -66,6 +76,19 @@ export function DeepBookValidation({
         {stale && <p>表示の更新に失敗しています。接続を確認するまで、表示済みの状態は最新とは限りません。</p>}
       </div>
       <p className="validation-help">PAPER：実際のお金を使わない仮想取引。計測開始とPAPER運用開始は別の操作です。</p>
+      <div className="validation-metrics" aria-label="重要な4つの指標">
+        <Metric title="API成功率" value={requests ? rate(successes / requests) : "未計測"} state={requests ? `通信${number(requests)}件中${number(successes)}件成功${successes < requests ? "・失敗あり" : ""}` : "計測記録を待っています"} help="データ取得リクエストが成功した割合。全APIの実試行を集計。" />
+        <Metric title="未解決の5分足欠損" value={quality ? `${count(report.candles?.unresolved)}本` : "未計測"} state={quality ? `${count(report.candles?.reconstructed)}本を安全に再構築${report.candles?.unresolved ? "・未解決あり" : "・未解決なし"}` : "ローソク足の品質記録がありません"} help="未解決欠損：安全に補完できていない価格データ。再構築：欠けた価格データを根拠に基づいて補う処理。" />
+        <Metric title="DeepBook接続・データ鮮度" value={freshness} state={view.connectionLabel} help="通信成功と価格データの鮮度は別々に確認します。鮮度は現在の安全監視の判定です。" />
+        <Metric title="PAPER実稼働時間" value={duration(report.runningMs)} state={`Bot${view.botLabel}`} help="検証期間中にBotが実際に稼働した時間。計測経過時間とは異なります。" />
+      </div>
+      {report.session && <div className="validation-warnings" aria-label="重要な警告">
+        {requests > successes && <p role="alert">! API取得失敗を記録しています。通信の詳細で原因と発生件数を確認してください。</p>}
+        {!!report.candles?.unresolved && <p role="alert">! 未解決の5分足欠損が{count(report.candles.unresolved)}本あります。安全に利用できるデータが揃うまで新規取引できません。</p>}
+        {operations.timing.dataStatus === "STALE" && <p role="alert">! 市場データが古くなっています。鮮度の回復を確認してください。</p>}
+        {!!report.integrityFault && <p role="alert">! 計測記録の整合性に問題があります。合格条件と評価範囲を確認してください。</p>}
+        {view.complete && <div><h3>{view.passed ? "確認できた合格条件" : "合格条件の未達・未確認項目"}</h3><ul>{report.criteria?.filter(c => view.passed ? c.ok : !c.ok).map(c => <li key={c.name}>{view.passed ? "✓" : "!"} {c.name}</li>)}</ul></div>}
+      </div>}
       {!report.session ? (
         <>
           <p>専用環境の記録です。計測開始とPAPER運用開始は別の操作です。</p>
@@ -78,19 +101,14 @@ export function DeepBookValidation({
         </>
       ) : (
         <>
-          <p>
-            検証開始：{dateTime(report.session.startedAt)} ／ 目標：
-            {dateTime(report.session.targetAt)}
-          </p>
-          <p>
-            経過：{duration(report.elapsedMs)} ／ PAPER実稼働：
-            {duration(report.runningMs)} ／ 進捗：{rate(report.progress)}
-          </p>
-          <progress
-            aria-label="24時間の進捗"
-            value={report.progress ?? 0}
-            max={1}
-          />
+          <div className="validation-progress" aria-label="検証進捗">
+            <h3>検証進捗</h3>
+            <div className="validation-progress-heading"><strong>{rate(progress)}</strong><span>目標 24時間</span></div>
+            <progress aria-label="24時間の進捗" value={progress ?? 0} max={1} />
+            <div className="validation-time-grid"><p>経過時間<strong>{duration(elapsed)}</strong></p><p>残り時間<strong>{duration(elapsed == null ? null : target - elapsed)}</strong></p></div>
+            <dl><dt>検証開始日時</dt><dd>{dateTime(report.session.startedAt)}</dd><dt>終了予定日時</dt><dd>{dateTime(report.session.targetAt)}</dd></dl>
+            <small>サーバーが保存したセッション時刻に基づく進捗です。再起動しても継続します。{stale ? "表示の更新が止まっています。" : ""}</small>
+          </div>
           <p>
             24時間未満・記録不足の場合は合格にしません。停止後・再起動後は手動再開が必要です。
           </p>
