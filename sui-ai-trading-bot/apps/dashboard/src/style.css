@@ -780,3 +780,9 @@ footer {
     padding: 12px;
   }
 }
+.price-chart .linked-indicator {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  margin: 20px 0;
+}

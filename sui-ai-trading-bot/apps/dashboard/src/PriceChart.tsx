@@ -1,3 +1,7 @@
+import { IndicatorPanel } from "./IndicatorPanel.tsx";
+import { chartSeries, lineSegments } from "./chartIndicators.ts";
+import type { SettingsApi } from "./settingsPresets.ts";
+import type { HistoryResult } from "../../worker/src/chart-history.ts";
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import type { Candle } from "../../../packages/shared/src/index.ts";
 import type { BotEngine } from "../../worker/src/engine.ts";
@@ -13,12 +17,39 @@ export function PriceChart({
   candles,
   trades,
   timeframe = 300,
+  synchronized = false,
+  historyApi,
 }: {
   candles: Candle[];
   trades: ReturnType<BotEngine["snapshot"]>["trades"];
   timeframe?: number;
+  synchronized?: boolean;
+  historyApi?: SettingsApi;
 }) {
-  const data = useMemo(() => chartData(candles), [candles]);
+  const [history, setHistory] = useState<HistoryResult | null>(null),
+    [historyBusy, setHistoryBusy] = useState(false),
+    [historyNotice, setHistoryNotice] = useState("");
+  const input = useMemo(() => {
+    if (!history) return candles;
+    const merged = new Map(history.candles.map((c) => [c.timestamp, c]));
+    for (const c of candles)
+      if (c.source.startsWith("DeepBook:SUI_USDC:USDC"))
+        merged.set(c.timestamp, c);
+    return [...merged.values()];
+  }, [candles, history]);
+  const data = useMemo(() => chartData(input), [input]);
+  const seriesKey = useMemo(
+    () =>
+      JSON.stringify(
+        data.candles.map((c) => [c.timestamp, c.timeframe, c.close]),
+      ),
+    [data],
+  );
+  const series = useMemo(() => chartSeries(data.candles), [seriesKey]);
+  const indexes = useMemo(
+    () => new Map(data.candles.map((c, i) => [c.timestamp, i])),
+    [data],
+  );
   const [hours, setHours] = useState(6),
     [span, setSpan] = useState(21600),
     [anchor, setAnchor] = useState<number | undefined>(),
@@ -113,6 +144,37 @@ export function PriceChart({
     );
     setSelected(nearest.timestamp);
   };
+  const loadHistory = async () => {
+    if (!historyApi || historyBusy) return;
+    setHistoryBusy(true);
+    setHistoryNotice("");
+    const to = Math.floor(Date.now() / 1000 / tf) * tf,
+      from = to - 7 * 86400 - 120 * tf;
+    try {
+      const raw = (await historyApi(
+        `chart/history?timeframe=${tf}&from=${from}&to=${to}`,
+      )) as HistoryResult;
+      if (
+        !Array.isArray(raw.candles) ||
+        raw.timeframe !== tf ||
+        raw.candles.some((c) => !c.source.startsWith("DeepBook:SUI_USDC:USDC"))
+      )
+        throw Error("INVALID_CHART_HISTORY");
+      setHistory(raw);
+      setHistoryNotice(
+        `表示専用履歴：${raw.candles.length}本取得 ／ 欠損${raw.missing}本${raw.error ? ` ／ 取得未完了（${raw.error}）。市場データ取得を優先しています。後で手動で再取得してください。` : ""}`,
+      );
+      choosePeriod(168);
+    } catch {
+      setHistoryNotice(
+        "履歴を取得できません。取得済みの表示を維持します。後で手動で再取得してください。",
+      );
+    } finally {
+      setHistoryBusy(false);
+    }
+  };
+  const visibleSeries = (key: keyof typeof series) =>
+    c.map((b) => series[key][indexes.get(b.timestamp)!]);
   const reconstructed = (b: Candle) =>
     b.provenance != null && b.provenance.origin !== "ORIGINAL";
   const origin = (b: Candle) =>
@@ -139,6 +201,17 @@ export function PriceChart({
           </button>
         ))}
       </div>
+      {historyApi && (
+        <div className="chart-history">
+          <button disabled={historyBusy} onClick={() => void loadHistory()}>
+            {historyBusy ? "履歴取得中…" : "DeepBookの7日履歴を取得"}
+          </button>
+          <p role="status">{historyNotice}</p>
+          <small>
+            表示専用のDeepBook市場履歴です。Botの市場データ・判断は変更しません。履歴は10秒ごとに再取得しません。
+          </small>
+        </div>
+      )}
       <p>
         選択期間：{hours === 168 ? "7日" : `${hours}時間`}
         {span !== hours * 3600 || anchor != null ? "（表示範囲を操作中）" : ""}
@@ -315,19 +388,18 @@ export function PriceChart({
                 )}
               </g>
             ))}
-            {[visible.ema20, visible.ema50].map((set, j) => (
-              <polyline
-                key={j}
-                aria-label={j === 0 ? "EMA20" : "EMA50"}
-                fill="none"
-                stroke={["#64b5ff", "#edc980"][j]}
-                strokeWidth="1.8"
-                points={set
-                  .flatMap((v, i) =>
-                    v == null ? [] : [`${x(c[i].timestamp + tf / 2)},${y(v)}`],
-                  )
-                  .join(" ")}
-              />
+            {[visibleSeries("ema20"), visibleSeries("ema50")].map((set, j) => (
+              <g key={j} aria-label={j === 0 ? "EMA20" : "EMA50"}>
+                {lineSegments(c, set, x, y).map((points, i) => (
+                  <polyline
+                    key={i}
+                    fill="none"
+                    stroke={["#64b5ff", "#edc980"][j]}
+                    strokeWidth="1.8"
+                    points={points}
+                  />
+                ))}
+              </g>
             ))}
             {trades.map((t) => {
               const b = c.find(
@@ -350,6 +422,36 @@ export function PriceChart({
                 </text>
               );
             })}
+            {synchronized && (
+              <>
+                <p>
+                  選択日時：{chosen ? chartTime(chosen.timestamp) : "未選択"}
+                  （足の開始・日本時間）
+                </p>
+                <IndicatorPanel
+                  kind="RSI"
+                  candles={c}
+                  sets={[visibleSeries("rsi")]}
+                  width={w}
+                  start={start}
+                  end={finish}
+                  selected={chosen?.timestamp ?? null}
+                />
+                <IndicatorPanel
+                  kind="MACD"
+                  candles={c}
+                  sets={[
+                    visibleSeries("macd"),
+                    visibleSeries("signal"),
+                    visibleSeries("histogram"),
+                  ]}
+                  width={w}
+                  start={start}
+                  end={finish}
+                  selected={chosen?.timestamp ?? null}
+                />
+              </>
+            )}
             {chosen && (
               <line
                 x1={x(chosen.timestamp + tf / 2)}

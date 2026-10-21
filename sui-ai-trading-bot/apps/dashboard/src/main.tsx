@@ -317,6 +317,8 @@ function Chart(props: {
   kind: string;
   trades: State["trades"];
   timeframe?: number;
+  synchronized?: boolean;
+  historyApi?: import("./settingsPresets.ts").SettingsApi;
 }) {
   return props.kind === "Price" ? (
     <PriceChart
@@ -642,21 +644,19 @@ function App() {
                     </select>
                   </label>
                 )}
-                {tab === "Chart" &&
-                  ["Price", "RSI", "MACD"].map((kind) => (
-                    <section key={kind}>
-                      <h3>
-                        {label(kind) === "未確認" ? kind : label(kind)} ·
-                        {timeframe / 60}分足
-                      </h3>
-                      <Chart
-                        timeframe={timeframe}
-                        candles={data.candlesByTimeframe[timeframe]}
-                        kind={kind}
-                        trades={data.trades}
-                      />
-                    </section>
-                  ))}
+                {tab === "Chart" && (
+                  <section>
+                    <h3>価格・RSI・MACD（共通時間軸）</h3>
+                    <Chart
+                      timeframe={timeframe}
+                      candles={data.candlesByTimeframe[timeframe]}
+                      kind="Price"
+                      trades={data.trades}
+                      synchronized
+                      historyApi={api}
+                    />
+                  </section>
+                )}
                 {tab === "Strategy" && (
                   <>
                     <ProfitGuardPanel data={data} />
