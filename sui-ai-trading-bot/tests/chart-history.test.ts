@@ -1,3 +1,4 @@
+import { apiAccess } from "../packages/shared/src/api.ts";
 import { it, expect } from "vitest";
 import {
   ChartHistoryStore,
@@ -152,4 +153,86 @@ it("worker thread reuses persisted cache and coalesces equal requests", async ()
     await new Promise((r) => setTimeout(r, 100));
     rmSync(folder, { recursive: true, force: true });
   }
+});
+
+it("preserves seeded verified reconstruction when historical raw data has a gap", async () => {
+  const s = new ChartHistoryStore(":memory:", {
+    now: () => to * 1000,
+    sleep: async () => {},
+    gate: async () => true,
+    fetch: async () => Response.json({ candles: [] }),
+  });
+  const candle = {
+    timestamp: from,
+    timeframe: 300 as const,
+    open: 2,
+    high: 3,
+    low: 1,
+    close: 2,
+    volume: 0,
+    source: "DeepBook:SUI_USDC:USDC:verified-v1",
+    provenance: {
+      origin: "NO_INDEXED_TRADES" as const,
+      upstream: "DeepBook Indexer" as const,
+      pair: "SUI_USDC" as const,
+      fetchedAt: to * 1000,
+      timeframe: 300,
+      evidence: ["verified test proof"],
+    },
+  };
+  s.seed([candle]);
+  const r = await s.get(q);
+  expect(r.candles[0]).toEqual(candle);
+  expect(r.missing).toBe(2015);
+  expect(r.cacheHit).toBe(false);
+  expect((await s.get(q)).cacheHit).toBe(true);
+  s.close();
+});
+it("cancelled work returns partial cache instead of retrying or inventing bars", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  let calls = 0;
+  const s = new ChartHistoryStore(":memory:", {
+    now: () => to * 1000,
+    sleep: async () => {},
+    gate: async () => true,
+    fetch: async () => {
+      calls++;
+      throw Error("unexpected");
+    },
+  });
+  const r = await s.get(q, controller.signal);
+  expect(r.error).toBe("CHART_CANCELLED");
+  expect(calls).toBe(0);
+  expect(r.candles).toHaveLength(0);
+  s.close();
+});
+it("overlapping seed data is keyed by market time and does not duplicate rows", async () => {
+  const s = new ChartHistoryStore(":memory:", {
+    now: () => to * 1000,
+    sleep: async () => {},
+    gate: async () => true,
+    fetch: async () => Response.json({ candles: [] }),
+  });
+  const candle = {
+    timestamp: from,
+    timeframe: 300 as const,
+    open: 2,
+    high: 3,
+    low: 1,
+    close: 2,
+    volume: 1,
+    source: "DeepBook:SUI_USDC:USDC",
+  };
+  s.seed([candle, candle]);
+  expect((await s.get(q)).candles).toHaveLength(1);
+  s.close();
+});
+
+it("history failures do not mutate the trading API controller", async () => {
+  const before = JSON.stringify(apiAccess.snapshot());
+  const h = harness(429);
+  expect((await h.store.get(q)).error).toBe("CHART_HTTP_429");
+  expect(JSON.stringify(apiAccess.snapshot())).toBe(before);
+  h.store.close();
 });

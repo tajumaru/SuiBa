@@ -1,3 +1,4 @@
+import { ChartHistoryStore } from "../apps/worker/src/chart-history.ts";
 import { it, expect } from "vitest";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
@@ -83,6 +84,17 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
     });
     return { status: response.status, value: await response.json() };
   }
+  const chartTo = Math.floor(Date.now() / 300000) * 300,
+    chartFrom = chartTo - 600;
+  const cache = new ChartHistoryStore(database + ".chart-history.sqlite", {
+    fetch: async () =>
+      Response.json({ candles: [[(chartTo - 600) * 1000, 2, 3, 1, 2, 0]] }),
+    now: Date.now,
+    sleep: async () => {},
+    gate: async () => true,
+  });
+  await cache.get({ timeframe: 300, from: chartFrom, to: chartTo });
+  cache.close();
   try {
     await start();
     const health = await fetch(`http://127.0.0.1:${port}/healthz`);
@@ -110,6 +122,28 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
     expect(state.mode).toBe("PAPER");
     expect(state.runtime).toMatchObject({ running: false, emergency: true });
     expect(state.settings).toEqual(original);
+    const beforeChart = {
+      runtime: state.runtime,
+      settings: state.settings,
+      trades: state.trades,
+    };
+    const historyPath = `chart/history?timeframe=300&from=${chartFrom}&to=${chartTo}`;
+    expect(
+      (await fetch(`http://127.0.0.1:${port}/api/${historyPath}`)).status,
+    ).toBe(401);
+    expect((await api("chart/history?timeframe=60&from=1&to=2")).status).toBe(
+      400,
+    );
+    const chartResult = await api(historyPath);
+    expect(chartResult.status).toBe(200);
+    expect(chartResult.value.cacheHit).toBe(true);
+    expect(chartResult.value.candles).toHaveLength(1);
+    const afterChart = (await api("state")).value;
+    expect({
+      runtime: afterChart.runtime,
+      settings: afterChart.settings,
+      trades: afterChart.trades,
+    }).toEqual(beforeChart);
     const safe = applySafePreset(state.settings);
     expect((await api("settings", safe)).status).toBe(200);
     state = (await api("state")).value;

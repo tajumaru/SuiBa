@@ -1,3 +1,4 @@
+import { candleGeometry } from "../apps/dashboard/src/candleGeometry.ts";
 import { it, expect } from "vitest";
 import {
   chartSeries,
@@ -53,4 +54,26 @@ it("computes 2136 consecutive bars without changing values or inputs", () => {
   expect(s.macd.at(-1)).toBe(calculate(c).macd);
   expect(JSON.stringify(c)).toBe(before);
   console.info(JSON.stringify({ chartSeriesBars: 2136, elapsedMs: ms }));
+});
+
+it("SVG batching preserves every wick and body rather than sampling", () => {
+  const base = chartFixture(),
+    c = Array.from({ length: 2016 }, (_, i) => ({
+      ...base[i % 1000],
+      timestamp: base[0].timestamp + i * 300,
+    }));
+  const geometry = candleGeometry(
+    c,
+    (t) => t,
+    (v) => v,
+    1,
+  );
+  expect(
+    geometry.groups.reduce((n, g) => n + (g.wick.match(/M /g)?.length ?? 0), 0),
+  ).toBe(2016);
+  expect(
+    geometry.groups.reduce((n, g) => n + (g.body.match(/M /g)?.length ?? 0), 0),
+  ).toBe(2016);
+  expect(geometry.groups[0].wick).toContain(`V ${c[0].low}`);
+  expect(geometry.groups[0].wick).toContain(`${c[0].high} V`);
 });

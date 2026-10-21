@@ -22,7 +22,7 @@ export function historyQuery(
     from <= 0 ||
     to <= from ||
     to - from > 12 * 86400 ||
-    to * 1000 > now + 3600000 ||
+    to * 1000 > now ||
     from * 1000 < now - 14 * 86400000 ||
     from % timeframe ||
     to % timeframe

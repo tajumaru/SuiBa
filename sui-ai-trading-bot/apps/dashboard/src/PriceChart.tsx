@@ -1,3 +1,4 @@
+import { candleGeometry } from "./candleGeometry.ts";
 import { IndicatorPanel } from "./IndicatorPanel.tsx";
 import { chartSeries, lineSegments } from "./chartIndicators.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
@@ -129,6 +130,10 @@ export function PriceChart({
     max = Math.max(...values),
     y = (v: number) => 215 - ((v - min) / (max - min || 1)) * 180;
   const dx = Math.max(0.8, Math.min(24, (plot / (finish - start)) * tf * 0.6));
+  const geometry = useMemo(
+    () => candleGeometry(c, x, y, dx),
+    [visible, w, min, max, tf],
+  );
   const chosen = c.find((b) => b.timestamp === selected) ?? c.at(-1);
   const pick = (clientX: number) => {
     if (!svg.current || !c.length) return;
@@ -162,7 +167,7 @@ export function PriceChart({
         throw Error("INVALID_CHART_HISTORY");
       setHistory(raw);
       setHistoryNotice(
-        `表示専用履歴：${raw.candles.length}本取得 ／ 欠損${raw.missing}本${raw.error ? ` ／ 取得未完了（${raw.error}）。市場データ取得を優先しています。後で手動で再取得してください。` : ""}`,
+        `表示専用履歴（準備用の過去足を含む）：${raw.candles.length}本取得 ／ 欠損${raw.missing}本${raw.error ? ` ／ 取得未完了（${raw.error}）。市場データ取得を優先しています。後で手動で再取得してください。` : ""}`,
       );
       choosePeriod(168);
     } catch {
@@ -291,6 +296,12 @@ export function PriceChart({
           時間の範囲で表示します。追加のAPI取得は行いません。
         </p>
       )}
+      {c.length > 0 && (finish - start) / tf > c.length && (
+        <p className="chart-warning">
+          表示期間内の欠損：{Math.round((finish - start) / tf - c.length)}
+          本。未取得部分を補間せず、指標の準備が不足する区間は未計測です。
+        </p>
+      )}
       {data.candles.length > 0 && (
         <>
           <div
@@ -343,53 +354,41 @@ export function PriceChart({
             <text x="2" y="232" fill="#b0c1cf" fontSize="12">
               {number(min, 4)}
             </text>
-            {c.map((b) => (
-              <g
-                key={b.timestamp}
-                stroke={b.close >= b.open ? "#43dfb2" : "#f77d8f"}
-              >
-                <title>
-                  {chartTime(b.timestamp)} {origin(b)}
-                </title>
-                <line
-                  x1={x(b.timestamp + tf / 2)}
-                  x2={x(b.timestamp + tf / 2)}
-                  y1={y(b.high)}
-                  y2={y(b.low)}
-                />
-                <rect
-                  x={x(b.timestamp + tf / 2) - dx / 2}
-                  width={dx}
-                  y={y(Math.max(b.open, b.close))}
-                  height={Math.max(1, Math.abs(y(b.open) - y(b.close)))}
-                  fill={b.close >= b.open ? "#43dfb2" : "#f77d8f"}
+            {geometry.groups.map((g) => (
+              <g key={g.color + g.style}>
+                <path d={g.wick} fill="none" stroke={g.color} />
+                <path
+                  d={g.body}
+                  fill={g.color}
+                  stroke={g.color}
                   strokeDasharray={
-                    (b.timestamp + tf) * 1000 > Date.now()
+                    g.style === "provisional"
                       ? "4 2"
-                      : reconstructed(b)
+                      : g.style === "reconstructed"
                         ? "2 2"
                         : undefined
                   }
                 />
-                {(reconstructed(b) ||
-                  (b.timestamp + tf) * 1000 > Date.now()) && (
-                  <text
-                    x={x(b.timestamp + tf / 2)}
-                    y="28"
-                    textAnchor="middle"
-                    fill="#edc980"
-                    fontSize="10"
-                  >
-                    {(b.timestamp + tf) * 1000 > Date.now() ? "○" : "◇"}
-                  </text>
-                )}
               </g>
+            ))}
+            {geometry.markers.map((m, i) => (
+              <text
+                key={i}
+                x={m.x}
+                y="28"
+                textAnchor="middle"
+                fill="#edc980"
+                fontSize="10"
+              >
+                {m.symbol}
+              </text>
             ))}
             {[visibleSeries("ema20"), visibleSeries("ema50")].map((set, j) => (
               <g key={j} aria-label={j === 0 ? "EMA20" : "EMA50"}>
                 {lineSegments(c, set, x, y).map((points, i) => (
                   <polyline
                     key={i}
+                    aria-label={j === 0 ? "EMA20" : "EMA50"}
                     fill="none"
                     stroke={["#64b5ff", "#edc980"][j]}
                     strokeWidth="1.8"
@@ -419,40 +418,6 @@ export function PriceChart({
                 </text>
               );
             })}
-            {synchronized && (
-              <>
-                <p>
-                  選択日時：{chosen ? chartTime(chosen.timestamp) : "未選択"}
-                  （足の開始・日本時間）
-                </p>
-                <IndicatorPanel
-                  interaction={interactions}
-                  onZoom={zoom}
-                  kind="RSI"
-                  candles={c}
-                  sets={[visibleSeries("rsi")]}
-                  width={w}
-                  start={start}
-                  end={finish}
-                  selected={chosen?.timestamp ?? null}
-                />
-                <IndicatorPanel
-                  interaction={interactions}
-                  onZoom={zoom}
-                  kind="MACD"
-                  candles={c}
-                  sets={[
-                    visibleSeries("macd"),
-                    visibleSeries("signal"),
-                    visibleSeries("histogram"),
-                  ]}
-                  width={w}
-                  start={start}
-                  end={finish}
-                  selected={chosen?.timestamp ?? null}
-                />
-              </>
-            )}
             {chosen && (
               <line
                 x1={x(chosen.timestamp + tf / 2)}
@@ -482,6 +447,40 @@ export function PriceChart({
             EMA20（青）／ EMA50（黄）／ ◇ 再構築足、○
             未確定足。データのない時間帯は空白で表示します。
           </p>
+          {synchronized && (
+            <>
+              <p>
+                選択日時：{chosen ? chartTime(chosen.timestamp) : "未選択"}
+                （足の開始・日本時間）
+              </p>
+              <IndicatorPanel
+                interaction={interactions}
+                onZoom={zoom}
+                kind="RSI"
+                candles={c}
+                sets={[visibleSeries("rsi")]}
+                width={w}
+                start={start}
+                end={finish}
+                selected={chosen?.timestamp ?? null}
+              />
+              <IndicatorPanel
+                interaction={interactions}
+                onZoom={zoom}
+                kind="MACD"
+                candles={c}
+                sets={[
+                  visibleSeries("macd"),
+                  visibleSeries("signal"),
+                  visibleSeries("histogram"),
+                ]}
+                width={w}
+                start={start}
+                end={finish}
+                selected={chosen?.timestamp ?? null}
+              />
+            </>
+          )}
           {chosen && (
             <div className="candle-detail" aria-label="選択したローソク足">
               <label>

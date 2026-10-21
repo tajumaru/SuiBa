@@ -45,6 +45,7 @@ export class ChartHistoryClient {
       const currentWorker = this.worker;
       this.worker.unref();
       this.worker.on("message", (m) => {
+        if (this.worker !== currentWorker) return;
         if (m.kind === "gate") {
           this.worker?.postMessage({ kind: "gate", allowed: this.allowed() });
           return;

@@ -114,6 +114,9 @@ export function IndicatorPanel({
           )
           .join(" ／ ")}
       </p>
+      {(end - start) / candles[0].timeframe > candles.length && (
+        <p className="chart-warning">データ不足：表示期間に欠損があります。</p>
+      )}
       {!valid.length && (
         <p className="chart-warning">
           データ不足：連続する確定足が60本揃うまで未計測です。

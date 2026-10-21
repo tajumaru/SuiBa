@@ -1,0 +1,31 @@
+{
+  "observedAt": 1792624876029,
+  "from": 1791933600000,
+  "to": 1792624800000,
+  "requests": [
+    {
+      "path": "/ohclv/SUI_USDC?interval=5m&start_time=1791933600000&end_time=1792624799999&limit=1000",
+      "status": 200,
+      "ms": 1107,
+      "count": 1000
+    },
+    {
+      "path": "/ohclv/SUI_USDC?interval=5m&start_time=1791933600000&end_time=1792321499999&limit=1000",
+      "status": 200,
+      "ms": 870,
+      "count": 1000
+    },
+    {
+      "path": "/ohclv/SUI_USDC?interval=5m&start_time=1791933600000&end_time=1792010099999&limit=1000",
+      "status": 200,
+      "ms": 746,
+      "count": 253
+    }
+  ],
+  "total": 2253,
+  "sevenDayBars": 1968,
+  "expected": 2016,
+  "missing": 48,
+  "first": 1792020000000,
+  "last": 1792624500000
+}
