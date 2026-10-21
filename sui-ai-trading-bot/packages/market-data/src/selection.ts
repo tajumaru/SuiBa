@@ -11,6 +11,7 @@ export class MarketSelection implements MarketDataProvider {
     private deep: MarketDataProvider & {
       prepare(now?: number): Promise<void>;
       finalize?(): Promise<void>;
+      diagnostics?(): MarketStatus["diagnostics"];
       quality?(): Record<number, import("./reconstruction.ts").CandleQuality>;
       book?: {
         timestamp: number;
@@ -35,7 +36,11 @@ export class MarketSelection implements MarketDataProvider {
     };
   }
   status() {
-    return { ...this.value, quality: this.deep.quality?.() };
+    return {
+      ...this.value,
+      quality: this.deep.quality?.(),
+      diagnostics: this.deep.diagnostics?.(),
+    };
   }
   async candles(tf: Timeframe, now = Date.now()) {
     return (await this.frames(now))[tf];

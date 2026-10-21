@@ -5,6 +5,9 @@ export interface CandleQuality {
   pair: "SUI_USDC";
   fetchedAt: number;
   timeframe: number;
+  reconstructionMs?: number;
+  originalCount?: number;
+  gapTimestamps?: number[];
   missing: number;
   reconstructed: number;
   unresolved: number;

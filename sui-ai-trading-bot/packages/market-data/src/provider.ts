@@ -2,6 +2,12 @@ import type { CandleQuality } from "./reconstruction.ts";
 import type { Candle, Timeframe } from "../../shared/src/index.ts";
 export type Frames = Record<number, Candle[]>;
 export interface MarketStatus {
+  diagnostics?: {
+    indexerLagMs: number | null;
+    indexedThrough: number;
+    bidDepthUsdc: number | null;
+    askDepthUsdc: number | null;
+  };
   quality?: Record<number, CandleQuality>;
   configured: string;
   source: string | null;

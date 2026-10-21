@@ -1,3 +1,8 @@
+import {
+  exportValidationReport,
+  validationMarkdown,
+} from "./validation-report.ts";
+import { ValidationRecorder, assertValidationProfile } from "./validation.ts";
 import { DeepBookMarketData } from "../../../packages/market-data/src/deepbook.ts";
 import { MarketSelection } from "../../../packages/market-data/src/selection.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
@@ -28,6 +33,7 @@ if (!["geckoterminal", "deepbook", "auto"].includes(marketMode))
 const reconstruction = process.env.DEEPBOOK_RECONSTRUCT_CANDLES ?? "off";
 if (!["off", "verified"].includes(reconstruction))
   throw new Error("INVALID_DEEPBOOK_RECONSTRUCTION");
+const validationEnabled = assertValidationProfile(process.env);
 const db = new BotDatabase(process.env.DATABASE_PATH ?? "data/bot.sqlite");
 const sui = new ReadOnlySuiClient(process.env.SUI_GRPC_URL),
   engine = new BotEngine(
@@ -46,10 +52,33 @@ const sui = new ReadOnlySuiClient(process.env.SUI_GRPC_URL),
   );
 // Monitoring boot closes the previous uptime segment and never resumes trading.
 engine.monitor.boot();
+const validation = validationEnabled ? new ValidationRecorder(db) : undefined;
+engine.validation = validation;
+if (validation) {
+  apiAccess.onAttempt = (event) => validation.attempt(event);
+  validation.sample(engine.marketStatus());
+}
 apiAccess.restoreCooldowns(db.get("api_cooldowns") ?? []);
+let lastExportAt = 0;
+function validationHeartbeat(final = false) {
+  if (!validation) return;
+  validation.sample(engine.marketStatus());
+  const now = Date.now();
+  if (
+    process.env.VALIDATION_REPORT_DIR &&
+    (final || now - lastExportAt >= 60000)
+  ) {
+    exportValidationReport(
+      process.env.VALIDATION_REPORT_DIR,
+      validation.report(now, true),
+    );
+    lastExportAt = now;
+  }
+}
 const watchdog = setInterval(() => {
   try {
     engine.monitor.watchdog();
+    validationHeartbeat();
   } catch {
     console.error("PAPER_MONITORING_UNAVAILABLE");
     process.exit(1);
@@ -130,7 +159,22 @@ const server = createServer(async (req, res) => {
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/operations") {
-      send(200, engine.monitor.snapshot());
+      send(200, {
+        ...engine.monitor.snapshot(),
+        ...(validation ? { validation: validation.report() } : {}),
+      });
+      return;
+    }
+    if (
+      validation &&
+      req.method === "GET" &&
+      ["/api/validation", "/api/validation/report.md"].includes(url.pathname)
+    ) {
+      const report = validation.report(Date.now(), true);
+      if (url.pathname.endsWith(".md")) {
+        res.writeHead(200, { "Content-Type": "text/markdown; charset=utf-8" });
+        res.end(validationMarkdown(report));
+      } else send(200, report);
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/balances") {
@@ -167,6 +211,26 @@ const server = createServer(async (req, res) => {
       }
     }
     const body = text ? JSON.parse(text) : {};
+    if (validation && url.pathname === "/api/validation/start") {
+      try {
+        const report = validation.begin();
+        validationHeartbeat(true);
+        send(200, report);
+      } catch (error) {
+        const code =
+          error instanceof Error ? error.message : "VALIDATION_START_FAILED";
+        send(409, {
+          error: [
+            "VALIDATION_ALREADY_STARTED",
+            "STOP_BEFORE_VALIDATION",
+            "PROFIT_GUARD_REQUIRED",
+          ].includes(code)
+            ? code
+            : "VALIDATION_START_FAILED",
+        });
+      }
+      return;
+    }
     if (url.pathname === "/api/backtest") {
       if (backtestBusy) {
         send(409, { error: "BACKTEST_BUSY" });
@@ -281,6 +345,11 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
     engine.monitor.transition("PROCESS_SHUTDOWN");
     server.close(() => {
       void Promise.resolve(activeTick).finally(() => {
+        try {
+          validationHeartbeat(true);
+        } catch {
+          console.error("VALIDATION_EXPORT_FAILED");
+        }
         db.close();
         process.exit(0);
       });

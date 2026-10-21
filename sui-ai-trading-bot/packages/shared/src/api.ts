@@ -32,6 +32,14 @@ export function retryDelay(
   );
 }
 export type ApiPolicy = { timeoutMs?: number; maxTransientRetries?: number };
+export type ApiAttempt = {
+  api: string;
+  success: boolean;
+  code: string | null;
+  latencyMs: number;
+  attempt: number;
+  occurredAt: number;
+};
 type Stats = {
   lastLatencyMs: number | null;
   requests: number;
@@ -50,6 +58,7 @@ export class ApiAccess {
   private caches = new Map<string, { until: number; value: unknown }>();
   private tails = new Map<string, Promise<unknown>>();
   private controller = new AbortController();
+  onAttempt: (event: ApiAttempt) => void = () => {};
   onRateLimit: (api: string) => void = () => {};
   onTransientFailure: (api: string, code: string) => void = () => {};
   restoreCooldowns(
@@ -173,11 +182,39 @@ export class ApiAccess {
             s.lastSuccessAt = Date.now();
             if (ttl)
               this.caches.set(id, { value: result, until: Date.now() + ttl });
+            // Observer failure must not turn a successful request into a retry.
+            try {
+              this.onAttempt({
+                api,
+                success: true,
+                code: null,
+                latencyMs: s.lastLatencyMs,
+                attempt,
+                occurredAt: Date.now(),
+              });
+            } catch {
+              throw new Error("VALIDATION_RECORD_FAILED");
+            }
             return result;
           } catch (error) {
             s.lastLatencyMs = Date.now() - began;
             s.failed = true;
             const code = error instanceof Error ? error.message : "";
+            if (code === "VALIDATION_RECORD_FAILED") throw error;
+            try {
+              this.onAttempt({
+                api,
+                success: false,
+                code: /^[A-Z0-9_]{1,100}$/.test(code)
+                  ? code
+                  : "UNKNOWN_FAILURE",
+                latencyMs: s.lastLatencyMs,
+                attempt,
+                occurredAt: Date.now(),
+              });
+            } catch {
+              throw new Error("VALIDATION_RECORD_FAILED");
+            }
             const transient = [
               "UPSTREAM_TIMEOUT",
               "UPSTREAM_NETWORK_FAILED",

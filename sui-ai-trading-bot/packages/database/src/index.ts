@@ -28,6 +28,7 @@ const eventTables = [
   "operation_candidates",
   "operation_events",
   "paper_checks",
+  "validation_events",
 ] as const;
 type EventTable = (typeof eventTables)[number];
 export class BotDatabase {
@@ -51,6 +52,7 @@ export class BotDatabase {
       "paper_checks",
       "paper_trades",
       "portfolio_snapshots",
+      "validation_events",
     ] as const)
       this.db.exec(
         `CREATE INDEX IF NOT EXISTS ${t}_timestamp ON ${t}(timestamp);`,
@@ -247,6 +249,7 @@ export class BotDatabase {
       audit: CandidateAudit;
       check: AccountingCheck;
       markPrice: number;
+      validation?: unknown;
     },
   ) {
     this.transaction(() => {
@@ -262,6 +265,13 @@ export class BotDatabase {
       this.append("paper_trades", id, trade, trade.timestamp);
       this.set("portfolio", portfolio);
       this.set("runtime", runtime);
+      if (verification?.validation)
+        this.append(
+          "validation_events",
+          `fill:${id}`,
+          verification.validation,
+          trade.timestamp,
+        );
       if (verification) {
         this.putCandidate(verification.audit);
         this.append("paper_checks", id, verification.check, trade.timestamp);

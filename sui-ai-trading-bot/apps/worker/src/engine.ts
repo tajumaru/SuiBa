@@ -40,7 +40,12 @@ import {
 import { equity, metrics } from "../../../packages/portfolio/src/index.ts";
 import { validateCandles } from "../../../packages/market-data/src/index.ts";
 import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
+import type { ValidationRecorder } from "./validation.ts";
 export class BotEngine {
+  validation?: ValidationRecorder;
+  marketStatus() {
+    return this.market.status?.() ?? null;
+  }
   private busy = false;
   private paper = new PaperTrading();
   readonly monitor: OperationMonitor;
@@ -69,6 +74,10 @@ export class BotEngine {
     this.busy = true;
     let audit: CandidateAudit | null = null;
     let committed = false;
+    const began = Date.now();
+    let measuredFrames: Record<number, Candle[]> = {},
+      measuredAction: string | null = null,
+      measuredError: string | null = null;
     this.monitor.beginCycle();
     try {
       const now = Date.now();
@@ -84,6 +93,7 @@ export class BotEngine {
       if (this.market.frames)
         for (const tf of [300, 900, 3600] as const)
           validateCandles(frames[tf], tf, Date.now());
+      measuredFrames = frames;
       const source = frames[300][0].source;
       if (
         Object.values(frames).some((rows) =>
@@ -133,6 +143,7 @@ export class BotEngine {
         now,
       });
       this.db.recordAnalysis(randomUUID(), decision, current, now);
+      measuredAction = decision.action;
       this.db.set("price", price);
       this.db.append(
         "portfolio_snapshots",
@@ -468,6 +479,15 @@ export class BotEngine {
           audit: { ...audit, finalAction: side, reasons: [] },
           check,
           markPrice: price,
+          validation: this.validation?.fill(
+            this.marketStatus(),
+            last.source,
+            c,
+            q.expiresAt,
+            audit.risk.status === "ALLOWED",
+            audit.profitGuard.allowed === true,
+            executionNow,
+          ),
         },
       );
       committed = true;
@@ -492,6 +512,7 @@ export class BotEngine {
         )
           ? error.message
           : safeFailure(error);
+      measuredError = code;
       if (audit && !committed)
         this.monitor.finishCandidate({
           ...audit,
@@ -514,7 +535,24 @@ export class BotEngine {
       const quality = this.market.status?.()?.quality;
       if (quality) this.db.set("market_quality", quality);
       this.monitor.healthy();
-      this.busy = false;
+      try {
+        this.validation?.cycle(
+          this.marketStatus(),
+          measuredFrames,
+          measuredAction,
+          measuredError,
+          began,
+        );
+      } catch {
+        this.db.set("runtime", {
+          ...this.db.runtime(),
+          running: false,
+          error: "VALIDATION_RECORD_FAILED",
+        });
+        throw new Error("VALIDATION_RECORD_FAILED");
+      } finally {
+        this.busy = false;
+      }
     }
   }
   private reject(

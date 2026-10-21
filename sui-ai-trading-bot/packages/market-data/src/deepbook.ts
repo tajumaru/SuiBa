@@ -139,6 +139,24 @@ export class DeepBookMarketData {
   private proofs = new Map<number, EmptyTradeProof>();
   private needsRefresh = false;
   private indexedThrough = 0;
+  private indexerLagMs: number | null = null;
+  diagnostics() {
+    const mid = this.book ? (this.book.bid + this.book.ask) / 2 : 0;
+    const depth = (levels: number[][] | undefined) =>
+      levels
+        ? levels
+            .filter(
+              (x) => Math.abs(x[0] / mid - 1) <= this.limits().maxSlippage,
+            )
+            .reduce((n, x) => n + x[0] * x[1], 0)
+        : null;
+    return {
+      indexerLagMs: this.indexerLagMs,
+      indexedThrough: this.indexedThrough,
+      bidDepthUsdc: depth(this.book?.bids),
+      askDepthUsdc: depth(this.book?.asks),
+    };
+  }
   quality() {
     return structuredClone(this.qualities);
   }
@@ -203,6 +221,7 @@ export class DeepBookMarketData {
         ),
       );
     const checked = Date.now();
+    this.indexerLagMs = status.max_time_lag_seconds * 1000;
     if (
       status.status !== "OK" ||
       status.max_checkpoint_lag > 100 ||
@@ -256,6 +275,9 @@ export class DeepBookMarketData {
       pair: "SUI_USDC",
       fetchedAt: Date.now(),
       timeframe: tf,
+      originalCount: c.length,
+      gapTimestamps: holes,
+      reconstructionMs: 0,
       missing: missingCount,
       reconstructed: 0,
       unresolved: missingCount,
@@ -269,83 +291,93 @@ export class DeepBookMarketData {
     this.qualities[tf] = quality;
     if (this.reconstruct && tf === 300 && holes.length) {
       this.needsRefresh = true;
-      // Bounded startup work; retry on a later cycle never resumes a stopped bot.
-      if (holes.length > 64) throw new Error("CANDLE_GAP");
-      const minutes: MarketCandle[] = [];
-      let cursor = (c.at(-1)!.timestamp + 300) * 1000 - 1000;
-      for (let page = 0; page < 8; page++) {
-        if (Date.now() - began > 45000) throw new Error("CANDLE_GAP");
-        const rows = parseDeepBook(
-          await this.read(
-            "/ohclv/SUI_USDC?interval=1m&start_time=" +
-              c[0].timestamp * 1000 +
-              "&end_time=" +
-              cursor +
-              "&limit=1000",
-            20000,
-          ),
-          60,
-          Date.now(),
-        );
-        minutes.push(...rows);
-        if (rows.length < 1000) break;
-        const earliest = rows[0].timestamp * 1000;
-        if (earliest >= cursor) throw new Error("INVALID_CANDLE");
-        cursor = earliest - 1000;
-        if (cursor < c[0].timestamp * 1000) break;
-        if (page === 7) throw new Error("CANDLE_GAP");
-      }
-      await this.refresh();
-      const indexedThrough = this.indexedThrough;
-      for (const t of holes) {
-        if (Date.now() - began > 45000) break;
-        if (minutes.some((x) => x.timestamp >= t && x.timestamp < t + 300))
-          continue;
-        if (validEmptyProof(this.proofs.get(t), t, Date.now())) continue;
-        if (
-          (t + 300) * 1000 > Date.now() - 120000 ||
-          indexedThrough < (t + 300) * 1000
-        )
-          continue;
-        const path =
-          "/trades/SUI_USDC?start_time=" +
-          t +
-          "&end_time=" +
-          (t + 300) +
-          "&limit=1000";
-        const trades = z
-          .array(z.object({ timestamp: z.number().int().positive() }))
-          .parse(await this.read(path));
-        if (
-          trades.some(
-            (x) => x.timestamp < t * 1000 || x.timestamp > (t + 300) * 1000,
+      const reconstructionStarted = Date.now();
+      try {
+        // Bounded startup work; retry on a later cycle never resumes a stopped bot.
+        if (holes.length > 64) throw new Error("CANDLE_GAP");
+        const minutes: MarketCandle[] = [];
+        let cursor = (c.at(-1)!.timestamp + 300) * 1000 - 1000;
+        for (let page = 0; page < 8; page++) {
+          if (Date.now() - began > 45000) throw new Error("CANDLE_GAP");
+          const rows = parseDeepBook(
+            await this.read(
+              "/ohclv/SUI_USDC?interval=1m&start_time=" +
+                c[0].timestamp * 1000 +
+                "&end_time=" +
+                cursor +
+                "&limit=1000",
+              20000,
+            ),
+            60,
+            Date.now(),
+          );
+          minutes.push(...rows);
+          if (rows.length < 1000) break;
+          const earliest = rows[0].timestamp * 1000;
+          if (earliest >= cursor) throw new Error("INVALID_CANDLE");
+          cursor = earliest - 1000;
+          if (cursor < c[0].timestamp * 1000) break;
+          if (page === 7) throw new Error("CANDLE_GAP");
+        }
+        await this.refresh();
+        const indexedThrough = this.indexedThrough;
+        for (const t of holes) {
+          if (Date.now() - began > 45000) break;
+          if (minutes.some((x) => x.timestamp >= t && x.timestamp < t + 300))
+            continue;
+          if (validEmptyProof(this.proofs.get(t), t, Date.now())) continue;
+          if (
+            (t + 300) * 1000 > Date.now() - 120000 ||
+            indexedThrough < (t + 300) * 1000
           )
-        )
-          throw new Error("INVALID_CANDLE");
-        this.proofs.set(t, {
-          source: "DeepBook Indexer",
-          pair: "SUI_USDC",
-          start: t,
-          end: t + 300,
-          fetchedAt: Date.now(),
-          indexedThrough,
-          complete: trades.length < 1000,
-          tradeCount: trades.filter((x) => x.timestamp < (t + 300) * 1000)
-            .length,
-          path,
-        });
+            continue;
+          const path =
+            "/trades/SUI_USDC?start_time=" +
+            t +
+            "&end_time=" +
+            (t + 300) +
+            "&limit=1000";
+          const trades = z
+            .array(z.object({ timestamp: z.number().int().positive() }))
+            .parse(await this.read(path));
+          if (
+            trades.some(
+              (x) => x.timestamp < t * 1000 || x.timestamp > (t + 300) * 1000,
+            )
+          )
+            throw new Error("INVALID_CANDLE");
+          this.proofs.set(t, {
+            source: "DeepBook Indexer",
+            pair: "SUI_USDC",
+            start: t,
+            end: t + 300,
+            fetchedAt: Date.now(),
+            indexedThrough,
+            complete: trades.length < 1000,
+            tradeCount: trades.filter((x) => x.timestamp < (t + 300) * 1000)
+              .length,
+            path,
+          });
+        }
+        for (const [t, p] of this.proofs)
+          if (Date.now() - p.fetchedAt > 3600000) this.proofs.delete(t);
+        const result = reconstructFiveMinutes(
+          c,
+          minutes,
+          this.proofs,
+          Date.now(),
+          quality.fetchedAt,
+        );
+        this.qualities[tf] = {
+          ...result.quality,
+          originalCount: c.length,
+          gapTimestamps: holes,
+        };
+        return validateCandles(result.candles, tf, Date.now());
+      } finally {
+        this.qualities[tf].reconstructionMs =
+          Date.now() - reconstructionStarted;
       }
-      for (const [t, p] of this.proofs)
-        if (Date.now() - p.fetchedAt > 3600000) this.proofs.delete(t);
-      const result = reconstructFiveMinutes(
-        c,
-        minutes,
-        this.proofs,
-        Date.now(),
-        quality.fetchedAt,
-      );
-      this.qualities[tf] = result.quality;
-      return validateCandles(result.candles, tf, Date.now());
     }
     const original = c.map((x) => ({
       ...x,

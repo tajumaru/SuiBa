@@ -1,40 +1,112 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  copyFileSync,
+} from "node:fs";
+
 import { randomBytes } from "node:crypto";
+
 import { fileURLToPath } from "node:url";
+
 import { dirname, join, resolve } from "node:path";
+
 import { execFileSync } from "node:child_process";
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
 const dir = join(root, "docker");
+
 const command = process.argv[2] ?? "status";
-const args = ["compose", "-p", "suiba-deepbook-24h", "--env-file", join(dir, ".env.deepbook-24h"), "-f", join(dir, "compose.deepbook-24h.yaml")];
+
+const args = [
+  "compose",
+  "-p",
+  "suiba-deepbook-24h",
+  "--env-file",
+  join(dir, ".env.deepbook-24h"),
+  "-f",
+  join(dir, "compose.deepbook-24h.yaml"),
+];
+
 function docker(tail, capture = false) {
-  return execFileSync("docker", [...args, ...tail], { cwd: root, encoding: "utf8", stdio: capture ? ["ignore", "pipe", "inherit"] : "inherit" });
+  return execFileSync("docker", [...args, ...tail], {
+    cwd: root,
+    encoding: "utf8",
+    stdio: capture ? ["ignore", "pipe", "inherit"] : "inherit",
+  });
 }
+
 if (command === "init") {
   mkdirSync(join(dir, "secrets"), { recursive: true });
+
   const secret = join(dir, "secrets/deepbook-24h-admin.txt");
-  if (!existsSync(secret)) writeFileSync(secret, randomBytes(32).toString("hex"), { mode: 0o600, flag: "wx" });
+
+  if (!existsSync(secret))
+    writeFileSync(secret, randomBytes(32).toString("hex"), {
+      mode: 0o600,
+      flag: "wx",
+    });
+
   const env = join(dir, ".env.deepbook-24h");
-  if (!existsSync(env)) copyFileSync(join(dir, "deepbook-24h.env.example"), env);
-  console.log("êÍópê›íËÇ∆ä«óùÉgÅ[ÉNÉìÇèÄîıÇµÇ‹ÇµÇΩÅBä˘ë∂ÉtÉ@ÉCÉãÇÕïœçXÇµÇƒÇ¢Ç‹ÇπÇÒÅB");
+
+  if (!existsSync(env))
+    copyFileSync(join(dir, "deepbook-24h.env.example"), env);
+
+  console.log(
+    "Â∞ÇÁî®Ë®≠ÂÆö„Å®ÁÆ°ÁêÜ„Éà„Éº„ÇØ„É≥„ÇíÊ∫ñÂÇô„Åó„Åæ„Åó„Åü„ÄÇÊó¢Â≠ò„Éï„Ç°„Ç§„É´„ÅØÂ§âÊõ¥„Åó„Å¶„ÅÑ„Åæ„Åõ„Çì„ÄÇ",
+  );
 } else if (["up", "stop", "restart", "logs"].includes(command)) {
   if (command === "up") docker(["up", "-d", "--build"]);
+
   if (command === "stop") docker(["stop", "bot"]);
+
   if (command === "restart") docker(["restart", "bot"]);
+
   if (command === "logs") {
     mkdirSync(join(dir, "artifacts"), { recursive: true });
-    writeFileSync(join(dir, "artifacts/deepbook-24h.log"), docker(["logs", "--no-color", "bot"], true));
-    console.log("docker/artifacts/deepbook-24h.log Ç…ï€ë∂ÇµÇ‹ÇµÇΩÅB");
+
+    writeFileSync(
+      join(dir, "artifacts/deepbook-24h.log"),
+      docker(["logs", "--no-color", "bot"], true),
+    );
+
+    console.log("docker/artifacts/deepbook-24h.log „Å´‰øùÂ≠ò„Åó„Åæ„Åó„Åü„ÄÇ");
   }
 } else if (["begin", "status", "report"].includes(command)) {
   // Read the credential inside the container; it never appears in CLI arguments/output.
+
   const script = `import {readFileSync} from 'node:fs';const token=readFileSync(process.env.ADMIN_TOKEN_FILE,'utf8').trim();const r=await fetch('http://127.0.0.1:3100/api/validation${command === "begin" ? "/start" : ""}',{method:'${command === "begin" ? "POST" : "GET"}',headers:{authorization:'Bearer '+token}});if(!r.ok)throw Error('HTTP_'+r.status);process.stdout.write(await r.text());`;
-  const data = JSON.parse(docker(["exec", "-T", "bot", "node", "--input-type=module", "-e", script], true));
+
+  const data = JSON.parse(
+    docker(
+      ["exec", "-T", "bot", "node", "--input-type=module", "-e", script],
+      true,
+    ),
+  );
+
   if (command === "report") {
     mkdirSync(join(dir, "artifacts"), { recursive: true });
-    writeFileSync(join(dir, "artifacts/deepbook-24h.json"), JSON.stringify(data, null, 2));
+
+    writeFileSync(
+      join(dir, "artifacts/deepbook-24h.json"),
+      JSON.stringify(data, null, 2),
+    );
+
     const md = script.replace("/api/validation'", "/api/validation/report.md'");
-    writeFileSync(join(dir, "artifacts/deepbook-24h.md"), docker(["exec", "-T", "bot", "node", "--input-type=module", "-e", md], true));
-    console.log("JSON / Markdown Ç docker/artifacts Ç…ï€ë∂ÇµÇ‹ÇµÇΩÅB");
+
+    writeFileSync(
+      join(dir, "artifacts/deepbook-24h.md"),
+      docker(
+        ["exec", "-T", "bot", "node", "--input-type=module", "-e", md],
+        true,
+      ),
+    );
+
+    console.log("JSON / Markdown „Çí docker/artifacts „Å´‰øùÂ≠ò„Åó„Åæ„Åó„Åü„ÄÇ");
   } else console.log(JSON.stringify(data, null, 2));
-} else throw Error("égópï˚ñ@: node docker/deepbook-24h.mjs init|up|begin|status|report|logs|stop|restart");
+} else
+  throw Error(
+    "‰ΩøÁî®ÊñπÊ≥ï: node docker/deepbook-24h.mjs init|up|begin|status|report|logs|stop|restart",
+  );
