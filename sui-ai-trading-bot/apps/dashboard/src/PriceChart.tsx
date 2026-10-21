@@ -1,7 +1,8 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import type { Candle } from "../../../packages/shared/src/index.ts";
 import type { BotEngine } from "../../worker/src/engine.ts";
 import {
+  chartPeriods,
   chartData,
   chartWindow,
   chartTime,
@@ -18,7 +19,8 @@ export function PriceChart({
   timeframe?: number;
 }) {
   const data = useMemo(() => chartData(candles), [candles]);
-  const visible = chartWindow(data, 6 * 3600);
+  const [hours, setHours] = useState<number>(6);
+  const visible = chartWindow(data, hours * 3600);
   const c = visible.candles;
   if (!c.length)
     return (
@@ -50,6 +52,25 @@ export function PriceChart({
       <p>
         <strong>SUI / USDC · {c[0].timeframe / 60}分足</strong>
       </p>
+      <div className="chart-controls" role="group" aria-label="表示期間の選択">
+        {chartPeriods.map((n) => (
+          <button
+            key={n}
+            aria-pressed={hours === n}
+            onClick={() => setHours(n)}
+          >
+            {n === 168 ? "7日" : `${n}時間`}
+          </button>
+        ))}
+      </div>
+      <p>選択期間：{hours === 168 ? "7日" : `${hours}時間`}</p>
+      {visible.available < hours * 3600 && (
+        <p className="chart-warning" role="status">
+          データ不足：選択した期間の全データはありません。取得済みの最大
+          {number(visible.available / 3600, 2)}
+          時間を表示しています。追加のAPI取得は行いません。
+        </p>
+      )}
       <p aria-label="実際の表示期間">
         表示期間：{chartTime(start)} ～ {chartTime(end)}（日本時間）
       </p>
