@@ -1,15 +1,20 @@
 import React, { useEffect, useState } from "react";
 import type { OperationMonitor } from "../../worker/src/operations.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
-import { operationReason } from "./operationLabels.ts";
+import {
+  dateTime,
+  number as formatNumber,
+  label,
+  percent,
+  nextStep,
+  errorCode,
+} from "./presentation.ts";
+import { Reason } from "./Reason.tsx";
 export type OperationsSnapshot = ReturnType<OperationMonitor["snapshot"]>;
-const date = (v: number | null) =>
-  v == null ? "未取得" : new Date(v).toLocaleString("ja-JP");
-const number = (v: number | null) =>
-  v == null
-    ? "未評価"
-    : new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 6 }).format(v);
-const usdc = (v: string | number | null) => (v == null ? "不明" : `${v} USDC`);
+const date = dateTime;
+const number = formatNumber;
+const usdc = (v: string | number | null) =>
+  v == null ? "不明" : `${formatNumber(v)} USDC`;
 const statusLabels: Record<string, string> = {
   STOPPED: "停止中",
   RUNNING: "正常稼働中",
@@ -42,7 +47,11 @@ export function OperationsView({
           。実資金の売買・署名・送信は行いません。
         </p>
         {data.stopReason && (
-          <p className="error">停止理由：{operationReason(data.stopReason)}</p>
+          <p className="error">
+            停止理由：
+            <Reason code={data.stopReason} />
+            次の操作：{nextStep(data.stopReason)}
+          </p>
         )}
         <div className="cards">
           {[
@@ -54,11 +63,11 @@ export function OperationsView({
             ["見積もり最終取得", date(data.lastQuoteAt)],
             ["最終売買", date(data.lastTradeAt)],
             [
-              "BUY / SELL / WAIT（最終アクション累計）",
-              `${data.actions.buys} / ${data.actions.sells} / ${data.actions.waits}`,
+              "買い / 売り / 見送り（最終判定の累計）",
+              `${number(data.actions.buys)} / ${number(data.actions.sells)} / ${number(data.actions.waits)}`,
             ],
-            ["Profit Guardによる拒否", String(data.actions.profitRejected)],
-            ["RiskEngineによる拒否", String(data.actions.riskRejected)],
+            ["利益保護による拒否", String(data.actions.profitRejected)],
+            ["リスク制限による拒否", String(data.actions.riskRejected)],
             ["APIエラー", String(data.apiErrors)],
             ["連続エラー", String(data.consecutiveErrors)],
             ["最終正常動作", date(data.lastHealthyAt)],
@@ -81,7 +90,7 @@ export function OperationsView({
           </p>
         )}
         <p>
-          バックオフ解除後も自動再開しません。異常解除とPAPER開始を個別に操作してください。
+          再試行待機解除後も自動再開しません。異常解除とPAPER開始を個別に操作してください。
         </p>
         {(data.apis ?? []).map((a) => (
           <article key={a.api}>
@@ -133,14 +142,14 @@ export function OperationsView({
 
             <p>
               リクエスト：{a.requests}件 ／ 直近1分：{a.requestsPerMinute}件 ／
-              429：{a.rateLimits}件 ／ リトライ：{a.retries}回
+              429：{a.rateLimits}件 ／ 再試行：{a.retries}回
             </p>
             <p>
               接続：
               {a.exhausted
                 ? "再試行上限・手動解除が必要"
                 : a.backoff
-                  ? "バックオフ中"
+                  ? "再試行待機中"
                   : a.active
                     ? "取得中"
                     : a.failed
@@ -180,13 +189,11 @@ export function OperationsView({
                 {[
                   [
                     "取引回数",
-                    `${r.tradeCount}件（BUY ${r.buyCount} / SELL ${r.sellCount}）`,
+                    `${r.tradeCount}件（買い ${number(r.buyCount)} / 売り ${number(r.sellCount)}）`,
                   ],
                   [
                     "勝率（売却単位）",
-                    r.winRate == null
-                      ? "売却なし"
-                      : `${number(r.winRate * 100)}%`,
+                    r.winRate == null ? "売却なし" : percent(r.winRate),
                   ],
                   [
                     "純損益（保有分の評価損益を含む）",
@@ -198,7 +205,7 @@ export function OperationsView({
                     "最大ドローダウン",
                     r.maxDrawdown == null
                       ? "評価データ不足"
-                      : `${number(r.maxDrawdown * 100)}%`,
+                      : percent(r.maxDrawdown),
                   ],
                   ["利益保護による見送り", `${r.profitGuardSkipped}件`],
                   ["リスク制限による見送り", `${r.riskSkipped}件`],
@@ -221,7 +228,7 @@ export function OperationsView({
                 <ul>
                   {r.stopReasons.map((s, i) => (
                     <li key={i}>
-                      {date(s.timestamp)}：{operationReason(s.reason)}
+                      {date(s.timestamp)}：<Reason code={s.reason} />
                     </li>
                   ))}
                 </ul>
@@ -292,7 +299,7 @@ export function OperationsView({
         </p>
         {ledger.reasons.map((reason) => (
           <p className="error" key={reason}>
-            {operationReason(reason)}
+            <Reason code={reason} />
           </p>
         ))}
         {latest && (
@@ -335,15 +342,25 @@ export function OperationsView({
                           } as Record<string, string>
                         )[key] ?? "照合項目"}
                       </td>
-                      <td>{latest.expected[key] ?? "不明"}</td>
-                      <td>{latest.actual[key] ?? "不明"}</td>
+                      <td>
+                        {latest.expected[key] == null
+                          ? "不明"
+                          : number(latest.expected[key])}
+                      </td>
+                      <td>
+                        {latest.actual[key] == null
+                          ? "不明"
+                          : number(latest.actual[key])}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             {latest.reasons.map((r) => (
-              <p key={r}>{operationReason(r)}</p>
+              <p key={r}>
+                <Reason code={r} />
+              </p>
             ))}
           </details>
         )}
@@ -351,29 +368,31 @@ export function OperationsView({
       <section>
         <h3>売買候補ごとの検証記録（直近50件）</h3>
         {data.candidates.length === 0 && (
-          <p>売買候補はまだありません。WAITが続いても正常です。</p>
+          <p>売買候補はまだありません。見送りが続いても正常です。</p>
         )}
         {data.candidates.map((c) => (
           <details className="operation-candidate" key={c.id}>
             <summary>
-              {date(c.createdAt)} · {c.side}候補 →{" "}
+              {date(c.createdAt)} · {label(c.side)}候補 →{" "}
               {c.finalAction === "SAFE_STOP"
                 ? "安全停止"
                 : c.finalAction === "PENDING"
                   ? "処理中"
-                  : c.finalAction}
+                  : label(c.finalAction)}
             </summary>
             <dl>
               {[
                 [
                   "売買予定数量",
                   c.quantityAtomic
-                    ? `${Number(c.quantityAtomic) / 1e9} SUI`
+                    ? `${number(Number(c.quantityAtomic) / 1e9, 9)} SUI`
                     : "見積もり未取得",
                 ],
                 [
                   "見積もり価格（最低受取額から計算）",
-                  c.quotePriceUsdc ? `${c.quotePriceUsdc} USDC / SUI` : "不明",
+                  c.quotePriceUsdc
+                    ? `${number(c.quotePriceUsdc)} USDC / SUI`
+                    : "不明",
                 ],
                 ["見積もり有効期限", date(c.quoteExpiresAt)],
                 ["取得原価", usdc(c.acquisitionCostUsdc)],
@@ -400,10 +419,10 @@ export function OperationsView({
                 ["想定純利益", usdc(c.netProfitUsdc)],
                 [
                   "最低利益条件",
-                  `${c.minProfitUsdc} USDC / ${Number(c.minProfitPct) * 100}%`,
+                  `${number(c.minProfitUsdc)} USDC / ${percent(c.minProfitPct)}`,
                 ],
                 [
-                  "Profit Guard判定",
+                  "利益保護判定",
                   !c.profitGuard.evaluated
                     ? "未評価"
                     : c.profitGuard.allowed
@@ -411,7 +430,7 @@ export function OperationsView({
                       : "拒否",
                 ],
                 [
-                  "RiskEngine判定",
+                  "リスク制限判定",
                   c.risk.status === "NOT_EVALUATED"
                     ? "未評価（前段の条件未通過または処理中）"
                     : c.risk.status === "ALLOWED"
@@ -426,10 +445,15 @@ export function OperationsView({
               ))}
             </dl>
             {c.profitGuard.reason && (
-              <p>利益保護：{operationReason(c.profitGuard.reason)}</p>
+              <p>
+                利益保護：
+                <Reason code={c.profitGuard.reason} />
+              </p>
             )}
             {c.reasons.map((reason, i) => (
-              <p key={i}>{operationReason(reason)}</p>
+              <p key={i}>
+                <Reason code={reason} />
+              </p>
             ))}
           </details>
         ))}
@@ -442,7 +466,7 @@ export function OperationsView({
           <ul>
             {data.events.map((e, i) => (
               <li key={i}>
-                {date(e.timestamp)}：{operationReason(e.code)}
+                {date(e.timestamp)}：<Reason code={e.code} />
               </li>
             ))}
           </ul>
@@ -463,10 +487,11 @@ export function OperationsPanel({ api }: { api: SettingsApi }) {
           setData(response as OperationsSnapshot);
           setError("");
         }
-      } catch {
+      } catch (e) {
         if (active)
           setError(
-            "運用検証データを取得できません。表示済みの情報は最新とは限りません。接続状態を確認してください。",
+            "運用検証データを取得できません。表示済みの情報は最新とは限りません。接続状態を確認してください。コード：" +
+              errorCode(e),
           );
       }
     };

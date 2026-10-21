@@ -16,6 +16,8 @@ import {
   sameSettings,
   type Mode,
 } from "./settingsEditor.ts";
+import { number, percent, errorCode } from "./presentation.ts";
+import { Reason } from "./Reason.tsx";
 type State = ReturnType<BotEngine["snapshot"]>;
 type Field = {
   key: keyof Settings;
@@ -35,7 +37,7 @@ export const fields: Field[] = [
     key: "dailyBuyLimit",
     label: "1日の購入上限",
     unit: "USDC",
-    help: "UTC 00:00からの累計購入額。最大20 USDC。",
+    help: "日本時間09:00（UTC 00:00）からの累計購入額。最大20 USDC。",
   },
   {
     key: "dailyLossPct",
@@ -119,12 +121,12 @@ export const fields: Field[] = [
     label: "最低利益率",
     unit: "%",
     scale: 100,
-    help: "費用控除後に必要な利益率。1.5%は内部値0.015。最大100%。",
+    help: "費用控除後に必要な利益率。最大100%。",
   },
 ];
 const format = (s: Settings, f: Field) =>
   typeof s[f.key] === "number"
-    ? `${Number((Number(s[f.key]) * (f.scale ?? 1)).toPrecision(12))} ${f.unit ?? ""}`
+    ? `${number(Number((Number(s[f.key]) * (f.scale ?? 1)).toPrecision(12)))} ${f.unit ?? ""}`
     : String(s[f.key]);
 export function PresetSelector({
   value,
@@ -222,7 +224,7 @@ export function AdvancedSettings(props: {
         利益保護を有効にする
       </label>
       <small>
-        利益条件の設定です。見積もり・費用・数量の検証とRiskEngineは常に適用されます。
+        利益条件の設定です。見積もり・費用・数量の検証とリスク制限は常に適用されます。
       </small>
     </details>
   );
@@ -260,8 +262,9 @@ export function ProfitGuardSummary({ data }: { data: State }) {
     <div className="profit-summary">
       <h3>利益保護：{data.settings.profitGuardEnabled ? "有効" : "無効"}</h3>
       <p>
-        最低純利益：{data.settings.minNetProfitUsdc} USDC ／ 最低利益率：
-        {data.settings.minNetProfitPct * 100}%
+        最低純利益：{number(data.settings.minNetProfitUsdc)} USDC ／
+        最低利益率：
+        {percent(data.settings.minNetProfitPct)}
       </p>
       <p>
         最後の判定：
@@ -278,7 +281,7 @@ export function ProfitGuardSummary({ data }: { data: State }) {
           ? (reasons[r.reason] ??
             "安全性を確認できないため、売買を見送りました")
           : "判定データはまだありません。"}{" "}
-        判定通過後もRiskEngineが確認します。
+        {r && <Reason code={r.reason} />}判定通過後もリスク制限が確認します。
       </small>
     </div>
   );
@@ -308,7 +311,9 @@ export function SettingsChanges({
               ? s[key]
                 ? "有効"
                 : "無効"
-              : String(s[key]);
+              : key === "strategy"
+                ? "ルールベース"
+                : String(s[key]);
         return (
           <li key={key}>
             <span>
@@ -372,11 +377,12 @@ export function SettingsPage({
       const result = await saveSettings(api, draft);
       await onSaved();
       dispatch({ type: "saved", settings: result });
-    } catch {
+    } catch (e) {
       dispatch({
         type: "failed",
         message:
-          "設定を保存・再確認できませんでした。入力値と接続を確認して再試行してください。",
+          "設定を保存・再確認できませんでした。入力値と接続を確認して再試行してください。コード：" +
+          errorCode(e),
       });
     } finally {
       lock.current = false;
@@ -484,7 +490,7 @@ export function SettingsPage({
             <p>適用予定：{modeLabel(selected)}</p>
             <SettingsChanges before={saved} after={draft} />
             <p>
-              ここに表示されない設定は保持します。設定の保存だけではBotは起動しません。
+              ここに表示されない設定は保持します。設定の保存だけではボットは起動しません。
             </p>
             <button type="button" onClick={() => void save()}>
               {selected === "safe" ? "安全重視を適用" : "変更を保存"}
@@ -517,8 +523,8 @@ export function SettingsPage({
       <div className="settings-saved" aria-label="保存済みの設定">
         <h3>保存済みの設定</h3>
         <p>
-          最大取引額：{saved.maxOrder} USDC ／ 1日の購入上限：
-          {saved.dailyBuyLimit} USDC
+          最大取引額：{number(saved.maxOrder)} USDC ／ 1日の購入上限：
+          {number(saved.dailyBuyLimit)} USDC
         </p>
         <ProfitGuardSummary data={{ ...data, settings: saved }} />
       </div>

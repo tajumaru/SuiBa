@@ -22,7 +22,7 @@ export default defineConfig({
   })),
   webServer: {
     command:
-      "pnpm exec vite apps/dashboard --host 127.0.0.1 --port 5174 --strictPort",
+      "node node_modules/vite/bin/vite.js apps/dashboard --host 127.0.0.1 --port 5174 --strictPort",
     url: "http://127.0.0.1:5174",
     reuseExistingServer: false,
     timeout: 30000,

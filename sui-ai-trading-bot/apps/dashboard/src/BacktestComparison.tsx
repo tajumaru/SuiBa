@@ -1,3 +1,6 @@
+import React from "react";
+import { dateTime, number, label, reason, errorCode } from "./presentation.ts";
+import { Reason } from "./Reason.tsx";
 import { useEffect, useState } from "react";
 import type { Settings } from "../../../packages/shared/src/index.ts";
 import type {
@@ -6,12 +9,11 @@ import type {
   RunResult,
 } from "../../../packages/backtest-engine/src/index.ts";
 
-const format = (v: number | null) =>
-  v === null
-    ? "—"
-    : new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 6 }).format(v);
-const date = (s: number) => new Date(s * 1000).toISOString().slice(0, 16);
-const epoch = (s: string) => Math.floor(Date.parse(s + ":00Z") / 1000);
+const format = number;
+// datetime-local represents Japan time; API epochs remain unchanged.
+const date = (s: number) =>
+  new Date(s * 1000 + 9 * 3600000).toISOString().slice(0, 16);
+const epoch = (s: string) => Math.floor(Date.parse(s + ":00+09:00") / 1000);
 const errors: Record<string, string> = {
   INSUFFICIENT_HISTORY_63_CANDLES:
     "保存済み確定足が不足しています。最低63本が必要です。",
@@ -46,7 +48,11 @@ function Lines({
     <svg
       viewBox="0 0 1000 220"
       role="img"
-      aria-label={drawdown ? "ON OFFドローダウン比較" : "ON OFF資産推移比較"}
+      aria-label={
+        drawdown
+          ? "利益保護の有効・無効別の最大下落率比較"
+          : "利益保護の有効・無効別の資産推移比較"
+      }
     >
       <text x="10" y="18" fill="#8fa7b9" fontSize="12">
         {format(max)} {drawdown ? "%" : "USDC"}
@@ -86,7 +92,7 @@ function Points({ result }: { result: ComparisonResult }) {
     <svg
       viewBox="0 0 1000 220"
       role="img"
-      aria-label="価格とBUY SELL Profit Guard WAITポイント"
+      aria-label="価格と買い・売り・利益保護による見送り地点"
     >
       <polyline
         fill="none"
@@ -114,15 +120,15 @@ function Points({ result }: { result: ComparisonResult }) {
               fill={k ? "#43dfb2" : "#70b9ff"}
             >
               <title>
-                {k ? "ON" : "OFF"} · {new Date(e.timestamp).toISOString()} ·{" "}
-                {e.reasons.join(", ")}
+                {k ? "利益保護あり" : "利益保護なし"} · {dateTime(e.timestamp)}{" "}
+                · {e.reasons.map(reason).join("、")}
               </title>
               {e.trade ? (e.trade.side === "BUY" ? "▲" : "▼") : "W"}
             </text>
           )),
       )}
       <text x="10" y="216" fill="#8fa7b9" fontSize="12">
-        ▲ BUY · ▼ SELL · W 利益不足WAIT（ポインターで理由）
+        ▲ 買い · ▼ 売り · W 利益不足による見送り（ポインターで理由）
       </text>
     </svg>
   );
@@ -183,7 +189,7 @@ export function BacktestComparison({
         const tf = m.timeframe ?? 300,
           split = Math.max(61, Math.floor(m.count * 0.6));
         setAvailable(
-          `${m.count}本 · ${m.source} · ${new Date(m.first * 1000).toLocaleString()} ～ ${new Date(m.last * 1000).toLocaleString()}`,
+          `${m.count}本 · ${m.source} · ${dateTime(m.first * 1000)} ～ ${dateTime(m.last * 1000)}`,
         );
         setInput((i) => ({
           ...i,
@@ -196,11 +202,8 @@ export function BacktestComparison({
           setInput(m.latest.options);
         }
       })
-      .catch(() => {
-        if (active)
-          setError(
-            "保存済み履歴を取得できません。Workerと認証を確認してください。",
-          );
+      .catch((e) => {
+        if (active) setError(errorCode(e));
       });
     return () => {
       active = false;
@@ -209,16 +212,31 @@ export function BacktestComparison({
   const fields: [keyof ComparisonInput, string, number, number, number][] = [
     ["initialUsdc", "初期USDC", 0.01, 1000000, 0.01],
     ["maxOrder", "注文上限 USDC", 0.01, 5, 0.01],
-    ["slippage", "スリッページ（0.003 = 0.3%）", 0, 0.003, 0.0001],
-    ["spread", "スプレッド控除率", 0, 0.01, 0.0001],
-    ["impact", "価格インパクト", 0, 0.003, 0.0001],
-    ["dexFeeRate", "DEX内包手数料率", 0, 0.01, 0.0001],
-    ["additionalFeeRate", "追加手数料率（内包分と別）", 0, 0.01, 0.0001],
+    ["slippage", "価格ずれの上限（%）", 0, 0.003, 0.0001],
+    ["spread", "売値と買値の差の控除率（%）", 0, 0.01, 0.0001],
+    ["impact", "取引による価格への影響（%）", 0, 0.003, 0.0001],
+    ["dexFeeRate", "DEX内包手数料率（%）", 0, 0.01, 0.0001],
+    ["additionalFeeRate", "追加手数料率（内包分と別）（%）", 0, 0.01, 0.0001],
     ["gasUsdc", "1約定のガス USDC", 0.000001, 1, 0.000001],
-    ["participation", "直前出来高への参加率上限", 0.000001, 0.01, 0.000001],
+    [
+      "participation",
+      "直前出来高への参加率上限（%）",
+      0.000001,
+      0.01,
+      0.000001,
+    ],
     ["minNetProfitUsdc", "最低純利益 USDC", 0, 5, 0.000001],
-    ["minNetProfitPct", "最低利益率（0.01 = 1%）", 0, 1, 0.001],
+    ["minNetProfitPct", "最低利益率（%）", 0, 1, 0.001],
   ];
+  const ratioKeys = new Set([
+    "slippage",
+    "spread",
+    "impact",
+    "dexFeeRate",
+    "additionalFeeRate",
+    "participation",
+    "minNetProfitPct",
+  ]);
   const summaryFields: [keyof RunResult["summary"], string, number?][] = [
     ["initialEquity", "初期資産 USDC"],
     ["finalEquity", "最終資産 USDC"],
@@ -226,18 +244,18 @@ export function BacktestComparison({
     ["totalReturnPct", "リターン %"],
     ["maxDrawdown", "最大ドローダウン %", 100],
     ["tradeCount", "約定回数"],
-    ["buyCount", "BUY回数"],
-    ["sellCount", "SELL回数"],
+    ["buyCount", "買い回数"],
+    ["sellCount", "売り回数"],
     ["winRate", "勝率 %", 100],
     ["averageProfit", "平均利益 USDC"],
     ["averageLoss", "平均損失 USDC"],
-    ["profitFactor", "Profit Factor"],
+    ["profitFactor", "利益と損失の比率"],
     ["totalFees", "総手数料 USDC（内包DEX＋追加）"],
     ["dexFees", "内包DEX手数料 USDC"],
     ["additionalFees", "追加手数料 USDC"],
     ["totalGas", "総ガス USDC"],
-    ["profitWaitCount", "利益不足WAIT回数"],
-    ["safetyRejectCount", "安全性・Risk拒否回数"],
+    ["profitWaitCount", "利益不足による見送り回数"],
+    ["safetyRejectCount", "安全性・リスク制限による拒否回数"],
     ["maxLosingStreak", "最大連敗数"],
     ["realizedPnl", "実現損益 USDC"],
     ["unrealizedPnl", "未実現損益 USDC"],
@@ -245,10 +263,10 @@ export function BacktestComparison({
   return (
     <>
       <section>
-        <h3>バックテスト比較 · PAPER ONLY</h3>
+        <h3>バックテスト比較 · PAPER（仮想売買）専用</h3>
         <p>{available}</p>
         <p>
-          過去OHLCVから生成する仮想DEX見積もりです。Cetus・DeepBookの過去の実約定価格を再現しません。ON／OFFは同じ相場・費用・次足始値条件で独立して計算します。
+          過去価格・出来高データ（OHLCV）から生成する仮想DEX見積もりです。Cetus・DeepBookの過去の実約定価格を再現しません。利益保護の有効／無効は同じ相場・費用・次足始値条件で独立して計算します。
         </p>
         <form
           onSubmit={async (e) => {
@@ -258,8 +276,7 @@ export function BacktestComparison({
             try {
               setResult(await request(input));
             } catch (e) {
-              const code = e instanceof Error ? e.message : "BACKTEST_FAILED";
-              setError(errors[code] ?? `比較を実行できません：${code}`);
+              setError(errorCode(e));
             } finally {
               setBusy(false);
             }
@@ -268,9 +285,9 @@ export function BacktestComparison({
           <div className="cards">
             {(
               [
-                ["trainEnd", "学習・調整期間の最終足 UTC"],
-                ["start", "未使用の検証期間 開始 UTC"],
-                ["end", "検証期間の最終足 UTC"],
+                ["trainEnd", "学習・調整期間の最終足（日本時間）"],
+                ["start", "未使用の検証期間 開始（日本時間）"],
+                ["end", "検証期間の最終足（日本時間）"],
               ] as const
             ).map(([key, label]) => (
               <label key={key}>
@@ -298,34 +315,52 @@ export function BacktestComparison({
                 <input
                   type="number"
                   required
-                  min={min}
-                  max={max}
-                  step={step}
-                  value={input[key] ?? ""}
+                  min={min * (ratioKeys.has(key) ? 100 : 1)}
+                  max={max * (ratioKeys.has(key) ? 100 : 1)}
+                  step={step * (ratioKeys.has(key) ? 100 : 1)}
+                  value={
+                    input[key] == null
+                      ? ""
+                      : Number(
+                          (
+                            input[key]! * (ratioKeys.has(key) ? 100 : 1)
+                          ).toPrecision(12),
+                        )
+                  }
                   onChange={(e) =>
-                    setInput({ ...input, [key]: Number(e.target.value) })
+                    setInput({
+                      ...input,
+                      [key]:
+                        Number(e.target.value) / (ratioKeys.has(key) ? 100 : 1),
+                    })
                   }
                 />
               </label>
             ))}
           </div>
           <button disabled={busy}>
-            {busy ? "比較を計算中…" : "同じ条件で ON／OFF を比較"}
+            {busy ? "比較を計算中…" : "同じ条件で利益保護の有効／無効を比較"}
           </button>
         </form>
         {error && (
           <p className="error" role="alert">
-            {error}
+            {errors[error] ??
+              "比較データを取得・計算できません。接続・認証・入力期間を確認して再試行してください。"}
+            <small>コード：{error}</small>
           </p>
         )}
       </section>
       {result && (
         <>
           <section>
-            <h3>比較結果 · OFFは青 / ONは緑</h3>
-            <p>{result.model}</p>
+            <h3>比較結果 · 利益保護なしは青 / 利益保護ありは緑</h3>
+            <p>検証モデル：過去の確定足と設定した費用に基づく仮想売買</p>
             <details>
-              <summary>使用データ・費用・戦略設定</summary>
+              <summary>モデルの技術情報</summary>
+              {result.model}
+            </details>
+            <details>
+              <summary>使用データ・費用・戦略設定（技術情報）</summary>
               <pre>
                 {JSON.stringify(
                   {
@@ -340,8 +375,8 @@ export function BacktestComparison({
               </pre>
             </details>
             <p>
-              入力期間：{new Date(result.options.start * 1000).toLocaleString()}{" "}
-              ～ {new Date(result.options.end * 1000).toLocaleString()}
+              入力期間：{dateTime(result.options.start * 1000)} ～{" "}
+              {dateTime(result.options.end * 1000)}
               。フォーム変更は再実行するまで結果へ反映されません。
             </p>
             <div className="scroll">
@@ -349,8 +384,8 @@ export function BacktestComparison({
                 <thead>
                   <tr>
                     <th>指標</th>
-                    <th>Profit Guard OFF</th>
-                    <th>Profit Guard ON</th>
+                    <th>利益保護なし</th>
+                    <th>利益保護あり</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -372,8 +407,7 @@ export function BacktestComparison({
               </table>
             </div>
             <small>
-              部分SELLごとに按分原価を用いた損益を1回として集計します。ゼロ損益は勝率の分母に含み、連敗をリセット。損失ゼロのProfit
-              Factorと該当取引なしの平均値は「—」。最終保有分は時価評価し強制決済しません。DEX手数料は受取数量へ内包済みで、損益から再控除しません。
+              部分売却ごとに按分原価を用いた損益を1回として集計します。ゼロ損益は勝率の分母に含み、連敗をリセット。損失ゼロの利益と損失の比率と該当取引なしの平均値は「—」。最終保有分は時価評価し強制決済しません。DEX手数料は受取数量へ内包済みで、損益から再控除しません。
             </small>
           </section>
           <section>
@@ -385,7 +419,7 @@ export function BacktestComparison({
             <Lines result={result} drawdown />
           </section>
           <section>
-            <h3>価格・売買・WAITポイント</h3>
+            <h3>価格・売買・見送り地点</h3>
             <Points result={result} />
           </section>
           <section>
@@ -395,11 +429,11 @@ export function BacktestComparison({
               value={mode}
               onChange={(e) => setMode(e.target.value as "on" | "off")}
             >
-              <option value="on">Profit Guard ON</option>
-              <option value="off">Profit Guard OFF</option>
+              <option value="on">利益保護あり</option>
+              <option value="off">利益保護なし</option>
             </select>
             <p>
-              シグナルは前足の確定後、約定候補は次足始値です。全WAIT・拒否を含みます。
+              シグナルは前足の確定後、約定候補は次足始値です。すべての見送り・拒否を含みます。
             </p>
             <label>
               <input
@@ -407,13 +441,13 @@ export function BacktestComparison({
                 checked={showAll}
                 onChange={(e) => setShowAll(e.target.checked)}
               />{" "}
-              通常の戦略WAITも表示（全{result[mode].events.length}件）
+              通常の戦略による見送りも表示（全{result[mode].events.length}件）
             </label>
             <div className="scroll">
               <table>
                 <thead>
                   <tr>
-                    <th>取引時点 / シグナル足 UTC</th>
+                    <th>取引時点 / シグナル足（日本時間）</th>
                     <th>判断 / 状態</th>
                     <th>数量 SUI / 価格</th>
                     <th>取得原価 USDC</th>
@@ -428,14 +462,16 @@ export function BacktestComparison({
                     .map((e) => (
                       <tr key={e.timestamp}>
                         <td>
-                          {new Date(e.timestamp).toISOString()}
+                          {dateTime(e.timestamp)}
                           <br />
-                          {new Date(e.signalTimestamp).toISOString()}
+                          {dateTime(e.signalTimestamp)}
                         </td>
                         <td>
-                          {e.decision.action} / {e.status}
+                          {label(e.decision.action)} / {label(e.status)}
                           <br />
-                          {e.decision.sellPurpose}
+                          {e.decision.sellPurpose
+                            ? label(e.decision.sellPurpose)
+                            : "—"}
                         </td>
                         <td>
                           {e.trade
@@ -443,16 +479,17 @@ export function BacktestComparison({
                             : "—"}
                         </td>
                         <td>
-                          {e.trade?.acquisition?.totalCostUsdc ??
-                            e.profit?.allocatedCostUsdc ??
-                            "—"}
+                          {format(
+                            e.trade?.acquisition?.totalCostUsdc ??
+                              e.profit?.allocatedCostUsdc,
+                          )}
                         </td>
                         <td>
-                          {e.trade?.realizedProfitUsdc ?? "—"} /{" "}
-                          {e.profit?.netProfitUsdc ?? "—"}
+                          {format(e.trade?.realizedProfitUsdc)} /{" "}
+                          {format(e.profit?.netProfitUsdc)}
                         </td>
                         <td>
-                          {e.quote?.dexFeeUsdc ?? "—"} /{" "}
+                          {format(e.quote?.dexFeeUsdc)} /{" "}
                           {(
                             e.trade?.costs ??
                             (e.decision.action === "BUY"
@@ -468,9 +505,13 @@ export function BacktestComparison({
                           )?.gasUsdc ?? "—"}
                         </td>
                         <td>
-                          {e.reasons.join(", ")}
+                          {e.reasons.map((code, i) => (
+                            <p key={i}>
+                              <Reason code={code} />
+                            </p>
+                          ))}
                           <br />
-                          {e.decision.reason}
+                          <Reason code={e.decision.reason} />
                           <details>
                             <summary>計算根拠・見積もり</summary>
                             <pre>
