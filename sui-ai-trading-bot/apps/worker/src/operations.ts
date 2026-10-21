@@ -10,6 +10,7 @@ import type {
   CandidateAudit,
   OperationEvent,
   OperationState,
+  MarketStallDetails,
 } from "../../../packages/shared/src/operations.ts";
 import {
   accountingTolerance,
@@ -23,6 +24,7 @@ export const monitoringLimits = {
   marketDelayedMs: 180000,
   consecutiveApiErrors: 3,
   heartbeatMs: 15000,
+  fetchDeadlineMs: 45000,
 };
 const code = (value: string) =>
   /^[A-Z][A-Z0-9_]{0,100}$/.test(value) ? value : "UNKNOWN_FAILURE";
@@ -37,9 +39,11 @@ export const numericText = (value: unknown): string | null => {
 };
 export class OperationMonitor {
   private cycleFailed = false;
+  private fetchMono: number | null = null;
   constructor(
     readonly db: BotDatabase,
     now = Date.now(),
+    private monotonicNow: () => number = () => performance.now(),
   ) {
     if (!db.get("operation_state"))
       db.set("operation_state", {
@@ -60,7 +64,17 @@ export class OperationMonitor {
       } satisfies OperationState);
   }
   state() {
-    return this.db.get<OperationState>("operation_state")!;
+    return {
+      lastFetchAttemptAt: null,
+      lastFetchSuccessAt: null,
+      lastTransportSuccessAt: null,
+      lastAnalysisAt: null,
+      fetchStartedAt: null,
+      lastFetchDurationMs: null,
+      nextFetchAt: null,
+      nextFetchReason: null,
+      ...this.db.get<OperationState>("operation_state")!,
+    };
   }
   private update(patch: Partial<OperationState>) {
     this.db.set("operation_state", { ...this.state(), ...patch });
@@ -70,6 +84,7 @@ export class OperationMonitor {
     reason: string,
     now = Date.now(),
     fatal = false,
+    details?: MarketStallDetails,
   ) {
     this.db.append(
       "operation_events",
@@ -79,6 +94,7 @@ export class OperationMonitor {
         kind,
         code: code(reason),
         fatal,
+        ...(details ? { details } : {}),
       } satisfies OperationEvent,
       now,
     );
@@ -94,12 +110,16 @@ export class OperationMonitor {
       active: false,
       processStartedAt: now,
       lastHeartbeatAt: now,
+      fetchStartedAt: null,
+      nextFetchAt: null,
+      nextFetchReason: null,
     });
+    this.fetchMono = null;
     this.db.set("runtime", { ...this.db.runtime(), running: false });
     this.db.interruptPending(now);
     this.event("BOOT", "PROCESS_RESTART_STOPPED", now);
   }
-  transition(reason: string, now = Date.now()) {
+  transition(reason: string, now = Date.now(), details?: MarketStallDetails) {
     const s = this.state(),
       active = this.db.runtime().running;
     this.update({
@@ -113,10 +133,136 @@ export class OperationMonitor {
       active || reason === "MANUAL_RESET" ? "CONTROL" : "STOP",
       reason,
       now,
+      false,
+      details,
     );
   }
   beginCycle() {
     this.cycleFailed = false;
+  }
+  scheduled(at: number | null, reason: string | null = null) {
+    this.update({ nextFetchAt: at, nextFetchReason: reason });
+  }
+  analysis(now = Date.now()) {
+    this.update({ lastAnalysisAt: now });
+  }
+  transportSuccess(now = Date.now()) {
+    this.update({ lastTransportSuccessAt: now });
+  }
+  async acquisition<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.fetchMono !== null) throw new Error("MARKET_FETCH_IN_PROGRESS");
+    const began = Date.now();
+    this.fetchMono = this.monotonicNow();
+    this.update({ lastFetchAttemptAt: began, fetchStartedAt: began });
+    const deadline = setTimeout(() => {
+      const details = this.stallDetails(Date.now());
+      if (this.db.runtime().running && details)
+        this.failCycle("MARKET_DATA_STALLED", Date.now(), details);
+    }, monitoringLimits.fetchDeadlineMs + 1);
+    deadline.unref?.();
+    try {
+      const value = await this.request("MARKET", fn);
+      this.update({ lastFetchSuccessAt: Date.now() });
+      if (
+        this.fetchMono != null &&
+        this.monotonicNow() - this.fetchMono > monitoringLimits.fetchDeadlineMs
+      ) {
+        const details = this.stallDetails(Date.now());
+        this.failCycle("MARKET_DATA_STALLED", Date.now(), details ?? undefined);
+        throw new Error("MARKET_DATA_STALLED");
+      }
+      return value;
+    } finally {
+      clearTimeout(deadline);
+      const elapsed =
+        this.fetchMono == null
+          ? null
+          : Math.max(0, this.monotonicNow() - this.fetchMono);
+      this.fetchMono = null;
+      this.update({
+        fetchStartedAt: null,
+        lastFetchDurationMs: elapsed == null ? null : Math.round(elapsed),
+      });
+    }
+  }
+  timing(now = Date.now()) {
+    const s = this.state(),
+      boundary = Math.floor(now / 300000) * 300000;
+    const candleAge =
+      s.lastMarketClosedAt == null
+        ? null
+        : Math.max(0, now - s.lastMarketClosedAt);
+    const updating =
+      s.lastMarketClosedAt === boundary - 300000 &&
+      now - boundary <= 60000 &&
+      candleAge != null &&
+      candleAge <= monitoringLimits.marketStaleMs;
+    return {
+      lastFetchAttemptAt: s.lastFetchAttemptAt ?? null,
+      lastFetchSuccessAt: s.lastFetchSuccessAt ?? null,
+      lastTransportSuccessAt: s.lastTransportSuccessAt ?? null,
+      lastAnalysisAt: s.lastAnalysisAt ?? null,
+      fetchStartedAt: s.fetchStartedAt ?? null,
+      fetching: s.fetchStartedAt != null,
+      fetchElapsedMs:
+        this.fetchMono == null
+          ? null
+          : Math.max(0, this.monotonicNow() - this.fetchMono),
+      lastFetchDurationMs: s.lastFetchDurationMs ?? null,
+      nextFetchAt: s.nextFetchAt ?? null,
+      nextFetchReason: s.nextFetchReason ?? null,
+      candleAgeSeconds: candleAge == null ? null : candleAge / 1000,
+      transportRecent:
+        s.lastTransportSuccessAt != null &&
+        now - s.lastTransportSuccessAt <= monitoringLimits.marketDelayedMs,
+      dataStatus:
+        candleAge == null
+          ? "UNKNOWN"
+          : candleAge > monitoringLimits.marketStaleMs
+            ? "STALE"
+            : updating
+              ? "UPDATING"
+              : "FRESH",
+    };
+  }
+  private stallDetails(now: number): MarketStallDetails | null {
+    const s = this.state(),
+      t = this.timing(now);
+    const reason: MarketStallDetails["reasonDetail"] | null =
+      s.lastMarketClosedAt != null &&
+      now - s.lastMarketClosedAt > monitoringLimits.marketStaleMs
+        ? "CANDLE_STALE"
+        : t.fetchElapsedMs != null &&
+            t.fetchElapsedMs > monitoringLimits.fetchDeadlineMs
+          ? "FETCH_DEADLINE_EXCEEDED"
+          : s.lastMarketAt != null &&
+              now - s.lastMarketAt > monitoringLimits.marketStaleMs
+            ? "FETCH_SUCCESS_STALE"
+            : s.lastMarketAt == null &&
+                now - s.processStartedAt > monitoringLimits.marketStaleMs
+              ? "NO_VALID_MARKET_DATA"
+              : null;
+    return reason
+      ? {
+          evaluatedAt: now,
+          reasonDetail: reason,
+          candleAgeSeconds: t.candleAgeSeconds,
+          lastFetchSuccessAgeSeconds:
+            s.lastFetchSuccessAt == null
+              ? null
+              : Math.max(0, now - s.lastFetchSuccessAt) / 1000,
+          lastValidatedMarketAgeSeconds:
+            s.lastMarketAt == null
+              ? null
+              : Math.max(0, now - s.lastMarketAt) / 1000,
+          fetching: t.fetching,
+          fetchStartedAt: t.fetchStartedAt,
+          fetchElapsedMs: t.fetchElapsedMs,
+          lastFetchDurationMs: t.lastFetchDurationMs,
+          nextFetchAt: t.nextFetchAt,
+          latestClosedAt: s.lastMarketClosedAt,
+        }
+      : null;
   }
   async request<T>(
     kind: "MARKET" | "QUOTE" | "HEALTH",
@@ -166,7 +312,7 @@ export class OperationMonitor {
       lastHeartbeatAt: now,
     });
   }
-  stop(reason: string, now = Date.now()) {
+  stop(reason: string, now = Date.now(), details?: MarketStallDetails) {
     const r = this.db.runtime();
     if (r.running || !r.error) {
       this.db.set("runtime", {
@@ -174,28 +320,25 @@ export class OperationMonitor {
         running: false,
         error: r.error ?? code(reason),
       });
-      this.transition(reason, now);
+      this.transition(reason, now, details);
+      if (details)
+        console.warn(
+          JSON.stringify({ event: "MARKET_DATA_STALLED", ...details }),
+        );
     }
   }
-  failCycle(reason: string, now = Date.now()) {
-    if (!this.cycleFailed) this.event("ERROR", reason, now);
+  failCycle(reason: string, now = Date.now(), details?: MarketStallDetails) {
+    if (!this.cycleFailed) this.event("ERROR", reason, now, false, details);
     this.cycleFailed = true;
-    this.event("ANOMALY", reason, now, true);
-    this.stop(reason, now);
+    this.event("ANOMALY", reason, now, true, details);
+    this.stop(reason, now, details);
   }
   watchdog(now = Date.now()) {
     const s = this.state(),
       r = this.db.runtime();
-    if (
-      r.running &&
-      ((s.lastMarketClosedAt != null &&
-        now - s.lastMarketClosedAt > monitoringLimits.marketStaleMs) ||
-        (s.lastMarketAt == null &&
-          now - s.processStartedAt > monitoringLimits.marketStaleMs) ||
-        (s.lastMarketAt != null &&
-          now - s.lastMarketAt > monitoringLimits.marketStaleMs))
-    )
-      this.failCycle("MARKET_DATA_STALLED", now);
+    const details = this.stallDetails(now);
+    if (r.running && details)
+      this.failCycle("MARKET_DATA_STALLED", now, details);
     if (this.db.runtime().running && !this.ledger().ok)
       this.failCycle("PAPER_RECONCILIATION_FAILED", now);
     this.account(now);
@@ -396,6 +539,7 @@ export class OperationMonitor {
       now - s.lastMarketAt > monitoringLimits.marketDelayedMs ||
       now - s.lastMarketClosedAt > monitoringLimits.marketStaleMs;
     return {
+      timing: this.timing(now),
       apis: apiAccess.snapshot(now),
       mode: "PAPER" as const,
       status:

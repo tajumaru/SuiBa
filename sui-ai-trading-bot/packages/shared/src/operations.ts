@@ -30,13 +30,40 @@ export interface CandidateAudit {
   finalAction: "PENDING" | "BUY" | "SELL" | "WAIT" | "SAFE_STOP";
   reasons: string[];
 }
+export interface MarketStallDetails {
+  evaluatedAt: number;
+  reasonDetail:
+    | "CANDLE_STALE"
+    | "FETCH_DEADLINE_EXCEEDED"
+    | "FETCH_SUCCESS_STALE"
+    | "NO_VALID_MARKET_DATA";
+  candleAgeSeconds: number | null;
+  lastFetchSuccessAgeSeconds: number | null;
+  lastValidatedMarketAgeSeconds: number | null;
+  fetching: boolean;
+  fetchStartedAt: number | null;
+  fetchElapsedMs: number | null;
+  lastFetchDurationMs: number | null;
+  nextFetchAt: number | null;
+  latestClosedAt: number | null;
+}
 export interface OperationEvent {
   timestamp: number;
   kind: "WAIT" | "ERROR" | "ANOMALY" | "STOP" | "CONTROL" | "BOOT";
   code: string;
   fatal?: boolean;
+  details?: MarketStallDetails;
 }
 export interface OperationState {
+  lastFetchAttemptAt?: number | null;
+  lastFetchSuccessAt?: number | null;
+  lastTransportSuccessAt?: number | null;
+  lastAnalysisAt?: number | null;
+  fetchStartedAt?: number | null;
+  lastFetchDurationMs?: number | null;
+  nextFetchAt?: number | null;
+  nextFetchReason?: string | null;
+
   observedSince: number;
   processStartedAt: number;
   runningMs: number;

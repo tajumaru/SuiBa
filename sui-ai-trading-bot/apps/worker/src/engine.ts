@@ -82,14 +82,15 @@ export class BotEngine {
     try {
       const now = Date.now();
       await this.monitor.request("HEALTH", () => this.sui.health());
-      const frames: Record<number, Candle[]> = this.market.frames
-        ? await this.monitor.request("MARKET", () => this.market.frames!(now))
-        : {};
-      if (!this.market.frames)
-        for (const tf of [300, 900, 3600] as const)
-          frames[tf] = await this.monitor.request("MARKET", () =>
-            this.market.candles(tf, now),
-          );
+      const frames: Record<number, Candle[]> = await this.monitor.acquisition(
+        async () => {
+          if (this.market.frames) return this.market.frames(now);
+          const result: Record<number, Candle[]> = {};
+          for (const tf of [300, 900, 3600] as const)
+            result[tf] = await this.market.candles(tf, now);
+          return result;
+        },
+      );
       if (this.market.frames)
         for (const tf of [300, 900, 3600] as const)
           validateCandles(frames[tf], tf, Date.now());
@@ -144,6 +145,7 @@ export class BotEngine {
       });
       this.db.recordAnalysis(randomUUID(), decision, current, now);
       measuredAction = decision.action;
+      this.monitor.analysis();
       this.db.set("price", price);
       this.db.append(
         "portfolio_snapshots",

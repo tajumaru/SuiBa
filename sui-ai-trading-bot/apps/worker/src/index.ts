@@ -1,3 +1,4 @@
+import { MarketScheduler } from "./scheduler.ts";
 import {
   exportValidationReport,
   validationMarkdown,
@@ -54,20 +55,24 @@ const sui = new ReadOnlySuiClient(process.env.SUI_GRPC_URL),
 engine.monitor.boot();
 const validation = validationEnabled ? new ValidationRecorder(db) : undefined;
 engine.validation = validation;
-if (validation) {
-  validation.boot();
-  apiAccess.onAttempt = (event) => {
+validation?.boot();
+apiAccess.onAttempt = (event) => {
+  if (
+    event.success &&
+    ["DeepBook Indexer", "GeckoTerminal"].includes(event.api)
+  )
+    engine.monitor.transportSuccess(event.occurredAt);
+  if (!validation) return;
+  try {
+    validation.attempt(event);
+  } catch {
     try {
-      validation.attempt(event);
-    } catch {
-      try {
-        validation.fault("VALIDATION_RECORD_FAILED");
-      } catch {}
-      throw new Error("VALIDATION_RECORD_FAILED");
-    }
-  };
-  validation.sample(engine.marketStatus());
-}
+      validation.fault("VALIDATION_RECORD_FAILED");
+    } catch {}
+    throw new Error("VALIDATION_RECORD_FAILED");
+  }
+};
+validation?.sample(engine.marketStatus());
 apiAccess.restoreCooldowns(db.get("api_cooldowns") ?? []);
 let lastExportAt = 0;
 function validationHeartbeat(final = false) {
@@ -103,12 +108,27 @@ watchdog.unref();
 let stopping = false;
 let backtestBusy = false;
 let activeTick: Promise<void> | undefined;
-async function loop() {
-  if (stopping) return;
-  activeTick = engine.tick();
-  await activeTick;
-  if (!stopping) setTimeout(loop, db.settings().intervalMs).unref();
-}
+const scheduler = new MarketScheduler(
+  async () => {
+    activeTick = engine.tick();
+    await activeTick;
+  },
+  () => ({
+    intervalMs: db.settings().intervalMs,
+    deepbook:
+      marketMode === "deepbook" ||
+      (marketMode === "auto" &&
+        engine.marketStatus()?.source !== "GeckoTerminal"),
+    latestClosedAt: engine.monitor.state().lastMarketClosedAt,
+    healthy: engine.marketStatus()?.healthy ?? false,
+    blocked: apiAccess.blocked(),
+  }),
+  (plan) => engine.monitor.scheduled(plan?.at ?? null, plan?.reason ?? null),
+  () => {
+    console.error("PAPER_WORKER_UNAVAILABLE");
+    process.exit(1);
+  },
+);
 const server = createServer(async (req, res) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Cache-Control", "no-store");
@@ -304,6 +324,11 @@ const server = createServer(async (req, res) => {
           error: null,
         });
       } else if (command === "start") {
+        const timing = engine.monitor.timing();
+        if (timing.fetchElapsedMs != null && timing.fetchElapsedMs > 45000) {
+          send(409, { error: "MARKET_FETCH_IN_PROGRESS" });
+          return;
+        }
         if (apiAccess.blocked()) {
           send(409, { error: "API_BACKOFF" });
           return;
@@ -347,13 +372,14 @@ server.listen(
   process.env.HOST ?? "127.0.0.1",
   () => {
     console.info("PAPER dashboard/API ready");
-    void loop();
+    scheduler.start();
   },
 );
 for (const signal of ["SIGINT", "SIGTERM"] as const)
   process.on(signal, () => {
     if (stopping) return;
     stopping = true;
+    scheduler.stop();
     apiAccess.cancel();
     clearInterval(watchdog);
     db.set("runtime", { ...db.runtime(), running: false });
