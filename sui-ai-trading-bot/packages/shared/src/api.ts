@@ -1,3 +1,10 @@
+import {
+  classifyHttpFailure,
+  requestIdentity,
+  HttpStatusFailure,
+  type ApiFailure,
+  type RequestPhase,
+} from "./http-errors.ts";
 export const apiLimits = {
   timeoutMs: 10000,
   maxWaitMs: 60000,
@@ -51,6 +58,7 @@ type Stats = {
   active: boolean;
   failed: boolean;
   recent: number[];
+  lastFailure: ApiFailure | null;
 };
 export class ApiAccess {
   private states = new Map<string, Stats>();
@@ -61,6 +69,11 @@ export class ApiAccess {
   onAttempt: (event: ApiAttempt) => void = () => {};
   onRateLimit: (api: string) => void = () => {};
   onTransientFailure: (api: string, code: string) => void = () => {};
+  onFailure: (failure: ApiFailure) => void = () => {};
+  recordFailure(failure: ApiFailure) {
+    this.state(failure.api).lastFailure = failure;
+    this.onFailure(failure);
+  }
   restoreCooldowns(
     values: { api: string; nextRetryAt: number | null; exhausted: boolean }[],
   ) {
@@ -83,6 +96,7 @@ export class ApiAccess {
         active: false,
         failed: false,
         recent: [],
+        lastFailure: null,
       });
     return this.states.get(api)!;
   }
@@ -205,6 +219,9 @@ export class ApiAccess {
             const failedAt = Date.now();
             const transient = [
               "UPSTREAM_TIMEOUT",
+              "UPSTREAM_CONNECT_TIMEOUT",
+              "UPSTREAM_HEADERS_TIMEOUT",
+              "UPSTREAM_BODY_TIMEOUT",
               "UPSTREAM_NETWORK_FAILED",
               "UPSTREAM_DNS_FAILED",
               "UPSTREAM_HTTP_502",
@@ -324,6 +341,9 @@ export async function apiFetch(
     api,
     key,
     async (signal) => {
+      const started = performance.now();
+      let phase: RequestPhase = "HEADERS_OR_CONNECT";
+      let status: number | null = null;
       const combined = AbortSignal.any([
         signal,
         ...(init?.signal ? [init.signal] : []),
@@ -331,14 +351,15 @@ export async function apiFetch(
       ]);
       try {
         const response = await rawFetch(input, { ...init, signal: combined });
-        if (response.status === 429) {
-          await response.body?.cancel();
-          throw new RateLimited(response.headers.get("retry-after"));
-        }
+        status = response.status;
         if (!response.ok) {
-          await response.body?.cancel();
-          throw new Error("UPSTREAM_HTTP_" + response.status);
+          phase = "HTTP";
+          await response.body?.cancel().catch(() => {});
+          if (status === 429)
+            throw new RateLimited(response.headers.get("retry-after"));
+          throw new HttpStatusFailure(status);
         }
+        phase = "BODY";
         const bytes = await response.arrayBuffer();
         return {
           bytes,
@@ -346,29 +367,24 @@ export async function apiFetch(
           headers: [...response.headers.entries()],
         };
       } catch (error) {
-        if (
-          error instanceof RateLimited ||
-          (error instanceof Error &&
-            /^UPSTREAM_HTTP_\d{3}$/.test(error.message))
-        )
+        const classification =
+          error instanceof RateLimited || error instanceof HttpStatusFailure
+            ? { code: error.message, phase: "HTTP" as const, causeCode: null }
+            : classifyHttpFailure(error, phase, combined);
+        apiAccess.recordFailure({
+          ...requestIdentity(
+            api,
+            url,
+            init?.method ?? (input instanceof Request ? input.method : "GET"),
+          ),
+          ...classification,
+          status,
+          elapsedMs: Math.round(performance.now() - started),
+          occurredAt: Date.now(),
+        });
+        if (error instanceof RateLimited || error instanceof HttpStatusFailure)
           throw error;
-        if (
-          init?.signal?.aborted ||
-          (input instanceof Request && input.signal.aborted)
-        )
-          throw new Error("API_CANCELLED");
-        if (combined.aborted)
-          throw new Error(
-            combined.reason?.name === "TimeoutError"
-              ? "UPSTREAM_TIMEOUT"
-              : "API_CANCELLED",
-          );
-        const code = (error as { cause?: { code?: string } })?.cause?.code;
-        throw new Error(
-          ["ENOTFOUND", "EAI_AGAIN"].includes(code ?? "")
-            ? "UPSTREAM_DNS_FAILED"
-            : "UPSTREAM_NETWORK_FAILED",
-        );
+        throw new Error(classification.code);
       }
     },
     ttl,

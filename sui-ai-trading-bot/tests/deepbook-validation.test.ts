@@ -309,6 +309,9 @@ it("does not retry a successful request when metrics persistence fails", async (
 });
 for (const code of [
   "UPSTREAM_TIMEOUT",
+  "UPSTREAM_CONNECT_TIMEOUT",
+  "UPSTREAM_HEADERS_TIMEOUT",
+  "UPSTREAM_BODY_TIMEOUT",
   "UPSTREAM_HTTP_429",
   "UPSTREAM_HTTP_502",
   "UPSTREAM_HTTP_503",

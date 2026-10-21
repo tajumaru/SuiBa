@@ -68,3 +68,7 @@ API異常時は計測書き込みより先に既存の即時停止コールバ�
 - `tests/deepbook-provider.test.ts`
 - `tests/deepbook-validation.test.ts`
 - `tests/e2e/deepbook-validation.pw.ts`
+
+## ローカルmainとのマージ後の確認（2026-10-21）
+
+ローカルmainに残っていた通信障害診断機能を統合しました。接続・ヘッダー・本文のタイムアウト分類を既存の即時停止、上限付きリトライ、Provider選択、24時間計測にも反映しています。マージ後の `pnpm build` は成功、ユニット277件・ブラウザーE2E76件が成功しました。このマージ後のDocker統合試験は再実行していません。上記Docker結果は24時間検証環境を追加した時点の結果です。

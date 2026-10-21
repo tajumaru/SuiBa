@@ -10,19 +10,25 @@ export function operationReason(code: string): string {
     THIN_ORDERBOOK: "注文板の数量が不足するため取引を停止しています",
     INDEXER_DELAYED: "DeepBookのデータ更新が遅れています",
     UPSTREAM_HTTP_504: "外部APIの中継先が時間切れです",
-    UPSTREAM_NETWORK_FAILED: "外部APIとの通信が切断されました",
-    UPSTREAM_DNS_FAILED: "外部APIの名前解決に失敗しました",
 
+    UPSTREAM_TIMEOUT: "接続または応答ヘッダー待ちが時間切れです（段階未確定）",
+    UPSTREAM_CONNECT_TIMEOUT: "外部APIへの接続が時間切れです",
+    UPSTREAM_HEADERS_TIMEOUT: "外部APIの応答ヘッダー待ちが時間切れです",
+    UPSTREAM_BODY_TIMEOUT: "外部APIの応答本文の受信が時間切れです",
+    UPSTREAM_DNS_FAILED: "外部APIの名前解決に失敗しました",
+    UPSTREAM_TLS_FAILED: "外部APIのTLS接続または証明書検証に失敗しました",
+    UPSTREAM_NETWORK_FAILED:
+      "外部APIとの接続が拒否・切断されたか通信に失敗しました",
+    UPSTREAM_HTTP_404: "外部APIの対象URLが見つかりません（HTTP 404）",
+    UPSTREAM_HTTP_500: "外部APIのサーバーエラーです（HTTP 500）",
+    UPSTREAM_HTTP_503: "外部APIが一時的に利用できません（HTTP 503）",
     REQUEST_FAILED: "リクエストを完了できませんでした",
     UNAUTHORIZED:
       "管理トークンを確認できません。ログアウトして正しいトークンで接続してください",
     HTTP_401: "認証が必要です。管理トークンを確認してください",
     HTTP_403: "この操作は許可されていません",
     REQUEST_REJECTED: "入力値または運用状態を確認してください",
-    UPSTREAM_TIMEOUT: "外部APIの応答が時間内に届きませんでした",
-    UPSTREAM_HTTP_500: "外部APIでサーバーエラーが発生しています",
     UPSTREAM_HTTP_502: "外部APIの中継先に接続できません",
-    UPSTREAM_HTTP_503: "外部APIが一時的に利用できません",
     NATIVE_USDC_POOL_NOT_FOUND: "ネイティブUSDCの取引プールが見つかりません",
     INSUFFICIENT_CANDLES: "判定に必要な確定足が不足しています",
     INVALID_CANDLE: "市場データに不正な価格または出来高があります",
@@ -37,6 +43,7 @@ export function operationReason(code: string): string {
     NO_LIQUIDITY: "取引に必要な流動性がありません",
     CONCURRENT_ORDER: "処理中の注文があるため見送りました",
     INVALID_QUOTE: "価格見積もりの内容が不正です",
+
     UPSTREAM_HTTP_429: "APIの利用制限に達したため安全停止しています",
     API_BACKOFF: "APIの再試行待機中です。PAPERは停止しています",
     API_RETRIES_EXHAUSTED:

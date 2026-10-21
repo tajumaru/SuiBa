@@ -423,6 +423,9 @@ export function aggregateValidation(
       !x.success &&
       [
         "UPSTREAM_TIMEOUT",
+        "UPSTREAM_CONNECT_TIMEOUT",
+        "UPSTREAM_HEADERS_TIMEOUT",
+        "UPSTREAM_BODY_TIMEOUT",
         "UPSTREAM_NETWORK_FAILED",
         "UPSTREAM_DNS_FAILED",
         "UPSTREAM_HTTP_429",

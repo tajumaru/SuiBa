@@ -6,6 +6,8 @@ SUI / Native USDC のMainnet市場データで、ルール戦略を検証する�
 
 Windows 11 + Docker Desktopの手順、429の対応と検証結果は[API安定化・Docker運用 1.1](docs/API_DOCKER_V1_1.md)を参照してください。
 
+[GeckoTerminal通信失敗の原因調査と24時間再テスト手順](docs/GECKO_TIMEOUT_INVESTIGATION.md)も参照してください。当時の通信障害の種類は未確定ですが、全通信例外をタイムアウト表示する誤分類を修正しました。
+
 ## 起動
 
 Node.js 24 LTS / pnpm 9.12.3。プロジェクトディレクトリで実行します。

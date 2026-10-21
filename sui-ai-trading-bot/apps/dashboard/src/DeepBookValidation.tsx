@@ -104,7 +104,14 @@ export function DeepBookValidation({
                 {dateTime(a.lastSuccessAt)}
               </p>
               <p>
-                タイムアウト：{a.codes.UPSTREAM_TIMEOUT ?? 0} ／ HTTP 429：
+                タイムアウト：
+                {[
+                  "UPSTREAM_TIMEOUT",
+                  "UPSTREAM_CONNECT_TIMEOUT",
+                  "UPSTREAM_HEADERS_TIMEOUT",
+                  "UPSTREAM_BODY_TIMEOUT",
+                ].reduce((n, code) => n + (a.codes[code] ?? 0), 0)}{" "}
+                ／ HTTP 429：
                 {a.codes.UPSTREAM_HTTP_429 ?? 0} ／ 502：
                 {a.codes.UPSTREAM_HTTP_502 ?? 0} ／ 503：
                 {a.codes.UPSTREAM_HTTP_503 ?? 0} ／ 504：

@@ -7,6 +7,7 @@ async function open(
   page: Page,
   status: "STOPPED" | "RUNNING" | "DATA_DELAYED" | "ABNORMAL_STOP",
   limited = false,
+  networkFailure = false,
 ) {
   const db = new BotDatabase(":memory:");
   db.set("runtime", {
@@ -73,6 +74,23 @@ async function open(
       backoff: true,
       nextRetryAt: Date.now() + 30000,
       failed: true,
+    };
+  }
+  if (networkFailure) {
+    operations.stopReason = "UPSTREAM_DNS_FAILED";
+    operations.apis[1].failed = true;
+    operations.apis[1].lastFailure = {
+      api: "GeckoTerminal",
+      host: "api.geckoterminal.com",
+      url: "https://api.geckoterminal.com/api/v2/networks/sui-network/pools/0x0df4f02d0e210169cb6d5aabd03c3058328c06f2c4dbb0804faa041159c78443/ohlcv/minute?aggregate=5&limit=1000&currency=token&token=quote&include_empty_intervals=false",
+      method: "GET",
+      operation: "OHLCV_5M",
+      code: "UPSTREAM_DNS_FAILED",
+      causeCode: "EAI_AGAIN",
+      phase: "DNS",
+      status: null,
+      elapsedMs: 42,
+      occurredAt: Date.now(),
     };
   }
   db.close();
@@ -189,4 +207,24 @@ test("shows Japanese rate-limit monitoring and keeps recovery separate from rest
   await expect(card).toContainText("再試行：1回");
   await expect(card).toContainText("429：2件");
   expect(api.writes).toEqual([]);
+});
+
+test("shows sanitized network failure diagnostics without mobile overflow", async ({
+  page,
+}) => {
+  await open(page, "ABNORMAL_STOP", false, true);
+  const card = page
+    .locator("article")
+    .filter({
+      has: page.getByRole("heading", { name: "GeckoTerminal", exact: true }),
+    });
+  await expect(card).toContainText("名前解決に失敗しました");
+  await expect(card).toContainText("5分足取得");
+  await expect(card).toContainText("EAI_AGAIN");
+  await expect(card).toContainText("42ms");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 });

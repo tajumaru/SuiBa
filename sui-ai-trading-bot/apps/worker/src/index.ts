@@ -85,6 +85,11 @@ function validationHeartbeat(final = false) {
     lastExportAt = now;
   }
 }
+// Log only allowlisted metadata; never raw errors, headers, bodies or credentials.
+apiAccess.onFailure = (failure) =>
+  console.warn(
+    JSON.stringify({ event: "UPSTREAM_REQUEST_FAILED", ...failure }),
+  );
 const watchdog = setInterval(() => {
   try {
     engine.monitor.watchdog();

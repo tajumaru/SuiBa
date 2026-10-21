@@ -81,6 +81,9 @@ export class MarketSelection implements MarketDataProvider {
           // 429, abort, pair mismatch, stale/thin/wide books must never be bypassed.
           const eligible = [
             "UPSTREAM_TIMEOUT",
+            "UPSTREAM_CONNECT_TIMEOUT",
+            "UPSTREAM_HEADERS_TIMEOUT",
+            "UPSTREAM_BODY_TIMEOUT",
             "UPSTREAM_NETWORK_FAILED",
             "UPSTREAM_DNS_FAILED",
             "UPSTREAM_HTTP_502",

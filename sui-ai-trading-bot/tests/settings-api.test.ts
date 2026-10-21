@@ -144,6 +144,21 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
     expect(state.settings).toEqual(safe);
     expect(state.trades).toHaveLength(1);
     expect(state.trades[0].orderId).toBe("old-trade");
+    const diagnostic = failure
+      .split("\n")
+      .filter((line) => line.startsWith("{"))
+      .map((line) => JSON.parse(line))
+      .find((entry) => entry.event === "UPSTREAM_REQUEST_FAILED");
+    expect(diagnostic).toMatchObject({
+      api: "Sui gRPC",
+      host: "127.0.0.1:1",
+      operation: "SUI_GRPC_READ",
+      code: "UPSTREAM_NETWORK_FAILED",
+      phase: "HEADERS_OR_CONNECT",
+    });
+    expect(diagnostic.elapsedMs).toBeGreaterThanOrEqual(0);
+    expect(diagnostic.url).toBe("https://127.0.0.1:1/[redacted]");
+    expect(failure).not.toContain(token);
   } finally {
     await stop();
     rmSync(folder, { recursive: true, force: true });
