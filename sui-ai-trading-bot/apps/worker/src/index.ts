@@ -1,3 +1,5 @@
+import { ChartHistoryClient } from "./chart-history-client.ts";
+import { historyQuery } from "./chart-history.ts";
 import { MarketScheduler } from "./scheduler.ts";
 import {
   exportValidationReport,
@@ -108,8 +110,24 @@ watchdog.unref();
 let stopping = false;
 let backtestBusy = false;
 let activeTick: Promise<void> | undefined;
+const chartHistory = new ChartHistoryClient(
+  (process.env.DATABASE_PATH ?? "data/bot.sqlite") + ".chart-history.sqlite",
+  () => {
+    const timing = engine.monitor.timing();
+    return (
+      !stopping &&
+      !apiAccess.blocked() &&
+      !apiAccess
+        .snapshot()
+        .some((a) => a.api === "DeepBook Indexer" && a.active) &&
+      !timing.fetching &&
+      (timing.nextFetchAt == null || timing.nextFetchAt - Date.now() > 12000)
+    );
+  },
+);
 const scheduler = new MarketScheduler(
   async () => {
+    chartHistory.cancel();
     activeTick = engine.tick();
     await activeTick;
   },
@@ -187,6 +205,29 @@ const server = createServer(async (req, res) => {
       !timingSafeEqual(supplied, expected)
     ) {
       send(401, { error: "UNAUTHORIZED" });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/chart/history") {
+      try {
+        const query = historyQuery(url.searchParams);
+        const result = await chartHistory.get(
+          query,
+          db.candles(query.timeframe),
+        );
+        send(200, result);
+      } catch (e) {
+        const code = e instanceof Error ? e.message : "CHART_HISTORY_FAILED";
+        send(code === "INVALID_CHART_RANGE" ? 400 : 503, {
+          error: [
+            "INVALID_CHART_RANGE",
+            "CHART_BUSY",
+            "CHART_CANCELLED",
+            "CHART_CACHE_UNAVAILABLE",
+          ].includes(code)
+            ? code
+            : "CHART_HISTORY_FAILED",
+        });
+      }
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/state") {
@@ -380,6 +421,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
     if (stopping) return;
     stopping = true;
     scheduler.stop();
+    chartHistory.close();
     apiAccess.cancel();
     clearInterval(watchdog);
     db.set("runtime", { ...db.runtime(), running: false });
