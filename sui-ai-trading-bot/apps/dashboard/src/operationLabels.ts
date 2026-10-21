@@ -56,6 +56,8 @@ export function operationReason(code: string): string {
     MANUAL_STOP: "手動で停止",
     MANUAL_RESET: "停止状態を手動で解除",
     EMERGENCY_STOP: "緊急停止",
+    MARKET_FETCH_IN_PROGRESS:
+      "市場データ取得が完了していません。状態を確認してください",
     MARKET_DATA_STALLED: "市場データの更新が停止しています",
     STALE_CANDLES: "市場データが古いため停止",
     QUOTE_EXPIRED: "価格見積もりの期限が切れています",

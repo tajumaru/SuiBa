@@ -63,6 +63,36 @@ export function OperationsView({
             次の操作：{nextStep(data.stopReason)}
           </p>
         )}
+        {data.timing && (
+          <div className="card" aria-label="市場データ取得タイミング">
+            <p>
+              市場データ：
+              {
+                {
+                  FRESH: "鮮度内",
+                  UPDATING: "確定足の更新待ち",
+                  STALE: "確定足が期限切れ",
+                  UNKNOWN: "未取得",
+                }[data.timing.dataStatus]
+              }{" "}
+              ／ 通信：
+              {data.timing.transportRecent
+                ? "直近の成功あり"
+                : "直近の成功未確認"}
+            </p>
+            <p>
+              最終取得試行：{date(data.timing.lastFetchAttemptAt)} ／
+              最終取得成功：{date(data.timing.lastFetchSuccessAt)} ／
+              最終分析成功：{date(data.timing.lastAnalysisAt)}
+            </p>
+            <p>
+              取得中：{data.timing.fetching ? "はい" : "いいえ"} ／ 取得開始：
+              {date(data.timing.fetchStartedAt)} ／ 前回所要時間：
+              {number(data.timing.lastFetchDurationMs)} ms ／ 次回予定：
+              {date(data.timing.nextFetchAt)}
+            </p>
+          </div>
+        )}
         <div className="cards">
           {[
             [
@@ -481,6 +511,23 @@ export function OperationsView({
             {data.events.map((e, i) => (
               <li key={i}>
                 {date(e.timestamp)}：<Reason code={e.code} />
+                {e.details && (
+                  <details>
+                    <summary>停止判定の詳細</summary>
+                    <pre>{JSON.stringify(e.details, null, 2)}</pre>
+                  </details>
+                )}
+                {e.apiFailure && (
+                  <details>
+                    <summary>API処理の詳細</summary>
+                    <p>
+                      {e.apiFailure.operation} {e.apiFailure.timeframe ?? ""} ／
+                      所要時間：{e.apiFailure.elapsedMs} ms ／ 再試行：
+                      {e.apiFailure.retryCount ?? "不明"} ／ HTTP：
+                      {e.apiFailure.status ?? "応答なし"}
+                    </p>
+                  </details>
+                )}
               </li>
             ))}
           </ul>

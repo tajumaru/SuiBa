@@ -46,6 +46,7 @@ export type ApiAttempt = {
   latencyMs: number;
   attempt: number;
   occurredAt: number;
+  failure?: ApiFailure;
 };
 type Stats = {
   lastLatencyMs: number | null;
@@ -154,7 +155,10 @@ export class ApiAccess {
   async run<T>(
     api: string,
     key: string,
-    fn: (signal: AbortSignal) => Promise<T>,
+    fn: (
+      signal: AbortSignal,
+      context: { attempt: number; lastSuccessAt: number | null },
+    ) => Promise<T>,
     ttl = 0,
     policy: ApiPolicy = {},
   ): Promise<T> {
@@ -182,15 +186,20 @@ export class ApiAccess {
             ...s.recent.filter((t) => t > Date.now() - 60000),
             Date.now(),
           ];
-          const began = Date.now();
+          const began = performance.now();
+          const previousFailure = s.lastFailure;
           try {
             const result = await fn(
               AbortSignal.any([
                 this.controller.signal,
                 AbortSignal.timeout(policy.timeoutMs ?? apiLimits.timeoutMs),
               ]),
+              { attempt, lastSuccessAt: s.lastSuccessAt },
             );
-            s.lastLatencyMs = Date.now() - began;
+            s.lastLatencyMs = Math.max(
+              0,
+              Math.round(performance.now() - began),
+            );
             s.failed = false;
             s.nextRetryAt = null;
             s.lastSuccessAt = Date.now();
@@ -211,7 +220,10 @@ export class ApiAccess {
             }
             return result;
           } catch (error) {
-            s.lastLatencyMs = Date.now() - began;
+            s.lastLatencyMs = Math.max(
+              0,
+              Math.round(performance.now() - began),
+            );
             s.failed = true;
             const code = error instanceof Error ? error.message : "";
             if (code === "VALIDATION_RECORD_FAILED") throw error;
@@ -241,6 +253,9 @@ export class ApiAccess {
                   latencyMs: failedLatencyMs,
                   attempt,
                   occurredAt: failedAt,
+                  ...(s.lastFailure && s.lastFailure !== previousFailure
+                    ? { failure: s.lastFailure }
+                    : {}),
                 });
               } catch {
                 throw new Error("VALIDATION_RECORD_FAILED");
@@ -309,6 +324,7 @@ export class RateLimited extends Error {
 }
 export const apiAccess = new ApiAccess();
 export const rawFetch = globalThis.fetch.bind(globalThis);
+const readSuccesses = new Map<string, number>();
 export async function apiFetch(
   api: string,
   input: string | URL | Request,
@@ -340,8 +356,20 @@ export async function apiFetch(
   const value = await apiAccess.run(
     api,
     key,
-    async (signal) => {
-      const started = performance.now();
+    async (signal, context) => {
+      const started = performance.now(),
+        startedAt = Date.now();
+      const identity = requestIdentity(
+        api,
+        url,
+        init?.method ?? (input instanceof Request ? input.method : "GET"),
+      );
+      const operationKey =
+        identity.api +
+        ":" +
+        identity.operation +
+        ":" +
+        (identity.timeframe ?? "");
       let phase: RequestPhase = "HEADERS_OR_CONNECT";
       let status: number | null = null;
       const combined = AbortSignal.any([
@@ -361,6 +389,7 @@ export async function apiFetch(
         }
         phase = "BODY";
         const bytes = await response.arrayBuffer();
+        readSuccesses.set(operationKey, Date.now());
         return {
           bytes,
           status: response.status,
@@ -372,13 +401,17 @@ export async function apiFetch(
             ? { code: error.message, phase: "HTTP" as const, causeCode: null }
             : classifyHttpFailure(error, phase, combined);
         apiAccess.recordFailure({
-          ...requestIdentity(
-            api,
-            url,
-            init?.method ?? (input instanceof Request ? input.method : "GET"),
-          ),
+          ...identity,
           ...classification,
           status,
+          startedAt,
+          endedAt: Date.now(),
+          retryCount: context.attempt,
+          lastSuccessAt: readSuccesses.get(operationKey) ?? null,
+          lastApiSuccessAt: context.lastSuccessAt,
+          timeoutType: classification.code.includes("TIMEOUT")
+            ? classification.phase
+            : null,
           elapsedMs: Math.round(performance.now() - started),
           occurredAt: Date.now(),
         });

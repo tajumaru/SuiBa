@@ -45,6 +45,7 @@ export interface ValidationSession {
   intervalMs: number;
 }
 interface Sample {
+  timing?: Partial<OperationState> | null;
   kind: "sample";
   at: number;
   running: boolean;
@@ -57,6 +58,7 @@ interface Sample {
   market: MarketStatus | null;
 }
 interface Cycle {
+  timing?: Partial<OperationState> | null;
   kind: "cycle";
   at: number;
   durationMs: number;
@@ -185,6 +187,7 @@ export class ValidationRecorder {
     const rows = frames[300] ?? [];
     this.append({
       kind: "cycle",
+      timing: this.db.get<OperationState>("operation_state") ?? null,
       at: now,
       durationMs: now - began,
       market,
@@ -204,6 +207,7 @@ export class ValidationRecorder {
       price = this.db.get<number>("price");
     this.append({
       kind: "sample",
+      timing: this.db.get<OperationState>("operation_state") ?? null,
       at: now,
       running: r.running,
       emergency: r.emergency,
@@ -549,6 +553,7 @@ export function aggregateValidation(
     cycleSuccessRate: pct(validCycles.length, cycles.length),
     apis,
     market: latest?.market ?? cycles.at(-1)?.market ?? null,
+    marketTiming: latest?.timing ?? cycles.at(-1)?.timing ?? null,
     candles: {
       uniqueFiveMinuteBars: seen.size,
       originalMissing: gaps.size,

@@ -12,6 +12,13 @@ export type ApiFailure = {
   status: number | null;
   elapsedMs: number;
   occurredAt: number;
+  startedAt?: number;
+  endedAt?: number;
+  retryCount?: number;
+  lastSuccessAt?: number | null;
+  lastApiSuccessAt?: number | null;
+  timeoutType?: RequestPhase | null;
+  timeframe?: string | null;
 };
 const knownCodes = new Set([
   "ENOTFOUND",
@@ -90,6 +97,21 @@ export function requestIdentity(api: string, value: string, method: string) {
         ? "CETUS_HTTP_READ"
         : "HTTP_READ";
   let safeUrl = `${url.origin}/[redacted]`;
+  let timeframe: string | null = null;
+  if (url.hostname === "deepbook-indexer.mainnet.mystenlabs.com") {
+    if (url.pathname === "/ohclv/SUI_USDC") {
+      operation = "OHLCV_FETCH";
+      const interval = url.searchParams.get("interval");
+      timeframe = ["1m", "5m", "15m", "1h", "4h", "1d"].includes(interval ?? "")
+        ? interval
+        : null;
+    } else if (url.pathname === "/orderbook/SUI_USDC")
+      operation = "ORDERBOOK_FETCH";
+    else if (url.pathname === "/status") operation = "MARKET_STATUS";
+    else if (url.pathname === "/get_pools") operation = "PROVIDER_HEALTH";
+    else if (url.pathname === "/trades/SUI_USDC")
+      operation = "TRADE_EVIDENCE_FETCH";
+  }
   const publicGeckoPath =
     /^\/api\/v2\/networks\/sui-network\/(?:pools\/0x[a-f0-9]{64}(?:\/ohlcv\/(?:minute|hour))?|tokens\/0x2%3A%3Asui%3A%3ASUI\/pools)$/i;
   if (
@@ -125,6 +147,7 @@ export function requestIdentity(api: string, value: string, method: string) {
     url: safeUrl,
     host: url.host,
     operation,
+    ...(timeframe ? { timeframe } : {}),
     method: ["GET", "POST", "HEAD"].includes(method) ? method : "OTHER",
   };
 }

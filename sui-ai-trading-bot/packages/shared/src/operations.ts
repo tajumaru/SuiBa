@@ -1,3 +1,4 @@
+import type { ApiFailure } from "./http-errors.ts";
 export interface CandidateAudit {
   id: string;
   orderId: string;
@@ -49,10 +50,11 @@ export interface MarketStallDetails {
 }
 export interface OperationEvent {
   timestamp: number;
-  kind: "WAIT" | "ERROR" | "ANOMALY" | "STOP" | "CONTROL" | "BOOT";
+  kind: "WAIT" | "ERROR" | "ANOMALY" | "STOP" | "CONTROL" | "BOOT" | "API";
   code: string;
   fatal?: boolean;
   details?: MarketStallDetails;
+  apiFailure?: ApiFailure;
 }
 export interface OperationState {
   lastFetchAttemptAt?: number | null;

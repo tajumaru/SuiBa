@@ -1,3 +1,4 @@
+import type { ApiFailure } from "../../../packages/shared/src/http-errors.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
 import { randomUUID } from "node:crypto";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
@@ -145,6 +146,19 @@ export class OperationMonitor {
   }
   analysis(now = Date.now()) {
     this.update({ lastAnalysisAt: now });
+  }
+  apiFailure(failure: ApiFailure) {
+    this.db.append(
+      "operation_events",
+      randomUUID(),
+      {
+        timestamp: failure.occurredAt,
+        kind: "API",
+        code: failure.code,
+        apiFailure: failure,
+      } satisfies OperationEvent,
+      failure.occurredAt,
+    );
   }
   transportSuccess(now = Date.now()) {
     this.update({ lastTransportSuccessAt: now });

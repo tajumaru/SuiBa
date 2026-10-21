@@ -57,17 +57,17 @@ const validation = validationEnabled ? new ValidationRecorder(db) : undefined;
 engine.validation = validation;
 validation?.boot();
 apiAccess.onAttempt = (event) => {
-  if (
-    event.success &&
-    ["DeepBook Indexer", "GeckoTerminal"].includes(event.api)
-  )
-    engine.monitor.transportSuccess(event.occurredAt);
-  if (!validation) return;
   try {
-    validation.attempt(event);
+    if (event.failure) engine.monitor.apiFailure(event.failure);
+    if (
+      event.success &&
+      ["DeepBook Indexer", "GeckoTerminal"].includes(event.api)
+    )
+      engine.monitor.transportSuccess(event.occurredAt);
+    validation?.attempt(event);
   } catch {
     try {
-      validation.fault("VALIDATION_RECORD_FAILED");
+      validation?.fault("VALIDATION_RECORD_FAILED");
     } catch {}
     throw new Error("VALIDATION_RECORD_FAILED");
   }
