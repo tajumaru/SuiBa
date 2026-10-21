@@ -19,15 +19,22 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dir = join(root, "docker");
 
 const command = process.argv[2] ?? "status";
+const profileArg = process.argv
+  .slice(3)
+  .find((x) => x.startsWith("--profile="));
+const profile = profileArg?.slice("--profile=".length) ?? "24h";
+if (!["24h", "p0"].includes(profile)) throw Error("INVALID_VALIDATION_PROFILE");
+const prefix = profile === "p0" ? "deepbook-p0" : "deepbook-24h";
 
 const args = [
   "compose",
   "-p",
-  "suiba-deepbook-24h",
+  "suiba-" + prefix,
   "--env-file",
-  join(dir, ".env.deepbook-24h"),
+  join(dir, ".env." + prefix),
   "-f",
   join(dir, "compose.deepbook-24h.yaml"),
+  ...(profile === "p0" ? ["-f", join(dir, "compose.deepbook-p0.yaml")] : []),
 ];
 
 function docker(tail, capture = false) {
@@ -41,7 +48,7 @@ function docker(tail, capture = false) {
 if (command === "init") {
   mkdirSync(join(dir, "secrets"), { recursive: true });
 
-  const secret = join(dir, "secrets/deepbook-24h-admin.txt");
+  const secret = join(dir, "secrets", prefix + "-admin.txt");
 
   if (!existsSync(secret))
     writeFileSync(secret, randomBytes(32).toString("hex"), {
@@ -49,10 +56,21 @@ if (command === "init") {
       flag: "wx",
     });
 
-  const env = join(dir, ".env.deepbook-24h");
+  const env = join(dir, ".env." + prefix);
 
-  if (!existsSync(env))
-    copyFileSync(join(dir, "deepbook-24h.env.example"), env);
+  if (!existsSync(env)) {
+    const template = readFileSync(
+      join(dir, "deepbook-24h.env.example"),
+      "utf8",
+    );
+    writeFileSync(
+      env,
+      profile === "p0"
+        ? template.replace("VALIDATION_PORT=3101", "VALIDATION_PORT=3102")
+        : template,
+      { mode: 0o600, flag: "wx" },
+    );
+  }
 
   console.log(
     "専用設定と管理トークンを準備しました。既存ファイルは変更していません。",
@@ -69,7 +87,8 @@ if (command === "init") {
     const target = join(
       dir,
       "artifacts",
-      "backup-" +
+      (profile === "p0" ? prefix + "-" : "") +
+        "backup-" +
         new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-"),
     );
     mkdirSync(target, { recursive: true });
@@ -89,7 +108,8 @@ if (command === "init") {
       join(
         dir,
         "artifacts",
-        "deepbook-24h-" +
+        prefix +
+          "-" +
           new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-") +
           ".log",
       ),
@@ -114,14 +134,14 @@ if (command === "init") {
     mkdirSync(join(dir, "artifacts"), { recursive: true });
 
     writeFileSync(
-      join(dir, "artifacts/deepbook-24h.json"),
+      join(dir, "artifacts", prefix + ".json"),
       JSON.stringify(data, null, 2),
     );
 
     const md = script.replace("/api/validation'", "/api/validation/report.md'");
 
     writeFileSync(
-      join(dir, "artifacts/deepbook-24h.md"),
+      join(dir, "artifacts", prefix + ".md"),
       docker(
         ["exec", "-T", "bot", "node", "--input-type=module", "-e", md],
         true,
@@ -132,5 +152,5 @@ if (command === "init") {
   } else console.log(JSON.stringify(data, null, 2));
 } else
   throw Error(
-    "使用方法: node docker/deepbook-24h.mjs init|up|begin|status|report|logs|backup|stop|restart",
+    "使用方法: node docker/deepbook-24h.mjs init|up|begin|status|report|logs|backup|stop|restart [--profile=p0]",
   );

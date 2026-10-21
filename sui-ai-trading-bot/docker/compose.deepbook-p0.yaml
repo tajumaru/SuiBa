@@ -1,0 +1,11 @@
+# Add to compose.deepbook-24h.yaml with -p suiba-deepbook-p0.
+# Named volumes inherit that NEW project; the existing project is untouched.
+services:
+  bot:
+    env_file: !override
+      - .env.deepbook-p0
+    ports: !override
+      - "127.0.0.1:${VALIDATION_PORT:-3102}:3100"
+secrets:
+  validation-admin:
+    file: ./secrets/deepbook-p0-admin.txt

@@ -28,6 +28,9 @@ const compose = (...args) =>
     env,
     "-f",
     resolve("docker/compose.deepbook-24h.yaml"),
+    ...(process.argv.includes("--p0")
+      ? ["-f", resolve("docker/compose.deepbook-p0.yaml")]
+      : []),
     "-f",
     override,
     ...args,
@@ -132,6 +135,17 @@ try {
   });
   assert.equal(second.status, 409);
   assert.equal((await api("state")).runtime.running, false);
+  mark("Check P0 scheduled timing and persisted freshness-stop diagnostics");
+  const timing = (await api("operations")).timing;
+  assert.ok(timing.nextFetchAt > Date.now() - 1000);
+  node(
+    `import assert from 'node:assert/strict';import {BotDatabase} from './packages/database/src/index.ts';import {OperationMonitor} from './apps/worker/src/operations.ts';const db=new BotDatabase('/app/validation/deepbook-paper.sqlite');const m=new OperationMonitor(db);const now=Date.now();db.set('runtime',{...db.runtime(),running:true,error:null});m.market(now-361000,now-67000);m.watchdog(now);const e=db.history('operation_events').find(e=>e.kind==='STOP'&&e.code==='MARKET_DATA_STALLED');assert.equal(e.details.candleAgeSeconds,361);assert.equal(e.details.lastValidatedMarketAgeSeconds,67);assert.ok(e.details.nextFetchAt);assert.equal(db.runtime().running,false);db.close();`,
+  );
+  const stopped = await api("operations");
+  assert.equal(stopped.stopReason, "MARKET_DATA_STALLED");
+  assert.ok(
+    stopped.events.some((e) => e.details?.reasonDetail === "CANDLE_STALE"),
+  );
   mark("Check persisted measurement, automatic reports, safe stop and WAL");
   await api("control", { command: "emergency" });
   node(

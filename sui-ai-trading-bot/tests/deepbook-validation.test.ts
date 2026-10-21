@@ -609,3 +609,37 @@ it("clean shutdown keeps the same measurement session without an integrity fault
   expect(reboot.report(start + 1000, true).integrityFault).toBeNull();
   db.close();
 });
+
+it("initializes a separate P0 profile without replacing the existing test credentials or env", () => {
+  const dir = mkdtempSync(join(tmpdir(), "suiba-init-"));
+  dirs.push(dir);
+  mkdirSync(join(dir, "docker"));
+  copyFileSync("docker/deepbook-24h.mjs", join(dir, "docker/deepbook-24h.mjs"));
+  copyFileSync(
+    "docker/deepbook-24h.env.example",
+    join(dir, "docker/deepbook-24h.env.example"),
+  );
+  const run = (...args: string[]) =>
+    execFileSync(
+      process.execPath,
+      [join(dir, "docker/deepbook-24h.mjs"), "init", ...args],
+      { encoding: "utf8", windowsHide: true },
+    );
+  run();
+  const secret = readFileSync(
+      join(dir, "docker/secrets/deepbook-24h-admin.txt"),
+      "utf8",
+    ),
+    env = readFileSync(join(dir, "docker/.env.deepbook-24h"), "utf8");
+  run("--profile=p0");
+  expect(readFileSync(join(dir, "docker/.env.deepbook-p0"), "utf8")).toContain(
+    "VALIDATION_PORT=3102",
+  );
+  expect(
+    readFileSync(join(dir, "docker/secrets/deepbook-p0-admin.txt"), "utf8"),
+  ).not.toBe(secret);
+  expect(
+    readFileSync(join(dir, "docker/secrets/deepbook-24h-admin.txt"), "utf8"),
+  ).toBe(secret);
+  expect(readFileSync(join(dir, "docker/.env.deepbook-24h"), "utf8")).toBe(env);
+});

@@ -10,3 +10,5 @@ data
 docker/secrets
 docker/artifacts
 docker/.env.deepbook-24h
+
+docker/.env.deepbook-p0

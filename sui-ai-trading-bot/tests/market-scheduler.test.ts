@@ -410,3 +410,37 @@ it("scheduler stop leaves an outstanding acquisition alone and never starts anot
   await vi.advanceTimersByTimeAsync(3600000);
   expect(tick).toHaveBeenCalledTimes(1);
 });
+
+it("keeps PAPER running across twelve delayed publication boundaries with bounded traffic", async () => {
+  vi.setSystemTime(boundary - 60000);
+  const { db, monitor } = fixture();
+  monitor.market(boundary - 300000);
+  const starts: number[] = [];
+  const scheduler = new MarketScheduler(
+    async () => {
+      starts.push(Date.now());
+      await monitor.acquisition(async () => {
+        await new Promise((r) => setTimeout(r, 7000));
+      });
+      const b = Math.floor(Date.now() / 300000) * 300000;
+      monitor.market(Date.now() - b < 25000 ? b - 300000 : b);
+      monitor.analysis();
+    },
+    () => ({ ...input, latestClosedAt: monitor.state().lastMarketClosedAt }),
+    (p) => monitor.scheduled(p?.at ?? null, p?.reason ?? null),
+    (e) => {
+      throw e;
+    },
+    clock,
+  );
+  const timer = setInterval(() => monitor.watchdog(), 15000);
+  scheduler.start();
+  await vi.advanceTimersByTimeAsync(3600000);
+  scheduler.stop();
+  clearInterval(timer);
+  expect(db.runtime()).toMatchObject({ running: true, error: null });
+  expect(starts.length).toBeGreaterThanOrEqual(60);
+  expect(starts.length).toBeLessThanOrEqual(75);
+  expect(starts.slice(1).every((t, i) => t - starts[i] >= 30000)).toBe(true);
+  db.close();
+});
