@@ -102,3 +102,5 @@ EMAはSMAで初期化、RSI14とATR14はWilder平滑化。MACDはEMA12−EMA26 /
 実装時の固定バージョンはpnpm-lock.yaml参照。Cetus / GeckoTerminalは外部サービスであり、公開API利用の将来の継続・商用条件・SLAを保証しません。専用認証や契約が必要になった場合は、その条件を確認してからアダプターを更新してください。
 
 Profit Guardは初期状態で有効です（最低純利益0.05 USDC・最低利益率1%）。Settingsで変更できます。計算・制約は[設計資料](docs/PROFIT_GUARD.md)を参照してください。
+
+DeepBookの実測、Provider設定、品質条件と検証結果は[DeepBook Provider検証](docs/DEEPBOOK_PROVIDER_VALIDATION.md)を参照してください。既定の取得元はGeckoTerminalのままです。

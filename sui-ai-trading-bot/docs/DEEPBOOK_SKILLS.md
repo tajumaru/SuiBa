@@ -12,11 +12,11 @@
 
 実行した導入コマンド（指定された2コマンドを1回に集約）:
 
-~~~powershell
+```powershell
 Set-Location D:\Source\SuiBa
 npx skills add mystenlabs/skills --skill deepbook-sdk --skill deepbook-overview --agent codex --copy --yes
 npx skills list --agent codex --json
-~~~
+```
 
 インストール前に対象のプロジェクト配置先に同名Skillがないことを確認した。再導入時は上記listと配置先を確認し、既存ならaddを繰り返さない。
 
@@ -31,9 +31,9 @@ D:\Source\SuiBaまたはその配下のsui-ai-trading-botをCodexで開き、次
 
 依頼例:
 
-~~~text
+```text
 $deepbook-sdk と $deepbook-overview を使い、SUI_USDCの読み取り専用Provider設計をレビューしてください。署名・送信は行わず、既存の鮮度検証と安全停止を維持してください。
-~~~
+```
 
 SDK初期化・読み取りはdeepbook-sdk/client-setup.md、板データはtrading.md、構造はdeepbook-overview/design.md、通貨・プールはcontract-info.mdを必要な範囲で読む。
 
@@ -55,3 +55,7 @@ GeckoTerminal、AI判断、環境変数、秘密情報、取引モード、実�
 
 検証: Codex指定のCLI一覧、SKILL.md/frontmatterと全リファレンスの読取、公式コミットとの全9ファイル照合、評価JSON構文確認、skills-lock.json確認。
 同じ作業ツリーの直前の回帰結果はpnpm build成功、pnpm test 203件成功、pnpm test:e2e 64件成功。今回のSkills導入後にアプリ全テストは再実行していない（実行コードへの変更なし）。配布されたevals.jsonは仕様評価用であり、9ファイルの照合やJSON構文確認をeval実行成功とは扱わない。
+
+## 追加の実測による更新
+
+DEEPBOOK_PROVIDER_VALIDATION.mdを参照。poolBookParamsを実際に照会した結果、SDKはtickSize=0.00001 / lotSize=0.1 / minSize=1を返した。上記6のIndexerのtick_size=100からの単純換算はSDK実測値と一致しないため、運用値の根拠にしない。期間指定も資料の秒と実APIのミリ秒で結果が異なった。公式Skillの固定表と実測は、それぞれの取得時刻・単位・経路を区別する。

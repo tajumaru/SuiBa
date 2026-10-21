@@ -1,0 +1,440 @@
+{
+  "observedAt": 1792553580373,
+  "requestedStart": 1777001580,
+  "requestedEnd": 1792553580,
+  "requests": [
+    {
+      "path": "/get_pools",
+      "status": 200,
+      "elapsedMs": 952,
+      "data": [
+        {
+          "pool_id": "0xe05dafb5133bcffb8d59f4e12465dc0e9faeaa05e3e342a08fe135800e3e4407",
+          "pool_name": "SUI_USDC",
+          "base_asset_id": "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI",
+          "base_asset_decimals": 9,
+          "base_asset_symbol": "SUI",
+          "base_asset_name": "Sui",
+          "quote_asset_id": "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC",
+          "quote_asset_decimals": 6,
+          "quote_asset_symbol": "USDC",
+          "quote_asset_name": "Native USDC Token",
+          "min_size": 1000000000,
+          "lot_size": 100000000,
+          "tick_size": 100
+        }
+      ]
+    },
+    {
+      "path": "/status?max_checkpoint_lag=100&max_time_lag_seconds=60",
+      "status": 200,
+      "elapsedMs": 479,
+      "data": {
+        "status": "OK",
+        "max_checkpoint_lag": 4,
+        "max_time_lag_seconds": 1,
+        "current_time_ms": 1792553581648
+      }
+    },
+    {
+      "path": "/orderbook/SUI_USDC?level=2&depth=10",
+      "status": 200,
+      "elapsedMs": 256,
+      "data": {
+        "timestamp": "1792553581987",
+        "bids": [
+          [
+            "1.02757",
+            "937"
+          ],
+          [
+            "1.02745",
+            "1932.8"
+          ],
+          [
+            "1.02719",
+            "3893"
+          ],
+          [
+            "1.02714",
+            "1928.9"
+          ],
+          [
+            "1.0271",
+            "243.2"
+          ]
+        ],
+        "asks": [
+          [
+            "1.02765",
+            "973"
+          ],
+          [
+            "1.02803",
+            "3893"
+          ],
+          [
+            "1.02828",
+            "1768.5"
+          ],
+          [
+            "1.0284",
+            "1243.2"
+          ],
+          [
+            "1.02859",
+            "1762.1"
+          ]
+        ]
+      }
+    },
+    {
+      "path": "/ohclv/SUI_USDC?interval=1m&start_time=1777001580&end_time=1792553580&limit=1000",
+      "status": 200,
+      "elapsedMs": 255,
+      "data": {
+        "received": 0,
+        "closed": 0,
+        "expected": 0,
+        "missing": 0,
+        "missingRate": null
+      }
+    },
+    {
+      "path": "/ohclv/SUI_USDC?interval=5m&start_time=1777001580&end_time=1792553580&limit=1000",
+      "status": 200,
+      "elapsedMs": 817,
+      "data": {
+        "received": 0,
+        "closed": 0,
+        "expected": 0,
+        "missing": 0,
+        "missingRate": null
+      }
+    },
+    {
+      "path": "/ohclv/SUI_USDC?interval=15m&start_time=1777001580&end_time=1792553580&limit=1000",
+      "status": 200,
+      "elapsedMs": 251,
+      "data": {
+        "received": 0,
+        "closed": 0,
+        "expected": 0,
+        "missing": 0,
+        "missingRate": null
+      }
+    },
+    {
+      "path": "/ohclv/SUI_USDC?interval=1h&start_time=1777001580&end_time=1792553580&limit=1000",
+      "status": 200,
+      "elapsedMs": 245,
+      "data": {
+        "received": 0,
+        "closed": 0,
+        "expected": 0,
+        "missing": 0,
+        "missingRate": null
+      }
+    },
+    {
+      "path": "/ohclv/SUI_USDC?interval=4h&start_time=1777001580&end_time=1792553580&limit=1000",
+      "status": 200,
+      "elapsedMs": 233,
+      "data": {
+        "received": 0,
+        "closed": 0,
+        "expected": 0,
+        "missing": 0,
+        "missingRate": null
+      }
+    },
+    {
+      "path": "/ohclv/SUI_USDC?interval=1d&start_time=1777001580&end_time=1792553580&limit=1000",
+      "status": 200,
+      "elapsedMs": 789,
+      "data": {
+        "received": 0,
+        "closed": 0,
+        "expected": 0,
+        "missing": 0,
+        "missingRate": null
+      }
+    },
+    {
+      "path": "/ohclv/SUI_USDC?interval=1m&limit=1000",
+      "status": 200,
+      "elapsedMs": 1991,
+      "data": {
+        "received": 1000,
+        "closed": 999,
+        "first": 1792489260,
+        "last": 1792553520,
+        "expected": 1072,
+        "missing": 73,
+        "missingRate": 0.06809701492537314,
+        "firstRow": [
+          1792489260,
+          0.98584,
+          0.98616,
+          0.98584,
+          0.98616,
+          6081.3
+        ],
+        "lastRow": [
+          1792553520,
+          1.02585,
+          1.02767,
+          1.02585,
+          1.02757,
+          4457.4
+        ]
+      }
+    },
+    {
+      "path": "/ohclv/SUI_USDC?interval=5m&limit=1000",
+      "status": 200,
+      "elapsedMs": 1147,
+      "data": {
+        "received": 1000,
+        "closed": 999,
+        "first": 1792240800,
+        "last": 1792553100,
+        "expected": 1042,
+        "missing": 43,
+        "missingRate": 0.04126679462571977,
+        "firstRow": [
+          1792240800,
+          0.9982,
+          0.9987,
+          0.99753,
+          0.99753,
+          953
+        ],
+        "lastRow": [
+          1792553100,
+          1.0248,
+          1.02545,
+          1.02375,
+          1.02521,
+          4321.4
+        ]
+      }
+    },
+    {
+      "path": "/ohclv/SUI_USDC?interval=15m&limit=1000",
+      "status": 200,
+      "elapsedMs": 423,
+      "data": {
+        "received": 673,
+        "closed": 672,
+        "first": 1791948600,
+        "last": 1792552500,
+        "expected": 672,
+        "missing": 0,
+        "missingRate": 0,
+        "firstRow": [
+          1791948600,
+          1.06706,
+          1.06706,
+          1.06399,
+          1.0648,
+          2682.3
+        ],
+        "lastRow": [
+          1792552500,
+          1.02541,
+          1.02554,
+          1.02247,
+          1.02521,
+          21911.6
+        ]
+      }
+    },
+    {
+      "path": "/ohclv/SUI_USDC?interval=1h&limit=1000",
+      "status": 200,
+      "elapsedMs": 470,
+      "data": {
+        "received": 169,
+        "closed": 168,
+        "first": 1791946800,
+        "last": 1792548000,
+        "expected": 168,
+        "missing": 0,
+        "missingRate": 0,
+        "firstRow": [
+          1791946800,
+          1.06706,
+          1.06706,
+          1.05997,
+          1.05999,
+          11770.4
+        ],
+        "lastRow": [
+          1792548000,
+          1.03332,
+          1.03372,
+          1.02358,
+          1.02808,
+          115623
+        ]
+      }
+    },
+    {
+      "path": "/ohclv/SUI_USDC?interval=4h&limit=1000",
+      "status": 200,
+      "elapsedMs": 292,
+      "data": {
+        "received": 43,
+        "closed": 42,
+        "first": 1791936000,
+        "last": 1792526400,
+        "expected": 42,
+        "missing": 0,
+        "missingRate": 0,
+        "firstRow": [
+          1791936000,
+          1.06706,
+          1.06706,
+          1.05997,
+          1.05999,
+          11770.4
+        ],
+        "lastRow": [
+          1792526400,
+          1.02223,
+          1.03488,
+          1.01855,
+          1.02931,
+          382243.6
+        ]
+      }
+    },
+    {
+      "path": "/ohclv/SUI_USDC?interval=1d&limit=1000",
+      "status": 200,
+      "elapsedMs": 758,
+      "data": {
+        "received": 8,
+        "closed": 7,
+        "first": 1791936000,
+        "last": 1792454400,
+        "expected": 7,
+        "missing": 0,
+        "missingRate": 0,
+        "firstRow": [
+          1791936000,
+          1.04807,
+          1.07,
+          1.00497,
+          1.02166,
+          3145408.69999988
+        ],
+        "lastRow": [
+          1792454400,
+          0.99895,
+          1.04263,
+          0.97593,
+          1.02931,
+          5418483.79999989
+        ]
+      }
+    },
+    {
+      "path": "/ohclv/SUI_USDC?interval=1d&start_time=1777001613000&end_time=1792553613000&limit=1000",
+      "status": 200,
+      "elapsedMs": 384,
+      "data": {
+        "received": 181,
+        "closed": 180,
+        "first": 1776988800,
+        "last": 1792454400,
+        "expected": 180,
+        "missing": 0,
+        "missingRate": 0,
+        "firstRow": [
+          1776988800,
+          0.94616,
+          0.9561,
+          0.93701,
+          0.9464,
+          5124357
+        ],
+        "lastRow": [
+          1792454400,
+          0.99895,
+          1.04263,
+          0.97593,
+          1.02931,
+          5418483.79999989
+        ]
+      }
+    },
+    {
+      "path": "/ohclv/SUI_USDC?interval=1h&start_time=1777002196188&end_time=1792554196188&limit=1000",
+      "status": 200,
+      "elapsedMs": 1371,
+      "data": {
+        "received": 1000,
+        "closed": 999,
+        "first": 1788955200,
+        "last": 1792548000,
+        "expected": 999,
+        "missing": 0,
+        "missingRate": 0,
+        "firstRow": [
+          1788955200,
+          0.8129,
+          0.82052,
+          0.81066,
+          0.81715,
+          457466.2
+        ],
+        "lastRow": [
+          1792548000,
+          1.03332,
+          1.03372,
+          1.02358,
+          1.02808,
+          115623
+        ]
+      }
+    },
+    {
+      "path": "/ohclv/SUI_USDC?interval=4h&start_time=1777002196188&end_time=1792554196188&limit=1000",
+      "status": 200,
+      "elapsedMs": 1765,
+      "data": {
+        "received": 1000,
+        "closed": 999,
+        "first": 1778155200,
+        "last": 1792526400,
+        "expected": 999,
+        "missing": 0,
+        "missingRate": 0,
+        "firstRow": [
+          1778155200,
+          0.993,
+          1.0032,
+          0.96571,
+          0.97207,
+          2561580.2
+        ],
+        "lastRow": [
+          1792526400,
+          1.02223,
+          1.03488,
+          1.01855,
+          1.02931,
+          382243.6
+        ]
+      }
+    }
+  ],
+  "sdkPoolBookParams": {
+    "tickSize": 0.00001,
+    "lotSize": 0.1,
+    "minSize": 1,
+    "elapsedMs": 350
+  }
+}
