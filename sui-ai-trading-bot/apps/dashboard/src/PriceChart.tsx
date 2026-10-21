@@ -175,6 +175,59 @@ export function PriceChart({
   };
   const visibleSeries = (key: keyof typeof series) =>
     c.map((b) => series[key][indexes.get(b.timestamp)!]);
+  const interactions: React.SVGProps<SVGSVGElement> = {
+    onKeyDown: (e) => {
+      if (["ArrowLeft", "ArrowRight", "+", "=", "-", "Home"].includes(e.key)) {
+        e.preventDefault();
+        if (e.key === "Home") setAnchor(undefined);
+        else if (e.key === "ArrowLeft" || e.key === "ArrowRight")
+          move(
+            ((e.key === "ArrowLeft" ? -1 : 1) * Math.min(span, available)) / 2,
+          );
+        else zoom(e.key === "-" ? 1.5 : 1 / 1.5);
+      }
+    },
+    onPointerDown: (e) => {
+      if (e.button !== 0) return;
+      drag.current = {
+        x: e.clientX,
+        y: e.clientY,
+        end,
+        span: Math.min(span, available),
+        moved: false,
+      };
+      e.currentTarget.setPointerCapture(e.pointerId);
+      pick(e.clientX);
+    },
+    onPointerMove: (e) => {
+      const d = drag.current;
+      if (!d) {
+        if (e.pointerType === "mouse") pick(e.clientX);
+        return;
+      }
+      if (Math.abs(e.clientX - d.x) > 6) {
+        d.moved = true;
+        setAnchor(
+          Math.min(
+            latestEnd,
+            Math.max(
+              first + d.span,
+              d.end - ((e.clientX - d.x) / plot) * d.span,
+            ),
+          ),
+        );
+      }
+    },
+    onPointerUp: (e) => {
+      if (!drag.current?.moved) pick(e.clientX);
+      drag.current = null;
+      if (e.currentTarget.hasPointerCapture(e.pointerId))
+        e.currentTarget.releasePointerCapture(e.pointerId);
+    },
+    onPointerCancel: () => {
+      drag.current = null;
+    },
+  };
   const reconstructed = (b: Candle) =>
     b.provenance != null && b.provenance.origin !== "ORIGINAL";
   const origin = (b: Candle) =>
@@ -282,63 +335,7 @@ export function PriceChart({
             role="img"
             aria-label="価格チャート"
             tabIndex={0}
-            onKeyDown={(e) => {
-              if (
-                ["ArrowLeft", "ArrowRight", "+", "=", "-", "Home"].includes(
-                  e.key,
-                )
-              ) {
-                e.preventDefault();
-                if (e.key === "Home") setAnchor(undefined);
-                else if (e.key === "ArrowLeft" || e.key === "ArrowRight")
-                  move(
-                    ((e.key === "ArrowLeft" ? -1 : 1) *
-                      Math.min(span, available)) /
-                      2,
-                  );
-                else zoom(e.key === "-" ? 1.5 : 1 / 1.5);
-              }
-            }}
-            onPointerDown={(e) => {
-              if (e.button !== 0) return;
-              drag.current = {
-                x: e.clientX,
-                y: e.clientY,
-                end,
-                span: Math.min(span, available),
-                moved: false,
-              };
-              e.currentTarget.setPointerCapture(e.pointerId);
-              pick(e.clientX);
-            }}
-            onPointerMove={(e) => {
-              const d = drag.current;
-              if (!d) {
-                if (e.pointerType === "mouse") pick(e.clientX);
-                return;
-              }
-              if (Math.abs(e.clientX - d.x) > 6) {
-                d.moved = true;
-                setAnchor(
-                  Math.min(
-                    latestEnd,
-                    Math.max(
-                      first + d.span,
-                      d.end - ((e.clientX - d.x) / plot) * d.span,
-                    ),
-                  ),
-                );
-              }
-            }}
-            onPointerUp={(e) => {
-              if (!drag.current?.moved) pick(e.clientX);
-              drag.current = null;
-              if (e.currentTarget.hasPointerCapture(e.pointerId))
-                e.currentTarget.releasePointerCapture(e.pointerId);
-            }}
-            onPointerCancel={() => {
-              drag.current = null;
-            }}
+            {...interactions}
           >
             <text x="2" y="16" fill="#b0c1cf" fontSize="12">
               {number(max, 4)}
@@ -429,6 +426,8 @@ export function PriceChart({
                   （足の開始・日本時間）
                 </p>
                 <IndicatorPanel
+                  interaction={interactions}
+                  onZoom={zoom}
                   kind="RSI"
                   candles={c}
                   sets={[visibleSeries("rsi")]}
@@ -438,6 +437,8 @@ export function PriceChart({
                   selected={chosen?.timestamp ?? null}
                 />
                 <IndicatorPanel
+                  interaction={interactions}
+                  onZoom={zoom}
                   kind="MACD"
                   candles={c}
                   sets={[

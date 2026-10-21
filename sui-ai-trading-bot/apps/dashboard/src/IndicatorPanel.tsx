@@ -1,9 +1,11 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import type { Candle } from "../../../packages/shared/src/index.ts";
 import { chartTicks, chartTime } from "./chartPresentation.ts";
 import { lineSegments } from "./chartIndicators.ts";
 import { number } from "./presentation.ts";
 export function IndicatorPanel({
+  interaction,
+  onZoom,
   kind,
   candles,
   sets,
@@ -12,6 +14,8 @@ export function IndicatorPanel({
   end,
   selected,
 }: {
+  interaction?: React.SVGProps<SVGSVGElement>;
+  onZoom?: (factor: number) => void;
   kind: "RSI" | "MACD";
   candles: Candle[];
   sets: (number | null)[][];
@@ -20,6 +24,19 @@ export function IndicatorPanel({
   end: number;
   selected: number | null;
 }) {
+  const svg = useRef<SVGSVGElement>(null);
+  useEffect(() => {
+    const el = svg.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        onZoom?.(e.deltaY > 0 ? 1.5 : 1 / 1.5);
+      }
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, [onZoom]);
   const valid = sets.flat().filter((v): v is number => v != null),
     min = kind === "RSI" ? 0 : Math.min(0, ...valid),
     max = kind === "RSI" ? 100 : Math.max(0, ...valid),
@@ -40,6 +57,10 @@ export function IndicatorPanel({
         （足の開始・日本時間）
       </p>
       <svg
+        ref={svg}
+        tabIndex={0}
+        className="interactive-price-chart"
+        {...interaction}
         viewBox={`0 0 ${width} 170`}
         role="img"
         aria-label={`${kind}チャート`}
