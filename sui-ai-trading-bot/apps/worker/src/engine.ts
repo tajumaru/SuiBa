@@ -56,7 +56,8 @@ export class BotEngine {
     readonly sui: Pick<ReadOnlySuiClient, "health" | "status">,
   ) {
     this.monitor = new OperationMonitor(db);
-    apiAccess.onTransientFailure = (_api, code) => this.monitor.stop(code);
+    apiAccess.onTransientFailure = (api, code, failure) =>
+      this.monitor.transientFailure(api, code, failure);
     apiAccess.onRateLimit = () => {
       this.monitor.stop("UPSTREAM_HTTP_429");
       db.set("api_cooldowns", apiAccess.snapshot());
@@ -192,6 +193,7 @@ export class BotEngine {
         );
       }
       if (
+        !this.monitor.ordersAllowed() ||
         !runtime.running ||
         runtime.emergency ||
         runtime.error ||
@@ -426,6 +428,7 @@ export class BotEngine {
       const executionNow = Date.now();
       const finalRuntime = this.db.runtime();
       if (
+        !this.monitor.ordersAllowed() ||
         !finalRuntime.running ||
         finalRuntime.emergency ||
         finalRuntime.error
@@ -525,12 +528,14 @@ export class BotEngine {
           reasons: [code],
         });
       this.db.set("decision", { action: "WAIT", reason: code, confidence: 0 });
-      this.monitor.failCycle(code);
-      this.db.set("runtime", {
-        ...this.db.runtime(),
-        running: false,
-        error: this.db.runtime().error ?? code,
-      });
+      if (!this.monitor.transientCycleFailure(code)) {
+        this.monitor.failCycle(code);
+        this.db.set("runtime", {
+          ...this.db.runtime(),
+          running: false,
+          error: this.db.runtime().error ?? code,
+        });
+      }
       this.db.append("risk_events", randomUUID(), {
         timestamp: Date.now(),
         reasons: [code],

@@ -1,3 +1,9 @@
+import {
+  initialPaperSafety,
+  recoverableReadFailure,
+  paperRecoveryLimits,
+  type PaperSafetyState,
+} from "../../../packages/shared/src/paper-recovery.ts";
 import type { ApiFailure } from "../../../packages/shared/src/http-errors.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
 import { randomUUID } from "node:crypto";
@@ -40,11 +46,120 @@ export const numericText = (value: unknown): string | null => {
 };
 export class OperationMonitor {
   private cycleFailed = false;
+  private cycleGeneration = 0;
+  private softFailureThisCycle = false;
+  safety(): PaperSafetyState {
+    return {
+      ...initialPaperSafety(),
+      ...this.db.get<PaperSafetyState>("paper_safety"),
+    };
+  }
+  private saveSafety(patch: Partial<PaperSafetyState>) {
+    this.db.set("paper_safety", { ...this.safety(), ...patch });
+  }
+  transientFailure(
+    api: string,
+    reason: string,
+    failure?: ApiFailure,
+    now = Date.now(),
+  ) {
+    if (
+      !recoverableReadFailure(failure) ||
+      failure.api !== api ||
+      failure.code !== reason ||
+      Math.abs(now - failure.occurredAt) > 1000
+    ) {
+      this.stop(reason, now);
+      return;
+    }
+    const r = this.db.runtime(),
+      s = this.safety();
+    this.softFailureThisCycle = true;
+    this.saveSafety({
+      connectivity: "DEGRADED",
+      generation: s.generation + 1,
+      resumePending: s.resumePending || (r.running && !r.error && !r.emergency),
+      episodeAt: s.episodeAt ?? now,
+      lastFailureAt: now,
+      latestFailure: failure,
+      failures: s.failures + 1,
+      healthyCycles: 0,
+      firstHealthyAt: null,
+      lastHealthyCycleAt: null,
+      recoveredAt: null,
+    });
+    // Runtime remains the final execution gate; transient degradation never grants intent.
+    this.db.set("runtime", { ...r, running: false });
+    if (r.running) this.transition("PAPER_NETWORK_PAUSED", now);
+    this.checkRecoveryDeadline(now);
+  }
+  transientCycleFailure(reason: string) {
+    const f = this.safety().latestFailure;
+    return (
+      this.softFailureThisCycle &&
+      !!f &&
+      (reason === f.code ||
+        (f.api === "Sui gRPC" && reason === "SUI_READ_FAILED"))
+    );
+  }
+  checkRecoveryDeadline(now = Date.now()) {
+    const s = this.safety();
+    if (
+      s.resumePending &&
+      ((s.episodeAt != null &&
+        now - s.episodeAt >= paperRecoveryLimits.maxEpisodeMs) ||
+        s.failures >= paperRecoveryLimits.maxFailures)
+    )
+      this.stop("PAPER_RECOVERY_EXHAUSTED", now);
+  }
+  ordersAllowed() {
+    const r = this.db.runtime();
+    return (
+      this.mode === "PAPER" &&
+      r.running &&
+      !r.error &&
+      !r.emergency &&
+      this.safety().connectivity === "HEALTHY" &&
+      !apiAccess.blocked()
+    );
+  }
+
+  recoveryCycle(checks: { market: boolean; sui: boolean }, now = Date.now()) {
+    const s = this.safety(), r = this.db.runtime();
+    if (s.connectivity === "HEALTHY") return false;
+    this.checkRecoveryDeadline(now);
+    // A failure or control action during this cycle invalidates its entire proof.
+    if (this.softFailureThisCycle || this.cycleFailed || this.cycleGeneration !== s.generation)
+      return false;
+    if (!checks.market || !checks.sui || apiAccess.blocked()) return false;
+    if (!this.ledger().ok) { this.failCycle("PAPER_RECONCILIATION_FAILED", now); return false; }
+    const stalled = this.stallDetails(now);
+    if (stalled) { this.failCycle("MARKET_DATA_STALLED", now, stalled); return false; }
+    if (s.lastHealthyCycleAt != null && now - s.lastHealthyCycleAt < paperRecoveryLimits.minimumCycleSpacingMs)
+      return false;
+    const count = s.healthyCycles + 1, first = s.firstHealthyAt ?? now;
+    if (count < paperRecoveryLimits.healthyCycles || now - first < paperRecoveryLimits.minimumHealthyMs) {
+      this.saveSafety({ connectivity: "RECOVERING", healthyCycles: count,
+        firstHealthyAt: first, lastHealthyCycleAt: now });
+      return false;
+    }
+    const resume = s.resumePending && !this.db.runtime().error && !r.emergency && this.mode === "PAPER";
+    this.saveSafety({ connectivity: "HEALTHY", healthyCycles: count,
+      firstHealthyAt: first, lastHealthyCycleAt: now, episodeAt: null,
+      failures: 0, resumePending: false, recoveredAt: resume ? now : null });
+    if (resume) {
+      this.db.set("runtime", { ...this.db.runtime(), running: true });
+      this.transition("PAPER_NETWORK_RECOVERED", now);
+    }
+    return resume;
+  }
+
   private fetchMono: number | null = null;
   constructor(
     readonly db: BotDatabase,
     now = Date.now(),
     private monotonicNow: () => number = () => performance.now(),
+    private readonly mode: string = "PAPER",
   ) {
     if (!db.get("operation_state"))
       db.set("operation_state", {
@@ -116,11 +231,33 @@ export class OperationMonitor {
       nextFetchReason: null,
     });
     this.fetchMono = null;
+    this.saveSafety({
+      ...initialPaperSafety(),
+      generation: this.safety().generation + 1,
+      lastStopReason: this.safety().lastStopReason,
+    });
     this.db.set("runtime", { ...this.db.runtime(), running: false });
     this.db.interruptPending(now);
     this.event("BOOT", "PROCESS_RESTART_STOPPED", now);
   }
   transition(reason: string, now = Date.now(), details?: MarketStallDetails) {
+    if (
+      [
+        "MANUAL_STOP",
+        "EMERGENCY_STOP",
+        "MANUAL_RESET",
+        "MANUAL_START",
+        "PROCESS_SHUTDOWN",
+      ].includes(reason)
+    )
+      this.saveSafety({
+        resumePending: false,
+        generation: this.safety().generation + 1,
+        healthyCycles: 0,
+        firstHealthyAt: null,
+        lastHealthyCycleAt: null,
+        recoveredAt: null,
+      });
     const s = this.state(),
       active = this.db.runtime().running;
     this.update({
@@ -140,6 +277,8 @@ export class OperationMonitor {
   }
   beginCycle() {
     this.cycleFailed = false;
+    this.softFailureThisCycle = false;
+    this.cycleGeneration = this.safety().generation;
   }
   scheduled(at: number | null, reason: string | null = null) {
     this.update({ nextFetchAt: at, nextFetchReason: reason });
@@ -293,6 +432,7 @@ export class OperationMonitor {
       });
       this.event("ERROR", `${kind}_${safeFailure(error)}`);
       if (
+        !this.softFailureThisCycle &&
         this.state().consecutiveErrors === monitoringLimits.consecutiveApiErrors
       ) {
         this.event("ANOMALY", "CONSECUTIVE_API_ERRORS", Date.now(), true);
@@ -327,6 +467,12 @@ export class OperationMonitor {
     });
   }
   stop(reason: string, now = Date.now(), details?: MarketStallDetails) {
+    this.saveSafety({
+      resumePending: false,
+      generation: this.safety().generation + 1,
+      lastStopReason: code(reason),
+      recoveredAt: null,
+    });
     const r = this.db.runtime();
     if (r.running || !r.error) {
       this.db.set("runtime", {
@@ -351,9 +497,13 @@ export class OperationMonitor {
     const s = this.state(),
       r = this.db.runtime();
     const details = this.stallDetails(now);
-    if (r.running && details)
+    this.checkRecoveryDeadline(now);
+    if ((r.running || this.safety().resumePending) && details)
       this.failCycle("MARKET_DATA_STALLED", now, details);
-    if (this.db.runtime().running && !this.ledger().ok)
+    if (
+      (this.db.runtime().running || this.safety().resumePending) &&
+      !this.ledger().ok
+    )
       this.failCycle("PAPER_RECONCILIATION_FAILED", now);
     this.account(now);
   }
@@ -553,6 +703,11 @@ export class OperationMonitor {
       now - s.lastMarketAt > monitoringLimits.marketDelayedMs ||
       now - s.lastMarketClosedAt > monitoringLimits.marketStaleMs;
     return {
+      safety: {
+        ...this.safety(),
+        ordersAllowed: this.ordersAllowed(),
+        limits: paperRecoveryLimits,
+      },
       timing: this.timing(now),
       apis: apiAccess.snapshot(now),
       mode: "PAPER" as const,

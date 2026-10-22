@@ -74,7 +74,11 @@ export class ApiAccess {
   private controller = new AbortController();
   onAttempt: (event: ApiAttempt) => void = () => {};
   onRateLimit: (api: string) => void = () => {};
-  onTransientFailure: (api: string, code: string) => void = () => {};
+  onTransientFailure: (
+    api: string,
+    code: string,
+    failure?: ApiFailure,
+  ) => void = () => {};
   onFailure: (failure: ApiFailure) => void = () => {};
   recordFailure(failure: ApiFailure) {
     this.state(failure.api).lastFailure = failure;
@@ -245,7 +249,14 @@ export class ApiAccess {
               "UPSTREAM_HTTP_503",
               "UPSTREAM_HTTP_504",
             ].includes(code);
-            if (transient) this.onTransientFailure(api, code);
+            if (transient)
+              this.onTransientFailure(
+                api,
+                code,
+                s.lastFailure !== previousFailure
+                  ? (s.lastFailure ?? undefined)
+                  : undefined,
+              );
             // Stop first: monitoring I/O must never delay the safety callback.
             const recordFailure = () => {
               try {
