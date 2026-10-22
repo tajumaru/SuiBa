@@ -64,6 +64,12 @@ async function open(
   db.putCandidate(candidate);
   const state = engine.snapshot(),
     operations = engine.monitor.snapshot();
+  if (status === "RUNNING") {
+    operations.safety.ordersAllowed = true;
+    operations.safety.connectivity = "HEALTHY";
+    operations.timing.dataStatus = "FRESH";
+    operations.timing.transportRecent = true;
+  }
   if (limited) {
     operations.stopReason = "UPSTREAM_HTTP_429";
     operations.apis[1] = {
@@ -117,7 +123,7 @@ async function open(
   await page.getByRole("button", { name: "接続", exact: true }).click();
   await page.getByRole("button", { name: "運用検証", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "運用検証", exact: true, level: 2 }),
+    page.getByRole("region", { name: "運用状態", exact: true }),
   ).toBeVisible();
   return {
     writes,
@@ -127,10 +133,10 @@ async function open(
   };
 }
 for (const [status, label] of [
-  ["STOPPED", "停止中"],
-  ["RUNNING", "正常稼働中"],
-  ["DATA_DELAYED", "データ遅延"],
-  ["ABNORMAL_STOP", "異常停止"],
+  ["STOPPED", "手動停止"],
+  ["RUNNING", "正常稼働"],
+  ["DATA_DELAYED", "通信障害・一時待機"],
+  ["ABNORMAL_STOP", "安全停止"],
 ] as const) {
   test(`displays ${status}, zero-trade reports, sanitized candidate reasons and atomic tolerances`, async ({
     page,
@@ -140,15 +146,22 @@ for (const [status, label] of [
     await expect(
       page.getByRole("article", { name: "24時間レポート" }),
     ).toContainText("0件");
+    await page.getByRole("button", { name: "7日間", exact: true }).click();
     await expect(
       page.getByRole("article", { name: "7日間レポート" }),
     ).toContainText("0件");
     await expect(
       page.getByText(
-        "取引ゼロ件も正常な検証結果です。売買がなくても条件を自動で緩めません。",
+        "取引ゼロ件だけでは正常・異常を判断できません。売買がなくても条件を自動で緩めません。",
         { exact: true },
       ),
     ).toBeVisible();
+    if (status === "STOPPED")
+      await page.screenshot({
+        path: info.outputPath("overview.png"),
+        fullPage: true,
+      });
+    await page.locator("#operation-diagnostics > summary").click();
     await expect(page.getByText(/許容誤差：SUI 0.000000001/)).toBeVisible();
     await page.locator(".operation-candidate summary").click();
     await expect(page.locator(".operation-candidate")).toContainText(
@@ -184,7 +197,7 @@ test("does not show stale information as healthy after a monitoring API error", 
   await expect(page.getByRole("alert")).toContainText(
     "運用検証データを取得できません",
   );
-  await expect(page.locator(".operation-state")).toContainText("接続状態不明");
+  await expect(page.locator(".operation-state")).toContainText("状態不明");
   await expect(page.locator(".operation-state.healthy")).toHaveCount(0);
   expect(api.writes).toEqual([]);
 });
@@ -193,6 +206,7 @@ test("shows Japanese rate-limit monitoring and keeps recovery separate from rest
   page,
 }) => {
   const api = await open(page, "ABNORMAL_STOP", true);
+  await page.locator("#operation-diagnostics > summary").click();
   await expect(
     page.getByText(
       "APIの利用制限に達しました。安全のためPAPER取引を停止しています。再試行可能時刻を確認してください。",
@@ -215,6 +229,7 @@ test("shows sanitized network failure diagnostics without mobile overflow", asyn
   page,
 }) => {
   await open(page, "ABNORMAL_STOP", false, true);
+  await page.locator("#operation-diagnostics > summary").click();
   const card = page.locator("article").filter({
     has: page.getByRole("heading", { name: "GeckoTerminal", exact: true }),
   });
@@ -227,4 +242,41 @@ test("shows sanitized network failure diagnostics without mobile overflow", asyn
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+});
+
+test("times out delayed operations and ignores a late response after a newer success", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await open(page, "STOPPED");
+  const snapshot = await page.evaluate(async () =>
+    (await fetch("/api/operations")).json(),
+  );
+  let release: (() => Promise<void>) | undefined;
+  let calls = 0;
+  await page.route("**/api/operations", async (route) => {
+    calls++;
+    if (calls === 1) {
+      await new Promise<void>((resolve) => {
+        release = async () => {
+          await route.fulfill({
+            json: {
+              ...snapshot,
+              status: "ABNORMAL_STOP",
+              stopReason: "EMERGENCY_STOP",
+            },
+          });
+          resolve();
+        };
+      });
+    } else await route.fulfill({ json: snapshot });
+  });
+  await page.clock.runFor(10000);
+  await expect.poll(() => calls).toBe(1);
+  await page.clock.runFor(8100);
+  await expect(page.locator(".operation-state")).toContainText("状態不明");
+  await page.clock.runFor(2000);
+  await expect(page.locator(".operation-state")).toContainText("手動停止");
+  await release!();
+  await expect(page.locator(".operation-state")).toContainText("手動停止");
 });

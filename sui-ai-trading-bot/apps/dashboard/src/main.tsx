@@ -597,7 +597,7 @@ function App() {
                     unavailable={!!error}
                   />
                 )}
-                <ConnectivityPanel safety={data.safety} stale={!!error} />
+                {tab !== "運用検証" && <ConnectivityPanel safety={data.safety} stale={!!error} />}
                 {data.runtime.emergency && (
                   <p className="error">
                     緊急停止中です。原因と接続状態を確認し、設定の「停止状態の解除」から解除後、PAPER運用を手動で開始してください。
