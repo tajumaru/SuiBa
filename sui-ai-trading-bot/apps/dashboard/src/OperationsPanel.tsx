@@ -1,3 +1,4 @@
+import { OperationSummary } from "./OperationOverview.tsx";
 import { ConnectivityPanel } from "./ConnectivityPanel.tsx";
 import { operationReason } from "./operationLabels.ts";
 import { DeepBookValidation } from "./DeepBookValidation.tsx";
@@ -40,6 +41,8 @@ export function OperationsView({
     ledger = data.accounting.ledger;
   return (
     <div className="operation-validation">
+      <OperationSummary data={data} stale={stale} />
+      {(!ledger.ok || (latest && !latest.ok)) && <p className="error" role="alert">残高・損益の不整合を検出しました。PAPER運用を停止し、詳細診断を確認してください。</p>}
       {data.validation && (
         <DeepBookValidation
           report={data.validation}
@@ -55,14 +58,6 @@ export function OperationsView({
       />
       <section>
         <h2>運用検証</h2>
-        <p
-          className={`operation-state ${!stale && data.status === "RUNNING" ? "healthy" : "warning"}`}
-        >
-          PAPER専用 ·{" "}
-          {stale
-            ? "接続状態不明（最終取得時点の記録を表示）"
-            : (statusLabels[data.status] ?? "状態を確認中")}
-        </p>
         <p>
           監視開始：{date(data.observedSince)}
           。実資金の売買・署名・送信は行いません。
@@ -552,15 +547,17 @@ export function OperationsPanel({ api }: { api: SettingsApi }) {
     [error, setError] = useState("");
   useEffect(() => {
     let active = true;
+    let generation = 0;
     const refresh = async () => {
+      const request = ++generation;
       try {
         const response = await api("operations");
-        if (active) {
+        if (active && request === generation) {
           setData(response as OperationsSnapshot);
           setError("");
         }
       } catch (e) {
-        if (active)
+        if (active && request === generation)
           setError(
             "運用検証データを取得できません。表示済みの情報は最新とは限りません。接続状態を確認してください。コード：" +
               errorCode(e),
