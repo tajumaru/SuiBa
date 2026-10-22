@@ -1,3 +1,4 @@
+import { ConnectivityPanel } from "./ConnectivityPanel.tsx";
 import { operationReason } from "./operationLabels.ts";
 import { DeepBookValidation } from "./DeepBookValidation.tsx";
 import type { ValidationReport } from "../../worker/src/validation.ts";
@@ -47,6 +48,11 @@ export function OperationsView({
           stale={stale}
         />
       )}
+      <ConnectivityPanel
+        safety={data.safety}
+        timing={data.timing}
+        stale={stale}
+      />
       <section>
         <h2>運用検証</h2>
         <p

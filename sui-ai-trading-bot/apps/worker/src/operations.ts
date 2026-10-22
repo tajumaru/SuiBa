@@ -735,6 +735,27 @@ export class OperationMonitor {
       costs: this.totals(trades),
     };
   }
+  safetySnapshot(now = Date.now()) {
+    const r = this.db.runtime();
+    return {
+      ...this.safety(),
+      botState: r.emergency
+        ? "EMERGENCY_STOP"
+        : r.error
+          ? "ABNORMAL_STOP"
+          : !r.running && !this.safety().resumePending
+            ? "MANUAL_STOP"
+            : this.safety().connectivity,
+      lastMarketSuccessAt: this.state().lastFetchSuccessAt,
+      latestApiError:
+        apiAccess
+          .snapshot(now)
+          .flatMap((a) => (a.lastFailure ? [a.lastFailure] : []))
+          .sort((a, b) => b.occurredAt - a.occurredAt)[0] ?? null,
+      ordersAllowed: this.ordersAllowed(),
+      limits: paperRecoveryLimits,
+    };
+  }
   snapshot(now = Date.now()) {
     const s = this.state(),
       r = this.db.runtime();
@@ -746,11 +767,7 @@ export class OperationMonitor {
       now - s.lastMarketAt > monitoringLimits.marketDelayedMs ||
       now - s.lastMarketClosedAt > monitoringLimits.marketStaleMs;
     return {
-      safety: {
-        ...this.safety(),
-        ordersAllowed: this.ordersAllowed(),
-        limits: paperRecoveryLimits,
-      },
+      safety: this.safetySnapshot(now),
       timing: this.timing(now),
       apis: apiAccess.snapshot(now),
       mode: "PAPER" as const,

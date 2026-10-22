@@ -58,6 +58,10 @@ export function operationReason(code: string): string {
     EMERGENCY_STOP: "緊急停止",
     MARKET_FETCH_IN_PROGRESS:
       "市場データ取得が完了していません。状態を確認してください",
+    PAPER_RECOVERY_EXHAUSTED: "通信復旧の時間または失敗回数が上限に達しました",
+    PAPER_RECOVERY_REQUIRED: "通信と市場データの安全確認が必要です",
+    PAPER_NETWORK_PAUSED: "通信障害を検出し、PAPER注文を一時停止しました",
+    PAPER_NETWORK_RECOVERED: "安全確認が完了し、PAPER検証を再開しました",
     MARKET_DATA_STALLED: "市場データの更新が停止しています",
     STALE_CANDLES: "市場データが古いため停止",
     QUOTE_EXPIRED: "価格見積もりの期限が切れています",

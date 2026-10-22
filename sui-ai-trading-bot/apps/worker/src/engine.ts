@@ -634,6 +634,7 @@ export class BotEngine {
       marketQuality: this.db.get("market_quality") ?? null,
       mode: "PAPER",
       runtime: this.db.runtime(),
+      safety: this.monitor.safetySnapshot(),
       connection: this.sui.status,
       price,
       portfolio: p,

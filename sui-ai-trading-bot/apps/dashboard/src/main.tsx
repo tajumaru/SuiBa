@@ -1,3 +1,4 @@
+import { ConnectivityPanel } from "./ConnectivityPanel.tsx";
 import { DashboardClient } from "./dashboardClient.ts";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
@@ -596,6 +597,7 @@ function App() {
                     unavailable={!!error}
                   />
                 )}
+                <ConnectivityPanel safety={data.safety} stale={!!error} />
                 {data.runtime.emergency && (
                   <p className="error">
                     緊急停止中です。原因と接続状態を確認し、設定の「停止状態の解除」から解除後、PAPER運用を手動で開始してください。
@@ -603,7 +605,8 @@ function App() {
                 )}
                 {!data.runtime.running &&
                   !data.runtime.error &&
-                  !data.runtime.emergency && (
+                  !data.runtime.emergency &&
+                  !data.safety?.resumePending && (
                     <p>
                       停止中です。設定で保存済みの条件を確認し、「PAPER運用開始」を押してください。
                     </p>
