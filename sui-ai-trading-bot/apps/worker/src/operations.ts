@@ -622,6 +622,11 @@ export class OperationMonitor {
       trades = this.db.range<Fill>("paper_trades", 0, now);
     const ids = new Set(checks.map((c) => c.orderId)),
       verified = trades.filter((t) => ids.has(t.orderId));
+    // Preserve find's first strict-equality match, including malformed IDs.
+    const firstCheck = new Map<AccountingCheck["orderId"], AccountingCheck>();
+    for (const c of checks)
+      if (c.orderId === c.orderId && !firstCheck.has(c.orderId))
+        firstCheck.set(c.orderId, c);
     let expectedGas = new D(0),
       actualGas = new D(0);
     const reasons: string[] = [];
@@ -634,7 +639,7 @@ export class OperationMonitor {
       const gas = numericText(t.costs?.gasUsdc);
       if (gas === null) reasons.push("UNKNOWN_COSTS");
       else actualGas = actualGas.plus(gas);
-      const check = checks.find((c) => c.orderId === t.orderId),
+      const check = firstCheck.get(t.orderId),
         fee = numericText(t.fee);
       if (
         fee === null ||
@@ -726,6 +731,7 @@ export class OperationMonitor {
   }
   report(hours: 24 | 168, now = Date.now()) {
     const from = now - hours * 3600000;
+    const counts = this.db.operationCounts(from, now);
     const trades = this.db.range<Fill>("paper_trades", from, now),
       events = this.db.range<OperationEvent>("operation_events", from, now);
     type Point = { timestamp: number; equity: number };
@@ -758,8 +764,8 @@ export class OperationMonitor {
       netPnl,
       maxDrawdown: values.length ? m.maxDrawdown : null,
       valuationBaselineAt: prior?.timestamp ?? points[0]?.timestamp ?? null,
-      profitGuardSkipped: this.db.operationCounts(from, now).profitRejected,
-      riskSkipped: this.db.operationCounts(from, now).riskRejected,
+      profitGuardSkipped: counts.profitRejected,
+      riskSkipped: counts.riskRejected,
       errors: events.filter((e) => e.kind === "ERROR").length,
       anomalies: events.filter((e) => e.kind === "ANOMALY").length,
       stopReasons: events
