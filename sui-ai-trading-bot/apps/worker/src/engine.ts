@@ -590,7 +590,7 @@ export class BotEngine {
       this.db.set("runtime", { ...this.db.runtime(), lastCandle: candle });
     });
   }
-  snapshot() {
+  snapshot(options: { light?: boolean } = {}) {
     const p = this.db.portfolio(),
       price = this.db.get<number>("price") ?? null,
       trades = this.db.history<Fill>("paper_trades", 10000),
@@ -624,14 +624,14 @@ export class BotEngine {
       acquisitionCostUsdc: positionOf(p).costUsdc,
       acquisitionFees:
         trades.find((t) => t.side === "BUY")?.acquisition ?? null,
-      trades: trades.slice(0, 200),
-      orders: this.db.history("paper_orders"),
-      riskEvents: this.db.history("risk_events"),
-      candles: this.db.candles(),
+      trades: options.light ? [] : trades.slice(0, 200),
+      orders: options.light ? [] : this.db.history("paper_orders"),
+      riskEvents: options.light ? [] : this.db.history("risk_events"),
+      candles: options.light ? [] : this.db.candles(),
       candlesByTimeframe: {
-        300: this.db.candles(300),
-        900: this.db.candles(900),
-        3600: this.db.candles(3600),
+        300: options.light ? [] : this.db.candles(300),
+        900: options.light ? [] : this.db.candles(900),
+        3600: options.light ? [] : this.db.candles(3600),
       },
       strategies: [
         { id: "rule-based", available: true },

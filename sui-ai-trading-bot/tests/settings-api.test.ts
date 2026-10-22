@@ -118,6 +118,40 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
     expect(monitoring.status).toBe(200);
     expect(monitoring.value.status).toBe("ABNORMAL_STOP");
     expect(monitoring.value.reports).toHaveLength(2);
+    for (const path of [
+      "dashboard/summary",
+      "dashboard/candles?timeframe=300",
+      "dashboard/records",
+    ])
+      expect((await fetch(`http://127.0.0.1:${port}/api/${path}`)).status).toBe(
+        401,
+      );
+    const summary = await api("dashboard/summary");
+    expect(summary.value.schema).toBe(1);
+    expect(summary.value.summary.runtime).toMatchObject({
+      running: false,
+      emergency: true,
+    });
+    expect(summary.value.summary.candles).toBeUndefined();
+    expect((await api("dashboard/candles?timeframe=60")).status).toBe(400);
+    const frame = (await api("dashboard/candles?timeframe=300")).value;
+    expect(frame.reset).toBe(true);
+    expect(
+      (await api("dashboard/candles?timeframe=300&version=" + frame.version))
+        .value.upserts,
+    ).toEqual([]);
+    const zipped = await fetch(`http://127.0.0.1:${port}/api/state`, {
+      headers: { Authorization: `Bearer ${token}`, "Accept-Encoding": "gzip" },
+    });
+    expect(zipped.headers.get("content-encoding")).toBe("gzip");
+    expect((await zipped.json()).runtime.emergency).toBe(true);
+    const plain = await fetch(`http://127.0.0.1:${port}/api/state`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Accept-Encoding": "gzip;q=0",
+      },
+    });
+    expect(plain.headers.get("content-encoding")).toBeNull();
     let state = (await api("state")).value;
     expect(state.mode).toBe("PAPER");
     expect(state.runtime).toMatchObject({ running: false, emergency: true });

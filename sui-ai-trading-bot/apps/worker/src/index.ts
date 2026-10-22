@@ -1,3 +1,5 @@
+import { DashboardService, acceptsGzip } from "./dashboard-feed.ts";
+import { gzip } from "node:zlib";
 import { ChartHistoryClient } from "./chart-history-client.ts";
 import { historyQuery } from "./chart-history.ts";
 import { MarketScheduler } from "./scheduler.ts";
@@ -147,6 +149,7 @@ const scheduler = new MarketScheduler(
     process.exit(1);
   },
 );
+const dashboard = new DashboardService(engine, db);
 const server = createServer(async (req, res) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Cache-Control", "no-store");
@@ -156,8 +159,29 @@ const server = createServer(async (req, res) => {
   );
   const url = new URL(req.url ?? "/", "http://localhost");
   const send = (status: number, value: unknown) => {
-    res.writeHead(status, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(value));
+    const body = JSON.stringify(value);
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Vary: "Accept-Encoding",
+    };
+    if (body.length > 1024 && acceptsGzip(req.headers["accept-encoding"])) {
+      gzip(body, (error, buffer) => {
+        if (res.destroyed) return;
+        if (error) {
+          res.destroy();
+          return;
+        }
+        res.writeHead(status, {
+          ...headers,
+          "Content-Encoding": "gzip",
+          "Content-Length": String(buffer.length),
+        });
+        res.end(buffer);
+      });
+    } else {
+      res.writeHead(status, headers);
+      res.end(body);
+    }
   };
   try {
     if (req.method === "GET" && url.pathname === "/healthz") {
@@ -228,6 +252,29 @@ const server = createServer(async (req, res) => {
             : "CHART_HISTORY_FAILED",
         });
       }
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/dashboard/summary") {
+      send(200, dashboard.summary());
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/dashboard/candles") {
+      const tf = Number(url.searchParams.get("timeframe"));
+      if (![300, 900, 3600].includes(tf)) {
+        send(400, { error: "INVALID_CHART_TIMEFRAME" });
+        return;
+      }
+      send(
+        200,
+        dashboard.candles(
+          tf as 300 | 900 | 3600,
+          url.searchParams.get("version"),
+        ),
+      );
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/dashboard/records") {
+      send(200, dashboard.records());
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/state") {
