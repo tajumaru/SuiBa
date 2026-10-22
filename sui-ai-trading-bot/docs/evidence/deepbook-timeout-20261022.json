@@ -238,5 +238,181 @@
     "HTTP2 also timed out: network root cause is unresolved",
     "No packet capture or independent external network comparison",
     "No wallets/signatures/orders used"
-  ]
+  ],
+  "afterDeployment": [
+    {
+      "at": 1792664983440,
+      "running": false,
+      "market": {
+        "healthy": false,
+        "lastSuccessAt": 1792664908944,
+        "latencyMs": 27648,
+        "reason": "UPSTREAM_TIMEOUT"
+      },
+      "deepbook": {
+        "api": "DeepBook Indexer",
+        "requests": 32,
+        "retries": 2,
+        "failed": true,
+        "lastSuccessAt": 1792664908922,
+        "lastFailure": {
+          "api": "DeepBook Indexer",
+          "url": "https://deepbook-indexer.mainnet.mystenlabs.com/[redacted]",
+          "host": "deepbook-indexer.mainnet.mystenlabs.com",
+          "operation": "MARKET_STATUS",
+          "method": "GET",
+          "code": "UPSTREAM_TIMEOUT",
+          "phase": "CONNECT",
+          "causeCode": null,
+          "transportTimings": {
+            "dnsMs": 8,
+            "totalMs": 8003,
+            "reusedConnection": false
+          },
+          "status": null,
+          "startedAt": 1792664969649,
+          "endedAt": 1792664977651,
+          "retryCount": 2,
+          "lastSuccessAt": 1792664905558,
+          "lastApiSuccessAt": 1792664908922,
+          "timeoutType": "CONNECT",
+          "elapsedMs": 8006,
+          "occurredAt": 1792664977651
+        }
+      },
+      "integrityFault": null
+    },
+    {
+      "at": 1792665013507,
+      "running": false,
+      "market": {
+        "healthy": false,
+        "lastSuccessAt": 1792664908944,
+        "latencyMs": 27648,
+        "reason": null
+      },
+      "deepbook": {
+        "api": "DeepBook Indexer",
+        "requests": 37,
+        "retries": 2,
+        "failed": false,
+        "lastSuccessAt": 1792665013153,
+        "lastFailure": {
+          "api": "DeepBook Indexer",
+          "url": "https://deepbook-indexer.mainnet.mystenlabs.com/[redacted]",
+          "host": "deepbook-indexer.mainnet.mystenlabs.com",
+          "operation": "MARKET_STATUS",
+          "method": "GET",
+          "code": "UPSTREAM_TIMEOUT",
+          "phase": "CONNECT",
+          "causeCode": null,
+          "transportTimings": {
+            "dnsMs": 8,
+            "totalMs": 8003,
+            "reusedConnection": false
+          },
+          "status": null,
+          "startedAt": 1792664969649,
+          "endedAt": 1792664977651,
+          "retryCount": 2,
+          "lastSuccessAt": 1792664905558,
+          "lastApiSuccessAt": 1792664908922,
+          "timeoutType": "CONNECT",
+          "elapsedMs": 8006,
+          "occurredAt": 1792664977651
+        }
+      },
+      "integrityFault": null
+    },
+    {
+      "at": 1792665043835,
+      "running": false,
+      "market": {
+        "healthy": true,
+        "lastSuccessAt": 1792665016080,
+        "latencyMs": 5346,
+        "reason": null
+      },
+      "deepbook": {
+        "api": "DeepBook Indexer",
+        "requests": 44,
+        "retries": 2,
+        "failed": false,
+        "lastSuccessAt": 1792665016044,
+        "lastFailure": {
+          "api": "DeepBook Indexer",
+          "url": "https://deepbook-indexer.mainnet.mystenlabs.com/[redacted]",
+          "host": "deepbook-indexer.mainnet.mystenlabs.com",
+          "operation": "MARKET_STATUS",
+          "method": "GET",
+          "code": "UPSTREAM_TIMEOUT",
+          "phase": "CONNECT",
+          "causeCode": null,
+          "transportTimings": {
+            "dnsMs": 8,
+            "totalMs": 8003,
+            "reusedConnection": false
+          },
+          "status": null,
+          "startedAt": 1792664969649,
+          "endedAt": 1792664977651,
+          "retryCount": 2,
+          "lastSuccessAt": 1792664905558,
+          "lastApiSuccessAt": 1792664908922,
+          "timeoutType": "CONNECT",
+          "elapsedMs": 8006,
+          "occurredAt": 1792664977651
+        }
+      },
+      "integrityFault": null
+    },
+    {
+      "at": 1792665073981,
+      "running": false,
+      "market": {
+        "healthy": false,
+        "lastSuccessAt": 1792665016080,
+        "latencyMs": 5346,
+        "reason": null
+      },
+      "deepbook": {
+        "api": "DeepBook Indexer",
+        "requests": 45,
+        "retries": 2,
+        "failed": false,
+        "lastSuccessAt": 1792665016044,
+        "lastFailure": {
+          "api": "DeepBook Indexer",
+          "url": "https://deepbook-indexer.mainnet.mystenlabs.com/[redacted]",
+          "host": "deepbook-indexer.mainnet.mystenlabs.com",
+          "operation": "MARKET_STATUS",
+          "method": "GET",
+          "code": "UPSTREAM_TIMEOUT",
+          "phase": "CONNECT",
+          "causeCode": null,
+          "transportTimings": {
+            "dnsMs": 8,
+            "totalMs": 8003,
+            "reusedConnection": false
+          },
+          "status": null,
+          "startedAt": 1792664969649,
+          "endedAt": 1792664977651,
+          "retryCount": 2,
+          "lastSuccessAt": 1792664905558,
+          "lastApiSuccessAt": 1792664908922,
+          "timeoutType": "CONNECT",
+          "elapsedMs": 8006,
+          "occurredAt": 1792664977651
+        }
+      },
+      "integrityFault": null
+    }
+  ],
+  "dockerHubBuildFailure": {
+    "host": "auth.docker.io",
+    "error": "lookup auth.docker.io: no such host",
+    "stage": "token fetch",
+    "note": "Separate infrastructure DNS failure, not a DeepBook HTTP response"
+  }
 }
