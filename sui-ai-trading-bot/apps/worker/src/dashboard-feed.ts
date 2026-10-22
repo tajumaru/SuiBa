@@ -8,11 +8,21 @@ const digest = (text: string) =>
   createHash("sha256").update(text).digest("hex");
 export class DashboardService {
   private frames = new Map<number, { version: string; candles: Candle[] }[]>();
+  private frameVersions = new Map<number, string>();
+  private recordCache: {
+    token: string;
+    value: ReturnType<DashboardService["readRecords"]>;
+    version: string;
+  } | null = null;
   constructor(
     private engine: BotEngine,
     private db: BotDatabase,
   ) {}
   frame(tf: Timeframe) {
+    return this.frameAtVersion(tf, this.db.displayVersion());
+  }
+  private frameAtVersion(tf: Timeframe, token: string) {
+    if (this.frameVersions.get(tf) === token) return this.frames.get(tf)![0];
     const candles = this.db.candles(tf),
       version = digest(canonicalFrame(candles));
     const history = this.frames.get(tf) ?? [];
@@ -21,14 +31,29 @@ export class DashboardService {
       history.splice(3);
       this.frames.set(tf, history);
     }
+    this.frameVersions.set(tf, token);
     return history[0];
   }
-  recordsData() {
+  private readRecords() {
     return {
       trades: this.db.history<Fill>("paper_trades", 200),
       orders: this.db.history("paper_orders"),
       riskEvents: this.db.history("risk_events"),
     };
+  }
+  private cachedRecords(token = this.db.displayVersion()) {
+    if (this.recordCache?.token !== token) {
+      const value = this.readRecords();
+      this.recordCache = {
+        token,
+        value,
+        version: digest(JSON.stringify(value)),
+      };
+    }
+    return this.recordCache;
+  }
+  recordsData() {
+    return this.cachedRecords().value;
   }
   summary() {
     const {
@@ -39,17 +64,18 @@ export class DashboardService {
       riskEvents,
       ...summary
     } = this.engine.snapshot({ light: true });
-    const records = this.recordsData();
+    const token = this.db.displayVersion(),
+      records = this.cachedRecords(token);
     return {
       schema: 1 as const,
       generatedAt: Date.now(),
       summary,
       frames: {
-        300: this.frame(300).version,
-        900: this.frame(900).version,
-        3600: this.frame(3600).version,
+        300: this.frameAtVersion(300, token).version,
+        900: this.frameAtVersion(900, token).version,
+        3600: this.frameAtVersion(3600, token).version,
       },
-      recordsVersion: digest(JSON.stringify(records)),
+      recordsVersion: records.version,
     };
   }
   candles(tf: Timeframe, baseVersion: string | null) {
@@ -80,11 +106,11 @@ export class DashboardService {
     };
   }
   records() {
-    const records = this.recordsData();
+    const records = this.cachedRecords();
     return {
       schema: 1 as const,
-      version: digest(JSON.stringify(records)),
-      records,
+      version: records.version,
+      records: records.value,
     };
   }
 }
