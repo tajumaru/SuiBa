@@ -211,3 +211,29 @@ it("changed records replace the complete bounded record snapshot", async () => {
   expect(next.state.riskEvents).toEqual(db.history("risk_events"));
   db.close();
 });
+it("late summary responses cannot overwrite a newer stop state", async () => {
+  const { db, service } = fixture(),
+    client = new DashboardClient();
+  let release!: (v: unknown) => void;
+  const held = new Promise<unknown>((r) => (release = r)),
+    old = service.summary();
+  old.summary.runtime = { ...old.summary.runtime, running: true };
+  const first = client.poll(
+    async () => held,
+    null,
+    false,
+    () => {},
+  );
+  db.set("runtime", {
+    ...db.runtime(),
+    running: false,
+    error: "MARKET_DATA_STALLED",
+  });
+  const { api } = localApi(service);
+  await client.poll(api, null, false, () => {});
+  release(old);
+  const late = await first;
+  expect(late.state.runtime.running).toBe(false);
+  expect(late.state.runtime.error).toBe("MARKET_DATA_STALLED");
+  db.close();
+});

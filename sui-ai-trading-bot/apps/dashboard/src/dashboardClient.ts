@@ -10,6 +10,8 @@ type State = ReturnType<BotEngine["snapshot"]>;
 type Summary = ReturnType<DashboardService["summary"]>;
 export class DashboardClient {
   private legacy = false;
+  private issued = 0;
+  private applied = 0;
   private state: State | null = null;
   private versions = new Map<number, string>();
   private recordsVersion: string | null = null;
@@ -20,6 +22,7 @@ export class DashboardClient {
     records: boolean,
     onSummary: (state: State) => void,
   ) {
+    const request = ++this.issued;
     let reply: Summary | undefined;
     if (!this.legacy) {
       try {
@@ -42,10 +45,16 @@ export class DashboardClient {
     }
     if (this.legacy) {
       const state = (await api("state")) as State;
+      if (request < this.applied && this.state)
+        return { state: this.state, channelError: null };
+      this.applied = request;
       this.state = state;
       onSummary(state);
       return { state, channelError: null };
     }
+    if (request < this.applied && this.state)
+      return { state: this.state, channelError: null };
+    this.applied = request;
     const s = reply!;
     this.state = {
       ...s.summary,
