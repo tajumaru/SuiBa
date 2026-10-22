@@ -1,4 +1,4 @@
-import { OperationSummary } from "./OperationOverview.tsx";
+import { OperationSummary, OperationGuidance } from "./OperationOverview.tsx";
 import { ConnectivityPanel } from "./ConnectivityPanel.tsx";
 import { operationReason } from "./operationLabels.ts";
 import { DeepBookValidation } from "./DeepBookValidation.tsx";
@@ -44,6 +44,7 @@ export function OperationsView({
   return (
     <div className="operation-validation">
       <OperationSummary data={data} stale={stale} />
+      {data.stopReason && <p className="error">停止理由：<Reason code={data.stopReason} /> 次の確認：{nextStep(data.stopReason)}</p>}
       {(!ledger.ok || (latest && !latest.ok)) && <p className="error" role="alert">残高・損益の不整合を検出しました。PAPER運用を停止し、詳細診断を確認してください。</p>}
       <section aria-label="主要KPI">
         <div className="operation-period" role="group" aria-label="集計期間">
@@ -59,6 +60,79 @@ export function OperationsView({
           </div>
         </> : <p>選択期間のレポートを取得できません。</p>}
       </section>
+      <OperationGuidance data={data} hours={hours} stale={stale} />
+      <section>
+        <h3>24時間・7日間の検証レポート</h3>
+        <p>
+          取引ゼロ件だけでは正常・異常を判断できません。売買がなくても条件を自動で緩めません。
+        </p>
+        <div className="operation-reports">
+          {data.reports.filter(r => r.hours === hours).map((r) => (
+            <article
+              key={r.hours}
+              aria-label={r.hours === 24 ? "24時間レポート" : "7日間レポート"}
+            >
+              <h3>{r.hours === 24 ? "24時間" : "7日間"}</h3>
+              <small>
+                {date(r.from)} 〜 {date(r.until)}
+              </small>
+              {!r.fullMonitoringCoverage && (
+                <p>監視記録は{date(r.observedFrom)}からの一部期間です。</p>
+              )}
+              <dl className="operation-report-grid">
+                {[
+                  [
+                    "取引回数",
+                    `${r.tradeCount}件（買い ${number(r.buyCount)} / 売り ${number(r.sellCount)}）`,
+                  ],
+                  [
+                    "勝率（売却単位）",
+                    r.winRate == null ? "算出不可（売却なし）" : percent(r.winRate),
+                  ],
+                  [
+                    "純損益（保有分の評価損益を含む）",
+                    r.netPnl == null
+                      ? "評価データ不足"
+                      : `${number(r.netPnl)} USDC`,
+                  ],
+                  [
+                    "最大ドローダウン",
+                    r.maxDrawdown == null
+                      ? "評価データ不足"
+                      : percent(r.maxDrawdown),
+                  ],
+                  ["利益保護による見送り", `${r.profitGuardSkipped}件`],
+                  ["リスク制限による見送り", `${r.riskSkipped}件`],
+                  ["エラー記録 / 異常検出記録", `${r.errors} / ${r.anomalies}件（同じ障害の重複を含むため合算不可）`],
+                  ["累計手数料（ガスを含む）", usdc(r.costs.feesUsdc)],
+                  ["ガス代", usdc(r.costs.gasUsdc)],
+                ].map(([label, value]) => (
+                  <React.Fragment key={label}>
+                    <dt>{label}</dt>
+                    <dd>{value}</dd>
+                  </React.Fragment>
+                ))}
+              </dl>
+              <p>損益推移：既存APIに時系列がないため表示できません。純損益と最大ドローダウンは取得済み集計です。</p>
+              <small>
+                損益の比較開始：{date(r.valuationBaselineAt)}
+                。期間開始前の評価がない場合は、最初に取得した評価との比較です。DEX手数料は見積もり内に含み、二重加算しません。
+              </small>
+              <details>
+                <summary>運用停止理由（{r.stopReasons.length}件）</summary>
+                <ul>
+                  {r.stopReasons.map((s, i) => (
+                    <li key={i}>
+                      {date(s.timestamp)}：<Reason code={s.reason} />
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </article>
+          ))}
+        </div>
+      </section>
+      <details id="operation-diagnostics" className="operation-diagnostics"><summary>詳細診断 · API通信・停止理由・品質・会計・監査ログ</summary>
       {data.validation && (
         <DeepBookValidation
           report={data.validation}
@@ -234,77 +308,6 @@ export function OperationsView({
         ))}
       </section>
       <section>
-        <h3>24時間・7日間の検証レポート</h3>
-        <p>
-          取引ゼロ件だけでは正常・異常を判断できません。売買がなくても条件を自動で緩めません。
-        </p>
-        <div className="operation-reports">
-          {data.reports.filter(r => r.hours === hours).map((r) => (
-            <article
-              key={r.hours}
-              aria-label={r.hours === 24 ? "24時間レポート" : "7日間レポート"}
-            >
-              <h3>{r.hours === 24 ? "24時間" : "7日間"}</h3>
-              <small>
-                {date(r.from)} 〜 {date(r.until)}
-              </small>
-              {!r.fullMonitoringCoverage && (
-                <p>監視記録は{date(r.observedFrom)}からの一部期間です。</p>
-              )}
-              <dl className="operation-report-grid">
-                {[
-                  [
-                    "取引回数",
-                    `${r.tradeCount}件（買い ${number(r.buyCount)} / 売り ${number(r.sellCount)}）`,
-                  ],
-                  [
-                    "勝率（売却単位）",
-                    r.winRate == null ? "算出不可（売却なし）" : percent(r.winRate),
-                  ],
-                  [
-                    "純損益（保有分の評価損益を含む）",
-                    r.netPnl == null
-                      ? "評価データ不足"
-                      : `${number(r.netPnl)} USDC`,
-                  ],
-                  [
-                    "最大ドローダウン",
-                    r.maxDrawdown == null
-                      ? "評価データ不足"
-                      : percent(r.maxDrawdown),
-                  ],
-                  ["利益保護による見送り", `${r.profitGuardSkipped}件`],
-                  ["リスク制限による見送り", `${r.riskSkipped}件`],
-                  ["エラー記録 / 異常検出記録", `${r.errors} / ${r.anomalies}件（同じ障害の重複を含むため合算不可）`],
-                  ["累計手数料（ガスを含む）", usdc(r.costs.feesUsdc)],
-                  ["ガス代", usdc(r.costs.gasUsdc)],
-                ].map(([label, value]) => (
-                  <React.Fragment key={label}>
-                    <dt>{label}</dt>
-                    <dd>{value}</dd>
-                  </React.Fragment>
-                ))}
-              </dl>
-              <p>損益推移：既存APIに時系列がないため表示できません。純損益と最大ドローダウンは取得済み集計です。</p>
-              <small>
-                損益の比較開始：{date(r.valuationBaselineAt)}
-                。期間開始前の評価がない場合は、最初に取得した評価との比較です。DEX手数料は見積もり内に含み、二重加算しません。
-              </small>
-              <details>
-                <summary>運用停止理由（{r.stopReasons.length}件）</summary>
-                <ul>
-                  {r.stopReasons.map((s, i) => (
-                    <li key={i}>
-                      {date(s.timestamp)}：<Reason code={s.reason} />
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            </article>
-          ))}
-        </div>
-      </section>
-      <section>
         <h3>残高・損益の整合性</h3>
         <div className="cards">
           {Object.entries(data.accounting.current).map(([key, value]) => (
@@ -435,7 +438,7 @@ export function OperationsView({
       <section>
         <h3>売買候補ごとの検証記録（直近50件）</h3>
         {data.candidates.length === 0 && (
-          <p>売買候補はまだありません。見送りが続いても正常です。</p>
+          <p>売買候補はまだありません。候補0件だけでは正常・異常を判断できません。</p>
         )}
         {data.candidates.map((c) => (
           <details className="operation-candidate" key={c.id}>
@@ -556,6 +559,7 @@ export function OperationsView({
           </ul>
         )}
       </section>
+      </details>
     </div>
   );
 }
