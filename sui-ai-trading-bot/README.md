@@ -10,7 +10,7 @@ Windows 11 + Docker Desktopの手順、429の対応と検証結果は[API安定�
 
 ## 起動
 
-Node.js 24 LTS / pnpm 9.12.3。プロジェクトディレクトリで実行します。
+Node.js 24.22.1 以降の 24 LTS / pnpm 9.12.3。プロジェクトディレクトリで実行します。
 
 ```powershell
 pnpm install --frozen-lockfile
