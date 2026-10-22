@@ -1,3 +1,9 @@
+import {
+  withApiTiming,
+  currentApiTiming,
+  timeAggregation,
+  timingHeader,
+} from "../../../packages/shared/src/api-timing.ts";
 import { deepBookTransport } from "../../../packages/market-data/src/deepbook-transport.ts";
 import { DashboardService, acceptsGzip } from "./dashboard-feed.ts";
 import { gzip } from "node:zlib";
@@ -13,7 +19,11 @@ import { DeepBookMarketData } from "../../../packages/market-data/src/deepbook.t
 import { MarketSelection } from "../../../packages/market-data/src/selection.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
 import "dotenv/config";
-import { createServer } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
@@ -151,7 +161,7 @@ const scheduler = new MarketScheduler(
   },
 );
 const dashboard = new DashboardService(engine, db);
-const server = createServer(async (req, res) => {
+const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Cache-Control", "no-store");
   res.setHeader(
@@ -160,13 +170,18 @@ const server = createServer(async (req, res) => {
   );
   const url = new URL(req.url ?? "/", "http://localhost");
   const send = (status: number, value: unknown) => {
+    const timing = currentApiTiming()!;
+    const jsonStart = performance.now();
     const body = JSON.stringify(value);
+    timing.jsonMs += performance.now() - jsonStart;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Vary: "Accept-Encoding",
     };
     if (body.length > 1024 && acceptsGzip(req.headers["accept-encoding"])) {
+      const compressionStart = performance.now();
       gzip(body, (error, buffer) => {
+        timing.compressionMs += performance.now() - compressionStart;
         if (res.destroyed) return;
         if (error) {
           res.destroy();
@@ -174,13 +189,17 @@ const server = createServer(async (req, res) => {
         }
         res.writeHead(status, {
           ...headers,
+          "Server-Timing": timingHeader(timing),
           "Content-Encoding": "gzip",
           "Content-Length": String(buffer.length),
         });
         res.end(buffer);
       });
     } else {
-      res.writeHead(status, headers);
+      res.writeHead(status, {
+        ...headers,
+        "Server-Timing": timingHeader(timing),
+      });
       res.end(body);
     }
   };
@@ -256,7 +275,10 @@ const server = createServer(async (req, res) => {
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/dashboard/summary") {
-      send(200, dashboard.summary());
+      send(
+        200,
+        timeAggregation(() => dashboard.summary()),
+      );
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/dashboard/candles") {
@@ -267,25 +289,35 @@ const server = createServer(async (req, res) => {
       }
       send(
         200,
-        dashboard.candles(
-          tf as 300 | 900 | 3600,
-          url.searchParams.get("version"),
+        timeAggregation(() =>
+          dashboard.candles(
+            tf as 300 | 900 | 3600,
+            url.searchParams.get("version"),
+          ),
         ),
       );
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/dashboard/records") {
-      send(200, dashboard.records());
+      send(
+        200,
+        timeAggregation(() => dashboard.records()),
+      );
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/state") {
-      send(200, engine.snapshot());
+      send(
+        200,
+        timeAggregation(() => engine.snapshot()),
+      );
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/operations") {
       send(200, {
-        ...engine.monitor.snapshot(),
-        ...(validation ? { validation: validation.report() } : {}),
+        ...timeAggregation(() => engine.monitor.snapshot()),
+        ...(validation
+          ? { validation: timeAggregation(() => validation.report()) }
+          : {}),
       });
       return;
     }
@@ -294,9 +326,11 @@ const server = createServer(async (req, res) => {
       req.method === "GET" &&
       ["/api/validation", "/api/validation/report.md"].includes(url.pathname)
     ) {
-      const report = validation.report(Date.now(), true);
+      const report = timeAggregation(() => validation.report(Date.now(), true));
       if (url.pathname.endsWith(".md")) {
-        res.writeHead(200, { "Content-Type": "text/markdown; charset=utf-8" });
+        res.writeHead(200, {
+          "Content-Type": "text/markdown; charset=utf-8",
+        });
         res.end(validationMarkdown(report));
       } else send(200, report);
       return;
@@ -459,7 +493,10 @@ const server = createServer(async (req, res) => {
   } catch {
     send(400, { error: "REQUEST_FAILED" });
   }
-});
+};
+const server = createServer((req, res) =>
+  withApiTiming(() => handleRequest(req, res)),
+);
 server.listen(
   Number(process.env.PORT ?? 3100),
   process.env.HOST ?? "127.0.0.1",

@@ -1,3 +1,4 @@
+import { timeSql } from "../../shared/src/api-timing.ts";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -33,6 +34,27 @@ const eventTables = [
 type EventTable = (typeof eventTables)[number];
 export class BotDatabase {
   private db: DatabaseSync;
+  private prepare(sql: string) {
+    const statement = this.db.prepare(sql);
+    return new Proxy(statement, {
+      get(target, property) {
+        const value = Reflect.get(target, property, target);
+        if (typeof value !== "function") return value;
+        if (property === "get" || property === "all" || property === "run")
+          return (...args: unknown[]) =>
+            timeSql(() => Reflect.apply(value, target, args));
+        return value.bind(target);
+      },
+    });
+  }
+  private transactionVersion = 0;
+  /** Display-only invalidation token. Covers local SQL, rollback and other writers. */
+  displayVersion() {
+    const row = this.prepare(
+      "SELECT total_changes() AS changes, data_version FROM pragma_data_version",
+    ).get()!;
+    return `${row.changes}:${row.data_version}:${this.transactionVersion}`;
+  }
   constructor(path: string) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
@@ -71,17 +93,15 @@ export class BotDatabase {
     if (!this.get("settings")) this.set("settings", defaults);
   }
   get<T>(key: string): T | undefined {
-    const row = this.db
-      .prepare("SELECT json FROM bot_runtime_state WHERE key=?")
-      .get(key) as { json: string } | undefined;
+    const row = this.prepare(
+      "SELECT json FROM bot_runtime_state WHERE key=?",
+    ).get(key) as { json: string } | undefined;
     return row ? JSON.parse(row.json) : undefined;
   }
   set(key: string, value: unknown) {
-    this.db
-      .prepare(
-        "INSERT INTO bot_runtime_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json",
-      )
-      .run(key, JSON.stringify(value));
+    this.prepare(
+      "INSERT INTO bot_runtime_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json",
+    ).run(key, JSON.stringify(value));
   }
   runtime() {
     return this.get<Runtime>("runtime")!;
@@ -127,55 +147,55 @@ export class BotDatabase {
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
+    } finally {
+      this.transactionVersion++;
     }
   }
   append(table: EventTable, id: string, value: unknown, now = Date.now()) {
-    this.db
-      .prepare(`INSERT INTO ${table} VALUES(?,?,?)`)
-      .run(id, now, JSON.stringify(value));
+    this.prepare(`INSERT INTO ${table} VALUES(?,?,?)`).run(
+      id,
+      now,
+      JSON.stringify(value),
+    );
   }
   history<T = Record<string, unknown>>(table: EventTable, limit = 200): T[] {
     return (
-      this.db
-        .prepare(
-          `SELECT json FROM ${table} ORDER BY timestamp DESC,id DESC LIMIT ?`,
-        )
-        .all(limit) as { json: string }[]
+      this.prepare(
+        `SELECT json FROM ${table} ORDER BY timestamp DESC,id DESC LIMIT ?`,
+      ).all(limit) as { json: string }[]
     ).map((r) => JSON.parse(r.json));
   }
   hasOrder(id: string) {
-    return !!this.db.prepare("SELECT id FROM paper_orders WHERE id=?").get(id);
+    return !!this.prepare("SELECT id FROM paper_orders WHERE id=?").get(id);
   }
   range<T>(table: EventTable, from: number, until: number): T[] {
     return (
-      this.db
-        .prepare(
-          `SELECT json FROM ${table} WHERE timestamp>=? AND timestamp<=? ORDER BY timestamp,id`,
-        )
-        .all(from, until) as { json: string }[]
+      this.prepare(
+        `SELECT json FROM ${table} WHERE timestamp>=? AND timestamp<=? ORDER BY timestamp,id`,
+      ).all(from, until) as { json: string }[]
     ).map((row) => JSON.parse(row.json));
   }
+  /** Display input cache only; retain SQL timestamps independently of JSON at. */
+  displayValidationRows(from: number, until: number) {
+    return this.prepare(
+      "SELECT timestamp,json FROM validation_events WHERE timestamp>=? AND timestamp<=? ORDER BY timestamp,id",
+    ).all(from, until) as { timestamp: number; json: string }[];
+  }
   before<T>(table: EventTable, at: number): T | null {
-    const row = this.db
-      .prepare(
-        `SELECT json FROM ${table} WHERE timestamp<? ORDER BY timestamp DESC,id DESC LIMIT 1`,
-      )
-      .get(at) as { json: string } | undefined;
+    const row = this.prepare(
+      `SELECT json FROM ${table} WHERE timestamp<? ORDER BY timestamp DESC,id DESC LIMIT 1`,
+    ).get(at) as { json: string } | undefined;
     return row ? JSON.parse(row.json) : null;
   }
   putCandidate(candidate: CandidateAudit) {
-    this.db
-      .prepare(
-        "INSERT INTO operation_candidates VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET timestamp=excluded.timestamp,json=excluded.json",
-      )
-      .run(candidate.id, candidate.timestamp, JSON.stringify(candidate));
+    this.prepare(
+      "INSERT INTO operation_candidates VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET timestamp=excluded.timestamp,json=excluded.json",
+    ).run(candidate.id, candidate.timestamp, JSON.stringify(candidate));
   }
   operationCounts(from = 0, until = Number.MAX_SAFE_INTEGER) {
-    const row = this.db
-      .prepare(
-        `SELECT COUNT(*) candidates, COALESCE(SUM(json_extract(json,'$.finalAction')='BUY'),0) buys, COALESCE(SUM(json_extract(json,'$.finalAction')='SELL'),0) sells, COALESCE(SUM(json_extract(json,'$.finalAction')='WAIT'),0) waits, COALESCE(SUM(json_extract(json,'$.profitGuard.evaluated')=1 AND json_extract(json,'$.profitGuard.allowed')=0),0) profitRejected, COALESCE(SUM(json_extract(json,'$.risk.status')='REJECTED'),0) riskRejected FROM operation_candidates WHERE timestamp>=? AND timestamp<=?`,
-      )
-      .get(from, until) as {
+    const row = this.prepare(
+      `SELECT COUNT(*) candidates, COALESCE(SUM(json_extract(json,'$.finalAction')='BUY'),0) buys, COALESCE(SUM(json_extract(json,'$.finalAction')='SELL'),0) sells, COALESCE(SUM(json_extract(json,'$.finalAction')='WAIT'),0) waits, COALESCE(SUM(json_extract(json,'$.profitGuard.evaluated')=1 AND json_extract(json,'$.profitGuard.allowed')=0),0) profitRejected, COALESCE(SUM(json_extract(json,'$.risk.status')='REJECTED'),0) riskRejected FROM operation_candidates WHERE timestamp>=? AND timestamp<=?`,
+    ).get(from, until) as {
       candidates: number;
       buys: number;
       sells: number;
@@ -183,19 +203,15 @@ export class BotDatabase {
       profitRejected: number;
       riskRejected: number;
     };
-    const waits = this.db
-      .prepare(
-        "SELECT COUNT(*) n FROM operation_events WHERE timestamp>=? AND timestamp<=? AND json_extract(json,'$.kind')='WAIT'",
-      )
-      .get(from, until) as { n: number };
+    const waits = this.prepare(
+      "SELECT COUNT(*) n FROM operation_events WHERE timestamp>=? AND timestamp<=? AND json_extract(json,'$.kind')='WAIT'",
+    ).get(from, until) as { n: number };
     return { ...row, waits: row.waits + waits.n };
   }
   interruptPending(now: number) {
-    const rows = this.db
-      .prepare(
-        "SELECT json FROM operation_candidates WHERE json_extract(json,'$.finalAction')='PENDING'",
-      )
-      .all() as { json: string }[];
+    const rows = this.prepare(
+      "SELECT json FROM operation_candidates WHERE json_extract(json,'$.finalAction')='PENDING'",
+    ).all() as { json: string }[];
     for (const row of rows) {
       const c = JSON.parse(row.json) as CandidateAudit;
       this.putCandidate({
@@ -208,7 +224,7 @@ export class BotDatabase {
   }
   saveCandles(c: Candle[]) {
     this.transaction(() => {
-      const st = this.db.prepare(
+      const st = this.prepare(
         "INSERT INTO market_candles VALUES(?,?,?,?) ON CONFLICT DO UPDATE SET json=excluded.json",
       );
       for (const x of c)
@@ -217,11 +233,9 @@ export class BotDatabase {
   }
   candles(timeframe = 300): Candle[] {
     return (
-      this.db
-        .prepare(
-          "SELECT json FROM market_candles WHERE timeframe=? AND source=(SELECT source FROM market_candles WHERE timeframe=? ORDER BY timestamp DESC, rowid DESC LIMIT 1) ORDER BY timestamp DESC LIMIT 1000",
-        )
-        .all(timeframe, timeframe) as { json: string }[]
+      this.prepare(
+        "SELECT json FROM market_candles WHERE timeframe=? AND source=(SELECT source FROM market_candles WHERE timeframe=? ORDER BY timestamp DESC, rowid DESC LIMIT 1) ORDER BY timestamp DESC LIMIT 1000",
+      ).all(timeframe, timeframe) as { json: string }[]
     )
       .map((x) => JSON.parse(x.json))
       .reverse();
@@ -254,7 +268,7 @@ export class BotDatabase {
   ) {
     this.transaction(() => {
       if (this.hasOrder(id)) throw new Error("DUPLICATE_ORDER");
-      if (this.db.prepare("SELECT id FROM paper_trades WHERE id=?").get(id))
+      if (this.prepare("SELECT id FROM paper_trades WHERE id=?").get(id))
         throw new Error("DUPLICATE_ORDER");
       if (verification && !verification.check.ok)
         throw new Error("PAPER_RECONCILIATION_FAILED");
