@@ -236,3 +236,24 @@ it("history failures do not mutate the trading API controller", async () => {
   expect(JSON.stringify(apiAccess.snapshot())).toBe(before);
   h.store.close();
 });
+it("authoritative original rows supersede cached no-trade reconstructions", async () => {
+  const { verifiedDisplayRepairs } =
+    await import("../packages/shared/src/chart-gap-audit.ts");
+  const repair = verifiedDisplayRepairs[0];
+  const store = new ChartHistoryStore(":memory:", {
+    now: () => (repair.timestamp + 600) * 1000,
+    sleep: async () => {},
+    gate: async () => true,
+    fetch: async () =>
+      Response.json({ candles: [[repair.timestamp * 1000, 2, 3, 1, 2.5, 10]] }),
+  });
+  store.seed([repair]);
+  const r = await store.get({
+    timeframe: 300,
+    from: repair.timestamp,
+    to: repair.timestamp + 300,
+  });
+  expect(r.candles[0].provenance?.origin).toBe("ORIGINAL");
+  expect(r.candles[0].volume).toBe(10);
+  store.close();
+});

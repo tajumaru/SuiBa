@@ -200,7 +200,7 @@ export class ChartHistoryStore {
               };
               this.db
                 .prepare(
-                  "INSERT INTO candles VALUES(?,?,?) ON CONFLICT(tf,ts) DO NOTHING",
+                  "INSERT INTO candles VALUES(?,?,?) ON CONFLICT(tf,ts) DO UPDATE SET json=excluded.json WHERE json_extract(candles.json, '$.provenance.origin')='NO_INDEXED_TRADES'",
                 )
                 .run(q.timeframe, c.timestamp, JSON.stringify(candle));
             }

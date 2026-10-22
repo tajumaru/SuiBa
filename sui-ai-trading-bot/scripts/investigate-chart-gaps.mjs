@@ -1,5 +1,120 @@
-import fs from 'node:fs';const saved=JSON.parse(fs.readFileSync('data/chart-probe-1792624868279/probe.json'));const from=saved.summary.to/1000-7*86400,to=saved.summary.to/1000,raw=saved.rows.sort((a,b)=>a[0]-b[0]),times=new Set(raw.map(r=>r[0]/1000)),missing=[];for(let t=from;t<to;t+=300)if(!times.has(t))missing.push(t);
-const dir='data/gaps-48-'+Date.now();fs.mkdirSync(dir,{recursive:true});const out={from,to,observedAt:Date.now(),originalRaw:raw,missing,queries:[],five:[],minutes:[],gaps:[]};let previous=0;function save(){fs.writeFileSync(dir+'/evidence.json',JSON.stringify(out));}
-async function read(path){const wait=Math.max(0,2500-(Date.now()-previous));if(wait)await new Promise(r=>setTimeout(r,wait));previous=Date.now();const start=performance.now(),res=await fetch('https://deepbook-indexer.mainnet.mystenlabs.com'+path,{signal:AbortSignal.timeout(12000)});const body=await res.json();out.queries.push({path,at:Date.now(),status:res.status,elapsedMs:Math.round(performance.now()-start)});save();if(!res.ok)throw Error('HTTP_'+res.status);return body;}
-async function pages(interval,start,end,max){const all=[];let cursor=end*1000-1;for(let i=0;i<max&&cursor>=start*1000;i++){const r=await read(`/ohclv/SUI_USDC?interval=${interval}&start_time=${start*1000}&end_time=${cursor}&limit=1000`);const c=r.candles??[];all.push(...c);if(c.length<1000)break;const earliest=Math.min(...c.map(r=>r[0]));if(earliest>=cursor)throw Error('PAGING_STALLED');cursor=earliest-1;}return all;}
-try{out.five=await pages('5m',from,to,3);save();out.minutes=await pages('1m',missing[0],missing.at(-1)+300,8);save();for(const t of missing){const path=`/trades/SUI_USDC?start_time=${t}&end_time=${t+300}&limit=1000`;const r=await read(path);out.gaps.push({timestamp:t,path,fetchedAt:Date.now(),trades:r,complete:Array.isArray(r)&&r.length<1000,validRange:Array.isArray(r)&&r.every(x=>Number.isFinite(x.timestamp)&&x.timestamp>=t*1000&&x.timestamp<=(t+300)*1000)});save();if(out.gaps.length%10===0)console.log(JSON.stringify({checked:out.gaps.length,queries:out.queries.length,dir}));}out.status=await read('/status?max_checkpoint_lag=100&max_time_lag_seconds=60');out.completedAt=Date.now();save();console.log(JSON.stringify({complete:true,dir,queries:out.queries.length,gaps:out.gaps.length,zeroTrades:out.gaps.filter(g=>g.complete&&g.validRange&&!g.trades.length).length}));}catch(e){out.error=String(e);save();console.log(JSON.stringify({error:String(e),dir,queries:out.queries.length}));process.exitCode=1;}
+import fs from "node:fs";
+const saved = JSON.parse(
+  fs.readFileSync("data/chart-probe-1792624868279/probe.json"),
+);
+const from = saved.summary.to / 1000 - 7 * 86400,
+  to = saved.summary.to / 1000,
+  raw = saved.rows.sort((a, b) => a[0] - b[0]),
+  times = new Set(raw.map((r) => r[0] / 1000)),
+  missing = [];
+for (let t = from; t < to; t += 300) if (!times.has(t)) missing.push(t);
+const dir = "data/gaps-48-" + Date.now();
+fs.mkdirSync(dir, { recursive: true });
+const out = {
+  from,
+  to,
+  observedAt: Date.now(),
+  originalRaw: raw,
+  missing,
+  queries: [],
+  five: [],
+  minutes: [],
+  gaps: [],
+};
+let previous = 0;
+function save() {
+  fs.writeFileSync(dir + "/evidence.json", JSON.stringify(out));
+}
+async function read(path) {
+  const wait = Math.max(0, 2500 - (Date.now() - previous));
+  if (wait) await new Promise((r) => setTimeout(r, wait));
+  previous = Date.now();
+  const start = performance.now(),
+    res = await fetch(
+      "https://deepbook-indexer.mainnet.mystenlabs.com" + path,
+      { signal: AbortSignal.timeout(12000) },
+    );
+  const body = await res.json();
+  out.queries.push({
+    path,
+    at: Date.now(),
+    status: res.status,
+    elapsedMs: Math.round(performance.now() - start),
+  });
+  save();
+  if (!res.ok) throw Error("HTTP_" + res.status);
+  return body;
+}
+async function pages(interval, start, end, max) {
+  const all = [];
+  let cursor = end * 1000 - 1;
+  for (let i = 0; i < max && cursor >= start * 1000; i++) {
+    const r = await read(
+      `/ohclv/SUI_USDC?interval=${interval}&start_time=${start * 1000}&end_time=${cursor}&limit=1000`,
+    );
+    const c = r.candles ?? [];
+    all.push(...c);
+    if (c.length < 1000) break;
+    const earliest = Math.min(...c.map((r) => r[0]));
+    if (earliest >= cursor) throw Error("PAGING_STALLED");
+    cursor = earliest - 1;
+  }
+  return all;
+}
+try {
+  out.five = await pages("5m", from, to, 3);
+  save();
+  out.minutes = await pages("1m", missing[0], missing.at(-1) + 300, 8);
+  save();
+  for (const t of missing) {
+    const path = `/trades/SUI_USDC?start_time=${t}&end_time=${t + 300}&limit=1000`;
+    const r = await read(path);
+    out.gaps.push({
+      timestamp: t,
+      path,
+      fetchedAt: Date.now(),
+      trades: r,
+      complete: Array.isArray(r) && r.length < 1000,
+      validRange:
+        Array.isArray(r) &&
+        r.every(
+          (x) =>
+            Number.isFinite(x.timestamp) &&
+            x.timestamp >= t * 1000 &&
+            x.timestamp <= (t + 300) * 1000,
+        ),
+    });
+    save();
+    if (out.gaps.length % 10 === 0)
+      console.log(
+        JSON.stringify({
+          checked: out.gaps.length,
+          queries: out.queries.length,
+          dir,
+        }),
+      );
+  }
+  out.status = await read(
+    "/status?max_checkpoint_lag=100&max_time_lag_seconds=60",
+  );
+  out.completedAt = Date.now();
+  save();
+  console.log(
+    JSON.stringify({
+      complete: true,
+      dir,
+      queries: out.queries.length,
+      gaps: out.gaps.length,
+      zeroTrades: out.gaps.filter(
+        (g) => g.complete && g.validRange && !g.trades.length,
+      ).length,
+    }),
+  );
+} catch (e) {
+  out.error = String(e);
+  save();
+  console.log(
+    JSON.stringify({ error: String(e), dir, queries: out.queries.length }),
+  );
+  process.exitCode = 1;
+}
