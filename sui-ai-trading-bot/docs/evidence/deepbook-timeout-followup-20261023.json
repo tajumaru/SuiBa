@@ -1,0 +1,1669 @@
+{
+  "collectedAt": 1792683790888,
+  "exact36182": [
+    {
+      "at": 1792682626273,
+      "kind": "cycle",
+      "error": "UPSTREAM_CONNECT_TIMEOUT",
+      "durationMs": 36264,
+      "market": {
+        "configured": "deepbook",
+        "source": "DeepBook",
+        "fallback": false,
+        "lastSuccessAt": 1792682532912,
+        "latencyMs": 36182,
+        "reason": "UPSTREAM_CONNECT_TIMEOUT",
+        "healthy": false,
+        "bookAt": 1792682532797,
+        "bid": 0.97626,
+        "ask": 0.97663,
+        "spread": 0.0003789255923272498,
+        "quality": {
+          "300": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682530843,
+            "timeframe": 300,
+            "missing": 2,
+            "reconstructed": 2,
+            "unresolved": 0,
+            "latestClosedAt": 1792682400000,
+            "origins": {
+              "ORIGINAL": 999,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 2
+            },
+            "originalCount": 999,
+            "gapTimestamps": [
+              1792446000,
+              1792456800
+            ],
+            "reconstructionMs": 1799
+          },
+          "900": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682532644,
+            "timeframe": 900,
+            "originalCount": 672,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792682100000,
+            "origins": {
+              "ORIGINAL": 672,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          },
+          "3600": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682532645,
+            "timeframe": 3600,
+            "originalCount": 168,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792681200000,
+            "origins": {
+              "ORIGINAL": 168,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          }
+        },
+        "diagnostics": {
+          "indexerLagMs": 2000,
+          "indexedThrough": 1792682592182,
+          "bidDepthUsdc": 9154.945107000001,
+          "askDepthUsdc": 9337.654389
+        }
+      },
+      "timing": {
+        "lastFetchAttemptAt": 1792682590009,
+        "lastFetchSuccessAt": 1792682532912,
+        "lastTransportSuccessAt": 1792682598870,
+        "lastAnalysisAt": 1792682532993,
+        "fetchStartedAt": null,
+        "lastFetchDurationMs": 36220,
+        "nextFetchAt": 1792682649991.32,
+        "nextFetchReason": "PERIODIC",
+        "observedSince": 1792581570216,
+        "processStartedAt": 1792682487533,
+        "runningMs": 4512038,
+        "accountedAt": 1792682626265,
+        "active": false,
+        "lastHeartbeatAt": 1792682626265,
+        "lastMarketAt": 1792682532977,
+        "lastMarketClosedAt": 1792682400000,
+        "lastQuoteAt": null,
+        "lastQuoteExpiresAt": null,
+        "lastTradeAt": null,
+        "lastHealthyAt": 1792682533018,
+        "apiErrors": 99,
+        "consecutiveErrors": 1
+      }
+    },
+    {
+      "at": 1792682637604,
+      "kind": "sample",
+      "running": true,
+      "error": null,
+      "market": {
+        "configured": "deepbook",
+        "source": "DeepBook",
+        "fallback": false,
+        "lastSuccessAt": 1792682532912,
+        "latencyMs": 36182,
+        "reason": "UPSTREAM_CONNECT_TIMEOUT",
+        "healthy": false,
+        "bookAt": 1792682532797,
+        "bid": 0.97626,
+        "ask": 0.97663,
+        "spread": 0.0003789255923272498,
+        "quality": {
+          "300": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682530843,
+            "timeframe": 300,
+            "missing": 2,
+            "reconstructed": 2,
+            "unresolved": 0,
+            "latestClosedAt": 1792682400000,
+            "origins": {
+              "ORIGINAL": 999,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 2
+            },
+            "originalCount": 999,
+            "gapTimestamps": [
+              1792446000,
+              1792456800
+            ],
+            "reconstructionMs": 1799
+          },
+          "900": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682532644,
+            "timeframe": 900,
+            "originalCount": 672,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792682100000,
+            "origins": {
+              "ORIGINAL": 672,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          },
+          "3600": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682532645,
+            "timeframe": 3600,
+            "originalCount": 168,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792681200000,
+            "origins": {
+              "ORIGINAL": 168,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          }
+        },
+        "diagnostics": {
+          "indexerLagMs": 2000,
+          "indexedThrough": 1792682592182,
+          "bidDepthUsdc": 9154.945107000001,
+          "askDepthUsdc": 9337.654389
+        }
+      },
+      "timing": {
+        "lastFetchAttemptAt": 1792682590009,
+        "lastFetchSuccessAt": 1792682532912,
+        "lastTransportSuccessAt": 1792682598870,
+        "lastAnalysisAt": 1792682532993,
+        "fetchStartedAt": null,
+        "lastFetchDurationMs": 36220,
+        "nextFetchAt": 1792682649988.973,
+        "nextFetchReason": "PERIODIC",
+        "observedSince": 1792581570216,
+        "processStartedAt": 1792682487533,
+        "runningMs": 4518162,
+        "accountedAt": 1792682637593,
+        "active": true,
+        "lastHeartbeatAt": 1792682637593,
+        "lastMarketAt": 1792682532977,
+        "lastMarketClosedAt": 1792682400000,
+        "lastQuoteAt": null,
+        "lastQuoteExpiresAt": null,
+        "lastTradeAt": null,
+        "lastHealthyAt": 1792682533018,
+        "apiErrors": 99,
+        "consecutiveErrors": 1
+      }
+    },
+    {
+      "at": 1792682652599,
+      "kind": "sample",
+      "running": true,
+      "error": null,
+      "market": {
+        "configured": "deepbook",
+        "source": "DeepBook",
+        "fallback": false,
+        "lastSuccessAt": 1792682532912,
+        "latencyMs": 36182,
+        "reason": null,
+        "healthy": false,
+        "bookAt": 1792682532797,
+        "bid": 0.97626,
+        "ask": 0.97663,
+        "spread": 0.0003789255923272498,
+        "quality": {
+          "300": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682530843,
+            "timeframe": 300,
+            "missing": 2,
+            "reconstructed": 2,
+            "unresolved": 0,
+            "latestClosedAt": 1792682400000,
+            "origins": {
+              "ORIGINAL": 999,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 2
+            },
+            "originalCount": 999,
+            "gapTimestamps": [
+              1792446000,
+              1792456800
+            ],
+            "reconstructionMs": 1799
+          },
+          "900": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682532644,
+            "timeframe": 900,
+            "originalCount": 672,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792682100000,
+            "origins": {
+              "ORIGINAL": 672,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          },
+          "3600": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682532645,
+            "timeframe": 3600,
+            "originalCount": 168,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792681200000,
+            "origins": {
+              "ORIGINAL": 168,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          }
+        },
+        "diagnostics": {
+          "indexerLagMs": 2000,
+          "indexedThrough": 1792682592182,
+          "bidDepthUsdc": 9154.945107000001,
+          "askDepthUsdc": 9337.654389
+        }
+      },
+      "timing": {
+        "lastFetchAttemptAt": 1792682652542,
+        "lastFetchSuccessAt": 1792682532912,
+        "lastTransportSuccessAt": 1792682598870,
+        "lastAnalysisAt": 1792682532993,
+        "fetchStartedAt": 1792682652542,
+        "lastFetchDurationMs": 36220,
+        "nextFetchAt": 1792682709987.1304,
+        "nextFetchReason": "PERIODIC",
+        "observedSince": 1792581570216,
+        "processStartedAt": 1792682487533,
+        "runningMs": 4533160,
+        "accountedAt": 1792682652591,
+        "active": true,
+        "lastHeartbeatAt": 1792682652591,
+        "lastMarketAt": 1792682532977,
+        "lastMarketClosedAt": 1792682400000,
+        "lastQuoteAt": null,
+        "lastQuoteExpiresAt": null,
+        "lastTradeAt": null,
+        "lastHealthyAt": 1792682533018,
+        "apiErrors": 99,
+        "consecutiveErrors": 1
+      }
+    },
+    {
+      "at": 1792682667602,
+      "kind": "sample",
+      "running": false,
+      "error": "UPSTREAM_BODY_TIMEOUT",
+      "market": {
+        "configured": "deepbook",
+        "source": "DeepBook",
+        "fallback": false,
+        "lastSuccessAt": 1792682532912,
+        "latencyMs": 36182,
+        "reason": null,
+        "healthy": false,
+        "bookAt": 1792682532797,
+        "bid": 0.97626,
+        "ask": 0.97663,
+        "spread": 0.0003789255923272498,
+        "quality": {
+          "300": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682530843,
+            "timeframe": 300,
+            "missing": 2,
+            "reconstructed": 2,
+            "unresolved": 0,
+            "latestClosedAt": 1792682400000,
+            "origins": {
+              "ORIGINAL": 999,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 2
+            },
+            "originalCount": 999,
+            "gapTimestamps": [
+              1792446000,
+              1792456800
+            ],
+            "reconstructionMs": 1799
+          },
+          "900": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682532644,
+            "timeframe": 900,
+            "originalCount": 672,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792682100000,
+            "origins": {
+              "ORIGINAL": 672,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          },
+          "3600": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682532645,
+            "timeframe": 3600,
+            "originalCount": 168,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792681200000,
+            "origins": {
+              "ORIGINAL": 168,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          }
+        },
+        "diagnostics": {
+          "indexerLagMs": 1000,
+          "indexedThrough": 1792682654218,
+          "bidDepthUsdc": 11124.665869,
+          "askDepthUsdc": 11388.703136
+        }
+      },
+      "timing": {
+        "lastFetchAttemptAt": 1792682652542,
+        "lastFetchSuccessAt": 1792682532912,
+        "lastTransportSuccessAt": 1792682658253,
+        "lastAnalysisAt": 1792682532993,
+        "fetchStartedAt": 1792682652542,
+        "lastFetchDurationMs": 36220,
+        "nextFetchAt": 1792682709987.1304,
+        "nextFetchReason": "PERIODIC",
+        "observedSince": 1792581570216,
+        "processStartedAt": 1792682487533,
+        "runningMs": 4546847,
+        "accountedAt": 1792682667591,
+        "active": false,
+        "lastHeartbeatAt": 1792682667591,
+        "lastMarketAt": 1792682532977,
+        "lastMarketClosedAt": 1792682400000,
+        "lastQuoteAt": null,
+        "lastQuoteExpiresAt": null,
+        "lastTradeAt": null,
+        "lastHealthyAt": 1792682533018,
+        "apiErrors": 99,
+        "consecutiveErrors": 1
+      }
+    },
+    {
+      "at": 1792682682598,
+      "kind": "sample",
+      "running": false,
+      "error": "UPSTREAM_BODY_TIMEOUT",
+      "market": {
+        "configured": "deepbook",
+        "source": "DeepBook",
+        "fallback": false,
+        "lastSuccessAt": 1792682532912,
+        "latencyMs": 36182,
+        "reason": null,
+        "healthy": false,
+        "bookAt": 1792682532797,
+        "bid": 0.97626,
+        "ask": 0.97663,
+        "spread": 0.0003789255923272498,
+        "quality": {
+          "300": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682530843,
+            "timeframe": 300,
+            "missing": 2,
+            "reconstructed": 2,
+            "unresolved": 0,
+            "latestClosedAt": 1792682400000,
+            "origins": {
+              "ORIGINAL": 999,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 2
+            },
+            "originalCount": 999,
+            "gapTimestamps": [
+              1792446000,
+              1792456800
+            ],
+            "reconstructionMs": 1799
+          },
+          "900": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682532644,
+            "timeframe": 900,
+            "originalCount": 672,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792682100000,
+            "origins": {
+              "ORIGINAL": 672,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          },
+          "3600": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682532645,
+            "timeframe": 3600,
+            "originalCount": 168,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792681200000,
+            "origins": {
+              "ORIGINAL": 168,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          }
+        },
+        "diagnostics": {
+          "indexerLagMs": 1000,
+          "indexedThrough": 1792682654218,
+          "bidDepthUsdc": 11124.665869,
+          "askDepthUsdc": 11388.703136
+        }
+      },
+      "timing": {
+        "lastFetchAttemptAt": 1792682652542,
+        "lastFetchSuccessAt": 1792682532912,
+        "lastTransportSuccessAt": 1792682658253,
+        "lastAnalysisAt": 1792682532993,
+        "fetchStartedAt": 1792682652542,
+        "lastFetchDurationMs": 36220,
+        "nextFetchAt": 1792682709987.1304,
+        "nextFetchReason": "PERIODIC",
+        "observedSince": 1792581570216,
+        "processStartedAt": 1792682487533,
+        "runningMs": 4546847,
+        "accountedAt": 1792682682590,
+        "active": false,
+        "lastHeartbeatAt": 1792682682590,
+        "lastMarketAt": 1792682532977,
+        "lastMarketClosedAt": 1792682400000,
+        "lastQuoteAt": null,
+        "lastQuoteExpiresAt": null,
+        "lastTradeAt": null,
+        "lastHealthyAt": 1792682533018,
+        "apiErrors": 99,
+        "consecutiveErrors": 1
+      }
+    }
+  ],
+  "stops": [
+    {
+      "timestamp": 1792682484919,
+      "kind": "STOP",
+      "code": "PROCESS_SHUTDOWN",
+      "fatal": false
+    },
+    {
+      "timestamp": 1792682606897,
+      "kind": "STOP",
+      "code": "UPSTREAM_BODY_TIMEOUT",
+      "fatal": false
+    },
+    {
+      "timestamp": 1792682666278,
+      "kind": "STOP",
+      "code": "UPSTREAM_BODY_TIMEOUT",
+      "fatal": false
+    }
+  ],
+  "events": [
+    {
+      "timestamp": 1792682591500,
+      "kind": "CONTROL",
+      "code": "MANUAL_START",
+      "fatal": false
+    },
+    {
+      "timestamp": 1792682606896,
+      "kind": "API",
+      "code": "UPSTREAM_BODY_TIMEOUT",
+      "apiFailure": {
+        "api": "DeepBook Indexer",
+        "url": "https://deepbook-indexer.mainnet.mystenlabs.com/[redacted]",
+        "host": "deepbook-indexer.mainnet.mystenlabs.com",
+        "operation": "OHLCV_FETCH",
+        "timeframe": "5m",
+        "method": "GET",
+        "code": "UPSTREAM_BODY_TIMEOUT",
+        "phase": "BODY",
+        "causeCode": null,
+        "transportTimings": {
+          "headersMs": 4895,
+          "totalMs": 8001,
+          "reusedConnection": true
+        },
+        "status": null,
+        "startedAt": 1792682598894,
+        "endedAt": 1792682606896,
+        "retryCount": 0,
+        "lastSuccessAt": 1792682530820,
+        "lastApiSuccessAt": 1792682598870,
+        "timeoutType": "BODY",
+        "elapsedMs": 8002,
+        "occurredAt": 1792682606896
+      }
+    },
+    {
+      "timestamp": 1792682606897,
+      "kind": "STOP",
+      "code": "UPSTREAM_BODY_TIMEOUT",
+      "fatal": false
+    },
+    {
+      "timestamp": 1792682615987,
+      "kind": "API",
+      "code": "UPSTREAM_TIMEOUT",
+      "apiFailure": {
+        "api": "DeepBook Indexer",
+        "url": "https://deepbook-indexer.mainnet.mystenlabs.com/[redacted]",
+        "host": "deepbook-indexer.mainnet.mystenlabs.com",
+        "operation": "OHLCV_FETCH",
+        "timeframe": "5m",
+        "method": "GET",
+        "code": "UPSTREAM_TIMEOUT",
+        "phase": "TLS",
+        "causeCode": null,
+        "transportTimings": {
+          "dnsMs": 4,
+          "tcpMs": 7862,
+          "totalMs": 8000,
+          "reusedConnection": false
+        },
+        "status": null,
+        "startedAt": 1792682607984,
+        "endedAt": 1792682615987,
+        "retryCount": 1,
+        "lastSuccessAt": 1792682530820,
+        "lastApiSuccessAt": 1792682598870,
+        "timeoutType": "TLS",
+        "elapsedMs": 8004,
+        "occurredAt": 1792682615987
+      }
+    },
+    {
+      "timestamp": 1792682626181,
+      "kind": "API",
+      "code": "UPSTREAM_CONNECT_TIMEOUT",
+      "apiFailure": {
+        "api": "DeepBook Indexer",
+        "url": "https://deepbook-indexer.mainnet.mystenlabs.com/[redacted]",
+        "host": "deepbook-indexer.mainnet.mystenlabs.com",
+        "operation": "OHLCV_FETCH",
+        "timeframe": "5m",
+        "method": "GET",
+        "code": "UPSTREAM_CONNECT_TIMEOUT",
+        "phase": "CONNECT",
+        "causeCode": null,
+        "transportTimings": {
+          "dnsMs": 13,
+          "totalMs": 8000,
+          "reusedConnection": false
+        },
+        "status": null,
+        "startedAt": 1792682618180,
+        "endedAt": 1792682626181,
+        "retryCount": 2,
+        "lastSuccessAt": 1792682530820,
+        "lastApiSuccessAt": 1792682598870,
+        "timeoutType": "CONNECT",
+        "elapsedMs": 8000,
+        "occurredAt": 1792682626181
+      }
+    },
+    {
+      "timestamp": 1792682626211,
+      "kind": "ERROR",
+      "code": "MARKET_UPSTREAM_CONNECT_TIMEOUT",
+      "fatal": false
+    },
+    {
+      "timestamp": 1792682626244,
+      "kind": "ANOMALY",
+      "code": "UPSTREAM_CONNECT_TIMEOUT",
+      "fatal": true
+    },
+    {
+      "timestamp": 1792682630242,
+      "kind": "CONTROL",
+      "code": "MANUAL_RESET",
+      "fatal": false
+    },
+    {
+      "timestamp": 1792682631469,
+      "kind": "CONTROL",
+      "code": "MANUAL_START",
+      "fatal": false
+    },
+    {
+      "timestamp": 1792682666277,
+      "kind": "API",
+      "code": "UPSTREAM_BODY_TIMEOUT",
+      "apiFailure": {
+        "api": "DeepBook Indexer",
+        "url": "https://deepbook-indexer.mainnet.mystenlabs.com/[redacted]",
+        "host": "deepbook-indexer.mainnet.mystenlabs.com",
+        "operation": "OHLCV_FETCH",
+        "timeframe": "5m",
+        "method": "GET",
+        "code": "UPSTREAM_BODY_TIMEOUT",
+        "phase": "BODY",
+        "causeCode": null,
+        "transportTimings": {
+          "headersMs": 4553,
+          "totalMs": 8001,
+          "reusedConnection": true
+        },
+        "status": null,
+        "startedAt": 1792682658276,
+        "endedAt": 1792682666277,
+        "retryCount": 0,
+        "lastSuccessAt": 1792682530820,
+        "lastApiSuccessAt": 1792682658253,
+        "timeoutType": "BODY",
+        "elapsedMs": 8002,
+        "occurredAt": 1792682666277
+      }
+    },
+    {
+      "timestamp": 1792682666278,
+      "kind": "STOP",
+      "code": "UPSTREAM_BODY_TIMEOUT",
+      "fatal": false
+    },
+    {
+      "timestamp": 1792682675503,
+      "kind": "API",
+      "code": "UPSTREAM_TIMEOUT",
+      "apiFailure": {
+        "api": "DeepBook Indexer",
+        "url": "https://deepbook-indexer.mainnet.mystenlabs.com/[redacted]",
+        "host": "deepbook-indexer.mainnet.mystenlabs.com",
+        "operation": "OHLCV_FETCH",
+        "timeframe": "5m",
+        "method": "GET",
+        "code": "UPSTREAM_TIMEOUT",
+        "phase": "TLS",
+        "causeCode": null,
+        "transportTimings": {
+          "dnsMs": 16,
+          "tcpMs": 7692,
+          "totalMs": 8001,
+          "reusedConnection": false
+        },
+        "status": null,
+        "startedAt": 1792682667502,
+        "endedAt": 1792682675503,
+        "retryCount": 1,
+        "lastSuccessAt": 1792682530820,
+        "lastApiSuccessAt": 1792682658253,
+        "timeoutType": "TLS",
+        "elapsedMs": 8001,
+        "occurredAt": 1792682675503
+      }
+    },
+    {
+      "timestamp": 1792682685598,
+      "kind": "API",
+      "code": "UPSTREAM_CONNECT_TIMEOUT",
+      "apiFailure": {
+        "api": "DeepBook Indexer",
+        "url": "https://deepbook-indexer.mainnet.mystenlabs.com/[redacted]",
+        "host": "deepbook-indexer.mainnet.mystenlabs.com",
+        "operation": "OHLCV_FETCH",
+        "timeframe": "5m",
+        "method": "GET",
+        "code": "UPSTREAM_CONNECT_TIMEOUT",
+        "phase": "CONNECT",
+        "causeCode": null,
+        "transportTimings": {
+          "dnsMs": 3,
+          "totalMs": 8001,
+          "reusedConnection": false
+        },
+        "status": null,
+        "startedAt": 1792682677598,
+        "endedAt": 1792682685598,
+        "retryCount": 2,
+        "lastSuccessAt": 1792682530820,
+        "lastApiSuccessAt": 1792682658253,
+        "timeoutType": "CONNECT",
+        "elapsedMs": 8002,
+        "occurredAt": 1792682685598
+      }
+    },
+    {
+      "timestamp": 1792682685626,
+      "kind": "ERROR",
+      "code": "MARKET_UPSTREAM_CONNECT_TIMEOUT",
+      "fatal": false
+    },
+    {
+      "timestamp": 1792682685643,
+      "kind": "ANOMALY",
+      "code": "UPSTREAM_CONNECT_TIMEOUT",
+      "fatal": true
+    }
+  ],
+  "cycles": [
+    {
+      "at": 1792682520069,
+      "kind": "cycle",
+      "error": null,
+      "durationMs": 32461,
+      "market": {
+        "configured": "deepbook",
+        "source": "DeepBook",
+        "fallback": false,
+        "lastSuccessAt": 1792682519934,
+        "latencyMs": 29392,
+        "reason": null,
+        "healthy": true,
+        "bookAt": 1792682519821,
+        "bid": 0.97671,
+        "ask": 0.97707,
+        "spread": 0.0003685164143353161,
+        "quality": {
+          "300": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682493821,
+            "timeframe": 300,
+            "missing": 2,
+            "reconstructed": 2,
+            "unresolved": 0,
+            "latestClosedAt": 1792682400000,
+            "origins": {
+              "ORIGINAL": 999,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 2
+            },
+            "originalCount": 999,
+            "gapTimestamps": [
+              1792446000,
+              1792456800
+            ],
+            "reconstructionMs": 23651
+          },
+          "900": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682518401,
+            "timeframe": 900,
+            "originalCount": 672,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792682100000,
+            "origins": {
+              "ORIGINAL": 672,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          },
+          "3600": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682518947,
+            "timeframe": 3600,
+            "originalCount": 168,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792681200000,
+            "origins": {
+              "ORIGINAL": 168,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          }
+        },
+        "diagnostics": {
+          "indexerLagMs": 1000,
+          "indexedThrough": 1792682517487,
+          "bidDepthUsdc": 10815.453442000002,
+          "askDepthUsdc": 14692.839999
+        }
+      },
+      "timing": {
+        "lastFetchAttemptAt": 1792682490531,
+        "lastFetchSuccessAt": 1792682519934,
+        "lastTransportSuccessAt": 1792682519914,
+        "lastAnalysisAt": 1792682520021,
+        "fetchStartedAt": null,
+        "lastFetchDurationMs": 29412,
+        "nextFetchAt": 1792682530000,
+        "nextFetchReason": "PERIODIC",
+        "observedSince": 1792581570216,
+        "processStartedAt": 1792682487533,
+        "runningMs": 4496641,
+        "accountedAt": 1792682520050,
+        "active": false,
+        "lastHeartbeatAt": 1792682520050,
+        "lastMarketAt": 1792682519999,
+        "lastMarketClosedAt": 1792682400000,
+        "lastQuoteAt": null,
+        "lastQuoteExpiresAt": null,
+        "lastTradeAt": null,
+        "lastHealthyAt": 1792682520050,
+        "apiErrors": 98,
+        "consecutiveErrors": 0
+      }
+    },
+    {
+      "at": 1792682533037,
+      "kind": "cycle",
+      "error": null,
+      "durationMs": 3017,
+      "market": {
+        "configured": "deepbook",
+        "source": "DeepBook",
+        "fallback": false,
+        "lastSuccessAt": 1792682532912,
+        "latencyMs": 2881,
+        "reason": null,
+        "healthy": true,
+        "bookAt": 1792682532797,
+        "bid": 0.97626,
+        "ask": 0.97663,
+        "spread": 0.0003789255923272498,
+        "quality": {
+          "300": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682530843,
+            "timeframe": 300,
+            "missing": 2,
+            "reconstructed": 2,
+            "unresolved": 0,
+            "latestClosedAt": 1792682400000,
+            "origins": {
+              "ORIGINAL": 999,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 2
+            },
+            "originalCount": 999,
+            "gapTimestamps": [
+              1792446000,
+              1792456800
+            ],
+            "reconstructionMs": 1799
+          },
+          "900": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682532644,
+            "timeframe": 900,
+            "originalCount": 672,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792682100000,
+            "origins": {
+              "ORIGINAL": 672,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          },
+          "3600": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682532645,
+            "timeframe": 3600,
+            "originalCount": 168,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792681200000,
+            "origins": {
+              "ORIGINAL": 168,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          }
+        },
+        "diagnostics": {
+          "indexerLagMs": 2000,
+          "indexedThrough": 1792682528758,
+          "bidDepthUsdc": 10269.329652,
+          "askDepthUsdc": 9243.258514000001
+        }
+      },
+      "timing": {
+        "lastFetchAttemptAt": 1792682530020,
+        "lastFetchSuccessAt": 1792682532912,
+        "lastTransportSuccessAt": 1792682532893,
+        "lastAnalysisAt": 1792682532993,
+        "fetchStartedAt": null,
+        "lastFetchDurationMs": 2899,
+        "nextFetchAt": 1792682589996.0544,
+        "nextFetchReason": "PERIODIC",
+        "observedSince": 1792581570216,
+        "processStartedAt": 1792682487533,
+        "runningMs": 4496641,
+        "accountedAt": 1792682533018,
+        "active": false,
+        "lastHeartbeatAt": 1792682533018,
+        "lastMarketAt": 1792682532977,
+        "lastMarketClosedAt": 1792682400000,
+        "lastQuoteAt": null,
+        "lastQuoteExpiresAt": null,
+        "lastTradeAt": null,
+        "lastHealthyAt": 1792682533018,
+        "apiErrors": 98,
+        "consecutiveErrors": 0
+      }
+    },
+    {
+      "at": 1792682626273,
+      "kind": "cycle",
+      "error": "UPSTREAM_CONNECT_TIMEOUT",
+      "durationMs": 36264,
+      "market": {
+        "configured": "deepbook",
+        "source": "DeepBook",
+        "fallback": false,
+        "lastSuccessAt": 1792682532912,
+        "latencyMs": 36182,
+        "reason": "UPSTREAM_CONNECT_TIMEOUT",
+        "healthy": false,
+        "bookAt": 1792682532797,
+        "bid": 0.97626,
+        "ask": 0.97663,
+        "spread": 0.0003789255923272498,
+        "quality": {
+          "300": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682530843,
+            "timeframe": 300,
+            "missing": 2,
+            "reconstructed": 2,
+            "unresolved": 0,
+            "latestClosedAt": 1792682400000,
+            "origins": {
+              "ORIGINAL": 999,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 2
+            },
+            "originalCount": 999,
+            "gapTimestamps": [
+              1792446000,
+              1792456800
+            ],
+            "reconstructionMs": 1799
+          },
+          "900": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682532644,
+            "timeframe": 900,
+            "originalCount": 672,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792682100000,
+            "origins": {
+              "ORIGINAL": 672,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          },
+          "3600": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682532645,
+            "timeframe": 3600,
+            "originalCount": 168,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792681200000,
+            "origins": {
+              "ORIGINAL": 168,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          }
+        },
+        "diagnostics": {
+          "indexerLagMs": 2000,
+          "indexedThrough": 1792682592182,
+          "bidDepthUsdc": 9154.945107000001,
+          "askDepthUsdc": 9337.654389
+        }
+      },
+      "timing": {
+        "lastFetchAttemptAt": 1792682590009,
+        "lastFetchSuccessAt": 1792682532912,
+        "lastTransportSuccessAt": 1792682598870,
+        "lastAnalysisAt": 1792682532993,
+        "fetchStartedAt": null,
+        "lastFetchDurationMs": 36220,
+        "nextFetchAt": 1792682649991.32,
+        "nextFetchReason": "PERIODIC",
+        "observedSince": 1792581570216,
+        "processStartedAt": 1792682487533,
+        "runningMs": 4512038,
+        "accountedAt": 1792682626265,
+        "active": false,
+        "lastHeartbeatAt": 1792682626265,
+        "lastMarketAt": 1792682532977,
+        "lastMarketClosedAt": 1792682400000,
+        "lastQuoteAt": null,
+        "lastQuoteExpiresAt": null,
+        "lastTradeAt": null,
+        "lastHealthyAt": 1792682533018,
+        "apiErrors": 99,
+        "consecutiveErrors": 1
+      }
+    },
+    {
+      "at": 1792682685671,
+      "kind": "cycle",
+      "error": "UPSTREAM_CONNECT_TIMEOUT",
+      "durationMs": 35666,
+      "market": {
+        "configured": "deepbook",
+        "source": "DeepBook",
+        "fallback": false,
+        "lastSuccessAt": 1792682532912,
+        "latencyMs": 33067,
+        "reason": "UPSTREAM_CONNECT_TIMEOUT",
+        "healthy": false,
+        "bookAt": 1792682532797,
+        "bid": 0.97626,
+        "ask": 0.97663,
+        "spread": 0.0003789255923272498,
+        "quality": {
+          "300": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682530843,
+            "timeframe": 300,
+            "missing": 2,
+            "reconstructed": 2,
+            "unresolved": 0,
+            "latestClosedAt": 1792682400000,
+            "origins": {
+              "ORIGINAL": 999,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 2
+            },
+            "originalCount": 999,
+            "gapTimestamps": [
+              1792446000,
+              1792456800
+            ],
+            "reconstructionMs": 1799
+          },
+          "900": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682532644,
+            "timeframe": 900,
+            "originalCount": 672,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792682100000,
+            "origins": {
+              "ORIGINAL": 672,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          },
+          "3600": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682532645,
+            "timeframe": 3600,
+            "originalCount": 168,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792681200000,
+            "origins": {
+              "ORIGINAL": 168,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          }
+        },
+        "diagnostics": {
+          "indexerLagMs": 1000,
+          "indexedThrough": 1792682654218,
+          "bidDepthUsdc": 11124.665869,
+          "askDepthUsdc": 11388.703136
+        }
+      },
+      "timing": {
+        "lastFetchAttemptAt": 1792682652542,
+        "lastFetchSuccessAt": 1792682532912,
+        "lastTransportSuccessAt": 1792682658253,
+        "lastAnalysisAt": 1792682532993,
+        "fetchStartedAt": null,
+        "lastFetchDurationMs": 33095,
+        "nextFetchAt": 1792682709987.1304,
+        "nextFetchReason": "PERIODIC",
+        "observedSince": 1792581570216,
+        "processStartedAt": 1792682487533,
+        "runningMs": 4546847,
+        "accountedAt": 1792682685662,
+        "active": false,
+        "lastHeartbeatAt": 1792682685662,
+        "lastMarketAt": 1792682532977,
+        "lastMarketClosedAt": 1792682400000,
+        "lastQuoteAt": null,
+        "lastQuoteExpiresAt": null,
+        "lastTradeAt": null,
+        "lastHealthyAt": 1792682533018,
+        "apiErrors": 100,
+        "consecutiveErrors": 2
+      }
+    },
+    {
+      "at": 1792682718853,
+      "kind": "cycle",
+      "error": null,
+      "durationMs": 8827,
+      "market": {
+        "configured": "deepbook",
+        "source": "DeepBook",
+        "fallback": false,
+        "lastSuccessAt": 1792682718657,
+        "latencyMs": 8617,
+        "reason": null,
+        "healthy": true,
+        "bookAt": 1792682718532,
+        "bid": 0.97769,
+        "ask": 0.97806,
+        "spread": 0.00037837146874609995,
+        "quality": {
+          "300": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682712065,
+            "timeframe": 300,
+            "missing": 2,
+            "reconstructed": 2,
+            "unresolved": 0,
+            "latestClosedAt": 1792682700000,
+            "origins": {
+              "ORIGINAL": 999,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 2
+            },
+            "originalCount": 999,
+            "gapTimestamps": [
+              1792446000,
+              1792456800
+            ],
+            "reconstructionMs": 5041
+          },
+          "900": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682717432,
+            "timeframe": 900,
+            "originalCount": 672,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792682100000,
+            "origins": {
+              "ORIGINAL": 672,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          },
+          "3600": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682718266,
+            "timeframe": 3600,
+            "originalCount": 168,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792681200000,
+            "origins": {
+              "ORIGINAL": 168,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          }
+        },
+        "diagnostics": {
+          "indexerLagMs": 2000,
+          "indexedThrough": 1792682715082,
+          "bidDepthUsdc": 9230.141555999999,
+          "askDepthUsdc": 9290.81465
+        }
+      },
+      "timing": {
+        "lastFetchAttemptAt": 1792682710026,
+        "lastFetchSuccessAt": 1792682718657,
+        "lastTransportSuccessAt": 1792682718632,
+        "lastAnalysisAt": 1792682718787,
+        "fetchStartedAt": null,
+        "lastFetchDurationMs": 8640,
+        "nextFetchAt": 1792682769982.432,
+        "nextFetchReason": "PERIODIC",
+        "observedSince": 1792581570216,
+        "processStartedAt": 1792682487533,
+        "runningMs": 4546847,
+        "accountedAt": 1792682718833,
+        "active": false,
+        "lastHeartbeatAt": 1792682718833,
+        "lastMarketAt": 1792682718763,
+        "lastMarketClosedAt": 1792682700000,
+        "lastQuoteAt": null,
+        "lastQuoteExpiresAt": null,
+        "lastTradeAt": null,
+        "lastHealthyAt": 1792682718833,
+        "apiErrors": 100,
+        "consecutiveErrors": 0
+      }
+    },
+    {
+      "at": 1792682776713,
+      "kind": "cycle",
+      "error": null,
+      "durationMs": 6714,
+      "market": {
+        "configured": "deepbook",
+        "source": "DeepBook",
+        "fallback": false,
+        "lastSuccessAt": 1792682776566,
+        "latencyMs": 6559,
+        "reason": null,
+        "healthy": true,
+        "bookAt": 1792682776459,
+        "bid": 0.97715,
+        "ask": 0.97799,
+        "spread": 0.0008592735047107244,
+        "quality": {
+          "300": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682770970,
+            "timeframe": 300,
+            "missing": 2,
+            "reconstructed": 2,
+            "unresolved": 0,
+            "latestClosedAt": 1792682700000,
+            "origins": {
+              "ORIGINAL": 999,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 2
+            },
+            "originalCount": 999,
+            "gapTimestamps": [
+              1792446000,
+              1792456800
+            ],
+            "reconstructionMs": 4280
+          },
+          "900": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682775712,
+            "timeframe": 900,
+            "originalCount": 672,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792682100000,
+            "origins": {
+              "ORIGINAL": 672,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          },
+          "3600": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682776010,
+            "timeframe": 3600,
+            "originalCount": 168,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792681200000,
+            "origins": {
+              "ORIGINAL": 168,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          }
+        },
+        "diagnostics": {
+          "indexerLagMs": 8000,
+          "indexedThrough": 1792682768302,
+          "bidDepthUsdc": 8419.415245,
+          "askDepthUsdc": 10043.422902
+        }
+      },
+      "timing": {
+        "lastFetchAttemptAt": 1792682769999,
+        "lastFetchSuccessAt": 1792682776566,
+        "lastTransportSuccessAt": 1792682776550,
+        "lastAnalysisAt": 1792682776664,
+        "fetchStartedAt": null,
+        "lastFetchDurationMs": 6578,
+        "nextFetchAt": 1792682829978.9795,
+        "nextFetchReason": "PERIODIC",
+        "observedSince": 1792581570216,
+        "processStartedAt": 1792682487533,
+        "runningMs": 4546847,
+        "accountedAt": 1792682776694,
+        "active": false,
+        "lastHeartbeatAt": 1792682776694,
+        "lastMarketAt": 1792682776641,
+        "lastMarketClosedAt": 1792682700000,
+        "lastQuoteAt": null,
+        "lastQuoteExpiresAt": null,
+        "lastTradeAt": null,
+        "lastHealthyAt": 1792682776694,
+        "apiErrors": 100,
+        "consecutiveErrors": 0
+      }
+    },
+    {
+      "at": 1792682838230,
+      "kind": "cycle",
+      "error": null,
+      "durationMs": 8238,
+      "market": {
+        "configured": "deepbook",
+        "source": "DeepBook",
+        "fallback": false,
+        "lastSuccessAt": 1792682837973,
+        "latencyMs": 5344,
+        "reason": null,
+        "healthy": true,
+        "bookAt": 1792682837864,
+        "bid": 0.97742,
+        "ask": 0.97779,
+        "spread": 0.000378475969333312,
+        "quality": {
+          "300": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682835407,
+            "timeframe": 300,
+            "missing": 2,
+            "reconstructed": 2,
+            "unresolved": 0,
+            "latestClosedAt": 1792682700000,
+            "origins": {
+              "ORIGINAL": 999,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 2
+            },
+            "originalCount": 999,
+            "gapTimestamps": [
+              1792446000,
+              1792456800
+            ],
+            "reconstructionMs": 1705
+          },
+          "900": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682837435,
+            "timeframe": 900,
+            "originalCount": 672,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792682100000,
+            "origins": {
+              "ORIGINAL": 672,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          },
+          "3600": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682837723,
+            "timeframe": 3600,
+            "originalCount": 168,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792681200000,
+            "origins": {
+              "ORIGINAL": 168,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          }
+        },
+        "diagnostics": {
+          "indexerLagMs": 2000,
+          "indexedThrough": 1792682832631,
+          "bidDepthUsdc": 10936.167768,
+          "askDepthUsdc": 9223.851636000001
+        }
+      },
+      "timing": {
+        "lastFetchAttemptAt": 1792682832619,
+        "lastFetchSuccessAt": 1792682837973,
+        "lastTransportSuccessAt": 1792682837953,
+        "lastAnalysisAt": 1792682838170,
+        "fetchStartedAt": null,
+        "lastFetchDurationMs": 5361,
+        "nextFetchAt": 1792682889974.422,
+        "nextFetchReason": "PERIODIC",
+        "observedSince": 1792581570216,
+        "processStartedAt": 1792682487533,
+        "runningMs": 4546847,
+        "accountedAt": 1792682838210,
+        "active": false,
+        "lastHeartbeatAt": 1792682838210,
+        "lastMarketAt": 1792682838143,
+        "lastMarketClosedAt": 1792682700000,
+        "lastQuoteAt": null,
+        "lastQuoteExpiresAt": null,
+        "lastTradeAt": null,
+        "lastHealthyAt": 1792682838210,
+        "apiErrors": 100,
+        "consecutiveErrors": 0
+      }
+    },
+    {
+      "at": 1792682893619,
+      "kind": "cycle",
+      "error": null,
+      "durationMs": 3627,
+      "market": {
+        "configured": "deepbook",
+        "source": "DeepBook",
+        "fallback": false,
+        "lastSuccessAt": 1792682893381,
+        "latencyMs": 3380,
+        "reason": null,
+        "healthy": true,
+        "bookAt": 1792682893274,
+        "bid": 0.97681,
+        "ask": 0.97722,
+        "spread": 0.00041964555303656697,
+        "quality": {
+          "300": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682890841,
+            "timeframe": 300,
+            "missing": 2,
+            "reconstructed": 2,
+            "unresolved": 0,
+            "latestClosedAt": 1792682700000,
+            "origins": {
+              "ORIGINAL": 999,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 2
+            },
+            "originalCount": 999,
+            "gapTimestamps": [
+              1792446000,
+              1792456800
+            ],
+            "reconstructionMs": 1738
+          },
+          "900": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682892880,
+            "timeframe": 900,
+            "originalCount": 672,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792682100000,
+            "origins": {
+              "ORIGINAL": 672,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          },
+          "3600": {
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792682893160,
+            "timeframe": 3600,
+            "originalCount": 168,
+            "gapTimestamps": [],
+            "reconstructionMs": 0,
+            "missing": 0,
+            "reconstructed": 0,
+            "unresolved": 0,
+            "latestClosedAt": 1792681200000,
+            "origins": {
+              "ORIGINAL": 168,
+              "ONE_MINUTE_AGGREGATE": 0,
+              "NO_INDEXED_TRADES": 0
+            }
+          }
+        },
+        "diagnostics": {
+          "indexerLagMs": 2000,
+          "indexedThrough": 1792682888003,
+          "bidDepthUsdc": 7542.703549,
+          "askDepthUsdc": 9268.112702
+        }
+      },
+      "timing": {
+        "lastFetchAttemptAt": 1792682889992,
+        "lastFetchSuccessAt": 1792682893381,
+        "lastTransportSuccessAt": 1792682893363,
+        "lastAnalysisAt": 1792682893568,
+        "fetchStartedAt": null,
+        "lastFetchDurationMs": 3395,
+        "nextFetchAt": 1792682949970.1348,
+        "nextFetchReason": "PERIODIC",
+        "observedSince": 1792581570216,
+        "processStartedAt": 1792682487533,
+        "runningMs": 4546847,
+        "accountedAt": 1792682893599,
+        "active": false,
+        "lastHeartbeatAt": 1792682893599,
+        "lastMarketAt": 1792682893538,
+        "lastMarketClosedAt": 1792682700000,
+        "lastQuoteAt": null,
+        "lastQuoteExpiresAt": null,
+        "lastTradeAt": null,
+        "lastHealthyAt": 1792682893599,
+        "apiErrors": 100,
+        "consecutiveErrors": 0
+      }
+    }
+  ]
+}

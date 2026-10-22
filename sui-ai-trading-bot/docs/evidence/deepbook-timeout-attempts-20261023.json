@@ -1,0 +1,143 @@
+[
+  {
+    "kind": "api",
+    "at": 1792682593857,
+    "data": {
+      "api": "DeepBook Indexer",
+      "success": true,
+      "code": null,
+      "latencyMs": 3838,
+      "attempt": 0,
+      "occurredAt": 1792682593857
+    },
+    "safelyStopped": false
+  },
+  {
+    "kind": "api",
+    "at": 1792682598870,
+    "data": {
+      "api": "DeepBook Indexer",
+      "success": true,
+      "code": null,
+      "latencyMs": 4980,
+      "attempt": 0,
+      "occurredAt": 1792682598870
+    },
+    "safelyStopped": false
+  },
+  {
+    "kind": "api",
+    "at": 1792682606897,
+    "data": {
+      "api": "DeepBook Indexer",
+      "success": false,
+      "code": "UPSTREAM_BODY_TIMEOUT",
+      "latencyMs": 8003,
+      "attempt": 0,
+      "occurredAt": 1792682606897,
+      "failure": {
+        "api": "DeepBook Indexer",
+        "url": "https://deepbook-indexer.mainnet.mystenlabs.com/[redacted]",
+        "host": "deepbook-indexer.mainnet.mystenlabs.com",
+        "operation": "OHLCV_FETCH",
+        "timeframe": "5m",
+        "method": "GET",
+        "code": "UPSTREAM_BODY_TIMEOUT",
+        "phase": "BODY",
+        "causeCode": null,
+        "transportTimings": {
+          "headersMs": 4895,
+          "totalMs": 8001,
+          "reusedConnection": true
+        },
+        "status": null,
+        "startedAt": 1792682598894,
+        "endedAt": 1792682606896,
+        "retryCount": 0,
+        "lastSuccessAt": 1792682530820,
+        "lastApiSuccessAt": 1792682598870,
+        "timeoutType": "BODY",
+        "elapsedMs": 8002,
+        "occurredAt": 1792682606896
+      }
+    },
+    "safelyStopped": true
+  },
+  {
+    "kind": "api",
+    "at": 1792682615988,
+    "data": {
+      "api": "DeepBook Indexer",
+      "success": false,
+      "code": "UPSTREAM_TIMEOUT",
+      "latencyMs": 8004,
+      "attempt": 1,
+      "occurredAt": 1792682615988,
+      "failure": {
+        "api": "DeepBook Indexer",
+        "url": "https://deepbook-indexer.mainnet.mystenlabs.com/[redacted]",
+        "host": "deepbook-indexer.mainnet.mystenlabs.com",
+        "operation": "OHLCV_FETCH",
+        "timeframe": "5m",
+        "method": "GET",
+        "code": "UPSTREAM_TIMEOUT",
+        "phase": "TLS",
+        "causeCode": null,
+        "transportTimings": {
+          "dnsMs": 4,
+          "tcpMs": 7862,
+          "totalMs": 8000,
+          "reusedConnection": false
+        },
+        "status": null,
+        "startedAt": 1792682607984,
+        "endedAt": 1792682615987,
+        "retryCount": 1,
+        "lastSuccessAt": 1792682530820,
+        "lastApiSuccessAt": 1792682598870,
+        "timeoutType": "TLS",
+        "elapsedMs": 8004,
+        "occurredAt": 1792682615987
+      }
+    },
+    "safelyStopped": true
+  },
+  {
+    "kind": "api",
+    "at": 1792682626181,
+    "data": {
+      "api": "DeepBook Indexer",
+      "success": false,
+      "code": "UPSTREAM_CONNECT_TIMEOUT",
+      "latencyMs": 8001,
+      "attempt": 2,
+      "occurredAt": 1792682626181,
+      "failure": {
+        "api": "DeepBook Indexer",
+        "url": "https://deepbook-indexer.mainnet.mystenlabs.com/[redacted]",
+        "host": "deepbook-indexer.mainnet.mystenlabs.com",
+        "operation": "OHLCV_FETCH",
+        "timeframe": "5m",
+        "method": "GET",
+        "code": "UPSTREAM_CONNECT_TIMEOUT",
+        "phase": "CONNECT",
+        "causeCode": null,
+        "transportTimings": {
+          "dnsMs": 13,
+          "totalMs": 8000,
+          "reusedConnection": false
+        },
+        "status": null,
+        "startedAt": 1792682618180,
+        "endedAt": 1792682626181,
+        "retryCount": 2,
+        "lastSuccessAt": 1792682530820,
+        "lastApiSuccessAt": 1792682598870,
+        "timeoutType": "CONNECT",
+        "elapsedMs": 8000,
+        "occurredAt": 1792682626181
+      }
+    },
+    "safelyStopped": true
+  }
+]
