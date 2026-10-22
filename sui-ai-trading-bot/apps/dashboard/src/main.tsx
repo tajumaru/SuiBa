@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
+import { DashboardClient } from "./dashboardClient.ts";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import type { BotEngine } from "../../worker/src/engine.ts";
 import { calculate, ema } from "../../../packages/indicators/src/index.ts";
@@ -394,11 +395,19 @@ function App() {
     [input, setInput] = useState(""),
     [data, setData] = useState<State | null>(null),
     [error, setError] = useState(""),
+    [channelError, setChannelError] = useState<string | null>(null),
     [tab, setTab] = useState("Overview"),
     [timeframe, setTimeframe] = useState<300 | 900 | 3600>(300);
+  const feedRef = useRef<DashboardClient | null>(null),
+    serialRef = useRef(0),
+    viewRef = useRef({ tab, timeframe });
+  viewRef.current = { tab, timeframe };
   const api = useCallback(
     async (path: string, body?: unknown) => {
       const r = await fetch("/api/" + path, {
+        signal: path.startsWith("dashboard/")
+          ? AbortSignal.timeout(8000)
+          : undefined,
         headers: {
           Authorization: "Bearer " + token,
           ...(body ? { "Content-Type": "application/json" } : {}),
@@ -417,22 +426,56 @@ function App() {
     [token],
   );
   async function refresh() {
+    const feed = feedRef.current;
+    if (!feed) return;
+    const serial = ++serialRef.current;
+    const view = viewRef.current;
     try {
-      setData(await api("state"));
-      setError("");
+      const result = await feed.poll(
+        api,
+        ["Overview", "Chart"].includes(view.tab)
+          ? view.tab === "Chart"
+            ? view.timeframe
+            : 300
+          : null,
+        ["Overview", "Chart", "Trading History"].includes(view.tab),
+        (state) => {
+          if (feedRef.current === feed && serialRef.current === serial) {
+            setData(state);
+            setError("");
+          }
+        },
+      );
+      if (feedRef.current === feed && serialRef.current === serial) {
+        setData(result.state);
+        setChannelError(result.channelError);
+        setError("");
+      }
     } catch (e) {
-      setError(errorCode(e));
+      if (feedRef.current === feed && serialRef.current === serial)
+        setError(errorCode(e));
     }
   }
   useEffect(() => {
     if (!token) return;
+    feedRef.current = new DashboardClient();
     void refresh();
     const id = setInterval(() => void refresh(), 10000);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      serialRef.current++;
+      feedRef.current = null;
+    };
   }, [token]);
+  useEffect(() => {
+    if (token) void refresh();
+  }, [tab, timeframe]);
   async function control(command: string) {
     try {
-      await api("control", { command });
+      serialRef.current++;
+      const runtime = await api("control", { command });
+      if (typeof runtime?.running === "boolean")
+        setData((previous) => (previous ? { ...previous, runtime } : previous));
       await refresh();
     } catch (e) {
       setError(errorCode(e));
@@ -511,6 +554,11 @@ function App() {
             </button>
           </nav>
           <main>
+            {channelError && (
+              <p role="alert" className="error">
+                {channelError}
+              </p>
+            )}
             {error && (
               <p role="alert" className="error">
                 <Reason code={error} />

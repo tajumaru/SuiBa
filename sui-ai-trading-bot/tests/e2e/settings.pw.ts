@@ -36,6 +36,8 @@ async function openSettings(
   let failure: "none" | "post" | "read" = "none",
     hold: Promise<void> | undefined;
   await page.route("**/api/**", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/dashboard/summary")
+      return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/state") {
       if (failure === "read" && writes.length) {

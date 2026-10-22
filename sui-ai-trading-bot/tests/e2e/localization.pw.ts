@@ -86,6 +86,8 @@ test("Japanese screens preserve actions, ratios and epochs across all viewports"
   );
   const posts: Record<string, number>[] = [];
   await page.route("**/api/**", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/dashboard/summary")
+      return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/state") return route.fulfill({ json: state });
     if (path === "/api/operations") return route.fulfill({ json: operations });

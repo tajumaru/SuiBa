@@ -97,6 +97,8 @@ async function open(
   let fail = false;
   const writes: string[] = [];
   await page.route("**/api/**", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/dashboard/summary")
+      return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
     if (route.request().method() !== "GET")
       writes.push(new URL(route.request().url()).pathname);
     if (route.request().url().endsWith("/api/state")) {
@@ -213,11 +215,9 @@ test("shows sanitized network failure diagnostics without mobile overflow", asyn
   page,
 }) => {
   await open(page, "ABNORMAL_STOP", false, true);
-  const card = page
-    .locator("article")
-    .filter({
-      has: page.getByRole("heading", { name: "GeckoTerminal", exact: true }),
-    });
+  const card = page.locator("article").filter({
+    has: page.getByRole("heading", { name: "GeckoTerminal", exact: true }),
+  });
   await expect(card).toContainText("名前解決に失敗しました");
   await expect(card).toContainText("5分足取得");
   await expect(card).toContainText("EAI_AGAIN");
