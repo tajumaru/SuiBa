@@ -1,0 +1,2836 @@
+{
+  "from": 1792020000,
+  "to": 1792624800,
+  "observedAt": 1792640800201,
+  "expected": 2016,
+  "originalCount": 1968,
+  "originalDuplicates": 0,
+  "invalidOriginal": 0,
+  "groups": [
+    [
+      1792107300
+    ],
+    [
+      1792143300
+    ],
+    [
+      1792216200,
+      1792216500
+    ],
+    [
+      1792219500
+    ],
+    [
+      1792244100
+    ],
+    [
+      1792245300
+    ],
+    [
+      1792249800
+    ],
+    [
+      1792251000
+    ],
+    [
+      1792252500
+    ],
+    [
+      1792253100
+    ],
+    [
+      1792257900
+    ],
+    [
+      1792263300,
+      1792263600
+    ],
+    [
+      1792265100
+    ],
+    [
+      1792266600,
+      1792266900
+    ],
+    [
+      1792270200,
+      1792270500
+    ],
+    [
+      1792276500
+    ],
+    [
+      1792281300
+    ],
+    [
+      1792283700
+    ],
+    [
+      1792288800
+    ],
+    [
+      1792291500
+    ],
+    [
+      1792294200
+    ],
+    [
+      1792295400
+    ],
+    [
+      1792297500
+    ],
+    [
+      1792303800
+    ],
+    [
+      1792305600
+    ],
+    [
+      1792306200
+    ],
+    [
+      1792309500,
+      1792309800
+    ],
+    [
+      1792311000
+    ],
+    [
+      1792311900,
+      1792312200
+    ],
+    [
+      1792312800
+    ],
+    [
+      1792313400
+    ],
+    [
+      1792329300
+    ],
+    [
+      1792341900
+    ],
+    [
+      1792344000,
+      1792344300
+    ],
+    [
+      1792347000
+    ],
+    [
+      1792347600,
+      1792347900
+    ],
+    [
+      1792350900
+    ],
+    [
+      1792374900
+    ],
+    [
+      1792446000
+    ],
+    [
+      1792456800
+    ]
+  ],
+  "causeCounts": {
+    "NO_TRADES_VERIFIED": 48
+  },
+  "reconstructed": 48,
+  "unresolved": 0,
+  "records": [
+    {
+      "timestamp": 1792107300,
+      "utc": "2026-10-15T23:35:00.000Z",
+      "jst": "2026/10/16 8:35:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640679925,
+      "tradePath": "/trades/SUI_USDC?start_time=1792107300&end_time=1792107600&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792107000,
+        "open": 1.03255,
+        "high": 1.03442,
+        "low": 1.0319,
+        "close": 1.03426,
+        "volume": 2252.7,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792107600,
+        "open": 1.03301,
+        "high": 1.03405,
+        "low": 1.03301,
+        "close": 1.03405,
+        "volume": 300,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792143300,
+      "utc": "2026-10-16T09:35:00.000Z",
+      "jst": "2026/10/16 18:35:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640682881,
+      "tradePath": "/trades/SUI_USDC?start_time=1792143300&end_time=1792143600&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792143000,
+        "open": 1.04262,
+        "high": 1.04269,
+        "low": 1.04189,
+        "close": 1.04211,
+        "volume": 2017.8,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792143600,
+        "open": 1.04361,
+        "high": 1.04429,
+        "low": 1.04293,
+        "close": 1.04429,
+        "volume": 508.4,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792216200,
+      "utc": "2026-10-17T05:50:00.000Z",
+      "jst": "2026/10/17 14:50:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640685398,
+      "tradePath": "/trades/SUI_USDC?start_time=1792216200&end_time=1792216500&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792215900,
+        "open": 1.00938,
+        "high": 1.00938,
+        "low": 1.00861,
+        "close": 1.00882,
+        "volume": 2561.1,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792216800,
+        "open": 1.00994,
+        "high": 1.01031,
+        "low": 1.00749,
+        "close": 1.00813,
+        "volume": 4654,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792216500,
+      "utc": "2026-10-17T05:55:00.000Z",
+      "jst": "2026/10/17 14:55:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640687976,
+      "tradePath": "/trades/SUI_USDC?start_time=1792216500&end_time=1792216800&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792215900,
+        "open": 1.00938,
+        "high": 1.00938,
+        "low": 1.00861,
+        "close": 1.00882,
+        "volume": 2561.1,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792216800,
+        "open": 1.00994,
+        "high": 1.01031,
+        "low": 1.00749,
+        "close": 1.00813,
+        "volume": 4654,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792219500,
+      "utc": "2026-10-17T06:45:00.000Z",
+      "jst": "2026/10/17 15:45:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640691519,
+      "tradePath": "/trades/SUI_USDC?start_time=1792219500&end_time=1792219800&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792219200,
+        "open": 1.00732,
+        "high": 1.00732,
+        "low": 1.00625,
+        "close": 1.0065,
+        "volume": 1908.1,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792219800,
+        "open": 1.00792,
+        "high": 1.00792,
+        "low": 1.00656,
+        "close": 1.00656,
+        "volume": 598.3,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792244100,
+      "utc": "2026-10-17T13:35:00.000Z",
+      "jst": "2026/10/17 22:35:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640693859,
+      "tradePath": "/trades/SUI_USDC?start_time=1792244100&end_time=1792244400&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792243800,
+        "open": 0.98957,
+        "high": 0.9906,
+        "low": 0.98957,
+        "close": 0.99027,
+        "volume": 2431.3,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792244400,
+        "open": 0.9878,
+        "high": 0.9878,
+        "low": 0.98769,
+        "close": 0.98769,
+        "volume": 183.8,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792245300,
+      "utc": "2026-10-17T13:55:00.000Z",
+      "jst": "2026/10/17 22:55:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640694937,
+      "tradePath": "/trades/SUI_USDC?start_time=1792245300&end_time=1792245600&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792245000,
+        "open": 0.99021,
+        "high": 0.99216,
+        "low": 0.99021,
+        "close": 0.99215,
+        "volume": 3602.8,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792245600,
+        "open": 0.98945,
+        "high": 0.98972,
+        "low": 0.98945,
+        "close": 0.98972,
+        "volume": 736.2,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792249800,
+      "utc": "2026-10-17T15:10:00.000Z",
+      "jst": "2026/10/18 0:10:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640697435,
+      "tradePath": "/trades/SUI_USDC?start_time=1792249800&end_time=1792250100&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792249500,
+        "open": 0.99118,
+        "high": 0.99118,
+        "low": 0.99081,
+        "close": 0.99081,
+        "volume": 495.9,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792250100,
+        "open": 0.99026,
+        "high": 0.99026,
+        "low": 0.98919,
+        "close": 0.9892,
+        "volume": 1853.8,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792251000,
+      "utc": "2026-10-17T15:30:00.000Z",
+      "jst": "2026/10/18 0:30:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640699958,
+      "tradePath": "/trades/SUI_USDC?start_time=1792251000&end_time=1792251300&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792250700,
+        "open": 0.9876,
+        "high": 0.9876,
+        "low": 0.9855,
+        "close": 0.9855,
+        "volume": 2325.2,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792251300,
+        "open": 0.98517,
+        "high": 0.9854,
+        "low": 0.9846,
+        "close": 0.9846,
+        "volume": 619.4,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792252500,
+      "utc": "2026-10-17T15:55:00.000Z",
+      "jst": "2026/10/18 0:55:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640702506,
+      "tradePath": "/trades/SUI_USDC?start_time=1792252500&end_time=1792252800&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792252200,
+        "open": 0.98223,
+        "high": 0.98223,
+        "low": 0.97957,
+        "close": 0.98008,
+        "volume": 8569.5,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792252800,
+        "open": 0.98229,
+        "high": 0.98336,
+        "low": 0.98131,
+        "close": 0.9816,
+        "volume": 3607,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792253100,
+      "utc": "2026-10-17T16:05:00.000Z",
+      "jst": "2026/10/18 1:05:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640704932,
+      "tradePath": "/trades/SUI_USDC?start_time=1792253100&end_time=1792253400&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792252800,
+        "open": 0.98229,
+        "high": 0.98336,
+        "low": 0.98131,
+        "close": 0.9816,
+        "volume": 3607,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792253400,
+        "open": 0.9834,
+        "high": 0.984,
+        "low": 0.98332,
+        "close": 0.98332,
+        "volume": 3620.5,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792257900,
+      "utc": "2026-10-17T17:25:00.000Z",
+      "jst": "2026/10/18 2:25:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640707452,
+      "tradePath": "/trades/SUI_USDC?start_time=1792257900&end_time=1792258200&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792257600,
+        "open": 0.97398,
+        "high": 0.97437,
+        "low": 0.97398,
+        "close": 0.97437,
+        "volume": 406.4,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792258200,
+        "open": 0.97376,
+        "high": 0.97376,
+        "low": 0.9736,
+        "close": 0.9736,
+        "volume": 37.5,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792263300,
+      "utc": "2026-10-17T18:55:00.000Z",
+      "jst": "2026/10/18 3:55:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640709972,
+      "tradePath": "/trades/SUI_USDC?start_time=1792263300&end_time=1792263600&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792263000,
+        "open": 0.98634,
+        "high": 0.98761,
+        "low": 0.98634,
+        "close": 0.98761,
+        "volume": 2995.7,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792263900,
+        "open": 0.98541,
+        "high": 0.98541,
+        "low": 0.98541,
+        "close": 0.98541,
+        "volume": 758.1,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792263600,
+      "utc": "2026-10-17T19:00:00.000Z",
+      "jst": "2026/10/18 4:00:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640712455,
+      "tradePath": "/trades/SUI_USDC?start_time=1792263600&end_time=1792263900&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792263000,
+        "open": 0.98634,
+        "high": 0.98761,
+        "low": 0.98634,
+        "close": 0.98761,
+        "volume": 2995.7,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792263900,
+        "open": 0.98541,
+        "high": 0.98541,
+        "low": 0.98541,
+        "close": 0.98541,
+        "volume": 758.1,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792265100,
+      "utc": "2026-10-17T19:25:00.000Z",
+      "jst": "2026/10/18 4:25:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640714977,
+      "tradePath": "/trades/SUI_USDC?start_time=1792265100&end_time=1792265400&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792264800,
+        "open": 0.988,
+        "high": 0.98835,
+        "low": 0.9876,
+        "close": 0.98795,
+        "volume": 2288.3,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792265400,
+        "open": 0.9872,
+        "high": 0.98846,
+        "low": 0.9872,
+        "close": 0.98846,
+        "volume": 1479.9,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792266600,
+      "utc": "2026-10-17T19:50:00.000Z",
+      "jst": "2026/10/18 4:50:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640717487,
+      "tradePath": "/trades/SUI_USDC?start_time=1792266600&end_time=1792266900&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792266300,
+        "open": 0.99121,
+        "high": 0.99236,
+        "low": 0.99121,
+        "close": 0.99198,
+        "volume": 648.2,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792267200,
+        "open": 0.99084,
+        "high": 0.99084,
+        "low": 0.99084,
+        "close": 0.99084,
+        "volume": 10,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792266900,
+      "utc": "2026-10-17T19:55:00.000Z",
+      "jst": "2026/10/18 4:55:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640720008,
+      "tradePath": "/trades/SUI_USDC?start_time=1792266900&end_time=1792267200&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792266300,
+        "open": 0.99121,
+        "high": 0.99236,
+        "low": 0.99121,
+        "close": 0.99198,
+        "volume": 648.2,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792267200,
+        "open": 0.99084,
+        "high": 0.99084,
+        "low": 0.99084,
+        "close": 0.99084,
+        "volume": 10,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792270200,
+      "utc": "2026-10-17T20:50:00.000Z",
+      "jst": "2026/10/18 5:50:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640722492,
+      "tradePath": "/trades/SUI_USDC?start_time=1792270200&end_time=1792270500&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792269900,
+        "open": 0.99104,
+        "high": 0.99104,
+        "low": 0.99104,
+        "close": 0.99104,
+        "volume": 401.7,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792270800,
+        "open": 0.99276,
+        "high": 0.99441,
+        "low": 0.99243,
+        "close": 0.99441,
+        "volume": 3234.9,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792270500,
+      "utc": "2026-10-17T20:55:00.000Z",
+      "jst": "2026/10/18 5:55:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640724996,
+      "tradePath": "/trades/SUI_USDC?start_time=1792270500&end_time=1792270800&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792269900,
+        "open": 0.99104,
+        "high": 0.99104,
+        "low": 0.99104,
+        "close": 0.99104,
+        "volume": 401.7,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792270800,
+        "open": 0.99276,
+        "high": 0.99441,
+        "low": 0.99243,
+        "close": 0.99441,
+        "volume": 3234.9,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792276500,
+      "utc": "2026-10-17T22:35:00.000Z",
+      "jst": "2026/10/18 7:35:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640727614,
+      "tradePath": "/trades/SUI_USDC?start_time=1792276500&end_time=1792276800&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792276200,
+        "open": 0.9679,
+        "high": 0.9703,
+        "low": 0.9673,
+        "close": 0.97025,
+        "volume": 10778.4,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792276800,
+        "open": 0.97082,
+        "high": 0.97504,
+        "low": 0.97082,
+        "close": 0.9739,
+        "volume": 16450.6,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792281300,
+      "utc": "2026-10-17T23:55:00.000Z",
+      "jst": "2026/10/18 8:55:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640730057,
+      "tradePath": "/trades/SUI_USDC?start_time=1792281300&end_time=1792281600&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792281000,
+        "open": 0.97558,
+        "high": 0.97666,
+        "low": 0.97558,
+        "close": 0.97636,
+        "volume": 18.4,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792281600,
+        "open": 0.97333,
+        "high": 0.97333,
+        "low": 0.97247,
+        "close": 0.97247,
+        "volume": 2111.5,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792283700,
+      "utc": "2026-10-18T00:35:00.000Z",
+      "jst": "2026/10/18 9:35:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640732549,
+      "tradePath": "/trades/SUI_USDC?start_time=1792283700&end_time=1792284000&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792283400,
+        "open": 0.9739,
+        "high": 0.9739,
+        "low": 0.97333,
+        "close": 0.97333,
+        "volume": 15.9,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792284000,
+        "open": 0.97411,
+        "high": 0.97411,
+        "low": 0.97236,
+        "close": 0.97236,
+        "volume": 865.4,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792288800,
+      "utc": "2026-10-18T02:00:00.000Z",
+      "jst": "2026/10/18 11:00:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640735057,
+      "tradePath": "/trades/SUI_USDC?start_time=1792288800&end_time=1792289100&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792288500,
+        "open": 0.98052,
+        "high": 0.98062,
+        "low": 0.97736,
+        "close": 0.97736,
+        "volume": 2788.6,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792289100,
+        "open": 0.97711,
+        "high": 0.97727,
+        "low": 0.97581,
+        "close": 0.97583,
+        "volume": 18141.6,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792291500,
+      "utc": "2026-10-18T02:45:00.000Z",
+      "jst": "2026/10/18 11:45:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640737635,
+      "tradePath": "/trades/SUI_USDC?start_time=1792291500&end_time=1792291800&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792291200,
+        "open": 0.9793,
+        "high": 0.9793,
+        "low": 0.97907,
+        "close": 0.97907,
+        "volume": 3285.5,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792291800,
+        "open": 0.9782,
+        "high": 0.98032,
+        "low": 0.9782,
+        "close": 0.98032,
+        "volume": 6770.1,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792294200,
+      "utc": "2026-10-18T03:30:00.000Z",
+      "jst": "2026/10/18 12:30:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640740052,
+      "tradePath": "/trades/SUI_USDC?start_time=1792294200&end_time=1792294500&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792293900,
+        "open": 0.98457,
+        "high": 0.98457,
+        "low": 0.98457,
+        "close": 0.98457,
+        "volume": 1,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792294500,
+        "open": 0.98686,
+        "high": 0.98748,
+        "low": 0.98686,
+        "close": 0.98731,
+        "volume": 960,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792295400,
+      "utc": "2026-10-18T03:50:00.000Z",
+      "jst": "2026/10/18 12:50:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640742546,
+      "tradePath": "/trades/SUI_USDC?start_time=1792295400&end_time=1792295700&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792295100,
+        "open": 0.99005,
+        "high": 0.9937,
+        "low": 0.99005,
+        "close": 0.99326,
+        "volume": 6465.4,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792295700,
+        "open": 0.9906,
+        "high": 0.99116,
+        "low": 0.9906,
+        "close": 0.99116,
+        "volume": 192.9,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792297500,
+      "utc": "2026-10-18T04:25:00.000Z",
+      "jst": "2026/10/18 13:25:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640745235,
+      "tradePath": "/trades/SUI_USDC?start_time=1792297500&end_time=1792297800&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792297200,
+        "open": 0.98702,
+        "high": 0.98702,
+        "low": 0.9865,
+        "close": 0.9865,
+        "volume": 7771.3,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792297800,
+        "open": 0.98515,
+        "high": 0.98515,
+        "low": 0.98158,
+        "close": 0.98158,
+        "volume": 2888.6,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792303800,
+      "utc": "2026-10-18T06:10:00.000Z",
+      "jst": "2026/10/18 15:10:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640749028,
+      "tradePath": "/trades/SUI_USDC?start_time=1792303800&end_time=1792304100&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792303500,
+        "open": 0.9763,
+        "high": 0.97645,
+        "low": 0.97601,
+        "close": 0.97611,
+        "volume": 9730.4,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792304100,
+        "open": 0.97369,
+        "high": 0.97369,
+        "low": 0.97369,
+        "close": 0.97369,
+        "volume": 1,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792305600,
+      "utc": "2026-10-18T06:40:00.000Z",
+      "jst": "2026/10/18 15:40:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640750996,
+      "tradePath": "/trades/SUI_USDC?start_time=1792305600&end_time=1792305900&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792305300,
+        "open": 0.98196,
+        "high": 0.98287,
+        "low": 0.98159,
+        "close": 0.98174,
+        "volume": 2183.8,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792305900,
+        "open": 0.98019,
+        "high": 0.98128,
+        "low": 0.97969,
+        "close": 0.98028,
+        "volume": 248.4,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792306200,
+      "utc": "2026-10-18T06:50:00.000Z",
+      "jst": "2026/10/18 15:50:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640752563,
+      "tradePath": "/trades/SUI_USDC?start_time=1792306200&end_time=1792306500&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792305900,
+        "open": 0.98019,
+        "high": 0.98128,
+        "low": 0.97969,
+        "close": 0.98028,
+        "volume": 248.4,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792306500,
+        "open": 0.98003,
+        "high": 0.98003,
+        "low": 0.98003,
+        "close": 0.98003,
+        "volume": 6.6,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792309500,
+      "utc": "2026-10-18T07:45:00.000Z",
+      "jst": "2026/10/18 16:45:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640755069,
+      "tradePath": "/trades/SUI_USDC?start_time=1792309500&end_time=1792309800&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792309200,
+        "open": 0.97752,
+        "high": 0.97752,
+        "low": 0.97752,
+        "close": 0.97752,
+        "volume": 1,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792310100,
+        "open": 0.97862,
+        "high": 0.97862,
+        "low": 0.97862,
+        "close": 0.97862,
+        "volume": 220.5,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792309800,
+      "utc": "2026-10-18T07:50:00.000Z",
+      "jst": "2026/10/18 16:50:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640757591,
+      "tradePath": "/trades/SUI_USDC?start_time=1792309800&end_time=1792310100&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792309200,
+        "open": 0.97752,
+        "high": 0.97752,
+        "low": 0.97752,
+        "close": 0.97752,
+        "volume": 1,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792310100,
+        "open": 0.97862,
+        "high": 0.97862,
+        "low": 0.97862,
+        "close": 0.97862,
+        "volume": 220.5,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792311000,
+      "utc": "2026-10-18T08:10:00.000Z",
+      "jst": "2026/10/18 17:10:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640760071,
+      "tradePath": "/trades/SUI_USDC?start_time=1792311000&end_time=1792311300&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792310700,
+        "open": 0.97738,
+        "high": 0.97948,
+        "low": 0.97738,
+        "close": 0.97948,
+        "volume": 1331.7,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792311300,
+        "open": 0.97881,
+        "high": 0.97881,
+        "low": 0.97881,
+        "close": 0.97881,
+        "volume": 190.8,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792311900,
+      "utc": "2026-10-18T08:25:00.000Z",
+      "jst": "2026/10/18 17:25:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640762590,
+      "tradePath": "/trades/SUI_USDC?start_time=1792311900&end_time=1792312200&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792311600,
+        "open": 0.97929,
+        "high": 0.97929,
+        "low": 0.97929,
+        "close": 0.97929,
+        "volume": 1.2,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792312500,
+        "open": 0.97923,
+        "high": 0.97923,
+        "low": 0.9774,
+        "close": 0.97783,
+        "volume": 19,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792312200,
+      "utc": "2026-10-18T08:30:00.000Z",
+      "jst": "2026/10/18 17:30:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640765090,
+      "tradePath": "/trades/SUI_USDC?start_time=1792312200&end_time=1792312500&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792311600,
+        "open": 0.97929,
+        "high": 0.97929,
+        "low": 0.97929,
+        "close": 0.97929,
+        "volume": 1.2,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792312500,
+        "open": 0.97923,
+        "high": 0.97923,
+        "low": 0.9774,
+        "close": 0.97783,
+        "volume": 19,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792312800,
+      "utc": "2026-10-18T08:40:00.000Z",
+      "jst": "2026/10/18 17:40:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640767600,
+      "tradePath": "/trades/SUI_USDC?start_time=1792312800&end_time=1792313100&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792312500,
+        "open": 0.97923,
+        "high": 0.97923,
+        "low": 0.9774,
+        "close": 0.97783,
+        "volume": 19,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792313100,
+        "open": 0.9764,
+        "high": 0.9802,
+        "low": 0.9764,
+        "close": 0.9765,
+        "volume": 33289.9,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792313400,
+      "utc": "2026-10-18T08:50:00.000Z",
+      "jst": "2026/10/18 17:50:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640770118,
+      "tradePath": "/trades/SUI_USDC?start_time=1792313400&end_time=1792313700&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792313100,
+        "open": 0.9764,
+        "high": 0.9802,
+        "low": 0.9764,
+        "close": 0.9765,
+        "volume": 33289.9,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792313700,
+        "open": 0.9784,
+        "high": 0.97876,
+        "low": 0.9784,
+        "close": 0.97876,
+        "volume": 10241,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792329300,
+      "utc": "2026-10-18T13:15:00.000Z",
+      "jst": "2026/10/18 22:15:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640772688,
+      "tradePath": "/trades/SUI_USDC?start_time=1792329300&end_time=1792329600&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792329000,
+        "open": 0.97932,
+        "high": 0.97932,
+        "low": 0.97932,
+        "close": 0.97932,
+        "volume": 5.5,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792329600,
+        "open": 0.97864,
+        "high": 0.97888,
+        "low": 0.97834,
+        "close": 0.97888,
+        "volume": 362.3,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792341900,
+      "utc": "2026-10-18T16:45:00.000Z",
+      "jst": "2026/10/19 1:45:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640775095,
+      "tradePath": "/trades/SUI_USDC?start_time=1792341900&end_time=1792342200&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792341600,
+        "open": 0.95654,
+        "high": 0.95683,
+        "low": 0.95556,
+        "close": 0.95638,
+        "volume": 14554.6,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792342200,
+        "open": 0.95771,
+        "high": 0.95771,
+        "low": 0.95747,
+        "close": 0.95751,
+        "volume": 7.3,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792344000,
+      "utc": "2026-10-18T17:20:00.000Z",
+      "jst": "2026/10/19 2:20:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640777601,
+      "tradePath": "/trades/SUI_USDC?start_time=1792344000&end_time=1792344300&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792343700,
+        "open": 0.9622,
+        "high": 0.96382,
+        "low": 0.9622,
+        "close": 0.96284,
+        "volume": 10513.8,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792344600,
+        "open": 0.95944,
+        "high": 0.95944,
+        "low": 0.95745,
+        "close": 0.95745,
+        "volume": 729.8,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792344300,
+      "utc": "2026-10-18T17:25:00.000Z",
+      "jst": "2026/10/19 2:25:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640780108,
+      "tradePath": "/trades/SUI_USDC?start_time=1792344300&end_time=1792344600&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792343700,
+        "open": 0.9622,
+        "high": 0.96382,
+        "low": 0.9622,
+        "close": 0.96284,
+        "volume": 10513.8,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792344600,
+        "open": 0.95944,
+        "high": 0.95944,
+        "low": 0.95745,
+        "close": 0.95745,
+        "volume": 729.8,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792347000,
+      "utc": "2026-10-18T18:10:00.000Z",
+      "jst": "2026/10/19 3:10:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640782626,
+      "tradePath": "/trades/SUI_USDC?start_time=1792347000&end_time=1792347300&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792346700,
+        "open": 0.96,
+        "high": 0.96,
+        "low": 0.95977,
+        "close": 0.95977,
+        "volume": 348.3,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792347300,
+        "open": 0.95723,
+        "high": 0.9578,
+        "low": 0.95723,
+        "close": 0.9578,
+        "volume": 2212.8,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792347600,
+      "utc": "2026-10-18T18:20:00.000Z",
+      "jst": "2026/10/19 3:20:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640785117,
+      "tradePath": "/trades/SUI_USDC?start_time=1792347600&end_time=1792347900&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792347300,
+        "open": 0.95723,
+        "high": 0.9578,
+        "low": 0.95723,
+        "close": 0.9578,
+        "volume": 2212.8,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792348200,
+        "open": 0.95794,
+        "high": 0.95794,
+        "low": 0.95772,
+        "close": 0.95779,
+        "volume": 162.2,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792347900,
+      "utc": "2026-10-18T18:25:00.000Z",
+      "jst": "2026/10/19 3:25:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640787666,
+      "tradePath": "/trades/SUI_USDC?start_time=1792347900&end_time=1792348200&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792347300,
+        "open": 0.95723,
+        "high": 0.9578,
+        "low": 0.95723,
+        "close": 0.9578,
+        "volume": 2212.8,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792348200,
+        "open": 0.95794,
+        "high": 0.95794,
+        "low": 0.95772,
+        "close": 0.95779,
+        "volume": 162.2,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792350900,
+      "utc": "2026-10-18T19:15:00.000Z",
+      "jst": "2026/10/19 4:15:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640790144,
+      "tradePath": "/trades/SUI_USDC?start_time=1792350900&end_time=1792351200&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792350600,
+        "open": 0.96067,
+        "high": 0.96067,
+        "low": 0.95898,
+        "close": 0.95898,
+        "volume": 58.4,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792351200,
+        "open": 0.95687,
+        "high": 0.95687,
+        "low": 0.95431,
+        "close": 0.95437,
+        "volume": 2635.7,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792374900,
+      "utc": "2026-10-19T01:55:00.000Z",
+      "jst": "2026/10/19 10:55:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640792627,
+      "tradePath": "/trades/SUI_USDC?start_time=1792374900&end_time=1792375200&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792374600,
+        "open": 1.00008,
+        "high": 1.00123,
+        "low": 0.99987,
+        "close": 1.00123,
+        "volume": 388.4,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792375200,
+        "open": 0.9999,
+        "high": 1.0014,
+        "low": 0.9999,
+        "close": 1.0014,
+        "volume": 1757.1,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792446000,
+      "utc": "2026-10-19T21:40:00.000Z",
+      "jst": "2026/10/20 6:40:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640795140,
+      "tradePath": "/trades/SUI_USDC?start_time=1792446000&end_time=1792446300&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792445700,
+        "open": 0.98757,
+        "high": 0.9889,
+        "low": 0.98757,
+        "close": 0.9889,
+        "volume": 208.3,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792446300,
+        "open": 0.98876,
+        "high": 0.98876,
+        "low": 0.98876,
+        "close": 0.98876,
+        "volume": 5.1,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    },
+    {
+      "timestamp": 1792456800,
+      "utc": "2026-10-20T00:40:00.000Z",
+      "jst": "2026/10/20 9:40:00 JST",
+      "cause": "NO_TRADES_VERIFIED",
+      "observedAt": 1792640797652,
+      "tradePath": "/trades/SUI_USDC?start_time=1792456800&end_time=1792457100&limit=1000",
+      "tradeResponse": [],
+      "complete": true,
+      "validRange": true,
+      "indexedThrough": 1792640798630,
+      "minuteCount": 0,
+      "fivePresent": false,
+      "previous": {
+        "timestamp": 1792456500,
+        "open": 0.99443,
+        "high": 0.99626,
+        "low": 0.99443,
+        "close": 0.99625,
+        "volume": 1465.1,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      },
+      "next": {
+        "timestamp": 1792457100,
+        "open": 0.99346,
+        "high": 0.99346,
+        "low": 0.99338,
+        "close": 0.99338,
+        "volume": 49.5,
+        "timeframe": 300,
+        "source": "DeepBook:SUI_USDC:USDC"
+      }
+    }
+  ],
+  "repairs": [
+    {
+      "timestamp": 1792107300,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 1.03426,
+      "high": 1.03426,
+      "low": 1.03426,
+      "close": 1.03426,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640679925,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792107300&end_time=1792107600&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792143300,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 1.04211,
+      "high": 1.04211,
+      "low": 1.04211,
+      "close": 1.04211,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640682881,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792143300&end_time=1792143600&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792216200,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 1.00882,
+      "high": 1.00882,
+      "low": 1.00882,
+      "close": 1.00882,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640685398,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792216200&end_time=1792216500&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792216500,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 1.00882,
+      "high": 1.00882,
+      "low": 1.00882,
+      "close": 1.00882,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640687976,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792216500&end_time=1792216800&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792219500,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 1.0065,
+      "high": 1.0065,
+      "low": 1.0065,
+      "close": 1.0065,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640691519,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792219500&end_time=1792219800&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792244100,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.99027,
+      "high": 0.99027,
+      "low": 0.99027,
+      "close": 0.99027,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640693859,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792244100&end_time=1792244400&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792245300,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.99215,
+      "high": 0.99215,
+      "low": 0.99215,
+      "close": 0.99215,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640694937,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792245300&end_time=1792245600&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792249800,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.99081,
+      "high": 0.99081,
+      "low": 0.99081,
+      "close": 0.99081,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640697435,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792249800&end_time=1792250100&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792251000,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.9855,
+      "high": 0.9855,
+      "low": 0.9855,
+      "close": 0.9855,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640699958,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792251000&end_time=1792251300&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792252500,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.98008,
+      "high": 0.98008,
+      "low": 0.98008,
+      "close": 0.98008,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640702506,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792252500&end_time=1792252800&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792253100,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.9816,
+      "high": 0.9816,
+      "low": 0.9816,
+      "close": 0.9816,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640704932,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792253100&end_time=1792253400&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792257900,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.97437,
+      "high": 0.97437,
+      "low": 0.97437,
+      "close": 0.97437,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640707452,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792257900&end_time=1792258200&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792263300,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.98761,
+      "high": 0.98761,
+      "low": 0.98761,
+      "close": 0.98761,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640709972,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792263300&end_time=1792263600&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792263600,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.98761,
+      "high": 0.98761,
+      "low": 0.98761,
+      "close": 0.98761,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640712455,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792263600&end_time=1792263900&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792265100,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.98795,
+      "high": 0.98795,
+      "low": 0.98795,
+      "close": 0.98795,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640714977,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792265100&end_time=1792265400&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792266600,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.99198,
+      "high": 0.99198,
+      "low": 0.99198,
+      "close": 0.99198,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640717487,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792266600&end_time=1792266900&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792266900,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.99198,
+      "high": 0.99198,
+      "low": 0.99198,
+      "close": 0.99198,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640720008,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792266900&end_time=1792267200&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792270200,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.99104,
+      "high": 0.99104,
+      "low": 0.99104,
+      "close": 0.99104,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640722492,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792270200&end_time=1792270500&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792270500,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.99104,
+      "high": 0.99104,
+      "low": 0.99104,
+      "close": 0.99104,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640724996,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792270500&end_time=1792270800&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792276500,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.97025,
+      "high": 0.97025,
+      "low": 0.97025,
+      "close": 0.97025,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640727614,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792276500&end_time=1792276800&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792281300,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.97636,
+      "high": 0.97636,
+      "low": 0.97636,
+      "close": 0.97636,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640730057,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792281300&end_time=1792281600&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792283700,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.97333,
+      "high": 0.97333,
+      "low": 0.97333,
+      "close": 0.97333,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640732549,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792283700&end_time=1792284000&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792288800,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.97736,
+      "high": 0.97736,
+      "low": 0.97736,
+      "close": 0.97736,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640735057,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792288800&end_time=1792289100&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792291500,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.97907,
+      "high": 0.97907,
+      "low": 0.97907,
+      "close": 0.97907,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640737635,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792291500&end_time=1792291800&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792294200,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.98457,
+      "high": 0.98457,
+      "low": 0.98457,
+      "close": 0.98457,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640740052,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792294200&end_time=1792294500&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792295400,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.99326,
+      "high": 0.99326,
+      "low": 0.99326,
+      "close": 0.99326,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640742546,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792295400&end_time=1792295700&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792297500,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.9865,
+      "high": 0.9865,
+      "low": 0.9865,
+      "close": 0.9865,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640745235,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792297500&end_time=1792297800&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792303800,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.97611,
+      "high": 0.97611,
+      "low": 0.97611,
+      "close": 0.97611,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640749028,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792303800&end_time=1792304100&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792305600,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.98174,
+      "high": 0.98174,
+      "low": 0.98174,
+      "close": 0.98174,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640750996,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792305600&end_time=1792305900&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792306200,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.98028,
+      "high": 0.98028,
+      "low": 0.98028,
+      "close": 0.98028,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640752563,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792306200&end_time=1792306500&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792309500,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.97752,
+      "high": 0.97752,
+      "low": 0.97752,
+      "close": 0.97752,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640755069,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792309500&end_time=1792309800&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792309800,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.97752,
+      "high": 0.97752,
+      "low": 0.97752,
+      "close": 0.97752,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640757591,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792309800&end_time=1792310100&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792311000,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.97948,
+      "high": 0.97948,
+      "low": 0.97948,
+      "close": 0.97948,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640760071,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792311000&end_time=1792311300&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792311900,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.97929,
+      "high": 0.97929,
+      "low": 0.97929,
+      "close": 0.97929,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640762590,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792311900&end_time=1792312200&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792312200,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.97929,
+      "high": 0.97929,
+      "low": 0.97929,
+      "close": 0.97929,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640765090,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792312200&end_time=1792312500&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792312800,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.97783,
+      "high": 0.97783,
+      "low": 0.97783,
+      "close": 0.97783,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640767600,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792312800&end_time=1792313100&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792313400,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.9765,
+      "high": 0.9765,
+      "low": 0.9765,
+      "close": 0.9765,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640770118,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792313400&end_time=1792313700&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792329300,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.97932,
+      "high": 0.97932,
+      "low": 0.97932,
+      "close": 0.97932,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640772688,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792329300&end_time=1792329600&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792341900,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.95638,
+      "high": 0.95638,
+      "low": 0.95638,
+      "close": 0.95638,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640775095,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792341900&end_time=1792342200&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792344000,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.96284,
+      "high": 0.96284,
+      "low": 0.96284,
+      "close": 0.96284,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640777601,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792344000&end_time=1792344300&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792344300,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.96284,
+      "high": 0.96284,
+      "low": 0.96284,
+      "close": 0.96284,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640780108,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792344300&end_time=1792344600&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792347000,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.95977,
+      "high": 0.95977,
+      "low": 0.95977,
+      "close": 0.95977,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640782626,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792347000&end_time=1792347300&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792347600,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.9578,
+      "high": 0.9578,
+      "low": 0.9578,
+      "close": 0.9578,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640785117,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792347600&end_time=1792347900&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792347900,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.9578,
+      "high": 0.9578,
+      "low": 0.9578,
+      "close": 0.9578,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640787666,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792347900&end_time=1792348200&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792350900,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.95898,
+      "high": 0.95898,
+      "low": 0.95898,
+      "close": 0.95898,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640790144,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792350900&end_time=1792351200&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792374900,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 1.00123,
+      "high": 1.00123,
+      "low": 1.00123,
+      "close": 1.00123,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640792627,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792374900&end_time=1792375200&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792446000,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.9889,
+      "high": 0.9889,
+      "low": 0.9889,
+      "close": 0.9889,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640795140,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792446000&end_time=1792446300&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    },
+    {
+      "timestamp": 1792456800,
+      "timeframe": 300,
+      "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+      "open": 0.99625,
+      "high": 0.99625,
+      "low": 0.99625,
+      "close": 0.99625,
+      "volume": 0,
+      "provenance": {
+        "origin": "NO_INDEXED_TRADES",
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792640797652,
+        "timeframe": 300,
+        "evidence": [
+          "/trades/SUI_USDC?start_time=1792456800&end_time=1792457100&limit=1000",
+          "order_fill.indexedThrough:1792640798630",
+          "complete-empty-response; independent-chain-audit:not-performed"
+        ]
+      }
+    }
+  ]
+}
