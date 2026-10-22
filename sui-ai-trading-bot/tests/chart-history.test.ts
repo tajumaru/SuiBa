@@ -8,7 +8,7 @@ import { ChartHistoryClient } from "../apps/worker/src/chart-history-client.ts";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-const to = Date.UTC(2026, 9, 22) / 1000,
+const to = Date.UTC(2026, 9, 30) / 1000,
   from = to - 7 * 86400,
   q = { timeframe: 300 as const, from, to };
 const rows = Array.from({ length: 2016 }, (_, i) => [

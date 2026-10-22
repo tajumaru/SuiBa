@@ -1,3 +1,4 @@
+import { verifiedDisplayRepairs } from "../../../packages/shared/src/chart-gap-audit.ts";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -224,6 +225,16 @@ export class ChartHistoryStore {
             ? "CHART_TIMEOUT"
             : "CHART_FETCH_FAILED";
     }
+    // These fixed historical repairs were generated with the unchanged verifier at their recorded evidence time.
+    // Only fill still-absent display rows after successful coverage; never touch the market database.
+    if (!error && q.timeframe === 300)
+      for (const c of verifiedDisplayRepairs)
+        if (c.timestamp >= q.from && c.timestamp < q.to)
+          this.db
+            .prepare(
+              "INSERT INTO candles VALUES(?,?,?) ON CONFLICT(tf,ts) DO NOTHING",
+            )
+            .run(300, c.timestamp, JSON.stringify(c));
     // Only this isolated cache is pruned; market/validation databases are never opened here.
     this.db
       .prepare("DELETE FROM candles WHERE ts<?")

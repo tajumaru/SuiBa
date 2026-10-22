@@ -1,3 +1,4 @@
+import { chartGapQuality } from "../../../packages/shared/src/chart-gap-quality.ts";
 import { candleGeometry } from "./candleGeometry.ts";
 import { IndicatorPanel } from "./IndicatorPanel.tsx";
 import { chartSeries, lineSegments } from "./chartIndicators.ts";
@@ -27,6 +28,7 @@ export function PriceChart({
   synchronized?: boolean;
   historyApi?: SettingsApi;
 }) {
+  const [gapTime, setGapTime] = useState<number | null>(null);
   const [history, setHistory] = useState<HistoryResult | null>(null),
     [historyBusy, setHistoryBusy] = useState(false),
     [historyNotice, setHistoryNotice] = useState("");
@@ -120,6 +122,11 @@ export function PriceChart({
     plot = right - left,
     start = visible.start ?? 0,
     finish = visible.end ?? 1;
+  const gapQuality = useMemo(
+    () => chartGapQuality(c, start, finish, tf),
+    [visible, tf],
+  );
+  const selectedGap = gapQuality.entries.find((g) => g.timestamp === gapTime);
   const x = (t: number) => left + ((t - start) / (finish - start)) * plot;
   const values = [
     ...c.flatMap((b) => [b.low, b.high]),
@@ -301,6 +308,47 @@ export function PriceChart({
           表示期間内の欠損：{Math.round((finish - start) / tf - c.length)}
           本。未取得部分を補間せず、指標の準備が不足する区間は未計測です。
         </p>
+      )}
+      {c.length > 0 && (
+        <div aria-label="表示履歴の品質">
+          <p>
+            期待：{gapQuality.expected}本 ／ 取得済み：{gapQuality.received}本
+            ／ 欠損：{gapQuality.missing}本 ／ 検証済み再構築：
+            {gapQuality.reconstructed}本 ／ 原因未確定：{gapQuality.unknown}本
+          </p>
+          {gapQuality.entries.length > 0 && (
+            <>
+              <label>
+                欠損・再構築の日時
+                <select
+                  aria-label="欠損・再構築の日時"
+                  value={gapTime ?? ""}
+                  onChange={(e) =>
+                    setGapTime(e.target.value ? Number(e.target.value) : null)
+                  }
+                >
+                  <option value="">日時を選択</option>
+                  {gapQuality.entries.map((g) => (
+                    <option key={g.timestamp} value={g.timestamp}>
+                      {chartTime(g.timestamp)}（日本時間）
+                      {g.reconstructed ? "・再構築" : "・欠損"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {selectedGap && (
+                <p role="status">
+                  対象日時：{dateTime(selectedGap.timestamp * 1000)} ／{" "}
+                  {selectedGap.reason}（{selectedGap.cause}） ／{" "}
+                  {selectedGap.reconstructed
+                    ? "検証済み再構築データ"
+                    : "補完せず欠損を維持"}
+                  。公式Indexerでの照合範囲です。
+                </p>
+              )}
+            </>
+          )}
+        </div>
       )}
       {data.candles.length > 0 && (
         <>
