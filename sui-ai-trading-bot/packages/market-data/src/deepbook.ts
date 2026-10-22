@@ -241,6 +241,9 @@ export class DeepBookMarketData {
     this.bookRaw = await this.read("/orderbook/SUI_USDC?level=2&depth=10");
     this.assertReady(Date.now());
   }
+  async refreshForOrder() {
+    await this.refresh();
+  }
   async finalize() {
     if (this.needsRefresh) {
       await this.refresh();

@@ -418,6 +418,10 @@ const server = createServer(async (req, res) => {
           send(409, { error: "MARKET_FETCH_IN_PROGRESS" });
           return;
         }
+        if (engine.monitor.safety().connectivity !== "HEALTHY") {
+          send(409, { error: "PAPER_RECOVERY_REQUIRED" });
+          return;
+        }
         if (apiAccess.blocked()) {
           send(409, { error: "API_BACKOFF" });
           return;

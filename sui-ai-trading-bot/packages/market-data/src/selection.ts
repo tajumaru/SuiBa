@@ -11,6 +11,7 @@ export class MarketSelection implements MarketDataProvider {
     private deep: MarketDataProvider & {
       prepare(now?: number): Promise<void>;
       finalize?(): Promise<void>;
+      refreshForOrder?(): Promise<void>;
       diagnostics?(): MarketStatus["diagnostics"];
       quality?(): Record<number, import("./reconstruction.ts").CandleQuality>;
       book?: {
@@ -116,6 +117,12 @@ export class MarketSelection implements MarketDataProvider {
     } finally {
       this.value.latencyMs = Date.now() - start;
     }
+  }
+  async refreshForOrder() {
+    if (!this.selected || !this.value.healthy)
+      throw new Error("MARKET_UNAVAILABLE");
+    await this.selected.refreshForOrder?.();
+    this.assertReady(Date.now());
   }
   assertReady(now: number) {
     if (!this.value.healthy || !this.selected)

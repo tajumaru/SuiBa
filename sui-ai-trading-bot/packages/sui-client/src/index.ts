@@ -65,10 +65,26 @@ export class ReadOnlySuiClient {
       return r;
     });
   }
-  async health() {
-    if (this.status.healthy && Date.now() - this.status.checkedAt < 120000)
+  async health(force = false) {
+    if (
+      !force &&
+      this.status.healthy &&
+      Date.now() - this.status.checkedAt < 120000
+    )
       return this.status;
-    await Promise.all([this.metadata(SUI), this.metadata(USDC)]);
+    const results = await Promise.allSettled([
+      this.metadata(SUI),
+      this.metadata(USDC),
+    ]);
+    if (results.some((r) => r.status === "rejected")) {
+      this.status = {
+        healthy: false,
+        checkedAt: Date.now(),
+        failures: this.status.failures + 1,
+      };
+      throw new Error("SUI_READ_FAILED");
+    }
+    this.status = { healthy: true, checkedAt: Date.now(), failures: 0 };
     return this.status;
   }
 }

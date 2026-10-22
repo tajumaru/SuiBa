@@ -82,7 +82,8 @@ export class BotEngine {
     this.monitor.beginCycle();
     try {
       const now = Date.now();
-      await this.monitor.request("HEALTH", () => this.sui.health());
+      const recovering = this.monitor.safety().connectivity !== "HEALTHY";
+      await this.monitor.request("HEALTH", () => this.sui.health(recovering));
       const frames: Record<number, Candle[]> = await this.monitor.acquisition(
         async () => {
           if (this.market.frames) return this.market.frames(now);
@@ -121,6 +122,27 @@ export class BotEngine {
       this.monitor.market((last.timestamp + 300) * 1000);
       if (this.db.runtime().running && !this.monitor.ledger().ok)
         throw new Error("PAPER_RECONCILIATION_FAILED");
+      let recoveryTransition = false;
+      if (this.monitor.safety().connectivity !== "HEALTHY") {
+        const status = this.marketStatus();
+        this.market.assertReady?.(Date.now());
+        const qualities = status?.quality;
+        const complete =
+          status?.source === "DeepBook" &&
+          status.healthy &&
+          !status.fallback &&
+          [300, 900, 3600].every(
+            (tf) => qualities?.[tf] && qualities[tf].unresolved === 0,
+          ) &&
+          status.bookAt != null &&
+          Date.now() - status.bookAt <= 10000 &&
+          status.diagnostics?.indexerLagMs != null &&
+          status.diagnostics.indexerLagMs <= 60000;
+        recoveryTransition = this.monitor.recoveryCycle({
+          market: complete,
+          sui: this.sui.status.healthy && this.sui.status.checkedAt >= began,
+        });
+      }
       let p = this.db.portfolio();
       if (p.day !== dayKey(now)) {
         p = {
@@ -193,6 +215,7 @@ export class BotEngine {
         );
       }
       if (
+        recoveryTransition ||
         !this.monitor.ordersAllowed() ||
         !runtime.running ||
         runtime.emergency ||
@@ -283,6 +306,7 @@ export class BotEngine {
           reverse = null;
         }
       }
+      await this.market.refreshForOrder?.();
       const validQuote = await this.router.validateQuote(q);
       const fresh = Date.now();
       const executionSettings = this.db.settings();

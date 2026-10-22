@@ -125,28 +125,61 @@ export class OperationMonitor {
   }
 
   recoveryCycle(checks: { market: boolean; sui: boolean }, now = Date.now()) {
-    const s = this.safety(), r = this.db.runtime();
+    const s = this.safety(),
+      r = this.db.runtime();
     if (s.connectivity === "HEALTHY") return false;
     this.checkRecoveryDeadline(now);
     // A failure or control action during this cycle invalidates its entire proof.
-    if (this.softFailureThisCycle || this.cycleFailed || this.cycleGeneration !== s.generation)
+    if (
+      this.softFailureThisCycle ||
+      this.cycleFailed ||
+      this.cycleGeneration !== s.generation
+    )
       return false;
     if (!checks.market || !checks.sui || apiAccess.blocked()) return false;
-    if (!this.ledger().ok) { this.failCycle("PAPER_RECONCILIATION_FAILED", now); return false; }
-    const stalled = this.stallDetails(now);
-    if (stalled) { this.failCycle("MARKET_DATA_STALLED", now, stalled); return false; }
-    if (s.lastHealthyCycleAt != null && now - s.lastHealthyCycleAt < paperRecoveryLimits.minimumCycleSpacingMs)
-      return false;
-    const count = s.healthyCycles + 1, first = s.firstHealthyAt ?? now;
-    if (count < paperRecoveryLimits.healthyCycles || now - first < paperRecoveryLimits.minimumHealthyMs) {
-      this.saveSafety({ connectivity: "RECOVERING", healthyCycles: count,
-        firstHealthyAt: first, lastHealthyCycleAt: now });
+    if (!this.ledger().ok) {
+      this.failCycle("PAPER_RECONCILIATION_FAILED", now);
       return false;
     }
-    const resume = s.resumePending && !this.db.runtime().error && !r.emergency && this.mode === "PAPER";
-    this.saveSafety({ connectivity: "HEALTHY", healthyCycles: count,
-      firstHealthyAt: first, lastHealthyCycleAt: now, episodeAt: null,
-      failures: 0, resumePending: false, recoveredAt: resume ? now : null });
+    const stalled = this.stallDetails(now);
+    if (stalled) {
+      this.failCycle("MARKET_DATA_STALLED", now, stalled);
+      return false;
+    }
+    if (
+      s.lastHealthyCycleAt != null &&
+      now - s.lastHealthyCycleAt < paperRecoveryLimits.minimumCycleSpacingMs
+    )
+      return false;
+    const count = s.healthyCycles + 1,
+      first = s.firstHealthyAt ?? now;
+    if (
+      count < paperRecoveryLimits.healthyCycles ||
+      now - first < paperRecoveryLimits.minimumHealthyMs
+    ) {
+      this.saveSafety({
+        connectivity: "RECOVERING",
+        healthyCycles: count,
+        firstHealthyAt: first,
+        lastHealthyCycleAt: now,
+      });
+      return false;
+    }
+    const resume =
+      s.resumePending &&
+      !this.db.runtime().error &&
+      !r.emergency &&
+      this.mode === "PAPER";
+    this.saveSafety({
+      connectivity: "HEALTHY",
+      healthyCycles: count,
+      firstHealthyAt: first,
+      lastHealthyCycleAt: now,
+      episodeAt: null,
+      failures: 0,
+      resumePending: false,
+      recoveredAt: resume ? now : null,
+    });
     if (resume) {
       this.db.set("runtime", { ...this.db.runtime(), running: true });
       this.transition("PAPER_NETWORK_RECOVERED", now);

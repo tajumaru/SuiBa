@@ -25,5 +25,6 @@ export interface MarketDataProvider {
   candles(timeframe: Timeframe, now?: number): Promise<Candle[]>;
   frames?(now?: number): Promise<Frames>;
   assertReady?(now: number): void;
+  refreshForOrder?(): Promise<void>;
   status?(): MarketStatus;
 }
