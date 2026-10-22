@@ -37,12 +37,28 @@ export function OperationsView({
   stale?: boolean;
   api?: SettingsApi;
 }) {
+  const [hours, setHours] = useState<24 | 168>(24);
+  const report = data.reports.find(r => r.hours === hours);
   const latest = data.accounting.latest,
     ledger = data.accounting.ledger;
   return (
     <div className="operation-validation">
       <OperationSummary data={data} stale={stale} />
       {(!ledger.ok || (latest && !latest.ok)) && <p className="error" role="alert">残高・損益の不整合を検出しました。PAPER運用を停止し、詳細診断を確認してください。</p>}
+      <section aria-label="主要KPI">
+        <div className="operation-period" role="group" aria-label="集計期間">
+          {([24, 168] as const).map(h => <button key={h} aria-pressed={hours === h} onClick={() => setHours(h)}>{h === 24 ? "24時間" : "7日間"}</button>)}
+        </div>
+        {report ? <>
+          <p>{date(report.observedFrom)} 〜 {date(report.until)}{!report.fullMonitoringCoverage && " · 記録期間不足（一部期間の集計）"}{stale && " · 最終取得時点"}</p>
+          <div className="operation-kpis">
+            <article><h3>取引回数</h3><strong>{report.tradeCount}件</strong><small>買い {report.buyCount} / 売り {report.sellCount}</small></article>
+            <article><h3>純損益</h3><strong>{usdc(report.netPnl)}</strong><small>保有分の評価損益を含む</small></article>
+            <article><h3>稼働時間・稼働率</h3><strong>集計不可</strong><small>期間別の稼働記録なし。監視開始以降の確認済み稼働 {Math.floor(data.runningMs / 60000)}分</small></article>
+            <article><h3>データ正常性</h3><strong>{stale ? "状態不明" : data.timing?.dataStatus === "FRESH" && data.timing.transportRecent ? "鮮度内" : data.timing?.dataStatus === "UPDATING" && data.timing.transportRecent ? "確定足待ち" : "要確認"}</strong><small>現在の取得状態（期間全体の品質率は集計不可）</small></article>
+          </div>
+        </> : <p>選択期間のレポートを取得できません。</p>}
+      </section>
       {data.validation && (
         <DeepBookValidation
           report={data.validation}
@@ -220,10 +236,10 @@ export function OperationsView({
       <section>
         <h3>24時間・7日間の検証レポート</h3>
         <p>
-          取引ゼロ件も正常な検証結果です。売買がなくても条件を自動で緩めません。
+          取引ゼロ件だけでは正常・異常を判断できません。売買がなくても条件を自動で緩めません。
         </p>
         <div className="operation-reports">
-          {data.reports.map((r) => (
+          {data.reports.filter(r => r.hours === hours).map((r) => (
             <article
               key={r.hours}
               aria-label={r.hours === 24 ? "24時間レポート" : "7日間レポート"}
@@ -235,7 +251,7 @@ export function OperationsView({
               {!r.fullMonitoringCoverage && (
                 <p>監視記録は{date(r.observedFrom)}からの一部期間です。</p>
               )}
-              <dl>
+              <dl className="operation-report-grid">
                 {[
                   [
                     "取引回数",
@@ -243,7 +259,7 @@ export function OperationsView({
                   ],
                   [
                     "勝率（売却単位）",
-                    r.winRate == null ? "売却なし" : percent(r.winRate),
+                    r.winRate == null ? "算出不可（売却なし）" : percent(r.winRate),
                   ],
                   [
                     "純損益（保有分の評価損益を含む）",
@@ -259,7 +275,7 @@ export function OperationsView({
                   ],
                   ["利益保護による見送り", `${r.profitGuardSkipped}件`],
                   ["リスク制限による見送り", `${r.riskSkipped}件`],
-                  ["エラー / 異常検出", `${r.errors} / ${r.anomalies}件`],
+                  ["エラー記録 / 異常検出記録", `${r.errors} / ${r.anomalies}件（同じ障害の重複を含むため合算不可）`],
                   ["累計手数料（ガスを含む）", usdc(r.costs.feesUsdc)],
                   ["ガス代", usdc(r.costs.gasUsdc)],
                 ].map(([label, value]) => (
@@ -269,6 +285,7 @@ export function OperationsView({
                   </React.Fragment>
                 ))}
               </dl>
+              <p>損益推移：既存APIに時系列がないため表示できません。純損益と最大ドローダウンは取得済み集計です。</p>
               <small>
                 損益の比較開始：{date(r.valuationBaselineAt)}
                 。期間開始前の評価がない場合は、最初に取得した評価との比較です。DEX手数料は見積もり内に含み、二重加算しません。
