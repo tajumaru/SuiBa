@@ -83,9 +83,11 @@ export class BotEngine {
     try {
       const now = Date.now();
       const recovering = this.monitor.safety().connectivity !== "HEALTHY";
-      await this.monitor.request("HEALTH", () => this.sui.health(recovering));
       const frames: Record<number, Candle[]> = await this.monitor.acquisition(
         async () => {
+          await this.monitor.request("HEALTH", () =>
+            this.sui.health(recovering),
+          );
           if (this.market.frames) return this.market.frames(now);
           const result: Record<number, Candle[]> = {};
           for (const tf of [300, 900, 3600] as const)

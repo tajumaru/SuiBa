@@ -307,8 +307,14 @@ it("integrates opt-in verified reconstruction and refreshes the book afterwards"
   x.provider.assertReady(Date.now());
   expect(
     x.read.mock.calls.filter((x) => x[0].startsWith("/orderbook")),
-  ).toHaveLength(3);
+  ).toHaveLength(2);
+  const minuteReads = x.read.mock.calls.filter((x) =>
+    x[0].includes("interval=1m"),
+  ).length;
   await x.provider.candles(300);
+  expect(
+    x.read.mock.calls.filter((x) => x[0].includes("interval=1m")),
+  ).toHaveLength(minuteReads);
   expect(
     x.read.mock.calls.filter((x) => x[0].startsWith("/trades")),
   ).toHaveLength(1);

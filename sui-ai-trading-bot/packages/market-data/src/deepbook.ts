@@ -1,4 +1,5 @@
 import { deepBookTransport } from "./deepbook-transport.ts";
+import { currentReadBudget } from "../../shared/src/read-budget.ts";
 import {
   gaps,
   reconstructFiveMinutes,
@@ -138,8 +139,9 @@ export class DeepBookMarketData {
   private bookRaw: unknown;
   private qualities: Record<number, CandleQuality> = {};
   private proofs = new Map<number, EmptyTradeProof>();
-  private needsRefresh = false;
+
   private indexedThrough = 0;
+  private refreshAfterCandles = false;
   private indexerLagMs: number | null = null;
   diagnostics() {
     const mid = this.book ? (this.book.bid + this.book.ask) / 2 : 0;
@@ -202,7 +204,7 @@ export class DeepBookMarketData {
       throw new Error("MARKET_PAIR_MISMATCH");
     await this.refresh();
   }
-  private async refresh() {
+  private async refreshStatus() {
     const status = z
       .object({
         status: z.string(),
@@ -238,6 +240,9 @@ export class DeepBookMarketData {
       status.pipelines?.find(
         (p) => p.pipeline === "order_fill" && !p.is_backfill,
       )?.indexed_timestamp_ms ?? 0;
+  }
+  private async refresh() {
+    await this.refreshStatus();
     this.bookRaw = await this.read("/orderbook/SUI_USDC?level=2&depth=10");
     this.assertReady(Date.now());
   }
@@ -245,10 +250,17 @@ export class DeepBookMarketData {
     await this.refresh();
   }
   async finalize() {
-    if (this.needsRefresh) {
+    // Avoid duplicate reads on short cycles; long/recovery/reconstruction cycles finish fresh.
+    if (
+      this.refreshAfterCandles ||
+      currentReadBudget()?.fresh ||
+      !this.book ||
+      Date.now() - this.book.timestamp > 5000
+    ) {
       await this.refresh();
-      this.needsRefresh = false;
+      this.refreshAfterCandles = false;
     }
+    this.assertReady(Date.now());
   }
   assertReady(now: number) {
     const limits = this.limits();
@@ -298,14 +310,17 @@ export class DeepBookMarketData {
     };
     this.qualities[tf] = quality;
     if (this.reconstruct && tf === 300 && holes.length) {
-      this.needsRefresh = true;
+      this.refreshAfterCandles = true;
       const reconstructionStarted = Date.now();
       try {
-        // Bounded startup work; retry on a later cycle never resumes a stopped bot.
+        // Reuse still-valid empty proofs; never reuse unproven missing intervals.
         if (holes.length > 64) throw new Error("CANDLE_GAP");
         const minutes: MarketCandle[] = [];
         let cursor = (c.at(-1)!.timestamp + 300) * 1000 - 1000;
-        for (let page = 0; page < 8; page++) {
+        const needsMinutes = holes.some(
+          (t) => !validEmptyProof(this.proofs.get(t), t, Date.now()),
+        );
+        for (let page = 0; needsMinutes && page < 8; page++) {
           if (Date.now() - began > 45000) throw new Error("CANDLE_GAP");
           const rows = parseDeepBook(
             await this.read(
@@ -327,7 +342,7 @@ export class DeepBookMarketData {
           if (cursor < c[0].timestamp * 1000) break;
           if (page === 7) throw new Error("CANDLE_GAP");
         }
-        await this.refresh();
+        await this.refreshStatus();
         const indexedThrough = this.indexedThrough;
         for (const t of holes) {
           if (Date.now() - began > 45000) break;

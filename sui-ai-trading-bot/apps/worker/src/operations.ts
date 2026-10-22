@@ -1,3 +1,4 @@
+import { withReadBudget } from "../../../packages/shared/src/read-budget-node.ts";
 import {
   initialPaperSafety,
   recoverableReadFailure,
@@ -340,14 +341,23 @@ export class OperationMonitor {
     const began = Date.now();
     this.fetchMono = this.monotonicNow();
     this.update({ lastFetchAttemptAt: began, fetchStartedAt: began });
+    const controller = new AbortController();
     const deadline = setTimeout(() => {
       const details = this.stallDetails(Date.now());
-      if (this.db.runtime().running && details)
+      controller.abort(new Error("MARKET_DATA_STALLED"));
+      if ((this.db.runtime().running || this.safety().resumePending) && details)
         this.failCycle("MARKET_DATA_STALLED", Date.now(), details);
     }, monitoringLimits.fetchDeadlineMs + 1);
     deadline.unref?.();
     try {
-      const value = await this.request("MARKET", fn);
+      const value = await this.request("MARKET", () =>
+        withReadBudget(
+          controller.signal,
+          this.safety().connectivity !== "HEALTHY",
+          fn,
+        ),
+      );
+      controller.signal.throwIfAborted();
       this.update({ lastFetchSuccessAt: Date.now() });
       if (
         this.fetchMono != null &&

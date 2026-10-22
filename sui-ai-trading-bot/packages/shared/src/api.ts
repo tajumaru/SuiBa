@@ -1,3 +1,4 @@
+import { currentReadBudget, abortable } from "./read-budget.ts";
 import {
   classifyHttpFailure,
   transportDiagnostics,
@@ -145,7 +146,10 @@ export class ApiAccess {
   }
   private wait(until: number) {
     return new Promise<void>((resolve, reject) => {
-      const signal = this.controller.signal;
+      const signal = AbortSignal.any([
+        this.controller.signal,
+        ...(currentReadBudget() ? [currentReadBudget()!.signal] : []),
+      ]);
       const abort = () => {
         clearTimeout(timer);
         reject(new Error("API_CANCELLED"));
@@ -171,17 +175,29 @@ export class ApiAccess {
     ttl = 0,
     policy: ApiPolicy = {},
   ): Promise<T> {
+    const budget = currentReadBudget();
+    budget?.signal.throwIfAborted();
+    if (budget?.fresh) ttl = 0;
     const s = this.state(api),
       id = api + ":" + key;
     if (this.controller.signal.aborted) throw new Error("API_CANCELLED");
     if (s.exhausted) throw new Error("API_RETRIES_EXHAUSTED");
-    if (this.flights.has(id)) return this.flights.get(id) as Promise<T>;
+    if (this.flights.has(id)) {
+      const pending = this.flights.get(id) as Promise<T>;
+      return budget ? abortable(pending, budget.signal) : pending;
+    }
     if ((s.nextRetryAt ?? 0) > Date.now()) throw new Error("API_BACKOFF");
     const cache = this.caches.get(id);
-    if (cache && cache.until > Date.now()) return cache.value as T;
+    if (!budget?.fresh && cache && cache.until > Date.now())
+      return cache.value as T;
     this.caches.delete(id);
     const task = (async () => {
-      await this.tails.get(api)?.catch(() => {});
+      const tail = this.tails.get(api);
+      if (tail) {
+        const settled = tail.catch(() => {});
+        await (budget ? abortable(settled, budget.signal) : settled);
+      }
+      budget?.signal.throwIfAborted();
       if (this.controller.signal.aborted) throw new Error("API_CANCELLED");
       if (s.exhausted) throw new Error("API_RETRIES_EXHAUSTED");
       if ((s.nextRetryAt ?? 0) > Date.now()) throw new Error("API_BACKOFF");
@@ -189,6 +205,7 @@ export class ApiAccess {
       try {
         for (let attempt = 0; ; attempt++) {
           this.controller.signal.throwIfAborted();
+          budget?.signal.throwIfAborted();
           if (attempt) s.retries++;
           s.requests++;
           s.recent = [
@@ -201,6 +218,7 @@ export class ApiAccess {
             const result = await fn(
               AbortSignal.any([
                 this.controller.signal,
+                ...(budget ? [budget.signal] : []),
                 AbortSignal.timeout(policy.timeoutMs ?? apiLimits.timeoutMs),
               ]),
               { attempt, lastSuccessAt: s.lastSuccessAt },
@@ -234,6 +252,7 @@ export class ApiAccess {
               Math.round(performance.now() - began),
             );
             s.failed = true;
+            budget?.signal.throwIfAborted();
             const code = error instanceof Error ? error.message : "";
             if (code === "VALIDATION_RECORD_FAILED") throw error;
             const failedLatencyMs = s.lastLatencyMs;
@@ -394,6 +413,7 @@ export async function apiFetch(
         ...(input instanceof Request ? [input.signal] : []),
       ]);
       try {
+        currentReadBudget()?.signal.throwIfAborted();
         const response = await (policy.transport ?? rawFetch)(input, {
           ...init,
           signal: combined,
