@@ -19,6 +19,7 @@ export type ApiFailure = {
   lastApiSuccessAt?: number | null;
   timeoutType?: RequestPhase | null;
   timeframe?: string | null;
+  transportTimings?: Record<string, number | boolean>;
 };
 const knownCodes = new Set([
   "ENOTFOUND",
@@ -32,6 +33,11 @@ const knownCodes = new Set([
   "UND_ERR_HEADERS_TIMEOUT",
   "UND_ERR_BODY_TIMEOUT",
   "UND_ERR_SOCKET",
+  "ERR_HTTP2_SESSION_ERROR",
+  "ERR_HTTP2_STREAM_ERROR",
+  "ERR_HTTP2_STREAM_CANCEL",
+  "ERR_HTTP2_GOAWAY_SESSION",
+  "ERR_HTTP2_ERROR",
   "CERT_HAS_EXPIRED",
   "DEPTH_ZERO_SELF_SIGNED_CERT",
   "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
@@ -155,4 +161,32 @@ export class HttpStatusFailure extends Error {
   constructor(readonly status: number) {
     super("UPSTREAM_HTTP_" + status);
   }
+}
+
+// Only fixed phase names and numeric timings may cross the logging boundary.
+export function transportDiagnostics(error: unknown) {
+  if (!error || typeof error !== "object") return {};
+  const e = error as {
+    requestPhase?: unknown;
+    transportTimings?: Record<string, unknown>;
+  };
+  const phases: RequestPhase[] = [
+    "DNS",
+    "CONNECT",
+    "TLS",
+    "HEADERS_OR_CONNECT",
+    "BODY",
+    "HTTP",
+  ];
+  const phase = phases.includes(e.requestPhase as RequestPhase)
+    ? (e.requestPhase as RequestPhase)
+    : undefined;
+  const timings: Record<string, number | boolean> = {};
+  for (const key of ["dnsMs", "tcpMs", "tlsMs", "headersMs", "totalMs"]) {
+    const v = e.transportTimings?.[key];
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) timings[key] = v;
+  }
+  if (typeof e.transportTimings?.reusedConnection === "boolean")
+    timings.reusedConnection = e.transportTimings.reusedConnection;
+  return { phase, timings: Object.keys(timings).length ? timings : undefined };
 }

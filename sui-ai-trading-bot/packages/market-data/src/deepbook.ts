@@ -1,3 +1,4 @@
+import { deepBookTransport } from "./deepbook-transport.ts";
 import {
   gaps,
   reconstructFiveMinutes,
@@ -169,7 +170,11 @@ export class DeepBookMarketData {
           base + path,
           { headers: { accept: "application/json" } },
           ttl,
-          { timeoutMs: 8000, maxTransientRetries: 2 },
+          {
+            timeoutMs: 8000,
+            maxTransientRetries: 2,
+            transport: deepBookTransport.fetch,
+          },
         )
       ).json(),
     private reconstruct = false,

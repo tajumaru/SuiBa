@@ -1,3 +1,4 @@
+import { deepBookTransport } from "../../../packages/market-data/src/deepbook-transport.ts";
 import { DashboardService, acceptsGzip } from "./dashboard-feed.ts";
 import { gzip } from "node:zlib";
 import { ChartHistoryClient } from "./chart-history-client.ts";
@@ -470,6 +471,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
     scheduler.stop();
     chartHistory.close();
     apiAccess.cancel();
+    deepBookTransport.close();
     clearInterval(watchdog);
     db.set("runtime", { ...db.runtime(), running: false });
     engine.monitor.transition("PROCESS_SHUTDOWN");

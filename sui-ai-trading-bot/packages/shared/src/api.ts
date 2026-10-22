@@ -1,5 +1,6 @@
 import {
   classifyHttpFailure,
+  transportDiagnostics,
   requestIdentity,
   HttpStatusFailure,
   type ApiFailure,
@@ -38,7 +39,11 @@ export function retryDelay(
     minimum + Math.max(0, Math.min(1, random)) * Math.min(1000, minimum * 0.25),
   );
 }
-export type ApiPolicy = { timeoutMs?: number; maxTransientRetries?: number };
+export type ApiPolicy = {
+  timeoutMs?: number;
+  maxTransientRetries?: number;
+  transport?: typeof fetch;
+};
 export type ApiAttempt = {
   api: string;
   success: boolean;
@@ -378,7 +383,10 @@ export async function apiFetch(
         ...(input instanceof Request ? [input.signal] : []),
       ]);
       try {
-        const response = await rawFetch(input, { ...init, signal: combined });
+        const response = await (policy.transport ?? rawFetch)(input, {
+          ...init,
+          signal: combined,
+        });
         status = response.status;
         if (!response.ok) {
           phase = "HTTP";
@@ -396,13 +404,15 @@ export async function apiFetch(
           headers: [...response.headers.entries()],
         };
       } catch (error) {
+        const detail = transportDiagnostics(error);
         const classification =
           error instanceof RateLimited || error instanceof HttpStatusFailure
             ? { code: error.message, phase: "HTTP" as const, causeCode: null }
-            : classifyHttpFailure(error, phase, combined);
+            : classifyHttpFailure(error, detail.phase ?? phase, combined);
         apiAccess.recordFailure({
           ...identity,
           ...classification,
+          ...(detail.timings ? { transportTimings: detail.timings } : {}),
           status,
           startedAt,
           endedAt: Date.now(),
