@@ -13,7 +13,9 @@ test("audited gaps expose exact times and verified reconstruction causes", async
     readFileSync("docs/evidence/chart-gaps-48/responses.json", "utf8"),
   );
   const candles = [
-    ...parseDeepBook({ candles: evidence.five }, 300, evidence.completedAt),
+    ...parseDeepBook({ candles: evidence.five }, 300, evidence.completedAt).map(
+      (c) => ({ ...c, timeframe: 300 as const }),
+    ),
     ...verifiedDisplayRepairs,
   ].sort((a, b) => a.timestamp - b.timestamp);
   const { state, operations } = validationFixture("unstarted");

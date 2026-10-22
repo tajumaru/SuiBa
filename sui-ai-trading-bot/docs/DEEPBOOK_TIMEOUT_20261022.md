@@ -1,0 +1,56 @@
+# DeepBook通信タイムアウト調査・対策（2026/10/22 日本時間）
+
+## 確認できた原因と限界
+
+3101の実ログで8秒のUPSTREAM_TIMEOUTが発生。処理はPROVIDER_HEALTH（get_pools）、MARKET_STATUS、ORDERBOOK_FETCH、OHLCV_FETCH（15m）に分散しており、一つのOHLCVパラメータの問題ではなかった。HTTPステータス未取得で、429の証拠はない。
+
+WindowsとDockerを同じ公開URLで比較。Dockerは6試行中5件、Windowsは6件すべてで8秒のタイムアウトを再現。DNSは両方34.54.113.162、DockerのAAAA応答はENODATA。IPv6待機による問題という証拠はない。Dockerのプロキシ環境変数は未設定（Windows全体のVPN・HTTPS検査の有無は未確認）。
+
+Node標準HTTPSで、TCP接続完了まで3,334/7,561/4,799ms、ある試行はTLS完了まで7,763msかかった。アプリの解析・指標計算の前に通信自体が遅延している。別接続先GoogleもTCP477ms→TLS4,846msの試行があり、DeepBookだけの問題とも断定できない。
+
+**確定できるのは、この環境でTCP/TLS/応答待ちの実通信遅延が起きていること。ISP、VPN/検査ソフト、経路、接続先サーバーのどこが根本原因かは未確定。パケットキャプチャや別回線との比較は未実施。タイムアウトを長くすれば解決する、とは判断していない。**
+
+[実測証拠](evidence/deepbook-timeout-20261022.json)を参照。全て公開データの読み取りで、キー・署名・実注文は使用していない。
+
+## アプリ側の改善
+
+接続先はTLSのALPNでh2を返した。同一HTTP/2接続によるstatus4試行は819/1,437/699/772msで成功し、60秒の待機後も同じ接続を利用できた。
+
+ただし、その後の実エンドポイント試験では初回8秒失敗、追加の有界再試行でも接続・再利用中の失敗が出た。HTTP/2で外部通信障害が消えたという結論ではない。復旧後には同じ接続でget_pools、status、orderbook、5m OHLCVを取得・既存の価格/板検証を通過し、60秒後の再取得も成功した。
+
+そこで、再接続コストを避ける対策としてDeepBookの公開GETのみNode標準HTTP/2で接続を再利用する。Providerのデータ仕様や鮮度条件を変更しない。
+
+- API全体の直列実行・single-flight・キャッシュ・429管理・最大2回再試行は既存ApiAccessをそのまま使用。
+- 1試行8秒の接続から本文受信までの期限を維持。期限切れ/キャンセル/途中切断では接続とストリームを破棄し、裏で接続を続けさせない。
+- idle120秒で閉じる。GOAWAY/切断後は次の有界試行で接続し直す。常時PINGや監視用API追加はない。
+- HTTPエラーはヘッダー受信時に返す。429の本文が止まっても安全停止を遅らせない。
+- URLオリジンを限定し、GET以外・別ホスト・URL認証情報を拒否。TLS証明書検証を無効化しない。応答は最大4MiB、途中本文は返さない。
+- 失敗ログにDNS/CONNECT/TLS/BODYなどの段階とdnsMs/tcpMs/tlsMs/headersMs/totalMs/reusedConnectionを追加。これらのmsは要求開始から各段階完了までの累積時間で、段階単独の時間ではない。
+- 既存の最初の通信異常での安全停止、RiskEngine、Profit Guard、PAPER限定、古い価格・見積もり拒否を維持。通信復旧だけで再開しない。
+- Sui gRPC・GeckoTerminal・Cetusの通信処理は変更しない。これらにも経路障害が起きれば従来どおり停止する。
+
+実装の根拠: [Node 24公式HTTP/2 API](https://github.com/nodejs/node/blob/v24.14.0/doc/api/http2.md)。新しいライブラリ依存は追加していない。実際の接続先のh2対応はALPNと実データ取得で確認した。
+
+## 検証
+
+- pnpm build成功。前回追加のchart-gap E2Eテストにあったtimeframe型の不整合も修正。
+- ユニット378件成功（通信20件追加）。HTTPステータス、途中本文、DNS/TCP/TLS待機時の接続破棄、429の即時処理、有界リトライ、停止後自動再開禁止、single-flight/キャッシュを確認。
+- E2E156件成功。既存の4画面幅とPAPER・検証画面・チャートの回帰を確認。
+- 実通信は読み取り専用。実注文件数の試験ではない。24時間安定稼働の完了を意味しない。
+
+## 今後の切り分け
+
+1. VPN/プロキシ/HTTPS検査ソフトの使用状況を確認する。保護機能を自動で無効化しない。
+2. 可能なら同じ診断を別回線（テザリングなど）で少数実行し、通常回線と比較する。
+3. 新ログで接続・TLS・応答・本文のどこで止まるかを比較する。
+4. 通信経路とデータの鮮度が安定してから、利用者が停止解除とPAPER開始を別々に判断する。
+
+公開APIの診断（Windows PowerShell、設定変更・取引なし、各6リクエスト程度）:
+
+```powershell
+cd D:\Source\SuiBa\sui-ai-trading-bot
+node scripts/probe-upstream-transport.mjs
+node scripts/probe-deepbook-http2.mjs
+```
+
+HTTP/2診断は60秒の待機を含む。失敗やタイムアウトはそのまま表示し、無限再試行しない。診断だけでBotを再開しない。

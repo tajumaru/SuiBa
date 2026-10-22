@@ -1,0 +1,242 @@
+{
+  "observedOn": "2026-10-22 Asia/Tokyo",
+  "endpoint": "https://deepbook-indexer.mainnet.mystenlabs.com",
+  "dns": {
+    "hostAndDockerA": [
+      "34.54.113.162"
+    ],
+    "dockerAAAA": "ENODATA",
+    "dockerProxyVariablesPresent": [],
+    "dockerNode": "v24.22.1",
+    "windowsNode": "v24.14.0"
+  },
+  "baseline": {
+    "docker": {
+      "requests": 6,
+      "successes": 1,
+      "timeouts": 5
+    },
+    "windows": {
+      "requests": 6,
+      "successes": 0,
+      "timeouts": 6
+    },
+    "nativeHttpsConnectionExamples": [
+      {
+        "tcpMs": 3334,
+        "tlsMs": 7763,
+        "deadlineMs": 8000,
+        "success": false
+      },
+      {
+        "tcpMs": 7561,
+        "deadlineMs": 8000,
+        "success": false
+      },
+      {
+        "tcpMs": 4799,
+        "deadlineMs": 8000,
+        "success": false
+      }
+    ],
+    "controlTls": [
+      {
+        "host": "deepbook-indexer.mainnet.mystenlabs.com",
+        "tcpMs": 2609,
+        "tlsMs": 2940,
+        "alpn": "h2"
+      },
+      {
+        "host": "www.google.com",
+        "tcpMs": 477,
+        "tlsMs": 4846,
+        "alpn": "h2"
+      }
+    ]
+  },
+  "http2StatusProbe": {
+    "sameConnection": true,
+    "requests": 4,
+    "successes": 4,
+    "elapsedMs": [
+      819,
+      1437,
+      699,
+      772
+    ],
+    "lastReadAfterIdleMs": 60000
+  },
+  "actualEndpoints": [
+    {
+      "file": "data/transport-real.log",
+      "events": [
+        {
+          "path": "/get_pools",
+          "error": "UPSTREAM_TRANSPORT_FAILED",
+          "phase": "HEADERS_OR_CONNECT",
+          "timings": {
+            "reusedConnection": false,
+            "dnsMs": 3,
+            "tcpMs": 233,
+            "tlsMs": 5679,
+            "totalMs": 8003
+          },
+          "connections": 1,
+          "at": 1792664178442
+        }
+      ]
+    },
+    {
+      "file": "data/transport-real-bounded.log",
+      "events": [
+        {
+          "path": "/get_pools",
+          "error": "UPSTREAM_TRANSPORT_FAILED",
+          "phase": "HEADERS_OR_CONNECT",
+          "timings": {
+            "reusedConnection": false,
+            "dnsMs": 7,
+            "tcpMs": 2433,
+            "tlsMs": 4735,
+            "totalMs": 8003
+          },
+          "connections": 1,
+          "at": 1792664345319
+        },
+        {
+          "path": "/get_pools",
+          "status": 200,
+          "ms": 6997,
+          "connections": 2,
+          "at": 1792664355819
+        },
+        {
+          "path": "/status?max_checkpoint_lag=100&max_time_lag_seconds=60",
+          "error": "UPSTREAM_TRANSPORT_FAILED",
+          "phase": "HEADERS_OR_CONNECT",
+          "timings": {
+            "reusedConnection": true,
+            "totalMs": 8008
+          },
+          "connections": 2,
+          "at": 1792664366334
+        },
+        {
+          "path": "/status?max_checkpoint_lag=100&max_time_lag_seconds=60",
+          "status": 200,
+          "ms": 5142,
+          "connections": 3,
+          "at": 1792664374979
+        },
+        {
+          "path": "/orderbook/SUI_USDC?level=2&depth=10",
+          "status": 200,
+          "ms": 694,
+          "connections": 3,
+          "at": 1792664378174
+        },
+        {
+          "book": {
+            "timestamp": 1792664378088,
+            "bid": 0.98811,
+            "ask": 0.98848,
+            "spread": 0.00037438214298360454,
+            "bids": [
+              [
+                0.98811,
+                1012
+              ],
+              [
+                0.98782,
+                2070.1
+              ],
+              [
+                0.9877,
+                4048
+              ],
+              [
+                0.98752,
+                2007.1
+              ],
+              [
+                0.98751,
+                2030.8
+              ]
+            ],
+            "asks": [
+              [
+                0.98848,
+                1012
+              ],
+              [
+                0.9887,
+                1000
+              ],
+              [
+                0.98881,
+                2037.3
+              ],
+              [
+                0.98885,
+                4048
+              ],
+              [
+                0.9889,
+                252.9
+              ]
+            ]
+          },
+          "diagnostics": {
+            "indexerLagMs": 1000,
+            "indexedThrough": 1792664373631,
+            "bidDepthUsdc": 11030.549802,
+            "askDepthUsdc": 8256.501983
+          }
+        },
+        {
+          "path": "/ohclv/SUI_USDC?interval=5m&limit=1000",
+          "status": 200,
+          "ms": 856,
+          "connections": 3,
+          "at": 1792664381535
+        },
+        {
+          "closedBars": 999,
+          "latest": 1792663800
+        },
+        {
+          "path": "/get_pools",
+          "status": 200,
+          "ms": 240,
+          "connections": 3,
+          "at": 1792664444279
+        },
+        {
+          "path": "/status?max_checkpoint_lag=100&max_time_lag_seconds=60",
+          "status": 200,
+          "ms": 728,
+          "connections": 3,
+          "at": 1792664447516
+        },
+        {
+          "path": "/orderbook/SUI_USDC?level=2&depth=10",
+          "status": 200,
+          "ms": 211,
+          "connections": 3,
+          "at": 1792664450237
+        },
+        {
+          "after60seconds": true,
+          "connections": 3,
+          "bookTimestamp": 1792664450152
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Not a controlled simultaneous throughput benchmark",
+    "HTTP2 also timed out: network root cause is unresolved",
+    "No packet capture or independent external network comparison",
+    "No wallets/signatures/orders used"
+  ]
+}
