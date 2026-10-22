@@ -1,0 +1,63 @@
+{
+  "build": "passed",
+  "unit": {
+    "files": 25,
+    "passed": 358,
+    "failed": 0
+  },
+  "e2e": {
+    "passed": 156,
+    "failed": 0,
+    "widths": [
+      375,
+      390,
+      430,
+      1280
+    ]
+  },
+  "environment": "isolated local Chromium; mocked browser APIs plus separate authenticated HTTP integration test; no running container updates",
+  "browserMetrics": [
+    {
+      "viewport": "width-375",
+      "bars": 2016,
+      "zoomMs": 166.3726999999999,
+      "svgElements": 26
+    },
+    {
+      "viewport": "width-375",
+      "readyMs": 539.6992000000009
+    },
+    {
+      "viewport": "width-390",
+      "bars": 2016,
+      "zoomMs": 73.97510000000011,
+      "svgElements": 26
+    },
+    {
+      "viewport": "width-390",
+      "readyMs": 542.1472999999996
+    },
+    {
+      "viewport": "width-430",
+      "bars": 2016,
+      "zoomMs": 74.82799999999997,
+      "svgElements": 26
+    },
+    {
+      "viewport": "width-430",
+      "readyMs": 530.3847000000005
+    },
+    {
+      "viewport": "width-1280",
+      "bars": 2016,
+      "zoomMs": 74.4336000000003,
+      "svgElements": 41
+    },
+    {
+      "viewport": "width-1280",
+      "readyMs": 521.8648999999996
+    }
+  ],
+  "containersUnchanged": true,
+  "independentOnChainAudit": false
+}
