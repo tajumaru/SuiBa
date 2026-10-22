@@ -178,7 +178,7 @@ it.each(["DNS", "CONNECT", "TLS"] as const)(
     expect(transportDiagnostics(e).phase).toBe(phase);
     expect(session.destroyed).toBe(true);
     expect(classifyHttpFailure(e, phase, controller.signal).code).toBe(
-      "UPSTREAM_TIMEOUT",
+      phase === "CONNECT" ? "UPSTREAM_CONNECT_TIMEOUT" : "UPSTREAM_TIMEOUT",
     );
   },
 );

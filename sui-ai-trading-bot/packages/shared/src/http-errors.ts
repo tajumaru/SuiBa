@@ -72,7 +72,9 @@ export function classifyHttpFailure(
       code: timedOut
         ? phase === "BODY"
           ? "UPSTREAM_BODY_TIMEOUT"
-          : "UPSTREAM_TIMEOUT"
+          : phase === "CONNECT"
+            ? "UPSTREAM_CONNECT_TIMEOUT"
+            : "UPSTREAM_TIMEOUT"
         : "API_CANCELLED",
       phase,
       causeCode,
