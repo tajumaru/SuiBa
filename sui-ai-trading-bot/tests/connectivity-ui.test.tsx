@@ -33,6 +33,7 @@ it("shows resumed only for a confirmed transition with an open order gate", () =
   const db = new BotDatabase(":memory:"),
     m = new OperationMonitor(db);
   db.set("runtime", { ...db.runtime(), running: true });
+  m.market(Date.now());
   db.set("paper_safety", { ...initialPaperSafety(), recoveredAt: Date.now() });
   expect(
     renderToStaticMarkup(<ConnectivityPanel safety={m.safetySnapshot()} />),

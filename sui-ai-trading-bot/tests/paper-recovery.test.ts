@@ -162,3 +162,18 @@ it("requires market and Sui proofs and refuses corrupted balances", () => {
   monitor.recoveryCycle({ market: true, sui: true });
   expect(db.runtime().error).toBe("PAPER_RECONCILIATION_FAILED");
 });
+
+it("counts a completed cycle only once and caps repeated failures", () => {
+  const { db, monitor } = setup();
+  const start = Date.now();
+  const f = failure();
+  monitor.transientFailure(f.api, f.code, f);
+  monitor.market(start, start);
+  monitor.beginCycle();
+  monitor.recoveryCycle({ market: true, sui: true }, start + 1000);
+  monitor.recoveryCycle({ market: true, sui: true }, start + 61000);
+  expect(monitor.safety().healthyCycles).toBe(1);
+  expect(db.runtime().running).toBe(false);
+  for (let i = 1; i < 9; i++) monitor.transientFailure(f.api, f.code, f);
+  expect(db.runtime().error).toBe("PAPER_RECOVERY_EXHAUSTED");
+});

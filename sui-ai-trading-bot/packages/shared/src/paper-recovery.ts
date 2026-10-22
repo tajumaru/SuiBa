@@ -1,6 +1,18 @@
 import type { ApiFailure } from "./http-errors.ts";
 
 export type Connectivity = "HEALTHY" | "DEGRADED" | "RECOVERING";
+export type PaperRecoveryProof = {
+  mode: "PAPER";
+  healthyCycles: number;
+  firstHealthyAt: number;
+  lastFailureAt: number;
+  confirmedAt: number;
+  generation: number;
+  marketHealthy: true;
+  suiHealthy: true;
+  ledgerHealthy: true;
+  backoff: false;
+};
 export type PaperSafetyState = {
   connectivity: Connectivity;
   resumePending: boolean;

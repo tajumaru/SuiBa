@@ -232,6 +232,7 @@ it("does not exempt an in-flight request forever; deadline uses monotonic time",
   const pending = monitor.acquisition(
     () => new Promise<void>((r) => (release = r)),
   );
+  void pending.catch(() => {});
   await vi.advanceTimersByTimeAsync(45001);
   expect(db.runtime()).toMatchObject({
     running: false,

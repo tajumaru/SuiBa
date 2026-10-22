@@ -252,7 +252,6 @@ export class ApiAccess {
               Math.round(performance.now() - began),
             );
             s.failed = true;
-            budget?.signal.throwIfAborted();
             const code = error instanceof Error ? error.message : "";
             if (code === "VALIDATION_RECORD_FAILED") throw error;
             const failedLatencyMs = s.lastLatencyMs;
@@ -268,7 +267,7 @@ export class ApiAccess {
               "UPSTREAM_HTTP_503",
               "UPSTREAM_HTTP_504",
             ].includes(code);
-            if (transient)
+            if (transient && !budget?.signal.aborted)
               this.onTransientFailure(
                 api,
                 code,
@@ -296,6 +295,10 @@ export class ApiAccess {
                 throw new Error("VALIDATION_RECORD_FAILED");
               }
             };
+            if (budget?.signal.aborted) {
+              recordFailure();
+              throw budget.signal.reason;
+            }
             if (!(error instanceof RateLimited)) {
               recordFailure();
               if (
@@ -342,13 +345,21 @@ export class ApiAccess {
         s.active = false;
       }
     })();
-    this.tails.set(api, task);
+    // A canceled queued request must not erase its still-active predecessor.
+    const predecessor = this.tails.get(api);
+    const tail = Promise.allSettled([
+      ...(predecessor ? [predecessor] : []),
+      task,
+    ]).then(() => {});
+    this.tails.set(api, tail);
+    void tail.then(() => {
+      if (this.tails.get(api) === tail) this.tails.delete(api);
+    });
     this.flights.set(id, task);
     try {
       return await task;
     } finally {
       this.flights.delete(id);
-      if (this.tails.get(api) === task) this.tails.delete(api);
     }
   }
 }

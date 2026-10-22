@@ -1,3 +1,7 @@
+import {
+  paperRecoveryLimits,
+  type PaperSafetyState,
+} from "../../../packages/shared/src/paper-recovery.ts";
 import { validateCandles } from "../../../packages/market-data/src/validation.ts";
 import { randomUUID } from "node:crypto";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
@@ -45,6 +49,7 @@ export interface ValidationSession {
   intervalMs: number;
 }
 interface Sample {
+  safety?: PaperSafetyState;
   timing?: Partial<OperationState> | null;
   kind: "sample";
   at: number;
@@ -70,6 +75,7 @@ interface Cycle {
   repairs: { timestamp: number; provenance: CandleProvenance }[];
 }
 export interface ValidationFill {
+  safety?: PaperSafetyState;
   kind: "fill";
   at: number;
   sessionId: string;
@@ -173,7 +179,16 @@ export class ValidationRecorder {
       kind: "api",
       at: data.occurredAt,
       data,
-      safelyStopped: !r.running && !!(r.error || r.emergency),
+      safelyStopped:
+        !r.running &&
+        !!(
+          r.error ||
+          r.emergency ||
+          (this.db.get<PaperSafetyState>("paper_safety")?.connectivity !==
+            undefined &&
+            this.db.get<PaperSafetyState>("paper_safety")?.connectivity !==
+              "HEALTHY")
+        ),
     });
   }
   cycle(
@@ -207,6 +222,7 @@ export class ValidationRecorder {
       price = this.db.get<number>("price");
     this.append({
       kind: "sample",
+      safety: this.db.get<PaperSafetyState>("paper_safety"),
       timing: this.db.get<OperationState>("operation_state") ?? null,
       at: now,
       running: r.running,
@@ -235,6 +251,7 @@ export class ValidationRecorder {
       last = candles.at(-1)!;
     return {
       kind: "fill",
+      safety: this.db.get<PaperSafetyState>("paper_safety"),
       at: now,
       sessionId: session.id,
       mode: "PAPER",
@@ -371,6 +388,24 @@ export function aggregateValidation(
   const stopped = operations.filter(
     (x) => x.kind === "STOP" || x.kind === "BOOT",
   );
+  const guardedRecoveries = operations.filter((e) => {
+    const p = e.recoveryProof;
+    return (
+      e.kind === "CONTROL" &&
+      e.code === "PAPER_NETWORK_RECOVERED" &&
+      !!p &&
+      p.mode === "PAPER" &&
+      p.confirmedAt === e.timestamp &&
+      p.healthyCycles >= paperRecoveryLimits.healthyCycles &&
+      p.firstHealthyAt > p.lastFailureAt &&
+      p.confirmedAt - p.firstHealthyAt >=
+        paperRecoveryLimits.minimumHealthyMs &&
+      p.marketHealthy === true &&
+      p.suiHealthy === true &&
+      p.ledgerHealthy === true &&
+      p.backoff === false
+    );
+  });
   const unauthorizedRuns = windowSamples.filter(
     (s) =>
       s.running &&
@@ -381,6 +416,19 @@ export function aggregateValidation(
             !starts.some(
               (start) =>
                 start.timestamp >= stop.timestamp && start.timestamp <= s.at,
+            ) &&
+            !(
+              stop.code === "PAPER_NETWORK_PAUSED" &&
+              !s.emergency &&
+              !s.error &&
+              s.safety?.connectivity === "HEALTHY" &&
+              guardedRecoveries.some(
+                (e) =>
+                  e.timestamp >= stop.timestamp &&
+                  e.timestamp <= s.at &&
+                  e.recoveryProof!.lastFailureAt >= stop.timestamp &&
+                  e.recoveryProof!.generation === s.safety?.generation,
+              )
             ),
         )),
   );
@@ -396,6 +444,7 @@ export function aggregateValidation(
     (f) =>
       !validPrices(f) ||
       !f.running ||
+      (!!f.safety && f.safety.connectivity !== "HEALTHY") ||
       f.mode !== "PAPER" ||
       !f.source.startsWith("DeepBook:SUI_USDC:USDC:verified-v1") ||
       !f.market?.healthy ||
@@ -508,9 +557,9 @@ export function aggregateValidation(
         unsafeFills.length === 0 &&
         checks.every((c) => c.ok),
     },
-    { name: "API異常時に即時安全停止", ok: missingSafetyStops.length === 0 },
+    { name: "API異常時に即時注文禁止", ok: missingSafetyStops.length === 0 },
     {
-      name: "停止後・再起動後の自動再開なし",
+      name: "重大停止・手動停止・再起動後の無許可再開なし",
       ok: unauthorizedRuns.length === 0,
     },
     {
@@ -617,6 +666,7 @@ export function aggregateValidation(
           ? latest.equity - session.initialEquity
           : null,
       safetyStops: stops,
+      guardedRecoveries: guardedRecoveries.length,
       manualStarts: starts.length,
       manualResumes: Math.max(0, starts.length - 1),
       restarts: operations.filter((e) => e.kind === "BOOT").length,
@@ -634,7 +684,7 @@ export function aggregateValidation(
       "Indexer由来の板・遅延・無約定証拠です。独立したオンチェーン照合の保証ではありません。",
       "約定やAPI障害がなかった場合、その安全経路は実運用で未行使です。ユニット・統合テストも併せて確認してください。",
       "PAPER専用コードで記録します。実資金移動の独立したチェーン監査は行いません。",
-      "24時間経過後も自動停止・自動再開はしません。評価対象は開始から24時間です。",
+      "24時間経過を理由に自動停止・再開しません。PAPER通信復旧は証拠付き安全確認後だけ許可します。評価対象は開始から24時間です。",
     ],
   };
 }

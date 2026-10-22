@@ -41,6 +41,7 @@ for (const begun of [false, true])
     await page.getByLabel("管理トークン").fill("test-only-no-real-token");
     await page.getByRole("button", { name: "接続", exact: true }).click();
     await page.getByRole("button", { name: "運用検証", exact: true }).click();
+    await page.locator("#operation-diagnostics > summary").click();
     const panel = page.getByRole("region", { name: "DeepBook 24時間検証" });
     await expect(panel).toBeVisible();
     if (begun) {

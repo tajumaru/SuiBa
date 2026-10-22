@@ -1,9 +1,11 @@
+import { abortable } from "../../../packages/shared/src/read-budget.ts";
 import { withReadBudget } from "../../../packages/shared/src/read-budget-node.ts";
 import {
   initialPaperSafety,
   recoverableReadFailure,
   paperRecoveryLimits,
   type PaperSafetyState,
+  type PaperRecoveryProof,
 } from "../../../packages/shared/src/paper-recovery.ts";
 import type { ApiFailure } from "../../../packages/shared/src/http-errors.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
@@ -49,6 +51,7 @@ export class OperationMonitor {
   private cycleFailed = false;
   private cycleGeneration = 0;
   private softFailureThisCycle = false;
+  private recoveryProofUsed = false;
   safety(): PaperSafetyState {
     return {
       ...initialPaperSafety(),
@@ -113,13 +116,20 @@ export class OperationMonitor {
     )
       this.stop("PAPER_RECOVERY_EXHAUSTED", now);
   }
-  ordersAllowed() {
-    const r = this.db.runtime();
+  ordersAllowed(generation?: number, now = Date.now()) {
+    const r = this.db.runtime(),
+      s = this.state();
     return (
       this.mode === "PAPER" &&
+      (generation == null || generation === this.safety().generation) &&
       r.running &&
       !r.error &&
       !r.emergency &&
+      this.fetchMono === null &&
+      s.lastMarketAt !== null &&
+      now - s.lastMarketAt <= monitoringLimits.marketDelayedMs &&
+      s.lastMarketClosedAt !== null &&
+      now - s.lastMarketClosedAt <= monitoringLimits.marketStaleMs &&
       this.safety().connectivity === "HEALTHY" &&
       !apiAccess.blocked()
     );
@@ -128,7 +138,7 @@ export class OperationMonitor {
   recoveryCycle(checks: { market: boolean; sui: boolean }, now = Date.now()) {
     const s = this.safety(),
       r = this.db.runtime();
-    if (s.connectivity === "HEALTHY") return false;
+    if (s.connectivity === "HEALTHY" || this.recoveryProofUsed) return false;
     this.checkRecoveryDeadline(now);
     // A failure or control action during this cycle invalidates its entire proof.
     if (
@@ -152,6 +162,7 @@ export class OperationMonitor {
       now - s.lastHealthyCycleAt < paperRecoveryLimits.minimumCycleSpacingMs
     )
       return false;
+    this.recoveryProofUsed = true;
     const count = s.healthyCycles + 1,
       first = s.firstHealthyAt ?? now;
     if (
@@ -183,7 +194,18 @@ export class OperationMonitor {
     });
     if (resume) {
       this.db.set("runtime", { ...this.db.runtime(), running: true });
-      this.transition("PAPER_NETWORK_RECOVERED", now);
+      this.transition("PAPER_NETWORK_RECOVERED", now, undefined, {
+        mode: "PAPER",
+        healthyCycles: count,
+        firstHealthyAt: first,
+        lastFailureAt: s.lastFailureAt!,
+        confirmedAt: now,
+        generation: s.generation,
+        marketHealthy: true,
+        suiHealthy: true,
+        ledgerHealthy: true,
+        backoff: false,
+      });
     }
     return resume;
   }
@@ -235,6 +257,7 @@ export class OperationMonitor {
     now = Date.now(),
     fatal = false,
     details?: MarketStallDetails,
+    recoveryProof?: PaperRecoveryProof,
   ) {
     this.db.append(
       "operation_events",
@@ -245,6 +268,7 @@ export class OperationMonitor {
         code: code(reason),
         fatal,
         ...(details ? { details } : {}),
+        ...(recoveryProof ? { recoveryProof } : {}),
       } satisfies OperationEvent,
       now,
     );
@@ -274,7 +298,12 @@ export class OperationMonitor {
     this.db.interruptPending(now);
     this.event("BOOT", "PROCESS_RESTART_STOPPED", now);
   }
-  transition(reason: string, now = Date.now(), details?: MarketStallDetails) {
+  transition(
+    reason: string,
+    now = Date.now(),
+    details?: MarketStallDetails,
+    recoveryProof?: PaperRecoveryProof,
+  ) {
     if (
       [
         "MANUAL_STOP",
@@ -307,12 +336,15 @@ export class OperationMonitor {
       now,
       false,
       details,
+      recoveryProof,
     );
   }
   beginCycle() {
     this.cycleFailed = false;
     this.softFailureThisCycle = false;
+    this.recoveryProofUsed = false;
     this.cycleGeneration = this.safety().generation;
+    return this.cycleGeneration;
   }
   scheduled(at: number | null, reason: string | null = null) {
     this.update({ nextFetchAt: at, nextFetchReason: reason });
@@ -321,6 +353,7 @@ export class OperationMonitor {
     this.update({ lastAnalysisAt: now });
   }
   apiFailure(failure: ApiFailure) {
+    this.db.set("latest_api_failure", failure);
     this.db.append(
       "operation_events",
       randomUUID(),
@@ -354,7 +387,7 @@ export class OperationMonitor {
         withReadBudget(
           controller.signal,
           this.safety().connectivity !== "HEALTHY",
-          fn,
+          () => abortable(fn(), controller.signal),
         ),
       );
       controller.signal.throwIfAborted();
@@ -751,8 +784,13 @@ export class OperationMonitor {
         apiAccess
           .snapshot(now)
           .flatMap((a) => (a.lastFailure ? [a.lastFailure] : []))
+          .concat(
+            this.db.get<ApiFailure>("latest_api_failure") ??
+              this.safety().latestFailure ??
+              [],
+          )
           .sort((a, b) => b.occurredAt - a.occurredAt)[0] ?? null,
-      ordersAllowed: this.ordersAllowed(),
+      ordersAllowed: this.ordersAllowed(undefined, now),
       limits: paperRecoveryLimits,
     };
   }

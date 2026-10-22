@@ -79,7 +79,7 @@ export class BotEngine {
     let measuredFrames: Record<number, Candle[]> = {},
       measuredAction: string | null = null,
       measuredError: string | null = null;
-    this.monitor.beginCycle();
+    const cycleToken = this.monitor.beginCycle();
     try {
       const now = Date.now();
       const recovering = this.monitor.safety().connectivity !== "HEALTHY";
@@ -134,7 +134,10 @@ export class BotEngine {
           status.healthy &&
           !status.fallback &&
           [300, 900, 3600].every(
-            (tf) => qualities?.[tf] && qualities[tf].unresolved === 0,
+            (tf) =>
+              qualities?.[tf] &&
+              qualities[tf].unresolved === 0 &&
+              qualities[tf].fetchedAt >= began,
           ) &&
           status.bookAt != null &&
           Date.now() - status.bookAt <= 10000 &&
@@ -218,7 +221,7 @@ export class BotEngine {
       }
       if (
         recoveryTransition ||
-        !this.monitor.ordersAllowed() ||
+        !this.monitor.ordersAllowed(cycleToken) ||
         !runtime.running ||
         runtime.emergency ||
         runtime.error ||
@@ -313,7 +316,7 @@ export class BotEngine {
       const fresh = Date.now();
       const executionSettings = this.db.settings();
       const costs = paperCosts(q, executionSettings);
-      const profit =
+      const profitAt = (at: number) =>
         side === "SELL"
           ? evaluateSell({
               position: positionOf(p),
@@ -321,7 +324,7 @@ export class BotEngine {
               costs,
               purpose: decision.sellPurpose ?? "TAKE_PROFIT",
               config: profitConfigOf(executionSettings),
-              now: fresh,
+              now: at,
             })
           : evaluateBuy({
               buyQuote: q,
@@ -336,7 +339,7 @@ export class BotEngine {
                     source: "PAPER_MODEL",
                   },
               config: profitConfigOf(executionSettings),
-              now: fresh,
+              now: at,
               maxExitUsdc: String(executionSettings.maxOrder),
               strategyTargetPrice: strategyExitPrice(
                 positionOf(p),
@@ -345,6 +348,7 @@ export class BotEngine {
                 executionSettings.takeProfitPct,
               ),
             });
+      const profit = profitAt(fresh);
       this.db.recordProfit(profit, decision);
       Object.assign(audit, {
         timestamp: fresh,
@@ -454,7 +458,7 @@ export class BotEngine {
       const executionNow = Date.now();
       const finalRuntime = this.db.runtime();
       if (
-        !this.monitor.ordersAllowed() ||
+        !this.monitor.ordersAllowed(cycleToken) ||
         !finalRuntime.running ||
         finalRuntime.emergency ||
         finalRuntime.error
@@ -480,6 +484,38 @@ export class BotEngine {
       )
         throw new Error("QUOTE_EXPIRED");
       this.market.assertReady?.(executionNow);
+      if (!this.monitor.ledger().ok)
+        throw new Error("PAPER_RECONCILIATION_FAILED");
+      const contextChanged =
+        JSON.stringify(this.db.settings()) !==
+          JSON.stringify(executionSettings) ||
+        JSON.stringify(this.db.portfolio()) !== JSON.stringify(p);
+      const finalProfit = profitAt(executionNow);
+      const finalReasons = assessRisk({
+        side,
+        quote: q,
+        portfolio: this.db.portfolio(),
+        runtime: this.db.runtime(),
+        settings: this.db.settings(),
+        price,
+        marketClosedAt: (last.timestamp + 300) * 1000,
+        now: executionNow,
+        duplicate: this.db.hasOrder(id),
+        pending: 0,
+      });
+      if (contextChanged) finalReasons.push("EXECUTION_CONTEXT_CHANGED");
+      if (!finalProfit.allowed)
+        finalReasons.push("PROFIT_GUARD_" + finalProfit.reason);
+      if (finalReasons.length) {
+        this.monitor.finishCandidate({
+          ...audit,
+          finalAction: "WAIT",
+          reasons: finalReasons,
+          risk: { status: "REJECTED", reasons: finalReasons },
+        });
+        this.reject(id, finalReasons, decision, executionNow, last.timestamp);
+        return;
+      }
       const fill = this.paper.fill(
         id,
         side,

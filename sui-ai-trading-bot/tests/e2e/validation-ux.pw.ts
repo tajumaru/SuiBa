@@ -15,6 +15,7 @@ for (const scenario of scenarios)
     await page.getByLabel("管理トークン").fill("test-only-no-real-token");
     await page.getByRole("button", { name: "接続", exact: true }).click();
     await page.getByRole("button", { name: "運用検証", exact: true }).click();
+    await page.locator("#operation-diagnostics > summary").click();
     const panel = page.getByRole("region", { name: "DeepBook 24時間検証" });
     await expect(panel).toBeVisible();
     await expect(panel.getByRole("article")).toHaveCount(4);
@@ -84,6 +85,7 @@ for (const scenario of scenarios)
       await page.getByLabel("管理トークン").fill("test-only-no-real-token");
       await page.getByRole("button", { name: "接続", exact: true }).click();
       await page.getByRole("button", { name: "運用検証", exact: true }).click();
+      await page.locator("#operation-diagnostics > summary").click();
       await expect(panel.getByRole("progressbar")).toHaveAttribute(
         "value",
         value!,
@@ -132,6 +134,7 @@ for (const kind of ["running-before-begin", "stale-display"] as const)
     await page.getByLabel("管理トークン").fill("test-only-no-real-token");
     await page.getByRole("button", { name: "接続", exact: true }).click();
     await page.getByRole("button", { name: "運用検証", exact: true }).click();
+    await page.locator("#operation-diagnostics > summary").click();
     const panel = page.getByRole("region", { name: "DeepBook 24時間検証" });
     await expect(panel).toBeVisible();
     if (kind === "running-before-begin") {

@@ -16,6 +16,10 @@ it("aborts an active read at the total deadline", async () => {
   const a = new ApiAccess(),
     c = new AbortController();
   let ended = false;
+  let failures = 0;
+  a.onAttempt = (e) => {
+    if (!e.success) failures++;
+  };
   const pending = withReadBudget(c.signal, true, () =>
     a.run(
       "read",
@@ -37,6 +41,7 @@ it("aborts an active read at the total deadline", async () => {
   c.abort(new Error("MARKET_DATA_STALLED"));
   await expect(pending).rejects.toThrow("MARKET_DATA_STALLED");
   expect(ended).toBe(true);
+  expect(failures).toBe(1);
   expect(a.snapshot().find((v) => v.api === "read")?.active).toBe(false);
 });
 it("aborts retry waiting without starting another attempt", async () => {
@@ -80,6 +85,12 @@ it("cancels queued work without aborting the independent active request", async 
   c.abort(new Error("MARKET_DATA_STALLED"));
   await expect(queued).rejects.toThrow("MARKET_DATA_STALLED");
   expect(calls).toBe(0);
+  const next = a.run("read", "third", async () => ++calls);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(calls).toBe(0);
   release();
   await active;
+  await next;
+  expect(calls).toBe(1);
 });

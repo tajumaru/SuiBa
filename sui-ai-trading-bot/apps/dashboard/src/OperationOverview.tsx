@@ -1,5 +1,6 @@
 import React from "react";
-import type { OperationsSnapshot } from "./OperationsPanel.tsx";
+import type { OperationMonitor } from "../../worker/src/operations.ts";
+type OperationsSnapshot = ReturnType<OperationMonitor["snapshot"]>;
 import { operationReason } from "./operationLabels.ts";
 export function operationSummary(d: OperationsSnapshot, stale = false) {
   const s = d.safety;

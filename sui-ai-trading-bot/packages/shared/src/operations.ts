@@ -1,4 +1,5 @@
 import type { ApiFailure } from "./http-errors.ts";
+import type { PaperRecoveryProof } from "./paper-recovery.ts";
 export interface CandidateAudit {
   id: string;
   orderId: string;
@@ -55,6 +56,7 @@ export interface OperationEvent {
   fatal?: boolean;
   details?: MarketStallDetails;
   apiFailure?: ApiFailure;
+  recoveryProof?: PaperRecoveryProof;
 }
 export interface OperationState {
   lastFetchAttemptAt?: number | null;

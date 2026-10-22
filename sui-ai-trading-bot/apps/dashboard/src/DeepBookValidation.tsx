@@ -413,7 +413,8 @@ export function DeepBookValidation({
               {report.paper?.pnlUsdc == null
                 ? "未評価"
                 : number(report.paper.pnlUsdc) + " USDC"}{" "}
-              ／ 手動再開：{count(report.paper?.manualResumes)}
+              ／ 手動再開：{count(report.paper?.manualResumes)}／
+              安全確認付き復旧：{count(report.paper?.guardedRecoveries)}
             </p>
             <p>
               安全停止：{count(report.paper?.safetyStops.length)}件 ／

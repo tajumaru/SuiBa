@@ -45,7 +45,7 @@ export function validationMarkdown(r: ValidationReport): string {
     "```",
     "## AI・PAPER",
     `分析 ${p.analyses} / BUY ${p.actions.BUY} / SELL ${p.actions.SELL} / WAIT ${p.actions.WAIT} / PAPER注文記録 ${p.orderRequests}（拒否 ${p.rejectedOrders}） / 約定 ${p.orders} / 損益 ${p.pnlUsdc ?? "未評価"} USDC`,
-    `安全停止 ${p.safetyStops.length} / 手動開始 ${p.manualStarts} / 手動再開 ${p.manualResumes} / 再起動 ${p.restarts}`,
+    `安全停止 ${p.safetyStops.length} / 手動開始 ${p.manualStarts} / 手動再開 ${p.manualResumes} / 安全確認付き復旧 ${p.guardedRecoveries ?? 0} / 再起動 ${p.restarts}`,
     `不正約定証拠 ${p.unsafeFills} / 証拠不足 ${p.missingFillEvidence} / 自動再開違反 ${p.unauthorizedRuns}`,
     `約定時安全経路の実行: ${p.fillChecksExercised ? "あり" : "未行使"} / API異常時停止経路の実行: ${p.errorStopChecksExercised ? "あり" : "未行使"}`,
     "安全停止履歴:",
