@@ -1,0 +1,586 @@
+{
+  "start": 1792750969971,
+  "end": 1792758261660,
+  "durationMs": 7291689,
+  "observer": {
+    "kind": "observer",
+    "at": 1792750968654,
+    "node": "v24.22.1",
+    "sha": "8b05f2a6864e2891259b8a934b0063be9ec337b3",
+    "image": "sha256:a3722496cd4529df8cd50aab7ca84ae2892312f3321f00b03330e4111ec30b85",
+    "lockSha256": "018af17282416ae1aa6bcbd9f97e6626f45957bd32ed96a3c0583b8773362816",
+    "observerSha256": "c1f91da5ca8b199406999f270b1829b34b69ef8596ad7e41409e55565f0ecbf4"
+  },
+  "apis": {
+    "DeepBook Indexer": {
+      "attempts": 797,
+      "success": 796,
+      "failed": 1,
+      "successRate": 0.998745294855709,
+      "retries": 1,
+      "maxConsecutiveFailures": 1,
+      "latencyMs": {
+        "n": 797,
+        "p50": 269,
+        "p95": 1185,
+        "p99": 6064,
+        "max": 8003
+      },
+      "successLatencyMs": {
+        "n": 796,
+        "p50": 269,
+        "p95": 1172,
+        "p99": 4685,
+        "max": 7943
+      },
+      "failureCodes": {
+        "UPSTREAM_TIMEOUT": 1
+      },
+      "failurePhases": {
+        "HEADERS_OR_CONNECT": 1
+      },
+      "failures": [
+        {
+          "api": "DeepBook Indexer",
+          "success": false,
+          "code": "UPSTREAM_TIMEOUT",
+          "latencyMs": 8003,
+          "attempt": 0,
+          "occurredAt": 1792754717763,
+          "failure": {
+            "api": "DeepBook Indexer",
+            "host": "deepbook-indexer.mainnet.mystenlabs.com",
+            "operation": "MARKET_STATUS",
+            "method": "GET",
+            "code": "UPSTREAM_TIMEOUT",
+            "causeCode": null,
+            "phase": "HEADERS_OR_CONNECT",
+            "status": null,
+            "elapsedMs": 8002,
+            "occurredAt": 1792754717763,
+            "startedAt": 1792754709765,
+            "endedAt": 1792754717763,
+            "retryCount": 0,
+            "lastSuccessAt": 1792754650830,
+            "lastApiSuccessAt": 1792754652199,
+            "timeoutType": "HEADERS_OR_CONNECT",
+            "transportTimings": {
+              "totalMs": 8001,
+              "reusedConnection": true
+            }
+          },
+          "recoveredAt": 1792754726621,
+          "priorCycleAt": 1792754652381,
+          "nextSuccessfulCycleAt": 1792754729002
+        }
+      ]
+    },
+    "Sui gRPC": {
+      "attempts": 98,
+      "success": 93,
+      "failed": 5,
+      "successRate": 0.9489795918367347,
+      "retries": 0,
+      "maxConsecutiveFailures": 2,
+      "latencyMs": {
+        "n": 98,
+        "p50": 360,
+        "p95": 8015,
+        "p99": 10006,
+        "max": 10006
+      },
+      "successLatencyMs": {
+        "n": 93,
+        "p50": 348,
+        "p95": 2817,
+        "p99": 9800,
+        "max": 9800
+      },
+      "failureCodes": {
+        "UPSTREAM_DNS_FAILED": 2,
+        "UPSTREAM_TIMEOUT": 3
+      },
+      "failurePhases": {
+        "DNS": 2,
+        "HEADERS_OR_CONNECT": 3
+      },
+      "failures": [
+        {
+          "api": "Sui gRPC",
+          "success": false,
+          "code": "UPSTREAM_TIMEOUT",
+          "latencyMs": 10006,
+          "attempt": 0,
+          "occurredAt": 1792751300026,
+          "failure": {
+            "api": "Sui gRPC",
+            "host": "fullnode.mainnet.sui.io",
+            "operation": "SUI_GRPC_READ",
+            "method": "POST",
+            "code": "UPSTREAM_TIMEOUT",
+            "causeCode": null,
+            "phase": "HEADERS_OR_CONNECT",
+            "status": null,
+            "elapsedMs": 10005,
+            "occurredAt": 1792751300025,
+            "startedAt": 1792751290023,
+            "endedAt": 1792751300025,
+            "retryCount": 0,
+            "lastSuccessAt": 1792751110567,
+            "lastApiSuccessAt": 1792751110567,
+            "timeoutType": "HEADERS_OR_CONNECT"
+          },
+          "recoveredAt": 1792751302867,
+          "priorCycleAt": 1792751239355,
+          "nextSuccessfulCycleAt": 1792751366871
+        },
+        {
+          "api": "Sui gRPC",
+          "success": false,
+          "code": "UPSTREAM_TIMEOUT",
+          "latencyMs": 10003,
+          "attempt": 0,
+          "occurredAt": 1792752919892,
+          "failure": {
+            "api": "Sui gRPC",
+            "host": "fullnode.mainnet.sui.io",
+            "operation": "SUI_GRPC_READ",
+            "method": "POST",
+            "code": "UPSTREAM_TIMEOUT",
+            "causeCode": null,
+            "phase": "HEADERS_OR_CONNECT",
+            "status": null,
+            "elapsedMs": 10002,
+            "occurredAt": 1792752919891,
+            "startedAt": 1792752909892,
+            "endedAt": 1792752919891,
+            "retryCount": 0,
+            "lastSuccessAt": 1792752730503,
+            "lastApiSuccessAt": 1792752730504,
+            "timeoutType": "HEADERS_OR_CONNECT"
+          },
+          "recoveredAt": 1792752920802,
+          "priorCycleAt": 1792752851786,
+          "nextSuccessfulCycleAt": 1792752943649
+        },
+        {
+          "api": "Sui gRPC",
+          "success": false,
+          "code": "UPSTREAM_DNS_FAILED",
+          "latencyMs": 8015,
+          "attempt": 0,
+          "occurredAt": 1792755377670,
+          "failure": {
+            "api": "Sui gRPC",
+            "host": "fullnode.mainnet.sui.io",
+            "operation": "SUI_GRPC_READ",
+            "method": "POST",
+            "code": "UPSTREAM_DNS_FAILED",
+            "causeCode": "EAI_AGAIN",
+            "phase": "DNS",
+            "status": null,
+            "elapsedMs": 8014,
+            "occurredAt": 1792755377670,
+            "startedAt": 1792755369659,
+            "endedAt": 1792755377670,
+            "retryCount": 0,
+            "lastSuccessAt": 1792755190385,
+            "lastApiSuccessAt": 1792755190385,
+            "timeoutType": null
+          },
+          "recoveredAt": 1792755431042,
+          "priorCycleAt": 1792755313089,
+          "nextSuccessfulCycleAt": 1792755433964
+        },
+        {
+          "api": "Sui gRPC",
+          "success": false,
+          "code": "UPSTREAM_DNS_FAILED",
+          "latencyMs": 8009,
+          "attempt": 0,
+          "occurredAt": 1792755385714,
+          "failure": {
+            "api": "Sui gRPC",
+            "host": "fullnode.mainnet.sui.io",
+            "operation": "SUI_GRPC_READ",
+            "method": "POST",
+            "code": "UPSTREAM_DNS_FAILED",
+            "causeCode": "EAI_AGAIN",
+            "phase": "DNS",
+            "status": null,
+            "elapsedMs": 8009,
+            "occurredAt": 1792755385714,
+            "startedAt": 1792755377705,
+            "endedAt": 1792755385714,
+            "retryCount": 0,
+            "lastSuccessAt": 1792755190385,
+            "lastApiSuccessAt": 1792755190385,
+            "timeoutType": null
+          },
+          "recoveredAt": 1792755431042,
+          "priorCycleAt": 1792755313089,
+          "nextSuccessfulCycleAt": 1792755433964
+        },
+        {
+          "api": "Sui gRPC",
+          "success": false,
+          "code": "UPSTREAM_TIMEOUT",
+          "latencyMs": 10004,
+          "attempt": 0,
+          "occurredAt": 1792758259378,
+          "failure": {
+            "api": "Sui gRPC",
+            "host": "fullnode.mainnet.sui.io",
+            "operation": "SUI_GRPC_READ",
+            "method": "POST",
+            "code": "UPSTREAM_TIMEOUT",
+            "causeCode": null,
+            "phase": "HEADERS_OR_CONNECT",
+            "status": null,
+            "elapsedMs": 10002,
+            "occurredAt": 1792758259377,
+            "startedAt": 1792758249378,
+            "endedAt": 1792758259377,
+            "retryCount": 0,
+            "lastSuccessAt": 1792758069906,
+            "lastApiSuccessAt": 1792758069906,
+            "timeoutType": "HEADERS_OR_CONNECT"
+          },
+          "recoveredAt": 1792758261187,
+          "priorCycleAt": 1792758191078,
+          "nextSuccessfulCycleAt": null
+        }
+      ]
+    }
+  },
+  "cycles": {
+    "count": 124,
+    "success": 120,
+    "failed": 4,
+    "successRate": 0.967741935483871,
+    "errors": {
+      "SUI_READ_FAILED": 4
+    },
+    "latencyMs": {
+      "n": 124,
+      "p50": 2766,
+      "p95": 14598,
+      "p99": 20184,
+      "max": 21262
+    },
+    "starts": 124,
+    "ends": 124,
+    "missingAuditEnd": [],
+    "extraAuditEnd": [],
+    "suiHealthSuccessWithoutActualAttempt": 75,
+    "auditStartPhases": {
+      "START": 124
+    },
+    "actions": {
+      "NOT_EVALUATED": 4,
+      "WAIT": 120
+    }
+  },
+  "frames": {
+    "300": {
+      "observations": 120,
+      "qualityObservations": 120,
+      "continuityProblems": [],
+      "latestCycleAt": 1792758191078,
+      "latestCount": 1001,
+      "latestClosedAt": 1792758000000,
+      "ageAtEndMs": 261660,
+      "latestQuality": {
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792758190182,
+        "timeframe": 300,
+        "missing": 2,
+        "reconstructed": 2,
+        "unresolved": 0,
+        "unresolvedTimestamps": [],
+        "latestClosedAt": 1792758000000,
+        "origins": {
+          "ORIGINAL": 999,
+          "ONE_MINUTE_AGGREGATE": 0,
+          "NO_INDEXED_TRADES": 2
+        },
+        "originalCount": 999,
+        "gapTimestamps": [
+          1792724700,
+          1792726500
+        ],
+        "reconstructionMs": 4
+      },
+      "gapTimestamps": [
+        1792456800,
+        1792724700,
+        1792726500
+      ],
+      "repaired": [
+        {
+          "timestamp": 1792456800,
+          "provenance": {
+            "origin": "NO_INDEXED_TRADES",
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792754592319,
+            "timeframe": 300,
+            "evidence": [
+              "/trades/SUI_USDC?start_time=1792456800&end_time=1792457100&limit=1000",
+              "order_fill.indexedThrough:1792754588250",
+              "complete-empty-response; independent-chain-audit:not-performed"
+            ]
+          }
+        },
+        {
+          "timestamp": 1792724700,
+          "provenance": {
+            "origin": "NO_INDEXED_TRADES",
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792754592538,
+            "timeframe": 300,
+            "evidence": [
+              "/trades/SUI_USDC?start_time=1792724700&end_time=1792725000&limit=1000",
+              "order_fill.indexedThrough:1792754588250",
+              "complete-empty-response; independent-chain-audit:not-performed"
+            ]
+          }
+        },
+        {
+          "timestamp": 1792726500,
+          "provenance": {
+            "origin": "NO_INDEXED_TRADES",
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1792754592754,
+            "timeframe": 300,
+            "evidence": [
+              "/trades/SUI_USDC?start_time=1792726500&end_time=1792726800&limit=1000",
+              "order_fill.indexedThrough:1792754588250",
+              "complete-empty-response; independent-chain-audit:not-performed"
+            ]
+          }
+        }
+      ],
+      "unresolvedObservations": 0,
+      "maxUnresolved": 0,
+      "reconstructionMs": {
+        "n": 120,
+        "p50": 3,
+        "p95": 309,
+        "p99": 2172,
+        "max": 2188
+      }
+    },
+    "900": {
+      "observations": 120,
+      "qualityObservations": 120,
+      "continuityProblems": [],
+      "latestCycleAt": 1792758191078,
+      "latestCount": 672,
+      "latestClosedAt": 1792757700000,
+      "ageAtEndMs": 561660,
+      "latestQuality": {
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792758190478,
+        "timeframe": 900,
+        "originalCount": 672,
+        "gapTimestamps": [],
+        "unresolvedTimestamps": [],
+        "reconstructionMs": 0,
+        "missing": 0,
+        "reconstructed": 0,
+        "unresolved": 0,
+        "latestClosedAt": 1792757700000,
+        "origins": {
+          "ORIGINAL": 672,
+          "ONE_MINUTE_AGGREGATE": 0,
+          "NO_INDEXED_TRADES": 0
+        }
+      },
+      "gapTimestamps": [],
+      "repaired": [],
+      "unresolvedObservations": 0,
+      "maxUnresolved": 0,
+      "reconstructionMs": {
+        "n": 120,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0
+      }
+    },
+    "3600": {
+      "observations": 120,
+      "qualityObservations": 120,
+      "continuityProblems": [],
+      "latestCycleAt": 1792758191078,
+      "latestCount": 168,
+      "latestClosedAt": 1792756800000,
+      "ageAtEndMs": 1461660,
+      "latestQuality": {
+        "upstream": "DeepBook Indexer",
+        "pair": "SUI_USDC",
+        "fetchedAt": 1792758190735,
+        "timeframe": 3600,
+        "originalCount": 168,
+        "gapTimestamps": [],
+        "unresolvedTimestamps": [],
+        "reconstructionMs": 0,
+        "missing": 0,
+        "reconstructed": 0,
+        "unresolved": 0,
+        "latestClosedAt": 1792756800000,
+        "origins": {
+          "ORIGINAL": 168,
+          "ONE_MINUTE_AGGREGATE": 0,
+          "NO_INDEXED_TRADES": 0
+        }
+      },
+      "gapTimestamps": [],
+      "repaired": [],
+      "unresolvedObservations": 0,
+      "maxUnresolved": 0,
+      "reconstructionMs": {
+        "n": 120,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0
+      }
+    }
+  },
+  "book": {
+    "cycleAgeMs": {
+      "n": 120,
+      "p50": 255,
+      "p95": 356,
+      "p99": 407,
+      "max": 452
+    },
+    "latestAcquisitionAgeMs": 221,
+    "latestSnapshotAgeAtEndMs": 70803,
+    "indexerLagMs": {
+      "n": 120,
+      "p50": 1000,
+      "p95": 2000,
+      "p99": 2000,
+      "max": 2000
+    }
+  },
+  "safety": {
+    "sampleCount": 487,
+    "maxSampleGapMs": 15025,
+    "runningSamples": 0,
+    "resumePendingSamples": 0,
+    "nonzeroOrderSamples": 0,
+    "buildVariants": [
+      {
+        "declaredSha": "8b05f2a6864e2891259b8a934b0063be9ec337b3",
+        "declaredImage": "sha256:a3722496cd4529df8cd50aab7ca84ae2892312f3321f00b03330e4111ec30b85",
+        "node": "v24.22.1",
+        "lockSha256": "018af17282416ae1aa6bcbd9f97e6626f45957bd32ed96a3c0583b8773362816"
+      }
+    ],
+    "settingsHashes": [
+      "80a3fcb63a125a50ec788ad87fbb79cf13095f49d3087dcfc97592a7ef8b3c2d"
+    ],
+    "integrityBad": 0,
+    "integrityChecks": 122,
+    "integrityFaults": 0,
+    "sessionSamples": 0,
+    "profitGuardOff": 0,
+    "startPortfolio": {
+      "usdc": 100,
+      "sui": 0,
+      "costBasis": 0,
+      "realized": 0,
+      "fees": 0,
+      "initialEquity": 100,
+      "day": "2026-10-23",
+      "dayStartEquity": 100,
+      "dailyBought": 0
+    },
+    "endPortfolio": {
+      "usdc": 100,
+      "sui": 0,
+      "costBasis": 0,
+      "realized": 0,
+      "fees": 0,
+      "initialEquity": 100,
+      "day": "2026-10-23",
+      "dayStartEquity": 100,
+      "dailyBought": 0
+    },
+    "controls": [],
+    "allEventCodes": {
+      "HEALTH_SUI_READ_FAILED": 4,
+      "MARKET_SUI_READ_FAILED": 4,
+      "PROCESS_RESTART_STOPPED": 1,
+      "UPSTREAM_DNS_FAILED": 2,
+      "UPSTREAM_TIMEOUT": 4
+    },
+    "finalLedger": {
+      "ok": true,
+      "reasons": [],
+      "expectedGasUsdc": "0",
+      "actualGasUsdc": "0",
+      "verifiedFills": 0,
+      "legacyFills": 0
+    },
+    "finalIntegrity": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "finalTables": {
+      "cycle_audits": 248,
+      "operation_events": 15,
+      "paper_orders": 0,
+      "paper_trades": 0,
+      "paper_checks": 0,
+      "operation_candidates": 0,
+      "bot_settings": 0,
+      "strategy_decisions": 120,
+      "risk_events": 4,
+      "validation_events": 0
+    },
+    "finalRuntime": {
+      "running": false,
+      "emergency": false,
+      "error": null,
+      "lastCandle": null
+    },
+    "runningCycleEvidence": 0,
+    "runningAuditEvidence": 0,
+    "invalidStoredCandles": 0
+  },
+  "checks": {
+    "twoHours": true,
+    "deepbookMinAttempts": true,
+    "suiMinAttempts": false,
+    "deepbookSuccess": true,
+    "suiSuccess": false,
+    "cycleSuccess": false,
+    "allFramesCurrent": true,
+    "bookFreshAtAcquisition": true,
+    "indexerFresh": true,
+    "safety": true,
+    "integrity": true,
+    "evidenceComplete": true,
+    "fixedBuild": true,
+    "reconstructionWithinBudget": true,
+    "bookFreshAtEnd": false,
+    "latestCycleSucceeded": false
+  },
+  "verdict": "INCONCLUSIVE",
+  "evidence": {
+    "fileSha256": "fd22a73695a3a4e9a707c87cc84049290513db28d6c574b9b0fb69bc156769a4",
+    "rows": 1508,
+    "auditSha256": "fa50b0ecffaa236281a28225e219e4abbd7cd55fad100065a87892190dfd4798",
+    "inspectionSha256": "ed62a8c397b1d65a30668e992d89f334f013760443f7804dceaca9fa20484938"
+  }
+}
