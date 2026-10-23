@@ -1,0 +1,8 @@
+{
+  "endpoint": "https://fullnode.mainnet.sui.io:443",
+  "operation": "metadata",
+  "coinType": "0x2::sui::SUI",
+  "pairs": 30,
+  "intervalMs": 5000,
+  "timeoutMs": 10000
+}

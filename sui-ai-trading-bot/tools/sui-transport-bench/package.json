@@ -1,0 +1,13 @@
+{
+  "name": "suiba-isolated-sui-transport-bench",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test bench.test.mjs"
+  },
+  "dependencies": {
+    "@mysten/sui": "2.37.0",
+    "@protobuf-ts/grpc-transport": "2.11.1",
+    "@grpc/grpc-js": "1.14.6"
+  }
+}

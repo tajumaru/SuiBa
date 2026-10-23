@@ -1,0 +1,36 @@
+{
+  "web": {
+    "count": 1,
+    "success": 1,
+    "successRate": 1,
+    "successfulLatencyMs": {
+      "p50": 391.87789999999995,
+      "p95": 391.87789999999995,
+      "p99": 391.87789999999995
+    },
+    "allLatencyMs": {
+      "p50": 391.87789999999995,
+      "p95": 391.87789999999995,
+      "p99": 391.87789999999995
+    },
+    "p99IsExploratory": true,
+    "recoveryTimeMs": null
+  },
+  "native": {
+    "count": 2,
+    "success": 1,
+    "successRate": 0.5,
+    "successfulLatencyMs": {
+      "p50": 1207.9222,
+      "p95": 1207.9222,
+      "p99": 1207.9222
+    },
+    "allLatencyMs": {
+      "p50": 1207.9222,
+      "p95": 10012.328099999999,
+      "p99": 10012.328099999999
+    },
+    "p99IsExploratory": true,
+    "recoveryTimeMs": null
+  }
+}
