@@ -1063,3 +1063,158 @@ footer {
 .validation-control dialog::backdrop {
   background: rgb(0 0 0 / 75%);
 }
+
+/* Bot vital signs (heartbeat) in the operation summary */
+.bot-vital {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 18px;
+  padding: 14px 18px;
+  background: #141d24;
+  border: 1px solid #344e65;
+  border-radius: 12px;
+}
+.bot-vital-heart {
+  position: relative;
+  flex: none;
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+}
+.bot-vital-ring {
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  opacity: 0;
+  animation-name: bot-vital-ring;
+  animation-timing-function: ease-out;
+  animation-iteration-count: infinite;
+}
+.bot-vital-heart-icon {
+  width: 42px;
+  height: 42px;
+  fill: currentColor;
+}
+.bot-vital.alive {
+  color: #f77d8f;
+}
+.bot-vital.alive .bot-vital-heart-icon {
+  animation-name: bot-heartbeat;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  filter: drop-shadow(0 0 7px rgb(247 125 143 / 55%));
+}
+.bot-vital.weak {
+  color: #edc980;
+}
+.bot-vital.weak .bot-vital-heart-icon {
+  animation-name: bot-heartbeat;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+.bot-vital.sleeping {
+  color: #5f7484;
+}
+.bot-vital.flatlined {
+  color: #96505c;
+}
+.bot-vital.unknown {
+  color: #5f7484;
+}
+@keyframes bot-heartbeat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  14% {
+    transform: scale(1.18);
+  }
+  28% {
+    transform: scale(1.02);
+  }
+  42% {
+    transform: scale(1.12);
+  }
+  56% {
+    transform: scale(1);
+  }
+}
+@keyframes bot-vital-ring {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.75;
+  }
+  70%,
+  100% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+}
+.bot-vital-ecg {
+  flex: 1 1 220px;
+  height: 48px;
+  min-width: 150px;
+}
+.bot-vital-ecg path {
+  fill: none;
+  stroke: #43dfb2;
+  stroke-width: 2;
+}
+.bot-vital.weak .bot-vital-ecg path {
+  stroke: #edc980;
+}
+.bot-ecg-flat {
+  stroke: #5f7484;
+  stroke-width: 2;
+  stroke-dasharray: 5 6;
+}
+.bot-ecg-wave {
+  animation-name: bot-ecg-scroll;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+.bot-ecg-wave.flowing {
+  animation-duration: 1.5s;
+}
+.bot-ecg-wave.slow {
+  animation-duration: 3.5s;
+}
+@keyframes bot-ecg-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-150px);
+  }
+}
+.bot-vital-readout {
+  flex: none;
+  min-width: 170px;
+}
+.bot-vital-readout strong {
+  display: block;
+  font-size: 16px;
+  color: #dce8f0;
+}
+.bot-vital-readout small {
+  margin-top: 5px;
+}
+@media (max-width: 700px) {
+  .bot-vital {
+    flex-wrap: wrap;
+  }
+  .bot-vital-ecg {
+    order: 3;
+    flex-basis: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bot-vital *,
+  .bot-vital *::before,
+  .bot-vital *::after {
+    animation: none !important;
+  }
+}

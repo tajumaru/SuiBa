@@ -2,6 +2,7 @@ import React from "react";
 import type { OperationMonitor } from "../../worker/src/operations.ts";
 type OperationsSnapshot = ReturnType<OperationMonitor["snapshot"]>;
 import { operationReason } from "./operationLabels.ts";
+import { BotVitalSigns } from "./BotVitalSigns.tsx";
 export function operationSummary(d: OperationsSnapshot, stale = false) {
   const s = d.safety;
   if (stale)
@@ -80,6 +81,7 @@ export function OperationSummary({
         {v.title}
       </h2>
       <p>{v.message}</p>
+      <BotVitalSigns data={data} stale={stale} />
     </section>
   );
 }
