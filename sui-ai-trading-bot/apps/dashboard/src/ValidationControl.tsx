@@ -162,8 +162,11 @@ export function ValidationControl({
                 ? view?.action
                 : readiness.status !== "GO"
                   ? `開始禁止：${readiness.reason} 画面内で承認を変更することはできません。`
-                  : (view?.action ??
-                    "検証専用環境と接続状態を確認してください。")}
+                  : !data.validation
+                    ? "検証専用環境と接続状態を確認してください。"
+                    : data.validation.session
+                      ? "ステップ2でPAPER Botを手動で開始してください。開始できない場合はボタン直下の理由を確認してください。"
+                      : "ステップ1で24時間計測を開始し、開始日時を確認してからステップ2へ進んでください。"}
       </p>
       {!!data.validation?.session && !v.running && !view?.complete && (
         <p className="control-warning" role="alert">
@@ -180,24 +183,30 @@ export function ValidationControl({
       <ol className="control-steps">
         <li>
           <h3>24時間の記録を開始</h3>
-          <p>
-            Botを停止し、Profit
-            Guardと事前承認を確認します。この操作ではBotは動きません。
-          </p>
-          <button
-            className="control-primary"
-            disabled={blocked || !!v.measureReasons.length}
-            aria-describedby="measure-reasons"
-            onClick={() => setPending("measure")}
-          >
-            {labels.measure}
-          </button>
-          <div id="measure-reasons">
-            {v.measureReasons.map((r) => (
-              <p key={r}>{r}</p>
-            ))}
-            {!api && <p>操作APIに接続できません。</p>}
-          </div>
+          {data.validation?.session ? (
+            <p>✓ 計測は開始済みです。開始日時と進捗は下に表示しています。</p>
+          ) : (
+            <>
+              <p>
+                Botを停止し、Profit
+                Guardと事前承認を確認します。この操作ではBotは動きません。
+              </p>
+              <button
+                className="control-primary"
+                disabled={blocked || !!v.measureReasons.length}
+                aria-describedby="measure-reasons"
+                onClick={() => setPending("measure")}
+              >
+                {labels.measure}
+              </button>
+              <div id="measure-reasons">
+                {v.measureReasons.map((r) => (
+                  <p key={r}>{r}</p>
+                ))}
+                {!api && <p>操作APIに接続できません。</p>}
+              </div>
+            </>
+          )}
         </li>
         <li>
           <h3>PAPER Botを手動で開始</h3>
