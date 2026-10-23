@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import type { OperationMonitor } from "../../worker/src/operations.ts";
 type OperationsSnapshot = ReturnType<OperationMonitor["snapshot"]>;
 import { operationReason } from "./operationLabels.ts";
 import { BotVitalSigns } from "./BotVitalSigns.tsx";
+import { botVital } from "./botVital.ts";
 export function operationSummary(d: OperationsSnapshot, stale = false) {
   const s = d.safety;
   if (stale)
@@ -20,6 +21,17 @@ export function operationSummary(d: OperationsSnapshot, stale = false) {
       tone: "error",
       message: operationReason(d.stopReason ?? s?.lastStopReason ?? "UNKNOWN"),
     };
+  // The bot's own run state outranks connectivity: a stopped bot is
+  // reported as stopped even while the network is recovering or degraded.
+  // Connectivity is still shown in the detailed diagnostics.
+  if (d.status === "STOPPED")
+    return {
+      title: s?.botState === "MANUAL_STOP" ? "手動停止" : "停止中・理由未確定",
+      tone: "stopped",
+      message: d.stopReason
+        ? operationReason(d.stopReason)
+        : "Botは停止しています。停止理由の記録とPAPER開始条件を確認してください。",
+    };
   if (s?.connectivity === "RECOVERING")
     return {
       title: "復旧確認中",
@@ -33,14 +45,6 @@ export function operationSummary(d: OperationsSnapshot, stale = false) {
       tone: "warning",
       message:
         "通信または市場データを確認してください。売買可能とは限りません。",
-    };
-  if (d.status === "STOPPED")
-    return {
-      title: s?.botState === "MANUAL_STOP" ? "手動停止" : "停止中・理由未確定",
-      tone: "stopped",
-      message: d.stopReason
-        ? operationReason(d.stopReason)
-        : "Botは停止しています。停止理由の記録とPAPER開始条件を確認してください。",
     };
   if (
     d.status === "RUNNING" &&
@@ -67,7 +71,22 @@ export function OperationSummary({
   data: OperationsSnapshot;
   stale: boolean;
 }) {
-  const v = operationSummary(data, stale);
+  // Tick every second so ages and the next-fetch countdown stay live, and
+  // remember when this snapshot arrived. If the worker's heartbeat record
+  // or the snapshot itself ages past the freshness bounds, botVital
+  // downgrades the beating states and the summary follows it into
+  // 状態不明 — the hero can never keep claiming 正常稼働 on old evidence.
+  const [now, setNow] = useState(() => Date.now());
+  const [receivedAt, setReceivedAt] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  useEffect(() => {
+    setReceivedAt(Date.now());
+  }, [data]);
+  const vital = botVital(data, stale, now, receivedAt);
+  const v = operationSummary(data, stale || vital.evidenceStale);
   return (
     <section className={`operation-hero ${v.tone}`} aria-label="運用状態">
       <small className="operation-mode">
@@ -81,7 +100,7 @@ export function OperationSummary({
         {v.title}
       </h2>
       <p>{v.message}</p>
-      <BotVitalSigns data={data} stale={stale} />
+      <BotVitalSigns vital={vital} />
     </section>
   );
 }

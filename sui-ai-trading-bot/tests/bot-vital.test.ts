@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { OperationMonitor } from "../apps/worker/src/operations.ts";
-import { botVital } from "../apps/dashboard/src/botVital.ts";
+import {
+  botVital,
+  VITAL_FETCH_DEADLINE_MS,
+  VITAL_HEARTBEAT_FRESH_MS,
+  VITAL_RECEIPT_FRESH_MS,
+} from "../apps/dashboard/src/botVital.ts";
 import { operationSummary } from "../apps/dashboard/src/OperationOverview.tsx";
 
 const NOW = 1_800_000_000_000;
@@ -20,75 +25,263 @@ function healthy() {
   d.safety.ordersAllowed = true;
   d.timing.dataStatus = "FRESH";
   d.timing.transportRecent = true;
+  // In production the heartbeat record is written by the same worker that
+  // generated the snapshot, so it is never far behind `now`.
+  d.lastHeartbeatAt = NOW - 5_000;
   return d;
 }
+/** Vital + summary as the hero renders them (summary follows evidenceStale). */
+function pair(
+  d: ReturnType<typeof fixture>,
+  stale = false,
+  receivedAt?: number,
+) {
+  const vital = botVital(d, stale, NOW, receivedAt ?? NOW);
+  return { vital, summary: operationSummary(d, stale || vital.evidenceStale) };
+}
 
-describe("bot vital signs", () => {
-  it("does not beat while the bot is stopped", () => {
-    const v = botVital(fixture(), false, NOW);
+describe("bot vital signs: stop state outranks connectivity", () => {
+  it("STOPPED + RECOVERING never shows a weak heartbeat", () => {
+    const d = fixture();
+    d.safety.connectivity = "RECOVERING";
+    const { vital, summary } = pair(d);
+    expect(vital.state).toBe("sleeping");
+    expect(vital.beatSeconds).toBeNull();
+    expect(vital.ecg).toBe("flat");
+    expect(summary.tone).toBe("stopped");
+  });
+
+  it("STOPPED + DEGRADED never shows a weak heartbeat", () => {
+    const d = fixture();
+    d.safety.connectivity = "DEGRADED";
+    const { vital, summary } = pair(d);
+    expect(vital.state).toBe("sleeping");
+    expect(vital.beatSeconds).toBeNull();
+    expect(summary.tone).toBe("stopped");
+  });
+
+  it("ABNORMAL_STOP + DEGRADED shows the safety stop, not a weak heartbeat", () => {
+    const d = fixture();
+    d.status = "ABNORMAL_STOP";
+    d.safety.connectivity = "DEGRADED";
+    const { vital, summary } = pair(d);
+    expect(vital.state).toBe("flatlined");
+    expect(vital.beatSeconds).toBeNull();
+    expect(summary.title).toBe("安全停止");
+  });
+
+  it("EMERGENCY_STOP + RECOVERING shows the safety stop", () => {
+    const d = healthy();
+    d.safety.botState = "EMERGENCY_STOP";
+    d.safety.connectivity = "RECOVERING";
+    const { vital, summary } = pair(d);
+    expect(vital.state).toBe("flatlined");
+    expect(summary.title).toBe("安全停止");
+  });
+
+  it("RUNNING + RECOVERING / DEGRADED still shows the weak heartbeat", () => {
+    const recovering = healthy();
+    recovering.safety.connectivity = "RECOVERING";
+    expect(pair(recovering).vital.state).toBe("weak");
+    expect(pair(recovering).summary.title).toBe("復旧確認中");
+    const degraded = healthy();
+    degraded.safety.connectivity = "DEGRADED";
+    expect(pair(degraded).vital.state).toBe("weak");
+    expect(pair(degraded).summary.title).toBe("通信障害・一時待機");
+  });
+});
+
+describe("bot vital signs: freshness", () => {
+  it("RUNNING + stale display is unknown in both displays", () => {
+    const { vital, summary } = pair(healthy(), true);
+    expect(vital.state).toBe("unknown");
+    expect(vital.beatSeconds).toBeNull();
+    expect(summary.title).toBe("状態不明");
+  });
+
+  it("RUNNING + ordersAllowed=false is unknown in both displays", () => {
+    const d = healthy();
+    d.safety.ordersAllowed = false;
+    const { vital, summary } = pair(d);
+    expect(vital.state).toBe("unknown");
+    expect(summary.title).toBe("状態不明");
+  });
+
+  it("downgrades to unknown when the worker heartbeat record is too old", () => {
+    const d = healthy();
+    d.lastHeartbeatAt = NOW - VITAL_HEARTBEAT_FRESH_MS - 1_000;
+    const { vital, summary } = pair(d);
+    expect(vital.state).toBe("unknown");
+    expect(vital.evidenceStale).toBe(true);
+    expect(vital.fetching).toBe(false);
+    expect(summary.title).toBe("状態不明");
+    // Exactly at the bound the evidence is still fresh.
+    d.lastHeartbeatAt = NOW - VITAL_HEARTBEAT_FRESH_MS;
+    expect(botVital(d, false, NOW, NOW).state).toBe("alive");
+  });
+
+  it("downgrades to unknown when the snapshot itself was received long ago", () => {
+    const d = healthy();
+    const receivedAt = NOW - VITAL_RECEIPT_FRESH_MS - 1_000;
+    const { vital, summary } = pair(d, false, receivedAt);
+    expect(vital.state).toBe("unknown");
+    expect(vital.evidenceStale).toBe(true);
+    expect(summary.title).toBe("状態不明");
+    expect(botVital(d, false, NOW, NOW - 10_000).state).toBe("alive");
+  });
+
+  it("does not downgrade stopped states when evidence ages", () => {
+    const d = fixture();
+    d.lastHeartbeatAt = NOW - 3_600_000;
+    const { vital, summary } = pair(d, false, NOW - 3_600_000);
+    expect(vital.state).toBe("sleeping");
+    expect(vital.evidenceStale).toBe(false);
+    expect(summary.tone).toBe("stopped");
+  });
+
+  it("returns to alive after communication recovers", () => {
+    const d = healthy();
+    d.safety.connectivity = "DEGRADED";
+    d.timing.dataStatus = "STALE";
+    d.timing.transportRecent = false;
+    expect(pair(d).vital.state).toBe("weak");
+    d.safety.connectivity = "HEALTHY";
+    d.timing.dataStatus = "FRESH";
+    d.timing.transportRecent = true;
+    d.lastHeartbeatAt = NOW - 1_000;
+    const { vital, summary } = pair(d);
+    expect(vital.state).toBe("alive");
+    expect(vital.beatSeconds).toBe(1);
+    expect(summary.title).toBe("正常稼働");
+  });
+});
+
+describe("bot vital signs: fetching and next fetch", () => {
+  it("shows fetching only for a credible in-progress fetch", () => {
+    const d = healthy();
+    d.timing.fetching = true;
+    d.timing.fetchElapsedMs = 2_000;
+    expect(botVital(d, false, NOW, NOW).fetching).toBe(true);
+  });
+
+  it("hides fetching when the worker stopped updating (old heartbeat)", () => {
+    const d = healthy();
+    d.timing.fetching = true;
+    d.timing.fetchElapsedMs = 2_000;
+    d.lastHeartbeatAt = NOW - VITAL_HEARTBEAT_FRESH_MS - 5_000;
+    const v = botVital(d, false, NOW, NOW);
+    expect(v.state).toBe("unknown");
+    expect(v.fetching).toBe(false);
+  });
+
+  it("hides fetching past the worker's fetch deadline or without elapsed evidence", () => {
+    const d = healthy();
+    d.timing.fetching = true;
+    d.timing.fetchElapsedMs = VITAL_FETCH_DEADLINE_MS + 1;
+    expect(botVital(d, false, NOW, NOW).fetching).toBe(false);
+    d.timing.fetchElapsedMs = null;
+    expect(botVital(d, false, NOW, NOW).fetching).toBe(false);
+  });
+
+  it("hides fetching while stopped", () => {
+    const d = fixture();
+    d.timing.fetching = true;
+    d.timing.fetchElapsedMs = 1_000;
+    const v = botVital(d, false, NOW, NOW);
     expect(v.state).toBe("sleeping");
-    expect(v.beatSeconds).toBeNull();
-    expect(v.ecg).toBe("flat");
+    expect(v.fetching).toBe(false);
+  });
+
+  it("reports an overdue next fetch instead of あと0秒", () => {
+    const d = healthy();
+    d.timing.nextFetchAt = NOW - 5_000;
+    const v = botVital(d, false, NOW, NOW);
+    expect(v.nextFetchSecondsIn).toBeNull();
+    expect(v.nextFetchOverdueSeconds).toBe(5);
+    d.timing.nextFetchAt = NOW;
+    expect(botVital(d, false, NOW, NOW).nextFetchOverdueSeconds).toBe(0);
+    d.timing.nextFetchAt = NOW + 30_200;
+    const ahead = botVital(d, false, NOW, NOW);
+    expect(ahead.nextFetchSecondsIn).toBe(31);
+    expect(ahead.nextFetchOverdueSeconds).toBeNull();
+  });
+
+  it("reports real activity ages, keeping missing evidence null", () => {
+    const d = healthy();
+    d.timing.lastAnalysisAt = NOW - 65_000;
+    d.timing.lastFetchSuccessAt = NOW - 3_400;
+    d.lastHeartbeatAt = NOW - 15_000;
+    const v = botVital(d, false, NOW, NOW);
+    expect(v.lastAnalysisSecondsAgo).toBe(65);
+    expect(v.lastFetchSecondsAgo).toBe(3);
+    expect(v.heartbeatSecondsAgo).toBe(15);
+    const bare = botVital(fixture(), false, NOW, NOW);
+    expect(bare.lastAnalysisSecondsAgo).toBeNull();
+    expect(bare.nextFetchSecondsIn).toBeNull();
+    expect(bare.nextFetchOverdueSeconds).toBeNull();
+  });
+});
+
+describe("bot vital signs: summary consistency across combinations", () => {
+  it("alive exactly matches 正常稼働, and beating states match live summaries", () => {
+    const combos: [string, ReturnType<typeof fixture>, boolean?][] = [
+      ["healthy", healthy()],
+      [
+        "ordersAllowed=false",
+        Object.assign(healthy(), {
+          safety: { ...healthy().safety, ordersAllowed: false },
+        }),
+      ],
+      [
+        "recovering",
+        Object.assign(healthy(), {
+          safety: { ...healthy().safety, connectivity: "RECOVERING" },
+        }),
+      ],
+      [
+        "degraded",
+        Object.assign(healthy(), {
+          safety: { ...healthy().safety, connectivity: "DEGRADED" },
+        }),
+      ],
+      [
+        "stopped+recovering",
+        Object.assign(fixture(), {
+          safety: { ...fixture().safety, connectivity: "RECOVERING" },
+        }),
+      ],
+      [
+        "abnormal+degraded",
+        Object.assign(fixture(), {
+          status: "ABNORMAL_STOP",
+          safety: { ...fixture().safety, connectivity: "DEGRADED" },
+        }),
+      ],
+      ["healthy+stale", healthy(), true],
+    ];
+    for (const [name, d, stale] of combos) {
+      const { vital, summary } = pair(d, stale ?? false);
+      expect(vital.state === "alive", name).toBe(summary.title === "正常稼働");
+      if (vital.beatSeconds != null)
+        expect(
+          ["正常稼働", "復旧確認中", "通信障害・一時待機"],
+          name,
+        ).toContain(summary.title);
+      if (vital.state === "sleeping")
+        expect(summary.tone, name).toBe("stopped");
+      if (vital.state === "flatlined")
+        expect(summary.title, name).toBe("安全停止");
+      if (vital.state === "unknown")
+        expect(summary.title, name).toBe("状態不明");
+    }
   });
 
   it("beats steadily only on the same evidence as the healthy summary", () => {
     const d = healthy();
-    expect(operationSummary(d).title).toBe("正常稼働");
-    const v = botVital(d, false, NOW);
+    const v = botVital(d, false, NOW, NOW);
     expect(v.state).toBe("alive");
     expect(v.beatSeconds).toBe(1);
     expect(v.ecg).toBe("flowing");
-    // Losing order permission must stop the heartbeat too.
-    d.safety.ordersAllowed = false;
-    expect(botVital(d, false, NOW).state).toBe("unknown");
-    expect(botVital(d, false, NOW).beatSeconds).toBeNull();
-  });
-
-  it("flattens on a safety stop and slows while recovering or degraded", () => {
-    const stopped = fixture();
-    stopped.status = "ABNORMAL_STOP";
-    expect(operationSummary(stopped).title).toBe("安全停止");
-    expect(botVital(stopped, false, NOW).state).toBe("flatlined");
-    expect(botVital(stopped, false, NOW).ecg).toBe("flat");
-
-    const recovering = healthy();
-    recovering.safety.connectivity = "RECOVERING";
-    const v = botVital(recovering, false, NOW);
-    expect(v.state).toBe("weak");
-    expect(v.beatSeconds).toBeGreaterThan(1);
-    expect(v.ecg).toBe("slow");
-
-    const degraded = healthy();
-    degraded.safety.connectivity = "DEGRADED";
-    expect(botVital(degraded, false, NOW).state).toBe("weak");
-  });
-
-  it("never beats on a stale display", () => {
-    const v = botVital(healthy(), true, NOW);
-    expect(v.state).toBe("unknown");
-    expect(v.beatSeconds).toBeNull();
-    expect(v.ecg).toBe("flat");
-  });
-
-  it("reports real activity ages and the next-fetch countdown", () => {
-    const d = healthy();
-    d.timing.fetching = true;
-    d.timing.lastAnalysisAt = NOW - 65_000;
-    d.timing.lastFetchSuccessAt = NOW - 3_400;
-    d.timing.nextFetchAt = NOW + 30_200;
-    d.lastHeartbeatAt = NOW - 15_000;
-    const v = botVital(d, false, NOW);
-    expect(v.fetching).toBe(true);
-    expect(v.lastAnalysisSecondsAgo).toBe(65);
-    expect(v.lastFetchSecondsAgo).toBe(3);
-    expect(v.heartbeatSecondsAgo).toBe(15);
-    expect(v.nextFetchSecondsIn).toBe(31);
-    // A next fetch in the past clamps to zero instead of going negative.
-    d.timing.nextFetchAt = NOW - 5_000;
-    expect(botVital(d, false, NOW).nextFetchSecondsIn).toBe(0);
-    // Missing evidence stays null rather than becoming a fake age.
-    const bare = botVital(fixture(), false, NOW);
-    expect(bare.lastAnalysisSecondsAgo).toBeNull();
-    expect(bare.nextFetchSecondsIn).toBeNull();
+    expect(operationSummary(d).title).toBe("正常稼働");
   });
 });
