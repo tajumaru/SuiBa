@@ -1,10 +1,9 @@
-import React, { useState } from "react";
+import React from "react";
 import type { ValidationReport } from "../../worker/src/validation.ts";
 import { validationMarkdown } from "../../../packages/shared/src/validation-presentation.ts";
 import type { ValidationOperations } from "./validationView.ts";
 import { validationView } from "./validationView.ts";
-import type { SettingsApi } from "./settingsPresets.ts";
-import { dateTime, number, errorCode } from "./presentation.ts";
+import { dateTime, number } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
 const rate = (n: number | null | undefined) =>
   n == null ? "未計測" : `${(n * 100).toFixed(2)}%`;
@@ -39,6 +38,10 @@ function Metric({
 function reveal(id: string) {
   const detail = document.getElementById(id) as HTMLDetailsElement | null;
   if (detail) {
+    const parent = document.getElementById(
+      "validation-diagnostics",
+    ) as HTMLDetailsElement | null;
+    if (parent) parent.open = true;
     detail.open = true;
     detail.querySelector("summary")?.focus();
   }
@@ -53,12 +56,10 @@ function download(name: string, text: string, type: string) {
 }
 export function DeepBookValidation({
   report,
-  api,
   stale = false,
   operations,
 }: {
   report: ValidationReport;
-  api?: SettingsApi;
   stale?: boolean;
   operations: ValidationOperations;
 }) {
@@ -85,40 +86,6 @@ export function DeepBookValidation({
         STALE: "データが古い",
         UNKNOWN: "未計測",
       }[operations.timing.dataStatus] ?? "未計測");
-  const [busy, setBusy] = useState(false),
-    [notice, setNotice] = useState("");
-  const begin = async () => {
-    if (
-      !api ||
-      busy ||
-      stale ||
-      report.session ||
-      ["RUNNING", "DATA_DELAYED"].includes(operations.status)
-    )
-      return;
-    setBusy(true);
-    try {
-      await api("validation/start", {});
-      setNotice(
-        "計測を開始しました。10秒以内に表示を更新します。PAPER運用は別途、手動で開始してください。",
-      );
-    } catch (e) {
-      const code = errorCode(e);
-      const explanation: Record<string, string> = {
-        STOP_BEFORE_VALIDATION:
-          "Botが稼働中です。既存の操作欄で停止してから計測を開始してください。",
-        PROFIT_GUARD_REQUIRED:
-          "Profit Guardを有効にしてから計測を開始してください。",
-        VALIDATION_ALREADY_STARTED:
-          "計測は開始済みです。既存の記録は上書きしません。表示の更新を待ってください。",
-      };
-      setNotice(
-        `計測を開始できません。${explanation[code] ?? "接続状態と安全条件を確認してから再操作してください。"} コード：${code}`,
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
   return (
     <section className="deepbook-validation" aria-label="DeepBook 24時間検証">
       <h2>DeepBook 24時間PAPER検証</h2>
@@ -130,25 +97,6 @@ export function DeepBookValidation({
           PAPER Bot：<strong>{view.botLabel}</strong>
         </p>
         <p>DeepBook接続：{view.connectionLabel}</p>
-      </div>
-      <div
-        className="validation-action"
-        aria-label="次に行う操作"
-        role={view.tone === "danger" ? "alert" : undefined}
-      >
-        <h3>次に行う操作</h3>
-        <p>{view.action}</p>
-        {operations.stopReason && (
-          <p>
-            停止理由：
-            <Reason code={operations.stopReason} />
-          </p>
-        )}
-        {stale && (
-          <p>
-            表示の更新に失敗しています。接続を確認するまで、表示済みの状態は最新とは限りません。
-          </p>
-        )}
       </div>
       <p className="validation-help">
         PAPER：実際のお金を使わない仮想取引。計測開始とPAPER運用開始は別の操作です。
@@ -196,24 +144,16 @@ export function DeepBookValidation({
       )}
       <div className="validation-metrics" aria-label="重要な4つの指標">
         <Metric
-          title="API成功率"
-          value={requests ? rate(successes / requests) : "未計測"}
-          state={
-            requests
-              ? `通信${number(requests)}件中${number(successes)}件成功${successes < requests ? "・失敗あり" : ""}`
-              : "計測記録を待っています"
-          }
-          help="データ取得リクエストが成功した割合。全APIの実試行を集計。"
+          title="PAPER売買件数"
+          value={`${count(report.paper?.orders)}件`}
+          state={`買い判断 ${count(report.paper?.actions.BUY)} ／ 売り判断 ${count(report.paper?.actions.SELL)}`}
+          help="約定件数と判断件数は異なります。取引ゼロだけでは異常と判断しません。"
         />
         <Metric
-          title="未解決の5分足欠損"
-          value={quality ? `${count(report.candles?.unresolved)}本` : "未計測"}
-          state={
-            quality
-              ? `${count(report.candles?.reconstructed)}本を安全に再構築${report.candles?.unresolved ? "・未解決あり" : "・未解決なし"}`
-              : "ローソク足の品質記録がありません"
-          }
-          help="未解決欠損：安全に補完できていない価格データ。再構築：欠けた価格データを根拠に基づいて補う処理。"
+          title="異常・安全停止"
+          value={`${count(report.paper?.safetyStops.length)}件`}
+          state={view.botLabel}
+          help="最新の停止理由と復旧手順は上のコントロールで確認してください。"
         />
         <Metric
           title="DeepBook接続・データ鮮度"
@@ -285,192 +225,184 @@ export function DeepBookValidation({
           )}
         </div>
       )}
-      {!report.session ? (
-        <>
-          <p>専用環境の記録です。計測開始とPAPER運用開始は別の操作です。</p>
-          <button
-            disabled={
-              !api ||
-              busy ||
-              stale ||
-              !!report.session ||
-              ["RUNNING", "DATA_DELAYED"].includes(operations.status)
+      <details className="validation-diagnostics" id="validation-diagnostics">
+        <summary>詳細診断 · 通信試行・遅延・品質・取引履歴・評価条件</summary>
+        <div className="validation-metrics">
+          <Metric
+            title="API成功率"
+            value={requests ? rate(successes / requests) : "未計測"}
+            state={`通信${number(requests)}件中${number(successes)}件成功`}
+            help="全APIの実試行を集計"
+          />
+          <Metric
+            title="未解決の5分足欠損"
+            value={
+              quality ? `${count(report.candles?.unresolved)}本` : "未計測"
             }
-            onClick={() => void begin()}
-          >
-            24時間計測を開始
-          </button>
-        </>
-      ) : (
-        <>
-          <p>
-            24時間未満・記録不足の場合は合格にしません。停止後・再起動後は手動再開が必要です。
+            state={`${count(report.candles?.reconstructed)}本を安全に再構築`}
+            help="品質履歴と再構築の証拠は以下で確認できます"
+          />
+        </div>
+        <p>
+          計測記録：{count(report.sampleCount)}件 ／ 最大記録空白：
+          {ms(report.maxGapMs)}
+        </p>
+        <details id="validation-api-details">
+          <summary>
+            通信の詳細{requests > successes ? "（取得失敗あり）" : ""}
+          </summary>
+          <p className="validation-help">
+            P95：通信の95%が収まる応答時間。リトライを含む実リクエストの計測です。
+          </p>
+          {(report.apis ?? []).map((a) => (
+            <div className="card" key={a.api}>
+              <h4>{a.api}</h4>
+              <p>
+                リクエスト：{a.requests} ／ 成功率：{rate(a.successRate)} ／
+                再試行：{a.retries}
+              </p>
+              <p>
+                平均応答：{ms(a.latency.averageMs)} ／ P95：
+                {ms(a.latency.p95Ms)} ／ 最終正常取得：
+                {dateTime(a.lastSuccessAt)}
+              </p>
+              <p>
+                タイムアウト：
+                {[
+                  "UPSTREAM_TIMEOUT",
+                  "UPSTREAM_CONNECT_TIMEOUT",
+                  "UPSTREAM_HEADERS_TIMEOUT",
+                  "UPSTREAM_BODY_TIMEOUT",
+                ].reduce((n, code) => n + (a.codes[code] ?? 0), 0)}{" "}
+                ／ HTTP 429：
+                {a.codes.UPSTREAM_HTTP_429 ?? 0} ／ 502：
+                {a.codes.UPSTREAM_HTTP_502 ?? 0} ／ 503：
+                {a.codes.UPSTREAM_HTTP_503 ?? 0} ／ 504：
+                {a.codes.UPSTREAM_HTTP_504 ?? 0}
+              </p>
+            </div>
+          ))}
+        </details>
+        <details id="validation-quality-details">
+          <summary>
+            ローソク足品質・再構築の詳細
+            {report.candles?.unresolved ? "（未解決欠損あり）" : ""}
+          </summary>
+          <p className="validation-help">
+            ローソク足再構築：欠けた価格データを根拠に基づいて補う処理。未解決欠損は安全に補完できていない価格データです。
           </p>
           <p>
-            計測記録：{count(report.sampleCount)}件 ／ 最大記録空白：
-            {ms(report.maxGapMs)}
+            取得5分足：{count(report.candles?.uniqueFiveMinuteBars)} ／ 元欠損：
+            {count(report.candles?.originalMissing)} ／ 再構築：
+            {count(report.candles?.reconstructed)} ／ 成功率：
+            {rate(report.candles?.reconstructionSuccessRate)} ／ 未解決：
+            {count(report.candles?.unresolved)}
           </p>
-          <details id="validation-api-details">
-            <summary>
-              通信の詳細{requests > successes ? "（取得失敗あり）" : ""}
-            </summary>
-            <p className="validation-help">
-              P95：通信の95%が収まる応答時間。リトライを含む実リクエストの計測です。
-            </p>
-            {(report.apis ?? []).map((a) => (
-              <div className="card" key={a.api}>
-                <h4>{a.api}</h4>
-                <p>
-                  リクエスト：{a.requests} ／ 成功率：{rate(a.successRate)} ／
-                  再試行：{a.retries}
-                </p>
-                <p>
-                  平均応答：{ms(a.latency.averageMs)} ／ P95：
-                  {ms(a.latency.p95Ms)} ／ 最終正常取得：
-                  {dateTime(a.lastSuccessAt)}
-                </p>
-                <p>
-                  タイムアウト：
-                  {[
-                    "UPSTREAM_TIMEOUT",
-                    "UPSTREAM_CONNECT_TIMEOUT",
-                    "UPSTREAM_HEADERS_TIMEOUT",
-                    "UPSTREAM_BODY_TIMEOUT",
-                  ].reduce((n, code) => n + (a.codes[code] ?? 0), 0)}{" "}
-                  ／ HTTP 429：
-                  {a.codes.UPSTREAM_HTTP_429 ?? 0} ／ 502：
-                  {a.codes.UPSTREAM_HTTP_502 ?? 0} ／ 503：
-                  {a.codes.UPSTREAM_HTTP_503 ?? 0} ／ 504：
-                  {a.codes.UPSTREAM_HTTP_504 ?? 0}
-                </p>
-              </div>
+          <p>
+            未解決を観測した取得周期：
+            {count(report.candles?.reconstructionFailures)} ／ 再構築P95：
+            {ms(report.candles?.reconstructionTime.p95Ms)} ／ 最新確定足：
+            {dateTime(
+              report.candles?.latestQuality?.[300]?.latestClosedAt ?? null,
+            )}
+          </p>
+          <details>
+            <summary>再構築の理由・証拠</summary>
+            <pre>{JSON.stringify(report.candles?.evidence ?? [], null, 2)}</pre>
+          </details>
+        </details>
+        <details>
+          <summary>注文板・データ反映遅延の詳細</summary>
+          <p className="validation-help">
+            スプレッド：買値と売値の差。Indexer遅延：市場データが反映されるまでの遅れ。
+          </p>
+          <p>
+            板の取得時刻：{dateTime(report.market?.bookAt ?? null)} ／
+            スプレッド：{rate(report.market?.spread)} ／ 買い板流動性：
+            {count(report.market?.diagnostics?.bidDepthUsdc)} USDC ／
+            売り板流動性：
+            {count(report.market?.diagnostics?.askDepthUsdc)} USDC
+          </p>
+          <p>
+            Indexer遅延：{ms(report.market?.diagnostics?.indexerLagMs)} ／
+            最終正常取得：{dateTime(report.market?.lastSuccessAt ?? null)}
+          </p>
+        </details>
+        <details>
+          <summary>
+            AI判断・PAPER取引・安全停止履歴
+            {report.paper?.safetyStops.length
+              ? `（安全停止${report.paper.safetyStops.length}件）`
+              : ""}
+          </summary>
+          <p>
+            分析：{count(report.paper?.analyses)} ／ 買い：
+            {count(report.paper?.actions.BUY)} ／ 売り：
+            {count(report.paper?.actions.SELL)} ／ 見送り：
+            {count(report.paper?.actions.WAIT)}
+          </p>
+          <p>
+            PAPER注文記録：{count(report.paper?.orderRequests)} ／ PAPER約定：
+            {count(report.paper?.orders)} ／ 評価損益：
+            {report.paper?.pnlUsdc == null
+              ? "未評価"
+              : number(report.paper.pnlUsdc) + " USDC"}{" "}
+            ／ 手動再開：{count(report.paper?.manualResumes)}／
+            安全確認付き復旧：{count(report.paper?.guardedRecoveries)}
+          </p>
+          <p>
+            安全停止：{count(report.paper?.safetyStops.length)}件 ／
+            約定時安全経路：
+            {report.paper?.fillChecksExercised ? "実行済み" : "未行使"} ／
+            API異常時停止経路：
+            {report.paper?.errorStopChecksExercised ? "実行済み" : "未行使"}
+          </p>
+          <ul>
+            {report.paper?.safetyStops.map((s, i) => (
+              <li key={i}>
+                {dateTime(s.timestamp)}：<Reason code={s.code} />
+              </li>
             ))}
-          </details>
-          <details id="validation-quality-details">
-            <summary>
-              ローソク足品質・再構築の詳細
-              {report.candles?.unresolved ? "（未解決欠損あり）" : ""}
-            </summary>
-            <p className="validation-help">
-              ローソク足再構築：欠けた価格データを根拠に基づいて補う処理。未解決欠損は安全に補完できていない価格データです。
-            </p>
-            <p>
-              取得5分足：{count(report.candles?.uniqueFiveMinuteBars)} ／
-              元欠損：
-              {count(report.candles?.originalMissing)} ／ 再構築：
-              {count(report.candles?.reconstructed)} ／ 成功率：
-              {rate(report.candles?.reconstructionSuccessRate)} ／ 未解決：
-              {count(report.candles?.unresolved)}
-            </p>
-            <p>
-              未解決を観測した取得周期：
-              {count(report.candles?.reconstructionFailures)} ／ 再構築P95：
-              {ms(report.candles?.reconstructionTime.p95Ms)} ／ 最新確定足：
-              {dateTime(
-                report.candles?.latestQuality?.[300]?.latestClosedAt ?? null,
-              )}
-            </p>
-            <details>
-              <summary>再構築の理由・証拠</summary>
-              <pre>
-                {JSON.stringify(report.candles?.evidence ?? [], null, 2)}
-              </pre>
-            </details>
-          </details>
-          <details>
-            <summary>注文板・データ反映遅延の詳細</summary>
-            <p className="validation-help">
-              スプレッド：買値と売値の差。Indexer遅延：市場データが反映されるまでの遅れ。
-            </p>
-            <p>
-              板の取得時刻：{dateTime(report.market?.bookAt ?? null)} ／
-              スプレッド：{rate(report.market?.spread)} ／ 買い板流動性：
-              {count(report.market?.diagnostics?.bidDepthUsdc)} USDC ／
-              売り板流動性：
-              {count(report.market?.diagnostics?.askDepthUsdc)} USDC
-            </p>
-            <p>
-              Indexer遅延：{ms(report.market?.diagnostics?.indexerLagMs)} ／
-              最終正常取得：{dateTime(report.market?.lastSuccessAt ?? null)}
-            </p>
-          </details>
-          <details>
-            <summary>
-              AI判断・PAPER取引・安全停止履歴
-              {report.paper?.safetyStops.length
-                ? `（安全停止${report.paper.safetyStops.length}件）`
-                : ""}
-            </summary>
-            <p>
-              分析：{count(report.paper?.analyses)} ／ 買い：
-              {count(report.paper?.actions.BUY)} ／ 売り：
-              {count(report.paper?.actions.SELL)} ／ 見送り：
-              {count(report.paper?.actions.WAIT)}
-            </p>
-            <p>
-              PAPER注文記録：{count(report.paper?.orderRequests)} ／ PAPER約定：
-              {count(report.paper?.orders)} ／ 評価損益：
-              {report.paper?.pnlUsdc == null
-                ? "未評価"
-                : number(report.paper.pnlUsdc) + " USDC"}{" "}
-              ／ 手動再開：{count(report.paper?.manualResumes)}／
-              安全確認付き復旧：{count(report.paper?.guardedRecoveries)}
-            </p>
-            <p>
-              安全停止：{count(report.paper?.safetyStops.length)}件 ／
-              約定時安全経路：
-              {report.paper?.fillChecksExercised ? "実行済み" : "未行使"} ／
-              API異常時停止経路：
-              {report.paper?.errorStopChecksExercised ? "実行済み" : "未行使"}
-            </p>
-            <ul>
-              {report.paper?.safetyStops.map((s, i) => (
-                <li key={i}>
-                  {dateTime(s.timestamp)}：<Reason code={s.code} />
-                </li>
-              ))}
-            </ul>
-          </details>
-          <details>
-            <summary>合格条件と評価範囲</summary>
-            <ul>
-              {report.criteria?.map((c) => (
-                <li key={c.name}>
-                  {c.ok ? "確認済み" : "未達・未確認"}：{c.name}
-                </li>
-              ))}
-            </ul>
-            <ul>
-              {report.limitations?.map((x) => (
-                <li key={x}>{x}</li>
-              ))}
-            </ul>
-          </details>
-          <button
-            onClick={() =>
-              download(
-                "deepbook-24h.json",
-                JSON.stringify(report, null, 2),
-                "application/json",
-              )
-            }
-          >
-            検証JSONを保存
-          </button>{" "}
-          <button
-            onClick={() =>
-              download(
-                "deepbook-24h.md",
-                validationMarkdown(report),
-                "text/markdown;charset=utf-8",
-              )
-            }
-          >
-            検証Markdownを保存
-          </button>
-        </>
-      )}
-      {notice && <p role="status">{notice}</p>}
+          </ul>
+        </details>
+        <details>
+          <summary>合格条件と評価範囲</summary>
+          <ul>
+            {report.criteria?.map((c) => (
+              <li key={c.name}>
+                {c.ok ? "確認済み" : "未達・未確認"}：{c.name}
+              </li>
+            ))}
+          </ul>
+          <ul>
+            {report.limitations?.map((x) => (
+              <li key={x}>{x}</li>
+            ))}
+          </ul>
+        </details>
+        <button
+          onClick={() =>
+            download(
+              "deepbook-24h.json",
+              JSON.stringify(report, null, 2),
+              "application/json",
+            )
+          }
+        >
+          検証JSONを保存
+        </button>{" "}
+        <button
+          onClick={() =>
+            download(
+              "deepbook-24h.md",
+              validationMarkdown(report),
+              "text/markdown;charset=utf-8",
+            )
+          }
+        >
+          検証Markdownを保存
+        </button>
+      </details>
     </section>
   );
 }

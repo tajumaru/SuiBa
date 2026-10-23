@@ -787,33 +787,279 @@ footer {
   margin: 20px 0;
 }
 /* Operations: decision first, evidence on demand. */
-.operation-validation { min-width: 0; overflow-wrap: anywhere; }
-.operation-validation > section, .operation-diagnostics { margin-block: 20px; }
-.operation-hero { padding: 24px; border: 1px solid currentColor; border-radius: 16px; background: #202725; }
-.operation-hero h2 { font-size: clamp(26px, 4vw, 38px); margin: 12px 0; }
-.operation-hero p { max-width: 65ch; color: #e2e8e5; font-size: 16px; }
-.operation-mode { color: #c4d7ce; font-weight: 700; }
-.operation-period { display: flex; gap: 8px; }
-.operation-period button { min-height: 44px; padding: 10px 20px; }
-.operation-period button[aria-pressed="true"] { background: #164d3d; color: #dbfff0; border-color: #57d9aa; }
-.operation-kpis { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 16px; }
-.operation-kpis article { min-width: 0; background: #242a2d; padding: 20px; border: 1px solid #465450; border-radius: 12px; }
-.operation-kpis h3 { font-size: 15px; margin: 0 0 16px; color: #d0dcd6; }
-.operation-kpis strong { display: block; font-size: clamp(23px, 2.6vw, 32px); font-variant-numeric: tabular-nums; }
-.operation-kpis small { display: block; margin-top: 12px; color: #c4d0ca; font-size: 14px; }
-.operation-next { padding: 20px; border-left: 4px solid #57d9aa; background: #202b27; }
-.operation-next li { margin-block: 10px; }
-.operation-validation a { color: #83e9bd; }
-.operation-report-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; }
-.operation-report-grid dt, .operation-report-grid dd { padding: 12px; margin: 0; background: #242a2d; white-space: normal; }
-.operation-validation summary { min-height: 44px; padding: 12px; cursor: pointer; }
-.operation-validation :is(button,a,summary):focus-visible { outline: 3px solid #83e9bd; outline-offset: 3px; }
-.operation-diagnostics { border: 1px solid #465450; border-radius: 12px; padding: 12px; }
-.operation-diagnostics pre { max-width: 100%; overflow: auto; }
-@media(max-width: 900px) { .operation-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); } }
-@media(max-width: 479px) { .operation-kpis { grid-template-columns: minmax(0,1fr); } .operation-hero { padding: 16px; } .operation-report-grid { grid-template-columns: minmax(0,1fr); gap: 0; } .operation-report-grid dd { margin-bottom: 12px; } }
-.operation-validation .operation-reports { display: block; }
-.operation-validation .operation-report-grid { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
-.operation-report-metric { background: #242a2d; border: 1px solid #465450; border-radius: 10px; min-width: 0; }
-.operation-report-metric dd { font-size: 20px; font-variant-numeric: tabular-nums; }
-@media(max-width: 767px) { .operation-validation .operation-report-grid { grid-template-columns: minmax(0,1fr); } }
+.operation-validation {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.operation-validation > section,
+.operation-diagnostics {
+  margin-block: 20px;
+}
+.operation-hero {
+  padding: 24px;
+  border: 1px solid currentColor;
+  border-radius: 16px;
+  background: #202725;
+}
+.operation-hero h2 {
+  font-size: clamp(26px, 4vw, 38px);
+  margin: 12px 0;
+}
+.operation-hero p {
+  max-width: 65ch;
+  color: #e2e8e5;
+  font-size: 16px;
+}
+.operation-mode {
+  color: #c4d7ce;
+  font-weight: 700;
+}
+.operation-period {
+  display: flex;
+  gap: 8px;
+}
+.operation-period button {
+  min-height: 44px;
+  padding: 10px 20px;
+}
+.operation-period button[aria-pressed="true"] {
+  background: #164d3d;
+  color: #dbfff0;
+  border-color: #57d9aa;
+}
+.operation-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+.operation-kpis article {
+  min-width: 0;
+  background: #242a2d;
+  padding: 20px;
+  border: 1px solid #465450;
+  border-radius: 12px;
+}
+.operation-kpis h3 {
+  font-size: 15px;
+  margin: 0 0 16px;
+  color: #d0dcd6;
+}
+.operation-kpis strong {
+  display: block;
+  font-size: clamp(23px, 2.6vw, 32px);
+  font-variant-numeric: tabular-nums;
+}
+.operation-kpis small {
+  display: block;
+  margin-top: 12px;
+  color: #c4d0ca;
+  font-size: 14px;
+}
+.operation-next {
+  padding: 20px;
+  border-left: 4px solid #57d9aa;
+  background: #202b27;
+}
+.operation-next li {
+  margin-block: 10px;
+}
+.operation-validation a {
+  color: #83e9bd;
+}
+.operation-report-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.operation-report-grid dt,
+.operation-report-grid dd {
+  padding: 12px;
+  margin: 0;
+  background: #242a2d;
+  white-space: normal;
+}
+.operation-validation summary {
+  min-height: 44px;
+  padding: 12px;
+  cursor: pointer;
+}
+.operation-validation :is(button, a, summary):focus-visible {
+  outline: 3px solid #83e9bd;
+  outline-offset: 3px;
+}
+.operation-diagnostics {
+  border: 1px solid #465450;
+  border-radius: 12px;
+  padding: 12px;
+}
+.operation-diagnostics pre {
+  max-width: 100%;
+  overflow: auto;
+}
+@media (max-width: 900px) {
+  .operation-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 479px) {
+  .operation-kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .operation-hero {
+    padding: 16px;
+  }
+  .operation-report-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .operation-report-grid dd {
+    margin-bottom: 12px;
+  }
+}
+.operation-validation .operation-reports {
+  display: block;
+}
+.operation-validation .operation-report-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.operation-report-metric {
+  background: #242a2d;
+  border: 1px solid #465450;
+  border-radius: 10px;
+  min-width: 0;
+}
+.operation-report-metric dd {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 767px) {
+  .operation-validation .operation-report-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Operation controls: semantic states, touch targets and progressive disclosure. */
+.validation-control {
+  --control-state: #bac4cc;
+  border: 1px solid var(--control-state);
+  border-top-width: 4px;
+  border-radius: 12px;
+  padding: 24px;
+  background: #18232c;
+  color: #e6edf3;
+}
+.validation-control.healthy {
+  --control-state: #79e3ab;
+}
+.validation-control.ready {
+  --control-state: #8ac5ff;
+}
+.validation-control.warning {
+  --control-state: #f0cc74;
+}
+.validation-control.danger {
+  --control-state: #ff9c9c;
+}
+.validation-control .control-state {
+  font-size: clamp(22px, 4vw, 30px);
+  font-weight: 700;
+  color: var(--control-state);
+}
+.validation-control p {
+  font-size: 16px;
+  line-height: 1.7;
+}
+.control-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  padding-left: 28px;
+}
+.control-steps li {
+  padding: 8px;
+  min-width: 0;
+}
+.control-steps h3 {
+  font-size: 20px;
+}
+.validation-control button {
+  min-height: 48px;
+  padding: 12px 20px;
+  margin: 4px 8px 4px 0;
+  font-size: 16px;
+}
+.validation-control .control-primary {
+  background: #175dc0;
+  border-color: #8ac5ff;
+  color: #fff;
+}
+.validation-control .control-stop {
+  background: #982c38;
+  border-color: #ffa6ab;
+  color: #fff;
+}
+.validation-control button:disabled {
+  background: #303a45;
+  color: #aeb8c3;
+  border-color: #647180;
+  opacity: 1;
+  cursor: not-allowed;
+}
+.validation-control :is(button, a):focus-visible {
+  outline: 3px solid #a8d4ff;
+  outline-offset: 3px;
+}
+.control-warning {
+  color: #f0cc74;
+}
+.control-secondary,
+.control-confirm {
+  border-top: 1px solid #647180;
+  padding-top: 16px;
+  margin-top: 20px;
+}
+.control-confirm {
+  border: 2px solid #8ac5ff;
+  border-radius: 8px;
+  padding: 20px;
+}
+.validation-diagnostics {
+  margin-top: 24px;
+  border-top: 1px solid #647180;
+}
+.deepbook-validation :is(p, small) {
+  font-size: 16px;
+  line-height: 1.7;
+}
+.operation-hero.stopped {
+  color: #bac4cc;
+}
+.operation-hero.ready {
+  color: #8ac5ff;
+}
+@media (max-width: 767px) {
+  .validation-control {
+    padding: 16px;
+  }
+  .control-steps {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+    padding-left: 24px;
+  }
+  .validation-control button {
+    width: 100%;
+    margin-right: 0;
+  }
+}
+.validation-control dialog.control-confirm {
+  background: #18232c;
+  color: #e6edf3;
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  margin: auto;
+}
+.validation-control dialog::backdrop {
+  background: rgb(0 0 0 / 75%);
+}

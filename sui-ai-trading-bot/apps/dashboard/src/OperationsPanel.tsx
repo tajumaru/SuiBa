@@ -1,10 +1,11 @@
+import { ValidationControl } from "./ValidationControl.tsx";
+import type { ControlState } from "./validationControl.ts";
 import { OperationSummary, OperationGuidance } from "./OperationOverview.tsx";
+import { MarketDataPanel } from "./MarketDataPanel.tsx";
 import { ConnectivityPanel } from "./ConnectivityPanel.tsx";
 import { operationReason } from "./operationLabels.ts";
 import { DeepBookValidation } from "./DeepBookValidation.tsx";
-import type { ValidationReport } from "../../worker/src/validation.ts";
 import React, { useEffect, useState } from "react";
-import type { OperationMonitor } from "../../worker/src/operations.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
 import {
   dateTime,
@@ -15,9 +16,8 @@ import {
   errorCode,
 } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
-export type OperationsSnapshot = ReturnType<OperationMonitor["snapshot"]> & {
-  validation?: ValidationReport;
-};
+import type { OperationsSnapshot } from "./operationsTypes.ts";
+export type { OperationsSnapshot } from "./operationsTypes.ts";
 const date = dateTime;
 const number = formatNumber;
 const usdc = (v: string | number | null) =>
@@ -26,7 +26,11 @@ export function OperationsView({
   data,
   stale = false,
   api,
+  state,
+  refresh,
 }: {
+  state?: ControlState;
+  refresh?: () => Promise<void>;
   data: OperationsSnapshot;
   stale?: boolean;
   api?: SettingsApi;
@@ -37,6 +41,20 @@ export function OperationsView({
     ledger = data.accounting.ledger;
   return (
     <div className="operation-validation">
+      <ValidationControl
+        data={data}
+        state={state}
+        stale={stale}
+        api={api}
+        refresh={refresh}
+      />
+      {data.validation && (
+        <DeepBookValidation
+          report={data.validation}
+          operations={data}
+          stale={stale}
+        />
+      )}
       <OperationSummary data={data} stale={stale} />
       {!!data.validation?.candles?.unresolved && (
         <p className="warning" role="alert">
@@ -200,13 +218,8 @@ export function OperationsView({
       </section>
       <details id="operation-diagnostics" className="operation-diagnostics">
         <summary>詳細診断 · API通信・停止理由・品質・会計・監査ログ</summary>
-        {data.validation && (
-          <DeepBookValidation
-            report={data.validation}
-            operations={data}
-            api={api}
-            stale={stale}
-          />
+        {state?.marketData && (
+          <MarketDataPanel value={state.marketData} unavailable={stale} />
         )}
         <ConnectivityPanel
           safety={data.safety}
@@ -638,6 +651,10 @@ export function OperationsView({
 }
 export function OperationsPanel({ api }: { api: SettingsApi }) {
   const [data, setData] = useState<OperationsSnapshot | null>(null),
+    [state, setState] = useState<ControlState | undefined>(),
+    [refreshAction, setRefreshAction] = useState<
+      (() => Promise<void>) | undefined
+    >(),
     [error, setError] = useState("");
   useEffect(() => {
     let active = true;
@@ -647,7 +664,7 @@ export function OperationsPanel({ api }: { api: SettingsApi }) {
       let timeout: ReturnType<typeof setTimeout> | undefined;
       try {
         const response = await Promise.race([
-          api("operations"),
+          Promise.all([api("operations"), api("state")]),
           new Promise<never>((_, reject) => {
             timeout = setTimeout(
               () => reject(new Error("OPERATIONS_TIMEOUT")),
@@ -656,7 +673,9 @@ export function OperationsPanel({ api }: { api: SettingsApi }) {
           }),
         ]);
         if (active && request === generation) {
-          setData(response as OperationsSnapshot);
+          const [operations, current] = response;
+          setData(operations as OperationsSnapshot);
+          setState(current as ControlState);
           setError("");
         }
       } catch (e) {
@@ -665,12 +684,14 @@ export function OperationsPanel({ api }: { api: SettingsApi }) {
             "運用検証データを取得できません。表示済みの情報は最新とは限りません。接続状態を確認してください。コード：" +
               errorCode(e),
           );
+        throw e;
       } finally {
         clearTimeout(timeout);
       }
     };
-    void refresh();
-    const timer = setInterval(() => void refresh(), 10000);
+    setRefreshAction(() => refresh);
+    void refresh().catch(() => {});
+    const timer = setInterval(() => void refresh().catch(() => {}), 10000);
     return () => {
       active = false;
       clearInterval(timer);
@@ -684,9 +705,19 @@ export function OperationsPanel({ api }: { api: SettingsApi }) {
         </p>
       )}
       {data ? (
-        <OperationsView data={data} stale={!!error} api={api} />
+        <OperationsView
+          data={data}
+          state={state}
+          stale={!!error}
+          api={api}
+          refresh={refreshAction}
+        />
       ) : (
-        <p role="status">{error ? "状態不明：運用状態を取得できません。" : "状態を確認中：運用検証データを取得しています…"}</p>
+        <p role="status">
+          {error
+            ? "状態不明：運用状態を取得できません。"
+            : "状態を確認中：運用検証データを取得しています…"}
+        </p>
       )}
     </>
   );

@@ -36,7 +36,7 @@ export function operationSummary(d: OperationsSnapshot, stale = false) {
   if (d.status === "STOPPED")
     return {
       title: s?.botState === "MANUAL_STOP" ? "手動停止" : "停止中・理由未確定",
-      tone: "warning",
+      tone: "stopped",
       message: d.stopReason
         ? operationReason(d.stopReason)
         : "Botは停止しています。停止理由の記録とPAPER開始条件を確認してください。",
