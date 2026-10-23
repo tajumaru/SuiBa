@@ -1,4 +1,8 @@
-export type ReadBudget = { signal: AbortSignal; fresh: boolean };
+export type ReadBudget = {
+  signal: AbortSignal;
+  fresh: boolean;
+  cycleId?: string;
+};
 let provider: () => ReadBudget | undefined = () => undefined;
 export const currentReadBudget = () => provider();
 // Installed by the worker only; browser consumers of shared/api remain Node-free.

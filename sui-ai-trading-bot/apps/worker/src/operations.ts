@@ -369,7 +369,7 @@ export class OperationMonitor {
   transportSuccess(now = Date.now()) {
     this.update({ lastTransportSuccessAt: now });
   }
-  async acquisition<T>(fn: () => Promise<T>): Promise<T> {
+  async acquisition<T>(fn: () => Promise<T>, cycleId?: string): Promise<T> {
     if (this.fetchMono !== null) throw new Error("MARKET_FETCH_IN_PROGRESS");
     const began = Date.now();
     this.fetchMono = this.monotonicNow();
@@ -388,6 +388,7 @@ export class OperationMonitor {
           controller.signal,
           this.safety().connectivity !== "HEALTHY",
           () => abortable(fn(), controller.signal),
+          cycleId,
         ),
       );
       controller.signal.throwIfAborted();

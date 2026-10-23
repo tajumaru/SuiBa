@@ -16,13 +16,20 @@ import {
 } from "../packages/shared/src/index.ts";
 import { RuleBasedStrategy } from "../packages/strategy-engine/src/index.ts";
 import { ValidationRecorder } from "../apps/worker/src/validation.ts";
+import {
+  ReadOnlySuiClient,
+  type SuiObservation,
+} from "../packages/sui-client/src/index.ts";
+import { GrpcTypes } from "@mysten/sui/grpc";
 
 const dbs: BotDatabase[] = [];
+const realClients: ReadOnlySuiClient[] = [];
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(Date.UTC(2026, 9, 23, 0, 1));
 });
 afterEach(() => {
+  for (const client of realClients.splice(0)) client.close();
   for (const db of dbs.splice(0)) db.close();
   apiAccess.restoreCooldowns(
     apiAccess
@@ -32,6 +39,67 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
+it.each([false, true])(
+  "integrates actual Sui health/observations with guarded recovery (manual stop=%s)",
+  async (manuallyStopped) => {
+    const t = fixture(),
+      observations: SuiObservation[] = [];
+    let fail = true,
+      calls = 0,
+      successes = 0;
+    const client = new ReadOnlySuiClient(undefined, {
+      fetch: async () => {
+        calls++;
+        if (fail)
+          throw new TypeError("fixture", {
+            cause: Object.assign(Error("fixture"), { code: "EAI_AGAIN" }),
+          });
+        const bytes = GrpcTypes.GetCoinInfoResponse.toBinary(
+          GrpcTypes.GetCoinInfoResponse.create({
+            metadata: { decimals: successes++ % 2 ? 6 : 9 },
+          }),
+        );
+        const frame = (flag: number, payload: Uint8Array) => {
+          const b = Buffer.alloc(5 + payload.length);
+          b[0] = flag;
+          b.writeUInt32BE(payload.length, 1);
+          b.set(payload, 5);
+          return b;
+        };
+        return new Response(
+          Buffer.concat([
+            frame(0, bytes),
+            frame(128, Buffer.from("grpc-status: 0\r\n")),
+          ]).toString("base64"),
+          { headers: { "content-type": "application/grpc-web-text" } },
+        );
+      },
+      onObservation: (e) => observations.push(e),
+    });
+    realClients.push(client);
+    Object.defineProperty(t.sui, "status", { get: () => client.status });
+    t.sui.health.mockImplementation((force) => client.health(force));
+    if (manuallyStopped) {
+      t.db.set("runtime", { ...t.db.runtime(), running: false });
+      t.engine.monitor.transition("MANUAL_STOP");
+    }
+    await t.tick();
+    expect(t.engine.monitor.safety().connectivity).toBe("DEGRADED");
+    expect(t.db.runtime().running).toBe(false);
+    expect(client.status.healthy).toBe(false);
+    fail = false;
+    await t.tick(60000);
+    expect(t.engine.monitor.safety().connectivity).toBe("RECOVERING");
+    expect(t.db.runtime().running).toBe(false);
+    await t.tick(60000);
+    expect(t.engine.monitor.safety().connectivity).toBe("HEALTHY");
+    expect(t.db.runtime().running).toBe(!manuallyStopped);
+    expect(calls).toBe(6);
+    expect(observations.every((e) => !!e.cycleId)).toBe(true);
+    expect(t.db.history("paper_orders")).toHaveLength(0);
+    expect(t.db.history("paper_trades")).toHaveLength(0);
+  },
+);
 function bars(tf: Timeframe): Candle[] {
   const end = Math.floor(Date.now() / (tf * 1000)) * tf - tf;
   return Array.from({ length: 70 }, (_, i) => ({

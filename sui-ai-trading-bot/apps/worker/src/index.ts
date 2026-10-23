@@ -25,7 +25,7 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { timingSafeEqual } from "node:crypto";
+import { timingSafeEqual, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { resolve, extname } from "node:path";
@@ -59,7 +59,10 @@ db.set(
     readFileSync(new URL("../../../pnpm-lock.yaml", import.meta.url), "utf8"),
   ),
 );
-const sui = new ReadOnlySuiClient(process.env.SUI_GRPC_URL),
+const sui = new ReadOnlySuiClient(process.env.SUI_GRPC_URL, {
+    onObservation: (event) =>
+      db.append("sui_observations", randomUUID(), event, event.at),
+  }),
   engine = new BotEngine(
     db,
     new MarketSelection(
@@ -323,6 +326,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method === "GET" && url.pathname === "/api/operations") {
       send(200, {
         ...timeAggregation(() => engine.monitor.snapshot()),
+        suiHealth: { ...sui.status },
+        suiReads: { ...sui.readStatus },
+        suiObservations: db.history("sui_observations", 50),
         ...(validation
           ? { validation: timeAggregation(() => validation.report()) }
           : {}),
@@ -532,6 +538,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
         } catch {
           console.error("VALIDATION_EXPORT_FAILED");
         }
+        sui.close();
         db.close();
         process.exit(0);
       });

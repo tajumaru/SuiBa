@@ -110,6 +110,7 @@ export class BotEngine {
             result[tf] = await this.market.candles(tf, now);
           return result;
         },
+        cycle.cycleId,
       );
       if (this.market.frames)
         for (const tf of [300, 900, 3600] as const)

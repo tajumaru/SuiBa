@@ -6,6 +6,7 @@ export function withReadBudget<T>(
   signal: AbortSignal,
   fresh: boolean,
   fn: () => Promise<T>,
+  cycleId?: string,
 ) {
-  return scope.run({ signal, fresh }, fn);
+  return scope.run({ signal, fresh, ...(cycleId ? { cycleId } : {}) }, fn);
 }

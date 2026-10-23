@@ -31,6 +31,7 @@ const eventTables = [
   "paper_checks",
   "validation_events",
   "cycle_audits",
+  "sui_observations",
 ] as const;
 type EventTable = (typeof eventTables)[number];
 export class BotDatabase {
@@ -76,6 +77,7 @@ export class BotDatabase {
       "paper_trades",
       "portfolio_snapshots",
       "validation_events",
+      "sui_observations",
     ] as const)
       this.db.exec(
         `CREATE INDEX IF NOT EXISTS ${t}_timestamp ON ${t}(timestamp);`,
