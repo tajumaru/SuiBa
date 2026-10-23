@@ -18,13 +18,15 @@ for (const scenario of scenarios)
     await page.locator("#operation-diagnostics > summary").click();
     const panel = page.getByRole("region", { name: "DeepBook 24時間検証" });
     await expect(panel).toBeVisible();
-    await expect(panel.getByRole("article")).toHaveCount(4);
+    await expect(
+      panel.getByLabel("重要な4つの指標").getByRole("article"),
+    ).toHaveCount(4);
     for (const d of await panel.locator(":scope > details").all())
       await expect(d).not.toHaveAttribute("open", "");
     if (scenario === "unstarted") {
       await expect(panel).toContainText("24時間検証：未開始");
       await expect(
-        panel.getByRole("article", { name: "API成功率", exact: true }),
+        panel.getByRole("article", { name: "PAPER実稼働時間", exact: true }),
       ).toContainText("未計測");
     } else {
       await expect(panel.getByRole("progressbar")).toHaveAttribute(
@@ -35,9 +37,9 @@ for (const scenario of scenarios)
     }
     if (scenario === "stopped") {
       await expect(panel).toContainText("PAPER Bot：停止中");
-      await expect(panel.getByLabel("次に行う操作")).toContainText(
-        "計測は進行しています",
-      );
+      await expect(
+        page.getByRole("region", { name: "運用検証コントロール" }),
+      ).toContainText("計測だけが進行しています");
     }
     if (scenario === "running")
       await expect(panel).toContainText("PAPER Bot：稼働中");
@@ -56,12 +58,15 @@ for (const scenario of scenarios)
       await expect(
         panel.getByRole("alert").filter({ hasText: "未解決の5分足欠損" }),
       ).toBeVisible();
+      await panel.getByRole("link", { name: "品質の詳細を確認" }).click();
       await expect(
         panel.getByRole("article", { name: "未解決の5分足欠損", exact: true }),
       ).toContainText("2本");
     }
     if (scenario === "safety-stop") {
-      await expect(panel.getByLabel("次に行う操作")).toContainText("停止理由");
+      await expect(
+        page.getByRole("region", { name: "運用検証コントロール" }),
+      ).toContainText("停止理由");
       await expect(panel).toContainText("PAPER Bot：異常停止");
     }
     if (scenario === "partial")
@@ -92,9 +97,20 @@ for (const scenario of scenarios)
       );
     }
     if (scenario !== "unstarted") {
+      if (
+        (await panel
+          .locator("#validation-diagnostics")
+          .getAttribute("open")) === null
+      )
+        await panel.locator("#validation-diagnostics > summary").click();
       const summary = panel.locator("#validation-quality-details > summary");
       await summary.focus();
-      await page.keyboard.press("Enter");
+      if (
+        (await panel
+          .locator("#validation-quality-details")
+          .getAttribute("open")) === null
+      )
+        await page.keyboard.press("Enter");
       await expect(
         panel.locator("#validation-quality-details"),
       ).toHaveAttribute("open", "");
@@ -139,19 +155,19 @@ for (const kind of ["running-before-begin", "stale-display"] as const)
     await expect(panel).toBeVisible();
     if (kind === "running-before-begin") {
       await expect(
-        panel.getByRole("button", { name: "24時間計測を開始" }),
+        page.getByRole("button", { name: "24時間計測を開始", exact: true }),
       ).toBeDisabled();
-      await expect(panel.getByLabel("次に行う操作")).toContainText(
-        "まず既存の操作欄でBotを停止",
-      );
+      await expect(
+        page.getByRole("region", { name: "運用検証コントロール" }),
+      ).toContainText("PAPER Botを停止してから計測を開始");
     } else {
       fail = true;
       await page.clock.fastForward(11000);
       await expect(panel).toContainText("PAPER Bot：状態不明");
       await expect(panel).toContainText("DeepBook接続：状態不明");
-      await expect(panel.getByLabel("次に行う操作")).toContainText(
-        "画面の接続を確認",
-      );
+      await expect(
+        page.getByRole("region", { name: "運用検証コントロール" }),
+      ).toContainText("最新の状態を取得");
     }
     expect(writes).toEqual([]);
   });
