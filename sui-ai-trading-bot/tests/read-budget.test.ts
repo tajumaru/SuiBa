@@ -94,3 +94,61 @@ it("cancels queued work without aborting the independent active request", async 
   await next;
   expect(calls).toBe(1);
 });
+
+it("total budget cancels 429 backoff without waiting for the server cooldown", async () => {
+  const { RateLimited } = await import("../packages/shared/src/api.ts");
+  const a = new ApiAccess(),
+    c = new AbortController();
+  let calls = 0;
+  const pending = withReadBudget(c.signal, false, () =>
+    a.run("429-budget", "x", async () => {
+      calls++;
+      throw new RateLimited("30");
+    }),
+  );
+  const outcome = pending.catch((e) => e.message);
+  await new Promise((r) => setTimeout(r, 10));
+  c.abort(new Error("MARKET_DATA_STALLED"));
+  const result = await Promise.race([
+    outcome,
+    new Promise((r) => setTimeout(() => r("STILL_WAITING"), 30)),
+  ]);
+  a.cancel();
+  await outcome;
+  expect(result).toBe("MARKET_DATA_STALLED");
+  expect(calls).toBe(1);
+  expect(a.blocked()).toBe(true);
+});
+it("fresh recovery does not reuse an earlier in-flight success", async () => {
+  const a = new ApiAccess();
+  let release!: (value: number) => void,
+    calls = 0;
+  const first = a.run("fresh-flight", "x", () => {
+    calls++;
+    return new Promise<number>((r) => (release = r));
+  });
+  const recovery = withReadBudget(new AbortController().signal, true, () =>
+    a.run("fresh-flight", "x", async () => ++calls),
+  );
+  release(1);
+  expect(await first).toBe(1);
+  expect(await recovery).toBe(2);
+  expect(calls).toBe(2);
+});
+it("does not record a late successful read after its budget expired", async () => {
+  const a = new ApiAccess(),
+    c = new AbortController();
+  let release!: () => void;
+  const events: boolean[] = [];
+  a.onAttempt = (e) => {
+    events.push(e.success);
+  };
+  const pending = withReadBudget(c.signal, false, () =>
+    a.run("late", "x", () => new Promise<void>((r) => (release = r)), 60000),
+  );
+  const outcome = pending.catch((e) => e.message);
+  c.abort(new Error("MARKET_DATA_STALLED"));
+  release();
+  expect(await outcome).toBe("MARKET_DATA_STALLED");
+  expect(events).toEqual([false]);
+});

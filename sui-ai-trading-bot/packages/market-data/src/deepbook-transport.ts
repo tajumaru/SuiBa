@@ -124,6 +124,7 @@ export class DeepBookTransport {
                 ? String(error.name)
                 : "Error",
             requestPhase: actual,
+            responseStatus: status || undefined,
             transportTimings: {
               ...timings,
               totalMs: Math.round(performance.now() - began),

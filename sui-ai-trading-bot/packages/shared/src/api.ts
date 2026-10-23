@@ -145,14 +145,19 @@ export class ApiAccess {
     this.caches.clear();
   }
   private wait(until: number) {
+    const budget = currentReadBudget();
     return new Promise<void>((resolve, reject) => {
       const signal = AbortSignal.any([
         this.controller.signal,
-        ...(currentReadBudget() ? [currentReadBudget()!.signal] : []),
+        ...(budget ? [budget.signal] : []),
       ]);
       const abort = () => {
         clearTimeout(timer);
-        reject(new Error("API_CANCELLED"));
+        reject(
+          budget?.signal.aborted
+            ? budget.signal.reason
+            : new Error("API_CANCELLED"),
+        );
       };
       const timer = setTimeout(
         () => {
@@ -184,7 +189,15 @@ export class ApiAccess {
     if (s.exhausted) throw new Error("API_RETRIES_EXHAUSTED");
     if (this.flights.has(id)) {
       const pending = this.flights.get(id) as Promise<T>;
-      return budget ? abortable(pending, budget.signal) : pending;
+      if (!budget?.fresh)
+        return budget ? abortable(pending, budget.signal) : pending;
+      // Recovery proof must originate in this acquisition, not an older flight.
+      await abortable(
+        pending.catch(() => {}),
+        budget.signal,
+      );
+      budget.signal.throwIfAborted();
+      return this.run(api, key, fn, 0, policy);
     }
     if ((s.nextRetryAt ?? 0) > Date.now()) throw new Error("API_BACKOFF");
     const cache = this.caches.get(id);
@@ -214,15 +227,17 @@ export class ApiAccess {
           ];
           const began = performance.now();
           const previousFailure = s.lastFailure;
+          const attemptSignal = AbortSignal.any([
+            this.controller.signal,
+            ...(budget ? [budget.signal] : []),
+            AbortSignal.timeout(policy.timeoutMs ?? apiLimits.timeoutMs),
+          ]);
           try {
-            const result = await fn(
-              AbortSignal.any([
-                this.controller.signal,
-                ...(budget ? [budget.signal] : []),
-                AbortSignal.timeout(policy.timeoutMs ?? apiLimits.timeoutMs),
-              ]),
-              { attempt, lastSuccessAt: s.lastSuccessAt },
-            );
+            const result = await fn(attemptSignal, {
+              attempt,
+              lastSuccessAt: s.lastSuccessAt,
+            });
+            attemptSignal.throwIfAborted();
             s.lastLatencyMs = Math.max(
               0,
               Math.round(performance.now() - began),
@@ -323,22 +338,7 @@ export class ApiAccess {
             this.onRateLimit(api);
             recordFailure();
             if (s.exhausted) throw new Error("API_RETRIES_EXHAUSTED");
-            await new Promise<void>((resolve, reject) => {
-              const signal = this.controller.signal;
-              const abort = () => {
-                clearTimeout(timer);
-                reject(new Error("API_CANCELLED"));
-              };
-              const timer = setTimeout(
-                () => {
-                  signal.removeEventListener("abort", abort);
-                  resolve();
-                },
-                Math.max(0, s.nextRetryAt! - Date.now()),
-              );
-              signal.addEventListener("abort", abort, { once: true });
-              if (signal.aborted) abort();
-            });
+            await this.wait(s.nextRetryAt);
           }
         }
       } finally {
@@ -447,6 +447,7 @@ export async function apiFetch(
         };
       } catch (error) {
         const detail = transportDiagnostics(error);
+        status ??= detail.status ?? null;
         const classification =
           error instanceof RateLimited || error instanceof HttpStatusFailure
             ? { code: error.message, phase: "HTTP" as const, causeCode: null }

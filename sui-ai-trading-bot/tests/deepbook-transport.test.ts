@@ -294,3 +294,24 @@ it("existing single-flight and short cache work with the reused connection", asy
   expect(f.requests()).toBe(2);
   expect(f.connections()).toBe(1);
 });
+
+it("preserves received HTTP status when the buffered successful body times out", async () => {
+  const f = await fixture();
+  f.handle((s) => {
+    s.respond({ ":status": 200 });
+    s.write("partial");
+  });
+  await expect(
+    apiFetch(
+      "h2 body status",
+      f.origin + "/status",
+      { signal: AbortSignal.timeout(80) },
+      0,
+      { transport: f.transport.fetch },
+    ),
+  ).rejects.toThrow("UPSTREAM_BODY_TIMEOUT");
+  expect(
+    apiAccess.snapshot().find((s) => s.api === "h2 body status")?.lastFailure
+      ?.status,
+  ).toBe(200);
+});
