@@ -116,7 +116,45 @@ const quantities = (values: number[]) => {
   return { count: s.count, mean: s.averageMs, p95: s.p95Ms, max: s.maxMs };
 };
 export class ValidationRecorder {
-  private cached: { at: number; value: ValidationReport } | null = null;
+  private cached: {
+    at: number;
+    version: string;
+    value: ValidationReport;
+  } | null = null;
+  private inputs: {
+    key: string;
+    rows: { timestamp: number; json: string }[];
+    values: Event[];
+    upper?: number;
+    selected?: Event[];
+  } | null = null;
+  private readEvents(session: ValidationSession, now: number, version: string) {
+    const key = JSON.stringify([version, session]);
+    if (this.inputs?.key !== key) {
+      const rows = this.db.displayValidationRows(
+        session.startedAt,
+        session.targetAt + validationLimits.maxGapMs,
+      );
+      this.inputs = { key, rows, values: [] };
+    }
+    const c = this.inputs,
+      until = Math.min(now, session.targetAt + validationLimits.maxGapMs);
+    let lo = 0,
+      hi = c.rows.length;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (c.rows[mid].timestamp <= until) lo = mid + 1;
+      else hi = mid;
+    }
+    if (c.upper !== lo) {
+      // Preserve parsing failures only within the original SQL time window.
+      while (c.values.length < lo)
+        c.values.push(JSON.parse(c.rows[c.values.length].json));
+      c.upper = lo;
+      c.selected = c.values.slice(0, lo);
+    }
+    return c.selected!;
+  }
   private pendingFault: string | null = null;
   constructor(readonly db: BotDatabase) {}
   boot() {
@@ -294,70 +332,33 @@ export class ValidationRecorder {
     };
   }
   report(now = Date.now(), fresh = false): ValidationReport {
+    const version = this.db.displayVersion();
     if (
       !fresh &&
       this.cached &&
+      this.cached.version === version &&
       now >= this.cached.at &&
       now - this.cached.at < 10000
     )
       return this.cached.value;
-    const value = aggregateValidation(this.db, this.session(), now);
-    this.cached = { at: now, value };
+    const session = this.session();
+    const value = aggregateValidation(
+      this.db,
+      session,
+      now,
+      session ? this.readEvents(session, now, version) : undefined,
+    );
+    this.cached = { at: now, version, value };
     return value;
   }
 }
-export function aggregateValidation(
-  db: BotDatabase,
-  session: ValidationSession | null,
-  now: number,
-) {
-  const limits = validationLimits;
-  if (!session)
-    return {
-      status: "未開始" as string,
-      session: null,
-      generatedAt: now,
-      limits,
-    };
-  const end = Math.min(now, session.targetAt),
-    elapsedMs = Math.max(0, end - session.startedAt);
-  const all = db.range<Event>(
-    "validation_events",
-    session.startedAt,
-    Math.min(now, session.targetAt + limits.maxGapMs),
-  );
-  const events = all.filter((x) => x.at <= end);
-  const samples = all.filter((e): e is Sample => e.kind === "sample");
+const summaries = new WeakMap<Event[], ReturnType<typeof summarizeEvents>>();
+function summarizeEvents(events: Event[]) {
   const cycles = events.filter((e): e is Cycle => e.kind === "cycle");
   const api = events
     .filter((e): e is Extract<Event, { kind: "api" }> => e.kind === "api")
     .map((e) => ({ ...e.data, safelyStopped: e.safelyStopped }));
   const fills = events.filter((e): e is ValidationFill => e.kind === "fill");
-  const operations = db.range<OperationEvent>(
-    "operation_events",
-    session.startedAt,
-    end,
-  );
-  const orders = db.range<unknown>("paper_trades", session.startedAt, end);
-  const orderRequests = db.range<{ status?: string }>(
-    "paper_orders",
-    session.startedAt,
-    end,
-  );
-  const checks = db.range<{ ok: boolean }>(
-    "paper_checks",
-    session.startedAt,
-    end,
-  );
-  const windowSamples = samples.filter((s) => s.at <= end);
-  const latest = windowSamples.at(-1) ?? null;
-  let maxGapMs = 0,
-    cursor = session.startedAt;
-  for (const s of samples) {
-    maxGapMs = Math.max(maxGapMs, Math.min(end, s.at) - cursor);
-    cursor = Math.min(end, s.at);
-  }
-  maxGapMs = Math.max(maxGapMs, end - cursor);
   const apis = [...new Set(api.map((a) => a.api))].map((name) => {
     const a = api.filter((x) => x.api === name),
       codes: Record<string, number> = {};
@@ -420,6 +421,135 @@ export function aggregateValidation(
   for (const c of cycles)
     if (c.action && c.action in actions)
       actions[c.action as keyof typeof actions]++;
+  const candles = {
+    uniqueFiveMinuteBars: seen.size,
+    originalMissing: gaps.size,
+    reconstructed: repaired.size,
+    restoredOriginal: [...gaps].filter(
+      (t) => resolved.has(t) && !repaired.has(t),
+    ).length,
+    reconstructionFailures,
+    failedCandleObservations: qualities.reduce((n, q) => n + q.unresolved, 0),
+    latestRawCount: latestQuality?.[300]?.originalCount ?? null,
+    unresolved: latestQuality?.[300]?.unresolved ?? null,
+    historicalUnresolved: historicalUnresolved.length,
+    historicalUnresolvedTimestamps: historicalUnresolved,
+    qualityObservedAt: latestQuality?.[300]?.fetchedAt ?? null,
+    unresolvedTimestamps: unresolved,
+    missingRate: pct(gaps.size, seen.size + historicalUnresolved.length),
+    reconstructionSuccessRate: pct(repaired.size, gaps.size),
+    latestQuality: latestQuality ?? null,
+    reconstructionTime: stats(qualities.map((q) => q.reconstructionMs ?? 0)),
+    evidence: [...repaired.values()],
+  };
+  const book = {
+    ageMs: stats(
+      cycles
+        .filter((c) => c.market?.bookAt != null)
+        .map((c) => c.at - c.market!.bookAt!),
+    ),
+    spread: quantities(
+      cycles.flatMap((c) =>
+        c.market?.spread == null ? [] : [c.market.spread],
+      ),
+    ),
+    bidDepthUsdc: quantities(
+      cycles.flatMap((c) =>
+        c.market?.diagnostics?.bidDepthUsdc == null
+          ? []
+          : [c.market.diagnostics.bidDepthUsdc],
+      ),
+    ),
+    askDepthUsdc: quantities(
+      cycles.flatMap((c) =>
+        c.market?.diagnostics?.askDepthUsdc == null
+          ? []
+          : [c.market.diagnostics.askDepthUsdc],
+      ),
+    ),
+    indexerLagMs: stats(
+      cycles.flatMap((c) =>
+        c.market?.diagnostics?.indexerLagMs == null
+          ? []
+          : [c.market.diagnostics.indexerLagMs],
+      ),
+    ),
+  };
+  return {
+    cycles,
+    api,
+    fills,
+    apis,
+    candles,
+    book,
+    actions,
+    qualities,
+    unresolved,
+    latestQuality,
+  };
+}
+function eventSummary(events: Event[]) {
+  let result = summaries.get(events);
+  if (!result) {
+    result = summarizeEvents(events);
+    summaries.set(events, result);
+  }
+  return result;
+}
+export function aggregateValidation(
+  db: BotDatabase,
+  session: ValidationSession | null,
+  now: number,
+  inputEvents?: Event[],
+) {
+  const limits = validationLimits;
+  if (!session)
+    return {
+      status: "未開始" as string,
+      session: null,
+      generatedAt: now,
+      limits,
+    };
+  const end = Math.min(now, session.targetAt),
+    elapsedMs = Math.max(0, end - session.startedAt);
+  const all =
+    inputEvents ??
+    db.range<Event>(
+      "validation_events",
+      session.startedAt,
+      Math.min(now, session.targetAt + limits.maxGapMs),
+    );
+  const events = all.every((x) => x.at <= end)
+    ? all
+    : all.filter((x) => x.at <= end);
+  const samples = all.filter((e): e is Sample => e.kind === "sample");
+  const derived = eventSummary(events);
+  const { cycles, api, fills, apis, actions, qualities, unresolved, latestQuality } = derived;
+  const operations = db.range<OperationEvent>(
+    "operation_events",
+    session.startedAt,
+    end,
+  );
+  const orders = db.range<unknown>("paper_trades", session.startedAt, end);
+  const orderRequests = db.range<{ status?: string }>(
+    "paper_orders",
+    session.startedAt,
+    end,
+  );
+  const checks = db.range<{ ok: boolean }>(
+    "paper_checks",
+    session.startedAt,
+    end,
+  );
+  const windowSamples = samples.filter((s) => s.at <= end);
+  const latest = windowSamples.at(-1) ?? null;
+  let maxGapMs = 0,
+    cursor = session.startedAt;
+  for (const s of samples) {
+    maxGapMs = Math.max(maxGapMs, Math.min(end, s.at) - cursor);
+    cursor = Math.min(end, s.at);
+  }
+  maxGapMs = Math.max(maxGapMs, end - cursor);
   const stops = operations.filter(
     (x) =>
       x.kind === "STOP" &&
@@ -644,60 +774,8 @@ export function aggregateValidation(
     apis,
     market: latest?.market ?? cycles.at(-1)?.market ?? null,
     marketTiming: latest?.timing ?? cycles.at(-1)?.timing ?? null,
-    candles: {
-      uniqueFiveMinuteBars: seen.size,
-      originalMissing: gaps.size,
-      reconstructed: repaired.size,
-      restoredOriginal: [...gaps].filter(
-        (t) => resolved.has(t) && !repaired.has(t),
-      ).length,
-      reconstructionFailures,
-      failedCandleObservations: qualities.reduce((n, q) => n + q.unresolved, 0),
-      latestRawCount: latestQuality?.[300]?.originalCount ?? null,
-      unresolved: latestQuality?.[300]?.unresolved ?? null,
-      historicalUnresolved: historicalUnresolved.length,
-      historicalUnresolvedTimestamps: historicalUnresolved,
-      qualityObservedAt: latestQuality?.[300]?.fetchedAt ?? null,
-      unresolvedTimestamps: unresolved,
-      missingRate: pct(gaps.size, seen.size + historicalUnresolved.length),
-      reconstructionSuccessRate: pct(repaired.size, gaps.size),
-      latestQuality: latestQuality ?? null,
-      reconstructionTime: stats(qualities.map((q) => q.reconstructionMs ?? 0)),
-      evidence: [...repaired.values()],
-    },
-    book: {
-      ageMs: stats(
-        cycles
-          .filter((c) => c.market?.bookAt != null)
-          .map((c) => c.at - c.market!.bookAt!),
-      ),
-      spread: quantities(
-        cycles.flatMap((c) =>
-          c.market?.spread == null ? [] : [c.market.spread],
-        ),
-      ),
-      bidDepthUsdc: quantities(
-        cycles.flatMap((c) =>
-          c.market?.diagnostics?.bidDepthUsdc == null
-            ? []
-            : [c.market.diagnostics.bidDepthUsdc],
-        ),
-      ),
-      askDepthUsdc: quantities(
-        cycles.flatMap((c) =>
-          c.market?.diagnostics?.askDepthUsdc == null
-            ? []
-            : [c.market.diagnostics.askDepthUsdc],
-        ),
-      ),
-      indexerLagMs: stats(
-        cycles.flatMap((c) =>
-          c.market?.diagnostics?.indexerLagMs == null
-            ? []
-            : [c.market.diagnostics.indexerLagMs],
-        ),
-      ),
-    },
+    candles: derived.candles,
+    book: derived.book,
     paper: {
       analyses: Object.values(actions).reduce((a, b) => a + b, 0),
       actions,
