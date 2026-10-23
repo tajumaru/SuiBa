@@ -1,0 +1,47 @@
+# Separate project, port, secrets and fresh volumes. No build or mutable tag at startup.
+name: suiba-paper-run2
+services:
+  bot:
+    image: ${PAPER_RUN2_IMAGE:?Set an inspected immutable sha256 image ID}
+    pull_policy: never
+    environment:
+      MODE: PAPER
+      MARKET_DATA_PROVIDER: deepbook
+      DEEPBOOK_RECONSTRUCT_CANDLES: verified
+      DEEPBOOK_VALIDATION: "1"
+      DATABASE_PATH: /app/validation/deepbook-paper.sqlite
+      VALIDATION_REPORT_DIR: /app/reports
+      SUI_GRPC_URL: https://fullnode.mainnet.sui.io:443
+      SUIBA_BUILD_SHA: ${PAPER_RUN2_SHA:?Set the fixed tested commit SHA}
+      SUIBA_IMAGE_ID: ${PAPER_RUN2_IMAGE:?Set the inspected immutable image ID}
+      ADMIN_TOKEN: ""
+      ADMIN_TOKEN_FILE: /run/secrets/run2-admin
+      HOST: 0.0.0.0
+      PORT: "3100"
+    ports:
+      - "127.0.0.1:${PAPER_RUN2_PORT:-3103}:3100"
+    secrets:
+      - run2-admin
+    volumes:
+      - run2-data:/app/validation
+      - run2-reports:/app/reports
+    init: true
+    restart: "no"
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "node", "docker/healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+secrets:
+  run2-admin:
+    file: ./secrets/paper-run2-admin.txt
+volumes:
+  run2-data:
+  run2-reports:

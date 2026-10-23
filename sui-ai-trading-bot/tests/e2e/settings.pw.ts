@@ -166,9 +166,9 @@ test("confirms, prevents duplicate saving, rereads settings, then starts only on
   await review(page)
     .getByRole("button", { name: "安全重視を適用", exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText(
-    "保存・サーバーへの再確認中",
-  );
+  await expect(
+    page.locator(".easy-settings").getByRole("status"),
+  ).toContainText("保存・サーバーへの再確認中");
   await expect(
     review(page).getByRole("button", { name: "安全重視を適用", exact: true }),
   ).toBeDisabled();
@@ -176,7 +176,9 @@ test("confirms, prevents duplicate saving, rereads settings, then starts only on
   await expect.poll(() => api.writes.length).toBe(1);
   expect(api.commands).toHaveLength(0);
   release();
-  await expect(page.getByRole("status")).toContainText("適用済み：安全重視");
+  await expect(
+    page.locator(".easy-settings").getByRole("status"),
+  ).toContainText("適用済み：安全重視");
   await expect(saved(page)).toContainText("最大取引額：2 USDC");
   expect(api.state.settings).toMatchObject({
     dailyLossPct: 0.002,
@@ -225,7 +227,9 @@ for (const failure of ["post", "read"] as const)
     await review(page)
       .getByRole("button", { name: "安全重視を適用", exact: true })
       .click();
-    await expect(page.getByRole("status")).toContainText("適用済み：安全重視");
+    await expect(
+      page.locator(".easy-settings").getByRole("status"),
+    ).toContainText("適用済み：安全重視");
   });
 
 test("keeps custom edits until an explicit discard and uses saved settings for mode switches", async ({
@@ -262,7 +266,9 @@ test("keeps custom edits until an explicit discard and uses saved settings for m
   await review(page)
     .getByRole("button", { name: "変更を保存", exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText("適用済み：カスタム");
+  await expect(
+    page.locator(".easy-settings").getByRole("status"),
+  ).toContainText("適用済み：カスタム");
   expect(api.state.settings.gasUsdc).toBe(0.06);
   await maximum(page).fill("3");
   await modes(page).nth(0).click();
@@ -305,15 +311,17 @@ test("validates values and keeps emergency stop independent during saving", asyn
   await review(page)
     .getByRole("button", { name: "安全重視を適用", exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText(
-    "保存・サーバーへの再確認中",
-  );
+  await expect(
+    page.locator(".easy-settings").getByRole("status"),
+  ).toContainText("保存・サーバーへの再確認中");
   await page.getByRole("button", { name: "緊急停止", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "PAPER運用：緊急停止中", exact: true }),
   ).toBeVisible();
   release();
-  await expect(page.getByRole("status")).toContainText("適用済み");
+  await expect(
+    page.locator(".easy-settings").getByRole("status"),
+  ).toContainText("適用済み");
   await expect(
     page.getByRole("button", { name: "PAPER運用開始", exact: true }),
   ).toBeDisabled();

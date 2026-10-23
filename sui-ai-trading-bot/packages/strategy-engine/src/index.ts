@@ -78,6 +78,8 @@ export class RuleBasedStrategy implements TradingStrategy {
         previousCandleTimestamp: c.candles.at(-2)!.timestamp,
         inputs: {
           price,
+          latestVolume: c.candles.at(-1)!.volume,
+          previousVolume: c.candles.at(-2)!.volume,
           entryPrice: c.entryPrice,
           current: { ...i },
           previous: { ...p },

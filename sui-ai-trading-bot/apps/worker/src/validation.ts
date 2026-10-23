@@ -3,6 +3,7 @@ import {
   type PaperSafetyState,
 } from "../../../packages/shared/src/paper-recovery.ts";
 import { validateCandles } from "../../../packages/market-data/src/validation.ts";
+import { digest, type RuntimeBuild } from "./runtime-build.ts";
 import { randomUUID } from "node:crypto";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
 import type { ApiAttempt } from "../../../packages/shared/src/api.ts";
@@ -42,6 +43,7 @@ export function assertValidationProfile(env: NodeJS.ProcessEnv) {
   return true;
 }
 export interface ValidationSession {
+  build?: (RuntimeBuild & { settingsSha256: string }) | null;
   id: string;
   startedAt: number;
   targetAt: number;
@@ -118,11 +120,24 @@ export class ValidationRecorder {
   private pendingFault: string | null = null;
   constructor(readonly db: BotDatabase) {}
   boot() {
+    const recorded = this.session()?.build;
+    const actual = this.db.get<RuntimeBuild>("runtime_build");
+    if (
+      recorded &&
+      (!actual ||
+        ["declaredSha", "declaredImage", "node", "lockSha256"].some(
+          (key) =>
+            recorded[key as keyof RuntimeBuild] !==
+            actual[key as keyof RuntimeBuild],
+        ))
+    )
+      this.fault("EXECUTION_BUILD_CHANGED");
     if (this.session() && this.db.get("validation_clean_shutdown") === false)
       this.fault("UNCLEAN_RESTART");
     this.db.set("validation_clean_shutdown", false);
   }
   fault(code: string) {
+    this.cached = null;
     this.pendingFault = code;
     this.db.set("validation_integrity_fault", code);
   }
@@ -150,6 +165,12 @@ export class ValidationRecorder {
     const price = this.db.get<number>("price"),
       p = this.db.portfolio();
     const session: ValidationSession = {
+      build: this.db.get<RuntimeBuild>("runtime_build")
+        ? {
+            ...this.db.get<RuntimeBuild>("runtime_build")!,
+            settingsSha256: digest(JSON.stringify(this.db.settings())),
+          }
+        : null,
       id: randomUUID(),
       startedAt: now,
       targetAt: now + validationLimits.durationMs,
@@ -373,7 +394,12 @@ export function aggregateValidation(
       for (const t of q.gapTimestamps ?? []) {
         gaps.add(t);
       }
-      if (q.unresolved > 0) reconstructionFailures++;
+      if (q.unresolved > 0) {
+        reconstructionFailures++;
+        // Reopen only a gap actually observed unresolved in this acquisition.
+        for (const t of q.unresolvedTimestamps ?? q.gapTimestamps ?? [])
+          if (!c.timestamps.includes(t)) resolved.delete(t);
+      }
       currentQualities.push(q);
       currentUnresolved =
         q.unresolved === 0
@@ -633,7 +659,7 @@ export function aggregateValidation(
       historicalUnresolvedTimestamps: historicalUnresolved,
       qualityObservedAt: latestQuality?.[300]?.fetchedAt ?? null,
       unresolvedTimestamps: unresolved,
-      missingRate: pct(gaps.size, seen.size + unresolved.length),
+      missingRate: pct(gaps.size, seen.size + historicalUnresolved.length),
       reconstructionSuccessRate: pct(repaired.size, gaps.size),
       latestQuality: latestQuality ?? null,
       reconstructionTime: stats(qualities.map((q) => q.reconstructionMs ?? 0)),

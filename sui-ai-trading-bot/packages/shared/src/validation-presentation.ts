@@ -10,6 +10,7 @@ export function validationMarkdown(r: ValidationReport): string {
   if (!r.session) return lines.join("\n\n") + "\n";
   lines.push(
     `計測ID: ${r.session.id}`,
+    `実行版（申告SHA/imageはdocker inspectと別途照合）: ${JSON.stringify(r.session.build ?? null)}`,
     `開始: ${new Date(r.session.startedAt).toISOString()} / 目標: ${new Date(r.session.targetAt).toISOString()}`,
     `計測時間: ${((r.elapsedMs ?? 0) / 3600000).toFixed(3)}時間 / PAPER実稼働: ${((r.runningMs ?? 0) / 3600000).toFixed(3)}時間`,
     `記録: ${r.sampleCount}件 / 最大空白: ${r.maxGapMs}ms / 市場取得正常率: ${rate(r.cycleSuccessRate)}`,

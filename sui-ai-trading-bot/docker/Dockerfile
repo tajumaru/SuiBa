@@ -1,4 +1,7 @@
 FROM node:24.22.1-bookworm-slim
+ARG SUIBA_BUILD_SHA=unknown
+LABEL org.opencontainers.image.revision=$SUIBA_BUILD_SHA
+ENV SUIBA_BUILD_SHA=$SUIBA_BUILD_SHA
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@9.12.3 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./

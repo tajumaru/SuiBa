@@ -724,3 +724,54 @@ it("does not call an old unresolved gap a current input gap after it leaves the 
   });
   db.close();
 });
+
+it("reopens a truly unresolved gap without deleting prior repair evidence and resolves a later backfill", () => {
+  const { db, recorder } = setup();
+  recorder.begin(start);
+  const t = bars()[20].timestamp,
+    m = market();
+  Object.assign(m.quality![300], {
+    gapTimestamps: [t],
+    missing: 1,
+    reconstructed: 1,
+    unresolved: 0,
+  });
+  const c = bars();
+  c[20].provenance = {
+    origin: "NO_INDEXED_TRADES",
+    upstream: "DeepBook Indexer",
+    pair: "SUI_USDC",
+    fetchedAt: start,
+    timeframe: 300,
+    evidence: ["fixture-proof"],
+  };
+  recorder.cycle(m, { 300: c }, "WAIT", null, start, start + 1);
+  const failed = market(start + 2);
+  Object.assign(failed.quality![300], {
+    gapTimestamps: [t],
+    unresolvedTimestamps: [t],
+    missing: 1,
+    unresolved: 1,
+  });
+  recorder.cycle(failed, {}, null, "CANDLE_GAP", start + 2, start + 3);
+  expect(recorder.report(start + 3, true).candles).toMatchObject({
+    unresolved: 1,
+    historicalUnresolved: 1,
+    reconstructed: 1,
+  });
+  recorder.cycle(
+    market(start + 4),
+    { 300: bars() },
+    "WAIT",
+    null,
+    start + 4,
+    start + 5,
+  );
+  expect(recorder.report(start + 5, true).candles).toMatchObject({
+    unresolved: 0,
+    historicalUnresolved: 0,
+    reconstructed: 1,
+    reconstructionFailures: 1,
+  });
+  db.close();
+});

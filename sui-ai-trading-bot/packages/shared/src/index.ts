@@ -105,6 +105,8 @@ export interface StrategyEvidence {
   previousCandleTimestamp: number;
   inputs: {
     price: number;
+    latestVolume: number;
+    previousVolume: number;
     entryPrice: number | null;
     current: Indicators;
     previous: Indicators;

@@ -1,3 +1,4 @@
+import { runtimeBuild } from "./runtime-build.ts";
 import { deepBookTransport } from "../../../packages/market-data/src/deepbook-transport.ts";
 import { DashboardService, acceptsGzip } from "./dashboard-feed.ts";
 import { gzip } from "node:zlib";
@@ -41,6 +42,13 @@ if (!["off", "verified"].includes(reconstruction))
   throw new Error("INVALID_DEEPBOOK_RECONSTRUCTION");
 const validationEnabled = assertValidationProfile(process.env);
 const db = new BotDatabase(process.env.DATABASE_PATH ?? "data/bot.sqlite");
+db.set(
+  "runtime_build",
+  runtimeBuild(
+    process.env,
+    readFileSync(new URL("../../../pnpm-lock.yaml", import.meta.url), "utf8"),
+  ),
+);
 const sui = new ReadOnlySuiClient(process.env.SUI_GRPC_URL),
   engine = new BotEngine(
     db,

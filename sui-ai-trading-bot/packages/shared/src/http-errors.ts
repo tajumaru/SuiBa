@@ -166,7 +166,11 @@ export class HttpStatusFailure extends Error {
 }
 
 // Only fixed phase names and numeric timings may cross the logging boundary.
-export function transportDiagnostics(error: unknown): { phase?: RequestPhase; status?: number; timings?: Record<string, number | boolean> } {
+export function transportDiagnostics(error: unknown): {
+  phase?: RequestPhase;
+  status?: number;
+  timings?: Record<string, number | boolean>;
+} {
   if (!error || typeof error !== "object") return {};
   const e = error as {
     requestPhase?: unknown;
