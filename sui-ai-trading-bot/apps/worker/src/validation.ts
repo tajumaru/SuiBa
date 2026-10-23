@@ -355,15 +355,27 @@ export function aggregateValidation(
     seen = new Set<number>();
   let reconstructionFailures = 0,
     latestQuality: MarketStatus["quality"] | undefined;
+  const currentQualities: NonNullable<MarketStatus["quality"]>[number][] = [];
+  let currentUnresolved: number[] = [];
   for (const c of cycles) {
-    const q = c.market?.quality?.[300];
+    const snapshot = c.market?.quality?.[300];
+    // An upstream health failure may expose an older provider snapshot.
+    const q =
+      snapshot && snapshot.fetchedAt >= c.at - c.durationMs
+        ? snapshot
+        : undefined;
     if (q) {
       latestQuality = c.market?.quality;
       for (const t of q.gapTimestamps ?? []) {
         gaps.add(t);
-        resolved.delete(t);
       }
       if (q.unresolved > 0) reconstructionFailures++;
+      currentQualities.push(q);
+      currentUnresolved =
+        q.unresolved === 0
+          ? []
+          : (q.unresolvedTimestamps ??
+            (q.gapTimestamps ?? []).filter((t) => !c.timestamps.includes(t)));
     }
     for (const t of c.timestamps) {
       seen.add(t);
@@ -371,10 +383,9 @@ export function aggregateValidation(
     }
     for (const r of c.repairs) repaired.set(r.timestamp, r);
   }
-  const unresolved = [...gaps].filter((t) => !resolved.has(t));
-  const qualities = cycles
-    .map((x) => x.market?.quality?.[300])
-    .filter((x) => !!x);
+  const historicalUnresolved = [...gaps].filter((t) => !resolved.has(t));
+  const unresolved = currentUnresolved;
+  const qualities = currentQualities;
   const actions = { BUY: 0, SELL: 0, WAIT: 0 };
   for (const c of cycles)
     if (c.action && c.action in actions)
@@ -543,7 +554,7 @@ export function aggregateValidation(
       name: "未解決欠損ゼロ・再構築45秒以内",
       ok:
         qualities.length > 0 &&
-        unresolved.length === 0 &&
+        latestQuality?.[300]?.unresolved === 0 &&
         qualities.every(
           (q) =>
             q.unresolved === 0 &&
@@ -613,7 +624,10 @@ export function aggregateValidation(
       reconstructionFailures,
       failedCandleObservations: qualities.reduce((n, q) => n + q.unresolved, 0),
       latestRawCount: latestQuality?.[300]?.originalCount ?? null,
-      unresolved: unresolved.length,
+      unresolved: latestQuality?.[300]?.unresolved ?? null,
+      historicalUnresolved: historicalUnresolved.length,
+      historicalUnresolvedTimestamps: historicalUnresolved,
+      qualityObservedAt: latestQuality?.[300]?.fetchedAt ?? null,
       unresolvedTimestamps: unresolved,
       missingRate: pct(gaps.size, seen.size + unresolved.length),
       reconstructionSuccessRate: pct(repaired.size, gaps.size),

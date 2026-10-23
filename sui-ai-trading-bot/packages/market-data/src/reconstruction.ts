@@ -8,6 +8,7 @@ export interface CandleQuality {
   reconstructionMs?: number;
   originalCount?: number;
   gapTimestamps?: number[];
+  unresolvedTimestamps?: number[];
   missing: number;
   reconstructed: number;
   unresolved: number;
@@ -196,6 +197,7 @@ export function reconstructFiveMinutes(
       missing: missing.length,
       reconstructed: origins.ONE_MINUTE_AGGREGATE + origins.NO_INDEXED_TRADES,
       unresolved,
+      unresolvedTimestamps: gaps(result),
       latestClosedAt: result.length
         ? (result.at(-1)!.timestamp + 300) * 1000
         : null,

@@ -1,5 +1,6 @@
 import { deepBookTransport } from "./deepbook-transport.ts";
-import { currentReadBudget } from "../../shared/src/read-budget.ts";
+import { withReadBudget } from "../../shared/src/read-budget-node.ts";
+import { abortable, currentReadBudget } from "../../shared/src/read-budget.ts";
 import {
   gaps,
   reconstructFiveMinutes,
@@ -192,7 +193,7 @@ export class DeepBookMarketData {
           quote_asset_decimals: z.number(),
         }),
       )
-      .parse(await this.read("/get_pools", 300000));
+      .parse(await this.checkedRead("/get_pools", 300000));
     const p = pools.find((p) => p.pool_name === "SUI_USDC");
     if (
       !p ||
@@ -222,7 +223,7 @@ export class DeepBookMarketData {
           .optional(),
       })
       .parse(
-        await this.read(
+        await this.checkedRead(
           "/status?max_checkpoint_lag=100&max_time_lag_seconds=60",
           5000,
         ),
@@ -243,7 +244,9 @@ export class DeepBookMarketData {
   }
   private async refresh() {
     await this.refreshStatus();
-    this.bookRaw = await this.read("/orderbook/SUI_USDC?level=2&depth=10");
+    this.bookRaw = await this.checkedRead(
+      "/orderbook/SUI_USDC?level=2&depth=10",
+    );
     this.assertReady(Date.now());
   }
   async refreshForOrder() {
@@ -271,10 +274,41 @@ export class DeepBookMarketData {
       limits.maxSlippage,
     );
   }
+  private async checkedRead(path: string, ttl = 0) {
+    const budget = currentReadBudget();
+    budget?.signal.throwIfAborted();
+    const result = await this.read(path, ttl);
+    budget?.signal.throwIfAborted();
+    return result;
+  }
   async candles(tf: Timeframe, now = Date.now()) {
+    const parent = currentReadBudget(),
+      controller = new AbortController();
+    const signal = AbortSignal.any([
+      controller.signal,
+      ...(parent ? [parent.signal] : []),
+    ]);
+    const began = performance.now();
+    const timer = setTimeout(
+      () => controller.abort(new Error("CANDLE_GAP")),
+      45000,
+    );
+    timer.unref?.();
+    try {
+      return await withReadBudget(signal, parent?.fresh ?? false, async () => {
+        const result = await abortable(this.readCandles(tf, now), signal);
+        signal.throwIfAborted();
+        if (performance.now() - began > 45000) throw new Error("CANDLE_GAP");
+        return result;
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  private async readCandles(tf: Timeframe, now: number) {
     const interval = tf === 300 ? "5m" : tf === 900 ? "15m" : "1h",
       began = Date.now();
-    const raw = await this.read(
+    const raw = await this.checkedRead(
       "/ohclv/SUI_USDC?interval=" + interval + "&limit=1000",
       20000,
     );
@@ -290,13 +324,14 @@ export class DeepBookMarketData {
                 n + Math.max(0, (x.timestamp - c[i].timestamp) / tf - 1),
               0,
             );
-    const quality: CandleQuality = {
+    let quality: CandleQuality = {
       upstream: "DeepBook Indexer",
       pair: "SUI_USDC",
       fetchedAt: Date.now(),
       timeframe: tf,
       originalCount: c.length,
       gapTimestamps: holes,
+      unresolvedTimestamps: holes,
       reconstructionMs: 0,
       missing: missingCount,
       reconstructed: 0,
@@ -323,7 +358,7 @@ export class DeepBookMarketData {
         for (let page = 0; needsMinutes && page < 8; page++) {
           if (Date.now() - began > 45000) throw new Error("CANDLE_GAP");
           const rows = parseDeepBook(
-            await this.read(
+            await this.checkedRead(
               "/ohclv/SUI_USDC?interval=1m&start_time=" +
                 c[0].timestamp * 1000 +
                 "&end_time=" +
@@ -362,7 +397,7 @@ export class DeepBookMarketData {
             "&limit=1000";
           const trades = z
             .array(z.object({ timestamp: z.number().int().positive() }))
-            .parse(await this.read(path));
+            .parse(await this.checkedRead(path));
           if (
             trades.some(
               (x) => x.timestamp < t * 1000 || x.timestamp > (t + 300) * 1000,
@@ -391,15 +426,16 @@ export class DeepBookMarketData {
           Date.now(),
           quality.fetchedAt,
         );
-        this.qualities[tf] = {
+        quality = {
           ...result.quality,
           originalCount: c.length,
           gapTimestamps: holes,
         };
+        this.qualities[tf] = quality;
+        currentReadBudget()?.signal.throwIfAborted();
         return validateCandles(result.candles, tf, Date.now());
       } finally {
-        this.qualities[tf].reconstructionMs =
-          Date.now() - reconstructionStarted;
+        quality.reconstructionMs = Date.now() - reconstructionStarted;
       }
     }
     const original = c.map((x) => ({

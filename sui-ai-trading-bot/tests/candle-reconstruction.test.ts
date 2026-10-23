@@ -373,3 +373,27 @@ it("persists WAIT, quality and PAPER safe stop when a trade contradicts an empty
   expect(db.history("paper_trades")).toHaveLength(0);
   db.close();
 });
+
+it("does not accept reconstruction whose final evidence read finishes after the deadline", async () => {
+  vi.useFakeTimers();
+  try {
+    const x = runtimeFixture();
+    const original = x.read.getMockImplementation()!;
+    x.read.mockImplementation(async (path) => {
+      const result = await original(path);
+      if (path.startsWith("/trades"))
+        await new Promise((r) => setTimeout(r, 45001));
+      return result;
+    });
+    const pending = x.provider.candles(300);
+    const result = pending.then(
+      () => "ACCEPTED",
+      (e) => e.message,
+    );
+    await vi.advanceTimersByTimeAsync(45001);
+    expect(await result).toBe("CANDLE_GAP");
+    expect(x.provider.quality()[300].unresolved).toBe(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});

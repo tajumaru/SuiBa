@@ -643,3 +643,84 @@ it("initializes a separate P0 profile without replacing the existing test creden
   ).toBe(secret);
   expect(readFileSync(join(dir, "docker/.env.deepbook-24h"), "utf8")).toBe(env);
 });
+
+it("separates current gaps from historical failures and ignores a stale quality snapshot on health failure", () => {
+  const { db, recorder } = setup();
+  recorder.begin(start);
+  const m = market(),
+    t = bars()[20].timestamp;
+  Object.assign(m.quality![300], {
+    gapTimestamps: [t],
+    missing: 1,
+    unresolved: 1,
+  });
+  recorder.cycle(m, {}, null, "CANDLE_GAP", start, start + 1);
+  const repaired = bars();
+  repaired[20].provenance = {
+    origin: "NO_INDEXED_TRADES",
+    upstream: "DeepBook Indexer",
+    pair: "SUI_USDC",
+    fetchedAt: start + 2,
+    timeframe: 300,
+    evidence: ["fixture-empty-proof"],
+  };
+  m.quality![300].unresolved = 0;
+  m.quality![300].reconstructed = 1;
+  recorder.cycle(m, { 300: repaired }, "WAIT", null, start, start + 2);
+  // No current candles fetched: the provider still exposes the previous quality.
+  recorder.cycle(m, {}, null, "SUI_READ_FAILED", start + 3, start + 4);
+  let report = recorder.report(start + 4, true);
+  expect(report.candles).toMatchObject({
+    unresolved: 0,
+    historicalUnresolved: 0,
+    reconstructionFailures: 1,
+  });
+  const outside = market(start + 5);
+  recorder.cycle(
+    outside,
+    { 300: bars().slice(30) },
+    "WAIT",
+    null,
+    start + 5,
+    start + 6,
+  );
+  report = recorder.report(start + 6, true);
+  expect(report.candles).toMatchObject({
+    unresolved: 0,
+    historicalUnresolved: 0,
+    originalMissing: 1,
+    reconstructed: 1,
+    reconstructionFailures: 1,
+  });
+  expect(report.criteria?.find((x) => x.name.startsWith("未解決"))?.ok).toBe(
+    false,
+  );
+  db.close();
+});
+it("does not call an old unresolved gap a current input gap after it leaves the fetch window", () => {
+  const { db, recorder } = setup();
+  recorder.begin(start);
+  const m = market(),
+    t = bars()[20].timestamp;
+  Object.assign(m.quality![300], {
+    gapTimestamps: [t],
+    missing: 1,
+    unresolved: 1,
+  });
+  recorder.cycle(m, {}, null, "CANDLE_GAP", start, start + 1);
+  recorder.cycle(
+    market(start + 2),
+    { 300: bars().slice(30) },
+    "WAIT",
+    null,
+    start + 2,
+    start + 3,
+  );
+  expect(recorder.report(start + 3, true).candles).toMatchObject({
+    unresolved: 0,
+    historicalUnresolved: 1,
+    historicalUnresolvedTimestamps: [t],
+    reconstructionFailures: 1,
+  });
+  db.close();
+});

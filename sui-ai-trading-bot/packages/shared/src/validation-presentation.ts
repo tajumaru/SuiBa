@@ -29,7 +29,7 @@ export function validationMarkdown(r: ValidationReport): string {
     p = r.paper!;
   lines.push(
     "## ローソク足品質",
-    `取得5分足（UTC時刻の重複除外）: ${q.uniqueFiveMinuteBars} / 元欠損: ${q.originalMissing} / 欠損率: ${rate(q.missingRate)} / 再構築: ${q.reconstructed} / 成功率: ${rate(q.reconstructionSuccessRate)} / 未解決: ${q.unresolved} / 未解決を観測した取得周期: ${q.reconstructionFailures} / 再構築失敗足の観測延べ数: ${q.failedCandleObservations} / 最新生データ本数: ${q.latestRawCount ?? "未取得"}`,
+    `取得5分足（UTC時刻の重複除外）: ${q.uniqueFiveMinuteBars} / 元欠損: ${q.originalMissing} / 欠損率: ${rate(q.missingRate)} / 再構築: ${q.reconstructed} / 成功率: ${rate(q.reconstructionSuccessRate)} / 現在の未解決: ${q.unresolved ?? "未取得"} / 履歴上の未解決: ${q.historicalUnresolved} / 未解決を観測した取得周期: ${q.reconstructionFailures} / 再構築失敗足の観測延べ数: ${q.failedCandleObservations} / 最新生データ本数: ${q.latestRawCount ?? "未取得"}`,
     `再構築時間: ${JSON.stringify(q.reconstructionTime)} / 最新品質: ${JSON.stringify(q.latestQuality)}`,
     "再構築の理由・取得元・取得時刻・証拠:",
     "```json",
