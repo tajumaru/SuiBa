@@ -222,6 +222,81 @@ describe("bot vital signs: fetching and next fetch", () => {
   });
 });
 
+describe("bot vital signs: fetch elapsed ages on screen", () => {
+  it("stops showing 取得中 once the on-screen age passes the fetch deadline", () => {
+    const d = healthy();
+    d.timing.fetching = true;
+    d.timing.fetchElapsedMs = 44_000;
+    // At receipt the fetch is still within its deadline.
+    expect(botVital(d, false, NOW, NOW).fetching).toBe(true);
+    // The snapshot value never changes, but 2s on screen ages it past 45s.
+    const aged = botVital(d, false, NOW + 2_000, NOW);
+    expect(aged.fetchElapsedMs).toBe(46_000);
+    expect(aged.fetching).toBe(false);
+    // The state itself is unaffected: only the 取得中 claim expires.
+    expect(aged.state).toBe("alive");
+    // Exactly at the deadline it is still credible.
+    d.timing.fetchElapsedMs = 43_000;
+    expect(botVital(d, false, NOW + 2_000, NOW).fetching).toBe(true);
+  });
+
+  it("ages a stuck fetchStartedAt across fresh snapshots (worker restart case)", () => {
+    // fetchStartedAt persists in the DB while the worker's monotonic
+    // fetch clock is gone, so snapshots keep arriving with
+    // fetchElapsedMs = null and fetching = true.
+    const d = healthy();
+    d.timing.fetching = true;
+    d.timing.fetchElapsedMs = null;
+    d.timing.fetchStartedAt = NOW - 40_000;
+    const first = botVital(d, false, NOW, NOW);
+    expect(first.fetchElapsedMs).toBe(40_000);
+    expect(first.fetching).toBe(true);
+    // Ten seconds later a new snapshot arrives (fresh heartbeat, fresh
+    // receipt) but the fetch start has not moved: it must expire.
+    d.lastHeartbeatAt = NOW + 9_000;
+    const later = botVital(d, false, NOW + 10_000, NOW + 10_000);
+    expect(later.fetchElapsedMs).toBe(50_000);
+    expect(later.fetching).toBe(false);
+    expect(later.state).toBe("alive");
+  });
+});
+
+describe("bot vital signs: weak heartbeat requires confirmed running", () => {
+  it("does not beat weakly when botState contradicts running (MANUAL_STOP)", () => {
+    const d = healthy();
+    d.safety.botState = "MANUAL_STOP";
+    d.safety.connectivity = "RECOVERING";
+    const v = botVital(d, false, NOW, NOW);
+    expect(v.state).not.toBe("weak");
+    expect(v.state).not.toBe("alive");
+    expect(v.beatSeconds).toBeNull();
+    const degraded = healthy();
+    degraded.safety.botState = "MANUAL_STOP";
+    degraded.safety.connectivity = "DEGRADED";
+    expect(botVital(degraded, false, NOW, NOW).beatSeconds).toBeNull();
+  });
+
+  it("does not beat weakly for an unrecognised status", () => {
+    const d = healthy();
+    d.status = "PAUSED" as typeof d.status;
+    d.safety.connectivity = "DEGRADED";
+    const v = botVital(d, false, NOW, NOW);
+    expect(v.state).toBe("unknown");
+    expect(v.beatSeconds).toBeNull();
+  });
+
+  it("still beats weakly while running (RUNNING and DATA_DELAYED)", () => {
+    const recovering = healthy();
+    recovering.safety.botState = "RECOVERING";
+    recovering.safety.connectivity = "RECOVERING";
+    expect(botVital(recovering, false, NOW, NOW).state).toBe("weak");
+    const delayed = healthy();
+    delayed.status = "DATA_DELAYED";
+    delayed.safety.connectivity = "DEGRADED";
+    expect(botVital(delayed, false, NOW, NOW).state).toBe("weak");
+  });
+});
+
 describe("bot vital signs: summary consistency across combinations", () => {
   it("alive exactly matches 正常稼働, and beating states match live summaries", () => {
     const combos: [string, ReturnType<typeof fixture>, boolean?][] = [

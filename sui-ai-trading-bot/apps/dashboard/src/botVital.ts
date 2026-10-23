@@ -8,10 +8,12 @@ import type { OperationsSnapshot } from "./operationsTypes.ts";
  *   1. stale display / expired evidence  -> unknown （状態確認中）
  *   2. safety stop (ABNORMAL / EMERGENCY) -> flatlined
  *   3. stopped                           -> sleeping
- *   4. recovering / degraded connectivity -> weak (only while not stopped)
+ *   4. recovering / degraded connectivity -> weak (only while the bot's
+ *      running state is positively confirmed)
  *   5. running on fresh evidence         -> alive
  * Connectivity never outranks the bot's own run state: a stopped bot must
- * not show a weak heartbeat just because the network is recovering.
+ * not show a weak heartbeat just because the network is recovering, and
+ * no heartbeat is shown when running cannot be confirmed at all.
  *
  * The animation is a visualisation of recorded evidence only. It never
  * invents activity the worker did not report, and its speed is a fixed
@@ -53,6 +55,14 @@ export interface BotVital {
    * within its deadline, the evidence is fresh, and the bot is not stopped.
    */
   fetching: boolean;
+  /**
+   * Effective fetch duration (ms) as of `now`: the worker's snapshot value
+   * advanced by the time since the snapshot was received, so a frozen
+   * snapshot ages on screen instead of claiming "取得中" forever. Falls
+   * back to `now - fetchStartedAt` when the snapshot has no elapsed value.
+   * Null when no fetch timing evidence exists.
+   */
+  fetchElapsedMs: number | null;
   /**
    * True when live-looking evidence (worker heartbeat and/or snapshot
    * receipt) is older than the freshness bounds and a beating state was
@@ -97,6 +107,16 @@ export function botVital(
     (heartbeatAgeMs != null && heartbeatAgeMs > VITAL_HEARTBEAT_FRESH_MS) ||
     (receiptAgeMs != null && receiptAgeMs > VITAL_RECEIPT_FRESH_MS);
 
+  // "Actually running" must be positively confirmed before any beating
+  // state (weak or alive) may be shown. The worker derives status from the
+  // runtime running flag, and a MANUAL_STOP botState contradicts running;
+  // either one missing or contradicting means no heartbeat. On real
+  // snapshots this changes nothing (MANUAL_STOP always comes with status
+  // STOPPED) — it guards against inconsistent or partial data.
+  const runningConfirmed =
+    (d.status === "RUNNING" || d.status === "DATA_DELAYED") &&
+    s?.botState !== "MANUAL_STOP";
+
   let core: VitalCore;
   if (stale) {
     core = {
@@ -125,7 +145,7 @@ export function botVital(
       ecg: "flat",
       evidenceStale: false,
     };
-  } else if (s?.connectivity === "RECOVERING") {
+  } else if (runningConfirmed && s?.connectivity === "RECOVERING") {
     core = {
       state: "weak",
       label: "復旧確認中（弱い鼓動）",
@@ -133,7 +153,10 @@ export function botVital(
       ecg: "slow",
       evidenceStale: false,
     };
-  } else if (s?.connectivity === "DEGRADED" || d.status === "DATA_DELAYED") {
+  } else if (
+    runningConfirmed &&
+    (s?.connectivity === "DEGRADED" || d.status === "DATA_DELAYED")
+  ) {
     core = {
       state: "weak",
       label: "通信が不安定（弱い鼓動）",
@@ -142,6 +165,7 @@ export function botVital(
       evidenceStale: false,
     };
   } else if (
+    runningConfirmed &&
     d.status === "RUNNING" &&
     s?.ordersAllowed &&
     d.timing?.transportRecent &&
@@ -175,16 +199,28 @@ export function botVital(
   }
 
   const nextFetchAt = d.timing?.nextFetchAt ?? null;
+  // Advance the worker's snapshot elapsed by the time the snapshot has
+  // been on screen. A frozen snapshot therefore crosses the fetch deadline
+  // on its own: even if fetchElapsedMs never updates again, the display
+  // stops claiming 取得中 45 seconds after the fetch started.
+  const sinceReceiptMs = receivedAt == null ? 0 : Math.max(0, now - receivedAt);
+  const fetchElapsedMs =
+    d.timing?.fetchElapsedMs != null
+      ? d.timing.fetchElapsedMs + sinceReceiptMs
+      : d.timing?.fetchStartedAt != null
+        ? Math.max(0, now - d.timing.fetchStartedAt)
+        : null;
   const fetchCredible =
     (d.timing?.fetching ?? false) &&
-    d.timing?.fetchElapsedMs != null &&
-    d.timing.fetchElapsedMs <= VITAL_FETCH_DEADLINE_MS;
+    fetchElapsedMs != null &&
+    fetchElapsedMs <= VITAL_FETCH_DEADLINE_MS;
   return {
     ...core,
     fetching:
       fetchCredible &&
       !core.evidenceStale &&
       (core.state === "alive" || core.state === "weak"),
+    fetchElapsedMs,
     lastAnalysisSecondsAgo: secondsAgo(d.timing?.lastAnalysisAt, now),
     lastFetchSecondsAgo: secondsAgo(d.timing?.lastFetchSuccessAt, now),
     heartbeatSecondsAgo: secondsAgo(d.lastHeartbeatAt, now),
