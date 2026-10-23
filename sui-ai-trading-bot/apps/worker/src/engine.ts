@@ -9,6 +9,7 @@ import {
   dayKey,
   safeFailure,
   type Candle,
+  type CycleEvidence,
   type DexRouter,
   type TradingDecision,
   type QuoteResult,
@@ -80,7 +81,22 @@ export class BotEngine {
       measuredAction: string | null = null,
       measuredError: string | null = null;
     const cycleToken = this.monitor.beginCycle();
+    const cycle: CycleEvidence = {
+      cycleId: randomUUID(),
+      beganAt: began,
+      runningAtStart: this.db.runtime().running,
+      generationAtStart: cycleToken,
+      connectivityAtStart: this.monitor.safety().connectivity,
+      analysis: null,
+      outcome: "NOT_EVALUATED",
+    };
     try {
+      this.db.append(
+        "cycle_audits",
+        randomUUID(),
+        { ...cycle, phase: "START" },
+        began,
+      );
       const now = Date.now();
       const recovering = this.monitor.safety().connectivity !== "HEALTHY";
       const frames: Record<number, Candle[]> = await this.monitor.acquisition(
@@ -171,7 +187,19 @@ export class BotEngine {
         entryPrice: p.sui > 0 ? p.costBasis / p.sui : null,
         now,
       });
-      this.db.recordAnalysis(randomUUID(), decision, current, now);
+      cycle.analysis = {
+        cycleId: cycle.cycleId,
+        runningAtStart: cycle.runningAtStart,
+        runningAtAnalysis: this.db.runtime().running,
+        ordersAllowedAtAnalysis:
+          !recoveryTransition && this.monitor.ordersAllowed(cycleToken),
+        generationAtStart: cycleToken,
+        generationAtAnalysis: this.monitor.safety().generation,
+        connectivityAtAnalysis: this.monitor.safety().connectivity,
+      };
+      decision.analysisContext = cycle.analysis;
+      cycle.outcome = "ANALYZED";
+      this.db.recordAnalysis(cycle.cycleId, decision, current, now);
       measuredAction = decision.action;
       this.monitor.analysis();
       this.db.set("price", price);
@@ -219,16 +247,25 @@ export class BotEngine {
           }),
         );
       }
+      if (recoveryTransition) {
+        cycle.outcome = "RECOVERY_CONFIRMATION";
+        return;
+      }
       if (
-        recoveryTransition ||
         !this.monitor.ordersAllowed(cycleToken) ||
         !runtime.running ||
         runtime.emergency ||
-        runtime.error ||
-        runtime.lastCandle === last.timestamp
-      )
+        runtime.error
+      ) {
+        cycle.outcome = "SAFETY_GATE";
         return;
+      }
+      if (runtime.lastCandle === last.timestamp) {
+        cycle.outcome = "ALREADY_PROCESSED_CANDLE";
+        return;
+      }
       if (decision.action === "WAIT") {
+        cycle.outcome = "STRATEGY_WAIT";
         this.monitor.wait(now);
         this.db.set("runtime", { ...runtime, lastCandle: last.timestamp });
         return;
@@ -263,6 +300,7 @@ export class BotEngine {
         reasons: [],
       };
       this.db.putCandidate(audit);
+      cycle.outcome = "CANDIDATE";
       if (amount <= 0) {
         this.monitor.finishCandidate({
           ...audit,
@@ -558,6 +596,7 @@ export class BotEngine {
         },
       );
       committed = true;
+      cycle.outcome = "FILLED";
       this.monitor.filled(fresh);
       const persisted = reconcileFill(
         p,
@@ -582,6 +621,7 @@ export class BotEngine {
           ? error.message
           : safeFailure(error);
       measuredError = code;
+      cycle.outcome = "FAILED";
       if (audit && !committed)
         this.monitor.finishCandidate({
           ...audit,
@@ -607,12 +647,31 @@ export class BotEngine {
       if (quality) this.db.set("market_quality", quality);
       this.monitor.healthy();
       try {
+        if (audit && !committed && !measuredError)
+          cycle.outcome = "CANDIDATE_REJECTED";
+        this.db.append(
+          "cycle_audits",
+          randomUUID(),
+          {
+            ...cycle,
+            phase: "END",
+            endedAt: Date.now(),
+            runningAtEnd: this.db.runtime().running,
+            action: measuredAction,
+            error: measuredError,
+            candidateId: audit?.id ?? null,
+            orderId: audit?.orderId ?? null,
+          },
+          Date.now(),
+        );
         this.validation?.cycle(
           this.marketStatus(),
           measuredFrames,
           measuredAction,
           measuredError,
           began,
+          Date.now(),
+          cycle,
         );
       } catch {
         this.validation?.fault("VALIDATION_RECORD_FAILED");

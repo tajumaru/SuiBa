@@ -673,3 +673,109 @@ it("rejects an internally consistent fill using costs different from the executi
   );
   t.db.close();
 });
+
+it("links running and stopped analyses to durable cycle start/end records without manufacturing orders", async () => {
+  const t = setup("WAIT");
+  try {
+    await t.engine.tick();
+    t.db.set("runtime", { ...t.db.runtime(), running: false });
+    t.engine.monitor.transition("MANUAL_STOP");
+    await t.engine.tick();
+    const decisions = t.db.history<any>("strategy_decisions");
+    expect(
+      decisions.map((d) => d.analysisContext.runningAtAnalysis).sort(),
+    ).toEqual([false, true]);
+    const events = t.db.history<any>("cycle_audits");
+    expect(events).toHaveLength(4);
+    for (const d of decisions) {
+      const rows = events.filter(
+        (e) => e.cycleId === d.analysisContext.cycleId,
+      );
+      expect(rows.map((e) => e.phase).sort()).toEqual(["END", "START"]);
+      expect(rows.find((e) => e.phase === "END").outcome).toBe(
+        d.analysisContext.runningAtAnalysis ? "STRATEGY_WAIT" : "SAFETY_GATE",
+      );
+    }
+    expect(t.db.history("operation_candidates")).toHaveLength(0);
+  } finally {
+    t.db.close();
+  }
+});
+it("records failed acquisition as unevaluated rather than a strategy WAIT", async () => {
+  const t = setup("BUY");
+  try {
+    t.market.candles.mockRejectedValue(new Error("CANDLE_GAP"));
+    await t.engine.tick();
+    const end = t.db
+      .history<any>("cycle_audits")
+      .find((e) => e.phase === "END");
+    expect(end).toMatchObject({
+      outcome: "FAILED",
+      analysis: null,
+      action: null,
+      error: "CANDLE_GAP",
+    });
+    expect(t.db.history("strategy_decisions")).toHaveLength(0);
+    expect(t.db.runtime().running).toBe(false);
+  } finally {
+    t.db.close();
+  }
+});
+
+it("completes an isolated BUY and protective SELL with exact cash, fees, realized loss and atomic audit records", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(Date.UTC(2026, 9, 23, 3, 1));
+  const t = setup("BUY");
+  t.db.updateSettings({ ...t.db.settings(), maxOrder: 2 });
+  try {
+    await t.engine.tick();
+    expect(t.db.portfolio()).toMatchObject({
+      usdc: 97.964,
+      sui: 0.997,
+      costBasis: 2.036,
+      fees: 0.036,
+      realized: 0,
+    });
+    vi.setSystemTime(Date.now() + 300000);
+    vi.mocked(RuleBasedStrategy.prototype.analyze).mockResolvedValue({
+      action: "SELL",
+      sellPurpose: "STOP_LOSS",
+      confidence: 1,
+      reason: "isolated protective-exit fixture",
+      timestamp: new Date().toISOString(),
+      stopLossPct: 0.02,
+      takeProfitPct: 0.3,
+    });
+    await t.engine.tick();
+    const p = t.db.portfolio();
+    expect(p.usdc).toBeCloseTo(99.916053, 6);
+    expect(p.realized).toBeCloseTo(-0.083947, 6);
+    expect(p.fees).toBeCloseTo(0.071965, 6);
+    expect(p.sui).toBe(0);
+    expect(p.costBasis).toBe(0);
+    for (const table of [
+      "paper_orders",
+      "paper_trades",
+      "paper_checks",
+      "operation_candidates",
+    ] as const)
+      expect(t.db.history(table)).toHaveLength(2);
+    const trades = t.db.history<Fill>("paper_trades");
+    expect(trades.find((x) => x.side === "SELL")?.pnl).toBeCloseTo(
+      -0.083947,
+      6,
+    );
+    for (const c of t.db.history<CandidateAudit>("operation_candidates"))
+      expect(c).toMatchObject({
+        profitGuard: { allowed: true },
+        risk: { status: "ALLOWED" },
+      });
+    expect(t.db.history<any>("paper_checks").every((c) => c.ok)).toBe(true);
+    expect(t.engine.monitor.ledger().ok).toBe(true);
+    await t.engine.tick();
+    expect(t.db.history("paper_trades")).toHaveLength(2); // same candle cannot double fill
+  } finally {
+    t.db.close();
+    vi.useRealTimers();
+  }
+});

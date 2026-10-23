@@ -98,7 +98,48 @@ export interface Indicators {
   priceChange: number;
 }
 export type TradingAction = "BUY" | "SELL" | "WAIT";
+export interface StrategyEvidence {
+  version: 1;
+  evaluatedAt: number;
+  candleTimestamp: number;
+  previousCandleTimestamp: number;
+  inputs: {
+    price: number;
+    entryPrice: number | null;
+    current: Indicators;
+    previous: Indicators;
+  };
+  thresholds: {
+    oversold: number;
+    overbought: number;
+    maxVolumeChange: number;
+    stopLossPct: number;
+    takeProfitPct: number;
+  };
+  conditions: Record<string, boolean>;
+  selectedRule: string;
+}
+export interface AnalysisContext {
+  cycleId: string;
+  runningAtStart: boolean;
+  runningAtAnalysis: boolean;
+  ordersAllowedAtAnalysis: boolean;
+  generationAtStart: number;
+  generationAtAnalysis: number;
+  connectivityAtAnalysis: string;
+}
+export interface CycleEvidence {
+  cycleId: string;
+  beganAt: number;
+  runningAtStart: boolean;
+  generationAtStart: number;
+  connectivityAtStart: string;
+  analysis: AnalysisContext | null;
+  outcome: string;
+}
 export interface TradingDecision {
+  evidence?: StrategyEvidence;
+  analysisContext?: AnalysisContext;
   action: TradingAction;
   confidence: number;
   reason: string;

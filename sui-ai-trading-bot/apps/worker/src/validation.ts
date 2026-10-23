@@ -8,6 +8,7 @@ import { BotDatabase } from "../../../packages/database/src/index.ts";
 import type { ApiAttempt } from "../../../packages/shared/src/api.ts";
 import type {
   Candle,
+  CycleEvidence,
   CandleProvenance,
 } from "../../../packages/shared/src/index.ts";
 import type {
@@ -63,6 +64,7 @@ interface Sample {
   market: MarketStatus | null;
 }
 interface Cycle {
+  execution?: CycleEvidence;
   timing?: Partial<OperationState> | null;
   kind: "cycle";
   at: number;
@@ -198,10 +200,12 @@ export class ValidationRecorder {
     error: string | null,
     began: number,
     now = Date.now(),
+    execution?: CycleEvidence,
   ) {
     const rows = frames[300] ?? [];
     this.append({
       kind: "cycle",
+      execution,
       timing: this.db.get<OperationState>("operation_state") ?? null,
       at: now,
       durationMs: now - began,
@@ -671,6 +675,26 @@ export function aggregateValidation(
     paper: {
       analyses: Object.values(actions).reduce((a, b) => a + b, 0),
       actions,
+      runningAnalyses: cycles.filter(
+        (c) => c.action && c.execution?.analysis?.ordersAllowedAtAnalysis,
+      ).length,
+      stoppedAnalyses: cycles.filter(
+        (c) =>
+          c.action &&
+          c.execution?.analysis &&
+          !c.execution.analysis.runningAtAnalysis,
+      ).length,
+      gatedAnalyses: cycles.filter(
+        (c) =>
+          c.action &&
+          c.execution?.analysis &&
+          c.execution.analysis.runningAtAnalysis &&
+          !c.execution.analysis.ordersAllowedAtAnalysis,
+      ).length,
+      unknownAnalysisState: cycles.filter(
+        (c) => c.action && !c.execution?.analysis,
+      ).length,
+      unevaluatedCycles: cycles.filter((c) => !c.action).length,
       orderRequests: orderRequests.length,
       rejectedOrders: orderRequests.filter((o) => o.status === "REJECTED")
         .length,

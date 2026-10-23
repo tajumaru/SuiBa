@@ -217,7 +217,7 @@ it("retry success cannot reopen orders in the failure cycle; clean full cycles r
       .filter((e) => e.code === "PAPER_NETWORK_RECOVERED"),
   ).toHaveLength(1);
 });
-it.each(["BODY", "DNS", "gRPC"])(
+it.each(["BODY", "DNS", "CONNECT", "TLS", "gRPC"])(
   "handles an evidenced %s failure at final acquisition failure without a hard error",
   async (kind) => {
     const t = fixture();
@@ -459,3 +459,35 @@ it.each(["unresolved", "old quality", "indexer"])(
     expect(t.engine.monitor.safety().healthyCycles).toBe(0);
   },
 );
+
+it("classifies stopped and recovery-confirmation analyses separately from eligible running analyses", async () => {
+  const t = fixture(),
+    recorder = new ValidationRecorder(t.db);
+  t.db.set("runtime", { ...t.db.runtime(), running: false });
+  recorder.begin();
+  t.db.set("runtime", { ...t.db.runtime(), running: true });
+  t.engine.monitor.transition("MANUAL_START");
+  t.engine.validation = recorder;
+  t.inject(() => {
+    t.fault();
+    t.inject();
+  });
+  await t.tick();
+  await t.tick(60000);
+  await t.tick(60000);
+  expect(recorder.report(Date.now(), true).paper).toMatchObject({
+    analyses: 3,
+    runningAnalyses: 0,
+    stoppedAnalyses: 2,
+    gatedAnalyses: 1,
+    unknownAnalysisState: 0,
+    unevaluatedCycles: 0,
+  });
+  expect(
+    t.db
+      .history<any>("cycle_audits")
+      .filter((e) => e.phase === "END")
+      .map((e) => e.outcome),
+  ).toContain("RECOVERY_CONFIRMATION");
+  expect(t.db.history("paper_trades")).toHaveLength(0);
+});
