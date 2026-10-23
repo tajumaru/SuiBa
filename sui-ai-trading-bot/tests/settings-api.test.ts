@@ -99,6 +99,9 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
     await start();
     const health = await fetch(`http://127.0.0.1:${port}/healthz`);
     expect(health.status).toBe(200);
+    expect(health.headers.get("server-timing")).toMatch(
+      /sql;dur=[\d.]+, sql-count;desc="\d+", aggregate;dur=[\d.]+, json;dur=[\d.]+, compression;dur=0\.000/,
+    );
     expect(await health.json()).toEqual({ status: "ok", mode: "PAPER" });
     const healthProcess = spawn(process.execPath, ["docker/healthcheck.mjs"], {
       env: { ...process.env, PORT: String(port) },
