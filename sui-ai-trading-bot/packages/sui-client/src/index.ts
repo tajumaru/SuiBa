@@ -33,6 +33,8 @@ export interface SuiObservation {
   code: string | null;
   cacheHit?: boolean;
   httpStatus?: number | null;
+  /** False for shared flights or local rejection; exclude from HTTP attempt counts. */
+  transportAttempted?: boolean;
   grpcStatus?: string;
   grpcStatusSource?: "SDK";
   network?: NetworkObservation;
@@ -47,6 +49,7 @@ type ReadContext = {
   pending: Promise<void>[];
 };
 export interface SuiClientOptions {
+  /** Must persist synchronously; async callbacks fail closed without awaiting I/O. */
   onObservation?: (event: SuiObservation) => void;
   /** Test/embedding hook; no dispatcher, protocol or retry changes by default. */
   fetch?: typeof fetch;
@@ -167,15 +170,18 @@ export class ReadOnlySuiClient {
         SuiObservation,
         | "network"
         | "httpStatus"
+        | "transportAttempted"
         | "grpcStatus"
         | "grpcStatusSource"
         | "cacheHit"
       >
     > = {},
   ) {
+    // A sticky storage fault already closes the gate. Never repeat blocking I/O.
+    if (this.observationFault) return;
     // No raw error/status text, URL, request, header, body, address or digest is persisted.
     try {
-      this.options.onObservation?.({
+      const result: unknown = this.options.onObservation?.({
         transportId: this.transportId,
         layer,
         operation: context.operation,
@@ -190,6 +196,15 @@ export class ReadOnlySuiClient {
         code,
         ...extra,
       });
+      if (
+        result &&
+        typeof (result as PromiseLike<unknown>).then === "function"
+      ) {
+        // TypeScript permits async functions in void callbacks. Pending storage
+        // cannot serve as evidence; consume rejection without waiting for I/O.
+        void Promise.resolve(result).catch(() => {});
+        throw Error("VALIDATION_RECORD_FAILED");
+      }
     } catch {
       this.observationFault = true;
       this.epoch++;
@@ -204,10 +219,12 @@ export class ReadOnlySuiClient {
     const context = this.scope.getStore()!;
     const trace = this.diagnostics.trace();
     let status: number | null = null;
+    let transportAttempted = false;
     return this.diagnostics.run(trace, async () => {
       try {
         const response = await apiFetch("Sui gRPC", input, init, 0, {
           transport: async (target, settings) => {
+            transportAttempted = true;
             try {
               const response = await (this.options.fetch ?? rawFetch)(
                 target,
@@ -224,7 +241,10 @@ export class ReadOnlySuiClient {
         });
         this.emit(context, "HTTP", trace.began, true, null, {
           httpStatus: response.status,
-          network: this.diagnostics.snapshot(trace),
+          transportAttempted,
+          ...(transportAttempted
+            ? { network: this.diagnostics.snapshot(trace) }
+            : {}),
         });
         this.assertEvidence();
         return response;
@@ -232,7 +252,10 @@ export class ReadOnlySuiClient {
         if (!this.observationFault)
           this.emit(context, "HTTP", trace.began, false, transportCode(error), {
             httpStatus: status,
-            network: this.diagnostics.snapshot(trace),
+            transportAttempted,
+            ...(transportAttempted
+              ? { network: this.diagnostics.snapshot(trace) }
+              : {}),
           });
         throw error;
       }

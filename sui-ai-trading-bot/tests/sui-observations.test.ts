@@ -254,3 +254,74 @@ it("body timeout retains received HTTP200 and cannot count as gRPC success", asy
     events.filter((e) => e.layer === "GRPC").every((e) => !e.success),
   ).toBe(true);
 });
+
+it("distinguishes shared HTTP results from actual transport attempts", async () => {
+  let release!: (response: Response) => void;
+  const fetcher = vi.fn(
+    () =>
+      new Promise<Response>((resolve) => {
+        release = resolve;
+      }),
+  );
+  const { c, events } = fixture(fetcher);
+  const reads = [c.metadata("0x2::sui::SUI"), c.metadata("0x2::sui::SUI")];
+  await new Promise(setImmediate);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  release(validResponse(9));
+  await Promise.all(reads);
+  const http = events.filter((e) => e.layer === "HTTP");
+  expect(http).toHaveLength(2);
+  expect(http.filter((e) => e.transportAttempted)).toHaveLength(1);
+  expect(http.find((e) => !e.transportAttempted)?.network).toBeUndefined();
+  expect(c.status.healthy).toBe(false);
+});
+
+it.each([
+  ["UND_ERR_CONNECT_TIMEOUT", "UPSTREAM_CONNECT_TIMEOUT"],
+  ["CERT_HAS_EXPIRED", "UPSTREAM_TLS_FAILED"],
+])(
+  "classifies %s without retrying or opening health",
+  async (causeCode, code) => {
+    const fetcher = vi.fn(async () => {
+      throw new TypeError("private", {
+        cause: Object.assign(Error("private"), { code: causeCode }),
+      });
+    });
+    const { c, events } = fixture(fetcher);
+    await expect(c.health()).rejects.toThrow("SUI_READ_FAILED");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(events.filter((e) => e.layer === "HTTP").map((e) => e.code)).toEqual(
+      [code, code],
+    );
+    expect(c.status.healthy).toBe(false);
+  },
+);
+
+it("cancels actual SDK fixture transport mid-request without retry or late health", async () => {
+  const controller = new AbortController();
+  const fetcher = vi.fn(
+    async (_input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+      new Promise<Response>((_, reject) => {
+        const fail = () => reject(init!.signal!.reason);
+        init!.signal!.addEventListener("abort", fail, { once: true });
+        if (init!.signal!.aborted) fail();
+      }),
+  );
+  const { c, events } = fixture(fetcher);
+  const pending = withReadBudget(
+    controller.signal,
+    true,
+    () => c.health(true),
+    "cancel-fixture",
+  );
+  await new Promise(setImmediate);
+  controller.abort(Error("MARKET_DATA_STALLED"));
+  await expect(pending).rejects.toThrow("SUI_READ_FAILED");
+  await new Promise(setImmediate);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(c.status.healthy).toBe(false);
+  expect(
+    events.filter((e) => e.layer === "HTTP").every((e) => !e.success),
+  ).toBe(true);
+  expect(events.some((e) => e.layer === "GRPC" && e.success)).toBe(false);
+});

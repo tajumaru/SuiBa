@@ -559,3 +559,33 @@ it("classifies stopped and recovery-confirmation analyses separately from eligib
   ).toContain("RECOVERY_CONFIRMATION");
   expect(t.db.history("paper_trades")).toHaveLength(0);
 });
+
+it("evidence storage failure hard-stops the engine and recovery cannot restart it", async () => {
+  const t = fixture();
+  const client = new ReadOnlySuiClient(undefined, {
+    fetch: async () =>
+      new Response("", {
+        headers: {
+          "content-type": "application/grpc-web-text",
+          "grpc-status": "14",
+        },
+      }),
+    onObservation: () => {
+      throw Error("fixture DB failure");
+    },
+  });
+  realClients.push(client);
+  Object.defineProperty(t.sui, "status", { get: () => client.status });
+  t.sui.health.mockImplementation((force) => client.health(force));
+  await t.tick();
+  expect(t.db.runtime()).toMatchObject({
+    running: false,
+    error: "VALIDATION_RECORD_FAILED",
+  });
+  await t.tick(60000);
+  await t.tick(60000);
+  expect(t.db.runtime().running).toBe(false);
+  expect(t.engine.monitor.safety().resumePending).toBe(false);
+  expect(t.db.history("paper_orders")).toHaveLength(0);
+  expect(t.db.history("paper_trades")).toHaveLength(0);
+});

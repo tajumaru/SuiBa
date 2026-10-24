@@ -193,3 +193,30 @@ it("a failed cache observation closes the existing healthy gate immediately", as
   await expect(c.health()).rejects.toThrow("VALIDATION_RECORD_FAILED");
   expect(c.status.healthy).toBe(false);
 });
+
+it("rejects async evidence writers immediately and consumes their rejected promise", async () => {
+  const { c, metadata } = fixture();
+  (c as unknown as { options: unknown }).options = {
+    onObservation: async () => {
+      throw Error("private storage failure");
+    },
+  };
+  await expect(c.health()).rejects.toThrow("VALIDATION_RECORD_FAILED");
+  await new Promise(setImmediate);
+  expect(c.status.healthy).toBe(false);
+  const count = metadata.mock.calls.length;
+  await expect(c.health()).rejects.toThrow("VALIDATION_RECORD_FAILED");
+  expect(metadata).toHaveBeenCalledTimes(count);
+});
+
+it("does not repeat failing persistence after its first sticky evidence fault", async () => {
+  const { c } = fixture();
+  const writer = vi.fn(() => {
+    throw Error("SQLITE_BUSY");
+  });
+  (c as unknown as { options: unknown }).options = { onObservation: writer };
+  await expect(c.health()).rejects.toThrow("VALIDATION_RECORD_FAILED");
+  await expect(c.health()).rejects.toThrow("VALIDATION_RECORD_FAILED");
+  expect(writer).toHaveBeenCalledTimes(1);
+  expect(c.status.healthy).toBe(false);
+});
