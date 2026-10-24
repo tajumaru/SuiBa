@@ -47,7 +47,9 @@ test("audited gaps expose exact times and verified reconstruction causes", async
   await page.goto("/");
   await page.getByLabel("管理トークン").fill("test-only");
   await page.getByRole("button", { name: "接続", exact: true }).click();
-  await page.getByRole("button", { name: "ダッシュボード", exact: true }).click();
+  await page
+    .getByRole("button", { name: "ダッシュボード", exact: true })
+    .click();
   await page
     .getByRole("button", { name: "DeepBookの7日履歴を取得", exact: true })
     .click();

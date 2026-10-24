@@ -16,10 +16,7 @@ import {
 } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
 import { SettingsPage, SettingsChanges } from "./SettingsPage.tsx";
-import {
-  OperationsFeedView,
-  useOperationsFeed,
-} from "./OperationsPanel.tsx";
+import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed } from "./AgentNarration.tsx";
 import { MarketDataPanel } from "./MarketDataPanel.tsx";
 import { PriceChart } from "./PriceChart.tsx";
