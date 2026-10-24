@@ -113,7 +113,7 @@ test("Japanese screens preserve actions, ratios and epochs across all viewports"
   await page.getByLabel("管理トークン").fill("test-only");
   await page.getByRole("button", { name: "接続", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "ダッシュボード", exact: true }),
+    page.getByRole("heading", { name: "実況", exact: true }),
   ).toBeVisible();
   await expect(page.locator("main")).toContainText(
     "安全条件またはデータの整合性を確認できません",
@@ -128,7 +128,7 @@ test("Japanese screens preserve actions, ratios and epochs across all viewports"
     ).toBe(true);
   await fits();
   for (const tab of [
-    "チャート",
+    "ダッシュボード",
     "戦略",
     "取引履歴",
     "設定",

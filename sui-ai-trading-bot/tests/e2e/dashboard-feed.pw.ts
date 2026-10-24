@@ -7,7 +7,7 @@ import type { BotEngine } from "../../apps/worker/src/engine.ts";
 test("modern feed keeps status prompt, caches charts and recovers failed channels", async ({
   page,
 }, info) => {
-  const { state } = validationFixture("unstarted");
+  const { state, operations } = validationFixture("unstarted");
   const db = new BotDatabase(":memory:");
   for (const tf of [300, 900, 3600] as const)
     db.saveCandles(
@@ -24,7 +24,8 @@ test("modern feed keeps status prompt, caches charts and recovers failed channel
   let summaryCalls = 0,
     frameCalls = 0,
     recordCalls = 0,
-    legacyCalls = 0,
+    stateCalls = 0,
+    operationsCalls = 0,
     fail = false,
     corrupt = false;
   await page.clock.install();
@@ -50,13 +51,26 @@ test("modern feed keeps status prompt, caches charts and recovers failed channel
       recordCalls++;
       return route.fulfill({ json: service.records() });
     }
-    if (u.pathname === "/api/state") legacyCalls++;
+    if (u.pathname === "/api/operations") {
+      operationsCalls++;
+      return route.fulfill({ json: operations });
+    }
+    if (u.pathname === "/api/state") {
+      stateCalls++;
+      return route.fulfill({ json: state });
+    }
     return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
   });
   const readyStart = performance.now();
   await page.goto("/");
   await page.getByLabel("管理トークン").fill("test-only");
   await page.getByRole("button", { name: "接続", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "実況", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "ダッシュボード", exact: true })
+    .click();
   await expect(
     page.getByRole("heading", { name: "ダッシュボード", exact: true }),
   ).toBeVisible();
@@ -67,7 +81,11 @@ test("modern feed keeps status prompt, caches charts and recovers failed channel
   await expect.poll(() => summaryCalls).toBeGreaterThan(1);
   expect(frameCalls).toBe(1);
   expect(recordCalls).toBe(1);
-  expect(legacyCalls).toBe(0);
+  // Every /api/state call so far belongs to an operations poll
+  // pair (operations + state are always fetched together): the
+  // dashboard client itself never fell back to the legacy endpoint.
+  await expect.poll(() => stateCalls - operationsCalls).toBe(0);
+  expect(operationsCalls).toBeGreaterThan(0);
   corrupt = true;
   const last = db.candles(300).at(-1)!;
   db.saveCandles([{ ...last, timestamp: last.timestamp + 300 }]);
@@ -86,7 +104,6 @@ test("modern feed keeps status prompt, caches charts and recovers failed channel
   fail = false;
   await page.clock.runFor(11000);
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await page.getByRole("button", { name: "チャート", exact: true }).click();
   await expect(
     page.getByLabel("SUI/USDC価格表示", { exact: true }),
   ).toBeVisible();

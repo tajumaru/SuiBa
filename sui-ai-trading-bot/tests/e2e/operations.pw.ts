@@ -196,6 +196,7 @@ test("narration survives polling, reconnects and stops without duplicates or uns
 }, info) => {
   await page.clock.install();
   const api = await open(page, "RUNNING");
+  await page.getByRole("button", { name: "実況", exact: true }).click();
   const feed = page.getByRole("region", {
     name: "エージェント実況",
     exact: true,
