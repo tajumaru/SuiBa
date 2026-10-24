@@ -968,7 +968,7 @@ describe("agent narration: fail-closed", () => {
 
 describe("narration tone: reasons, softly and shortly", () => {
   function telemetry(
-    overrides: Partial<DecisionTelemetry> & {
+    overrides: Omit<Partial<DecisionTelemetry>, "conditions"> & {
       conditions?: Partial<DecisionTelemetry["conditions"]>;
     } = {},
   ): DecisionTelemetry {
@@ -1166,7 +1166,7 @@ describe("narration tone: reasons, softly and shortly", () => {
 
 describe("buy-condition chips", () => {
   function telemetry(
-    overrides: Partial<DecisionTelemetry> & {
+    overrides: Omit<Partial<DecisionTelemetry>, "conditions"> & {
       conditions?: Partial<DecisionTelemetry["conditions"]>;
     } = {},
   ): DecisionTelemetry {
