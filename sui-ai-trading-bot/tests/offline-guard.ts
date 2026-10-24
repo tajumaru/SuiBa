@@ -1,3 +1,5 @@
+import { assertNodeVersion } from "../scripts/verify-node-version.mjs";
+assertNodeVersion({ report: false });
 // Reject socket creation before any test transport can reach a real endpoint.
 import { Socket, Server } from "node:net";
 import { syncBuiltinESMExports } from "node:module";
