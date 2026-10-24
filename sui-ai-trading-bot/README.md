@@ -111,4 +111,8 @@ DeepBookの実測、Provider設定、品質条件と検証結果は[DeepBook Pro
 
 既存環境と分離したCompose・計測・日本語ダッシュボード・JSON/Markdownレポートを利用できます。[Windows 11の起動・停止・確認・バックアップ手順](docs/DEEPBOOK_24H_PAPER.md)を参照してください。24時間未満は「検証途中」で、PAPERの開始・異常後の再開は手動です。標準Providerは変更しません。
 
+## Windows無人検証ツール（passive preflightの長時間監視）
+
+隔離済み passive preflight（`docker/compose.preflight-30m.yaml`、PAPER・`running=false` の受動的観測）を、Windows 11で .bat のダブルクリックだけで30分／2時間／6時間／24時間実行し、Markdown・JSON・CSVレポートを自動生成するツールが [tools/windows-verification](tools/windows-verification/README.md) にあります。AIエージェント不要で、異常時は検証専用コンテナだけを安全停止します。
+
 DeepBookの取得周期・安全監視のP0修正と、既存検証を保持したままポート3102で再実行する手順は [DeepBook P0修正](docs/DEEPBOOK_P0_SCHEDULER.md) を参照してください。

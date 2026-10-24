@@ -1,0 +1,2 @@
+# Per-run outputs (evidence, reports, secrets, logs) are never committed.
+runs/

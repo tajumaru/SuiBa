@@ -1,0 +1,1 @@
+{"at":1000000000000,"candles":[],"cycles":[],"events":[],"integrity":[{"integrity_check":"ok"}],"integrityFault":null,"operations":{"ledger":{"ok":true},"mode":"PAPER","status":"STOPPED"},"runtime":{"running":false},"safety":{},"session":null,"tables":{"bot_settings":0,"operation_candidates":0,"paper_checks":0,"paper_orders":0,"paper_trades":0}}
