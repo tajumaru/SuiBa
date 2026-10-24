@@ -1,6 +1,7 @@
 import React from "react";
 import { dateTime, number, label, reason, errorCode } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
+import { BacktestReplay } from "./BacktestReplay.tsx";
 import { useEffect, useState } from "react";
 import type { Settings } from "../../../packages/shared/src/index.ts";
 import type {
@@ -422,6 +423,7 @@ export function BacktestComparison({
             <h3>価格・売買・見送り地点</h3>
             <Points result={result} />
           </section>
+          <BacktestReplay result={result} />
           <section>
             <h3>取引・判断履歴</h3>
             <select
