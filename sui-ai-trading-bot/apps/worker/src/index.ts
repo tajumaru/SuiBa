@@ -1,3 +1,4 @@
+import "../../../scripts/enforce-node-version.mjs";
 import { runtimeBuild } from "./runtime-build.ts";
 import {
   withApiTiming,

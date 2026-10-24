@@ -12,3 +12,6 @@ docker/artifacts
 docker/.env.deepbook-24h
 
 docker/.env.deepbook-p0
+
+# Project-local interpreter archives and binaries
+.runtime/

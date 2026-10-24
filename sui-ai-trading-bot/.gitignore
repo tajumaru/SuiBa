@@ -11,3 +11,6 @@ playwright-report/
 /docker/.env.deepbook-24h
 /docker/secrets/
 /docker/artifacts/
+
+# Project-local interpreter archives and binaries
+.runtime/

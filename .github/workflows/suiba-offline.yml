@@ -1,0 +1,29 @@
+name: SuiBa offline validation
+on:
+  push:
+    paths: ["sui-ai-trading-bot/**", ".github/workflows/suiba-offline.yml"]
+  pull_request:
+    paths: ["sui-ai-trading-bot/**", ".github/workflows/suiba-offline.yml"]
+permissions:
+  contents: read
+jobs:
+  offline:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: sui-ai-trading-bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.22.1"
+      - run: node scripts/verify-node-version.mjs
+      - run: corepack enable
+      - run: corepack prepare pnpm@9.12.3 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm test:offline

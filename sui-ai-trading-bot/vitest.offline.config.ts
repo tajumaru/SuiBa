@@ -1,4 +1,6 @@
+import { assertNodeVersion } from "./scripts/verify-node-version.mjs";
 import { defineConfig } from "vitest/config";
+assertNodeVersion();
 export default defineConfig({
   test: {
     include: ["tests/**/*.test.{ts,tsx}"],
