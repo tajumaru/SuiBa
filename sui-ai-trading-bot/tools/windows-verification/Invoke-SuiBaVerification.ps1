@@ -35,12 +35,15 @@ param(
     [string]$RunRoot = '',
     [switch]$NonInteractive,
     [switch]$SkipWatchdog,
-    [switch]$SkipPerfDetail
+    [switch]$SkipPerfDetail,
+    [switch]$ConfirmLongRun,
+    [switch]$NoOpenResults
 )
 
 $script:ToolDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:RepoRoot = (Resolve-Path (Join-Path (Join-Path $script:ToolDir '..') '..')).Path
 . (Join-Path (Join-Path $script:ToolDir 'lib') 'Verification.Common.ps1')
+. (Join-Path (Join-Path $script:ToolDir 'lib') 'Verification.OneClick.ps1')
 
 $script:DockerExe = if ($env:SUIBA_WINVERIFY_DOCKER) { $env:SUIBA_WINVERIFY_DOCKER } else { 'docker' }
 $script:GitExe = if ($env:SUIBA_WINVERIFY_GIT) { $env:SUIBA_WINVERIFY_GIT } else { 'git' }
@@ -49,6 +52,8 @@ $script:State = $null
 $script:RunDir = $null
 $script:SecretValue = $null
 $script:Finalized = $false
+$script:RunMutex = $null
+$script:OwnsMutex = $false
 
 function Invoke-External {
     param([string]$Exe, [string[]]$CommandArgs, [int]$TimeoutSec = 0)
@@ -490,6 +495,14 @@ function Finalize-SuiBaRun {
         PreflightSummaryVerdict = $summaryVerdict
     }
     New-SuiBaReportFiles -Meta $meta -Summary $summary -Facts $facts -Rows $rows -Incidents $script:Incidents -OutDir $reportsDir -Forbidden $forbidden -Perf $perf
+    $overall = New-SuiBaNextActions -ReportsDir $reportsDir -RunRoot $script:RunRoot -Forbidden $forbidden -Rows $rows
+    Write-Host "終了理由: $Reason / 総合評価: $overall / 通信品質判定: $summaryVerdict"
+    if ($Reason -ne 'COMPLETED') { Write-Host '検証は中断または異常停止しました。' }
+    elseif ($overall -ne 'PASS') { Write-Host '観測時間は終了しましたが、品質未達または証拠不足です。成功扱いしません。' }
+    else { Write-Host '通信観測の品質基準を達成しました。取引検証の合格ではありません。' }
+    Write-Host "レポート: $(Join-Path $reportsDir 'report.md')"
+    Write-Host "次の対応: $(Join-Path $reportsDir 'next-actions.md')"
+    if (-not $NonInteractive -and -not $NoOpenResults) { Open-SuiBaResultFolder -Path $reportsDir }
 
     $script:State.Status = if ($Reason -eq 'COMPLETED') { 'Completed' } elseif ($Reason -eq 'USER_STOPPED') { 'StoppedByUser' } else { 'Aborted' }
     $script:State.Reason = $Reason
@@ -503,13 +516,18 @@ try {
 
     if ($DurationMinutes -le 0) {
         if ($NonInteractive) { throw 'DurationMinutes is required in non-interactive mode.' }
-        Write-Host ''
-        Write-Host 'SuiBa Windows unattended verification'
-        Write-Host '  1) 30 minutes'
-        Write-Host '  2) 2 hours'
-        Write-Host '  3) 6 hours'
-        Write-Host '  4) 24 hours'
-        $choice = Read-Host 'Select duration [1-4]'
+        do {
+            $choice = Read-SuiBaMenuChoice
+            if ($choice -eq '7') { exit 0 }
+            if ($choice -eq '5') {
+                $latest = Get-SuiBaLatestReport -RunRoot $RunRoot
+                if ($latest) { Open-SuiBaResultFolder -Path (Join-Path $latest.FullName 'reports') }
+                else { Write-Host '保存済みの検証結果はありません。' }
+            }
+            if ($choice -eq '6') {
+                & (Get-Process -Id $PID).Path -NoProfile -ExecutionPolicy Bypass -File (Join-Path $script:ToolDir 'Stop-SuiBaVerification.ps1') -RunRoot $RunRoot
+            }
+        } while ($choice -in @('5', '6'))
         $DurationMinutes = @{ '1' = 30; '2' = 120; '3' = 360; '4' = 1440 }[$choice]
         if ($null -eq $DurationMinutes) { throw 'Invalid selection.' }
     }
@@ -517,15 +535,30 @@ try {
         throw 'Duration must be 30, 120, 360 or 1440 minutes.'
     }
     Write-Host "Duration: $DurationMinutes minutes"
+    if (-not (Confirm-SuiBaLongRun -Minutes $DurationMinutes -NonInteractive:$NonInteractive -Confirmed:$ConfirmLongRun)) {
+        Write-Host '開始を取り消しました。'; exit 0
+    }
+    $script:RunMutex = New-Object Threading.Mutex($false, 'Local\SuiBaWindowsVerification')
+    try { $script:OwnsMutex = $script:RunMutex.WaitOne(0) }
+    catch [Threading.AbandonedMutexException] { $script:OwnsMutex = $true }
+    if (-not $script:OwnsMutex) { throw '他のSuiBa検証が起動準備中または実行中です。二重起動を拒否しました。' }
+    $pointerPath = Join-Path (Join-Path $RunRoot 'active') 'active-run.json'
+    if (Test-Path -LiteralPath $pointerPath) {
+        $pointer = [IO.File]::ReadAllText($pointerPath) | ConvertFrom-Json -ErrorAction Stop
+        $prior = [IO.File]::ReadAllText($pointer.StateFile) | ConvertFrom-Json -ErrorAction Stop
+        if ($prior.Status -in @('Preparing', 'Running')) { throw '前回の検証が準備中・実行中の記録です。安全停止メニューで状態を確認してください。' }
+    }
 
     $dockerVersion = Invoke-Docker @('version', '--format', '{{.Server.Version}}')
     if ($dockerVersion.ExitCode -ne 0) { throw 'Docker engine is not reachable. Start Docker Desktop first.' }
     $composeVersion = Invoke-Docker @('compose', 'version')
     if ($composeVersion.ExitCode -ne 0) { throw 'Docker Compose v2 is not available.' }
 
-    $gitHead = Invoke-Git @('rev-parse', 'HEAD')
+    Push-Location $script:RepoRoot
+    try { $gitHead = Invoke-Git @('rev-parse', 'HEAD') } finally { Pop-Location }
     if ($gitHead.ExitCode -ne 0) { throw 'Cannot resolve git HEAD; the verification target SHA cannot be fixed.' }
     $sha = ($gitHead.Output[0]).Trim()
+    Write-Host "検証対象SHA: $sha（自動git pullは行いません）"
     Push-Location $script:RepoRoot
     try {
         $dirty = Invoke-Git @('status', '--porcelain')
@@ -548,7 +581,7 @@ try {
     if ($disk0.Abort) { throw "Disk stop condition at start: $($disk0.Reason)" }
 
     # ------------------------------------------------------------ run setup
-    $runId = 'winverify-{0}-{1}' -f (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ'), $sha.Substring(0, 7)
+    $runId = 'winverify-{0}-{1}' -f (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssfffZ'), $sha.Substring(0, 7)
     # Compose project names are lowercase-only (see
     # Get-SuiBaComposeProjectName in lib): normalize once, here, and
     # guard the result so a future run ID format that smuggles in an
@@ -558,6 +591,7 @@ try {
     if (-not (Test-SuiBaComposeProjectName $project)) { throw "Generated Compose project name '$project' is invalid: it must consist only of lowercase letters, digits, hyphens and underscores, and start with a letter or digit. Aborting before any Docker Compose call." }
     $imageTag = "suiba-winverify:$runId"
     $script:RunDir = Join-Path $RunRoot $runId
+    if (Test-Path -LiteralPath $script:RunDir) { throw '同名の検証結果が存在します。上書きせず中止します。' }
     foreach ($sub in @('evidence', 'reports', 'logs', 'secret')) {
         New-Item -ItemType Directory -Path (Join-Path $script:RunDir $sub) -Force | Out-Null
     }
@@ -639,6 +673,10 @@ try {
     $insp = Get-ContainerInspect -ContainerId $script:State.ContainerId
     if ($null -eq $insp -or -not (Test-DedicatedContainer $insp)) { throw 'Container identity check failed (not our dedicated project).' }
     if ($insp.Image -ne $imageId) { throw 'Container image does not match the inspected image ID.' }
+    $liveGuard = Invoke-Docker @('exec', $script:State.ContainerId, 'node', 'scripts/verify-node-version.mjs')
+    if ($liveGuard.ExitCode -ne 0) { throw '実行中コンテナのNode.js確認に失敗しました。' }
+    $liveRuntime = ($liveGuard.Output -join "`n") | ConvertFrom-Json -ErrorAction Stop
+    if (-not (Compare-SuiBaNodeVersion $liveRuntime.version) -or $liveRuntime.version -ne $nodeVersion) { throw '実行中コンテナのNode.jsバージョンが不一致です。検証を中止します。' }
     foreach ($mnt in @($insp.Mounts)) {
         if ($mnt.Type -eq 'volume' -and $mnt.Name -notlike "$project*") { throw "Unexpected volume mounted: $($mnt.Name)" }
     }
@@ -770,7 +808,7 @@ try {
     exit $exitCode
 } catch {
     $message = $_.Exception.Message
-    Write-Host "ERROR: $message"
+    Write-Host (Get-SuiBaFriendlyError (Protect-SuiBaText $message @($script:SecretValue)))
     if ($script:State -and $script:State.ContainerId -and -not $script:Finalized) {
         Add-Incident -Reason 'FATAL' -Detail $message
         $script:State.Reason = 'FATAL'
@@ -778,6 +816,13 @@ try {
         $script:State.Status = 'Failed'
         Save-State
     }
+    if ($script:State) {
+        $script:State.Status = 'Failed'
+        Save-State
+    }
     exit 1
+} finally {
+    if ($script:OwnsMutex) { $script:RunMutex.ReleaseMutex() }
+    if ($script:RunMutex) { $script:RunMutex.Dispose() }
 }
 

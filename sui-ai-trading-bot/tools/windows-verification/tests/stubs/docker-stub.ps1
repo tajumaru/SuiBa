@@ -29,7 +29,8 @@ if (-not $project) { $project = 'suiba-stub' }
 if ($joined -match '^(down|.*\bprune\b|.*volume rm|.*\bkill\b)') { throw "FORBIDDEN COMMAND RECORDED: $joined" }
 
 switch -Regex ($joined) {
-    '^version' { Write-Output '27.3.1'; break }
+    '^exec' { Write-Output '{"event":"NODE_VERSION_VERIFIED","version":"v24.22.1","execPath":"/usr/local/bin/node"}'; break }
+    '^version' { if ($scenario -eq 'docker-down') { throw 'Docker engine unavailable (stub)' }; Write-Output '27.3.1'; break }
     '^compose .* version' { Write-Output 'Docker Compose version v2.29.0'; break }
     '^compose .* config' { break }
     '^compose .* up' { Set-StubProp 'running' $true; Save-StubState; break }
@@ -53,7 +54,10 @@ switch -Regex ($joined) {
         break
     }
     '^run' {
-        if ($joined -match '--version') { Write-Output 'v24.22.1' }
+        if ($joined -match '--version') {
+            if ($scenario -eq 'node-mismatch') { Write-Output 'v24.14.0' }
+            else { Write-Output 'v24.22.1' }
+        }
         else { Write-Output '{"event":"NODE_VERSION_VERIFIED","version":"v24.22.1","execPath":"/usr/local/bin/node","platform":"linux","arch":"x64"}' }
     }
     '^inspect' {
@@ -70,6 +74,10 @@ switch -Regex ($joined) {
     }
     '^cp' {
         $src = $args[1]; $dest = $args[2]
+        if ($scenario -eq 'userstop') {
+            $evidenceDir = if (Test-Path -LiteralPath $dest -PathType Container) { $dest } else { Split-Path -Parent $dest }
+            [IO.File]::WriteAllText((Join-Path (Split-Path -Parent $evidenceDir) 'STOP_REQUEST'), 'stub user stop')
+        }
         $fixtureName = if ($scenario -eq 'safety') { 'evidence-safety.jsonl' } else { 'evidence-happy.jsonl' }
         $text = [IO.File]::ReadAllText((Join-Path $fixtures $fixtureName))
         $prefix = ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()).ToString().Substring(0, 8)
