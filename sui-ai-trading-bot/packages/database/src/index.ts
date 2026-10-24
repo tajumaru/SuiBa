@@ -54,9 +54,20 @@ export class BotDatabase {
       return fn();
     } catch (error) {
       const value = (error as { errcode?: unknown } | null)?.errcode;
-      const primary = typeof value === "number" ? value & 255 : null;
+      const code =
+        typeof value === "number" &&
+        Number.isInteger(value) &&
+        value > 0 &&
+        value <= 0x7fffffff
+          ? value
+          : null;
+      const primary = code === null ? null : code & 255;
+      // node:sqlite exposes numeric errcode (code is ERR_SQLITE_ERROR).
+      // Only documented BUSY variants are transient. LOCKED concerns this
+      // connection/shared cache and is deliberately not treated as BUSY.
+      const transient = code !== null && [5, 261, 517, 773].includes(code);
       // Constraint rejection is a business/transaction failure, not connection loss.
-      if (primary !== 19) this.fault ??= { sqliteCode: primary };
+      if (primary !== 19 && !transient) this.fault ??= { sqliteCode: primary };
       throw error;
     }
   }

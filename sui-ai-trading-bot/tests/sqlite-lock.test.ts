@@ -45,6 +45,61 @@ function response(decimals: number) {
     { headers: { "content-type": "application/grpc-web-text" } },
   );
 }
+it.each([5, 261, 517, 773])(
+  "propagates BUSY code %s without poisoning the connection",
+  (errcode) => {
+    const { db } = fixture();
+    const error = Object.assign(new Error("fixture"), {
+      code: "ERR_SQLITE_ERROR",
+      errcode,
+    });
+    const sql = (db as unknown as { sql<T>(fn: () => T): T }).sql.bind(db);
+    expect(() =>
+      sql(() => {
+        throw error;
+      }),
+    ).toThrow(error);
+    expect(db.health()).toMatchObject({
+      healthy: true,
+      requiresRestart: false,
+    });
+    db.append("sui_observations", "after-busy", {});
+  },
+);
+it.each([
+  6,
+  262,
+  518,
+  11,
+  779,
+  26,
+  10,
+  1029,
+  "5",
+  "SQLITE_BUSY",
+  undefined,
+  NaN,
+])(
+  "keeps LOCKED, permanent and unsupported errcode %s fail-closed",
+  (errcode) => {
+    const { db } = fixture();
+    const error = Object.assign(new Error("fixture"), { errcode });
+    const sql = (db as unknown as { sql<T>(fn: () => T): T }).sql.bind(db);
+    expect(() =>
+      sql(() => {
+        throw error;
+      }),
+    ).toThrow(error);
+    expect(db.health()).toMatchObject({
+      healthy: false,
+      requiresRestart: true,
+    });
+    expect(() => db.append("sui_observations", "after-fault", {})).toThrow(
+      "DATABASE_UNAVAILABLE",
+    );
+    expect(db.runtime().running).toBe(false);
+  },
+);
 it("preserves WAL/FULL, uses no busy waiting, and synchronously acknowledges durable rows", () => {
   const { db, raw } = fixture();
   const connection = (db as unknown as { db: DatabaseSync }).db;
@@ -84,29 +139,13 @@ it.each([200, 10000])(
     expect(performance.now() - began).toBeLessThan(500);
     expect(controller.signal.aborted).toBe(true);
     expect(db.health()).toMatchObject({
-      healthy: false,
-      sqliteCode: 5,
-      requiresRestart: true,
-    });
-    expect(db.runtime()).toMatchObject({
-      running: false,
-      error: "DATABASE_UNAVAILABLE",
+      healthy: true,
+      requiresRestart: false,
     });
     expect(monitor.ordersAllowed()).toBe(false);
-    expect(monitor.recoveryCycle({ market: true, sui: true })).toBe(false);
     await lock.terminate();
-    expect(() => db.append("sui_observations", "retry", {})).toThrow(
-      "DATABASE_UNAVAILABLE",
-    );
-    expect(() =>
-      db.set("runtime", { ...db.runtime(), running: true, error: null }),
-    ).toThrow("DATABASE_UNAVAILABLE");
-    expect(
-      raw
-        .prepare("SELECT json FROM bot_runtime_state WHERE key='runtime'")
-        .get()?.json,
-    ).toContain('"running":true');
-    expect(db.history("sui_observations")).toHaveLength(0);
+    db.append("sui_observations", "retry", { recovered: true });
+    expect(db.history("sui_observations")).toEqual([{ recovered: true }]);
     expect(db.history("paper_orders")).toHaveLength(0);
     expect(db.history("paper_trades")).toHaveLength(0);
   },
@@ -119,6 +158,31 @@ it("latches actual READONLY writes and rejects recovery after the connection bec
   expect(db.health()).toMatchObject({ healthy: false, sqliteCode: 8 });
   connection.exec("PRAGMA query_only=OFF");
   expect(() => db.transaction(() => db.set("runtime", {}))).toThrow(
+    "DATABASE_UNAVAILABLE",
+  );
+});
+it("keeps actual same-connection SQLITE_LOCKED fail-closed after cursor cleanup", () => {
+  const { db } = fixture();
+  const connection = (db as unknown as { db: DatabaseSync }).db;
+  db.append("sui_observations", "cursor-row", {});
+  const cursor = connection.prepare("SELECT * FROM sui_observations").iterate();
+  cursor.next();
+  const sql = (db as unknown as { sql<T>(fn: () => T): T }).sql.bind(db);
+  try {
+    expect(() =>
+      sql(() => connection.exec("DROP TABLE sui_observations")),
+    ).toThrow(
+      expect.objectContaining({ code: "ERR_SQLITE_ERROR", errcode: 6 }),
+    );
+  } finally {
+    cursor.return?.();
+  }
+  expect(db.health()).toMatchObject({
+    healthy: false,
+    sqliteCode: 6,
+    requiresRestart: true,
+  });
+  expect(() => db.append("sui_observations", "after-locked", {})).toThrow(
     "DATABASE_UNAVAILABLE",
   );
 });
@@ -178,7 +242,7 @@ it.each([false, true])(
     );
     expect(writes).toBe(1);
     expect(client.status.healthy).toBe(false);
-    expect(db.runtime().running).toBe(false);
+    expect(db.health().requiresRestart).toBe(false);
     expect(monitor.ordersAllowed()).toBe(false);
     raw.exec("ROLLBACK");
     for (let n = 0; n < 3; n++) {
@@ -243,7 +307,7 @@ it("a new process connection still applies boot stop instead of resuming persist
   expect(() =>
     db.set("runtime", { ...db.runtime(), running: false }),
   ).toThrow();
-  expect(db.runtime().running).toBe(false);
+  expect(db.health().requiresRestart).toBe(false);
   raw.exec("ROLLBACK");
   const restarted = new BotDatabase(path);
   cleanup.push(() => restarted.close());
