@@ -1,0 +1,60 @@
+# Approval required before build/start. No inherited env, existing volumes or build action.
+name: ${SUIBA_PREFLIGHT_PROJECT:?Set a NEW unique project name}
+services:
+  bot:
+    image: ${SUIBA_PREFLIGHT_IMAGE:?Set an independently inspected sha256 image ID}
+    pull_policy: never
+    command:
+      [
+        "node",
+        "--import",
+        "./scripts/enforce-node-version.mjs",
+        "--import",
+        "tsx",
+        "--import",
+        "./scripts/preflight-metrics-preload.mjs",
+        "--import",
+        "./scripts/preflight-observer.mjs",
+        "apps/worker/src/index.ts",
+      ]
+    environment:
+      MODE: PAPER
+      HOST: 0.0.0.0
+      PORT: "3100"
+      MARKET_DATA_PROVIDER: deepbook
+      DEEPBOOK_RECONSTRUCT_CANDLES: verified
+      DEEPBOOK_VALIDATION: "1"
+      DATABASE_PATH: /app/validation/deepbook-paper.sqlite
+      VALIDATION_REPORT_DIR: /app/reports
+      SUI_GRPC_URL: https://fullnode.mainnet.sui.io:443
+      SUIBA_BUILD_SHA: ${SUIBA_PREFLIGHT_SHA:?Set the tested immutable commit SHA}
+      SUIBA_IMAGE_ID: ${SUIBA_PREFLIGHT_IMAGE:?Set the inspected sha256 image ID}
+      ADMIN_TOKEN: ""
+      ADMIN_TOKEN_FILE: /run/secrets/preflight-admin
+      DOTENV_CONFIG_QUIET: "true"
+    ports: ["127.0.0.1:3105:3100"]
+    volumes:
+      ["preflight-data:/app/validation", "preflight-reports:/app/reports"]
+    secrets: ["preflight-admin"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    init: true
+    restart: "no"
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "node", "docker/healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+secrets:
+  preflight-admin:
+    file: ${SUIBA_PREFLIGHT_SECRET_FILE:?Set a NEW per-run secret file}
+volumes:
+  preflight-data:
+  preflight-reports:

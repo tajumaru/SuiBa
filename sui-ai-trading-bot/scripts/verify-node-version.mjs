@@ -1,3 +1,4 @@
+import { existsSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 export const requiredNodeRange = ">=24.22.1 <25";
@@ -36,6 +37,8 @@ export function assertNodeVersion({ report = true } = {}) {
 }
 if (
   process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  existsSync(resolve(process.argv[1])) &&
+  realpathSync(resolve(process.argv[1])) ===
+    realpathSync(fileURLToPath(import.meta.url))
 )
   assertNodeVersion();

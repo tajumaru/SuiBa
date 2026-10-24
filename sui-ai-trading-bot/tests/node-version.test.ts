@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   assertNodeVersion,
   isSupportedNodeVersion,
@@ -25,6 +26,14 @@ it("reports the interpreter actually executing this test", () => {
     arch: process.arch,
   });
   expect(isSupportedNodeVersion(process.versions.node)).toBe(true);
+  const script = resolve("scripts/verify-node-version.mjs");
+  const cli = spawnSync(
+    process.execPath,
+    [process.platform === "win32" ? script.toLowerCase() : script],
+    { encoding: "utf8", windowsHide: true },
+  );
+  expect(cli.status).toBe(0);
+  expect(cli.stdout).toContain("NODE_VERSION_VERIFIED");
 });
 it.each(["24.14.0", "25.0.0"])(
   "rejects a simulated unsupported runtime %s before spawning typecheck",
