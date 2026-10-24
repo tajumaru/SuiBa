@@ -8,11 +8,15 @@ import { botVital } from "../apps/dashboard/src/botVital.ts";
 import {
   advanceNarration,
   agentPose,
+  currentConditionChips,
   cycleNarrationText,
+  decisionTrail,
   emptyNarrationState,
+  entryConditionChips,
   MAX_NARRATION_ENTRIES,
   type NarrationState,
 } from "../apps/dashboard/src/agentNarration.ts";
+import type { DecisionTelemetry } from "../apps/worker/src/operations.ts";
 import type { TradingDecision } from "../packages/shared/src/index.ts";
 import type {
   CandidateAudit,
@@ -251,7 +255,7 @@ describe("agent narration: initialisation", () => {
       NOW,
     );
     expect(state.entries).toHaveLength(1);
-    expect(state.entries[0].text).toContain("停止中です");
+    expect(state.entries[0].text).toContain("停止中だよ");
     const vital = botVital(d, false, NOW, NOW);
     expect(agentPose(state, d, vital, NOW)).toBe("sleep");
   });
@@ -262,8 +266,8 @@ describe("agent narration: initialisation", () => {
     const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
     expect(state.entries).toHaveLength(1);
     expect(state.entries[0].kind).toBe("cycle");
-    expect(state.entries[0].text).toContain("買い条件は0/3");
-    expect(state.entries[0].text).toContain("EMA20（2.38）がEMA50（2.42）");
+    expect(state.entries[0].text).toContain("EMAの差は-1.6667%");
+    expect(state.entries[0].text).toContain("遠いなあ");
     // Re-advancing the very same snapshot adds nothing.
     const again = advanceNarration(state, d, "alive", NOW);
     expect(again.entries).toHaveLength(1);
@@ -289,10 +293,10 @@ describe("agent narration: cycles", () => {
     return { state, d2 };
   }
 
-  it("a new cycle with 2/3 conditions met narrates progress and points", () => {
+  it("a new cycle with 2/3 conditions met names the one remaining and points", () => {
     const { state, d2 } = twoCycles();
     expect(state.entries).toHaveLength(2);
-    expect(state.entries[1].text).toContain("買い条件が2/3そろってきました");
+    expect(state.entries[1].text).toContain("あとEMAだけ");
     const vital = botVital(d2, false, NOW, NOW);
     expect(agentPose(state, d2, vital, NOW)).toBe("point");
   });
@@ -308,7 +312,7 @@ describe("agent narration: cycles", () => {
         sellPurpose: null,
         price: 2.4,
         entryPrice: null,
-        ema20: 2.418,
+        ema20: 2.3,
         ema50: 2.42,
         rsi: 28,
         previousRsi: 33,
@@ -331,9 +335,35 @@ describe("agent narration: cycles", () => {
       },
       null,
     );
-    expect(text).toContain("買い条件が1/3そろってきました");
-    expect(text).toContain("売られすぎライン（30）の下");
-    expect(text).toContain("反発の起点待ち");
+    expect(text).toContain("RSIは28で圏内、上抜け待ち");
+    expect(text).toContain("条件は1/3だね");
+  });
+
+  it("a condition that was met and then breaks narrates a step back", () => {
+    const { db, monitor } = fixture();
+    const d1 = runningSnapshot(
+      db,
+      monitor,
+      decision({
+        conditions: { histogramImproving: true },
+        histogram: -0.001,
+        previousHistogram: -0.002,
+      }),
+    );
+    let state = advanceNarration(emptyNarrationState(), d1, "alive", NOW);
+    const d2 = runningSnapshot(
+      db,
+      monitor,
+      decision({
+        evaluatedAt: NOW,
+        histogram: -0.003,
+        previousHistogram: -0.001,
+      }),
+    );
+    state = advanceNarration(state, d2, "alive", NOW);
+    expect(state.entries).toHaveLength(2);
+    expect(state.entries[1].text).toContain("MACDが崩れて-0.003");
+    expect(state.entries[1].text).toContain("一歩さがったなあ");
   });
 
   it("identical consecutive cycle evidence is not narrated twice", () => {
@@ -379,9 +409,8 @@ describe("agent narration: cycles", () => {
       },
       null,
     );
-    expect(text).toContain("保有中です");
-    expect(text).toContain("取得価格2.3 USDCに対して現在2.4 USDC");
-    expect(text).toContain("+4.3478%");
+    expect(text).toContain("保有中だよ");
+    expect(text).toContain("取得2.3 USDCから今は+4.3478%");
   });
 
   it("a volume rejection narrates the measured volume change", () => {
@@ -392,9 +421,7 @@ describe("agent narration: cycles", () => {
       decision({ selectedRule: "VOLUME_REJECT", volumeChange: 3.5 }),
     );
     const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
-    expect(state.entries[0].text).toContain(
-      "出来高の異常を検出したため見送りました",
-    );
+    expect(state.entries[0].text).toContain("出来高が急に変わったから見送ったよ");
     expect(state.entries[0].text).toContain("350%");
   });
 });
@@ -415,7 +442,7 @@ describe("agent narration: trades and rejections from candidate audits", () => {
     state = advanceNarration(state, d2, "alive", NOW + 1000);
     const trade = state.entries.at(-1)!;
     expect(trade.kind).toBe("trade");
-    expect(trade.text).toContain("PAPERで買いを記録しました");
+    expect(trade.text).toContain("PAPERで買いを記録したよ");
     expect(trade.text).toContain("0.5 SUI");
     expect(trade.text).toContain("2.4312 USDC");
     const vital = botVital(d2, false, NOW, NOW);
@@ -439,7 +466,7 @@ describe("agent narration: trades and rejections from candidate audits", () => {
     state = advanceNarration(state, d2, "alive", NOW + 500);
     const rejection = state.entries.at(-1)!;
     expect(rejection.kind).toBe("rejection");
-    expect(rejection.text).toContain("買いシグナルは出ましたが、見送りました");
+    expect(rejection.text).toContain("買いシグナルは出たけど、見送ったよ");
     expect(rejection.text).toContain(
       "手数料込みの利益が基準に届かないため見送り",
     );
@@ -465,15 +492,13 @@ describe("agent narration: events", () => {
     ];
     const next = advanceNarration(state, d, "alive", at + 1000);
     const texts = next.entries.map((e) => e.text);
-    expect(texts.some((t) => t.includes("DeepBookの通信に失敗しました"))).toBe(
+    expect(texts.some((t) => t.includes("DeepBookと通信できなかったよ"))).toBe(
       true,
     );
-    expect(texts.some((t) => t.includes("処理中にエラーが発生しました"))).toBe(
-      false,
-    );
+    expect(texts.some((t) => t.includes("処理でエラーが出たよ"))).toBe(false);
     expect(
       texts.some((t) =>
-        t.includes("止まりました。理由：APIの連続エラーを検出しました"),
+        t.includes("止まったよ。理由：APIの連続エラーを検出しました"),
       ),
     ).toBe(true);
   });
@@ -487,7 +512,7 @@ describe("agent narration: events", () => {
     );
     degraded.safety.connectivity = "DEGRADED";
     const s2 = advanceNarration(state, degraded, "weak", NOW);
-    expect(s2.entries.at(-1)!.text).toContain("通信が不安定になっています");
+    expect(s2.entries.at(-1)!.text).toContain("通信が不安定だよ");
     const recovering = runningSnapshot(
       db,
       monitor,
@@ -496,7 +521,7 @@ describe("agent narration: events", () => {
     recovering.safety.connectivity = "RECOVERING";
     recovering.safety.healthyCycles = 2;
     const s3 = advanceNarration(s2, recovering, "weak", NOW);
-    expect(s3.entries.at(-1)!.text).toContain("正常サイクル2回を確認");
+    expect(s3.entries.at(-1)!.text).toContain("正常サイクル2回");
     const healthyAgain = runningSnapshot(
       db,
       monitor,
@@ -504,7 +529,7 @@ describe("agent narration: events", () => {
     );
     const s4 = advanceNarration(s3, healthyAgain, "alive", NOW);
     expect(s4.entries.at(-1)!.kind).toBe("recovery");
-    expect(s4.entries.at(-1)!.text).toContain("通信が復旧しました");
+    expect(s4.entries.at(-1)!.text).toContain("通信が復旧したよ");
   });
 
   it("entries are capped", () => {
@@ -938,5 +963,343 @@ describe("agent narration: fail-closed", () => {
     const d2 = monitor.snapshot(NOW);
     state = advanceNarration(state, d2, "sleeping", NOW);
     expect(state.entries.length).toBe(count);
+  });
+});
+
+describe("narration tone: reasons, softly and shortly", () => {
+  function telemetry(
+    overrides: Partial<DecisionTelemetry> & {
+      conditions?: Partial<DecisionTelemetry["conditions"]>;
+    } = {},
+  ): DecisionTelemetry {
+    const { conditions, ...rest } = overrides;
+    return {
+      evaluatedAt: NOW - 60_000,
+      candleTimestamp: NOW - 300_000,
+      action: "WAIT",
+      reason: "",
+      selectedRule: "NO_SIGNAL",
+      sellPurpose: null,
+      price: 2.4,
+      entryPrice: null,
+      ema20: 2.38,
+      ema50: 2.42,
+      rsi: 44,
+      previousRsi: 42,
+      histogram: -0.003,
+      previousHistogram: -0.002,
+      atr: 0.02,
+      volumeChange: 0.05,
+      oversold: 30,
+      overbought: 70,
+      stopLossPct: 0.02,
+      takeProfitPct: 0.03,
+      ...rest,
+      conditions: {
+        emaUp: false,
+        rsiRecovery: false,
+        histogramImproving: false,
+        hasPosition: false,
+        stopLoss: false,
+        takeProfit: false,
+        ...(conditions ?? {}),
+      },
+    };
+  }
+
+  const farWait = telemetry();
+  const newlyMet = telemetry({
+    previousRsi: 28,
+    rsi: 34,
+    conditions: { rsiRecovery: true },
+  });
+  const progress = telemetry({
+    ema20: 2.43,
+    ema50: 2.42,
+    conditions: { emaUp: true },
+  });
+  const oneRemaining = telemetry({
+    ema20: 2.43,
+    ema50: 2.42,
+    previousRsi: 28,
+    rsi: 34,
+    histogram: -0.0004,
+    previousHistogram: -0.0002,
+    conditions: { emaUp: true, rsiRecovery: true },
+  });
+  const brokeBefore = telemetry({
+    histogram: -0.001,
+    previousHistogram: -0.002,
+    conditions: { histogramImproving: true },
+  });
+  const brokeNow = telemetry({
+    histogram: -0.003,
+    previousHistogram: -0.001,
+  });
+  const buyAll = telemetry({
+    action: "BUY",
+    selectedRule: "BUY_SIGNAL",
+    ema20: 2.431,
+    ema50: 2.424,
+    previousRsi: 28,
+    rsi: 39,
+    histogram: 0.0009,
+    previousHistogram: -0.001,
+    conditions: {
+      emaUp: true,
+      rsiRecovery: true,
+      histogramImproving: true,
+    },
+  });
+  const holding = telemetry({
+    price: 2.35,
+    entryPrice: 2.3,
+    conditions: { hasPosition: true },
+  });
+  const sellNoEntry = telemetry({
+    action: "SELL",
+    sellPurpose: "TAKE_PROFIT",
+    price: 2.4,
+    entryPrice: null,
+  });
+  const volumeReject = telemetry({
+    selectedRule: "VOLUME_REJECT",
+    volumeChange: 3.5,
+  });
+
+  const scenarios: [string, string][] = [
+    ["far WAIT", cycleNarrationText(farWait, null)],
+    ["newly met", cycleNarrationText(newlyMet, decisionTrail(farWait))],
+    ["progress", cycleNarrationText(progress, null)],
+    ["one remaining", cycleNarrationText(oneRemaining, null)],
+    [
+      "regression",
+      cycleNarrationText(brokeNow, decisionTrail(brokeBefore)),
+    ],
+    ["buy summary", cycleNarrationText(buyAll, null)],
+    ["holding", cycleNarrationText(holding, null)],
+    ["sell without entry", cycleNarrationText(sellNoEntry, null)],
+    ["volume reject", cycleNarrationText(volumeReject, null)],
+  ];
+
+  it.each(scenarios)("%s stays within two short sentences", (_name, text) => {
+    const sentences = text.split("。").filter((s) => s.length > 0);
+    expect(sentences.length).toBeLessThanOrEqual(3);
+    expect(text.length).toBeLessThanOrEqual(80);
+  });
+
+  it.each(scenarios)("%s avoids report-style phrasing", (_name, text) => {
+    expect(text).not.toMatch(/です|ます|ました|確認できました|総括/);
+  });
+
+  it("a far WAIT still carries a recorded number", () => {
+    const text = cycleNarrationText(farWait, null);
+    expect(text).toMatch(/\d/);
+    expect(text).toContain("EMAの差は-1.6667%");
+  });
+
+  it("a WAIT whose furthest condition approached says so", () => {
+    // Same evidence twice: the furthest condition (EMA) did not move.
+    const still = cycleNarrationText(farWait, decisionTrail(farWait));
+    expect(still).toContain("まだ遠いなあ");
+    // EMA gap narrowed since the previous cycle: an approach.
+    const before = telemetry({ ema20: 2.3, ema50: 2.42 });
+    const approached = cycleNarrationText(
+      telemetry({ ema20: 2.36, ema50: 2.42 }),
+      decisionTrail(before),
+    );
+    expect(approached).toContain("EMAの差は-2.5%");
+    expect(approached).toContain("少し近づいてきたね");
+  });
+
+  it("2/3 met names the single missing condition", () => {
+    const text = cycleNarrationText(oneRemaining, null);
+    expect(text).toContain("あとMACDだけ");
+    expect(text).toContain("-0.0004、ほぼゼロ");
+  });
+
+  it("a broken condition narrates the step back with its number", () => {
+    const text = cycleNarrationText(brokeNow, decisionTrail(brokeBefore));
+    expect(text).toContain("MACDが崩れて-0.003");
+    expect(text).toContain("一歩さがったなあ");
+  });
+
+  it("a newly met condition is announced with the crossing numbers", () => {
+    const text = cycleNarrationText(newlyMet, decisionTrail(farWait));
+    expect(text).toContain("RSIが28→34で上抜けた");
+    expect(text).toContain("残りはEMAとMACD");
+  });
+
+  it("a BUY narrates the summary of why, from the evidence", () => {
+    const text = cycleNarrationText(buyAll, null);
+    expect(text).toContain("3つ揃ったよ");
+    expect(text).toContain("EMAは順並び");
+    expect(text).toContain("RSIは28→39まで回復");
+    expect(text).toContain("MACDもプラス");
+    expect(text).toContain("だから買うね");
+  });
+
+  it("a position watch counts down to the take-profit line", () => {
+    const text = cycleNarrationText(holding, null);
+    expect(text).toContain("保有中だよ");
+    expect(text).toContain("今は+2.1739%");
+    expect(text).toContain("利確まであと0.8261%");
+  });
+
+  it("missing entry price is not invented for a SELL", () => {
+    const text = cycleNarrationText(sellNoEntry, null);
+    expect(text).toContain("利確のラインに触れたよ");
+    expect(text).toContain("価格は2.4 USDCだね");
+    expect(text).not.toContain("取得から");
+    expect(text).not.toMatch(/NaN|undefined/);
+  });
+
+  it("a BUY without all conditions recorded does not claim a summary", () => {
+    const text = cycleNarrationText(
+      telemetry({ action: "BUY", selectedRule: "BUY_SIGNAL" }),
+      null,
+    );
+    expect(text).toContain("買いシグナルが出たよ");
+    expect(text).not.toContain("3つ揃ったよ");
+  });
+});
+
+describe("buy-condition chips", () => {
+  function telemetry(
+    overrides: Partial<DecisionTelemetry> & {
+      conditions?: Partial<DecisionTelemetry["conditions"]>;
+    } = {},
+  ): DecisionTelemetry {
+    const { conditions, ...rest } = overrides;
+    return {
+      evaluatedAt: NOW - 60_000,
+      candleTimestamp: NOW - 300_000,
+      action: "WAIT",
+      reason: "",
+      selectedRule: "NO_SIGNAL",
+      sellPurpose: null,
+      price: 2.4,
+      entryPrice: null,
+      ema20: 2.38,
+      ema50: 2.42,
+      rsi: 44,
+      previousRsi: 42,
+      histogram: -0.003,
+      previousHistogram: -0.002,
+      atr: 0.02,
+      volumeChange: 0.05,
+      oversold: 30,
+      overbought: 70,
+      stopLossPct: 0.02,
+      takeProfitPct: 0.03,
+      ...rest,
+      conditions: {
+        emaUp: false,
+        rsiRecovery: false,
+        histogramImproving: false,
+        hasPosition: false,
+        stopLoss: false,
+        takeProfit: false,
+        ...(conditions ?? {}),
+      },
+    };
+  }
+  const byKey = (chips: ReturnType<typeof entryConditionChips>) =>
+    Object.fromEntries(chips.map((c) => [c.key, c]));
+
+  it("all three met shows checkmarks", () => {
+    const chips = entryConditionChips(
+      telemetry({
+        conditions: {
+          emaUp: true,
+          rsiRecovery: true,
+          histogramImproving: true,
+        },
+      }),
+      null,
+    );
+    expect(chips.map((c) => c.status)).toEqual(["✓", "✓", "✓"]);
+    expect(chips.every((c) => c.tone === "met")).toBe(true);
+  });
+
+  it("far conditions use the prototype's status words", () => {
+    const chips = byKey(entryConditionChips(telemetry(), null));
+    expect(chips.ema.status).toBe("逆並び");
+    expect(chips.rsi.status).toBe("あと14");
+    expect(chips.rsi.tone).toBe("far");
+    expect(chips.macd.status).toBe("マイナス");
+  });
+
+  it("RSI points to the line are whole points from the evidence", () => {
+    const chips = byKey(entryConditionChips(telemetry({ rsi: 41 }), null));
+    expect(chips.rsi.status).toBe("あと11");
+  });
+
+  it("RSI inside the oversold zone reads 圏内", () => {
+    const chips = byKey(
+      entryConditionChips(telemetry({ rsi: 28, previousRsi: 33 }), null),
+    );
+    expect(chips.rsi.status).toBe("圏内");
+    expect(chips.rsi.tone).toBe("close");
+  });
+
+  it("a nearly-closed EMA gap reads あと少し", () => {
+    const chips = byKey(
+      entryConditionChips(telemetry({ ema20: 2.415, ema50: 2.42 }), null),
+    );
+    expect(chips.ema.status).toBe("あと少し");
+  });
+
+  it("a histogram a hair below zero reads あと1", () => {
+    const chips = byKey(
+      entryConditionChips(
+        telemetry({ histogram: -0.0004, previousHistogram: -0.0002 }),
+        null,
+      ),
+    );
+    expect(chips.macd.status).toBe("あと1");
+    expect(chips.macd.tone).toBe("close");
+  });
+
+  it("without an ATR the near-zero MACD status is not claimed", () => {
+    const chips = byKey(
+      entryConditionChips(
+        telemetry({
+          histogram: -0.0004,
+          previousHistogram: -0.0002,
+          atr: 0,
+        }),
+        null,
+      ),
+    );
+    expect(chips.macd.status).toBe("マイナス");
+  });
+
+  it("conditions met last cycle and broken now read 後退", () => {
+    const before = telemetry({
+      conditions: {
+        emaUp: true,
+        rsiRecovery: true,
+        histogramImproving: true,
+      },
+    });
+    const chips = byKey(
+      entryConditionChips(telemetry(), decisionTrail(before)),
+    );
+    expect(chips.ema.status).toBe("後退");
+    expect(chips.rsi.status).toBe("後退");
+    expect(chips.macd.status).toBe("後退");
+    expect(chips.macd.tone).toBe("back");
+  });
+
+  it("currentConditionChips is null without a fresh decision", () => {
+    const state = emptyNarrationState();
+    expect(currentConditionChips(state, null, NOW)).toBeNull();
+    const stale = telemetry({ evaluatedAt: NOW - 360_001 });
+    expect(currentConditionChips(state, stale, NOW)).toBeNull();
+    const fresh = telemetry({ evaluatedAt: NOW - 1_000 });
+    const chips = currentConditionChips(state, fresh, NOW);
+    expect(chips).not.toBeNull();
+    expect(chips!.map((c) => c.label)).toEqual(["EMA", "RSI", "MACD"]);
   });
 });
