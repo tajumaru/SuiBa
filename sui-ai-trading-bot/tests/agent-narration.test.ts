@@ -1,0 +1,942 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { BotDatabase } from "../packages/database/src/index.ts";
+import { OperationMonitor } from "../apps/worker/src/operations.ts";
+import { BotEngine } from "../apps/worker/src/engine.ts";
+import { DashboardService } from "../apps/worker/src/dashboard-feed.ts";
+import type { DatabaseSync } from "node:sqlite";
+import { botVital } from "../apps/dashboard/src/botVital.ts";
+import {
+  advanceNarration,
+  agentPose,
+  cycleNarrationText,
+  emptyNarrationState,
+  MAX_NARRATION_ENTRIES,
+  type NarrationState,
+} from "../apps/dashboard/src/agentNarration.ts";
+import type { TradingDecision } from "../packages/shared/src/index.ts";
+import type {
+  CandidateAudit,
+  OperationEvent,
+} from "../packages/shared/src/operations.ts";
+import type { ApiFailure } from "../packages/shared/src/http-errors.ts";
+
+const NOW = 1_800_000_000_000;
+const databases: BotDatabase[] = [];
+afterEach(() => {
+  vi.restoreAllMocks();
+  for (const db of databases.splice(0)) db.close();
+});
+
+function decision(overrides: {
+  evaluatedAt?: number;
+  action?: TradingDecision["action"];
+  selectedRule?: string;
+  sellPurpose?: TradingDecision["sellPurpose"];
+  price?: number;
+  entryPrice?: number | null;
+  ema20?: number;
+  ema50?: number;
+  rsi?: number;
+  previousRsi?: number;
+  histogram?: number;
+  previousHistogram?: number;
+  volumeChange?: number;
+  conditions?: Record<string, boolean>;
+}): TradingDecision {
+  const o = overrides;
+  const conditions = {
+    hasPosition: false,
+    stopLoss: false,
+    takeProfit: false,
+    latestVolumePositive: true,
+    previousVolumePositive: true,
+    volumeChangeExceeded: false,
+    emaUp: false,
+    rsiRecovery: false,
+    histogramImproving: false,
+    emaDown: true,
+    rsiReversal: false,
+    histogramDeclining: true,
+    ...(o.conditions ?? {}),
+  };
+  return {
+    action: o.action ?? "WAIT",
+    confidence: 0,
+    reason: "条件未成立",
+    stopLossPct: 0.02,
+    takeProfitPct: 0.03,
+    timestamp: new Date(o.evaluatedAt ?? NOW - 60_000).toISOString(),
+    sellPurpose: o.sellPurpose,
+    evidence: {
+      version: 1,
+      evaluatedAt: o.evaluatedAt ?? NOW - 60_000,
+      candleTimestamp: NOW - 300_000,
+      previousCandleTimestamp: NOW - 600_000,
+      inputs: {
+        price: o.price ?? 2.4,
+        latestVolume: 1000,
+        previousVolume: 900,
+        entryPrice: o.entryPrice ?? null,
+        current: {
+          ema20: o.ema20 ?? 2.38,
+          ema50: o.ema50 ?? 2.42,
+          rsi: o.rsi ?? 44,
+          macd: 0.001,
+          signal: 0.002,
+          histogram: o.histogram ?? -0.003,
+          atr: 0.02,
+          volumeChange: o.volumeChange ?? 0.05,
+          priceChange: 0.001,
+        },
+        previous: {
+          ema20: 2.37,
+          ema50: 2.42,
+          rsi: o.previousRsi ?? 42,
+          macd: 0.0005,
+          signal: 0.002,
+          histogram: o.previousHistogram ?? -0.002,
+          atr: 0.02,
+          volumeChange: 0.03,
+          priceChange: 0,
+        },
+      },
+      thresholds: {
+        oversold: 30,
+        overbought: 70,
+        maxVolumeChange: 3,
+        stopLossPct: 0.02,
+        takeProfitPct: 0.03,
+      },
+      conditions,
+      selectedRule: o.selectedRule ?? "NO_SIGNAL",
+    },
+  };
+}
+
+function fixture() {
+  const db = new BotDatabase(":memory:");
+  databases.push(db);
+  const monitor = new OperationMonitor(db);
+  return { db, monitor };
+}
+
+/** A snapshot whose hero would judge the bot alive (mirrors bot-vital tests). */
+function runningSnapshot(
+  db: BotDatabase,
+  monitor: OperationMonitor,
+  dec?: TradingDecision | null,
+) {
+  if (dec) db.set("decision", dec);
+  const d = monitor.snapshot(NOW);
+  d.status = "RUNNING";
+  d.safety.botState = "RUNNING";
+  d.safety.connectivity = "HEALTHY";
+  d.safety.ordersAllowed = true;
+  d.timing.dataStatus = "FRESH";
+  d.timing.transportRecent = true;
+  d.timing.lastTransportSuccessAt = NOW - 1_000;
+  d.lastHeartbeatAt = NOW - 5_000;
+  d.lastMarketClosedAt = NOW - 300_000;
+  return d;
+}
+
+function apiEvent(
+  at: number,
+  api: string,
+  code = "UPSTREAM_HTTP_503",
+): OperationEvent {
+  const failure: ApiFailure = {
+    api,
+    url: "https://example.invalid",
+    host: "example.invalid",
+    operation: "read",
+    method: "GET",
+    code,
+    causeCode: null,
+    phase: "HTTP",
+    status: 503,
+    elapsedMs: 100,
+    occurredAt: at,
+  };
+  return { timestamp: at, kind: "API", code, apiFailure: failure };
+}
+
+function candidate(overrides: Partial<CandidateAudit>): CandidateAudit {
+  return {
+    id: "cand-1",
+    orderId: "order-1",
+    timestamp: NOW - 30_000,
+    createdAt: NOW - 30_000,
+    side: "BUY",
+    requestedInputAtomic: "10000000",
+    quantityAtomic: "500000000",
+    quotePriceUsdc: "2.4312",
+    quoteExpiresAt: null,
+    acquisitionCostUsdc: null,
+    expectedSaleUsdc: null,
+    saleModel: null,
+    dexFeeUsdc: null,
+    gasUsdc: null,
+    additionalFeeUsdc: null,
+    buyGasUsdc: null,
+    netProfitUsdc: null,
+    minProfitUsdc: "0",
+    minProfitPct: "0",
+    profitGuard: { evaluated: true, allowed: true, reason: null },
+    risk: { status: "ALLOWED", reasons: [] },
+    finalAction: "BUY",
+    reasons: [],
+    ...overrides,
+  };
+}
+
+describe("worker decision telemetry (read-only, fail-closed)", () => {
+  it("is null when no decision was recorded", () => {
+    const { monitor } = fixture();
+    expect(monitor.snapshot(NOW).decision).toBeNull();
+  });
+
+  it("copies the recorded evidence with its real values", () => {
+    const { db, monitor } = fixture();
+    db.set("decision", decision({ rsi: 28, previousRsi: 33 }));
+    const t = monitor.snapshot(NOW).decision;
+    expect(t).not.toBeNull();
+    expect(t!.rsi).toBe(28);
+    expect(t!.previousRsi).toBe(33);
+    expect(t!.conditions.emaUp).toBe(false);
+    expect(t!.oversold).toBe(30);
+    expect(t!.action).toBe("WAIT");
+  });
+
+  it("is null for an unknown evidence version", () => {
+    const { db, monitor } = fixture();
+    const dec = decision({});
+    (dec.evidence as { version: number }).version = 2;
+    db.set("decision", dec);
+    expect(monitor.snapshot(NOW).decision).toBeNull();
+  });
+
+  it("is null when a value is not a finite number", () => {
+    const { db, monitor } = fixture();
+    const dec = decision({});
+    dec.evidence!.inputs.current.rsi = Number.NaN;
+    db.set("decision", dec);
+    expect(monitor.snapshot(NOW).decision).toBeNull();
+  });
+
+  it("is null when a narrated condition is missing", () => {
+    const { db, monitor } = fixture();
+    const dec = decision({});
+    delete (dec.evidence!.conditions as Record<string, unknown>)
+      .histogramImproving;
+    db.set("decision", dec);
+    expect(monitor.snapshot(NOW).decision).toBeNull();
+  });
+
+  it("is null for the evidence-less fallback decision the engine stores on failure", () => {
+    const { db, monitor } = fixture();
+    db.set("decision", { action: "WAIT", reason: "SOME_CODE", confidence: 0 });
+    expect(monitor.snapshot(NOW).decision).toBeNull();
+  });
+});
+
+describe("agent narration: initialisation", () => {
+  it("a stopped bot gets one status entry and the sleep pose", () => {
+    const { monitor } = fixture();
+    const d = monitor.snapshot(NOW);
+    const state = advanceNarration(
+      emptyNarrationState(),
+      d,
+      botVital(d, false, NOW, NOW).state,
+      NOW,
+    );
+    expect(state.entries).toHaveLength(1);
+    expect(state.entries[0].text).toContain("停止中です");
+    const vital = botVital(d, false, NOW, NOW);
+    expect(agentPose(state, d, vital, NOW)).toBe("sleep");
+  });
+
+  it("a running bot narrates its latest recorded cycle with real numbers", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    expect(state.entries).toHaveLength(1);
+    expect(state.entries[0].kind).toBe("cycle");
+    expect(state.entries[0].text).toContain("買い条件は0/3");
+    expect(state.entries[0].text).toContain("EMA20（2.38）がEMA50（2.42）");
+    // Re-advancing the very same snapshot adds nothing.
+    const again = advanceNarration(state, d, "alive", NOW);
+    expect(again.entries).toHaveLength(1);
+  });
+});
+
+describe("agent narration: cycles", () => {
+  function twoCycles() {
+    const { db, monitor } = fixture();
+    const d1 = runningSnapshot(db, monitor, decision({}));
+    let state = advanceNarration(emptyNarrationState(), d1, "alive", NOW);
+    const d2 = runningSnapshot(
+      db,
+      monitor,
+      decision({
+        evaluatedAt: NOW,
+        conditions: { rsiRecovery: true, histogramImproving: true },
+        histogram: -0.001,
+        previousHistogram: -0.002,
+      }),
+    );
+    state = advanceNarration(state, d2, "alive", NOW);
+    return { state, d2 };
+  }
+
+  it("a new cycle with 2/3 conditions met narrates progress and points", () => {
+    const { state, d2 } = twoCycles();
+    expect(state.entries).toHaveLength(2);
+    expect(state.entries[1].text).toContain("買い条件が2/3そろってきました");
+    const vital = botVital(d2, false, NOW, NOW);
+    expect(agentPose(state, d2, vital, NOW)).toBe("point");
+  });
+
+  it("the featured unmet condition follows the evidence (RSI in the zone)", () => {
+    const text = cycleNarrationText(
+      {
+        evaluatedAt: NOW,
+        candleTimestamp: NOW,
+        action: "WAIT" as const,
+        reason: "",
+        selectedRule: "NO_SIGNAL",
+        sellPurpose: null,
+        price: 2.4,
+        entryPrice: null,
+        ema20: 2.418,
+        ema50: 2.42,
+        rsi: 28,
+        previousRsi: 33,
+        histogram: -0.001,
+        previousHistogram: -0.002,
+        atr: 0.02,
+        volumeChange: 0.05,
+        oversold: 30,
+        overbought: 70,
+        stopLossPct: 0.02,
+        takeProfitPct: 0.03,
+        conditions: {
+          emaUp: false,
+          rsiRecovery: false,
+          histogramImproving: true,
+          hasPosition: false,
+          stopLoss: false,
+          takeProfit: false,
+        },
+      },
+      null,
+    );
+    expect(text).toContain("買い条件が1/3そろってきました");
+    expect(text).toContain("売られすぎライン（30）の下");
+    expect(text).toContain("反発の起点待ち");
+  });
+
+  it("identical consecutive cycle evidence is not narrated twice", () => {
+    const { db, monitor } = fixture();
+    const d1 = runningSnapshot(db, monitor, decision({}));
+    let state = advanceNarration(emptyNarrationState(), d1, "alive", NOW);
+    const d2 = runningSnapshot(db, monitor, decision({ evaluatedAt: NOW }));
+    state = advanceNarration(state, d2, "alive", NOW);
+    expect(state.entries).toHaveLength(1);
+  });
+
+  it("a position watch narrates entry price, current price and the guard lines", () => {
+    const text = cycleNarrationText(
+      {
+        evaluatedAt: NOW,
+        candleTimestamp: NOW,
+        action: "WAIT",
+        reason: "",
+        selectedRule: "NO_SIGNAL",
+        sellPurpose: null,
+        price: 2.4,
+        entryPrice: 2.3,
+        ema20: 2.41,
+        ema50: 2.4,
+        rsi: 55,
+        previousRsi: 54,
+        histogram: 0.001,
+        previousHistogram: 0.001,
+        atr: 0.02,
+        volumeChange: 0.01,
+        oversold: 30,
+        overbought: 70,
+        stopLossPct: 0.02,
+        takeProfitPct: 0.03,
+        conditions: {
+          emaUp: true,
+          rsiRecovery: false,
+          histogramImproving: false,
+          hasPosition: true,
+          stopLoss: false,
+          takeProfit: false,
+        },
+      },
+      null,
+    );
+    expect(text).toContain("保有中です");
+    expect(text).toContain("取得価格2.3 USDCに対して現在2.4 USDC");
+    expect(text).toContain("+4.3478%");
+  });
+
+  it("a volume rejection narrates the measured volume change", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(
+      db,
+      monitor,
+      decision({ selectedRule: "VOLUME_REJECT", volumeChange: 3.5 }),
+    );
+    const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    expect(state.entries[0].text).toContain(
+      "出来高の異常を検出したため見送りました",
+    );
+    expect(state.entries[0].text).toContain("350%");
+  });
+});
+
+describe("agent narration: trades and rejections from candidate audits", () => {
+  it("a recorded PAPER buy narrates quantity and price, then smiles", () => {
+    const { db, monitor } = fixture();
+    const d1 = runningSnapshot(db, monitor, decision({}));
+    let state = advanceNarration(emptyNarrationState(), d1, "alive", NOW);
+    const d2 = runningSnapshot(
+      db,
+      monitor,
+      decision({ evaluatedAt: NOW, action: "BUY", selectedRule: "BUY_SIGNAL" }),
+    );
+    d2.candidates = [
+      candidate({ timestamp: NOW + 1000, createdAt: NOW + 1000 }),
+    ];
+    state = advanceNarration(state, d2, "alive", NOW + 1000);
+    const trade = state.entries.at(-1)!;
+    expect(trade.kind).toBe("trade");
+    expect(trade.text).toContain("PAPERで買いを記録しました");
+    expect(trade.text).toContain("0.5 SUI");
+    expect(trade.text).toContain("2.4312 USDC");
+    const vital = botVital(d2, false, NOW, NOW);
+    expect(agentPose(state, d2, vital, NOW + 1000)).toBe("pointSmile");
+  });
+
+  it("a gate rejection narrates the recorded reason in Japanese", () => {
+    const { db, monitor } = fixture();
+    const d1 = runningSnapshot(db, monitor, decision({}));
+    let state = advanceNarration(emptyNarrationState(), d1, "alive", NOW);
+    const d2 = runningSnapshot(db, monitor, decision({ evaluatedAt: NOW }));
+    d2.candidates = [
+      candidate({
+        id: "cand-2",
+        finalAction: "WAIT",
+        reasons: ["MINIMUM_NET_PROFIT_NOT_MET"],
+        timestamp: NOW + 500,
+        createdAt: NOW + 500,
+      }),
+    ];
+    state = advanceNarration(state, d2, "alive", NOW + 500);
+    const rejection = state.entries.at(-1)!;
+    expect(rejection.kind).toBe("rejection");
+    expect(rejection.text).toContain("買いシグナルは出ましたが、見送りました");
+    expect(rejection.text).toContain(
+      "手数料込みの利益が基準に届かないため見送り",
+    );
+  });
+});
+
+describe("agent narration: events", () => {
+  function started() {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    return { db, monitor, state };
+  }
+
+  it("STOP and API events narrate; a same-timestamp ERROR does not repeat the API story", () => {
+    const { db, monitor, state } = started();
+    const d = runningSnapshot(db, monitor, decision({ evaluatedAt: NOW }));
+    const at = NOW + 2000;
+    d.events = [
+      { timestamp: at, kind: "ERROR", code: "MARKET_UPSTREAM_HTTP_503" },
+      apiEvent(at, "DeepBook"),
+      { timestamp: at + 1000, kind: "STOP", code: "CONSECUTIVE_API_ERRORS" },
+    ];
+    const next = advanceNarration(state, d, "alive", at + 1000);
+    const texts = next.entries.map((e) => e.text);
+    expect(texts.some((t) => t.includes("DeepBookの通信に失敗しました"))).toBe(
+      true,
+    );
+    expect(texts.some((t) => t.includes("処理中にエラーが発生しました"))).toBe(
+      false,
+    );
+    expect(
+      texts.some((t) =>
+        t.includes("止まりました。理由：APIの連続エラーを検出しました"),
+      ),
+    ).toBe(true);
+  });
+
+  it("connectivity transitions narrate degradation and recovery once", () => {
+    const { db, monitor, state } = started();
+    const degraded = runningSnapshot(
+      db,
+      monitor,
+      decision({ evaluatedAt: NOW }),
+    );
+    degraded.safety.connectivity = "DEGRADED";
+    const s2 = advanceNarration(state, degraded, "weak", NOW);
+    expect(s2.entries.at(-1)!.text).toContain("通信が不安定になっています");
+    const recovering = runningSnapshot(
+      db,
+      monitor,
+      decision({ evaluatedAt: NOW }),
+    );
+    recovering.safety.connectivity = "RECOVERING";
+    recovering.safety.healthyCycles = 2;
+    const s3 = advanceNarration(s2, recovering, "weak", NOW);
+    expect(s3.entries.at(-1)!.text).toContain("正常サイクル2回を確認");
+    const healthyAgain = runningSnapshot(
+      db,
+      monitor,
+      decision({ evaluatedAt: NOW }),
+    );
+    const s4 = advanceNarration(s3, healthyAgain, "alive", NOW);
+    expect(s4.entries.at(-1)!.kind).toBe("recovery");
+    expect(s4.entries.at(-1)!.text).toContain("通信が復旧しました");
+  });
+
+  it("entries are capped", () => {
+    const { db, monitor, state } = started();
+    const d = runningSnapshot(db, monitor, decision({ evaluatedAt: NOW }));
+    d.events = Array.from({ length: 40 }, (_, i) =>
+      apiEvent(NOW + 1000 + i, `API${i}`),
+    );
+    const next = advanceNarration(state, d, "alive", NOW + 5000);
+    expect(next.entries.length).toBe(MAX_NARRATION_ENTRIES);
+  });
+});
+
+describe("agent pose", () => {
+  it("points for one met condition when the recorded price rises", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({ price: 2.4 }));
+    const prev = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    const next = runningSnapshot(
+      db,
+      monitor,
+      decision({ evaluatedAt: NOW, price: 2.5, conditions: { emaUp: true } }),
+    );
+    const state = advanceNarration(prev, next, "alive", NOW);
+    expect(agentPose(state, next, botVital(next, false, NOW, NOW), NOW)).toBe(
+      "point",
+    );
+  });
+
+  it("weak (degraded) never points, even with 2/3 conditions met", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(
+      db,
+      monitor,
+      decision({
+        conditions: { rsiRecovery: true, histogramImproving: true },
+      }),
+    );
+    d.safety.connectivity = "DEGRADED";
+    const vital = botVital(d, false, NOW, NOW);
+    expect(vital.state).toBe("weak");
+    expect(agentPose(emptyNarrationState(), d, vital, NOW)).toBe("normal");
+  });
+
+  it("a safety stop sleeps", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    d.status = "ABNORMAL_STOP";
+    d.safety.botState = "ABNORMAL_STOP";
+    const vital = botVital(d, false, NOW, NOW);
+    expect(vital.state).toBe("flatlined");
+    expect(agentPose(emptyNarrationState(), d, vital, NOW)).toBe("sleep");
+  });
+
+  it("an alive bot with fewer than two conditions met stays normal", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    const vital = botVital(d, false, NOW, NOW);
+    expect(vital.state).toBe("alive");
+    expect(agentPose(emptyNarrationState(), d, vital, NOW)).toBe("normal");
+  });
+});
+
+describe("agent narration: fail-closed", () => {
+  it("keeps display snapshots available for actually corrupted stored decision JSON", () => {
+    const { db, monitor } = fixture();
+    db.set("decision", decision({}));
+    (db as unknown as { db: DatabaseSync }).db
+      .prepare("UPDATE bot_runtime_state SET json=? WHERE key=?")
+      .run("{", "decision");
+    const health = { healthy: true, checkedAt: NOW, failures: 0 };
+    const engine = new BotEngine(
+      db,
+      { candles: async () => [] },
+      {
+        getQuote: async () => {
+          throw new Error("UNEXPECTED_ORDER");
+        },
+        validateQuote: async () => false,
+      },
+      { health: async () => health, status: health },
+    );
+    expect(monitor.snapshot(NOW).decision).toBeNull();
+    expect(engine.snapshot().decision).toBeNull();
+    expect(
+      new DashboardService(engine, db).summary().summary.decision,
+    ).toBeNull();
+    expect(db.health().healthy).toBe(true);
+  });
+  it.each(["BUY", "WAIT", "SAFE_STOP"] as const)(
+    "narrates PENDING -> %s once, including after reconnect",
+    (finalAction) => {
+      const { db, monitor } = fixture();
+      const d = runningSnapshot(db, monitor, decision({}));
+      d.candidates = [candidate({ finalAction: "PENDING" })];
+      const first = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+      d.candidates = [candidate({ finalAction })];
+      const next = advanceNarration(first, d, "alive", NOW);
+      expect(next.entries).toHaveLength(first.entries.length + 1);
+      const again = advanceNarration(next, structuredClone(d), "alive", NOW);
+      expect(again.entries).toEqual(next.entries);
+      expect(again.entries).toBe(next.entries);
+    },
+  );
+
+  it.each([-1, 0, NOW + 1, NOW - 360_001, 9e20])(
+    "rejects invalid or expired decision time %s",
+    (at) => {
+      const { db, monitor } = fixture();
+      const dec = decision({});
+      dec.evidence!.evaluatedAt = at;
+      db.set("decision", dec);
+      expect(monitor.snapshot(NOW).decision).toBeNull();
+    },
+  );
+
+  it("rejects malformed optional telemetry without changing persisted state or gates", () => {
+    const { db, monitor } = fixture();
+    const before = monitor.snapshot(NOW);
+    const gate = monitor.ordersAllowed(undefined, NOW);
+    const set = vi.spyOn(db, "set");
+    const get = db.get.bind(db);
+    vi.spyOn(db, "get").mockImplementation((key) => {
+      if (key === "decision") throw new SyntaxError("invalid JSON");
+      return get(key);
+    });
+    expect(monitor.snapshot(NOW)).toEqual(before);
+    expect(monitor.ordersAllowed(undefined, NOW)).toBe(gate);
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    new Error("display read failed"),
+    new TypeError("invalid display data"),
+  ])("isolates optional read failure %s in all display snapshots", (error) => {
+    const { db, monitor } = fixture();
+    const health = { healthy: true, checkedAt: NOW, failures: 0 };
+    const engine = new BotEngine(
+      db,
+      { candles: async () => [] },
+      {
+        getQuote: async () => {
+          throw new Error("UNEXPECTED_ORDER");
+        },
+        validateQuote: async () => false,
+      },
+      { health: async () => health, status: health },
+    );
+    const before = monitor.snapshot(NOW);
+    const get = db.get.bind(db);
+    const set = vi.spyOn(db, "set");
+    vi.spyOn(db, "get").mockImplementation((key) => {
+      if (key === "decision") throw error;
+      return get(key);
+    });
+    expect(monitor.snapshot(NOW)).toEqual(before);
+    expect(engine.snapshot().decision).toBeNull();
+    expect(
+      new DashboardService(engine, db).summary().summary.decision,
+    ).toBeNull();
+    expect(db.health().healthy).toBe(true);
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it.each([5, 11, 10, 6])(
+    "keeps SQLite fault classification and immediate safety state for telemetry errcode %s",
+    (errcode) => {
+      const { db, monitor } = fixture();
+      db.set("runtime", { ...db.runtime(), running: true });
+      monitor.market(NOW, NOW - 300_000);
+      const get = db.get.bind(db);
+      const sql = (db as unknown as { sql<T>(fn: () => T): T }).sql.bind(db);
+      vi.spyOn(db, "get").mockImplementation((key) => {
+        if (key === "decision")
+          return sql(() => {
+            throw Object.assign(new Error("fixture SQL read failure"), {
+              errcode,
+            });
+          });
+        return get(key);
+      });
+      const snapshot = monitor.snapshot(NOW);
+      expect(snapshot.decision).toBeNull();
+      expect(db.health()).toMatchObject({
+        healthy: errcode === 5,
+        requiresRestart: errcode !== 5,
+      });
+      if (errcode !== 5) {
+        expect(snapshot.status).toBe("ABNORMAL_STOP");
+        expect(snapshot.stopReason).toBe("DATABASE_UNAVAILABLE");
+        expect(snapshot.safety.botState).toBe("ABNORMAL_STOP");
+        expect(snapshot.safety.ordersAllowed).toBe(false);
+        expect(db.runtime()).toMatchObject({
+          running: false,
+          error: "DATABASE_UNAVAILABLE",
+        });
+        expect(() => db.set("runtime", { running: true })).toThrow(
+          "DATABASE_UNAVAILABLE",
+        );
+        vi.restoreAllMocks();
+        expect(db.health().healthy).toBe(false);
+        expect(monitor.ordersAllowed(undefined, NOW)).toBe(false);
+      }
+      expect(db.history("paper_orders")).toEqual([]);
+      expect(db.history("paper_trades")).toEqual([]);
+    },
+  );
+
+  it("still propagates faults outside optional decision data", () => {
+    const { db, monitor } = fixture();
+    const get = db.get.bind(db);
+    vi.spyOn(db, "get").mockImplementation((key) => {
+      if (key === "portfolio") throw new Error("DATABASE_UNAVAILABLE");
+      return get(key);
+    });
+    expect(() => monitor.snapshot(NOW)).toThrow("DATABASE_UNAVAILABLE");
+  });
+
+  it.each(["candle", "price", "entry", "rsi", "threshold", "rule", "purpose"])(
+    "rejects malformed %s evidence",
+    (field) => {
+      const { db, monitor } = fixture();
+      const dec = decision({});
+      const evidence = dec.evidence!;
+      if (field === "candle") evidence.candleTimestamp = NOW - 360_001;
+      if (field === "price") evidence.inputs.price = -1;
+      if (field === "entry") evidence.inputs.entryPrice = 0;
+      if (field === "rsi") evidence.inputs.current.rsi = 101;
+      if (field === "threshold") evidence.thresholds.stopLossPct = 2;
+      if (field === "rule")
+        (evidence as unknown as Record<string, unknown>).selectedRule = {};
+      if (field === "purpose")
+        (dec as unknown as Record<string, unknown>).sellPurpose = {};
+      db.set("decision", dec);
+      expect(monitor.snapshot(NOW).decision).toBeNull();
+    },
+  );
+
+  it("expires a trade pose even when no new narration arrives", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, null);
+    const state = emptyNarrationState();
+    state.entries = [{ id: "trade", at: NOW, kind: "trade", text: "recorded" }];
+    const vital = botVital(d, false, NOW, NOW);
+    expect(agentPose(state, d, vital, NOW)).toBe("pointSmile");
+    expect(agentPose(state, d, vital, NOW + 360_001)).toBe("normal");
+  });
+
+  it("does not narrate or point for old/future evidence or unconfirmed running state", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(
+      db,
+      monitor,
+      decision({ conditions: { emaUp: true, rsiRecovery: true } }),
+    );
+    const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    const vital = botVital(d, false, NOW, NOW);
+    for (const at of [NOW - 360_001, NOW + 1]) {
+      d.decision!.evaluatedAt = at;
+      expect(
+        advanceNarration(emptyNarrationState(), d, "alive", NOW).entries[0]
+          .kind,
+      ).toBe("status");
+      expect(agentPose(state, d, vital, NOW)).toBe("normal");
+    }
+    d.decision!.evaluatedAt = NOW;
+    expect(advanceNarration(state, d, "unknown", NOW).entries).toEqual(
+      state.entries,
+    );
+    for (const stopped of ["sleeping", "flatlined"] as const) {
+      expect(advanceNarration(state, d, stopped, NOW).entries).toEqual(
+        state.entries,
+      );
+      expect(agentPose(state, d, { ...vital, state: stopped }, NOW)).toBe(
+        "sleep",
+      );
+    }
+  });
+
+  it("keeps visible old records deduplicated through long sessions with bounded memory", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    const old = candidate({});
+    d.candidates = [old];
+    let state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    for (let i = 0; i < 1000; i++) {
+      d.events = [apiEvent(NOW + i, `API${i}`)];
+      state = advanceNarration(state, d, "alive", NOW + i);
+      expect(state.entries.length).toBeLessThanOrEqual(30);
+      expect(state.seen.length).toBeLessThanOrEqual(200);
+    }
+    expect(state.entries.every((entry) => entry.kind !== "trade")).toBe(true);
+    expect(
+      advanceNarration(state, structuredClone(d), "alive", NOW + 1000).entries,
+    ).toBe(state.entries);
+  });
+
+  it("keeps React keys unique when same-timestamp entries arrive after the history cap", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    let state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    for (let i = 0; i < 60; i++) {
+      d.events = [apiEvent(NOW, `API${i}`)];
+      state = advanceNarration(state, d, "alive", NOW);
+    }
+    expect(state.entries).toHaveLength(30);
+    expect(new Set(state.entries.map((e) => e.id)).size).toBe(30);
+  });
+
+  it("does not replay evicted events or final candidates when old pages return after reconnect", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    let state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    const oldEvent = apiEvent(NOW + 1, "evicted-old-api");
+    const oldCandidate = candidate({
+      id: "evicted-old-fill",
+      createdAt: NOW + 1,
+      timestamp: NOW + 1,
+    });
+    for (let i = 1; i <= 1000; i++) {
+      d.events = [i === 1 ? oldEvent : apiEvent(NOW + i, `API${i}`)];
+      d.candidates = [
+        i === 1
+          ? oldCandidate
+          : candidate({
+              id: `fill-${i}`,
+              createdAt: NOW + i,
+              timestamp: NOW + i,
+              quotePriceUsdc: String(i),
+            }),
+      ];
+      state = advanceNarration(state, d, "alive", NOW + i);
+    }
+    expect(state.seen).toHaveLength(200);
+    expect(state.seen.some((key) => key.includes("evicted-old"))).toBe(false);
+    const entries = state.entries;
+    d.events = [oldEvent];
+    d.candidates = [oldCandidate];
+    state = advanceNarration(state, structuredClone(d), "alive", NOW + 2000);
+    expect(state.entries).toBe(entries);
+    expect(state.retiredEventThrough).toBeGreaterThan(NOW + 1);
+    expect(state.retiredCandidateThrough).toBeGreaterThan(NOW + 1);
+    d.events = [apiEvent(NOW + 2001, "new-api")];
+    d.candidates = [
+      candidate({
+        id: "new-fill",
+        createdAt: NOW + 2001,
+        timestamp: NOW + 2001,
+      }),
+    ];
+    state = advanceNarration(state, d, "alive", NOW + 2001);
+    expect(state.entries.slice(-2).map((entry) => entry.kind)).toEqual([
+      "warning",
+      "trade",
+    ]);
+    expect(state.entries).toHaveLength(30);
+    expect(state.seen.length).toBeLessThanOrEqual(200);
+  });
+
+  it("allows a known pending candidate to finish after its key was evicted", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    const pending = candidate({
+      id: "long-pending",
+      createdAt: NOW,
+      timestamp: NOW,
+      finalAction: "PENDING",
+    });
+    d.candidates = [pending];
+    let state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    for (let i = 1; i <= 300; i++) {
+      d.candidates = [
+        candidate({
+          id: `later-${i}`,
+          createdAt: NOW + i,
+          timestamp: NOW + i,
+          quotePriceUsdc: String(i),
+        }),
+      ];
+      d.events = [apiEvent(NOW + i, `API${i}`)];
+      state = advanceNarration(state, d, "alive", NOW + i);
+    }
+    expect(state.seen.some((key) => key.includes("long-pending"))).toBe(false);
+    expect(state.pendingCandidateIds).toContain("long-pending");
+    d.candidates = [{ ...pending, finalAction: "SELL" }];
+    d.events = [];
+    state = advanceNarration(state, d, "alive", NOW + 500);
+    expect(state.entries.at(-1)?.text).toContain("売りを記録");
+    expect(state.pendingCandidateIds).not.toContain("long-pending");
+    expect(advanceNarration(state, d, "alive", NOW + 501).entries).toBe(
+      state.entries,
+    );
+    expect(state.pendingCandidateIds.length).toBeLessThanOrEqual(50);
+  });
+
+  it("does not merge failures from different APIs at the same timestamp", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    d.events = [apiEvent(NOW, "DeepBook"), apiEvent(NOW, "Sui gRPC")];
+    expect(
+      advanceNarration(state, d, "alive", NOW).entries.filter(
+        (e) => e.kind === "warning",
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("no decision telemetry means no cycle narration", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, null);
+    expect(d.decision).toBeNull();
+    let state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    expect(state.entries).toHaveLength(1);
+    expect(state.entries[0].kind).toBe("status");
+    const d2 = runningSnapshot(db, monitor, null);
+    state = advanceNarration(state, d2, "alive", NOW);
+    expect(state.entries).toHaveLength(1);
+  });
+
+  it("a decision recorded while stopped is not narrated as a live cycle", () => {
+    const { db, monitor } = fixture();
+    const d1 = monitor.snapshot(NOW);
+    let state: NarrationState = advanceNarration(
+      emptyNarrationState(),
+      d1,
+      "sleeping",
+      NOW,
+    );
+    const count = state.entries.length;
+    db.set("decision", decision({ evaluatedAt: NOW }));
+    const d2 = monitor.snapshot(NOW);
+    state = advanceNarration(state, d2, "sleeping", NOW);
+    expect(state.entries.length).toBe(count);
+  });
+});

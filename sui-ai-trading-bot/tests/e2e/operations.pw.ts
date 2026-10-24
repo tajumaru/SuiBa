@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { BotDatabase } from "../../packages/database/src/index.ts";
 import { BotEngine } from "../../apps/worker/src/engine.ts";
 import type { CandidateAudit } from "../../packages/shared/src/operations.ts";
+import type { OperationsSnapshot } from "../../apps/dashboard/src/operationsTypes.ts";
 
 async function open(
   page: Page,
@@ -190,6 +191,72 @@ for (const [status, label] of [
       });
   });
 }
+test("narration survives polling, reconnects and stops without duplicates or unsafe poses", async ({
+  page,
+}, info) => {
+  await page.clock.install();
+  const api = await open(page, "RUNNING");
+  const feed = page.getByRole("region", {
+    name: "エージェント実況",
+    exact: true,
+  });
+  const operations = (await page.evaluate(async () =>
+    (await fetch("/api/operations")).json(),
+  )) as OperationsSnapshot;
+  let fail = false;
+  await page.route("**/api/operations", (route) =>
+    fail ? route.abort() : route.fulfill({ json: operations }),
+  );
+  const stamp = await page.evaluate(() => Date.now());
+  operations.candidates = [
+    {
+      ...operations.candidates[0],
+      id: "pending-to-filled",
+      finalAction: "PENDING",
+      timestamp: stamp,
+    },
+  ];
+  await page.clock.runFor(10_000);
+  const count = await feed.locator(".agent-feed-entry").count();
+  operations.candidates[0].finalAction = "BUY";
+  operations.candidates[0].timestamp = stamp + 20_000;
+  operations.lastHeartbeatAt = stamp + 20_000;
+  await page.clock.runFor(10_000);
+  await expect(feed.locator(".agent-feed-entry.trade")).toHaveCount(1);
+  await expect(feed.locator(".agent-feed-stage")).toHaveClass(
+    /pose-pointSmile/,
+  );
+  await expect(feed.locator(".agent-feed-entry")).toHaveCount(count + 1);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(feed.locator("img")).toHaveCSS("animation-name", "none");
+  fail = true;
+  await page.clock.runFor(10_000);
+  await expect(feed.locator(".agent-feed-stage")).toHaveClass(/pose-normal/);
+  fail = false;
+  operations.lastHeartbeatAt = stamp + 40_000;
+  await page.clock.runFor(10_000);
+  await expect(feed.locator(".agent-feed-entry.trade")).toHaveCount(1);
+  operations.status = "STOPPED";
+  operations.safety.botState = "MANUAL_STOP";
+  await page.clock.runFor(10_000);
+  await expect(feed.locator(".agent-feed-stage")).toHaveClass(/pose-sleep/);
+  operations.status = "ABNORMAL_STOP";
+  operations.stopReason = "PAPER_RECONCILIATION_FAILED";
+  operations.safety.botState = "ABNORMAL_STOP";
+  await page.clock.runFor(10_000);
+  await expect(feed.locator(".agent-feed-stage")).toHaveClass(/pose-sleep/);
+  await expect(feed.locator(".agent-feed-entry").last()).toContainText(
+    "止まりました",
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  expect(api.writes).toEqual([]);
+  await feed.screenshot({ path: info.outputPath("narration-stopped.png") });
+});
+
 test("does not show stale information as healthy after a monitoring API error", async ({
   page,
 }) => {

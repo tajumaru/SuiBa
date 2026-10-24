@@ -719,6 +719,7 @@ export class BotEngine {
     });
   }
   snapshot(options: { light?: boolean } = {}) {
+    const decision = this.monitor.displayDecision();
     const p = this.db.portfolio(),
       price = this.db.get<number>("price") ?? null,
       trades = this.db.history<Fill>("paper_trades", 10000),
@@ -746,7 +747,7 @@ export class BotEngine {
         values,
         trades.flatMap((x) => (x.pnl === null ? [] : [x.pnl])),
       ),
-      decision: this.db.get("decision") ?? null,
+      decision,
       indicators: this.db.get("indicators") ?? null,
       settings: this.db.settings(),
       profitGuard: this.db.get<ProfitReport>("profitGuard") ?? null,
