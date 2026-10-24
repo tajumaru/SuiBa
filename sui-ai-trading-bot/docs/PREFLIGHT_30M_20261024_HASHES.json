@@ -1,0 +1,10 @@
+{
+  "build.log": "ab732ea0cabb3bfdc197b6af80f3a52694ef2cf97f7dbcff388a286f4a3dec43",
+  "node-proof.log": "705df519d8dff6fa7f3a9039134aca9460772a9745deecce255b38ff4efd156d",
+  "docker-final.log": "6ca76a289f3ab9ac2a0c065aecbd0b55cc57a90833c59ddead56037d45815e1d",
+  "before.json": "2ce05fb491c5296d18da3a9173759c451afd5fbfa46383eb2cb34d1c77374f53",
+  "after.json": "2ce05fb491c5296d18da3a9173759c451afd5fbfa46383eb2cb34d1c77374f53",
+  "reports/preflight-evidence.jsonl": "8cbe144bb5275b0c01d846baa31529194db5985808fa956797a0520cc6015bb2",
+  "validation/deepbook-paper.sqlite": "d5ce35ad1c2b62bd1344092cb9bc5071bfcacc72559ad53c7fd0b92b0cd50656",
+  "volume-integrity-proof.json": "6085f533650efe44687d5bdc52d80d3b0f54fef03912e69f3a706a368c353fa9"
+}

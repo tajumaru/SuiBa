@@ -1,0 +1,351 @@
+{
+  "targetSha": "4d24126285c35471397e968734a8a53fcd375808",
+  "image": "sha256:b0b98c467d926a459dcbe7fdbbc058e25405f7fdf30904ca15792ae473d4b187",
+  "project": "suiba-live30-preflight30-20261024t055711z-4d24126",
+  "node": {
+    "kind": "container-node-proof",
+    "version": "v24.22.1",
+    "execPath": "/usr/local/bin/node",
+    "platform": "linux",
+    "arch": "x64",
+    "sha": "4d24126285c35471397e968734a8a53fcd375808",
+    "lockSha256": "018af17282416ae1aa6bcbd9f97e6626f45957bd32ed96a3c0583b8773362816"
+  },
+  "reason": "COMPLETED_30_MINUTES",
+  "start": 1792821781118,
+  "startIso": "2026-10-24T06:03:01.118Z",
+  "end": 1792823586063,
+  "endIso": "2026-10-24T06:33:06.063Z",
+  "durationSeconds": 1804.945,
+  "apis": {
+    "Sui gRPC": {
+      "attempts": 22,
+      "successes": 22,
+      "failures": 0,
+      "successRate": 1,
+      "retryAttempts": 0,
+      "latencyMs": {
+        "n": 22,
+        "p50": 385,
+        "p95": 1560,
+        "p99": 5124,
+        "max": 5124
+      },
+      "errors": {}
+    },
+    "DeepBook Indexer": {
+      "attempts": 196,
+      "successes": 196,
+      "failures": 0,
+      "successRate": 1,
+      "retryAttempts": 0,
+      "latencyMs": {
+        "n": 196,
+        "p50": 246,
+        "p95": 699,
+        "p99": 3238,
+        "max": 3431
+      },
+      "errors": {}
+    }
+  },
+  "market": {
+    "completed": 30,
+    "successes": 30,
+    "failures": 0,
+    "successRate": 1,
+    "elapsedMs": {
+      "n": 30,
+      "p50": 3193,
+      "p95": 6623,
+      "p99": 14933,
+      "max": 14933
+    },
+    "errors": {},
+    "starts": 30,
+    "ends": 30
+  },
+  "layers": {
+    "HTTP": {
+      "attempts": 22,
+      "successes": 22,
+      "failures": 0,
+      "successRate": 1,
+      "elapsedMs": {
+        "n": 22,
+        "p50": 806,
+        "p95": 5130,
+        "p99": 5607,
+        "max": 5607
+      },
+      "cacheHits": 0,
+      "transportAttempts": 22
+    },
+    "GRPC": {
+      "attempts": 22,
+      "successes": 22,
+      "failures": 0,
+      "successRate": 1,
+      "elapsedMs": {
+        "n": 22,
+        "p50": 866,
+        "p95": 5244,
+        "p99": 5670,
+        "max": 5670
+      },
+      "cacheHits": 0,
+      "transportAttempts": 0
+    },
+    "METADATA": {
+      "attempts": 22,
+      "successes": 22,
+      "failures": 0,
+      "successRate": 1,
+      "elapsedMs": {
+        "n": 22,
+        "p50": 933,
+        "p95": 5316,
+        "p99": 5749,
+        "max": 5749
+      },
+      "cacheHits": 0,
+      "transportAttempts": 0
+    },
+    "HEALTH": {
+      "attempts": 30,
+      "successes": 30,
+      "failures": 0,
+      "successRate": 1,
+      "elapsedMs": {
+        "n": 30,
+        "p50": 0,
+        "p95": 2249,
+        "p99": 5816,
+        "max": 5816
+      },
+      "cacheHits": 19,
+      "transportAttempts": 0
+    }
+  },
+  "metadataByCoin": {
+    "SUI": {
+      "attempts": 11,
+      "successes": 11,
+      "failures": 0,
+      "successRate": 1
+    },
+    "USDC": {
+      "attempts": 11,
+      "successes": 11,
+      "failures": 0,
+      "successRate": 1
+    }
+  },
+  "network": {
+    "protocols": {
+      "h1": 22
+    },
+    "reused": 0,
+    "newConnections": 22,
+    "unknownReuse": 0,
+    "phases": {
+      "dnsMs": {
+        "n": 22,
+        "p50": 117,
+        "p95": 198,
+        "p99": 727,
+        "max": 727
+      },
+      "tcpMs": {
+        "n": 22,
+        "p50": 37,
+        "p95": 106,
+        "p99": 340,
+        "max": 340
+      },
+      "tlsMs": {
+        "n": 22,
+        "p50": 86,
+        "p95": 482,
+        "p99": 4803,
+        "max": 4803
+      },
+      "responseWaitMs": {
+        "n": 22,
+        "p50": 132,
+        "p95": 374,
+        "p99": 401,
+        "max": 401
+      },
+      "bodyMs": {
+        "n": 22,
+        "p50": 2,
+        "p95": 5,
+        "p99": 24,
+        "max": 24
+      },
+      "totalMs": {
+        "n": 22,
+        "p50": 806,
+        "p95": 5130,
+        "p99": 5607,
+        "max": 5607
+      }
+    }
+  },
+  "metricsLastInWindow": {
+    "event": "PREFLIGHT_PASSIVE_METRICS",
+    "scope": "CUMULATIVE",
+    "at": 1792823576677,
+    "eventLoop": {
+      "count": 170041,
+      "p50Ms": 10.182655,
+      "p95Ms": 10.371071,
+      "maxMs": 1285.554175
+    },
+    "sqlite": {
+      "append": {
+        "count": 247,
+        "p50Ms": 58.143,
+        "p95Ms": 74.623,
+        "maxMs": 108.479,
+        "failures": 0
+      },
+      "set": {
+        "count": 744,
+        "p50Ms": 58.463,
+        "p95Ms": 80.447,
+        "maxMs": 213.631,
+        "failures": 0
+      },
+      "transaction": {
+        "count": 120,
+        "p50Ms": 66.687,
+        "p95Ms": 141.823,
+        "maxMs": 200.063,
+        "failures": 0
+      }
+    },
+    "sqliteBusy": 0,
+    "sqliteLocked": 0
+  },
+  "metricsFinal": {
+    "event": "PREFLIGHT_PASSIVE_METRICS",
+    "scope": "CUMULATIVE",
+    "at": 1792823586717,
+    "eventLoop": {
+      "count": 170979,
+      "p50Ms": 10.182655,
+      "p95Ms": 10.371071,
+      "maxMs": 1285.554175
+    },
+    "sqlite": {
+      "append": {
+        "count": 248,
+        "p50Ms": 58.143,
+        "p95Ms": 74.623,
+        "maxMs": 108.479,
+        "failures": 0
+      },
+      "set": {
+        "count": 750,
+        "p50Ms": 58.463,
+        "p95Ms": 80.703,
+        "maxMs": 213.631,
+        "failures": 0
+      },
+      "transaction": {
+        "count": 120,
+        "p50Ms": 66.687,
+        "p95Ms": 141.823,
+        "maxMs": 200.063,
+        "failures": 0
+      }
+    },
+    "sqliteBusy": 0,
+    "sqliteLocked": 0
+  },
+  "metricSamples": 121,
+  "db": {
+    "integrity": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "observations": 96,
+    "paperOrders": 0,
+    "paperTrades": 0,
+    "runtime": {
+      "running": false,
+      "emergency": false,
+      "error": null,
+      "lastCandle": null
+    },
+    "validationIntegrityFault": null,
+    "sqliteBytes": 1220608
+  },
+  "safety": {
+    "sampleCount": 121,
+    "samplesRunning": 0,
+    "maxOrders": 0,
+    "maxTrades": 0,
+    "connectivity": {
+      "HEALTHY": 121
+    },
+    "integrityFaults": 0,
+    "bookAgeAtCycleEndMs": {
+      "n": 30,
+      "p50": 1020,
+      "p95": 1291,
+      "p99": 1471,
+      "max": 1471
+    },
+    "indexerLagAtCycleEndMs": {
+      "n": 30,
+      "p50": 1000,
+      "p95": 1000,
+      "p99": 1000,
+      "max": 1000
+    },
+    "unresolvedByTf": {
+      "300": 0,
+      "900": 0,
+      "3600": 0
+    }
+  },
+  "disk": {
+    "maxDUsedPercent": 10.486028174727098,
+    "minCFreeGiB": 37.817962646484375,
+    "policy": {
+      "dMaxUsedPercent": 80,
+      "cMinFreeGiB": 10,
+      "explicitlyApproved": true
+    }
+  },
+  "shutdown": {
+    "api": [],
+    "cycles": []
+  },
+  "existingUnchanged": true,
+  "verification": {
+    "volumeAndHostCopySha256Match": true,
+    "sourceDbSha256": "d5ce35ad1c2b62bd1344092cb9bc5071bfcacc72559ad53c7fd0b92b0cd50656",
+    "integrity": "ok",
+    "containerExitCode": 0,
+    "oomKilled": false,
+    "containerFinishedAt": "2026-10-24T06:33:06.756670049Z",
+    "newVolumesRetained": [
+      "suiba-live30-preflight30-20261024t055711z-4d24126_preflight-data",
+      "suiba-live30-preflight30-20261024t055711z-4d24126_preflight-reports"
+    ],
+    "secretRetained": true,
+    "readOnlyValidationInitialFailure": {
+      "sqliteCode": 14,
+      "stage": "post-run verification helper",
+      "resolvedBy": "read-only source mount plus temporary copy with writable directory for WAL auxiliary files",
+      "applicationFailure": false
+    }
+  },
+  "nextTwoHourReadOnlyObservation": "GO_WITH_EXPLICIT_SEPARATE_APPROVAL",
+  "paperTradingOrLive": "NOT_AUTHORIZED"
+}
