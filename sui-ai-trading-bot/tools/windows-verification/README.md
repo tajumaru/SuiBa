@@ -23,12 +23,26 @@ LIVE取引は行いません。
 ## 使い方
 
 1. `Start-SuiBaVerification.bat` をダブルクリックします。
-2. 検証時間を選んで Enter を押します（1=30分 / 2=2時間 / 3=6時間 / 4=24時間）。
+2. メニューで選びます。**Enterだけなら30分**です。
+   1=30分（推奨）、2=2時間、3=6時間、4=24時間、5=前回結果、6=安全停止、7=終了。
+   6時間・24時間は安全条件の表示後、`START` の明示入力が必要です。
 3. 専用イメージのビルド（初回は数分かかります）とコンテナ内Node検証
    （`>=24.22.1 <25`）が自動で行われ、検証コンテナが起動します。
 4. 監視画面に残り時間、市場サイクルの成功率、Sui gRPC / DeepBook の成功率が
    定期表示されます。ウィンドウは開いたままにしてください。
 5. 指定時間が終わると自動で監査・レポート生成・専用コンテナ停止まで行われます。
+   結果フォルダを自動表示し、コンソールに `report.md` と `next-actions.md` の場所を表示します。
+   自動表示できなくても保存済みレポートは保持します。CodexやMuse Metaを起動しておく必要はありません。
+
+検証前にはGit状態・対象SHA、Docker Desktop/Compose、ポート3105、ディスク条件、二重起動を確認します。
+起動準備中から名前付きmutexで排他し、前回がPreparing/Runningの記録なら自動上書きせず中止します。
+古い実行記録が残る場合は状態を確認してください。安全性が確認できない状態を自動削除して続行しません。
+イメージ内Nodeの確認に加えて、起動した専用コンテナでもバージョンガードを実行します。
+自動git pullや既存コンテナの全体停止・volume削除は行いません。
+
+CLI互換: `-DurationMinutes`、`-NonInteractive`、`-SkipPerfDetail`は維持します。
+フォルダ自動表示を省く場合は `-NoOpenResults`（レポート保存とパス表示は維持）。
+360分以上の非対話実行には、明示承認を示す `-ConfirmLongRun` が追加で必要です。
 
 途中で止めたいときは `Stop-SuiBaVerification.bat` をダブルクリックしてください。
 監視プロセスへ終了要求を出し、レポートを生成してから停止します（最大約60秒＋
@@ -50,11 +64,26 @@ LIVE取引は行いません。
 | `reports/event-loop-spikes.jsonl` | 性能詳細計測: イベントループ遅延スパイクと計測用同期I/O（後述） |
 | `reports/performance-correlation.json` | 性能詳細計測: 時刻突き合わせ結果（機械可読） |
 | `reports/performance-analysis.md` | 性能詳細計測: TOP10・同時刻の処理・原因候補と未確定項目（人間向け） |
+| `reports/next-actions.md` | 総合評価、未達チェック、通信失敗時刻、性能TOP10・相関、比較可否、次の調査と開始条件 |
 | `evidence/` | 生の証拠（evidence JSONL、監査JSON、redact済み inspect、コンテナログ） |
 | `state.json` | 実行状態と身元情報（project名、コンテナID、image ID、対象SHA） |
 
 成功率は「観測窓内の実試行」だけを分母にします（DeepBook の cache hit は含みません）。
 30分検証レポートと同じ定義です。
+
+### 完了と品質判定
+
+`COMPLETED`は予定した観測の終了です。`report.json`の`overallVerdict`とレポート末尾で
+`PASS / FAIL / INCONCLUSIVE`を別に表示します。既存サマリのGOはPASS候補、NO-GOはFAIL、
+母数不足のINCONCLUSIVEはそのまま未確定です。詳細計測OFF・ファイル欠落・ステータス欠落・
+上限到達・不正行もPASSにしません。詳細書込み失敗や異常停止はFAIL、ユーザー中断はINCONCLUSIVEです。
+30分では既存の2時間・最低試行数基準に届かずINCONCLUSIVEになることがあります。基準は緩和しません。
+exit 0は通常終了またはユーザー停止を意味し、品質PASSを意味しません。
+
+比較は直前の保存結果とSHA・イメージ・Node・予定時間・設定ハッシュ・計測モードが一致し、
+両方COMPLETEDの場合だけ行います。確認できない場合は比較しない理由を明記します。
+結果はミリ秒を含む実行日時とSHA別に保存し、同名結果があれば上書きせず中止します。
+PAPER取引・LIVE取引は常に未検証です。通信観測のPASSを取引開始の承認に使用しません。
 
 ## 性能詳細計測（SQLite・イベントループ）
 
@@ -201,6 +230,7 @@ Docker・ネットワーク無しでロジックを検証する自己テスト�
 
 ```powershell
 pwsh -File tools/windows-verification/tests/Invoke-SelfTest.ps1
+pwsh -File tools/windows-verification/tests/Invoke-OneClickSelfTest.ps1
 ```
 
 内容: Node版数判定・異常条件・ディスク判定（境界値と実測値の回帰）の単体テスト、性能詳細計測の相関・欠落時表示・
@@ -214,6 +244,6 @@ PR #6レビュー後の補足: 窓ごとのスパイク値は過去の累積ピ�
 計測用フラッシュ時間にはJSON変換・バイト数計算・同期書込みを含めます。
 Windows PowerShell 5.1の自己テストはUTF-8のレポートを明示的に読み込み、途中例外でも失敗終了します。
 
-このツールは Linux 環境で PowerShell 7.4 + スタブにより検証しました。
-Windows 実機（Windows PowerShell 5.1 / PowerShell 7、実 Docker Desktop）での
-実通信長時間検証は未実施です。初回は30分で様子を見てから長い時間を選んでください。
+この変更はWindows PowerShell 5.1とPowerShell 7でスタブ/fixtureを使用して確認します。
+実Docker Desktopでの新しい30分以上の通信検証、Explorerの実画面表示、6時間・24時間実行は
+今回実施しません。初回実通信はユーザーの明示承認後に30分から開始してください。
