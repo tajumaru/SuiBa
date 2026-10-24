@@ -69,6 +69,9 @@ async function open(
     operations.safety.connectivity = "HEALTHY";
     operations.timing.dataStatus = "FRESH";
     operations.timing.transportRecent = true;
+    operations.lastHeartbeatAt = Date.now();
+    operations.lastMarketClosedAt = Date.now() - 300_000;
+    operations.timing.lastTransportSuccessAt = Date.now();
   }
   if (limited) {
     operations.stopReason = "UPSTREAM_HTTP_429";
@@ -279,4 +282,95 @@ test("times out delayed operations and ignores a late response after a newer suc
   await expect(page.locator(".operation-state")).toContainText("手動停止");
   await release!();
   await expect(page.locator(".operation-state")).toContainText("手動停止");
+});
+
+test("vital animation follows errors, recovery, stop and reduced motion", async ({
+  page,
+}) => {
+  await page.clock.install();
+  const api = await open(page, "RUNNING");
+  const vital = page.locator(".bot-vital");
+  await expect(vital).toHaveClass("bot-vital alive");
+  await expect(vital).toContainText("高さ・色は装飾");
+  await expect(page.locator(".bot-vital-drop")).toHaveCSS(
+    "animation-name",
+    "bot-drop-fall",
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(page.locator(".bot-vital-drop")).toHaveCSS(
+    "animation-name",
+    "none",
+  );
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const snapshot = await page.evaluate(async () =>
+    (await fetch("/api/operations")).json(),
+  );
+  let status = "DEGRADED";
+  let fetchElapsedMs = 0;
+  await page.route("**/api/operations", async (route) =>
+    route.fulfill({
+      json: {
+        ...snapshot,
+        timing: {
+          ...snapshot.timing,
+          fetching: fetchElapsedMs > 0,
+          fetchElapsedMs,
+          lastTransportSuccessAt: await page.evaluate(() => Date.now()),
+        },
+        lastMarketClosedAt: await page.evaluate(() => Date.now() - 300_000),
+        lastHeartbeatAt: await page.evaluate(() => Date.now()),
+        status: status === "STOPPED" ? "STOPPED" : "RUNNING",
+        safety: {
+          ...snapshot.safety,
+          connectivity: status === "STOPPED" ? "HEALTHY" : status,
+          botState: status === "STOPPED" ? "MANUAL_STOP" : "RUNNING",
+        },
+      },
+    }),
+  );
+  await page.clock.runFor(10_000);
+  await expect(vital).toHaveClass("bot-vital weak");
+  status = "HEALTHY";
+  await page.clock.runFor(10_000);
+  await expect(vital).toHaveClass("bot-vital alive");
+  status = "STOPPED";
+  await page.clock.runFor(10_000);
+  await expect(vital).toHaveClass("bot-vital sleeping");
+  await expect(page.locator(".bot-vital-drop")).toHaveCount(0);
+  status = "HEALTHY";
+  await page.clock.runFor(10_000);
+  await expect(vital).toHaveClass("bot-vital alive");
+  fetchElapsedMs = 45_001;
+  await page.clock.runFor(10_000);
+  await expect(vital).toHaveClass("bot-vital unknown");
+  await expect(page.locator(".operation-state")).toContainText("状態不明");
+  fetchElapsedMs = 0;
+  await page.clock.runFor(10_000);
+  await expect(vital).toHaveClass("bot-vital alive");
+  expect(api.writes).toEqual([]);
+  await page.locator(".operation-hero").screenshot({
+    path: `test-results/vital-${test.info().project.name}.png`,
+  });
+});
+
+test("vital expires immediately on page return and after API timeout", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await open(page, "RUNNING");
+  const vital = page.locator(".bot-vital");
+  await expect(vital).toHaveClass("bot-vital alive");
+  await page.clock.setSystemTime(Date.now() + 60_000);
+  await page.evaluate(() => window.dispatchEvent(new Event("pageshow")));
+  await expect(vital).toHaveClass("bot-vital unknown");
+  await expect(page.locator(".bot-vital-drop")).toHaveCount(0);
+  await page.route("**/api/operations", () => {});
+  await page.clock.runFor(18_100);
+  await expect(page.locator(".operation-state")).toContainText("状態不明");
+  await expect(vital).toHaveClass("bot-vital unknown");
 });
