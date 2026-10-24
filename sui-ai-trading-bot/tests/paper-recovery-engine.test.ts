@@ -1,3 +1,7 @@
+import { DatabaseSync } from "node:sqlite";
+import { mkdtempSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { BotEngine } from "../apps/worker/src/engine.ts";
 import { BotDatabase } from "../packages/database/src/index.ts";
@@ -113,8 +117,8 @@ function bars(tf: Timeframe): Candle[] {
     volume: 10000,
   }));
 }
-function fixture() {
-  const db = new BotDatabase(":memory:");
+function fixture(database?: BotDatabase) {
+  const db = database ?? new BotDatabase(":memory:");
   dbs.push(db);
   db.set("runtime", { ...db.runtime(), running: true });
   db.updateSettings({ ...db.settings(), takeProfitPct: 0.3 });
@@ -589,3 +593,64 @@ it("evidence storage failure hard-stops the engine and recovery cannot restart i
   expect(t.db.history("paper_orders")).toHaveLength(0);
   expect(t.db.history("paper_trades")).toHaveLength(0);
 });
+
+it.each([false, true])(
+  "actual DB lock during Sui evidence closes engine gate (manual=%s)",
+  async (manual) => {
+    const path = join(
+      mkdtempSync(join(tmpdir(), "suiba-engine-lock-")),
+      "fixture.sqlite",
+    );
+    const t = fixture(new BotDatabase(path)),
+      lock = new DatabaseSync(path);
+    if (manual) {
+      t.db.set("runtime", { ...t.db.runtime(), running: false });
+      t.engine.monitor.transition("MANUAL_STOP");
+    }
+    let held = false;
+    const client = new ReadOnlySuiClient(undefined, {
+      fetch: async () => {
+        if (!held) {
+          lock.exec("BEGIN IMMEDIATE");
+          held = true;
+        }
+        return new Response("", {
+          headers: {
+            "content-type": "application/grpc-web-text",
+            "grpc-status": "14",
+          },
+        });
+      },
+      onObservation: (event) =>
+        t.db.append(
+          "sui_observations",
+          String(event.at) + event.layer,
+          event,
+          event.at,
+        ),
+    });
+    realClients.push(client);
+    Object.defineProperty(t.sui, "status", { get: () => client.status });
+    t.sui.health.mockImplementation((force) => client.health(force));
+    try {
+      await expect(t.tick()).rejects.toThrow("DATABASE_UNAVAILABLE");
+      expect(t.db.health().healthy).toBe(false);
+      expect(t.db.runtime()).toMatchObject({
+        running: false,
+        error: "DATABASE_UNAVAILABLE",
+      });
+      expect(t.engine.monitor.ordersAllowed()).toBe(false);
+      expect(t.market.frames).not.toHaveBeenCalled();
+      lock.exec("ROLLBACK");
+      held = false;
+      for (let n = 0; n < 3; n++)
+        await expect(t.tick(60000)).rejects.toThrow("DATABASE_UNAVAILABLE");
+      expect(t.router.getQuote).not.toHaveBeenCalled();
+      expect(t.db.history("paper_orders")).toHaveLength(0);
+      expect(t.db.history("paper_trades")).toHaveLength(0);
+    } finally {
+      if (held) lock.exec("ROLLBACK");
+      lock.close();
+    }
+  },
+);
