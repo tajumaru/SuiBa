@@ -186,6 +186,59 @@ function Test-SuiBaAbortCondition {
     return $null
 }
 
+function Test-SuiBaDiskStopCondition {
+    # Disk stop conditions, reconciled with the 30-minute validation
+    # agreement (docs/PREFLIGHT_30M_20261024.md section 14: "D80% /
+    # C free 10 GiB", i.e. the two numbers judge DIFFERENT drives):
+    #   * the drive that holds Docker's data (the Docker Desktop disk
+    #     image) stops the run at >= 80% used,
+    #   * the system drive, the output drive (runs/: logs, reports,
+    #     evidence, secret, compose override) and the temp drive stop
+    #     the run at < 10 GiB free; their used percentage is NOT judged,
+    #   * if the Docker data location cannot be determined, or no disk
+    #     facts were collected at all, the run stops (fail-closed):
+    #     an unjudgeable disk state never starts or continues a run.
+    # $Drives entries: Name (e.g. 'C:\'), Roles (string[]; any of
+    # 'System', 'DockerData', 'Output', 'Temp'), UsedPct, FreeGiB.
+    # Pure function: the caller collects the facts; this function only
+    # judges them, so it is unit-testable with synthetic values.
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()]$Drives,
+        [Parameter(Mandatory = $true)][bool]$DockerDataDetermined
+    )
+    $result = [pscustomobject]@{ Abort = $false; Reason = ''; Checks = @() }
+    $list = @($Drives)
+    if ($list.Count -eq 0) {
+        $result.Abort = $true
+        $result.Reason = 'disk facts unavailable (fail-closed)'
+        return $result
+    }
+    foreach ($d in $list) {
+        $result.Checks += "$($d.Name) roles=$($d.Roles -join '+') used=$([math]::Round([double]$d.UsedPct, 1))% freeGiB=$([math]::Round([double]$d.FreeGiB, 2))"
+    }
+    if (-not $DockerDataDetermined) {
+        $result.Abort = $true
+        $result.Reason = 'docker data location could not be determined (fail-closed)'
+        return $result
+    }
+    foreach ($d in $list) {
+        if ($d.Roles -contains 'DockerData' -and [double]$d.UsedPct -ge 80) {
+            $result.Abort = $true
+            $result.Reason = "docker data drive $($d.Name) used $([math]::Round([double]$d.UsedPct, 1))% >= 80%"
+            return $result
+        }
+    }
+    foreach ($d in $list) {
+        $freeRoles = @($d.Roles | Where-Object { $_ -in @('System', 'Output', 'Temp') })
+        if ($freeRoles.Count -gt 0 -and [double]$d.FreeGiB -lt 10) {
+            $result.Abort = $true
+            $result.Reason = "$($freeRoles[0].ToLower()) drive $($d.Name) free $([math]::Round([double]$d.FreeGiB, 2)) GiB < 10 GiB"
+            return $result
+        }
+    }
+    return $result
+}
+
 function Protect-SuiBaText {
     # Last-resort scrub so secret values can never reach a report file,
     # even if a log line quoted them.

@@ -173,26 +173,143 @@ function Stop-DedicatedProject {
     }
 }
 
-function Get-DiskFacts {
-    # Stop thresholds preserved from the 30-minute validation:
-    # system drive free < 10 GiB, or a relevant drive >= 80% used.
-    $facts = [pscustomobject]@{ Abort = $false; Reason = ''; Checks = @() }
+function Get-SuiBaDriveRoot {
+    param([string]$Path)
+    if ([string]::IsNullOrEmpty($Path)) { return $null }
+    $m = [regex]::Match($Path, '^([A-Za-z]:)')
+    if (-not $m.Success) { return $null }
+    return ($m.Groups[1].Value + '\').ToUpper()
+}
+
+function Resolve-DockerDataDriveRoots {
+    # Determines which host drive(s) hold Docker's data (the Docker
+    # Desktop disk image). Returns an array of drive roots (e.g.
+    # @('D:\')), or $null when the location cannot be determined; the
+    # caller treats $null as a stop condition (fail-closed) and never
+    # guesses a drive.
+    #
+    # Evidence sources (every drive found by any source is judged;
+    # sources never veto each other):
+    #  (a) `docker info` DockerRootDir - only when it is a Windows
+    #      path. Under Docker Desktop / WSL2 it is '/var/lib/docker',
+    #      a path inside the Linux VM that names no host drive, so a
+    #      POSIX result is deliberately NOT used as evidence.
+    #  (b) WSL2 distro registry (HKCU:\Software\Microsoft\Windows\
+    #      CurrentVersion\Lxss): the BasePath of the docker-desktop
+    #      distro(s) is the folder holding the vhdx, and it follows
+    #      Docker Desktop's "disk image location" setting.
+    #  (c) Docker Desktop settings (settings-store.json /
+    #      settings.json): an absolute Windows 'dataFolder' value,
+    #      when present.
+    #  (d) The default vhdx locations under %LOCALAPPDATA%\Docker\wsl.
+    $found = @{}
     try {
-        if ([Environment]::OSVersion.Platform -ne 'Win32NT') { return $facts }
-        $drives = @{}
-        $sys = [IO.DriveInfo]::new([Environment]::SystemDirectory.Substring(0, 3))
-        $drives[$sys.Name] = $sys
-        $local = [IO.DriveInfo]::new($env:LOCALAPPDATA.Substring(0, 3))
-        $drives[$local.Name] = $local
-        $repo = [IO.DriveInfo]::new($script:RepoRoot.Substring(0, 3))
-        $drives[$repo.Name] = $repo
-        foreach ($d in $drives.Values) {
-            $usedPct = if ($d.TotalSize -gt 0) { 100.0 * (1 - $d.AvailableFreeSpace / $d.TotalSize) } else { 0 }
-            $facts.Checks += "$($d.Name) used=$([math]::Round($usedPct, 1))% freeGiB=$([math]::Round($d.AvailableFreeSpace / 1GB, 2))"
-            if ($usedPct -ge 80) { $facts.Abort = $true; $facts.Reason = "drive $($d.Name) used $([math]::Round($usedPct, 1))% >= 80%" }
+        $r = Invoke-Docker @('info', '--format', '{{.DockerRootDir}}')
+        if ($r.ExitCode -eq 0 -and $r.Output.Count -gt 0) {
+            $root = Get-SuiBaDriveRoot ($r.Output[0].Trim())
+            if ($root) { $found[$root] = $true }
         }
-        if ($sys.AvailableFreeSpace -lt 10GB) { $facts.Abort = $true; $facts.Reason = "system drive free $([math]::Round($sys.AvailableFreeSpace / 1GB, 2)) GiB < 10 GiB" }
-    } catch { Write-Log "Disk check skipped: $($_.Exception.Message)" }
+    } catch { }
+    try {
+        $lxss = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss'
+        if (Test-Path $lxss) {
+            foreach ($key in (Get-ChildItem $lxss -ErrorAction Stop)) {
+                try {
+                    $props = Get-ItemProperty $key.PSPath -ErrorAction Stop
+                    if ("$($props.DistributionName)" -like 'docker-desktop*') {
+                        $root = Get-SuiBaDriveRoot (("$($props.BasePath)") -replace '/', '\')
+                        if ($root) { $found[$root] = $true }
+                    }
+                } catch { }
+            }
+        }
+    } catch { }
+    try {
+        foreach ($settingsName in @('settings-store.json', 'settings.json')) {
+            $settingsPath = Join-Path (Join-Path $env:APPDATA 'Docker') $settingsName
+            if (-not (Test-Path $settingsPath)) { continue }
+            try {
+                $settings = [IO.File]::ReadAllText($settingsPath) | ConvertFrom-Json -ErrorAction Stop
+                foreach ($prop in $settings.PSObject.Properties) {
+                    if ($prop.Name -ieq 'dataFolder') {
+                        $root = Get-SuiBaDriveRoot ("$($prop.Value)")
+                        if ($root) { $found[$root] = $true }
+                    }
+                }
+            } catch { }
+        }
+    } catch { }
+    try {
+        $wslDir = Join-Path $env:LOCALAPPDATA 'Docker\wsl'
+        foreach ($candidate in @('data\docker_data.vhdx', 'disk\docker_data.vhdx', 'main\ext4.vhdx', 'data\ext4.vhdx')) {
+            $vhdx = Join-Path $wslDir $candidate
+            if (Test-Path $vhdx) {
+                $root = Get-SuiBaDriveRoot $vhdx
+                if ($root) { $found[$root] = $true }
+                break
+            }
+        }
+    } catch { }
+    if ($found.Count -eq 0) { return $null }
+    return @($found.Keys | Sort-Object)
+}
+
+function Get-DiskFacts {
+    # Collects disk facts and judges them with
+    # Test-SuiBaDiskStopCondition (lib/Verification.Common.ps1), which
+    # encodes the 30-minute validation agreement
+    # (docs/PREFLIGHT_30M_20261024.md section 14: "D80% / C free
+    # 10 GiB"): the Docker data drive stops at >= 80% used; the
+    # system, output (runs/: logs, reports, evidence, secret, compose
+    # override) and temp drives stop at < 10 GiB free, regardless of
+    # their used percentage. This one function backs BOTH the start
+    # gate and the in-run periodic check (every 5 minutes), so both
+    # apply exactly the same conditions.
+    # Fail-closed: any collection failure, or a Docker data location
+    # that cannot be determined, aborts instead of skipping the check.
+    $facts = [pscustomobject]@{ Abort = $false; Reason = ''; Checks = @() }
+    if ([Environment]::OSVersion.Platform -ne 'Win32NT') {
+        # Non-Windows hosts occur only in the stub-based self-test;
+        # the tool ships for Windows, where the collection below
+        # always runs and is fail-closed.
+        $facts.Checks += 'disk check not applicable (non-Windows test host)'
+        return $facts
+    }
+    try {
+        $roles = @{}
+        $addRole = {
+            param([string]$Root, [string]$Role)
+            if (-not $Root) { return }
+            if (-not $roles.ContainsKey($Root)) { $roles[$Root] = New-Object System.Collections.ArrayList }
+            if (-not $roles[$Root].Contains($Role)) { [void]$roles[$Root].Add($Role) }
+        }
+        & $addRole (Get-SuiBaDriveRoot ([Environment]::SystemDirectory)) 'System'
+        $outBase = if ($script:RunRoot) { $script:RunRoot } else { $script:ToolDir }
+        & $addRole (Get-SuiBaDriveRoot $outBase) 'Output'
+        & $addRole (Get-SuiBaDriveRoot ([IO.Path]::GetTempPath())) 'Temp'
+        $dockerRoots = Resolve-DockerDataDriveRoots
+        $dockerDetermined = ($null -ne $dockerRoots)
+        if ($dockerDetermined) { foreach ($dr in $dockerRoots) { & $addRole $dr 'DockerData' } }
+        $entries = @()
+        foreach ($rootName in @($roles.Keys | Sort-Object)) {
+            $di = [IO.DriveInfo]::new($rootName)
+            if (-not $di.IsReady -or $di.TotalSize -le 0) { throw "drive $rootName is not ready" }
+            $entries += [pscustomobject]@{
+                Name    = $rootName
+                Roles   = [string[]]@($roles[$rootName])
+                UsedPct = 100.0 * (1 - $di.AvailableFreeSpace / $di.TotalSize)
+                FreeGiB = $di.AvailableFreeSpace / 1GB
+            }
+        }
+        $judged = Test-SuiBaDiskStopCondition -Drives $entries -DockerDataDetermined $dockerDetermined
+        $facts.Abort = $judged.Abort
+        $facts.Reason = $judged.Reason
+        $facts.Checks = $judged.Checks
+        if ($dockerDetermined) { $facts.Checks += "docker data drive(s): $($dockerRoots -join ', ')" }
+    } catch {
+        $facts.Abort = $true
+        $facts.Reason = "disk check failed (fail-closed): $($_.Exception.Message)"
+    }
     return $facts
 }
 

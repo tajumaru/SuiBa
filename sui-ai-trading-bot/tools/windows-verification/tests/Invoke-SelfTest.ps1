@@ -49,6 +49,47 @@ try {
     $s5 = $safeState.PSObject.Copy(); $s5.LastSuccessCycleAgeSec = 301
     Assert 'abort: no successful cycle 5min' ((Test-SuiBaAbortCondition -State $s5) -eq 'NO_SUCCESSFUL_CYCLE_5MIN')
 
+    # ------------------------------------------------------------ disk conditions
+    # Definitions reconciled with docs/PREFLIGHT_30M_20261024.md
+    # section 14 ("D80% / C free 10 GiB"): the >= 80% used rule judges
+    # ONLY the Docker data drive; system / output / temp drives are
+    # judged by free space < 10 GiB and never by used percentage; an
+    # undeterminable Docker data location aborts (fail-closed).
+    function New-DiskDrive { param([string]$Name, [string[]]$Roles, [double]$UsedPct, [double]$FreeGiB) [pscustomobject]@{ Name = $Name; Roles = $Roles; UsedPct = $UsedPct; FreeGiB = $FreeGiB } }
+    # Regression for the field report: C used 83% but free 37.83 GiB,
+    # Docker data on D at 10.6% used - the old code aborted on C's
+    # used percentage; the reconciled rules must let this start.
+    $diskUser = Test-SuiBaDiskStopCondition -DockerDataDetermined $true -Drives @(
+        (New-DiskDrive 'C:\' @('System', 'Temp') 83 37.83),
+        (New-DiskDrive 'D:\' @('DockerData', 'Output') 10.6 832.64))
+    Assert 'disk regression: C 83% used / 37.83 GiB free does not abort' (-not $diskUser.Abort)
+    $diskDocker80 = Test-SuiBaDiskStopCondition -DockerDataDetermined $true -Drives @(
+        (New-DiskDrive 'C:\' @('System') 50 100), (New-DiskDrive 'D:\' @('DockerData') 80.0 100))
+    Assert 'disk boundary: docker data drive at exactly 80% aborts' ($diskDocker80.Abort -and $diskDocker80.Reason -match 'docker data drive')
+    $diskDocker799 = Test-SuiBaDiskStopCondition -DockerDataDetermined $true -Drives @(
+        (New-DiskDrive 'C:\' @('System') 50 100), (New-DiskDrive 'D:\' @('DockerData') 79.9 100))
+    Assert 'disk boundary: docker data drive at 79.9% passes' (-not $diskDocker799.Abort)
+    $diskDockerOnC = Test-SuiBaDiskStopCondition -DockerDataDetermined $true -Drives @(
+        (New-DiskDrive 'C:\' @('System', 'DockerData') 83 37.83))
+    Assert 'disk: docker data on C at 83% aborts by the docker rule' ($diskDockerOnC.Abort -and $diskDockerOnC.Reason -match 'docker data drive')
+    $diskFree10 = Test-SuiBaDiskStopCondition -DockerDataDetermined $true -Drives @(
+        (New-DiskDrive 'C:\' @('System') 95 10), (New-DiskDrive 'D:\' @('DockerData') 10 800))
+    Assert 'disk boundary: system free exactly 10 GiB passes' (-not $diskFree10.Abort)
+    $diskFree999 = Test-SuiBaDiskStopCondition -DockerDataDetermined $true -Drives @(
+        (New-DiskDrive 'C:\' @('System') 95 9.99), (New-DiskDrive 'D:\' @('DockerData') 10 800))
+    Assert 'disk boundary: system free 9.99 GiB aborts' ($diskFree999.Abort -and $diskFree999.Reason -match 'system drive')
+    $diskOutput = Test-SuiBaDiskStopCondition -DockerDataDetermined $true -Drives @(
+        (New-DiskDrive 'C:\' @('System') 50 100), (New-DiskDrive 'D:\' @('DockerData') 10 800), (New-DiskDrive 'E:\' @('Output') 40 9.5))
+    Assert 'disk: output drive free < 10 GiB aborts' ($diskOutput.Abort -and $diskOutput.Reason -match 'output drive')
+    $diskTemp = Test-SuiBaDiskStopCondition -DockerDataDetermined $true -Drives @(
+        (New-DiskDrive 'C:\' @('System') 50 100), (New-DiskDrive 'D:\' @('DockerData') 10 800), (New-DiskDrive 'F:\' @('Temp') 40 5))
+    Assert 'disk: temp drive free < 10 GiB aborts' ($diskTemp.Abort -and $diskTemp.Reason -match 'temp drive')
+    $diskUndet = Test-SuiBaDiskStopCondition -DockerDataDetermined $false -Drives @(
+        (New-DiskDrive 'C:\' @('System') 50 100))
+    Assert 'disk: undeterminable docker data location aborts (fail-closed)' ($diskUndet.Abort -and $diskUndet.Reason -match 'could not be determined')
+    $diskEmpty = Test-SuiBaDiskStopCondition -DockerDataDetermined $true -Drives @()
+    Assert 'disk: no facts aborts (fail-closed)' ($diskEmpty.Abort)
+
     # ------------------------------------------------------------ stub setup
     $env:SUIBA_WINVERIFY_DOCKER = Join-Path (Join-Path $script:TestsDir 'stubs') 'docker-stub.ps1'
     $env:SUIBA_WINVERIFY_GIT = Join-Path (Join-Path $script:TestsDir 'stubs') 'git-stub.ps1'
