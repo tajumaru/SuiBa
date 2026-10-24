@@ -1,0 +1,2 @@
+{"v":1,"kind":"sync-io","source":"perf-detail-writer","file":"sqlite-timing.jsonl","records":200,"bytes":60000,"startedAt":1000000042900,"endedAt":1000000042950,"durationMs":50.0,"ok":true,"cycleId":"stub-cycle-1"}
+{"v":1,"kind":"event-loop-spike","startedAt":1000000042800,"endedAt":1000000044300,"windowMs":1500,"maxDelayMs":1450.5,"p50Ms":21.0,"p95Ms":900.0,"p99Ms":1400.0,"thresholdMs":500,"cycleId":"stub-cycle-1","memory":{"rss":100000000,"heapTotal":90000000,"heapUsed":50000000,"external":1000000,"arrayBuffers":100000}}

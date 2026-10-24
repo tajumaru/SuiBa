@@ -22,13 +22,20 @@
 # (scripts/winverify-deadline.mjs via NODE_OPTIONS) that terminates the
 # worker even if every host process dies.
 #
+# Detailed performance metrics (SQLite per-operation timing and
+# event-loop spikes, scripts/preflight-detailed-metrics.mjs) are ON
+# for verification runs via SUIBA_PERF_DETAIL=1 in the compose
+# override; -SkipPerfDetail turns them back off. They add no RPC
+# and never change abort/recovery judgments.
+#
 # Compatible with Windows PowerShell 5.1 and PowerShell 7.
 param(
     [double]$DurationMinutes = 0,
     [int]$PollSeconds = 20,
     [string]$RunRoot = '',
     [switch]$NonInteractive,
-    [switch]$SkipWatchdog
+    [switch]$SkipWatchdog,
+    [switch]$SkipPerfDetail
 )
 
 $script:ToolDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -435,6 +442,41 @@ function Finalize-SuiBaRun {
     $rows = $finalParsed.AllRows
     $facts = Get-SuiBaEvidenceFacts -Rows $rows
     $summary = Get-SuiBaSuccessSummary -Rows $rows
+    $forbidden = @()
+    if ($script:SecretValue) { $forbidden += $script:SecretValue }
+
+    # Detailed performance metrics: the worker flushes its JSONL
+    # files and prints PREFLIGHT_PERF_DETAIL_STATUS only at exit, so
+    # refresh the copied reports and the container log AFTER the
+    # stop before correlating. Missing files are reported as
+    # missing with reasons by Get-SuiBaPerfCorrelation; they are
+    # never treated as normal values. A failure here must not lose
+    # the main report, so it degrades to an incident.
+    $perf = $null
+    try {
+        [void](Invoke-Docker @('cp', "$($script:State.ContainerId):/app/reports/.", $evidenceDir))
+        $logsFinal = Invoke-Docker @('logs', $script:State.ContainerId)
+        $perfStatus = $null
+        if ($logsFinal.ExitCode -eq 0) {
+            [IO.File]::WriteAllLines((Join-Path (Join-Path $script:RunDir 'logs') 'container.log'), [string[]]$logsFinal.Output)
+            $perfStatus = Get-SuiBaPerfDetailStatus -Lines $logsFinal.Output
+        }
+        $perfEnabled = $true
+        if ($null -ne $script:State.PerfDetailEnabled) { $perfEnabled = [bool]$script:State.PerfDetailEnabled }
+        $perf = Get-SuiBaPerfCorrelation -Enabled $perfEnabled -SqlitePath (Join-Path $evidenceDir 'sqlite-timing.jsonl') -SpikePath (Join-Path $evidenceDir 'event-loop-spikes.jsonl') -StatusRecord $perfStatus -EvidenceRows $rows
+        foreach ($name in @('sqlite-timing.jsonl', 'event-loop-spikes.jsonl')) {
+            $src = Join-Path $evidenceDir $name
+            if (Test-Path $src) {
+                $rawText = [IO.File]::ReadAllText($src)
+                [IO.File]::WriteAllText((Join-Path $reportsDir $name), (Protect-SuiBaText $rawText $forbidden), [Text.UTF8Encoding]::new($false))
+            }
+        }
+        [IO.File]::WriteAllText((Join-Path $reportsDir 'performance-correlation.json'), (Protect-SuiBaText ($perf | ConvertTo-Json -Depth 10) $forbidden), [Text.UTF8Encoding]::new($false))
+        $analysis = "# 性能詳細計測レポート`r`n`r`n" + (New-SuiBaPerfAnalysisMarkdown -Perf $perf)
+        [IO.File]::WriteAllText((Join-Path $reportsDir 'performance-analysis.md'), (Protect-SuiBaText $analysis $forbidden), [Text.UTF8Encoding]::new($false))
+    } catch {
+        Add-Incident -Reason 'PERF_DETAIL_FAILED' -Detail "Detailed performance report failed: $($_.Exception.Message)"
+    }
     $meta = [pscustomobject]@{
         RunId = $script:State.RunId; Project = $script:State.Project; Sha = $script:State.Sha
         ImageId = $script:State.ImageId; NodeVersion = $NodeVersion
@@ -447,9 +489,7 @@ function Finalize-SuiBaRun {
         PassiveMetrics = $LatestMetrics
         PreflightSummaryVerdict = $summaryVerdict
     }
-    $forbidden = @()
-    if ($script:SecretValue) { $forbidden += $script:SecretValue }
-    New-SuiBaReportFiles -Meta $meta -Summary $summary -Facts $facts -Rows $rows -Incidents $script:Incidents -OutDir $reportsDir -Forbidden $forbidden
+    New-SuiBaReportFiles -Meta $meta -Summary $summary -Facts $facts -Rows $rows -Incidents $script:Incidents -OutDir $reportsDir -Forbidden $forbidden -Perf $perf
 
     $script:State.Status = if ($Reason -eq 'COMPLETED') { 'Completed' } elseif ($Reason -eq 'USER_STOPPED') { 'StoppedByUser' } else { 'Aborted' }
     $script:State.Reason = $Reason
@@ -539,6 +579,7 @@ try {
         Sha = $sha; ContainerId = $null; SecretFile = $secretFile
         RepoRoot = $script:RepoRoot; OverrideFile = $null
         DurationMinutes = $DurationMinutes; StartedAtUtc = $null; DeadlineUtc = $null
+        PerfDetailEnabled = (-not $SkipPerfDetail)
         Status = 'Preparing'; Reason = $null
     }
     Save-State
@@ -569,7 +610,9 @@ try {
     # ------------------------------------------------------------ compose up
     $maxRuntimeMs = [long](($DurationMinutes + 10) * 60000)
     $overrideFile = Join-Path $script:RunDir 'compose.override.yaml'
-    $overrideYaml = "services:`n  bot:`n    environment:`n      NODE_OPTIONS: `"--import ./scripts/winverify-deadline.mjs`"`n      SUIBA_WINVERIFY_MAX_RUNTIME_MS: `"$maxRuntimeMs`"`n"
+    $perfDetailFlag = if ($SkipPerfDetail) { '0' } else { '1' }
+    $perfThresholdMs = if ($env:SUIBA_WINVERIFY_PERF_THRESHOLD_MS) { $env:SUIBA_WINVERIFY_PERF_THRESHOLD_MS } else { '500' }
+    $overrideYaml = "services:`n  bot:`n    environment:`n      NODE_OPTIONS: `"--import ./scripts/winverify-deadline.mjs`"`n      SUIBA_WINVERIFY_MAX_RUNTIME_MS: `"$maxRuntimeMs`"`n      SUIBA_PERF_DETAIL: `"$perfDetailFlag`"`n      SUIBA_PERF_DETAIL_DIR: `"/app/reports`"`n      SUIBA_PERF_EVENT_LOOP_THRESHOLD_MS: `"$perfThresholdMs`"`n"
     [IO.File]::WriteAllText($overrideFile, $overrideYaml, [Text.UTF8Encoding]::new($false))
     $script:State.OverrideFile = $overrideFile
 
