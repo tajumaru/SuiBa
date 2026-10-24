@@ -117,6 +117,7 @@ export class OperationMonitor {
       this.stop("PAPER_RECOVERY_EXHAUSTED", now);
   }
   ordersAllowed(generation?: number, now = Date.now()) {
+    if (!this.db.health().healthy) return false;
     const r = this.db.runtime(),
       s = this.state();
     return (
@@ -136,6 +137,7 @@ export class OperationMonitor {
   }
 
   recoveryCycle(checks: { market: boolean; sui: boolean }, now = Date.now()) {
+    if (!this.db.health().healthy) return false;
     const s = this.safety(),
       r = this.db.runtime();
     if (s.connectivity === "HEALTHY" || this.recoveryProofUsed) return false;
@@ -571,6 +573,7 @@ export class OperationMonitor {
     this.stop(reason, now, details);
   }
   watchdog(now = Date.now()) {
+    this.db.assertHealthy();
     const s = this.state(),
       r = this.db.runtime();
     const details = this.stallDetails(now);

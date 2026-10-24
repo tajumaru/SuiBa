@@ -36,15 +36,43 @@ const eventTables = [
 type EventTable = (typeof eventTables)[number];
 export class BotDatabase {
   private db: DatabaseSync;
+  private fault: { sqliteCode: number | null } | null = null;
+  private lastRuntime?: Runtime;
+  health() {
+    return {
+      healthy: this.fault === null,
+      code: this.fault ? "DATABASE_UNAVAILABLE" : null,
+      sqliteCode: this.fault?.sqliteCode ?? null,
+      requiresRestart: this.fault !== null,
+    };
+  }
+  assertHealthy() {
+    if (this.fault) throw new Error("DATABASE_UNAVAILABLE");
+  }
+  private sql<T>(fn: () => T): T {
+    try {
+      return fn();
+    } catch (error) {
+      const value = (error as { errcode?: unknown } | null)?.errcode;
+      const primary = typeof value === "number" ? value & 255 : null;
+      // Constraint rejection is a business/transaction failure, not connection loss.
+      if (primary !== 19) this.fault ??= { sqliteCode: primary };
+      throw error;
+    }
+  }
   private prepare(sql: string) {
-    const statement = this.db.prepare(sql);
+    const statement = this.sql(() => this.db.prepare(sql));
+    const database = this;
     return new Proxy(statement, {
       get(target, property) {
         const value = Reflect.get(target, property, target);
         if (typeof value !== "function") return value;
         if (property === "get" || property === "all" || property === "run")
           return (...args: unknown[]) =>
-            timeSql(() => Reflect.apply(value, target, args));
+            timeSql(() => {
+              if (property === "run") database.assertHealthy();
+              return database.sql(() => Reflect.apply(value, target, args));
+            });
         return value.bind(target);
       },
     });
@@ -61,7 +89,7 @@ export class BotDatabase {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec(
-      "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;",
+      "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=0; PRAGMA foreign_keys=ON;",
     );
     this.db.exec(
       `CREATE TABLE IF NOT EXISTS market_candles(timeframe INTEGER NOT NULL,timestamp INTEGER NOT NULL,source TEXT NOT NULL,json TEXT NOT NULL,PRIMARY KEY(timeframe,timestamp,source));CREATE TABLE IF NOT EXISTS bot_runtime_state(key TEXT PRIMARY KEY,json TEXT NOT NULL);`,
@@ -106,8 +134,16 @@ export class BotDatabase {
       "INSERT INTO bot_runtime_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json",
     ).run(key, JSON.stringify(value));
   }
-  runtime() {
-    return this.get<Runtime>("runtime")!;
+  runtime(): Runtime {
+    // Effective in-memory stop; never claim that the stop was durably persisted.
+    if (this.fault)
+      return {
+        ...(this.lastRuntime ?? { emergency: false, lastCandle: null }),
+        running: false,
+        error: "DATABASE_UNAVAILABLE",
+      };
+    this.lastRuntime = this.get<Runtime>("runtime")!;
+    return this.lastRuntime;
   }
   portfolio() {
     return this.get<Portfolio>("portfolio")!;
@@ -142,13 +178,22 @@ export class BotDatabase {
     });
   }
   transaction<T>(fn: () => T): T {
-    this.db.exec("BEGIN IMMEDIATE");
+    this.assertHealthy();
+    this.sql(() => this.db.exec("BEGIN IMMEDIATE"));
     try {
       const result = fn();
-      this.db.exec("COMMIT");
+      this.sql(() => this.db.exec("COMMIT"));
       return result;
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      try {
+        // Rollback must remain possible after a statement has latched a fault.
+        this.sql(() => this.db.exec("ROLLBACK"));
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [error, rollbackError],
+          "DATABASE_ROLLBACK_FAILED",
+        );
+      }
       throw error;
     } finally {
       this.transactionVersion++;

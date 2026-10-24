@@ -72,6 +72,7 @@ export class BotEngine {
     return quote;
   }
   async tick() {
+    this.db.assertHealthy();
     if (this.busy) return;
     this.busy = true;
     let audit: CandidateAudit | null = null;

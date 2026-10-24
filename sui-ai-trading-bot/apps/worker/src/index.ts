@@ -126,7 +126,12 @@ const watchdog = setInterval(() => {
     engine.monitor.watchdog();
     validationHeartbeat();
   } catch {
-    console.error("PAPER_MONITORING_UNAVAILABLE");
+    console.error(
+      JSON.stringify({
+        event: "PAPER_MONITORING_UNAVAILABLE",
+        databaseHealth: db.health(),
+      }),
+    );
     process.exit(1);
   }
 }, 15000);
@@ -167,7 +172,12 @@ const scheduler = new MarketScheduler(
   }),
   (plan) => engine.monitor.scheduled(plan?.at ?? null, plan?.reason ?? null),
   () => {
-    console.error("PAPER_WORKER_UNAVAILABLE");
+    console.error(
+      JSON.stringify({
+        event: "PAPER_WORKER_UNAVAILABLE",
+        databaseHealth: db.health(),
+      }),
+    );
     process.exit(1);
   },
 );
@@ -326,6 +336,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method === "GET" && url.pathname === "/api/operations") {
       send(200, {
         ...timeAggregation(() => engine.monitor.snapshot()),
+        databaseHealth: db.health(),
         suiHealth: { ...sui.status },
         suiReads: { ...sui.readStatus },
         suiObservations: db.history("sui_observations", 50),
