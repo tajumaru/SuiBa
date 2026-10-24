@@ -28,7 +28,6 @@ type State = ReturnType<BotEngine["snapshot"]>;
 const NAV_TABS = [
   "Live",
   "Overview",
-  "Chart",
   "Strategy",
   "Trading History",
   "Settings",
@@ -456,12 +455,8 @@ function App() {
     try {
       const result = await feed.poll(
         api,
-        ["Overview", "Chart"].includes(view.tab)
-          ? view.tab === "Chart"
-            ? view.timeframe
-            : 300
-          : null,
-        ["Overview", "Chart", "Trading History"].includes(view.tab),
+        view.tab === "Overview" ? view.timeframe : null,
+        ["Overview", "Trading History"].includes(view.tab),
         (state) => {
           if (feedRef.current === feed && serialRef.current === serial) {
             setData(state);
@@ -692,14 +687,30 @@ function App() {
                       ))}
                     </div>
                     <ProfitGuardPanel data={data} />
+                    <label>
+                      時間足
+                      <select
+                        value={timeframe}
+                        onChange={(e) =>
+                          setTimeframe(
+                            Number(e.target.value) as 300 | 900 | 3600,
+                          )
+                        }
+                      >
+                        <option value={300}>5分</option>
+                        <option value={900}>15分</option>
+                        <option value={3600}>1時間</option>
+                      </select>
+                    </label>
                     <section>
-                      <h3>
-                        SUI / USDC <small>5分足 · EMA20 / EMA50</small>
-                      </h3>
+                      <h3>価格・RSI・MACD（共通時間軸）</h3>
                       <Chart
-                        candles={data.candles}
+                        timeframe={timeframe}
+                        candles={data.candlesByTimeframe[timeframe]}
                         kind="Price"
                         trades={data.trades}
+                        synchronized
+                        historyApi={api}
                       />
                     </section>
                     <div className="cards">
@@ -723,34 +734,6 @@ function App() {
                       ))}
                     </div>
                   </>
-                )}
-                {activeTab === "Chart" && (
-                  <label>
-                    時間足
-                    <select
-                      value={timeframe}
-                      onChange={(e) =>
-                        setTimeframe(Number(e.target.value) as 300 | 900 | 3600)
-                      }
-                    >
-                      <option value={300}>5分</option>
-                      <option value={900}>15分</option>
-                      <option value={3600}>1時間</option>
-                    </select>
-                  </label>
-                )}
-                {activeTab === "Chart" && (
-                  <section>
-                    <h3>価格・RSI・MACD（共通時間軸）</h3>
-                    <Chart
-                      timeframe={timeframe}
-                      candles={data.candlesByTimeframe[timeframe]}
-                      kind="Price"
-                      trades={data.trades}
-                      synchronized
-                      historyApi={api}
-                    />
-                  </section>
                 )}
                 {activeTab === "Strategy" && (
                   <>

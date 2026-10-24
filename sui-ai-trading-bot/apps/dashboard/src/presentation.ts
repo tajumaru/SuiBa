@@ -15,7 +15,6 @@ export const labels: Record<string, string> = {
   EMERGENCY_EXIT: "緊急売却",
   Live: "実況",
   Overview: "ダッシュボード",
-  Chart: "チャート",
   Strategy: "戦略",
   "Trading History": "取引履歴",
   Settings: "設定",
