@@ -320,7 +320,9 @@ test("vital animation follows errors, recovery, stop and reduced motion", async 
           ...snapshot.timing,
           fetching: fetchElapsedMs > 0,
           fetchElapsedMs,
+          lastTransportSuccessAt: await page.evaluate(() => Date.now()),
         },
+        lastMarketClosedAt: await page.evaluate(() => Date.now() - 300_000),
         lastHeartbeatAt: await page.evaluate(() => Date.now()),
         status: status === "STOPPED" ? "STOPPED" : "RUNNING",
         safety: {
