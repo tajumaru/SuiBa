@@ -15,6 +15,7 @@ import {
   Decimal,
   safeFailure,
   type QuoteResult,
+  type TradingDecision,
 } from "../../../packages/shared/src/index.ts";
 import type {
   CandidateAudit,
@@ -38,6 +39,46 @@ export const monitoringLimits = {
 };
 const code = (value: string) =>
   /^[A-Z][A-Z0-9_]{0,100}$/.test(value) ? value : "UNKNOWN_FAILURE";
+/**
+ * Read-only telemetry for the dashboard's narration feed: a validated
+ * copy of the latest decision evidence the engine already recorded in
+ * the database (`decision` key, written by `recordAnalysis` on every
+ * analysed cycle). It is assembled inside `snapshot()` from stored
+ * records only — it never runs the strategy, never touches an order
+ * gate, and returns null whenever the stored evidence is missing,
+ * malformed, or from an unknown evidence version (fail-closed), so the
+ * dashboard narrates nothing it cannot ground in a real record.
+ */
+export interface DecisionTelemetry {
+  evaluatedAt: number;
+  candleTimestamp: number;
+  action: TradingDecision["action"];
+  reason: string;
+  selectedRule: string;
+  sellPurpose: string | null;
+  price: number;
+  entryPrice: number | null;
+  ema20: number;
+  ema50: number;
+  rsi: number;
+  previousRsi: number;
+  histogram: number;
+  previousHistogram: number;
+  atr: number;
+  volumeChange: number;
+  oversold: number;
+  overbought: number;
+  stopLossPct: number;
+  takeProfitPct: number;
+  conditions: {
+    emaUp: boolean;
+    rsiRecovery: boolean;
+    histogramImproving: boolean;
+    hasPosition: boolean;
+    stopLoss: boolean;
+    takeProfit: boolean;
+  };
+}
 export const numericText = (value: unknown): string | null => {
   if (typeof value !== "string" && typeof value !== "number") return null;
   try {
@@ -804,6 +845,81 @@ export class OperationMonitor {
       limits: paperRecoveryLimits,
     };
   }
+  decisionTelemetry(): DecisionTelemetry | null {
+    const d = this.db.get<TradingDecision>("decision");
+    const e = d?.evidence,
+      t = e?.thresholds,
+      cur = e?.inputs?.current,
+      prev = e?.inputs?.previous,
+      cond = e?.conditions;
+    if (!d || !e || e.version !== 1 || !t || !cur || !prev || !cond)
+      return null;
+    if (!["BUY", "SELL", "WAIT"].includes(d.action)) return null;
+    const entry = e.inputs.entryPrice;
+    const nums = [
+      e.evaluatedAt,
+      e.candleTimestamp,
+      e.inputs.price,
+      cur.ema20,
+      cur.ema50,
+      cur.rsi,
+      prev.rsi,
+      cur.histogram,
+      prev.histogram,
+      cur.atr,
+      cur.volumeChange,
+      t.oversold,
+      t.overbought,
+      t.stopLossPct,
+      t.takeProfitPct,
+    ];
+    if (
+      !nums.every((n) => typeof n === "number" && Number.isFinite(n)) ||
+      (entry !== null &&
+        (typeof entry !== "number" || !Number.isFinite(entry)))
+    )
+      return null;
+    const conditionKeys = [
+      "emaUp",
+      "rsiRecovery",
+      "histogramImproving",
+      "hasPosition",
+      "stopLoss",
+      "takeProfit",
+    ] as const;
+    if (!conditionKeys.every((k) => typeof cond[k] === "boolean"))
+      return null;
+    return {
+      evaluatedAt: e.evaluatedAt,
+      candleTimestamp: e.candleTimestamp,
+      action: d.action,
+      reason: typeof d.reason === "string" ? d.reason : "",
+      selectedRule: e.selectedRule,
+      sellPurpose: d.sellPurpose ?? null,
+      price: e.inputs.price,
+      entryPrice: entry,
+      ema20: cur.ema20,
+      ema50: cur.ema50,
+      rsi: cur.rsi,
+      previousRsi: prev.rsi,
+      histogram: cur.histogram,
+      previousHistogram: prev.histogram,
+      atr: cur.atr,
+      volumeChange: cur.volumeChange,
+      oversold: t.oversold,
+      overbought: t.overbought,
+      stopLossPct: t.stopLossPct,
+      takeProfitPct: t.takeProfitPct,
+      conditions: {
+        emaUp: cond.emaUp,
+        rsiRecovery: cond.rsiRecovery,
+        histogramImproving: cond.histogramImproving,
+        hasPosition: cond.hasPosition,
+        stopLoss: cond.stopLoss,
+        takeProfit: cond.takeProfit,
+      },
+    };
+  }
   snapshot(now = Date.now()) {
     const s = this.state(),
       r = this.db.runtime();
@@ -817,6 +933,7 @@ export class OperationMonitor {
     return {
       safety: this.safetySnapshot(now),
       timing: this.timing(now),
+      decision: this.decisionTelemetry(),
       apis: apiAccess.snapshot(now),
       mode: "PAPER" as const,
       status:

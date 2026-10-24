@@ -1,6 +1,7 @@
 import { ValidationControl } from "./ValidationControl.tsx";
 import type { ControlState } from "./validationControl.ts";
 import { OperationSummary, OperationGuidance } from "./OperationOverview.tsx";
+import { AgentNarrationFeed } from "./AgentNarration.tsx";
 import { MarketDataPanel } from "./MarketDataPanel.tsx";
 import { ConnectivityPanel } from "./ConnectivityPanel.tsx";
 import { operationReason } from "./operationLabels.ts";
@@ -56,6 +57,7 @@ export function OperationsView({
         />
       )}
       <OperationSummary data={data} stale={stale} />
+      <AgentNarrationFeed data={data} stale={stale} />
       {!!data.validation?.candles?.unresolved && (
         <p className="warning" role="alert">
           ローソク足に未解決の品質問題があります。詳細診断で確認してください。
