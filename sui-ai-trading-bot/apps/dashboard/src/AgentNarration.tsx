@@ -4,6 +4,7 @@ import { botVital } from "./botVital.ts";
 import {
   advanceNarration,
   agentPose,
+  currentConditionChips,
   emptyNarrationState,
   type AgentPose,
   type NarrationState,
@@ -107,6 +108,11 @@ export function AgentNarrationFeed({
 
   const vital = botVital(data, stale, now, receivedAt);
   const pose = agentPose(narration, data, vital, now);
+  // Buy-condition chips come from the same fresh decision evidence
+  // as the narration; a stale display shows no chips at all.
+  const chips = stale
+    ? null
+    : currentConditionChips(narration, data.decision, now);
 
   return (
     <section className="agent-feed" aria-label="エージェント実況">
@@ -122,6 +128,20 @@ export function AgentNarrationFeed({
           <small>エージェントが、Botの記録をもとに今の様子を実況します。</small>
         </div>
       </div>
+      {chips && (
+        <div className="agent-feed-chips" aria-label="買い条件">
+          <span className="agent-feed-chips-title">買い条件</span>
+          {chips.map((chip) => (
+            <span
+              key={chip.key}
+              className={`agent-feed-chip tone-${chip.tone}`}
+            >
+              <span className="agent-feed-chip-label">{chip.label}</span>
+              <span className="agent-feed-chip-status">{chip.status}</span>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="agent-feed-list" ref={listRef}>
         {narration.entries.length === 0 ? (
           <p className="agent-feed-empty">

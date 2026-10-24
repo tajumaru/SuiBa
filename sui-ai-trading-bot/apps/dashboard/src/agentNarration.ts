@@ -13,6 +13,13 @@ import { number as fmtNumber, percent as fmtPercent } from "./presentation.ts";
  * or malformed the feed stays silent for that cycle (fail-closed),
  * exactly like the vital signs next to it.
  *
+ * Cycle narration follows the approved "reasons, softly and shortly"
+ * style: one or two short sentences in a companionable tone (never
+ * report-style), carrying at least one recorded number, naming the
+ * entry condition that is still missing, and — via the previous
+ * cycle's DecisionTrail — whether things approached, newly clicked,
+ * or fell back since last time.
+ *
  * All functions here are pure: the component keeps a NarrationState,
  * feeds each new snapshot through `advanceNarration`, and renders the
  * accumulated entries. `agentPose` derives the character's pose from
@@ -53,6 +60,10 @@ export interface NarrationState {
   lastDecisionAt: number | null;
   /** Price of the previous narrated cycle, for grounded price-move text. */
   prevDecisionPrice: number | null;
+  /** Narratable facts of the newest decision accounted for. */
+  lastTrail: DecisionTrail | null;
+  /** The decision before that, for approach / retreat narration. */
+  prevTrail: DecisionTrail | null;
   lastConnectivity: string | null;
   lastStatus: string | null;
   initialized: boolean;
@@ -85,9 +96,50 @@ export function emptyNarrationState(): NarrationState {
     pendingCandidateIds: [],
     lastDecisionAt: null,
     prevDecisionPrice: null,
+    lastTrail: null,
+    prevTrail: null,
     lastConnectivity: null,
     lastStatus: null,
     initialized: false,
+  };
+}
+
+/**
+ * A compact copy of one decision's narratable facts, kept in the
+ * narration state so the next cycle can be told as a change
+ * (approach / newly met / broken) instead of a static readout.
+ * Every value is copied verbatim from the telemetry; the condition
+ * flags keep the telemetry field names on purpose.
+ */
+export interface DecisionTrail {
+  evaluatedAt: number;
+  price: number;
+  ema20: number;
+  ema50: number;
+  rsi: number;
+  histogram: number;
+  atr: number;
+  oversold: number;
+  emaUp: boolean;
+  rsiRecovery: boolean;
+  histogramImproving: boolean;
+  hasPosition: boolean;
+}
+
+export function decisionTrail(dec: DecisionTelemetry): DecisionTrail {
+  return {
+    evaluatedAt: dec.evaluatedAt,
+    price: dec.price,
+    ema20: dec.ema20,
+    ema50: dec.ema50,
+    rsi: dec.rsi,
+    histogram: dec.histogram,
+    atr: dec.atr,
+    oversold: dec.oversold,
+    emaUp: dec.conditions.emaUp,
+    rsiRecovery: dec.conditions.rsiRecovery,
+    histogramImproving: dec.conditions.histogramImproving,
+    hasPosition: dec.conditions.hasPosition,
   };
 }
 
@@ -134,71 +186,292 @@ function unmetDistance(
   return dec.atr > 0 ? delta / (dec.atr * 0.25) : 1;
 }
 
-function furthestUnmetSentence(dec: DecisionTelemetry): string | null {
-  const unmet = entryConditions(dec).filter((c) => !c.met);
-  if (!unmet.length) return null;
+type EntryCondKey = "emaUp" | "rsiRecovery" | "histogramImproving";
+const COND_SHORT: Record<EntryCondKey, string> = {
+  emaUp: "EMA",
+  rsiRecovery: "RSI",
+  histogramImproving: "MACD",
+};
+
+const emaGapPct = (v: { price: number; ema20: number; ema50: number }) =>
+  fmtPercent(v.price > 0 ? (v.ema20 - v.ema50) / v.price : 0);
+const rsiPoints = (rsi: number, oversold: number) =>
+  Math.max(0, Math.round(rsi - oversold));
+
+/**
+ * Per-key distance used ONLY to compare the same condition across two
+ * cycles (did it approach since last time?). Scales differ per key
+ * and are never shown as numbers.
+ */
+function trailDistance(key: EntryCondKey, t: DecisionTrail): number {
+  if (key === "emaUp") return t.price > 0 ? (t.ema50 - t.ema20) / t.price : 0;
+  if (key === "rsiRecovery") return t.rsi - t.oversold;
+  return -t.histogram;
+}
+
+/** Number-carrying phrase for one unmet entry condition. */
+function unmetNumberPhrase(key: EntryCondKey, dec: DecisionTelemetry): string {
+  if (key === "emaUp") return `EMAの差は${emaGapPct(dec)}`;
+  if (key === "rsiRecovery")
+    return dec.rsi <= dec.oversold
+      ? `RSIは${fmtNumber(dec.rsi, 1)}で圏内、上抜け待ち`
+      : `RSI ${fmtNumber(dec.rsi, 1)}、ラインまでまだ${rsiPoints(dec.rsi, dec.oversold)}`;
+  return `MACDは${fmtNumber(dec.histogram, 4)}`;
+}
+
+/** Number-free aside naming a second unmet entry condition. */
+function unmetAside(key: EntryCondKey, dec: DecisionTelemetry): string {
+  if (key === "emaUp") return "EMAもまだ逆並びだし";
+  if (key === "rsiRecovery")
+    return dec.rsi <= dec.oversold
+      ? "RSIは圏内で待ってるし"
+      : "RSIもまだ高めだし";
+  return dec.histogram < 0 ? "MACDもマイナス側だし" : "MACDも下向きだし";
+}
+
+/** The one remaining condition, named with its recorded number. */
+function singleRemainingText(key: EntryCondKey, dec: DecisionTelemetry): string {
+  if (key === "emaUp") {
+    const gap =
+      dec.price > 0 ? Math.abs((dec.ema20 - dec.ema50) / dec.price) : 1;
+    return gap <= 0.003
+      ? `あとEMAだけ。差は${emaGapPct(dec)}、ほぼ並んだよ`
+      : `あとEMAだけ。差は${emaGapPct(dec)}、まだ開いてるね`;
+  }
+  if (key === "rsiRecovery")
+    return dec.rsi <= dec.oversold
+      ? "あとRSIだけ。圏内から上抜け待ちだね"
+      : `あとRSIだけ。${fmtNumber(dec.rsi, 1)}、ラインまで${rsiPoints(dec.rsi, dec.oversold)}だね`;
+  if (
+    dec.histogram < 0 &&
+    dec.atr > 0 &&
+    Math.abs(dec.histogram) <= dec.atr * 0.05
+  )
+    return `あとMACDだけ。${fmtNumber(dec.histogram, 4)}、ほぼゼロ。次で揃うかも`;
+  if (dec.histogram < 0)
+    return `あとMACDだけ。まだ${fmtNumber(dec.histogram, 4)}、マイナス側だね`;
+  return `あとMACDだけ。${fmtNumber(dec.histogram, 4)}でプラス圏だけど、下向きだね`;
+}
+
+/**
+ * WAIT-cycle narration: short and soft, but always grounded — one
+ * recorded number, the missing condition named, and the change since
+ * the previous cycle (a condition that broke is the headline, then a
+ * single remaining condition, then a newly met one, then progress).
+ */
+function waitNarration(
+  dec: DecisionTelemetry,
+  prev: DecisionTrail | null,
+): string {
+  const conds = entryConditions(dec);
+  const met = conds.filter((c) => c.met).length;
+  const unmet = conds.filter((c) => !c.met);
+  const wasMet = (key: EntryCondKey) => (prev ? prev[key] : false);
+
+  const broken = unmet.filter((c) => wasMet(c.key));
+  if (broken.length) {
+    const key = broken[0].key;
+    if (key === "emaUp")
+      return `EMAの並びが崩れた。差は${emaGapPct(dec)}、一歩さがったなあ`;
+    if (key === "rsiRecovery")
+      return `RSIの回復が消えた。今は${fmtNumber(dec.rsi, 1)}、一歩さがったなあ`;
+    return `MACDが崩れて${fmtNumber(dec.histogram, 4)}。一歩さがったなあ`;
+  }
+
+  if (!unmet.length) return "買い条件は3つ揃ったよ。今は様子見だね";
+  if (unmet.length === 1) return singleRemainingText(unmet[0].key, dec);
+
+  const closestUnmet = () =>
+    unmet.reduce((a, b) =>
+      unmetDistance(dec, b.key) < unmetDistance(dec, a.key) ? b : a,
+    );
+
+  if (met === 1) {
+    const newly = conds.filter((c) => c.met && !wasMet(c.key));
+    if (prev && newly.length) {
+      const n = newly[0].key;
+      const lead =
+        n === "emaUp"
+          ? "EMAが順並びになった"
+          : n === "rsiRecovery"
+            ? `RSIが${fmtNumber(dec.previousRsi, 1)}→${fmtNumber(dec.rsi, 1)}で上抜けた`
+            : `MACDが${fmtNumber(dec.previousHistogram, 4)}→${fmtNumber(dec.histogram, 4)}に上向いた`;
+      const rest = unmet.map((c) => COND_SHORT[c.key]).join("と");
+      return `${lead}。残りは${rest}、${unmetNumberPhrase(closestUnmet().key, dec)}だね`;
+    }
+    const closest = closestUnmet();
+    const other = unmet.find((c) => c.key !== closest.key)!;
+    return `${unmetNumberPhrase(closest.key, dec)}。${unmetAside(other.key, dec)}、条件は1/3だね`;
+  }
+
+  // Nothing met yet: feature the furthest condition (the bottleneck),
+  // and say whether even that one approached since the last cycle.
   const furthest = unmet.reduce((a, b) =>
     unmetDistance(dec, b.key) > unmetDistance(dec, a.key) ? b : a,
   );
-  if (furthest.key === "emaUp")
-    return `EMA20（${fmtNumber(dec.ema20, 4)}）がEMA50（${fmtNumber(dec.ema50, 4)}）を上回るのを待っています。`;
-  if (furthest.key === "rsiRecovery")
-    return dec.rsi <= dec.oversold
-      ? `RSIは${fmtNumber(dec.rsi, 1)}で売られすぎライン（${fmtNumber(dec.oversold, 1)}）の下にあります。反発の起点待ちです。`
-      : `RSIは${fmtNumber(dec.rsi, 1)}。売られすぎ（${fmtNumber(dec.oversold, 1)}以下）からの回復サインはまだありません。`;
-  return `MACDヒストグラムの改善待ちです（前回 ${fmtNumber(dec.previousHistogram, 4)} → 現在 ${fmtNumber(dec.histogram, 4)}）。`;
+  const other = unmet.find((c) => c.key !== furthest.key)!;
+  const approached =
+    prev != null &&
+    trailDistance(furthest.key, decisionTrail(dec)) <
+      trailDistance(furthest.key, prev);
+  return `${unmetNumberPhrase(furthest.key, dec)}。${unmetAside(other.key, dec)}、${approached ? "少し近づいてきたね" : "まだ遠いなあ"}`;
 }
 
 /** Narration text for one analysed cycle, from its decision evidence. */
 export function cycleNarrationText(
   dec: DecisionTelemetry,
-  prevPrice: number | null,
+  prev: DecisionTrail | null,
 ): string {
-  if (dec.action === "BUY")
-    return `買いシグナルが成立しました（買い条件 3/3）。価格は${price(dec.price)}です。`;
+  if (dec.action === "BUY") {
+    if (metEntryConditions(dec) === 3) {
+      const parts = [
+        "EMAは順並び",
+        `RSIは${fmtNumber(dec.previousRsi, 1)}→${fmtNumber(dec.rsi, 1)}まで回復`,
+        dec.histogram > 0 ? "MACDもプラス" : "MACDも上向き",
+      ];
+      return `3つ揃ったよ。${parts.join("、")}だから買うね`;
+    }
+    return `買いシグナルが出たよ。価格は${price(dec.price)}だね`;
+  }
   if (dec.action === "SELL") {
-    const entry =
+    const gain =
       dec.entryPrice != null && dec.entryPrice > 0
-        ? `取得価格${price(dec.entryPrice)}に対して現在${price(dec.price)}（${signedPct(dec.price / dec.entryPrice - 1)}）`
-        : `価格は${price(dec.price)}`;
+        ? signedPct(dec.price / dec.entryPrice - 1)
+        : null;
     switch (dec.sellPurpose) {
       case "TAKE_PROFIT":
-        return `利確条件に触れました。${entry}です。`;
+        return gain
+          ? `利確のラインに触れたよ。取得から${gain}だね`
+          : `利確のラインに触れたよ。価格は${price(dec.price)}だね`;
       case "STOP_LOSS":
-        return `損切り条件に触れました。${entry}です。`;
+        return gain
+          ? `損切りのラインに触れたよ。取得から${gain}だね`
+          : `損切りのラインに触れたよ。価格は${price(dec.price)}だね`;
       case "STRATEGY_EXIT":
-        return `売りシグナルが成立しました（EMA下降・RSI反落・MACD悪化）。価格は${price(dec.price)}です。`;
+        return `売りシグナルが出たよ。価格は${price(dec.price)}だね`;
       case "RISK_REDUCTION":
       case "EMERGENCY_EXIT":
-        return `リスク低減のための売り判定になりました。価格は${price(dec.price)}です。`;
+        return `リスクを減らす売り判定だよ。価格は${price(dec.price)}だね`;
       default:
-        return `売り判定になりました。価格は${price(dec.price)}です。`;
+        return `売り判定だよ。価格は${price(dec.price)}だね`;
     }
   }
   if (dec.selectedRule === "VOLUME_REJECT")
-    return `出来高の異常を検出したため見送りました（出来高の変化 ${fmtPercent(dec.volumeChange)}、価格 ${price(dec.price)}）。`;
+    return `出来高が急に変わったから見送ったよ。変化は${fmtPercent(dec.volumeChange)}だね`;
   if (dec.conditions.hasPosition && dec.entryPrice != null) {
-    const pct =
-      dec.entryPrice > 0 ? signedPct(dec.price / dec.entryPrice - 1) : "±0%";
-    return `保有中です。取得価格${price(dec.entryPrice)}に対して現在${price(dec.price)}（${pct}）。利確ライン（+${fmtPercent(dec.takeProfitPct)}）と損切りライン（-${fmtPercent(dec.stopLossPct)}）を見守っています。`;
+    const gain = dec.entryPrice > 0 ? dec.price / dec.entryPrice - 1 : 0;
+    if (gain >= 0 && dec.takeProfitPct - gain > 0)
+      return `保有中だよ。今は${signedPct(gain)}、利確まであと${fmtPercent(dec.takeProfitPct - gain)}だね`;
+    if (gain < 0 && gain + dec.stopLossPct > 0)
+      return `保有中だよ。今は${signedPct(gain)}、損切りまであと${fmtPercent(gain + dec.stopLossPct)}だね`;
+    return `保有中だよ。取得${price(dec.entryPrice)}から今は${signedPct(gain)}だね`;
   }
-  const met = metEntryConditions(dec);
-  const parts: string[] = [];
-  if (prevPrice != null && prevPrice > 0) {
-    const change = dec.price / prevPrice - 1;
-    if (Math.abs(change) >= 0.003)
-      parts.push(
-        `価格は${price(dec.price)}（前回の判定から${signedPct(change)}）。`,
-      );
+  return waitNarration(dec, prev);
+}
+
+export type ConditionChipTone = "met" | "close" | "far" | "back";
+export interface EntryConditionChip {
+  key: "ema" | "rsi" | "macd";
+  label: string;
+  met: boolean;
+  /** Short status word shown next to the label ("✓", "あと3", …). */
+  status: string;
+  tone: ConditionChipTone;
+}
+
+/**
+ * The buy-condition chips (EMA / RSI / MACD only), derived from the
+ * same evidence as the narration so the two can never disagree.
+ * Status words use recorded values only: the EMA gap as a share of
+ * price, whole RSI points to the oversold line, the histogram against
+ * a small ATR window — and "後退" when the condition was met in the
+ * previous cycle and has since broken.
+ */
+export function entryConditionChips(
+  dec: DecisionTelemetry,
+  prev: DecisionTrail | null,
+): EntryConditionChip[] {
+  const emaGap = dec.price > 0 ? (dec.ema50 - dec.ema20) / dec.price : 1;
+  const ema: EntryConditionChip = dec.conditions.emaUp
+    ? { key: "ema", label: "EMA", met: true, status: "✓", tone: "met" }
+    : prev?.emaUp
+      ? { key: "ema", label: "EMA", met: false, status: "後退", tone: "back" }
+      : emaGap <= 0.003
+        ? {
+            key: "ema",
+            label: "EMA",
+            met: false,
+            status: "あと少し",
+            tone: "close",
+          }
+        : { key: "ema", label: "EMA", met: false, status: "逆並び", tone: "far" };
+  const points = rsiPoints(dec.rsi, dec.oversold);
+  const rsi: EntryConditionChip = dec.conditions.rsiRecovery
+    ? { key: "rsi", label: "RSI", met: true, status: "✓", tone: "met" }
+    : prev?.rsiRecovery
+      ? { key: "rsi", label: "RSI", met: false, status: "後退", tone: "back" }
+      : dec.rsi <= dec.oversold
+        ? { key: "rsi", label: "RSI", met: false, status: "圏内", tone: "close" }
+        : {
+            key: "rsi",
+            label: "RSI",
+            met: false,
+            status: `あと${points}`,
+            tone: points <= 3 ? "close" : "far",
+          };
+  const macd: EntryConditionChip = dec.conditions.histogramImproving
+    ? { key: "macd", label: "MACD", met: true, status: "✓", tone: "met" }
+    : prev?.histogramImproving
+      ? {
+          key: "macd",
+          label: "MACD",
+          met: false,
+          status: "後退",
+          tone: "back",
+        }
+      : dec.histogram < 0 &&
+          dec.atr > 0 &&
+          Math.abs(dec.histogram) <= dec.atr * 0.05
+        ? { key: "macd", label: "MACD", met: false, status: "あと1", tone: "close" }
+        : dec.histogram < 0
+          ? {
+              key: "macd",
+              label: "MACD",
+              met: false,
+              status: "マイナス",
+              tone: "far",
+            }
+          : {
+              key: "macd",
+              label: "MACD",
+              met: false,
+              status: "下向き",
+              tone: "far",
+            };
+  return [ema, rsi, macd];
+}
+
+/**
+ * Chips for the snapshot on screen: null unless the decision is
+ * fresh (a stale display shows no chips, like it tells no narration).
+ * The "previous" trail is whichever decision came right before the
+ * one on screen, whether or not the feed has consumed it yet.
+ */
+export function currentConditionChips(
+  state: NarrationState,
+  dec: DecisionTelemetry | null | undefined,
+  now: number,
+): EntryConditionChip[] | null {
+  if (!dec || !freshDecision(dec, now)) return null;
+  let prev: DecisionTrail | null = null;
+  if (state.lastTrail) {
+    if (dec.evaluatedAt === state.lastTrail.evaluatedAt)
+      prev = state.prevTrail;
+    else if (dec.evaluatedAt > state.lastTrail.evaluatedAt)
+      prev = state.lastTrail;
+    else prev = state.prevTrail;
   }
-  parts.push(
-    met === 0
-      ? "様子見です。買い条件は0/3で、まだ何もそろっていません。"
-      : `買い条件が${met}/3そろってきました。`,
-  );
-  const furthest = furthestUnmetSentence(dec);
-  if (furthest) parts.push(furthest);
-  return parts.join("");
+  return entryConditionChips(dec, prev);
 }
 
 type EntryDraft = Omit<NarrationEntry, "id">;
@@ -223,19 +496,19 @@ function initialEntry(
     return {
       at: now,
       kind: "stop",
-      text: `安全停止中です。理由：${stopReasonText(d)}`,
+      text: `安全停止中だよ。理由：${stopReasonText(d)}`,
     };
   if (vitalState === "sleeping")
     return d.stopReason
       ? {
           at: now,
           kind: "stop",
-          text: `停止中です。理由：${stopReasonText(d)}`,
+          text: `停止中だよ。理由：${stopReasonText(d)}`,
         }
       : {
           at: now,
           kind: "status",
-          text: "停止中です。開始操作を待っています。",
+          text: "停止中だよ。開始操作を待ってるね",
         };
   if (vitalState === "alive" || vitalState === "weak") {
     const dec = d.decision;
@@ -248,13 +521,13 @@ function initialEntry(
     return {
       at: now,
       kind: "status",
-      text: "稼働中です。市場データの取得と判定を続けています。",
+      text: "稼働中だよ。新しい記録が届くのを待ってるね",
     };
   }
   return {
     at: now,
     kind: "status",
-    text: "状態を確認中です。最新の記録が届くまで実況は止まります。",
+    text: "状態を確認中だよ。記録が届くまで実況は止まるね",
   };
 }
 
@@ -293,6 +566,8 @@ export function advanceNarration(
         pendingCandidateIds: [...pending].slice(-50),
         lastDecisionAt: d.decision?.evaluatedAt ?? null,
         prevDecisionPrice: d.decision?.price ?? null,
+        lastTrail: d.decision ? decisionTrail(d.decision) : null,
+        prevTrail: null,
         lastConnectivity: d.safety?.connectivity ?? null,
         lastStatus: d.status ?? null,
         initialized: true,
@@ -328,61 +603,61 @@ export function advanceNarration(
         kind: "stop",
         text:
           e.code === "MANUAL_STOP"
-            ? "手動で停止されました。"
-            : `止まりました。理由：${operationReason(e.code)}`,
+            ? "手動で止められたよ"
+            : `止まったよ。理由：${operationReason(e.code)}`,
       });
     } else if (e.kind === "BOOT") {
       drafts.push({
         at: e.timestamp,
         kind: "status",
-        text: "再起動しました。開始は手動操作を待っています。",
+        text: "再起動したよ。開始は手動操作待ちだね",
       });
     } else if (e.kind === "CONTROL") {
       if (e.code === "MANUAL_START") {
         drafts.push({
           at: e.timestamp,
           kind: "start",
-          text: "PAPER運用を開始しました。",
+          text: "PAPER運用を始めたよ",
         });
       } else if (e.code === "PAPER_NETWORK_RECOVERED") {
         narratedRecovered = true;
         drafts.push({
           at: e.timestamp,
           kind: "recovery",
-          text: "通信の復旧が確認でき、PAPER運用を再開しました。",
+          text: "通信が戻ったよ。PAPER運用を再開するね",
         });
       } else if (e.code === "PAPER_NETWORK_PAUSED") {
         narratedPaused = true;
         drafts.push({
           at: e.timestamp,
           kind: "warning",
-          text: "通信障害を検出したため、注文を一時停止しました。",
+          text: "通信がおかしいから、注文を一時停止したよ",
         });
       } else if (e.code === "MANUAL_RESET") {
         drafts.push({
           at: e.timestamp,
           kind: "status",
-          text: "停止状態が手動で解除されました。",
+          text: "停止状態が解除されたよ",
         });
       }
     } else if (e.kind === "API" && e.apiFailure) {
       drafts.push({
         at: e.timestamp,
         kind: "warning",
-        text: `${e.apiFailure.api}の通信に失敗しました（${operationReason(e.apiFailure.code)}）。`,
+        text: `${e.apiFailure.api}と通信できなかったよ（${operationReason(e.apiFailure.code)}）`,
       });
     } else if (e.kind === "ANOMALY" && e.fatal) {
       drafts.push({
         at: e.timestamp,
         kind: "warning",
-        text: `異常を検出しました：${operationReason(e.code)}`,
+        text: `異常を検出したよ：${operationReason(e.code)}`,
       });
     } else if (e.kind === "ERROR" && !apiTimestamps.has(e.timestamp)) {
       // An API event at the same timestamp already told this story.
       drafts.push({
         at: e.timestamp,
         kind: "warning",
-        text: `処理中にエラーが発生しました：${operationReason(e.code)}`,
+        text: `処理でエラーが出たよ：${operationReason(e.code)}`,
       });
     }
     // WAIT events are covered by the richer cycle narration below.
@@ -424,26 +699,26 @@ export function advanceNarration(
       drafts.push({
         at: c.timestamp,
         kind: "trade",
-        text: `PAPERで${c.finalAction === "BUY" ? "買い" : "売り"}を記録しました${fill ? `：${fill}` : ""}。`,
+        text: `PAPERで${c.finalAction === "BUY" ? "買い" : "売り"}を記録したよ${fill ? `：${fill}` : ""}`,
       });
     } else if (c.finalAction === "WAIT") {
       const reason = c.reasons[0]
         ? operationReason(c.reasons[0])
-        : "条件を確認できませんでした";
+        : "条件を確認できなかった";
       drafts.push({
         at: c.timestamp,
         kind: "rejection",
-        text: `${c.side === "BUY" ? "買い" : "売り"}シグナルは出ましたが、見送りました（${reason}）。`,
+        text: `${c.side === "BUY" ? "買い" : "売り"}シグナルは出たけど、見送ったよ（${reason}）`,
       });
     } else if (c.finalAction === "SAFE_STOP") {
       narratedStop = true;
       const reason = c.reasons[0]
         ? operationReason(c.reasons[0])
-        : "安全条件を確認できませんでした";
+        : "安全条件を確認できなかった";
       drafts.push({
         at: c.timestamp,
         kind: "stop",
-        text: `候補の処理中に安全停止しました（${reason}）。`,
+        text: `候補の処理中に安全停止したよ（${reason}）`,
       });
     }
     // PENDING candidates are not final yet: stay silent.
@@ -452,6 +727,8 @@ export function advanceNarration(
   // --- strategy cycle, from the decision evidence --------------------
   let lastDecisionAt = prev.lastDecisionAt;
   let prevDecisionPrice = prev.prevDecisionPrice;
+  let lastTrail = prev.lastTrail;
+  let prevTrail = prev.prevTrail;
   let priceRising = prev.priceRising;
   const dec = d.decision;
   if (dec && (lastDecisionAt == null || dec.evaluatedAt > lastDecisionAt)) {
@@ -462,12 +739,14 @@ export function advanceNarration(
       drafts.push({
         at: dec.evaluatedAt,
         kind: "cycle",
-        text: cycleNarrationText(dec, prevDecisionPrice),
+        text: cycleNarrationText(dec, lastTrail),
       });
     }
     priceRising = prevDecisionPrice != null && dec.price > prevDecisionPrice;
     prevDecisionPrice = dec.price;
     lastDecisionAt = dec.evaluatedAt;
+    prevTrail = lastTrail;
+    lastTrail = decisionTrail(dec);
   }
 
   // --- connectivity transitions --------------------------------------
@@ -478,19 +757,19 @@ export function advanceNarration(
       drafts.push({
         at: now,
         kind: "warning",
-        text: "通信が不安定になっています。復旧するまで新規注文は止まっています。",
+        text: "通信が不安定だよ。復旧するまで新規注文は止めてるね",
       });
     else if (connectivity === "RECOVERING")
       drafts.push({
         at: now,
         kind: "status",
-        text: `通信の復旧を確認中です（正常サイクル${d.safety.healthyCycles}回を確認）。`,
+        text: `通信の復旧を確認中だよ（正常サイクル${d.safety.healthyCycles}回）`,
       });
     else if (connectivity === "HEALTHY" && !narratedRecovered)
       drafts.push({
         at: now,
         kind: "recovery",
-        text: "通信が復旧しました。",
+        text: "通信が復旧したよ",
       });
   }
   if (connectivity) lastConnectivity = connectivity;
@@ -505,7 +784,7 @@ export function advanceNarration(
       drafts.push({
         at: now,
         kind: "stop",
-        text: `止まりました。理由：${stopReasonText(d)}`,
+        text: `止まったよ。理由：${stopReasonText(d)}`,
       });
   }
   if (d.status) lastStatus = d.status;
@@ -517,6 +796,8 @@ export function advanceNarration(
       pendingCandidateIds: [...pending].slice(-50),
       lastDecisionAt,
       prevDecisionPrice,
+      lastTrail,
+      prevTrail,
       priceRising,
       lastConnectivity,
       lastStatus,
