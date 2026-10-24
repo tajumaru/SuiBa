@@ -4,6 +4,8 @@ type OperationsSnapshot = ReturnType<OperationMonitor["snapshot"]>;
 import { operationReason } from "./operationLabels.ts";
 import { BotVitalSigns } from "./BotVitalSigns.tsx";
 import { botVital } from "./botVital.ts";
+import { SignalApproach } from "./SignalApproach.tsx";
+import { signalProgress } from "./signalProgress.ts";
 export function operationSummary(d: OperationsSnapshot, stale = false) {
   const s = d.safety;
   if (stale)
@@ -123,6 +125,10 @@ export function OperationSummary({
       </h2>
       <p>{v.message}</p>
       <BotVitalSigns vital={vital} />
+      <SignalApproach
+        progress={signalProgress(data.signal)}
+        vitalState={vital.state}
+      />
     </section>
   );
 }

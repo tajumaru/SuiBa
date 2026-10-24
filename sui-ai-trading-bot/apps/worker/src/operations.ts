@@ -15,6 +15,7 @@ import {
   Decimal,
   safeFailure,
   type QuoteResult,
+  type TradingDecision,
 } from "../../../packages/shared/src/index.ts";
 import type {
   CandidateAudit,
@@ -38,6 +39,38 @@ export const monitoringLimits = {
 };
 const code = (value: string) =>
   /^[A-Z][A-Z0-9_]{0,100}$/.test(value) ? value : "UNKNOWN_FAILURE";
+/**
+ * Display-only copy of the strategy evidence behind the latest
+ * decision, used by the dashboard's signal-approach gauges. Every
+ * value is copied verbatim from the recorded decision evidence; the
+ * strategy never reads this back.
+ */
+export interface SignalTelemetry {
+  /** When the strategy evaluated these inputs (ms epoch). */
+  evaluatedAt: number;
+  /** Start time (s epoch) of the candle the decision evaluated. */
+  candleTimestamp: number | null;
+  action: TradingDecision["action"];
+  selectedRule: string | null;
+  /** True when the bot held a position at evaluation time. */
+  hasPosition: boolean;
+  price: number;
+  current: {
+    ema20: number;
+    ema50: number;
+    rsi: number;
+    histogram: number;
+    atr: number;
+  };
+  previous: { rsi: number; histogram: number };
+  thresholds: { oversold: number };
+  /** The strategy's own BUY-entry condition results for that cycle. */
+  conditions: {
+    emaUp: boolean;
+    rsiRecovery: boolean;
+    histogramImproving: boolean;
+  };
+}
 export const numericText = (value: unknown): string | null => {
   if (typeof value !== "string" && typeof value !== "number") return null;
   try {
@@ -804,6 +837,67 @@ export class OperationMonitor {
       limits: paperRecoveryLimits,
     };
   }
+  /**
+   * Read-only telemetry for the dashboard's "signal approach" gauges:
+   * a copy of the evidence the rule-based strategy itself recorded for
+   * its latest decision (`db.recordAnalysis` stores the full decision,
+   * including `evidence`, on every analysis cycle). This only reads
+   * that record back — it never feeds the gauges into the strategy, the
+   * order gates, or any safety logic, and writing it changes nothing
+   * about how decisions are made. Returns null when no analysis has
+   * been recorded yet, when the stored decision carries no evidence
+   * (e.g. the engine's error placeholder), or when any value the
+   * gauges need is missing or not finite (fail closed, like the rest
+   * of the operations display).
+   */
+  signalTelemetry(): SignalTelemetry | null {
+    const decision = this.db.get<TradingDecision>("decision");
+    const e = decision?.evidence;
+    if (!decision || !e || e.version !== 1) return null;
+    const num = (v: unknown): v is number =>
+      typeof v === "number" && Number.isFinite(v);
+    const cur = e.inputs?.current,
+      prev = e.inputs?.previous;
+    if (
+      !num(e.evaluatedAt) ||
+      !num(e.inputs?.price) ||
+      e.inputs.price <= 0 ||
+      !cur ||
+      !prev ||
+      !num(cur.ema20) ||
+      !num(cur.ema50) ||
+      !num(cur.rsi) ||
+      !num(cur.histogram) ||
+      !num(cur.atr) ||
+      !num(prev.rsi) ||
+      !num(prev.histogram) ||
+      !num(e.thresholds?.oversold)
+    )
+      return null;
+    const cond = e.conditions ?? {};
+    return {
+      evaluatedAt: e.evaluatedAt,
+      candleTimestamp: num(e.candleTimestamp) ? e.candleTimestamp : null,
+      action: decision.action,
+      selectedRule: typeof e.selectedRule === "string" ? e.selectedRule : null,
+      hasPosition: e.inputs.entryPrice !== null,
+      price: e.inputs.price,
+      current: {
+        ema20: cur.ema20,
+        ema50: cur.ema50,
+        rsi: cur.rsi,
+        histogram: cur.histogram,
+        atr: cur.atr,
+      },
+      previous: { rsi: prev.rsi, histogram: prev.histogram },
+      thresholds: { oversold: e.thresholds.oversold },
+      conditions: {
+        emaUp: cond.emaUp === true,
+        rsiRecovery: cond.rsiRecovery === true,
+        histogramImproving: cond.histogramImproving === true,
+      },
+    };
+  }
   snapshot(now = Date.now()) {
     const s = this.state(),
       r = this.db.runtime();
@@ -817,6 +911,7 @@ export class OperationMonitor {
     return {
       safety: this.safetySnapshot(now),
       timing: this.timing(now),
+      signal: this.signalTelemetry(),
       apis: apiAccess.snapshot(now),
       mode: "PAPER" as const,
       status:

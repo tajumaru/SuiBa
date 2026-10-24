@@ -1340,6 +1340,218 @@ footer {
   color: #9aafbf;
   font-size: 12px;
 }
+/* Signal approach gauges ("あと一歩ゲージ × 雫") under the vital
+   signs: per-condition progress toward the strategy's BUY entry,
+   computed from the strategy's own recorded evidence. The droplet
+   swells with the bottleneck progress; its scale is set inline on
+   the inner span so the tremble / fall keyframes on the outer span
+   never fight it. States mirror .bot-vital: stopped greys out,
+   safety stop freezes pale, unknown dims, and nothing animates
+   unless the vital state is live. */
+.signal-approach {
+  margin-top: 12px;
+  padding: 14px 18px;
+  background: #141d24;
+  border: 1px solid #344e65;
+  border-radius: 12px;
+  color: #dce8f0;
+}
+.signal-approach-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.signal-approach-head strong {
+  font-size: 15px;
+}
+.signal-approach-phase {
+  font-size: 13px;
+  font-weight: 700;
+  color: #4da2ff;
+}
+.signal-approach.weak .signal-approach-phase {
+  color: #edc980;
+}
+.signal-approach-scene {
+  position: relative;
+  height: 96px;
+  margin-top: 4px;
+  overflow: hidden;
+}
+.signal-approach-pipe {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 54px;
+  height: 7px;
+  border-radius: 0 0 7px 7px;
+  background: #5f7484;
+  opacity: 0.6;
+}
+.signal-approach-drop {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  z-index: 2;
+  transform: translateX(-50%);
+}
+.signal-approach-drop-inner {
+  display: block;
+  transform-origin: 50% 0;
+}
+.signal-approach-drop svg {
+  display: block;
+  width: 34px;
+  height: 44px;
+}
+.signal-approach-drop.tremble {
+  animation-name: signal-drop-tremble;
+  animation-duration: 0.5s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+@keyframes signal-drop-tremble {
+  0%,
+  100% {
+    transform: translateX(-50%) rotate(-2.5deg);
+  }
+  50% {
+    transform: translateX(-50%) rotate(2.5deg);
+  }
+}
+.signal-approach-drop.ready {
+  animation-name: signal-drop-fall;
+  animation-duration: 1.9s;
+  animation-timing-function: ease-in;
+  animation-iteration-count: infinite;
+}
+@keyframes signal-drop-fall {
+  0% {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+  55% {
+    transform: translateX(-50%) translateY(38px);
+    opacity: 1;
+  }
+  64% {
+    transform: translateX(-50%) translateY(43px) scale(1.15, 0.82);
+    opacity: 1;
+  }
+  78%,
+  100% {
+    transform: translateX(-50%) translateY(40px);
+    opacity: 0;
+  }
+}
+.signal-approach-banner {
+  position: absolute;
+  top: 12px;
+  right: 6px;
+  z-index: 3;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #2ea86f;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+.signal-approach-gauges {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.signal-approach-gauge {
+  display: grid;
+  grid-template-columns: 76px 1fr auto;
+  align-items: center;
+  gap: 6px 10px;
+}
+.signal-approach-gauge-name {
+  font-size: 13px;
+  font-weight: 700;
+}
+.signal-approach-track {
+  display: block;
+  height: 9px;
+  border-radius: 99px;
+  background: #24313d;
+  overflow: hidden;
+}
+.signal-approach-fill {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #4da2ff, #1b63d8);
+}
+.signal-approach-fill.met {
+  background: #2ea86f;
+}
+.signal-approach-met {
+  font-size: 12px;
+  font-weight: 700;
+  color: #2ea86f;
+  white-space: nowrap;
+}
+.signal-approach-rest {
+  font-size: 12px;
+  color: #dce8f0;
+  white-space: nowrap;
+}
+.signal-approach-detail {
+  grid-column: 2 / 4;
+  color: #9aafbf;
+  font-size: 11px;
+}
+.signal-approach-note,
+.signal-approach-empty {
+  display: block;
+  margin-top: 10px;
+  color: #9aafbf;
+  font-size: 12px;
+}
+.signal-approach.sleeping {
+  color: #5f7484;
+}
+.signal-approach.sleeping .signal-approach-fill {
+  background: #5f7484;
+}
+.signal-approach.sleeping .signal-approach-drop {
+  filter: grayscale(0.8);
+  opacity: 0.6;
+}
+.signal-approach.flatlined .signal-approach-scene,
+.signal-approach.flatlined .signal-approach-gauges {
+  filter: saturate(0.25) brightness(1.2);
+  opacity: 0.75;
+}
+.signal-approach.unknown {
+  opacity: 0.72;
+}
+.signal-approach.unknown .signal-approach-drop {
+  filter: grayscale(0.5);
+}
+@media (max-width: 700px) {
+  .signal-approach-gauge {
+    grid-template-columns: 64px 1fr auto;
+  }
+  .signal-approach-rest {
+    white-space: normal;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .signal-approach *,
+  .signal-approach *::before,
+  .signal-approach *::after {
+    animation: none !important;
+  }
+}
 @media (max-width: 700px) {
   .bot-vital {
     flex-wrap: wrap;
