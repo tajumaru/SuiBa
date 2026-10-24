@@ -132,7 +132,7 @@ export function botVital(
   ) {
     core = {
       state: "flatlined",
-      label: "安全停止（鼓動なし）",
+      label: "安全停止（雫なし）",
       beatSeconds: null,
       ecg: "flat",
       evidenceStale: false,
@@ -140,7 +140,7 @@ export function botVital(
   } else if (d.status === "STOPPED") {
     core = {
       state: "sleeping",
-      label: "停止中（鼓動なし）",
+      label: "停止中（雫なし）",
       beatSeconds: null,
       ecg: "flat",
       evidenceStale: false,
@@ -148,7 +148,7 @@ export function botVital(
   } else if (runningConfirmed && s?.connectivity === "RECOVERING") {
     core = {
       state: "weak",
-      label: "復旧確認中（弱い鼓動）",
+      label: "復旧確認中（弱い雫）",
       beatSeconds: 1.8,
       ecg: "slow",
       evidenceStale: false,
@@ -159,7 +159,7 @@ export function botVital(
   ) {
     core = {
       state: "weak",
-      label: "通信が不安定（弱い鼓動）",
+      label: "通信が不安定（弱い雫）",
       beatSeconds: 1.8,
       ecg: "slow",
       evidenceStale: false,
@@ -173,7 +173,7 @@ export function botVital(
   ) {
     core = {
       state: "alive",
-      label: "鼓動中",
+      label: "雫が足を産んでいる",
       beatSeconds: 1,
       ecg: "flowing",
       evidenceStale: false,
