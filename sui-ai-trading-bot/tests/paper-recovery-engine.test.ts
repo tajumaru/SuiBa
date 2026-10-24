@@ -633,18 +633,25 @@ it.each([false, true])(
     Object.defineProperty(t.sui, "status", { get: () => client.status });
     t.sui.health.mockImplementation((force) => client.health(force));
     try {
-      await expect(t.tick()).rejects.toThrow("DATABASE_UNAVAILABLE");
-      expect(t.db.health().healthy).toBe(false);
-      expect(t.db.runtime()).toMatchObject({
-        running: false,
-        error: "DATABASE_UNAVAILABLE",
+      // Production scheduler treats this rejection as fatal and exits; no order
+      // execution can follow in the failed cycle even though SQL can recover.
+      await expect(t.tick()).rejects.toMatchObject({ errcode: 5 });
+      expect(t.db.health()).toMatchObject({
+        healthy: true,
+        requiresRestart: false,
       });
       expect(t.engine.monitor.ordersAllowed()).toBe(false);
       expect(t.market.frames).not.toHaveBeenCalled();
       lock.exec("ROLLBACK");
       held = false;
-      for (let n = 0; n < 3; n++)
-        await expect(t.tick(60000)).rejects.toThrow("DATABASE_UNAVAILABLE");
+      for (let n = 0; n < 3; n++) await t.tick(60000);
+      await expect(client.health(true)).rejects.toThrow(
+        "VALIDATION_RECORD_FAILED",
+      );
+      // A failed stop cannot be persisted while the writer lock is held.
+      // The production worker exits on the rejected tick, rather than resuming.
+      expect(t.db.runtime().running).toBe(!manual);
+      expect(t.engine.monitor.ordersAllowed()).toBe(false);
       expect(t.router.getQuote).not.toHaveBeenCalled();
       expect(t.db.history("paper_orders")).toHaveLength(0);
       expect(t.db.history("paper_trades")).toHaveLength(0);
