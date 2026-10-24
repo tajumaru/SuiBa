@@ -1,0 +1,57 @@
+{
+  "recordedAt": "2026-10-24T03:54:25.153Z",
+  "baseline": "f4c616fb25759488afa10513c2396939807b19db",
+  "runtime": {
+    "version": "v24.22.1",
+    "execPath": "D:\\Source\\SuiBa\\.worktrees\\validation-ux\\sui-ai-trading-bot\\.runtime\\node-v24.22.1-win-x64\\node-v24.22.1-win-x64\\node.exe",
+    "platform": "win32",
+    "arch": "x64"
+  },
+  "nodeExeSha256": "d702daa815eabbff763c7d3808e235cf031cf2ca70211b56847bc72f51e240e5",
+  "pnpm": {
+    "version": "9.12.3",
+    "entry": "C:/Users/yuake/AppData/Roaming/npm/node_modules/pnpm/bin/pnpm.cjs",
+    "node": "D:\\Source\\SuiBa\\.worktrees\\validation-ux\\sui-ai-trading-bot\\.runtime\\node-v24.22.1-win-x64\\node-v24.22.1-win-x64\\node.exe"
+  },
+  "rejectedAmbient": {
+    "version": "v24.14.0",
+    "execPath": "C:/Program Files/nodejs/node.exe",
+    "task": "typecheck",
+    "exitCode": 1,
+    "rejectedBeforeTask": true
+  },
+  "tests": {
+    "files": 40,
+    "passed": 506,
+    "failed": 0,
+    "skipped": 7,
+    "jsonReport": "data/node24-proof-20261024/vitest.json",
+    "jsonReportSha256": "19b19295cb87e7b8b5ae075d9c3567d1f8627aae747d440ce7826fbae1256583"
+  },
+  "build": {
+    "command": "./scripts/project.ps1 pnpm run build",
+    "observedExitCode": 0,
+    "includesTypecheck": true
+  },
+  "docker": {
+    "executed": false,
+    "registryVerifiedTag": "node:24.22.1-bookworm-slim",
+    "indexDigest": "sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205",
+    "linuxAmd64Manifest": "sha256:2dd9a4f758e173b65fee15388f7706af6fb01ef50cf7a2c0538711d67a6981ae",
+    "builtApplicationImageId": null
+  },
+  "sourceHashes": {
+    "package.json": "514e4cc2bb7722ef93d801a44ba7fc9184c7b7a4d5641a623ce6c3d242d205cf",
+    "pnpm-lock.yaml": "018af17282416ae1aa6bcbd9f97e6626f45957bd32ed96a3c0583b8773362816",
+    ".node-version": "7c415154bb9f8e90394317c7109261249d2c4fbd549008ae6d014ee565ee7967",
+    ".nvmrc": "d9f318747a126ce2247661af67852b185def7789492eabfad7bba322be087c33",
+    ".npmrc": "7cd45e51f846d2650c297784dbcf535bf5577f939a21b3c0d0e62e4b38c68401",
+    "docker/Dockerfile": "da2734cec1c440e00d0ee17688de17777856a7ee202cf5b332f540fddc0bae49",
+    "docker/compose.preflight-30m.yaml": "905446e0178375cd7d01da2093ab333026bcc3cb2b15cbe3986acb877b27653f",
+    "scripts/verify-node-version.mjs": "134cda6588547a5e109073e9a43614072d83065012bc3e58c93a87c2da2f2445",
+    "scripts/run-project.mjs": "cef1c515e65ce6d9340e6100b3edd8e874c6bf29b80031549297622c369f9b8e",
+    "scripts/preflight-passive-metrics.mjs": "b28b1a677fad1b057e7cf9b9f67da513ca7e82c51affe477625555a457810e91",
+    "scripts/preflight-metrics-preload.mjs": "e37901e89edb7ed6ec38ade5d870476204e0b25691a60ce59cbd62a22c11e7e8",
+    "../.github/workflows/suiba-offline.yml": "e124b40ba827d0642cb70e69496a54d322100682b4c7d984c3d9abfe2ce7eb3f"
+  }
+}
