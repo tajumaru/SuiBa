@@ -185,6 +185,46 @@ try {
     Assert 'project name: other characters are rejected' (-not (Test-SuiBaComposeProjectName 'suiba.winverify'))
     Assert 'project name: empty is rejected' (-not (Test-SuiBaComposeProjectName ''))
 
+    # ------------------------------------------ detailed perf metrics
+    # Report-side correlation coverage: missing files are stated as
+    # missing with a reason (never zeros), overlap correlation is by
+    # timestamp, BUSY/LOCKED counting uses failure error codes, and
+    # only whitelisted fields survive (a planted non-whitelisted value
+    # must not reach the output).
+    $perfDir = Join-Path $work 'perf-unit'
+    New-Item -ItemType Directory -Path $perfDir -Force | Out-Null
+    $sqliteFixture = Join-Path $perfDir 'sqlite-timing.jsonl'
+    [IO.File]::WriteAllText($sqliteFixture, (@(
+        '{"v":1,"kind":"sqlite","op":"transaction","table":null,"key":null,"context":"saveCandles","cycleId":"u-cycle","rows":60,"startedAt":1000000042500,"endedAt":1000000043300,"durationMs":800.5,"jsonMs":null,"sqlMs":null,"beginMs":1.2,"bodyMs":790.1,"commitMs":9.2,"rollbackMs":null,"ok":true,"errorCode":null,"note":"PLANTED-SECRET-VALUE"}',
+        '{"v":1,"kind":"sqlite","op":"set","table":"bot_runtime_state","key":"k","context":null,"cycleId":null,"rows":1,"startedAt":1000000058000,"endedAt":1000000059500,"durationMs":1500.0,"jsonMs":0.2,"sqlMs":1499.0,"beginMs":null,"bodyMs":null,"commitMs":null,"rollbackMs":null,"ok":true,"errorCode":null}',
+        '{"v":1,"kind":"sqlite","op":"append","table":"validation_events","key":null,"context":null,"cycleId":null,"rows":1,"startedAt":1000000073000,"endedAt":1000000073010,"durationMs":10.0,"jsonMs":0.1,"sqlMs":9.0,"beginMs":null,"bodyMs":null,"commitMs":null,"rollbackMs":null,"ok":false,"errorCode":5}',
+        'broken line'
+    ) -join "`n"), [Text.UTF8Encoding]::new($false))
+    $spikeFixture = Join-Path $perfDir 'event-loop-spikes.jsonl'
+    [IO.File]::WriteAllText($spikeFixture, '{"v":1,"kind":"event-loop-spike","startedAt":1000000042800,"endedAt":1000000044300,"windowMs":1500,"maxDelayMs":1450.5,"p50Ms":21.0,"p95Ms":900.0,"p99Ms":1400.0,"thresholdMs":500,"cycleId":"u-cycle","memory":{"rss":100,"heapTotal":90,"heapUsed":50,"external":1,"arrayBuffers":1}}', [Text.UTF8Encoding]::new($false))
+    $readSqlite = Read-SuiBaPerfJsonl -Path $sqliteFixture
+    Assert 'perf: jsonl parsed with bad line counted' ($readSqlite.Available -and $readSqlite.Rows.Count -eq 3 -and $readSqlite.BadLines -eq 1)
+    $readMissing = Read-SuiBaPerfJsonl -Path (Join-Path $perfDir 'does-not-exist.jsonl')
+    Assert 'perf: missing file is unavailable with a reason' ((-not $readMissing.Available) -and $readMissing.Reason -match '存在しません')
+    $statusRec = Get-SuiBaPerfDetailStatus -Lines @('noise {"event":"PREFLIGHT_PERF_DETAIL_STATUS","eventLoopThresholdMs":500,"spikesDetected":1,"eventLoopCumulative":{"count":1,"p50Ms":1,"p95Ms":2,"p99Ms":3,"maxMs":4},"sqliteWriter":{"file":"sqlite-timing.jsonl","written":3,"dropped":0,"bytesWritten":1,"flushCount":1,"flushFailures":0,"flushTotalMs":5.0,"flushMaxMs":5.0,"truncated":false,"queued":0},"spikeWriter":{"file":"event-loop-spikes.jsonl","written":1,"dropped":0,"bytesWritten":1,"flushCount":1,"flushFailures":0,"flushTotalMs":1.0,"flushMaxMs":1.0,"truncated":false,"queued":0}}')
+    Assert 'perf: status record parsed from log lines' ($null -ne $statusRec -and $statusRec.eventLoopThresholdMs -eq 500)
+    $cycleRows = @([pscustomobject]@{ kind = 'cycle'; began = 1000000042000; at = 1000000045000; durationMs = 3000; action = 'WAIT'; error = $null })
+    $corr = Get-SuiBaPerfCorrelation -Enabled $true -SqlitePath $sqliteFixture -SpikePath $spikeFixture -StatusRecord $statusRec -EvidenceRows $cycleRows
+    Assert 'perf: correlation available' ($corr.available -eq $true)
+    Assert 'perf: slowest sqlite op is the 1500ms set' ($corr.sqlite.topSlowest[0].durationMs -eq 1500.0)
+    Assert 'perf: busy counted from failed errorCode 5' ($corr.sqlite.busyOrLocked -eq 1 -and $corr.sqlite.failures -eq 1)
+    Assert 'perf: spike overlaps the saveCandles transaction' ($corr.spikes.topDelays[0].overlappingSqlite.Count -ge 1 -and $corr.spikes.topDelays[0].overlappingSqlite[0].context -eq 'saveCandles')
+    Assert 'perf: spike is inside the evidence cycle' ($corr.spikes.topDelays[0].cycleRelation -match 'サイクル実行中')
+    Assert 'perf: non-whitelisted values never reach the correlation' (-not (($corr | ConvertTo-Json -Depth 10).Contains('PLANTED-SECRET-VALUE')))
+    $corrMissing = Get-SuiBaPerfCorrelation -Enabled $true -SqlitePath (Join-Path $perfDir 'nope1.jsonl') -SpikePath (Join-Path $perfDir 'nope2.jsonl') -StatusRecord $null -EvidenceRows @()
+    Assert 'perf: both files missing stays unavailable with reason' ((-not $corrMissing.available) -and $corrMissing.reason -match '得られませんでした')
+    $corrOff = Get-SuiBaPerfCorrelation -Enabled $false -SqlitePath $sqliteFixture -SpikePath $spikeFixture -StatusRecord $statusRec -EvidenceRows $cycleRows
+    Assert 'perf: disabled states its reason and is not available' ((-not $corrOff.available) -and $corrOff.reason -match '無効')
+    $perfMd = New-SuiBaPerfAnalysisMarkdown -Perf $corr
+    Assert 'perf: analysis markdown has TOP10 and the no-causation caveat' ($perfMd -match '遅いSQLite処理 TOP10' -and $perfMd -match '因果関係の証明ではありません')
+    $perfMdMissing = New-SuiBaPerfAnalysisMarkdown -Perf $corrMissing
+    Assert 'perf: missing data markdown states the reason instead of zeros' ($perfMdMissing -match '計測データが得られませんでした')
+
     # ------------------------------------------------------------ stub setup
     $env:SUIBA_WINVERIFY_DOCKER = Join-Path (Join-Path $script:TestsDir 'stubs') 'docker-stub.ps1'
     $env:SUIBA_WINVERIFY_GIT = Join-Path (Join-Path $script:TestsDir 'stubs') 'git-stub.ps1'
@@ -214,7 +254,7 @@ try {
         Assert 'happy: events.csv exists' (Test-Path (Join-Path $reports 'events.csv'))
         Assert 'happy: samples.csv exists' (Test-Path (Join-Path $reports 'samples.csv'))
         Assert 'happy: preflight summary produced by stub summarizer' (Test-Path (Join-Path $reports 'preflight-summary.json'))
-        $report = (Get-Content (Join-Path $reports 'report.json') -Raw) | ConvertFrom-Json
+        $report = [IO.File]::ReadAllText((Join-Path $reports 'report.json')) | ConvertFrom-Json -ErrorAction Stop
         Assert 'happy: DeepBook 5/6 with 1 timeout' ($report.summary.Apis.'DeepBook Indexer'.Successes -eq 5 -and $report.summary.Apis.'DeepBook Indexer'.Failures -eq 1 -and $report.summary.Apis.'DeepBook Indexer'.Timeouts -eq 1)
         Assert 'happy: Sui gRPC 2/2' ($report.summary.Apis.'Sui gRPC'.Successes -eq 2)
         Assert 'happy: cycles 3/3' ($report.summary.Cycles.Count -eq 3 -and $report.summary.Cycles.Successes -eq 3)
@@ -230,6 +270,20 @@ try {
         Assert 'happy: secret value appears in no report' (-not $leaked)
         $override = [IO.File]::ReadAllText((Join-Path $happy.RunDir.FullName 'compose.override.yaml'))
         Assert 'happy: in-container deadline armed via override' ($override -match 'winverify-deadline' -and $override -match 'SUIBA_WINVERIFY_MAX_RUNTIME_MS')
+        Assert 'happy: override enables detailed perf metrics' ($override -match 'SUIBA_PERF_DETAIL')
+        Assert 'happy: state records perf detail enabled' ($stateHappy.PerfDetailEnabled -eq $true)
+        Assert 'happy: sqlite-timing.jsonl copied to reports' (Test-Path (Join-Path $reports 'sqlite-timing.jsonl'))
+        Assert 'happy: event-loop-spikes.jsonl copied to reports' (Test-Path (Join-Path $reports 'event-loop-spikes.jsonl'))
+        Assert 'happy: performance-correlation.json exists' (Test-Path (Join-Path $reports 'performance-correlation.json'))
+        Assert 'happy: performance-analysis.md exists' (Test-Path (Join-Path $reports 'performance-analysis.md'))
+        Assert 'happy: report.json carries the performance correlation' ($null -ne $report.performance -and $report.performance.available -eq $true -and $report.performance.sqlite.topSlowest[0].durationMs -eq 1500.0)
+        $reportMd = [IO.File]::ReadAllText((Join-Path $reports 'report.md'))
+        Assert 'happy: report.md has the perf section with TOP10' ($reportMd -match '性能詳細計測' -and $reportMd -match '遅いSQLite処理 TOP10')
+        $perfLeaked = $false
+        foreach ($f in @('performance-correlation.json', 'performance-analysis.md', 'sqlite-timing.jsonl', 'event-loop-spikes.jsonl')) {
+            if ([IO.File]::ReadAllText((Join-Path $reports $f)).Contains($secret)) { $perfLeaked = $true }
+        }
+        Assert 'happy: secret value appears in no perf report' (-not $perfLeaked)
     }
     $calls = [IO.File]::ReadAllText((Join-Path $happy.StubHome 'calls.log'))
     Assert 'happy: no forbidden docker commands' ($calls -notmatch 'prune|volume rm|\bkill\b|\bdown\b')
@@ -269,6 +323,9 @@ try {
     Assert 'watchdog: state WatchdogStopped' ($wdStateAfter.Status -eq 'WatchdogStopped')
     $wdCalls = [IO.File]::ReadAllText((Join-Path $wdStubHome 'calls.log'))
     Assert 'watchdog: stopped the dedicated project' ($wdCalls -match 'stop')
+} catch {
+    $script:Failures++
+    Write-Host "FAIL: self-test aborted: $($_.Exception.Message)"
 } finally {
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item Env:SUIBA_WINVERIFY_DOCKER, Env:SUIBA_WINVERIFY_GIT, Env:SUIBA_WINVERIFY_STUB_HOME, Env:SUIBA_WINVERIFY_STUB_FIXTURES, Env:SUIBA_WINVERIFY_STUB_SCENARIO -ErrorAction SilentlyContinue

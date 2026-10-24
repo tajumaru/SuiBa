@@ -46,11 +46,103 @@ LIVE取引は行いません。
 | `reports/events.csv` | API失敗・タイムアウト・インシデントの一覧 |
 | `reports/samples.csv` | observerサンプル（running、注文数、整合性、市場状態）の時系列 |
 | `reports/preflight-summary.json` | 既存集計ツール（summarize-preflight）の出力。2時間未満では INCONCLUSIVE になり得ます |
+| `reports/sqlite-timing.jsonl` | 性能詳細計測: SQLite処理ごとの実測（後述） |
+| `reports/event-loop-spikes.jsonl` | 性能詳細計測: イベントループ遅延スパイクと計測用同期I/O（後述） |
+| `reports/performance-correlation.json` | 性能詳細計測: 時刻突き合わせ結果（機械可読） |
+| `reports/performance-analysis.md` | 性能詳細計測: TOP10・同時刻の処理・原因候補と未確定項目（人間向け） |
 | `evidence/` | 生の証拠（evidence JSONL、監査JSON、redact済み inspect、コンテナログ） |
 | `state.json` | 実行状態と身元情報（project名、コンテナID、image ID、対象SHA） |
 
 成功率は「観測窓内の実試行」だけを分母にします（DeepBook の cache hit は含みません）。
 30分検証レポートと同じ定義です。
+
+## 性能詳細計測（SQLite・イベントループ）
+
+ボトルネック特定と再現可能な証拠の収集を目的とした計測です。性能改善
+そのものではありません。また、**時刻が一致しただけでは因果関係を断定
+しません**。2026-10-24 の2時間検証の調査でも、イベントループ最大遅延
+（2,545.943 ms）と通信タイムアウトは別々の時刻に発生しており、因果
+関係は未確認のままです。本計測は「同じ時刻に何が起きていたか／いな
+かったか」を判定できる証拠を残すためのものです。
+
+### 有効・無効
+
+- Windows無人検証では**デフォルトで有効**です（compose override 経由で
+  `SUIBA_PERF_DETAIL=1` を Worker に渡します）。通常起動（検証以外）では
+  常に無効で、既存の受動計測（PREFLIGHT_PASSIVE_METRICS）だけが動きます。
+- 無効化: `Invoke-SuiBaVerification.ps1 -SkipPerfDetail`
+  （.bat からの実行では有効のままです）
+- 遅延スパイクの閾値: 環境変数 `SUIBA_WINVERIFY_PERF_THRESHOLD_MS`
+  （未指定時は 500 ms）
+- 計測は追加の RPC を行わず、DB スキーマも変更しません。異常停止・
+  復旧の判定には一切関与しません（計測側の失敗は件数として記録され、
+  検証の安全停止条件は従来どおり証拠保存の失敗等で判断されます）。
+
+### 記録内容
+
+- `sqlite-timing.jsonl`（1行 = 1回の同期処理）: 処理種別
+  （append / set / saveCandles / transaction）、開始・終了時刻、処理
+  時間、処理件数、対象テーブルまたは操作カテゴリ（文脈メソッド名）、
+  成否、エラーコード（SQLite primary code）、関連する市場サイクルID。
+  append / set / saveCandles は JSON変換時間と SQL実行時間を分離し、
+  transaction は BEGIN / 本体 / COMMIT（ROLLBACK）を分離します。
+  SQL文・パラメータ・保存値そのものは記録しません。
+  ※ transaction の合計には内側の処理が含まれます（既存の累積計測とは
+  独立した詳細記録であり、合算はしません）。
+- `event-loop-spikes.jsonl`: 閾値を超えたイベントループ遅延
+  （観測窓、最大遅延、P50/P95/P99、その時点のサイクルID、メモリ
+  使用量）と、計測ファイル自体のフラッシュ書込み（sync-io。計測が
+  観測対象を乱していないかを後から検証するため）。
+- 終了時に Worker が `PREFLIGHT_PERF_DETAIL_STATUS`（累積
+  P50/P95/P99/最大、ライタ統計、スパイク件数）をコンテナログへ出し、
+  ツールが停止後の再コピーで取り込みます。
+
+### 上限と失敗時の挙動
+
+- 書込みはバッファリングし、約2秒ごと／200件ごとにまとめて追記します
+  （高頻度の同期ログ書込みはしません）。
+- 上限: 1ファイルあたり 60,000 件 / 24 MiB。達した分は破棄され、
+  件数と truncated フラグがステータスとレポートに残ります。
+- 書込み失敗は例外にせず、失敗回数として数えます。本体の永続化や
+  検証の停止判定に影響しません。
+- **ファイルが無い・空・読めない場合は正常値として扱いません**。
+  performance-analysis.md と report.md に理由（ファイル不存在、空、
+  ステータス未取得 等）を明記します。
+
+### オーバーヘッド（ON/OFF比較）
+
+`scripts/perf-detail-overhead.mjs`（`npx tsx` で実行、vitest 対象外）で
+同一ワークロード（append/set/transaction 各1,500回＋saveCandles
+20バッチ、synchronous=FULL の実ファイルDB）を OFF/ON 交互に5回ずつ
+実行した中央値比較（2026-10-24、この開発VMで計測）:
+
+- OFF 中央値 140.5 ms / ON 中央値 224.0 ms（4,520 トップレベル操作）
+- 差分は 1操作あたり約 18.5 µs。fsync のばらつきが大きいため絶対値は
+  環境依存ですが、検証のサイクル周期（分単位）に対して無視できる
+  水準です。実フラッシュ時間は各レポートにも記録されます。
+
+### 計測できないもの（未確定として残るもの）
+
+- fsync・ディスク待ちそのものの分離（SQLite 処理時間に含まれます）
+- GC ポーズの分離
+- オブザーバーの証拠書込み `appendFileSync` の直接計測（preload から
+  fs を差し替えられず計測不能。`validation_events` の append として
+  間接観測のみ可能）
+- ホスト側 CPU スケジューリング・他プロセスの影響
+- プロセス起動直後の遅延（monitorEventLoopDelay の初期化直後は
+  過小観測され得ます）
+- WAL チェックポイントの個別計測（自動実行。発生時は transaction /
+  COMMIT 時間として現れます）
+
+### 次回検証で確認するポイント
+
+1. `reports/` に上記4ファイルが揃い、report.md の性能詳細計測
+   セクションに TOP10 が出ていること
+2. `performance.available` が true で、理由欄に欠落の注記が無いこと
+3. スパイクが出た場合、その時刻の SQLite / 同期I/O の重なりと、
+   サイクル内外の別（performance-analysis.md）が読み取れること
+4. truncated や flush 失敗が出ていないこと（出ていれば計測側の上限・
+   失敗として扱い、「速かった」証拠にしないこと）
 
 ## 安全設計
 
@@ -111,11 +203,16 @@ Docker・ネットワーク無しでロジックを検証する自己テスト�
 pwsh -File tools/windows-verification/tests/Invoke-SelfTest.ps1
 ```
 
-内容: Node版数判定・異常条件・ディスク判定（境界値と実測値の回帰）の単体テスト、正常系E2E（レポート生成・成功率集計・
+内容: Node版数判定・異常条件・ディスク判定（境界値と実測値の回帰）の単体テスト、性能詳細計測の相関・欠落時表示・
+ホワイトリスト外情報の非混入の単体テスト、正常系E2E（レポート生成・成功率集計・性能詳細レポート4ファイル・
 secret非混入・禁止コマンド未使用の確認）、安全違反シナリオでの安全停止、
 ウォッチドッグの単体テスト。
 
 ## 注意（未検証事項）
+
+PR #6レビュー後の補足: 窓ごとのスパイク値は過去の累積ピークと分けて記録します。
+計測用フラッシュ時間にはJSON変換・バイト数計算・同期書込みを含めます。
+Windows PowerShell 5.1の自己テストはUTF-8のレポートを明示的に読み込み、途中例外でも失敗終了します。
 
 このツールは Linux 環境で PowerShell 7.4 + スタブにより検証しました。
 Windows 実機（Windows PowerShell 5.1 / PowerShell 7、実 Docker Desktop）での

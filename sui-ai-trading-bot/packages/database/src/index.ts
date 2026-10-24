@@ -34,9 +34,92 @@ const eventTables = [
   "sui_observations",
 ] as const;
 type EventTable = (typeof eventTables)[number];
+/**
+ * Timing metadata for one synchronous persistence operation. Emitted
+ * only when BotDatabase.perfSink is installed (detailed performance
+ * metrics, opt-in via scripts/preflight-detailed-metrics.mjs). Carries
+ * no SQL text, no parameters and no stored values: table/key names are
+ * code constants, and the only value-derived fields are the cycle
+ * audit's own cycleId/phase, which are correlation keys, not secrets.
+ * Phase split: append/set/saveCandles separate JSON.stringify time
+ * (jsonMs) from statement execution time (sqlMs); transaction separates
+ * BEGIN (beginMs), callback body (bodyMs) and COMMIT/ROLLBACK
+ * (commitMs/rollbackMs). A transaction record's duration INCLUDES the
+ * nested append/set/saveCandles records emitted inside it; the views
+ * overlap by design and must never be added together.
+ */
+export interface SqlitePerfRecord {
+  op: "append" | "set" | "saveCandles" | "transaction";
+  table: string | null;
+  key: string | null;
+  rows: number;
+  startedAt: number;
+  endedAt: number;
+  durationMs: number;
+  jsonMs: number | null;
+  sqlMs: number | null;
+  beginMs: number | null;
+  bodyMs: number | null;
+  commitMs: number | null;
+  rollbackMs: number | null;
+  ok: boolean;
+  errorCode: number | null;
+  cycleId: string | null;
+  cyclePhase: string | null;
+}
 export class BotDatabase {
   private db: DatabaseSync;
   private fault: { sqliteCode: number | null } | null = null;
+  /**
+   * Optional detailed-performance sink. Null (the default) disables
+   * instrumentation completely: every method then runs its original
+   * code path. Installed only by the preflight detailed-metrics
+   * preload when the operator explicitly enables it. The sink is
+   * invoked synchronously and any error it throws is swallowed here:
+   * measurement must never break or alter persistence.
+   */
+  static perfSink: ((record: SqlitePerfRecord) => void) | null = null;
+  private perfErrorCode(error: unknown): number | null {
+    const value = (error as { errcode?: unknown } | null)?.errcode;
+    return typeof value === "number" && Number.isInteger(value)
+      ? value & 255
+      : null;
+  }
+  private perfDraft(
+    op: SqlitePerfRecord["op"],
+    startedAt: number,
+  ): SqlitePerfRecord {
+    return {
+      op,
+      table: null,
+      key: null,
+      rows: 0,
+      startedAt,
+      endedAt: startedAt,
+      durationMs: 0,
+      jsonMs: null,
+      sqlMs: null,
+      beginMs: null,
+      bodyMs: null,
+      commitMs: null,
+      rollbackMs: null,
+      ok: true,
+      errorCode: null,
+      cycleId: null,
+      cyclePhase: null,
+    };
+  }
+  private perfFinish(draft: SqlitePerfRecord, t0: number) {
+    draft.endedAt = Date.now();
+    draft.durationMs = performance.now() - t0;
+    const sink = BotDatabase.perfSink;
+    if (!sink) return;
+    try {
+      sink(draft);
+    } catch {
+      // Measurement must never break persistence.
+    }
+  }
   private lastRuntime?: Runtime;
   health() {
     return {
@@ -141,9 +224,33 @@ export class BotDatabase {
     return row ? JSON.parse(row.json) : undefined;
   }
   set(key: string, value: unknown) {
-    this.prepare(
-      "INSERT INTO bot_runtime_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json",
-    ).run(key, JSON.stringify(value));
+    if (!BotDatabase.perfSink) {
+      this.prepare(
+        "INSERT INTO bot_runtime_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json",
+      ).run(key, JSON.stringify(value));
+      return;
+    }
+    const draft = this.perfDraft("set", Date.now()),
+      t0 = performance.now();
+    draft.table = "bot_runtime_state";
+    draft.key = key;
+    draft.rows = 1;
+    try {
+      const j0 = performance.now();
+      const json = JSON.stringify(value);
+      draft.jsonMs = performance.now() - j0;
+      const s0 = performance.now();
+      this.prepare(
+        "INSERT INTO bot_runtime_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json",
+      ).run(key, json);
+      draft.sqlMs = performance.now() - s0;
+    } catch (error) {
+      draft.ok = false;
+      draft.errorCode = this.perfErrorCode(error);
+      this.perfFinish(draft, t0);
+      throw error;
+    }
+    this.perfFinish(draft, t0);
   }
   runtime(): Runtime {
     // Effective in-memory stop; never claim that the stop was durably persisted.
@@ -189,33 +296,106 @@ export class BotDatabase {
     });
   }
   transaction<T>(fn: () => T): T {
-    this.assertHealthy();
-    this.sql(() => this.db.exec("BEGIN IMMEDIATE"));
-    try {
-      const result = fn();
-      this.sql(() => this.db.exec("COMMIT"));
-      return result;
-    } catch (error) {
+    if (!BotDatabase.perfSink) {
+      this.assertHealthy();
+      this.sql(() => this.db.exec("BEGIN IMMEDIATE"));
       try {
-        // Rollback must remain possible after a statement has latched a fault.
-        this.sql(() => this.db.exec("ROLLBACK"));
-      } catch (rollbackError) {
-        throw new AggregateError(
-          [error, rollbackError],
-          "DATABASE_ROLLBACK_FAILED",
-        );
+        const result = fn();
+        this.sql(() => this.db.exec("COMMIT"));
+        return result;
+      } catch (error) {
+        try {
+          // Rollback must remain possible after a statement has latched a fault.
+          this.sql(() => this.db.exec("ROLLBACK"));
+        } catch (rollbackError) {
+          throw new AggregateError(
+            [error, rollbackError],
+            "DATABASE_ROLLBACK_FAILED",
+          );
+        }
+        throw error;
+      } finally {
+        this.transactionVersion++;
       }
+    }
+    // Instrumented path: identical control flow, with BEGIN / body /
+    // COMMIT / ROLLBACK timed as separate segments.
+    const draft = this.perfDraft("transaction", Date.now()),
+      t0 = performance.now();
+    let segment = t0,
+      failed = false;
+    try {
+      this.assertHealthy();
+      this.sql(() => this.db.exec("BEGIN IMMEDIATE"));
+      draft.beginMs = performance.now() - segment;
+      segment = performance.now();
+      try {
+        const result = fn();
+        draft.bodyMs = performance.now() - segment;
+        segment = performance.now();
+        this.sql(() => this.db.exec("COMMIT"));
+        draft.commitMs = performance.now() - segment;
+        return result;
+      } catch (error) {
+        if (draft.bodyMs === null) draft.bodyMs = performance.now() - segment;
+        segment = performance.now();
+        try {
+          // Rollback must remain possible after a statement has latched a fault.
+          this.sql(() => this.db.exec("ROLLBACK"));
+        } catch (rollbackError) {
+          draft.rollbackMs = performance.now() - segment;
+          throw new AggregateError(
+            [error, rollbackError],
+            "DATABASE_ROLLBACK_FAILED",
+          );
+        }
+        draft.rollbackMs = performance.now() - segment;
+        throw error;
+      }
+    } catch (error) {
+      failed = true;
+      draft.errorCode = this.perfErrorCode(error);
       throw error;
     } finally {
       this.transactionVersion++;
+      draft.ok = !failed;
+      this.perfFinish(draft, t0);
     }
   }
   append(table: EventTable, id: string, value: unknown, now = Date.now()) {
-    this.prepare(`INSERT INTO ${table} VALUES(?,?,?)`).run(
-      id,
-      now,
-      JSON.stringify(value),
-    );
+    if (!BotDatabase.perfSink) {
+      this.prepare(`INSERT INTO ${table} VALUES(?,?,?)`).run(
+        id,
+        now,
+        JSON.stringify(value),
+      );
+      return;
+    }
+    const draft = this.perfDraft("append", Date.now()),
+      t0 = performance.now();
+    draft.table = table;
+    draft.rows = 1;
+    if (table === "cycle_audits" && value && typeof value === "object") {
+      // Correlation key only: the cycle id/phase the engine itself
+      // recorded. No other value content is ever copied to a record.
+      const v = value as { cycleId?: unknown; phase?: unknown };
+      if (typeof v.cycleId === "string") draft.cycleId = v.cycleId;
+      if (typeof v.phase === "string") draft.cyclePhase = v.phase;
+    }
+    try {
+      const j0 = performance.now();
+      const json = JSON.stringify(value);
+      draft.jsonMs = performance.now() - j0;
+      const s0 = performance.now();
+      this.prepare(`INSERT INTO ${table} VALUES(?,?,?)`).run(id, now, json);
+      draft.sqlMs = performance.now() - s0;
+    } catch (error) {
+      draft.ok = false;
+      draft.errorCode = this.perfErrorCode(error);
+      this.perfFinish(draft, t0);
+      throw error;
+    }
+    this.perfFinish(draft, t0);
   }
   history<T = Record<string, unknown>>(table: EventTable, limit = 200): T[] {
     return (
@@ -282,13 +462,51 @@ export class BotDatabase {
     }
   }
   saveCandles(c: Candle[]) {
-    this.transaction(() => {
-      const st = this.prepare(
-        "INSERT INTO market_candles VALUES(?,?,?,?) ON CONFLICT DO UPDATE SET json=excluded.json",
-      );
-      for (const x of c)
-        st.run(x.timeframe, x.timestamp, x.source, JSON.stringify(x));
-    });
+    if (!BotDatabase.perfSink) {
+      this.transaction(() => {
+        const st = this.prepare(
+          "INSERT INTO market_candles VALUES(?,?,?,?) ON CONFLICT DO UPDATE SET json=excluded.json",
+        );
+        for (const x of c)
+          st.run(x.timeframe, x.timestamp, x.source, JSON.stringify(x));
+      });
+      return;
+    }
+    // Instrumented path: identical statements and values; the per-row
+    // JSON.stringify time and statement execution time are accumulated
+    // separately so a slow saveCandles can be attributed to conversion
+    // vs SQLite execution (the enclosing transaction is timed as well).
+    const draft = this.perfDraft("saveCandles", Date.now()),
+      t0 = performance.now();
+    draft.table = "market_candles";
+    draft.rows = c.length;
+    let jsonMs = 0,
+      sqlMs = 0;
+    try {
+      this.transaction(() => {
+        const st = this.prepare(
+          "INSERT INTO market_candles VALUES(?,?,?,?) ON CONFLICT DO UPDATE SET json=excluded.json",
+        );
+        for (const x of c) {
+          const j0 = performance.now();
+          const json = JSON.stringify(x);
+          jsonMs += performance.now() - j0;
+          const s0 = performance.now();
+          st.run(x.timeframe, x.timestamp, x.source, json);
+          sqlMs += performance.now() - s0;
+        }
+      });
+    } catch (error) {
+      draft.ok = false;
+      draft.errorCode = this.perfErrorCode(error);
+      draft.jsonMs = jsonMs;
+      draft.sqlMs = sqlMs;
+      this.perfFinish(draft, t0);
+      throw error;
+    }
+    draft.jsonMs = jsonMs;
+    draft.sqlMs = sqlMs;
+    this.perfFinish(draft, t0);
   }
   candles(timeframe = 300): Candle[] {
     return (

@@ -76,6 +76,13 @@ switch -Regex ($joined) {
         $text = $text -replace '10000000', $prefix
         if ($src -like '*:/app/reports/.') {
             [IO.File]::WriteAllText((Join-Path $dest 'preflight-evidence.jsonl'), $text, [Text.UTF8Encoding]::new($false))
+            if ($scenario -eq 'happy') {
+                foreach ($pair in @(@('perf-sqlite-timing.jsonl', 'sqlite-timing.jsonl'), @('perf-event-loop-spikes.jsonl', 'event-loop-spikes.jsonl'))) {
+                    $perfText = [IO.File]::ReadAllText((Join-Path $fixtures $pair[0]))
+                    $perfText = $perfText -replace '10000000', $prefix
+                    [IO.File]::WriteAllText((Join-Path $dest $pair[1]), $perfText, [Text.UTF8Encoding]::new($false))
+                }
+            }
         } else {
             [IO.File]::WriteAllText($dest, $text, [Text.UTF8Encoding]::new($false))
         }
@@ -83,6 +90,10 @@ switch -Regex ($joined) {
     '^logs' {
         $m = '{"event":"PREFLIGHT_PASSIVE_METRICS","scope":"CUMULATIVE","at":1000000000000,"eventLoop":{"count":1000,"p50Ms":10.1,"p95Ms":10.4,"maxMs":20.5},"sqlite":{"append":{"count":10,"p50Ms":50,"p95Ms":70,"maxMs":90,"failures":0},"set":{"count":30,"p50Ms":55,"p95Ms":80,"maxMs":100,"failures":0},"transaction":{"count":5,"p50Ms":60,"p95Ms":120,"maxMs":150,"failures":0}},"sqliteBusy":0,"sqliteLocked":0}'
         Write-Output "2026-10-24T00:00:00.000000000Z $m"
+        if ($scenario -eq 'happy') {
+            $pd = '{"event":"PREFLIGHT_PERF_DETAIL_STATUS","enabled":true,"startedAt":1000000000000,"endedAt":1000000100000,"eventLoopThresholdMs":500,"spikesDetected":1,"sinkErrors":0,"eventLoopCumulative":{"count":6000,"p50Ms":20.1,"p95Ms":100.2,"p99Ms":1400.0,"maxMs":1450.5},"sqliteWriter":{"file":"sqlite-timing.jsonl","written":4,"dropped":0,"bytesWritten":1200,"flushCount":2,"flushFailures":0,"flushTotalMs":55.0,"flushMaxMs":50.0,"truncated":false,"queued":0},"spikeWriter":{"file":"event-loop-spikes.jsonl","written":2,"dropped":0,"bytesWritten":600,"flushCount":1,"flushFailures":0,"flushTotalMs":3.0,"flushMaxMs":3.0,"truncated":false,"queued":0}}'
+            Write-Output "2026-10-24T00:00:01.000000000Z $pd"
+        }
     }
     '^stats' { Write-Output '120MiB / 7.50GiB'; break }
     '^stop' { Set-StubProp 'running' $false; Save-StubState; break }
