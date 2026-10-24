@@ -171,3 +171,69 @@ it("observes actual loopback fetch without adding network calls or altering the 
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
+
+it("tracks HTTP/2 without substituting h1 and releases all socket listeners over repeated connections", async () => {
+  const d = observer();
+  for (let n = 0; n < 200; n++) {
+    const t = d.trace(),
+      socket = Object.assign(new EventEmitter(), { alpnProtocol: "h2" });
+    await d.run(t, async () => {
+      channel("undici:client:beforeConnect").publish({
+        connectParams: {
+          hostname: "sui-fixture.invalid",
+          port: 443,
+          protocol: "https:",
+        },
+      });
+      channel("net.client.socket").publish({ socket });
+      socket.emit("connect");
+      socket.emit("secureConnect");
+    });
+    expect(d.snapshot(t).protocol).toBe("h2");
+    socket.emit("close");
+    expect(socket.eventNames()).toHaveLength(0);
+  }
+  expect(d.snapshot(d.trace()).available).toBe(true);
+  d.close();
+  d.close();
+});
+
+it("bounds retained active sockets and detaches every listener on close", async () => {
+  const d = observer(),
+    sockets: EventEmitter[] = [];
+  for (let n = 0; n < 80; n++) {
+    const socket = new EventEmitter();
+    sockets.push(socket);
+    await d.run(d.trace(), async () => {
+      channel("undici:client:beforeConnect").publish({
+        connectParams: {
+          hostname: "sui-fixture.invalid",
+          port: 443,
+          protocol: "https:",
+        },
+      });
+      channel("net.client.socket").publish({ socket });
+    });
+  }
+  expect(sockets.filter((s) => s.eventNames().length)).toHaveLength(64);
+  expect(d.snapshot(d.trace()).available).toBe(false);
+  d.close();
+  expect(sockets.every((s) => s.eventNames().length === 0)).toBe(true);
+});
+
+it("correlates interleaved events by request identity rather than current ALS scope", async () => {
+  const d = observer(),
+    a = d.trace(),
+    b = d.trace();
+  const reqA = { origin: "https://sui-fixture.invalid" },
+    reqB = { origin: "https://sui-fixture.invalid" };
+  await d.run(a, async () => {
+    channel("undici:request:create").publish({ request: reqA });
+  });
+  await d.run(b, async () => {
+    channel("undici:request:create").publish({ request: reqB });
+    channel("undici:request:headers").publish({ request: reqA });
+  });
+  expect(d.snapshot(a).phase).toBe("BODY");
+  expect(d.snapshot(b).phase).toBe("UNKNOWN");
+});
