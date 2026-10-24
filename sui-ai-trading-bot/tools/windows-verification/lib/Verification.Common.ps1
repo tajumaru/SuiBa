@@ -18,10 +18,24 @@ function Compare-SuiBaNodeVersion {
     return $false
 }
 
+function Test-SuiBaFiniteNumber {
+    # Equivalent of the Double.IsFinite check, spelled with only
+    # the two predicates that exist on BOTH .NET Framework and
+    # .NET Core. The .bat launchers run Windows PowerShell 5.1
+    # (.NET Framework), which has no Double.IsFinite static method:
+    # calling it there kills the caller with a "method not found"
+    # error as soon as evidence aggregation runs. Double.IsNaN and
+    # Double.IsInfinity exist on both runtimes and together give
+    # exactly the same verdict, so every finiteness check in this
+    # tool goes through this function instead.
+    param([double]$Value)
+    return (-not [double]::IsNaN($Value) -and -not [double]::IsInfinity($Value))
+}
+
 function Get-SuiBaStats {
     # Same percentile definition as scripts/summarize-preflight.cjs stats().
     param([double[]]$Values)
-    $a = @($Values | Where-Object { [double]::IsFinite($_) } | Sort-Object)
+    $a = @($Values | Where-Object { Test-SuiBaFiniteNumber $_ } | Sort-Object)
     $result = [pscustomobject]@{ N = $a.Count; P50 = $null; P95 = $null; Max = $null }
     if ($a.Count -gt 0) {
         $result.P50 = $a[[math]::Ceiling($a.Count * 0.5) - 1]

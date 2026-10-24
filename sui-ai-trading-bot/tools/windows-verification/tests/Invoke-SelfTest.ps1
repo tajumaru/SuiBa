@@ -29,6 +29,50 @@ try {
     $st = Get-SuiBaStats -Values @(10, 20, 30, 40)
     Assert 'stats percentile' ($st.N -eq 4 -and $st.P50 -eq 20 -and $st.P95 -eq 40 -and $st.Max -eq 40)
 
+    # ------------------------------------------ PS 5.1 finite number
+    # Field failure: the .bat launchers run Windows PowerShell 5.1
+    # (.NET Framework), which has no [double]::IsFinite. The monitor
+    # survived startup, first sample included, and then died with a
+    # "method not found" error the first time Get-SuiBaSuccessSummary
+    # aggregated evidence in the monitoring loop (this self-test runs
+    # on pwsh 7, where the method exists, so it could not catch that).
+    # Test-SuiBaFiniteNumber must reproduce the exact same verdicts
+    # using only Double.IsNaN / Double.IsInfinity (both runtimes).
+    Assert 'finite: ordinary value is finite' (Test-SuiBaFiniteNumber 1.5)
+    Assert 'finite: zero is finite' (Test-SuiBaFiniteNumber 0)
+    Assert 'finite: negative value is finite' (Test-SuiBaFiniteNumber (-273.15))
+    Assert 'finite: large value is finite' (Test-SuiBaFiniteNumber 1.0e300)
+    Assert 'finite: NaN is not finite' (-not (Test-SuiBaFiniteNumber ([double]::NaN)))
+    Assert 'finite: +Infinity is not finite' (-not (Test-SuiBaFiniteNumber ([double]::PositiveInfinity)))
+    Assert 'finite: -Infinity is not finite' (-not (Test-SuiBaFiniteNumber ([double]::NegativeInfinity)))
+    $stMixed = Get-SuiBaStats -Values @(5, [double]::NaN, 15, [double]::PositiveInfinity, [double]::NegativeInfinity)
+    Assert 'stats: non-finite values are excluded' ($stMixed.N -eq 2 -and $stMixed.P50 -eq 5 -and $stMixed.P95 -eq 15 -and $stMixed.Max -eq 15)
+
+    # ------------------------------------------ PS 5.1 source guard
+    # Regression guard for the same class of bug: APIs and cmdlet
+    # parameters that exist only on .NET Core / PowerShell 7 must
+    # never come back into the product scripts (the .bat launchers
+    # run them under Windows PowerShell 5.1). The scan covers every
+    # product .ps1 - this self-test and the stubs are excluded, they
+    # are not shipped runtime code. Patterns were confirmed absent
+    # by a manual audit of all product scripts; ::IsFinite is the
+    # one that actually shipped and broke on the real machine.
+    $ps51Forbidden = @(
+        '::IsFinite', '::Clamp\s*\(', 'GetRelativePath',
+        '::ToHexString', '-Parallel\b', '-AsHashtable\b', '-SkipLast\b',
+        '-AsByteStream\b', '\bJoin-String\b', '\bTest-Json\b', 'Sort-Object[^\r\n]*-Stable\b')
+    $ps51ProductScripts = @(
+        (Join-Path $script:ToolDir 'Invoke-SuiBaVerification.ps1'),
+        (Join-Path $script:ToolDir 'Stop-SuiBaVerification.ps1'),
+        (Join-Path $script:ToolDir 'Watch-SuiBaVerification.ps1'),
+        (Join-Path (Join-Path $script:ToolDir 'lib') 'Verification.Common.ps1'))
+    Assert 'ps51 guard: patterns are capable of matching' ([regex]::IsMatch('filter { [double]::IsFinite($_) }', $ps51Forbidden[0]))
+    foreach ($productScript in $ps51ProductScripts) {
+        $source = [IO.File]::ReadAllText($productScript)
+        $hits = @($ps51Forbidden | Where-Object { [regex]::IsMatch($source, $_) })
+        Assert "ps51 guard: $(Split-Path -Leaf $productScript) uses no PS7/.NET Core-only APIs" ($hits.Count -eq 0)
+    }
+
     $safeState = [pscustomobject]@{
         RunningTrueSeen = $false; NonzeroOrdersSeen = $false; SessionSeen = $false
         IntegrityFaultSeen = $false; IntegrityBadSeen = $false
