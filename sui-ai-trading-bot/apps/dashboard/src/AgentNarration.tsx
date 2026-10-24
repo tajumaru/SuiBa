@@ -27,6 +27,46 @@ const POSE_LABEL: Record<AgentPose, string> = {
   sleep: "止まっています",
 };
 
+const SPARK_PATH =
+  "M12 1 L14.2 9.8 L23 12 L14.2 14.2 L12 23 L9.8 14.2 L1 12 L9.8 9.8 Z";
+
+/**
+ * Expression overlay drawn on top of the character artwork (the JPGs
+ * themselves are never modified). Each pose gets a small CSS/SVG
+ * effect anchored to coordinates measured on the artwork: a floating
+ * "Zzz" and a breathing snot bubble while asleep, twinkling stars at
+ * the fingertip while pointing, and a musical note plus a star
+ * drifting up after a trade. The normal pose has no effect. Motion is
+ * defined only under prefers-reduced-motion: no-preference in
+ * style.css; under reduce the effects rest as faint still marks.
+ */
+export function AgentPoseFx({ pose }: { pose: AgentPose }) {
+  return (
+    <div className="agent-feed-fx" data-pose={pose} aria-hidden="true">
+      <div className="agent-feed-fx-grp fx-g-sleep">
+        <span className="agent-feed-fx-zzz z1">Z</span>
+        <span className="agent-feed-fx-zzz z2">Z</span>
+        <span className="agent-feed-fx-zzz z3">Z</span>
+        <div className="agent-feed-fx-noseb" />
+      </div>
+      <div className="agent-feed-fx-grp fx-g-point">
+        <svg className="agent-feed-fx-spark s1" viewBox="0 0 24 24">
+          <path d={SPARK_PATH} fill="#ffd166" />
+        </svg>
+        <svg className="agent-feed-fx-spark s2" viewBox="0 0 24 24">
+          <path d={SPARK_PATH} fill="#ffe9a8" />
+        </svg>
+      </div>
+      <div className="agent-feed-fx-grp fx-g-smile">
+        <span className="agent-feed-fx-note n1">♪</span>
+        <svg className="agent-feed-fx-star" viewBox="0 0 24 24">
+          <path d={SPARK_PATH} fill="#ffd166" />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 const timeText = (at: number) =>
   new Intl.DateTimeFormat("ja-JP", {
     timeZone: "Asia/Tokyo",
@@ -48,6 +88,10 @@ const timeText = (at: number) =>
  * The character artwork is AI-generated raster imagery (the stage
  * background matches the images' own #12161f backdrop so they blend
  * in); the pose is a symbol of the recorded state, not a measurement.
+ * On top of the artwork sits a pure CSS/SVG expression overlay
+ * (AgentPoseFx) keyed to the same pose: Zzz and a snot bubble while
+ * asleep, stars at the fingertip while pointing, a note and a star
+ * after a trade; it never carries information of its own.
  */
 export function AgentNarrationFeed({
   data,
@@ -119,6 +163,7 @@ export function AgentNarrationFeed({
       <div className="agent-feed-head">
         <div className={`agent-feed-stage pose-${pose}`} aria-hidden="true">
           <img src={POSE_IMAGE[pose]} alt="" />
+          <AgentPoseFx pose={pose} />
         </div>
         <div className="agent-feed-title">
           <h2>Botの実況</h2>
