@@ -82,8 +82,14 @@ export interface BotVital {
   nextFetchOverdueSeconds: number | null;
 }
 
-const secondsAgo = (at: number | null | undefined, now: number) =>
-  at == null ? null : Math.max(0, Math.floor((now - at) / 1000));
+const validTime = (at: number | null | undefined): at is number =>
+  typeof at === "number" && Number.isFinite(at) && at > 0;
+const age = (at: number | null | undefined, now: number) =>
+  validTime(at) && Number.isFinite(now) && at <= now ? now - at : null;
+const secondsAgo = (at: number | null | undefined, now: number) => {
+  const elapsed = age(at, now);
+  return elapsed == null ? null : Math.floor(elapsed / 1000);
+};
 
 type VitalCore = Pick<
   BotVital,
@@ -97,15 +103,25 @@ export function botVital(
   receivedAt?: number | null,
 ): BotVital {
   const s = d.safety;
-  const heartbeatAgeMs =
-    d.lastHeartbeatAt == null ? null : now - d.lastHeartbeatAt;
-  const receiptAgeMs = receivedAt == null ? null : now - receivedAt;
+  const heartbeatAgeMs = age(d.lastHeartbeatAt, now);
+  const receiptAgeMs = age(receivedAt, now);
+  // Re-evaluate the worker's 180s transport / 360s candle bounds as the
+  // snapshot ages. A new receipt must not renew old market evidence.
+  const transportAgeMs = age(d.timing?.lastTransportSuccessAt, now);
+  const candleAgeMs = age(d.lastMarketClosedAt, now);
+  const marketExpired =
+    transportAgeMs == null ||
+    transportAgeMs > 180_000 ||
+    candleAgeMs == null ||
+    candleAgeMs > 360_000;
   // Expired evidence only downgrades states that claim the bot is live
   // (alive / weak). Sleeping and flatlined make no liveness claim, and a
   // stopped bot's heartbeat record may legitimately age.
   const evidenceExpired =
-    (heartbeatAgeMs != null && heartbeatAgeMs > VITAL_HEARTBEAT_FRESH_MS) ||
-    (receiptAgeMs != null && receiptAgeMs > VITAL_RECEIPT_FRESH_MS);
+    heartbeatAgeMs == null ||
+    heartbeatAgeMs > VITAL_HEARTBEAT_FRESH_MS ||
+    (receivedAt != null &&
+      (receiptAgeMs == null || receiptAgeMs > VITAL_RECEIPT_FRESH_MS));
 
   // "Actually running" must be positively confirmed before any beating
   // state (weak or alive) may be shown. The worker derives status from the
@@ -115,7 +131,7 @@ export function botVital(
   // STOPPED) — it guards against inconsistent or partial data.
   const runningConfirmed =
     (d.status === "RUNNING" || d.status === "DATA_DELAYED") &&
-    s?.botState !== "MANUAL_STOP";
+    ["RUNNING", "HEALTHY", "RECOVERING", "DEGRADED"].includes(s?.botState);
 
   let core: VitalCore;
   if (stale) {
@@ -168,6 +184,8 @@ export function botVital(
     runningConfirmed &&
     d.status === "RUNNING" &&
     s?.ordersAllowed &&
+    s?.connectivity === "HEALTHY" &&
+    !marketExpired &&
     d.timing?.transportRecent &&
     ["FRESH", "UPDATING"].includes(d.timing.dataStatus)
   ) {
@@ -203,17 +221,31 @@ export function botVital(
   // been on screen. A frozen snapshot therefore crosses the fetch deadline
   // on its own: even if fetchElapsedMs never updates again, the display
   // stops claiming 取得中 45 seconds after the fetch started.
-  const sinceReceiptMs = receivedAt == null ? 0 : Math.max(0, now - receivedAt);
+  const sinceReceiptMs = receiptAgeMs ?? 0;
   const fetchElapsedMs =
-    d.timing?.fetchElapsedMs != null
+    typeof d.timing?.fetchElapsedMs === "number" &&
+    Number.isFinite(d.timing.fetchElapsedMs) &&
+    d.timing.fetchElapsedMs >= 0
       ? d.timing.fetchElapsedMs + sinceReceiptMs
-      : d.timing?.fetchStartedAt != null
-        ? Math.max(0, now - d.timing.fetchStartedAt)
-        : null;
+      : age(d.timing?.fetchStartedAt, now);
   const fetchCredible =
     (d.timing?.fetching ?? false) &&
     fetchElapsedMs != null &&
     fetchElapsedMs <= VITAL_FETCH_DEADLINE_MS;
+  if (
+    d.timing?.fetching &&
+    fetchElapsedMs != null &&
+    fetchElapsedMs > VITAL_FETCH_DEADLINE_MS &&
+    (core.state === "alive" || core.state === "weak")
+  ) {
+    core = {
+      state: "unknown",
+      label: "取得期限超過・状態確認中",
+      beatSeconds: null,
+      ecg: "flat",
+      evidenceStale: true,
+    };
+  }
   return {
     ...core,
     fetching:
@@ -225,11 +257,11 @@ export function botVital(
     lastFetchSecondsAgo: secondsAgo(d.timing?.lastFetchSuccessAt, now),
     heartbeatSecondsAgo: secondsAgo(d.lastHeartbeatAt, now),
     nextFetchSecondsIn:
-      nextFetchAt != null && nextFetchAt > now
+      validTime(nextFetchAt) && nextFetchAt > now
         ? Math.ceil((nextFetchAt - now) / 1000)
         : null,
     nextFetchOverdueSeconds:
-      nextFetchAt != null && nextFetchAt <= now
+      validTime(nextFetchAt) && nextFetchAt <= now
         ? Math.floor((now - nextFetchAt) / 1000)
         : null,
   };

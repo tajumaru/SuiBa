@@ -28,6 +28,8 @@ function healthy() {
   // In production the heartbeat record is written by the same worker that
   // generated the snapshot, so it is never far behind `now`.
   d.lastHeartbeatAt = NOW - 5_000;
+  d.timing.lastTransportSuccessAt = NOW - 1_000;
+  d.lastMarketClosedAt = NOW - 300_000;
   return d;
 }
 /** Vital + summary as the hero renders them (summary follows evidenceStale). */
@@ -233,8 +235,8 @@ describe("bot vital signs: fetch elapsed ages on screen", () => {
     const aged = botVital(d, false, NOW + 2_000, NOW);
     expect(aged.fetchElapsedMs).toBe(46_000);
     expect(aged.fetching).toBe(false);
-    // The state itself is unaffected: only the 取得中 claim expires.
-    expect(aged.state).toBe("alive");
+    // An overdue acquisition must not keep claiming normal operation.
+    expect(aged.state).toBe("unknown");
     // Exactly at the deadline it is still credible.
     d.timing.fetchElapsedMs = 43_000;
     expect(botVital(d, false, NOW + 2_000, NOW).fetching).toBe(true);
@@ -257,7 +259,7 @@ describe("bot vital signs: fetch elapsed ages on screen", () => {
     const later = botVital(d, false, NOW + 10_000, NOW + 10_000);
     expect(later.fetchElapsedMs).toBe(50_000);
     expect(later.fetching).toBe(false);
-    expect(later.state).toBe("alive");
+    expect(later.state).toBe("unknown");
   });
 });
 
@@ -359,4 +361,104 @@ describe("bot vital signs: summary consistency across combinations", () => {
     expect(v.ecg).toBe("flowing");
     expect(operationSummary(d).title).toBe("正常稼働");
   });
+});
+
+describe("final review regressions", () => {
+  it.each([null, NaN, Infinity, -1, NOW + 1])(
+    "rejects missing or invalid heartbeat %s",
+    (at) => {
+      const d = healthy();
+      d.lastHeartbeatAt = at as number;
+      const v = botVital(d, false, NOW, NOW);
+      expect(v.state).toBe("unknown");
+      expect(v.beatSeconds).toBeNull();
+      expect(v.heartbeatSecondsAgo).toBeNull();
+    },
+  );
+  it.each([NaN, Infinity, -1, NOW + 1])("rejects invalid receipt %s", (at) => {
+    expect(botVital(healthy(), false, NOW, at).state).toBe("unknown");
+  });
+  it("expires market evidence despite fresh heartbeats and receipts", () => {
+    const d = healthy();
+    d.timing.lastTransportSuccessAt = NOW - 180_001;
+    expect(pair(d).vital.state).toBe("unknown");
+    d.timing.lastTransportSuccessAt = NOW;
+    d.lastMarketClosedAt = NOW - 360_001;
+    expect(pair(d).vital.state).toBe("unknown");
+    d.lastMarketClosedAt = NOW - 360_000;
+    expect(pair(d).vital.state).toBe("alive");
+  });
+  it("does not treat a restart without market evidence as healthy", () => {
+    const d = healthy();
+    d.lastMarketClosedAt = null;
+    d.timing.lastTransportSuccessAt = null;
+    expect(pair(d).vital.state).toBe("unknown");
+  });
+  it("transitions healthy, failure, recovery, stop, restart", () => {
+    const d = healthy();
+    expect(pair(d).vital.state).toBe("alive");
+    d.safety.connectivity = "DEGRADED";
+    expect(pair(d).vital.state).toBe("weak");
+    d.safety.connectivity = "HEALTHY";
+    expect(pair(d).vital.state).toBe("alive");
+    d.status = "STOPPED";
+    d.safety.botState = "MANUAL_STOP";
+    expect(pair(d).vital.state).toBe("sleeping");
+    d.status = "RUNNING";
+    d.safety.botState = "RUNNING";
+    expect(pair(d).vital.state).toBe("alive");
+  });
+  it("API timeout and simultaneous faults never animate normally", () => {
+    const d = healthy();
+    d.timing.fetching = true;
+    d.timing.fetchElapsedMs = 46_000;
+    expect(pair(d, true).vital.beatSeconds).toBeNull();
+    d.safety.botState = "EMERGENCY_STOP";
+    d.safety.connectivity = "DEGRADED";
+    d.lastHeartbeatAt = NaN;
+    expect(pair(d).vital.state).toBe("flatlined");
+  });
+  it("does not renew old evidence on page remount", () => {
+    const d = healthy();
+    expect(botVital(d, false, NOW + 31_000, NOW + 31_000).state).toBe(
+      "unknown",
+    );
+  });
+  it("keeps contradictory manual-stop summaries unknown", () => {
+    const d = healthy();
+    d.safety.botState = "MANUAL_STOP";
+    expect(pair(d).vital.state).toBe("unknown");
+    expect(pair(d).summary.title).toBe("状態不明");
+  });
+  it.each([NaN, Infinity, -1])(
+    "does not display invalid elapsed values %s",
+    (at) => {
+      const d = healthy();
+      d.timing.fetching = true;
+      d.timing.fetchElapsedMs = at;
+      d.timing.fetchStartedAt = null;
+      d.timing.lastAnalysisAt = at;
+      const v = pair(d).vital;
+      expect(v.fetching).toBe(false);
+      expect(v.fetchElapsedMs).toBeNull();
+      expect(v.lastAnalysisSecondsAgo).toBeNull();
+    },
+  );
+});
+
+it("rejects an unrecognized botState even with a running status", () => {
+  const d = healthy();
+  d.safety.botState = "UNRECOGNIZED";
+  d.safety.connectivity = "DEGRADED";
+  expect(pair(d).vital.beatSeconds).toBeNull();
+});
+it("expired fetch blocks healthy summary and recovers on completion", () => {
+  const d = healthy();
+  d.timing.fetching = true;
+  d.timing.fetchElapsedMs = 45_001;
+  expect(pair(d).vital.state).toBe("unknown");
+  expect(pair(d).summary.title).toBe("状態不明");
+  d.timing.fetching = false;
+  d.timing.fetchElapsedMs = null;
+  expect(pair(d).vital.state).toBe("alive");
 });

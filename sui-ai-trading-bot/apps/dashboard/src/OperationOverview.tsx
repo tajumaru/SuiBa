@@ -32,6 +32,15 @@ export function operationSummary(d: OperationsSnapshot, stale = false) {
         ? operationReason(d.stopReason)
         : "Botは停止しています。停止理由の記録とPAPER開始条件を確認してください。",
     };
+  if (
+    !["RUNNING", "DATA_DELAYED"].includes(d.status) ||
+    !["RUNNING", "HEALTHY", "RECOVERING", "DEGRADED"].includes(s?.botState)
+  )
+    return {
+      title: "状態不明",
+      tone: "warning",
+      message: "稼働状態を確認できません。詳細診断を確認してください。",
+    };
   if (s?.connectivity === "RECOVERING")
     return {
       title: "復旧確認中",
@@ -49,6 +58,7 @@ export function operationSummary(d: OperationsSnapshot, stale = false) {
   if (
     d.status === "RUNNING" &&
     s?.ordersAllowed &&
+    s?.connectivity === "HEALTHY" &&
     d.timing?.transportRecent &&
     ["FRESH", "UPDATING"].includes(d.timing.dataStatus)
   )
@@ -79,14 +89,26 @@ export function OperationSummary({
   const [now, setNow] = useState(() => Date.now());
   const [receivedAt, setReceivedAt] = useState(() => Date.now());
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
+    const update = () => setNow(Date.now());
+    const id = setInterval(update, 1000);
+    document.addEventListener("visibilitychange", update);
+    window.addEventListener("pageshow", update);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", update);
+      window.removeEventListener("pageshow", update);
+    };
   }, []);
   useEffect(() => {
-    setReceivedAt(Date.now());
+    const at = Date.now();
+    setReceivedAt(at);
+    setNow(at);
   }, [data]);
   const vital = botVital(data, stale, now, receivedAt);
-  const v = operationSummary(data, stale || vital.evidenceStale);
+  const v = operationSummary(
+    data,
+    stale || vital.evidenceStale || vital.state === "unknown",
+  );
   return (
     <section className={`operation-hero ${v.tone}`} aria-label="運用状態">
       <small className="operation-mode">
