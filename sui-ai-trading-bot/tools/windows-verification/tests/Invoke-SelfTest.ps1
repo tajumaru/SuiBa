@@ -90,6 +90,42 @@ try {
     $diskEmpty = Test-SuiBaDiskStopCondition -DockerDataDetermined $true -Drives @()
     Assert 'disk: no facts aborts (fail-closed)' ($diskEmpty.Abort)
 
+    # -------------------------------------------- docker data location
+    # Path normalization is the regression test for the real machine:
+    # WSL records docker-desktop BasePath values with a Win32 device
+    # prefix, which the old drive-root regex silently rejected.
+    Assert 'path normalization: device-prefixed registry BasePath yields D drive' ((Get-SuiBaDriveRoot '\\?\D:\DockerData\DockerDesktopWSL\distro') -eq 'D:\')
+    Assert 'path normalization: device-prefixed vhdx path yields C drive' ((Get-SuiBaDriveRoot '\\?\C:\Users\suiba\AppData\Local\Docker\wsl\data\ext4.vhdx') -eq 'C:\')
+    Assert 'path normalization: dotted device prefix yields D drive' ((Get-SuiBaDriveRoot '\\.\D:\DockerData\DockerDesktopWSL') -eq 'D:\')
+    Assert 'path normalization: forward-slash Windows path yields D drive' ((Get-SuiBaDriveRoot 'D:/DockerData/DockerDesktopWSL') -eq 'D:\')
+    Assert 'path normalization: POSIX path is not evidence' ($null -eq (Get-SuiBaDriveRoot '/var/lib/docker'))
+    Assert 'path normalization: UNC share path is not evidence' ($null -eq (Get-SuiBaDriveRoot '\\server\share\DockerData'))
+    Assert 'path normalization: extended UNC path is not evidence' ($null -eq (Get-SuiBaDriveRoot '\\?\UNC\server\share\DockerData'))
+    Assert 'path normalization: relative path is not evidence' ($null -eq (Get-SuiBaDriveRoot 'DockerData\DockerDesktopWSL'))
+    Assert 'path normalization: drive-relative path is not evidence' ($null -eq (Get-SuiBaDriveRoot 'D:DockerData\DockerDesktopWSL'))
+
+    # The actual field configuration: DockerRootDir is the Linux VM
+    # path, while the registry identifies D as the data drive. Feeding
+    # that drive into the unchanged stop rules must not abort for the
+    # user's C=83%/37.83 GiB free and D=10.6% used measurements.
+    $fieldRoots = @(Get-SuiBaDockerDataDriveRootsFromEvidence -DockerRootDir '/var/lib/docker' -RegistryBasePaths @('\\?\D:\DockerData\DockerDesktopWSL\distro'))
+    Assert 'docker location regression: prefixed registry BasePath identifies only D' ($fieldRoots.Count -eq 1 -and $fieldRoots[0] -eq 'D:\')
+    $fieldDisk = Test-SuiBaDiskStopCondition -DockerDataDetermined ($null -ne $fieldRoots -and $fieldRoots.Count -gt 0) -Drives @(
+        (New-DiskDrive 'C:\' @('System', 'Temp') 83 37.82),
+        (New-DiskDrive 'D:\' @('DockerData', 'Output') 10.6 832.64))
+    Assert 'docker location regression: field disk measurements pass' (-not $fieldDisk.Abort)
+
+    # Docker Desktop layouts nest the data folder below wslDistros in
+    # some versions; recursive settings traversal must still find it.
+    $nestedSettings = '{"wslDistros":{"docker-desktop-data":{"dataFolder":"D:\\DockerData\\DockerDesktopWSL"}}}' | ConvertFrom-Json
+    $nestedRoots = @(Get-SuiBaDockerDataDriveRootsFromSettings $nestedSettings)
+    Assert 'docker location: nested wslDistros dataFolder identifies D' ($nestedRoots.Count -eq 1 -and $nestedRoots[0] -eq 'D:\')
+    $nestedEvidenceRoots = @(Get-SuiBaDockerDataDriveRootsFromEvidence -SettingsDocuments @($nestedSettings))
+    Assert 'docker location: nested settings evidence identifies D' ($nestedEvidenceRoots.Count -eq 1 -and $nestedEvidenceRoots[0] -eq 'D:\')
+    $diskImageSettings = '{"resources":{"DiskImageLocation":"E:\\DockerImages"}}' | ConvertFrom-Json
+    $diskImageRoots = @(Get-SuiBaDockerDataDriveRootsFromSettings $diskImageSettings)
+    Assert 'docker location: nested DiskImageLocation identifies E' ($diskImageRoots.Count -eq 1 -and $diskImageRoots[0] -eq 'E:\')
+
     # ------------------------------------------------------------ stub setup
     $env:SUIBA_WINVERIFY_DOCKER = Join-Path (Join-Path $script:TestsDir 'stubs') 'docker-stub.ps1'
     $env:SUIBA_WINVERIFY_GIT = Join-Path (Join-Path $script:TestsDir 'stubs') 'git-stub.ps1'

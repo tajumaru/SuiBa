@@ -173,43 +173,41 @@ function Stop-DedicatedProject {
     }
 }
 
-function Get-SuiBaDriveRoot {
-    param([string]$Path)
-    if ([string]::IsNullOrEmpty($Path)) { return $null }
-    $m = [regex]::Match($Path, '^([A-Za-z]:)')
-    if (-not $m.Success) { return $null }
-    return ($m.Groups[1].Value + '\').ToUpper()
-}
-
 function Resolve-DockerDataDriveRoots {
     # Determines which host drive(s) hold Docker's data (the Docker
-    # Desktop disk image). Returns an array of drive roots (e.g.
-    # @('D:\')), or $null when the location cannot be determined; the
-    # caller treats $null as a stop condition (fail-closed) and never
-    # guesses a drive.
+    # Desktop disk image). Returns an array of drive roots, or $null
+    # when the location cannot be determined; the caller treats $null
+    # as a stop condition (fail-closed) and never guesses a drive.
     #
     # Evidence sources (every drive found by any source is judged;
     # sources never veto each other):
-    #  (a) `docker info` DockerRootDir - only when it is a Windows
-    #      path. Under Docker Desktop / WSL2 it is '/var/lib/docker',
-    #      a path inside the Linux VM that names no host drive, so a
-    #      POSIX result is deliberately NOT used as evidence.
+    #  (a) `docker info` DockerRootDir - only when it is an absolute
+    #      Windows path. Under Docker Desktop / WSL2 it is
+    #      '/var/lib/docker', a path inside the Linux VM that names no
+    #      host drive, so a POSIX result is deliberately NOT used as
+    #      evidence.
     #  (b) WSL2 distro registry (HKCU:\Software\Microsoft\Windows\
     #      CurrentVersion\Lxss): the BasePath of the docker-desktop
     #      distro(s) is the folder holding the vhdx, and it follows
-    #      Docker Desktop's "disk image location" setting.
+    #      Docker Desktop's "disk image location" setting. WSL commonly
+    #      records this value with a Win32 device prefix; the shared
+    #      normalization in lib/Verification.Common.ps1 removes that
+    #      prefix before extracting the drive.
     #  (c) Docker Desktop settings (settings-store.json /
-    #      settings.json): an absolute Windows 'dataFolder' value,
-    #      when present.
-    #  (d) The default vhdx locations under %LOCALAPPDATA%\Docker\wsl.
-    $found = @{}
+    #      settings.json): parsed documents are searched recursively
+    #      for string values of data-folder-like settings, including
+    #      layouts nested under wslDistros entries.
+    #  (d) The default vhdx locations under %LOCALAPPDATA%\Docker\wsl,
+    #      including a shallow recursive search (depth 3) for *.vhdx.
+    # Raw evidence is aggregated by the pure
+    # Get-SuiBaDockerDataDriveRootsFromEvidence function so the exact
+    # normalization and settings traversal used here are unit-testable.
+    $dockerRootDir = ''
     try {
         $r = Invoke-Docker @('info', '--format', '{{.DockerRootDir}}')
-        if ($r.ExitCode -eq 0 -and $r.Output.Count -gt 0) {
-            $root = Get-SuiBaDriveRoot ($r.Output[0].Trim())
-            if ($root) { $found[$root] = $true }
-        }
+        if ($r.ExitCode -eq 0 -and $r.Output.Count -gt 0) { $dockerRootDir = "$($r.Output[0])" }
     } catch { }
+    $registryBasePaths = @()
     try {
         $lxss = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss'
         if (Test-Path $lxss) {
@@ -217,41 +215,36 @@ function Resolve-DockerDataDriveRoots {
                 try {
                     $props = Get-ItemProperty $key.PSPath -ErrorAction Stop
                     if ("$($props.DistributionName)" -like 'docker-desktop*') {
-                        $root = Get-SuiBaDriveRoot (("$($props.BasePath)") -replace '/', '\')
-                        if ($root) { $found[$root] = $true }
+                        $registryBasePaths += "$($props.BasePath)"
                     }
                 } catch { }
             }
         }
     } catch { }
+    $settingsDocuments = @()
     try {
         foreach ($settingsName in @('settings-store.json', 'settings.json')) {
             $settingsPath = Join-Path (Join-Path $env:APPDATA 'Docker') $settingsName
             if (-not (Test-Path $settingsPath)) { continue }
             try {
-                $settings = [IO.File]::ReadAllText($settingsPath) | ConvertFrom-Json -ErrorAction Stop
-                foreach ($prop in $settings.PSObject.Properties) {
-                    if ($prop.Name -ieq 'dataFolder') {
-                        $root = Get-SuiBaDriveRoot ("$($prop.Value)")
-                        if ($root) { $found[$root] = $true }
-                    }
-                }
+                $settingsDocuments += ([IO.File]::ReadAllText($settingsPath) | ConvertFrom-Json -ErrorAction Stop)
             } catch { }
         }
     } catch { }
+    $vhdxPaths = @()
     try {
         $wslDir = Join-Path $env:LOCALAPPDATA 'Docker\wsl'
         foreach ($candidate in @('data\docker_data.vhdx', 'disk\docker_data.vhdx', 'main\ext4.vhdx', 'data\ext4.vhdx')) {
             $vhdx = Join-Path $wslDir $candidate
-            if (Test-Path $vhdx) {
-                $root = Get-SuiBaDriveRoot $vhdx
-                if ($root) { $found[$root] = $true }
-                break
+            if (Test-Path $vhdx) { $vhdxPaths += $vhdx }
+        }
+        if (Test-Path $wslDir) {
+            foreach ($vhdxFile in @(Get-ChildItem -LiteralPath $wslDir -Filter '*.vhdx' -File -Recurse -Depth 3 -ErrorAction Stop)) {
+                $vhdxPaths += $vhdxFile.FullName
             }
         }
     } catch { }
-    if ($found.Count -eq 0) { return $null }
-    return @($found.Keys | Sort-Object)
+    return Get-SuiBaDockerDataDriveRootsFromEvidence -DockerRootDir $dockerRootDir -RegistryBasePaths $registryBasePaths -SettingsDocuments $settingsDocuments -ExistingVhdxPaths $vhdxPaths
 }
 
 function Get-DiskFacts {

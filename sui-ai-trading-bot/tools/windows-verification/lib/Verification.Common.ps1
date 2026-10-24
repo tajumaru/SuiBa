@@ -186,6 +186,133 @@ function Test-SuiBaAbortCondition {
     return $null
 }
 
+function ConvertTo-SuiBaNormalizedWindowsPath {
+    # Canonical form used before extracting a drive root from evidence
+    # supplied by Docker, the WSL registry, Docker Desktop settings or
+    # the file system. Only an absolute drive-letter path is evidence:
+    #   * forward slashes become backslashes,
+    #   * Win32 device prefixes (\\?\, \\.\) and the NT prefix (\??\)
+    #     are removed,
+    #   * UNC paths (including \\?\UNC\...) have no drive letter and
+    #     therefore return $null,
+    #   * POSIX paths, relative paths and drive-relative paths such as
+    #     "D:folder" also return $null.
+    # The return value is the normalized full path, or $null when the
+    # input cannot identify a host drive.
+    param([AllowEmptyString()][string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
+    $normalized = $Path.Trim()
+    if ($normalized.Length -ge 2 -and $normalized.StartsWith('"') -and $normalized.EndsWith('"')) {
+        $normalized = $normalized.Substring(1, $normalized.Length - 2).Trim()
+    }
+    $normalized = $normalized.Replace('/', '\')
+    foreach ($uncPrefix in @('\\?\UNC\', '\\.\UNC\', '\??\UNC\')) {
+        if ($normalized.StartsWith($uncPrefix, [StringComparison]::OrdinalIgnoreCase)) { return $null }
+    }
+    foreach ($devicePrefix in @('\\?\', '\\.\', '\??\')) {
+        if ($normalized.StartsWith($devicePrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            $normalized = $normalized.Substring($devicePrefix.Length)
+            break
+        }
+    }
+    if ($normalized.StartsWith('\\')) { return $null }
+    if ($normalized -notmatch '^[A-Za-z]:\\') { return $null }
+    $drive = $normalized.Substring(0, 1).ToUpperInvariant()
+    $rest = '\' + $normalized.Substring(2).TrimStart('\')
+    return ($drive + ':' + $rest)
+}
+
+function Get-SuiBaDriveRoot {
+    # Returns the canonical root (for example 'D:\') of an absolute
+    # Windows path after ConvertTo-SuiBaNormalizedWindowsPath, or $null
+    # when the path does not identify a host drive.
+    param([AllowEmptyString()][string]$Path)
+    $normalized = ConvertTo-SuiBaNormalizedWindowsPath $Path
+    if ($null -eq $normalized) { return $null }
+    return $normalized.Substring(0, 3).ToUpperInvariant()
+}
+
+function Test-SuiBaDockerDataSettingName {
+    # Docker Desktop has used several names for the disk-image/data
+    # location across versions. Accept the known stems case-insensitively
+    # anywhere in a setting name; the caller separately requires the
+    # value to be a string containing an absolute Windows path.
+    param([AllowEmptyString()][string]$Name)
+    if ([string]::IsNullOrWhiteSpace($Name)) { return $false }
+    return ($Name -match '(?i)(datafolder|diskimage|wsldisk|wsldatafolder|dockerdatafolder)')
+}
+
+function Get-SuiBaDockerDataDriveRootsFromSettings {
+    # Recursively walks a parsed Docker Desktop settings document
+    # (objects, arrays and dictionaries, up to depth 32) and returns the
+    # sorted drive roots named by string values of data-folder-like
+    # settings. Keeping this independent of file I/O makes nested
+    # layouts such as wslDistros.<distro>.dataFolder unit-testable.
+    param([AllowNull()]$Settings)
+    $roots = @{}
+    $pending = New-Object System.Collections.ArrayList
+    [void]$pending.Add([pscustomobject]@{ Node = $Settings; Key = ''; Depth = 0 })
+    $visited = 0
+    while ($pending.Count -gt 0 -and $visited -lt 10000) {
+        $last = $pending.Count - 1
+        $item = $pending[$last]
+        $pending.RemoveAt($last)
+        $visited++
+        if ($null -eq $item.Node -or $item.Depth -gt 32) { continue }
+        $node = $item.Node
+        if ($node -is [string]) {
+            if (Test-SuiBaDockerDataSettingName ([string]$item.Key)) {
+                $root = Get-SuiBaDriveRoot ([string]$node)
+                if ($root) { $roots[$root] = $true }
+            }
+            continue
+        }
+        if ($node -is [System.Collections.IDictionary]) {
+            foreach ($key in @($node.Keys)) {
+                [void]$pending.Add([pscustomobject]@{ Node = $node[$key]; Key = [string]$key; Depth = ($item.Depth + 1) })
+            }
+            continue
+        }
+        if ($node -is [System.Collections.IEnumerable]) {
+            foreach ($child in $node) {
+                [void]$pending.Add([pscustomobject]@{ Node = $child; Key = [string]$item.Key; Depth = ($item.Depth + 1) })
+            }
+            continue
+        }
+        foreach ($prop in @($node.PSObject.Properties)) {
+            [void]$pending.Add([pscustomobject]@{ Node = $prop.Value; Key = [string]$prop.Name; Depth = ($item.Depth + 1) })
+        }
+    }
+    return @($roots.Keys | Sort-Object)
+}
+
+function Get-SuiBaDockerDataDriveRootsFromEvidence {
+    # Aggregates raw Docker-data evidence without performing I/O. The
+    # caller supplies the DockerRootDir string, matching WSL registry
+    # BasePath values, parsed settings documents and existing vhdx
+    # paths; every value passes through the same path normalization.
+    # Returns sorted drive roots, or $null when no source identifies a
+    # host drive (the caller must fail closed in that case).
+    param(
+        [AllowEmptyString()][string]$DockerRootDir = '',
+        [AllowEmptyCollection()][string[]]$RegistryBasePaths = @(),
+        [AllowEmptyCollection()][object[]]$SettingsDocuments = @(),
+        [AllowEmptyCollection()][string[]]$ExistingVhdxPaths = @()
+    )
+    $roots = @{}
+    foreach ($candidate in @($DockerRootDir) + @($RegistryBasePaths) + @($ExistingVhdxPaths)) {
+        $root = Get-SuiBaDriveRoot ([string]$candidate)
+        if ($root) { $roots[$root] = $true }
+    }
+    foreach ($document in $SettingsDocuments) {
+        foreach ($root in @(Get-SuiBaDockerDataDriveRootsFromSettings $document)) {
+            $roots[$root] = $true
+        }
+    }
+    if ($roots.Count -eq 0) { return $null }
+    return @($roots.Keys | Sort-Object)
+}
+
 function Test-SuiBaDiskStopCondition {
     # Disk stop conditions, reconciled with the 30-minute validation
     # agreement (docs/PREFLIGHT_30M_20261024.md section 14: "D80% /
