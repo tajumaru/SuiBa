@@ -113,123 +113,38 @@ export function ValidationControl({
       className={`validation-control ${v.tone}`}
       aria-label="運用検証コントロール"
     >
-      <h2>運用検証コントロール</h2>
-      <p className="control-state" role="status">
-        <span aria-hidden="true">
-          {v.tone === "healthy"
-            ? "✓"
-            : v.tone === "danger"
-              ? "!"
-              : v.tone === "warning"
-                ? "△"
-                : "○"}
-        </span>{" "}
-        {stale || uncertain
-          ? "状態不明"
-          : v.abnormal
-            ? "異常・緊急停止"
-            : data.safety?.connectivity === "DEGRADED"
-              ? "通信不安定（注文禁止）"
-              : data.safety?.connectivity === "RECOVERING"
-                ? "復旧確認中（注文禁止）"
-                : data.safety?.resumePending
-                  ? "通信復旧待ち（注文禁止）"
-                  : v.running
-                    ? data.status === "DATA_DELAYED"
-                      ? "稼働中・データ遅延"
-                      : "PAPER Bot稼働中"
-                    : v.tone === "ready"
-                      ? "開始可能"
-                      : "PAPER Bot停止中"}
-      </p>
-      <p>
-        事前判定：
-        <strong>
-          {readiness.status === "GO"
-            ? "GO（開始準備の承認済み・24時間検証の合格ではありません）"
-            : "NO-GO（開始禁止）"}
-        </strong>
-      </p>
-      <h3>次に必要な操作</h3>
-      <p>
-        {stale || uncertain
-          ? "最新の状態を取得してください。開始と解除は状態確認までできません。"
-          : v.abnormal
-            ? "停止理由と詳細診断を確認し、原因の解消後にRESETで解除してください。その後のPAPER開始は別の手動操作です。"
-            : data.safety?.resumePending
-              ? "通信と安全条件の復旧確認を待ってください。停止すると自動再開を取り消します。"
-              : view?.complete || v.running
-                ? view?.action
-                : readiness.status !== "GO"
-                  ? `開始禁止：${readiness.reason} 画面内で承認を変更することはできません。`
-                  : !data.validation
-                    ? "検証専用環境と接続状態を確認してください。"
-                    : data.validation.session
-                      ? "ステップ2でPAPER Botを手動で開始してください。開始できない場合はボタン直下の理由を確認してください。"
-                      : "ステップ1で24時間計測を開始し、開始日時を確認してからステップ2へ進んでください。"}
-      </p>
-      {!!data.validation?.session && !v.running && !view?.complete && (
-        <p className="control-warning" role="alert">
-          計測だけが進行しています。PAPER
-          Botは停止中のため、PAPER稼働時間は増えません。
-        </p>
-      )}
-      {(data.stopReason || data.safety?.lastStopReason) && (
-        <p>
-          最新の停止理由：
-          {reason(data.stopReason ?? data.safety.lastStopReason!)}
-        </p>
-      )}
-      <ol className="control-steps">
-        <li>
-          <h3>24時間の記録を開始</h3>
-          {data.validation?.session ? (
-            <p>✓ 計測は開始済みです。開始日時と進捗は下に表示しています。</p>
-          ) : (
-            <>
-              <p>
-                Botを停止し、Profit
-                Guardと事前承認を確認します。この操作ではBotは動きません。
-              </p>
-              <button
-                className="control-primary"
-                disabled={blocked || !!v.measureReasons.length}
-                aria-describedby="measure-reasons"
-                onClick={() => setPending("measure")}
-              >
-                {labels.measure}
-              </button>
-              <div id="measure-reasons">
-                {v.measureReasons.map((r) => (
-                  <p key={r}>{r}</p>
-                ))}
-                {!api && <p>操作APIに接続できません。</p>}
-              </div>
-            </>
-          )}
-        </li>
-        <li>
-          <h3>PAPER Botを手動で開始</h3>
-          <p>
-            開始日時を確認後、保存済み設定で仮想売買を開始します。LIVE取引は行いません。
+      <div className="control-header">
+        <div>
+          <h2>運用検証コントロール</h2>
+          <p className="control-state" role="status">
+            <span aria-hidden="true">
+              {v.tone === "healthy"
+                ? "✓"
+                : v.tone === "danger"
+                  ? "!"
+                  : v.tone === "warning"
+                    ? "△"
+                    : "○"}
+            </span>{" "}
+            {stale || uncertain
+              ? "状態不明"
+              : v.abnormal
+                ? "異常・緊急停止"
+                : data.safety?.connectivity === "DEGRADED"
+                  ? "通信不安定（注文禁止）"
+                  : data.safety?.connectivity === "RECOVERING"
+                    ? "復旧確認中（注文禁止）"
+                    : data.safety?.resumePending
+                      ? "通信復旧待ち（注文禁止）"
+                      : v.running
+                        ? data.status === "DATA_DELAYED"
+                          ? "稼働中・データ遅延"
+                          : "PAPER Bot稼働中"
+                        : v.tone === "ready"
+                          ? "開始可能"
+                          : "PAPER Bot停止中"}
           </p>
-          <button
-            className="control-primary"
-            disabled={blocked || !!v.startReasons.length}
-            aria-describedby="start-reasons"
-            onClick={() => setPending("start")}
-          >
-            {labels.start}
-          </button>
-          <div id="start-reasons">
-            {v.startReasons.map((r) => (
-              <p key={r}>{r}</p>
-            ))}
-            {!api && <p>操作APIに接続できません。</p>}
-          </div>
-        </li>
-      </ol>
-      <div className="control-secondary">
+        </div>
         {(v.running || data.safety?.resumePending || stale || uncertain) && (
           <button
             className="control-stop"
@@ -239,27 +154,144 @@ export function ValidationControl({
             {labels.stop}
           </button>
         )}
+      </div>
+      <div className="control-result">
+        <strong>24時間検証：{view?.sessionLabel ?? "利用不可"}</strong>
+        {view?.complete && (
+          <p>評価は終了しました。検証結果と未達条件は下で確認できます。</p>
+        )}
+      </div>
+      {!v.running && (
+        <>
+          <h3>次に必要な操作</h3>
+          <p>
+            {stale || uncertain
+              ? "最新の状態を取得してください。開始と解除は状態確認までできません。"
+              : v.abnormal
+                ? "停止理由と詳細診断を確認し、原因の解消後にRESETで解除してください。その後のPAPER開始は別の手動操作です。"
+                : data.safety?.resumePending
+                  ? "通信と安全条件の復旧確認を待ってください。停止すると自動再開を取り消します。"
+                  : view?.complete || v.running
+                    ? view?.action
+                    : readiness.status !== "GO"
+                      ? `開始禁止：${readiness.reason} 画面内で承認を変更することはできません。`
+                      : !data.validation
+                        ? "検証専用環境と接続状態を確認してください。"
+                        : data.validation.session
+                          ? "ステップ2でPAPER Botを手動で開始してください。開始できない場合はボタン直下の理由を確認してください。"
+                          : "ステップ1で24時間計測を開始し、開始日時を確認してからステップ2へ進んでください。"}
+          </p>
+          {!!data.validation?.session && !v.running && !view?.complete && (
+            <p className="control-warning" role="alert">
+              計測だけが進行しています。PAPER
+              Botは停止中のため、PAPER稼働時間は増えません。
+            </p>
+          )}
+        </>
+      )}
+      {data.stopReason && (
+        <p>
+          現在の停止理由：
+          {reason(data.stopReason ?? data.safety.lastStopReason!)}
+        </p>
+      )}
+      {!v.running && (
+        <ol className="control-steps">
+          <li>
+            <h3>24時間の記録を開始</h3>
+            {data.validation?.session ? (
+              <p>✓ 計測は開始済みです。開始日時と進捗は下に表示しています。</p>
+            ) : (
+              <>
+                <p>
+                  Botを停止し、Profit
+                  Guardと事前承認を確認します。この操作ではBotは動きません。
+                </p>
+                <button
+                  className="control-primary"
+                  disabled={blocked || !!v.measureReasons.length}
+                  aria-describedby="measure-reasons"
+                  onClick={() => setPending("measure")}
+                >
+                  {labels.measure}
+                </button>
+                <div id="measure-reasons">
+                  {v.measureReasons.map((r) => (
+                    <p key={r}>{r}</p>
+                  ))}
+                  {!api && <p>操作APIに接続できません。</p>}
+                </div>
+              </>
+            )}
+          </li>
+          <li>
+            <h3>PAPER Botを手動で開始</h3>
+            <p>
+              開始日時を確認後、保存済み設定で仮想売買を開始します。LIVE取引は行いません。
+            </p>
+            <button
+              className="control-primary"
+              disabled={blocked || !!v.startReasons.length}
+              aria-describedby="start-reasons"
+              onClick={() => setPending("start")}
+            >
+              {labels.start}
+            </button>
+            <div id="start-reasons">
+              {v.startReasons.map((r) => (
+                <p key={r}>{r}</p>
+              ))}
+              {!api && <p>操作APIに接続できません。</p>}
+            </div>
+          </li>
+        </ol>
+      )}
+      {v.abnormal && (
+        <div className="control-secondary">
+          {v.abnormal && (
+            <>
+              <button
+                disabled={blocked || stale || uncertain}
+                onClick={() => setPending("reset")}
+              >
+                {labels.reset}
+              </button>
+              <p>
+                通信・データ鮮度・台帳と停止原因を確認後に解除してください。記録や残高を削除せず、Botは再開しません。
+              </p>
+            </>
+          )}
+        </div>
+      )}
+      <details className="control-details">
+        <summary>開始条件・操作の説明・過去の停止理由</summary>
+        <p>
+          事前判定：
+          <strong>
+            {readiness.status === "GO"
+              ? "GO（開始準備の承認済み・24時間検証の合格ではありません）"
+              : "NO-GO（開始禁止）"}
+          </strong>
+        </p>
+        {v.running && readiness.status !== "GO" && (
+          <p>
+            この判定は新たに開始する際の承認条件です。現在の稼働状態とは別です。
+          </p>
+        )}
+        {!data.stopReason && data.safety?.lastStopReason && (
+          <p>
+            過去の停止理由（現在は解除済み）：
+            {reason(data.safety.lastStopReason)}
+          </p>
+        )}
         <p>
           手動停止すると自動復旧による再開も取り消します。24時間計測は終了しません。
         </p>
-        {v.abnormal && (
-          <>
-            <button
-              disabled={blocked || stale || uncertain}
-              onClick={() => setPending("reset")}
-            >
-              {labels.reset}
-            </button>
-            <p>
-              通信・データ鮮度・台帳と停止原因を確認後に解除してください。記録や残高を削除せず、Botは再開しません。
-            </p>
-          </>
-        )}
-      </div>
-      <p>
-        検証：{view?.sessionLabel ?? "利用不可"}
-        。24時間経過で評価が完了します。計測終了ボタンはありません。Botは自動停止しません。完了と正常稼働完走・合格は別です。
-      </p>
+        <p>
+          検証：{view?.sessionLabel ?? "利用不可"}
+          。24時間経過で評価が完了します。計測終了ボタンはありません。Botは自動停止しません。完了と正常稼働完走・合格は別です。
+        </p>
+      </details>
       {pending && (
         <dialog
           ref={confirmation}

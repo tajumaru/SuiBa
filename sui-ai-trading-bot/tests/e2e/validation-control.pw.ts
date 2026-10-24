@@ -52,6 +52,9 @@ for (const go of [false, true]) {
     if (!go) {
       await expect(measure).toBeDisabled();
       await expect(start).toBeDisabled();
+      await control
+        .getByText("開始条件・操作の説明・過去の停止理由", { exact: true })
+        .click();
       await expect(control).toContainText("NO-GO（開始禁止）");
       expect(writes).toEqual([]);
     } else {
@@ -70,6 +73,18 @@ for (const go of [false, true]) {
       await start.click();
       await control.getByRole("button", { name: "確認して実行" }).click();
       await expect(control.locator(".control-state")).toContainText("稼働中");
+      await expect(start).toHaveCount(0);
+      await expect(control.locator(".control-steps")).toHaveCount(0);
+      await expect(control.locator(".control-details")).not.toHaveAttribute(
+        "open",
+        "",
+      );
+      expect((await control.boundingBox())!.height).toBeLessThan(
+        info.project.name === "width-375" ? 450 : 400,
+      );
+      await control.screenshot({
+        path: `test-results/control-${info.project.name}.png`,
+      });
       await control
         .getByRole("button", { name: "PAPER Botを停止", exact: true })
         .click();

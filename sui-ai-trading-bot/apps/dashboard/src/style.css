@@ -1488,3 +1488,71 @@ footer {
     animation: none !important;
   }
 }
+
+/* Keep current operation separate from the recorded validation outcome. */
+.validation-control {
+  padding: 20px 24px;
+}
+.control-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.control-header h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+.validation-control .control-state {
+  margin: 0;
+  font-size: 22px;
+}
+.validation-control p {
+  margin: 8px 0;
+}
+.control-result {
+  margin-top: 16px;
+  padding: 12px 0;
+  border-top: 1px solid #647180;
+}
+.control-result p {
+  color: #bac4cc;
+}
+.control-details {
+  margin-top: 8px;
+}
+.control-details summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #bac4cc;
+}
+.control-details summary::before {
+  content: "▸";
+}
+.control-details[open] summary::before {
+  content: "▾";
+}
+.control-details summary:focus-visible {
+  outline: 3px solid #a8d4ff;
+  outline-offset: 3px;
+}
+.validation-control .control-steps {
+  margin: 12px 0;
+  gap: 16px;
+}
+.validation-control .control-steps h3 {
+  margin: 4px 0;
+  font-size: 18px;
+}
+@media (max-width: 767px) {
+  .validation-control {
+    padding: 16px;
+  }
+  .control-header > div {
+    min-width: 0;
+  }
+}
