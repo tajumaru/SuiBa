@@ -13,6 +13,7 @@ export const labels: Record<string, string> = {
   STRATEGY_EXIT: "戦略による売却",
   RISK_REDUCTION: "リスク削減",
   EMERGENCY_EXIT: "緊急売却",
+  Live: "実況",
   Overview: "ダッシュボード",
   Chart: "チャート",
   Strategy: "戦略",

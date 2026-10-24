@@ -16,11 +16,25 @@ import {
 } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
 import { SettingsPage, SettingsChanges } from "./SettingsPage.tsx";
-import { OperationsPanel } from "./OperationsPanel.tsx";
+import {
+  OperationsFeedView,
+  useOperationsFeed,
+} from "./OperationsPanel.tsx";
+import { AgentNarrationFeed } from "./AgentNarration.tsx";
 import { MarketDataPanel } from "./MarketDataPanel.tsx";
 import { PriceChart } from "./PriceChart.tsx";
 import { BacktestComparison } from "./BacktestComparison.tsx";
 type State = ReturnType<BotEngine["snapshot"]>;
+const NAV_TABS = [
+  "Live",
+  "Overview",
+  "Chart",
+  "Strategy",
+  "Trading History",
+  "Settings",
+  "運用検証",
+  "バックテスト比較",
+];
 const money = (v: number | null | undefined) => number(v, 4);
 const precise = (v: string | null | undefined) =>
   v == null ? "不明" : `${number(v)} USDC`;
@@ -397,12 +411,16 @@ function App() {
     [data, setData] = useState<State | null>(null),
     [error, setError] = useState(""),
     [channelError, setChannelError] = useState<string | null>(null),
-    [tab, setTab] = useState("Overview"),
+    [tab, setTab] = useState("Live"),
     [timeframe, setTimeframe] = useState<300 | 900 | 3600>(300);
+  // A tab value that no longer exists (for example a restored
+  // "Chart" from before the chart tab was merged into the
+  // dashboard) falls back to the dashboard instead of breaking.
+  const activeTab = NAV_TABS.includes(tab) ? tab : "Overview";
   const feedRef = useRef<DashboardClient | null>(null),
     serialRef = useRef(0),
-    viewRef = useRef({ tab, timeframe });
-  viewRef.current = { tab, timeframe };
+    viewRef = useRef({ tab: activeTab, timeframe });
+  viewRef.current = { tab: activeTab, timeframe };
   const api = useCallback(
     async (path: string, body?: unknown) => {
       const r = await fetch("/api/" + path, {
@@ -426,6 +444,10 @@ function App() {
     },
     [token],
   );
+  // One shared operations feed for the narration tab and the
+  // operations tab (see useOperationsFeed). It polls only while
+  // logged in.
+  const operations = useOperationsFeed(api, token !== "");
   async function refresh() {
     const feed = feedRef.current;
     if (!feed) return;
@@ -526,17 +548,9 @@ function App() {
       ) : (
         <>
           <nav>
-            {[
-              "Overview",
-              "Chart",
-              "Strategy",
-              "Trading History",
-              "Settings",
-              "運用検証",
-              "バックテスト比較",
-            ].map((t) => (
+            {NAV_TABS.map((t) => (
               <button
-                className={tab === t ? "active" : ""}
+                className={activeTab === t ? "active" : ""}
                 key={t}
                 onClick={() => {
                   setTab(t);
@@ -571,7 +585,11 @@ function App() {
                 <div className="title">
                   <div>
                     <small>仮想売買の検証</small>
-                    <h1>{label(tab) === "未確認" ? tab : label(tab)}</h1>
+                    <h1>
+                      {label(activeTab) === "未確認"
+                        ? activeTab
+                        : label(activeTab)}
+                    </h1>
                   </div>
                   <span className="status">
                     {error
@@ -591,13 +609,15 @@ function App() {
                         : "未接続"}
                   </span>
                 </div>
-                {data.marketData && tab !== "運用検証" && (
-                  <MarketDataPanel
-                    value={data.marketData}
-                    unavailable={!!error}
-                  />
-                )}
-                {tab !== "運用検証" && (
+                {data.marketData &&
+                  activeTab !== "運用検証" &&
+                  activeTab !== "Live" && (
+                    <MarketDataPanel
+                      value={data.marketData}
+                      unavailable={!!error}
+                    />
+                  )}
+                {activeTab !== "運用検証" && activeTab !== "Live" && (
                   <ConnectivityPanel safety={data.safety} stale={!!error} />
                 )}
                 {data.runtime.emergency && (
@@ -620,7 +640,29 @@ function App() {
                     次の操作：{nextStep(data.runtime.error)}
                   </p>
                 )}
-                {tab === "Overview" && (
+                {/* The narration tab stays mounted (only hidden) so
+                    the feed history accumulated from snapshot diffs
+                    survives tab switches. */}
+                <div className="narration-tab" hidden={activeTab !== "Live"}>
+                  {operations.error && (
+                    <p className="error" role="alert">
+                      {operations.error}
+                    </p>
+                  )}
+                  {operations.data ? (
+                    <AgentNarrationFeed
+                      data={operations.data}
+                      stale={!!operations.error}
+                    />
+                  ) : (
+                    <p role="status">
+                      {operations.error
+                        ? "状態不明：Botの記録を取得できません。"
+                        : "状態を確認中：Botの記録を取得しています…"}
+                    </p>
+                  )}
+                </div>
+                {activeTab === "Overview" && (
                   <>
                     <div className="cards">
                       {[
@@ -682,7 +724,7 @@ function App() {
                     </div>
                   </>
                 )}
-                {tab === "Chart" && (
+                {activeTab === "Chart" && (
                   <label>
                     時間足
                     <select
@@ -697,7 +739,7 @@ function App() {
                     </select>
                   </label>
                 )}
-                {tab === "Chart" && (
+                {activeTab === "Chart" && (
                   <section>
                     <h3>価格・RSI・MACD（共通時間軸）</h3>
                     <Chart
@@ -710,7 +752,7 @@ function App() {
                     />
                   </section>
                 )}
-                {tab === "Strategy" && (
+                {activeTab === "Strategy" && (
                   <>
                     <ProfitGuardPanel data={data} />
                     <section>
@@ -734,7 +776,7 @@ function App() {
                     </section>
                   </>
                 )}
-                {tab === "Trading History" && (
+                {activeTab === "Trading History" && (
                   <>
                     <section>
                       <h3>仮想約定履歴</h3>
@@ -797,11 +839,13 @@ function App() {
                     </section>
                   </>
                 )}
-                {tab === "バックテスト比較" && (
+                {activeTab === "バックテスト比較" && (
                   <BacktestComparison token={token} settings={data.settings} />
                 )}
-                {tab === "運用検証" && <OperationsPanel api={api} />}
-                {tab === "Settings" && (
+                {activeTab === "運用検証" && (
+                  <OperationsFeedView api={api} feed={operations} />
+                )}
+                {activeTab === "Settings" && (
                   <SettingsPage
                     data={data}
                     api={api}
