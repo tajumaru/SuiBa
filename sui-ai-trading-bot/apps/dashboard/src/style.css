@@ -1355,8 +1355,13 @@ footer {
     animation: none !important;
   }
 }
+/* The narration tab container stays mounted and is only hidden, so
+   the feed history survives tab switches. */
+.narration-tab[hidden] {
+  display: none;
+}
 /* Agent narration feed: a character stage plus a chat-style timeline
-   under the operations hero. The stage background is the character
+   on its own tab. The stage background is the character
    artwork's own #12161f backdrop so the raster poses blend in; the
    gentle bob is the only motion, and the sleeping pose never moves. */
 .agent-feed {

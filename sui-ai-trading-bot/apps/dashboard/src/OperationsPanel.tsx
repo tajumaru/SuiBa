@@ -1,12 +1,11 @@
 import { ValidationControl } from "./ValidationControl.tsx";
 import type { ControlState } from "./validationControl.ts";
 import { OperationSummary, OperationGuidance } from "./OperationOverview.tsx";
-import { AgentNarrationFeed } from "./AgentNarration.tsx";
 import { MarketDataPanel } from "./MarketDataPanel.tsx";
 import { ConnectivityPanel } from "./ConnectivityPanel.tsx";
 import { operationReason } from "./operationLabels.ts";
 import { DeepBookValidation } from "./DeepBookValidation.tsx";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { SettingsApi } from "./settingsPresets.ts";
 import {
   dateTime,
@@ -57,7 +56,6 @@ export function OperationsView({
         />
       )}
       <OperationSummary data={data} stale={stale} />
-      <AgentNarrationFeed data={data} stale={stale} />
       {!!data.validation?.candles?.unresolved && (
         <p className="warning" role="alert">
           ローソク足に未解決の品質問題があります。詳細診断で確認してください。
@@ -651,15 +649,29 @@ export function OperationsView({
     </div>
   );
 }
-export function OperationsPanel({ api }: { api: SettingsApi }) {
+export type OperationsFeed = ReturnType<typeof useOperationsFeed>;
+
+/**
+ * The single operations polling loop (operations snapshot + control
+ * state every 10 seconds). It lives at the App level so the agent
+ * narration tab and the operations tab share one feed: the narration
+ * history, which is accumulated from snapshot diffs, keeps advancing
+ * no matter which tab is on screen, and the endpoints are never
+ * polled twice.
+ */
+export function useOperationsFeed(api: SettingsApi, active: boolean) {
   const [data, setData] = useState<OperationsSnapshot | null>(null),
     [state, setState] = useState<ControlState | undefined>(),
-    [refreshAction, setRefreshAction] = useState<
-      (() => Promise<void>) | undefined
-    >(),
     [error, setError] = useState("");
+  const refreshRef = useRef<() => Promise<void>>(async () => {});
   useEffect(() => {
-    let active = true;
+    if (!active) {
+      setData(null);
+      setState(undefined);
+      setError("");
+      return;
+    }
+    let alive = true;
     let generation = 0;
     const refresh = async () => {
       const request = ++generation;
@@ -674,14 +686,14 @@ export function OperationsPanel({ api }: { api: SettingsApi }) {
             );
           }),
         ]);
-        if (active && request === generation) {
+        if (alive && request === generation) {
           const [operations, current] = response;
           setData(operations as OperationsSnapshot);
           setState(current as ControlState);
           setError("");
         }
       } catch (e) {
-        if (active && request === generation)
+        if (alive && request === generation)
           setError(
             "運用検証データを取得できません。表示済みの情報は最新とは限りません。接続状態を確認してください。コード：" +
               errorCode(e),
@@ -691,14 +703,26 @@ export function OperationsPanel({ api }: { api: SettingsApi }) {
         clearTimeout(timeout);
       }
     };
-    setRefreshAction(() => refresh);
+    refreshRef.current = refresh;
     void refresh().catch(() => {});
     const timer = setInterval(() => void refresh().catch(() => {}), 10000);
     return () => {
-      active = false;
+      alive = false;
       clearInterval(timer);
     };
-  }, [api]);
+  }, [api, active]);
+  const refresh = useCallback(() => refreshRef.current(), []);
+  return { data, state, error, refresh };
+}
+
+export function OperationsFeedView({
+  api,
+  feed,
+}: {
+  api: SettingsApi;
+  feed: OperationsFeed;
+}) {
+  const { data, state, error, refresh } = feed;
   return (
     <>
       {error && (
@@ -712,7 +736,7 @@ export function OperationsPanel({ api }: { api: SettingsApi }) {
           state={state}
           stale={!!error}
           api={api}
-          refresh={refreshAction}
+          refresh={refresh}
         />
       ) : (
         <p role="status">
@@ -723,4 +747,9 @@ export function OperationsPanel({ api }: { api: SettingsApi }) {
       )}
     </>
   );
+}
+
+export function OperationsPanel({ api }: { api: SettingsApi }) {
+  const feed = useOperationsFeed(api, true);
+  return <OperationsFeedView api={api} feed={feed} />;
 }

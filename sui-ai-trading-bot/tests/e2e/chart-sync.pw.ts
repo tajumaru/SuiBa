@@ -43,7 +43,9 @@ test("2016 bars share periods gestures and selection without repeated history tr
   await page.goto("/");
   await page.getByLabel("管理トークン").fill("test-only-no-real-token");
   await page.getByRole("button", { name: "接続", exact: true }).click();
-  await page.getByRole("button", { name: "チャート", exact: true }).click();
+  await page
+    .getByRole("button", { name: "ダッシュボード", exact: true })
+    .click();
   const chart = page.getByLabel("SUI/USDC価格表示", { exact: true });
   await expect(
     chart.getByRole("group", { name: "表示期間の選択" }),
