@@ -4,12 +4,12 @@
 
 ## 原因と影響（基準SHAの行番号）
 
-- `packages/database/src/index.ts:61`でDatabaseSyncを生成、64行でWAL/FULL/busy_timeout=5000を設定。`append`(157行)・`set`(109行)・transaction(144行)も同じ同期接続を使用。
+- `packages/database/src/index.ts:61`でDatabaseSyncを生成、64行でWAL/FULL/busy_timeout=5000を設定。`append`(157行)・`set`(104行)・transaction(144行)も同じ同期接続を使用。
 - `apps/worker/src/index.ts:62`のSui onObservation→db.appendは通信Promise継続処理内で同期実行。Sui clientのemitで保存完了後にのみ正常判定へ進む。
 - WALはreader/writerの並行性を改善するが、writerは1接続。別接続のBEGIN IMMEDIATEに競合するとSQLite C API内部で最大約5秒待つ。実測約5.4秒はbusy timeoutにスケジューラ/OS等の上振れを含み、厳密な上限ではない。
 - 同じNodeメインスレッドのtimer、AbortSignal.timeout、45秒取得deadline、15秒watchdog、API制御、SIGTERMハンドラ、Promise継続も実行されない。ソケット/OSの処理自体とJSハンドラ実行は区別する。
-- `apps/worker/src/operations.ts:136`のordersAllowed、375行付近の取得deadline、安全停止(546行)はDB状態を参照/保存する。DB lockがあると停止保存自身も待つ/失敗する。
-- `apps/worker/src/engine.ts:613`以降のcatchもdecision→stop→runtime→riskのDB書込に依存。最初の保存失敗で後続停止保存へ届かない可能性。注文/約定/会計のBEGIN IMMEDIATE/COMMIT、cycle_audits、heartbeat、API設定保存にも同じ待ちがある。
+- `apps/worker/src/operations.ts:119`のordersAllowed、378行の取得deadline、安全停止(546行)はDB状態を参照/保存する。DB lockがあると停止保存自身も待つ/失敗する。
+- `apps/worker/src/engine.ts:614`以降のcatchもdecision→stop→runtime→riskのDB書込に依存。最初の保存失敗で後続停止保存へ届かない可能性。注文/約定/会計のBEGIN IMMEDIATE/COMMIT、cycle_audits、heartbeat、API設定保存にも同じ待ちがある。
 - 同期ブロック中にJSで新規注文が並行実行されるわけではない。ただし制御応答が遅れ、停止失敗後に永続runtime.running=trueが残る場合を放置してはならない。
 
 ## 比較
