@@ -231,15 +231,16 @@ try {
     $env:SUIBA_WINVERIFY_STUB_FIXTURES = Join-Path $script:TestsDir 'fixtures'
 
     function Invoke-MainRun {
-        param([string]$Scenario, [string]$Tag)
+        param([string]$Scenario, [string]$Tag, [string[]]$ExtraArgs = @())
         $stubHome = Join-Path $work "stub-$Tag"
         New-Item -ItemType Directory -Path $stubHome -Force | Out-Null
         $env:SUIBA_WINVERIFY_STUB_HOME = $stubHome
         $env:SUIBA_WINVERIFY_STUB_SCENARIO = $Scenario
         $runsRoot = Join-Path $work "runs-$Tag"
-        $out = @(& $pwshExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $script:ToolDir 'Invoke-SuiBaVerification.ps1') -DurationMinutes 0.3 -PollSeconds 2 -NonInteractive -SkipWatchdog -RunRoot $runsRoot 2>&1 | ForEach-Object { "$_" })
+        $out = @(& $pwshExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $script:ToolDir 'Invoke-SuiBaVerification.ps1') -DurationMinutes 0.3 -PollSeconds 2 -NonInteractive -SkipWatchdog -RunRoot $runsRoot @ExtraArgs 2>&1 | ForEach-Object { "$_" })
         $code = $LASTEXITCODE
-        $runDir = Get-ChildItem $runsRoot -Directory | Where-Object { $_.Name -like 'winverify-*' } | Select-Object -First 1
+        $runDir = $null
+        if (Test-Path -LiteralPath $runsRoot) { $runDir = Get-ChildItem $runsRoot -Directory | Where-Object { $_.Name -like 'winverify-*' } | Select-Object -First 1 }
         return [pscustomobject]@{ ExitCode = $code; Output = $out; RunDir = $runDir; StubHome = $stubHome }
     }
 
@@ -251,6 +252,7 @@ try {
         $reports = Join-Path $happy.RunDir.FullName 'reports'
         Assert 'happy: report.md exists' (Test-Path (Join-Path $reports 'report.md'))
         Assert 'happy: report.json exists' (Test-Path (Join-Path $reports 'report.json'))
+        Assert 'happy: next-actions.md exists' (Test-Path (Join-Path $reports 'next-actions.md'))
         Assert 'happy: events.csv exists' (Test-Path (Join-Path $reports 'events.csv'))
         Assert 'happy: samples.csv exists' (Test-Path (Join-Path $reports 'samples.csv'))
         Assert 'happy: preflight summary produced by stub summarizer' (Test-Path (Join-Path $reports 'preflight-summary.json'))
@@ -259,6 +261,7 @@ try {
         Assert 'happy: Sui gRPC 2/2' ($report.summary.Apis.'Sui gRPC'.Successes -eq 2)
         Assert 'happy: cycles 3/3' ($report.summary.Cycles.Count -eq 3 -and $report.summary.Cycles.Successes -eq 3)
         Assert 'happy: reason COMPLETED' ($report.reason -eq 'COMPLETED')
+        Assert 'happy: COMPLETED is INCONCLUSIVE quality, not PASS' ($report.overallVerdict -eq 'INCONCLUSIVE')
         $stateHappy = (Get-Content (Join-Path $happy.RunDir.FullName 'state.json') -Raw) | ConvertFrom-Json
         Assert 'happy: state Completed' ($stateHappy.Status -eq 'Completed')
         Assert 'happy: state project name is compose-valid lowercase' (Test-SuiBaComposeProjectName $stateHappy.Project)
@@ -298,6 +301,61 @@ try {
         $stateSafety = (Get-Content (Join-Path $safety.RunDir.FullName 'state.json') -Raw) | ConvertFrom-Json
         Assert 'safety: state Failed' ($stateSafety.Status -eq 'Failed')
     }
+
+    $off = Invoke-MainRun -Scenario 'happy' -Tag 'detail-off' -ExtraArgs @('-SkipPerfDetail')
+    Assert 'detail OFF run completed' ($off.ExitCode -eq 0)
+    $offReport = [IO.File]::ReadAllText((Join-Path $off.RunDir.FullName 'reports/report.json')) | ConvertFrom-Json -ErrorAction Stop
+    Assert 'detail OFF remains explicitly disabled' (-not $offReport.performance.enabled)
+    $stopped = Invoke-MainRun -Scenario 'userstop' -Tag 'userstop'
+    Assert 'user stop exits normally' ($stopped.ExitCode -eq 0)
+    $stopReport = [IO.File]::ReadAllText((Join-Path $stopped.RunDir.FullName 'reports/report.json')) | ConvertFrom-Json -ErrorAction Stop
+    Assert 'user stop produces incomplete report' ($stopReport.reason -eq 'USER_STOPPED' -and $stopReport.overallVerdict -eq 'INCONCLUSIVE')
+    Assert 'user stop produces next actions' (Test-Path -LiteralPath (Join-Path $stopped.RunDir.FullName 'reports/next-actions.md'))
+    foreach ($scenario in @('docker-down', 'node-mismatch')) {
+        $bad = Invoke-MainRun -Scenario $scenario -Tag $scenario
+        Assert "$scenario aborts" ($bad.ExitCode -ne 0)
+        $badCalls = [IO.File]::ReadAllText((Join-Path $bad.StubHome 'calls.log'))
+        Assert "$scenario never starts a container" ($badCalls -notmatch 'compose .* up')
+    }
+
+    # Actual interactive entry: Enter chooses 30m, fixture asks for user stop.
+    # No 30m real communication and no Explorer window are launched.
+    $menuHome = Join-Path $work 'stub-menu'
+    New-Item -ItemType Directory -Path $menuHome -Force | Out-Null
+    $env:SUIBA_WINVERIFY_STUB_HOME = $menuHome
+    $env:SUIBA_WINVERIFY_STUB_SCENARIO = 'userstop'
+    $menuRoot = Join-Path $work 'runs-menu'
+    $inputFile = Join-Path $work 'menu-input.txt'
+    [IO.File]::WriteAllText($inputFile, "`r`n")
+    $menuScript = Join-Path $script:ToolDir 'Invoke-SuiBaVerification.ps1'
+    $menuOut = Join-Path $work 'menu-out.log'
+    $menuErr = Join-Path $work 'menu-err.log'
+    $menuProc = New-Object Diagnostics.Process
+    $menuProc.StartInfo = New-Object Diagnostics.ProcessStartInfo
+    $menuProc.StartInfo.FileName = $pwshExe
+    $menuProc.StartInfo.Arguments = (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $menuScript + '"'), '-PollSeconds', '2', '-SkipWatchdog', '-NoOpenResults', '-RunRoot', ('"' + $menuRoot + '"')) -join ' ')
+    $menuProc.StartInfo.UseShellExecute = $false
+    $menuProc.StartInfo.CreateNoWindow = $true
+    $menuProc.StartInfo.RedirectStandardInput = $true
+    $menuProc.StartInfo.RedirectStandardOutput = $true
+    $menuProc.StartInfo.RedirectStandardError = $true
+    [void]$menuProc.Start()
+    $outputTask = $menuProc.StandardOutput.ReadToEndAsync()
+    $errorTask = $menuProc.StandardError.ReadToEndAsync()
+    $menuProc.StandardInput.WriteLine('')
+    $menuProc.StandardInput.Close()
+    if (-not $menuProc.WaitForExit(60000)) {
+        $menuProc.Kill()
+        throw 'Menu smoke test exceeded 60s (stub-only child terminated)'
+    }
+    Assert '30m menu starts and stops with fixture' ($menuProc.ExitCode -eq 0)
+    [IO.File]::WriteAllText($menuOut, $outputTask.Result)
+    [IO.File]::WriteAllText($menuErr, $errorTask.Result)
+    $menuProc.Dispose()
+    $menuRun = Get-ChildItem -LiteralPath $menuRoot -Directory | Where-Object { $_.Name -like 'winverify-*' } | Select-Object -First 1
+    $menuReport = [IO.File]::ReadAllText((Join-Path $menuRun.FullName 'reports/report.json')) | ConvertFrom-Json -ErrorAction Stop
+    Assert 'Enter really selects 30m in monitor' ($menuReport.durationMinutesPlanned -eq 30)
+    Assert 'menu smoke never enables trading' (-not $menuReport.facts.RunningTrueSeen -and -not $menuReport.facts.NonzeroOrdersSeen)
 
     # ------------------------------------------------------------ watchdog
     $wdRun = Join-Path $work 'wd-run'

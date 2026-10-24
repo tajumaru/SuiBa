@@ -3,6 +3,7 @@ setlocal
 title SuiBa Windows Verification
 rem SuiBa unattended Docker verification (PAPER, stopped-state observation).
 rem No AI agent is contacted while this runs.
+rem Default menu choice is 30 minutes; completed is not a quality PASS.
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Invoke-SuiBaVerification.ps1" %*
 set "RC=%ERRORLEVEL%"
 echo.

@@ -511,6 +511,7 @@ function Get-SuiBaPerfCorrelation {
         available = $false
         reason = $null
         statusRecordPresent = ($null -ne $StatusRecord)
+        sinkErrors = $null
         thresholdMs = $null
         eventLoopCumulative = $null
         writers = $null
@@ -532,6 +533,7 @@ function Get-SuiBaPerfCorrelation {
         return $perf
     }
     if ($null -ne $StatusRecord) {
+        $perf.sinkErrors = $StatusRecord.sinkErrors
         $perf.thresholdMs = $StatusRecord.eventLoopThresholdMs
         $perf.eventLoopCumulative = $StatusRecord.eventLoopCumulative
         $perf.writers = [ordered]@{ sqlite = $StatusRecord.sqliteWriter; spikes = $StatusRecord.spikeWriter }
