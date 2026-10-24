@@ -76,7 +76,7 @@ it("records sqlite operations with JSON/SQL phases separated and no value conten
   cleanup.push(() => detailed.stop());
   db.append("risk_events", "e1", { note: "TOP-SECRET-VALUE", n: 1 });
   db.set("some_key", { token: "TOP-SECRET-VALUE" });
-  const byOp = (op: string) => sqlite.records.find((r) => r.op === op);
+  const byOp = (op: string) => sqlite.records.find((r: any) => r.op === op);
   const append = byOp("append"),
     set = byOp("set");
   expect(append.table).toBe("risk_events");
@@ -106,8 +106,8 @@ it("separates transaction BEGIN/body/COMMIT and stamps composite context", () =>
   });
   cleanup.push(() => detailed.stop());
   db.saveCandles([candle(1000), candle(2000), candle(3000)]);
-  const save = sqlite.records.find((r) => r.op === "saveCandles"),
-    tx = sqlite.records.find((r) => r.op === "transaction");
+  const save = sqlite.records.find((r: any) => r.op === "saveCandles"),
+    tx = sqlite.records.find((r: any) => r.op === "transaction");
   expect(save.rows).toBe(3);
   expect(save.table).toBe("market_candles");
   expect(save.context).toBe("saveCandles");
@@ -120,7 +120,7 @@ it("separates transaction BEGIN/body/COMMIT and stamps composite context", () =>
   expect(tx.rollbackMs).toBeNull();
   // The plain transaction path reports the same split without a context.
   db.transaction(() => db.set("k", 1));
-  const plain = sqlite.records.filter((r) => r.op === "transaction").at(-1);
+  const plain = sqlite.records.filter((r: any) => r.op === "transaction").at(-1);
   expect(plain.context).toBeNull();
 });
 
@@ -140,12 +140,12 @@ it("correlates operations with the in-flight market cycle id", () => {
   db.append("cycle_audits", "c2", { cycleId: "cycle-42", phase: "END" });
   db.set("after", 3);
   const setRec = (key: string) =>
-    sqlite.records.find((r) => r.op === "set" && r.key === key);
+    sqlite.records.find((r: any) => r.op === "set" && r.key === key);
   expect(setRec("before").cycleId).toBeNull();
   expect(setRec("during").cycleId).toBe("cycle-42");
   expect(setRec("after").cycleId).toBeNull();
   const start = sqlite.records.find(
-    (r) => r.op === "append" && r.cyclePhase === "START",
+    (r: any) => r.op === "append" && r.cyclePhase === "START",
   );
   expect(start.cycleId).toBe("cycle-42");
 });
@@ -165,7 +165,7 @@ it("records failures with the outcome unchanged (fault latching and rollback)", 
       throw Error("boom");
     }),
   ).toThrow("boom");
-  const tx = sqlite.records.find((r) => r.op === "transaction");
+  const tx = sqlite.records.find((r: any) => r.op === "transaction");
   expect(tx.ok).toBe(false);
   expect(tx.rollbackMs).not.toBeNull();
   expect(tx.commitMs).toBeNull();
@@ -175,7 +175,7 @@ it("records failures with the outcome unchanged (fault latching and rollback)", 
   circular.self = circular;
   expect(() => db.append("risk_events", "bad", circular)).toThrow();
   const bad = sqlite.records.find(
-    (r) => r.op === "append" && r.ok === false,
+    (r: any) => r.op === "append" && r.ok === false,
   );
   expect(bad).toBeDefined();
   expect(bad.sqlMs).toBeNull();
@@ -207,7 +207,7 @@ it("detects event-loop spikes above the configured threshold with memory", async
     // Deliberate synchronous block: the event loop cannot tick.
   }
   await sleep(500);
-  const spike = spikes.records.find((r) => r.kind === "event-loop-spike");
+  const spike = spikes.records.find((r: any) => r.kind === "event-loop-spike");
   expect(spike).toBeDefined();
   expect(spike.maxDelayMs).toBeGreaterThanOrEqual(30);
   expect(spike.thresholdMs).toBe(30);
@@ -243,7 +243,7 @@ it("records the metrics writer's own flushes as sync-io evidence", () => {
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line));
-  const io = spikeLines.find((r) => r.kind === "sync-io");
+  const io = spikeLines.find((r: any) => r.kind === "sync-io");
   expect(io).toBeDefined();
   expect(io.source).toBe("perf-detail-writer");
   expect(io.file).toBe("sqlite-timing.jsonl");
