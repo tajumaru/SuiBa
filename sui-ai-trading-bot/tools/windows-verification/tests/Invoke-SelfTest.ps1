@@ -254,7 +254,7 @@ try {
         Assert 'happy: events.csv exists' (Test-Path (Join-Path $reports 'events.csv'))
         Assert 'happy: samples.csv exists' (Test-Path (Join-Path $reports 'samples.csv'))
         Assert 'happy: preflight summary produced by stub summarizer' (Test-Path (Join-Path $reports 'preflight-summary.json'))
-        $report = (Get-Content (Join-Path $reports 'report.json') -Raw) | ConvertFrom-Json
+        $report = [IO.File]::ReadAllText((Join-Path $reports 'report.json')) | ConvertFrom-Json -ErrorAction Stop
         Assert 'happy: DeepBook 5/6 with 1 timeout' ($report.summary.Apis.'DeepBook Indexer'.Successes -eq 5 -and $report.summary.Apis.'DeepBook Indexer'.Failures -eq 1 -and $report.summary.Apis.'DeepBook Indexer'.Timeouts -eq 1)
         Assert 'happy: Sui gRPC 2/2' ($report.summary.Apis.'Sui gRPC'.Successes -eq 2)
         Assert 'happy: cycles 3/3' ($report.summary.Cycles.Count -eq 3 -and $report.summary.Cycles.Successes -eq 3)
@@ -323,6 +323,9 @@ try {
     Assert 'watchdog: state WatchdogStopped' ($wdStateAfter.Status -eq 'WatchdogStopped')
     $wdCalls = [IO.File]::ReadAllText((Join-Path $wdStubHome 'calls.log'))
     Assert 'watchdog: stopped the dedicated project' ($wdCalls -match 'stop')
+} catch {
+    $script:Failures++
+    Write-Host "FAIL: self-test aborted: $($_.Exception.Message)"
 } finally {
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item Env:SUIBA_WINVERIFY_DOCKER, Env:SUIBA_WINVERIFY_GIT, Env:SUIBA_WINVERIFY_STUB_HOME, Env:SUIBA_WINVERIFY_STUB_FIXTURES, Env:SUIBA_WINVERIFY_STUB_SCENARIO -ErrorAction SilentlyContinue

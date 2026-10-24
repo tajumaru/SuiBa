@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -13,6 +13,7 @@ afterEach(() => {
   for (const fn of cleanup.splice(0).reverse()) fn();
   // Never leak an installed sink into another test.
   BotDatabase.perfSink = null;
+  vi.restoreAllMocks();
 });
 
 function memoryWriter() {
@@ -120,7 +121,9 @@ it("separates transaction BEGIN/body/COMMIT and stamps composite context", () =>
   expect(tx.rollbackMs).toBeNull();
   // The plain transaction path reports the same split without a context.
   db.transaction(() => db.set("k", 1));
-  const plain = sqlite.records.filter((r: any) => r.op === "transaction").at(-1);
+  const plain = sqlite.records
+    .filter((r: any) => r.op === "transaction")
+    .at(-1);
   expect(plain.context).toBeNull();
 });
 
@@ -252,6 +255,40 @@ it("records the metrics writer's own flushes as sync-io evidence", () => {
     .trim()
     .split("\n");
   expect(sqliteLines.length).toBe(2);
+});
+
+it("includes serialization in flush duration and its sync-io interval", () => {
+  const dir = mkdtempSync(join(tmpdir(), "suiba-perf-serialization-"));
+  let now = 0;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  vi.spyOn(Date, "now").mockImplementation(() => 1000 + now);
+  const writer = createBufferedJsonlWriter(join(dir, "timing.jsonl"), {
+    flushIntervalMs: 60000,
+  });
+  cleanup.push(() => {
+    writer.stop();
+  });
+  const onFlush = vi.fn();
+  writer.onFlush = onFlush;
+  writer.push({
+    toJSON() {
+      now += 125;
+      return { serialized: true };
+    },
+  });
+  writer.flush();
+  expect(onFlush).toHaveBeenCalledOnce();
+  expect(onFlush.mock.calls[0][0]).toMatchObject({
+    startedAt: 1000,
+    endedAt: 1125,
+    durationMs: 125,
+    ok: true,
+  });
+  expect(writer.stats()).toMatchObject({
+    written: 1,
+    flushTotalMs: 125,
+    flushMaxMs: 125,
+  });
 });
 
 it("caps records, flags truncation and counts drops", () => {

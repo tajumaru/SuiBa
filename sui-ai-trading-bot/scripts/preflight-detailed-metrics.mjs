@@ -79,6 +79,10 @@ export function createBufferedJsonlWriter(path, options = {}) {
     },
     flush() {
       if (!queue.length) return;
+      // Include serialization and byte accounting: both synchronously block
+      // the same event loop as the write and belong to this flush interval.
+      const startedAt = Date.now(),
+        t0 = performance.now();
       const batch = queue;
       queue = [];
       const lines = [];
@@ -102,7 +106,6 @@ export function createBufferedJsonlWriter(path, options = {}) {
         bytes += size;
         kept++;
       }
-      const t0 = performance.now();
       let ok = true;
       if (lines.length) {
         try {
@@ -125,7 +128,7 @@ export function createBufferedJsonlWriter(path, options = {}) {
             file: basename(path),
             records: kept,
             bytes,
-            startedAt: Date.now() - durationMs,
+            startedAt,
             endedAt: Date.now(),
             durationMs,
             ok,
@@ -295,7 +298,10 @@ export function installDetailedMetrics(options = {}) {
       newPeak =
         cumulativeMaxMs >= eventLoopThresholdMs &&
         cumulativeMaxMs > lastReportedMaxMs;
-    if ((windowed.count > 0 && windowMaxMs >= eventLoopThresholdMs) || newPeak) {
+    if (
+      (windowed.count > 0 && windowMaxMs >= eventLoopThresholdMs) ||
+      newPeak
+    ) {
       spikesDetected++;
       const memory = process.memoryUsage(),
         stats = windowStats(windowed.count > 0 ? windowed : cumulative);
@@ -305,7 +311,11 @@ export function installDetailedMetrics(options = {}) {
         startedAt: windowStart,
         endedAt: end,
         windowMs: end - windowStart,
-        maxDelayMs: round3(Math.max(windowMaxMs, cumulativeMaxMs)),
+        // A historical cumulative peak must not be assigned to a later,
+        // smaller window spike. Only use it when it is newly observed.
+        maxDelayMs: round3(
+          newPeak ? Math.max(windowMaxMs, cumulativeMaxMs) : windowMaxMs,
+        ),
         p50Ms: stats.p50Ms,
         p95Ms: stats.p95Ms,
         p99Ms: stats.p99Ms,
