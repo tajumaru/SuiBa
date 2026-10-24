@@ -44,7 +44,6 @@ export function createBufferedJsonlWriter(path, options = {}) {
   const maxRecords = options.maxRecords ?? 60000;
   const maxBytes = options.maxBytes ?? 24 * 1024 * 1024;
   let queue = [],
-    queuedBytes = 0,
     stopped = false,
     written = 0,
     dropped = 0,
@@ -62,49 +61,60 @@ export function createBufferedJsonlWriter(path, options = {}) {
   const writer = {
     onFlush: null,
     push(record) {
+      // Records are queued as objects and serialized at flush time,
+      // keeping JSON.stringify cost off the measured operation path
+      // (the flush itself is recorded as sync-io evidence instead).
       if (stopped) {
         dropped++;
         return false;
       }
-      let line;
-      try {
-        line = JSON.stringify(record);
-      } catch {
-        dropped++;
-        return false;
-      }
-      const bytes = Buffer.byteLength(line) + 1;
-      if (
-        written + queue.length >= maxRecords ||
-        bytesWritten + queuedBytes + bytes > maxBytes
-      ) {
+      if (written + queue.length >= maxRecords) {
         truncated = true;
         dropped++;
         return false;
       }
-      queue.push(line);
-      queuedBytes += bytes;
+      queue.push(record);
       if (queue.length >= flushBatchRecords) writer.flush();
       return true;
     },
     flush() {
       if (!queue.length) return;
-      const batch = queue,
-        bytes = queuedBytes;
+      const batch = queue;
       queue = [];
-      queuedBytes = 0;
-      const text = batch.join("\n") + "\n",
-        t0 = performance.now();
+      const lines = [];
+      let bytes = 0,
+        kept = 0;
+      for (let i = 0; i < batch.length; i++) {
+        let line;
+        try {
+          line = JSON.stringify(batch[i]);
+        } catch {
+          dropped++;
+          continue;
+        }
+        const size = Buffer.byteLength(line) + 1;
+        if (bytesWritten + bytes + size > maxBytes) {
+          truncated = true;
+          dropped += batch.length - i;
+          break;
+        }
+        lines.push(line);
+        bytes += size;
+        kept++;
+      }
+      const t0 = performance.now();
       let ok = true;
-      try {
-        appendFileSync(path, text);
-        written += batch.length;
-        bytesWritten += bytes;
-        flushCount++;
-      } catch {
-        ok = false;
-        flushFailures++;
-        dropped += batch.length;
+      if (lines.length) {
+        try {
+          appendFileSync(path, lines.join("\n") + "\n");
+          written += kept;
+          bytesWritten += bytes;
+          flushCount++;
+        } catch {
+          ok = false;
+          flushFailures++;
+          dropped += kept;
+        }
       }
       const durationMs = performance.now() - t0;
       flushTotalMs += durationMs;
@@ -113,7 +123,7 @@ export function createBufferedJsonlWriter(path, options = {}) {
         try {
           writer.onFlush({
             file: basename(path),
-            records: batch.length,
+            records: kept,
             bytes,
             startedAt: Date.now() - durationMs,
             endedAt: Date.now(),
@@ -264,7 +274,8 @@ export function installDetailedMetrics(options = {}) {
   cumulative.enable();
   const windowed = monitorEventLoopDelay({ resolution: 20 });
   windowed.enable();
-  let windowStart = Date.now();
+  let windowStart = Date.now(),
+    lastReportedMaxMs = 0;
   const windowStats = (h) => ({
     count: h.count,
     p50Ms: h.count ? round3(h.percentile(50) / 1e6) : null,
@@ -274,20 +285,30 @@ export function installDetailedMetrics(options = {}) {
   });
   const checker = setInterval(() => {
     const end = Date.now(),
-      maxMs = windowed.max / 1e6;
-    if (windowed.count > 0 && maxMs >= eventLoopThresholdMs) {
+      windowMaxMs = windowed.count > 0 ? windowed.max / 1e6 : 0,
+      cumulativeMaxMs = cumulative.count > 0 ? cumulative.max / 1e6 : 0,
+      // A blocked loop can delay the histogram's own bookkeeping past a
+      // window reset, so a new cumulative peak above the threshold is a
+      // second, independent trigger. The window bounds then describe
+      // when the spike was OBSERVED, which the correlation report
+      // states explicitly; the delay value itself is exact.
+      newPeak =
+        cumulativeMaxMs >= eventLoopThresholdMs &&
+        cumulativeMaxMs > lastReportedMaxMs;
+    if ((windowed.count > 0 && windowMaxMs >= eventLoopThresholdMs) || newPeak) {
       spikesDetected++;
-      const memory = process.memoryUsage();
+      const memory = process.memoryUsage(),
+        stats = windowStats(windowed.count > 0 ? windowed : cumulative);
       spikeWriter.push({
         v: 1,
         kind: "event-loop-spike",
         startedAt: windowStart,
         endedAt: end,
         windowMs: end - windowStart,
-        maxDelayMs: round3(maxMs),
-        p50Ms: windowStats(windowed).p50Ms,
-        p95Ms: windowStats(windowed).p95Ms,
-        p99Ms: windowStats(windowed).p99Ms,
+        maxDelayMs: round3(Math.max(windowMaxMs, cumulativeMaxMs)),
+        p50Ms: stats.p50Ms,
+        p95Ms: stats.p95Ms,
+        p99Ms: stats.p99Ms,
         thresholdMs: eventLoopThresholdMs,
         cycleId: currentCycleId,
         memory: {
@@ -299,6 +320,8 @@ export function installDetailedMetrics(options = {}) {
         },
       });
     }
+    if (cumulativeMaxMs > lastReportedMaxMs)
+      lastReportedMaxMs = cumulativeMaxMs;
     windowed.reset();
     windowStart = end;
   }, eventLoopWindowMs);
