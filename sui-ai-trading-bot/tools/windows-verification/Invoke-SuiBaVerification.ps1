@@ -509,7 +509,13 @@ try {
 
     # ------------------------------------------------------------ run setup
     $runId = 'winverify-{0}-{1}' -f (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ'), $sha.Substring(0, 7)
-    $project = "suiba-$runId"
+    # Compose project names are lowercase-only (see
+    # Get-SuiBaComposeProjectName in lib): normalize once, here, and
+    # guard the result so a future run ID format that smuggles in an
+    # invalid character stops BEFORE any Compose call, not inside
+    # 'compose config' resolution.
+    $project = Get-SuiBaComposeProjectName $runId
+    if (-not (Test-SuiBaComposeProjectName $project)) { throw "Generated Compose project name '$project' is invalid: it must consist only of lowercase letters, digits, hyphens and underscores, and start with a letter or digit. Aborting before any Docker Compose call." }
     $imageTag = "suiba-winverify:$runId"
     $script:RunDir = Join-Path $RunRoot $runId
     foreach ($sub in @('evidence', 'reports', 'logs', 'secret')) {

@@ -126,6 +126,21 @@ try {
     $diskImageRoots = @(Get-SuiBaDockerDataDriveRootsFromSettings $diskImageSettings)
     Assert 'docker location: nested DiskImageLocation identifies E' ($diskImageRoots.Count -eq 1 -and $diskImageRoots[0] -eq 'E:\')
 
+    # --------------------------------------------- compose project name
+    # Field regression: a run ID embeds an uppercase T/Z timestamp
+    # (winverify-20261024T080741Z-b8f4467). Used verbatim as the
+    # Compose project name it was rejected on the real machine at
+    # 'compose config' resolution, after the image build and Node
+    # check had already succeeded.
+    $fieldProject = Get-SuiBaComposeProjectName 'winverify-20261024T080741Z-b8f4467'
+    Assert 'project name regression: field run ID normalizes to lowercase' ($fieldProject -eq 'suiba-winverify-20261024t080741z-b8f4467')
+    Assert 'project name regression: field project name is compose-valid' (Test-SuiBaComposeProjectName $fieldProject)
+    Assert 'project name: already-lowercase name passes' (Test-SuiBaComposeProjectName 'suiba-winverify-20261024t080741z-b8f4467')
+    Assert 'project name: uppercase is rejected' (-not (Test-SuiBaComposeProjectName 'suiba-Winverify'))
+    Assert 'project name: leading hyphen is rejected' (-not (Test-SuiBaComposeProjectName '-suiba'))
+    Assert 'project name: other characters are rejected' (-not (Test-SuiBaComposeProjectName 'suiba.winverify'))
+    Assert 'project name: empty is rejected' (-not (Test-SuiBaComposeProjectName ''))
+
     # ------------------------------------------------------------ stub setup
     $env:SUIBA_WINVERIFY_DOCKER = Join-Path (Join-Path $script:TestsDir 'stubs') 'docker-stub.ps1'
     $env:SUIBA_WINVERIFY_GIT = Join-Path (Join-Path $script:TestsDir 'stubs') 'git-stub.ps1'
@@ -162,6 +177,7 @@ try {
         Assert 'happy: reason COMPLETED' ($report.reason -eq 'COMPLETED')
         $stateHappy = (Get-Content (Join-Path $happy.RunDir.FullName 'state.json') -Raw) | ConvertFrom-Json
         Assert 'happy: state Completed' ($stateHappy.Status -eq 'Completed')
+        Assert 'happy: state project name is compose-valid lowercase' (Test-SuiBaComposeProjectName $stateHappy.Project)
         $secret = [IO.File]::ReadAllText((Join-Path (Join-Path $happy.RunDir.FullName 'secret') 'admin.txt'))
         $leaked = $false
         foreach ($f in @('report.md', 'report.json', 'events.csv', 'samples.csv')) {

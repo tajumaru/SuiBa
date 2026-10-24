@@ -232,6 +232,32 @@ function Get-SuiBaDriveRoot {
     return $normalized.Substring(0, 3).ToUpperInvariant()
 }
 
+function Get-SuiBaComposeProjectName {
+    # Docker Compose project names may contain only lowercase letters,
+    # digits, hyphens and underscores, and must start with a letter or
+    # digit (^[a-z0-9][a-z0-9_-]*$). A run ID embeds a UTC timestamp
+    # whose literal 'T' and 'Z' are uppercase (for example
+    # 'winverify-20261024T080741Z-b8f4467'), so used verbatim as a
+    # project name it is rejected by Compose. The project name is
+    # therefore the lowercased run ID behind the 'suiba-' prefix. The
+    # run ID itself keeps its original case: it is only a folder name
+    # and an image tag, where uppercase is valid. Normalization
+    # happens exactly once, at generation; the result is stored in
+    # state and every later reference (compose -p, container labels,
+    # volume prefixes, Stop/Watch) reads the stored value.
+    param([Parameter(Mandatory = $true)][string]$RunId)
+    return ('suiba-' + $RunId.ToLowerInvariant())
+}
+
+function Test-SuiBaComposeProjectName {
+    # Case-sensitive on purpose: PowerShell's -match is case-insensitive
+    # and would wave an uppercase name through, so -cmatch guards the
+    # exact Compose rule ^[a-z0-9][a-z0-9_-]*$.
+    param([AllowEmptyString()][string]$Name)
+    if ([string]::IsNullOrEmpty($Name)) { return $false }
+    return ($Name -cmatch '^[a-z0-9][a-z0-9_-]*$')
+}
+
 function Test-SuiBaDockerDataSettingName {
     # Docker Desktop has used several names for the disk-image/data
     # location across versions. Accept the known stems case-insensitively
