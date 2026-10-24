@@ -71,7 +71,10 @@ export function BotVitalSigns({ vital }: { vital: BotVital }) {
     facts.push(`Workerの心拍信号 ${ago(vital.heartbeatSecondsAgo)}`);
 
   return (
-    <div className={`bot-vital ${vital.state}`} aria-label="Botの雫とローソク足">
+    <div
+      className={`bot-vital ${vital.state}`}
+      aria-label="Botの雫とローソク足"
+    >
       <div className="bot-vital-scene" style={sceneStyle} aria-hidden="true">
         {cycleSeconds != null && (
           <>
