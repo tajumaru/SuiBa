@@ -106,7 +106,7 @@ export function AgentNarrationFeed({
   }, [narration.entries]);
 
   const vital = botVital(data, stale, now, receivedAt);
-  const pose = agentPose(narration, data, vital);
+  const pose = agentPose(narration, data, vital, now);
 
   return (
     <section className="agent-feed" aria-label="エージェント実況">
@@ -119,9 +119,7 @@ export function AgentNarrationFeed({
           <p className="agent-feed-pose" role="status">
             {POSE_LABEL[pose]}
           </p>
-          <small>
-            エージェントが、Botの記録をもとに今の様子を実況します。
-          </small>
+          <small>エージェントが、Botの記録をもとに今の様子を実況します。</small>
         </div>
       </div>
       <div className="agent-feed-list" ref={listRef}>

@@ -845,8 +845,16 @@ export class OperationMonitor {
       limits: paperRecoveryLimits,
     };
   }
-  decisionTelemetry(): DecisionTelemetry | null {
-    const d = this.db.get<TradingDecision>("decision");
+  decisionTelemetry(now = Date.now()): DecisionTelemetry | null {
+    let d: TradingDecision | undefined;
+    try {
+      d = this.db.get<TradingDecision>("decision");
+    } catch (error) {
+      // Malformed optional telemetry must not hide the operations controls.
+      // Database faults still propagate through the existing safety handling.
+      if (error instanceof SyntaxError) return null;
+      throw error;
+    }
     const e = d?.evidence,
       t = e?.thresholds,
       cur = e?.inputs?.current,
@@ -875,8 +883,7 @@ export class OperationMonitor {
     ];
     if (
       !nums.every((n) => typeof n === "number" && Number.isFinite(n)) ||
-      (entry !== null &&
-        (typeof entry !== "number" || !Number.isFinite(entry)))
+      (entry !== null && (typeof entry !== "number" || !Number.isFinite(entry)))
     )
       return null;
     const conditionKeys = [
@@ -887,7 +894,40 @@ export class OperationMonitor {
       "stopLoss",
       "takeProfit",
     ] as const;
-    if (!conditionKeys.every((k) => typeof cond[k] === "boolean"))
+    if (!conditionKeys.every((k) => typeof cond[k] === "boolean")) return null;
+    if (
+      e.evaluatedAt <= 0 ||
+      e.evaluatedAt > now ||
+      now - e.evaluatedAt > monitoringLimits.marketStaleMs ||
+      e.candleTimestamp <= 0 ||
+      e.candleTimestamp > e.evaluatedAt ||
+      now - e.candleTimestamp > monitoringLimits.marketStaleMs ||
+      e.inputs.price <= 0 ||
+      (entry !== null && entry <= 0) ||
+      cur.ema20 <= 0 ||
+      cur.ema50 <= 0 ||
+      cur.atr < 0 ||
+      cur.rsi < 0 ||
+      cur.rsi > 100 ||
+      prev.rsi < 0 ||
+      prev.rsi > 100 ||
+      t.oversold < 0 ||
+      t.overbought > 100 ||
+      t.oversold >= t.overbought ||
+      t.stopLossPct < 0 ||
+      t.stopLossPct >= 1 ||
+      t.takeProfitPct < 0 ||
+      typeof e.selectedRule !== "string" ||
+      !/^[A-Z][A-Z0-9_]{0,100}$/.test(e.selectedRule) ||
+      (d.sellPurpose != null &&
+        ![
+          "TAKE_PROFIT",
+          "STOP_LOSS",
+          "STRATEGY_EXIT",
+          "RISK_REDUCTION",
+          "EMERGENCY_EXIT",
+        ].includes(d.sellPurpose))
+    )
       return null;
     return {
       evaluatedAt: e.evaluatedAt,
@@ -933,7 +973,7 @@ export class OperationMonitor {
     return {
       safety: this.safetySnapshot(now),
       timing: this.timing(now),
-      decision: this.decisionTelemetry(),
+      decision: this.decisionTelemetry(now),
       apis: apiAccess.snapshot(now),
       mode: "PAPER" as const,
       status:

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { OperationMonitor } from "../apps/worker/src/operations.ts";
 import { botVital } from "../apps/dashboard/src/botVital.ts";
@@ -18,6 +18,11 @@ import type {
 import type { ApiFailure } from "../packages/shared/src/http-errors.ts";
 
 const NOW = 1_800_000_000_000;
+const databases: BotDatabase[] = [];
+afterEach(() => {
+  vi.restoreAllMocks();
+  for (const db of databases.splice(0)) db.close();
+});
 
 function decision(overrides: {
   evaluatedAt?: number;
@@ -107,6 +112,7 @@ function decision(overrides: {
 
 function fixture() {
   const db = new BotDatabase(":memory:");
+  databases.push(db);
   const monitor = new OperationMonitor(db);
   return { db, monitor };
 }
@@ -131,7 +137,11 @@ function runningSnapshot(
   return d;
 }
 
-function apiEvent(at: number, api: string, code = "UPSTREAM_HTTP_503"): OperationEvent {
+function apiEvent(
+  at: number,
+  api: string,
+  code = "UPSTREAM_HTTP_503",
+): OperationEvent {
   const failure: ApiFailure = {
     api,
     url: "https://example.invalid",
@@ -240,7 +250,7 @@ describe("agent narration: initialisation", () => {
     expect(state.entries).toHaveLength(1);
     expect(state.entries[0].text).toContain("停止中です");
     const vital = botVital(d, false, NOW, NOW);
-    expect(agentPose(state, d, vital)).toBe("sleep");
+    expect(agentPose(state, d, vital, NOW)).toBe("sleep");
   });
 
   it("a running bot narrates its latest recorded cycle with real numbers", () => {
@@ -281,7 +291,7 @@ describe("agent narration: cycles", () => {
     expect(state.entries).toHaveLength(2);
     expect(state.entries[1].text).toContain("買い条件が2/3そろってきました");
     const vital = botVital(d2, false, NOW, NOW);
-    expect(agentPose(state, d2, vital)).toBe("point");
+    expect(agentPose(state, d2, vital, NOW)).toBe("point");
   });
 
   it("the featured unmet condition follows the evidence (RSI in the zone)", () => {
@@ -327,11 +337,7 @@ describe("agent narration: cycles", () => {
     const { db, monitor } = fixture();
     const d1 = runningSnapshot(db, monitor, decision({}));
     let state = advanceNarration(emptyNarrationState(), d1, "alive", NOW);
-    const d2 = runningSnapshot(
-      db,
-      monitor,
-      decision({ evaluatedAt: NOW }),
-    );
+    const d2 = runningSnapshot(db, monitor, decision({ evaluatedAt: NOW }));
     state = advanceNarration(state, d2, "alive", NOW);
     expect(state.entries).toHaveLength(1);
   });
@@ -383,7 +389,9 @@ describe("agent narration: cycles", () => {
       decision({ selectedRule: "VOLUME_REJECT", volumeChange: 3.5 }),
     );
     const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
-    expect(state.entries[0].text).toContain("出来高の異常を検出したため見送りました");
+    expect(state.entries[0].text).toContain(
+      "出来高の異常を検出したため見送りました",
+    );
     expect(state.entries[0].text).toContain("350%");
   });
 });
@@ -398,7 +406,9 @@ describe("agent narration: trades and rejections from candidate audits", () => {
       monitor,
       decision({ evaluatedAt: NOW, action: "BUY", selectedRule: "BUY_SIGNAL" }),
     );
-    d2.candidates = [candidate({ timestamp: NOW + 1000, createdAt: NOW + 1000 })];
+    d2.candidates = [
+      candidate({ timestamp: NOW + 1000, createdAt: NOW + 1000 }),
+    ];
     state = advanceNarration(state, d2, "alive", NOW + 1000);
     const trade = state.entries.at(-1)!;
     expect(trade.kind).toBe("trade");
@@ -406,7 +416,7 @@ describe("agent narration: trades and rejections from candidate audits", () => {
     expect(trade.text).toContain("0.5 SUI");
     expect(trade.text).toContain("2.4312 USDC");
     const vital = botVital(d2, false, NOW, NOW);
-    expect(agentPose(state, d2, vital)).toBe("pointSmile");
+    expect(agentPose(state, d2, vital, NOW + 1000)).toBe("pointSmile");
   });
 
   it("a gate rejection narrates the recorded reason in Japanese", () => {
@@ -427,7 +437,9 @@ describe("agent narration: trades and rejections from candidate audits", () => {
     const rejection = state.entries.at(-1)!;
     expect(rejection.kind).toBe("rejection");
     expect(rejection.text).toContain("買いシグナルは出ましたが、見送りました");
-    expect(rejection.text).toContain("手数料込みの利益が基準に届かないため見送り");
+    expect(rejection.text).toContain(
+      "手数料込みの利益が基準に届かないため見送り",
+    );
   });
 });
 
@@ -450,14 +462,26 @@ describe("agent narration: events", () => {
     ];
     const next = advanceNarration(state, d, "alive", at + 1000);
     const texts = next.entries.map((e) => e.text);
-    expect(texts.some((t) => t.includes("DeepBookの通信に失敗しました"))).toBe(true);
-    expect(texts.some((t) => t.includes("処理中にエラーが発生しました"))).toBe(false);
-    expect(texts.some((t) => t.includes("止まりました。理由：APIの連続エラーを検出しました"))).toBe(true);
+    expect(texts.some((t) => t.includes("DeepBookの通信に失敗しました"))).toBe(
+      true,
+    );
+    expect(texts.some((t) => t.includes("処理中にエラーが発生しました"))).toBe(
+      false,
+    );
+    expect(
+      texts.some((t) =>
+        t.includes("止まりました。理由：APIの連続エラーを検出しました"),
+      ),
+    ).toBe(true);
   });
 
   it("connectivity transitions narrate degradation and recovery once", () => {
     const { db, monitor, state } = started();
-    const degraded = runningSnapshot(db, monitor, decision({ evaluatedAt: NOW }));
+    const degraded = runningSnapshot(
+      db,
+      monitor,
+      decision({ evaluatedAt: NOW }),
+    );
     degraded.safety.connectivity = "DEGRADED";
     const s2 = advanceNarration(state, degraded, "weak", NOW);
     expect(s2.entries.at(-1)!.text).toContain("通信が不安定になっています");
@@ -492,6 +516,21 @@ describe("agent narration: events", () => {
 });
 
 describe("agent pose", () => {
+  it("points for one met condition when the recorded price rises", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({ price: 2.4 }));
+    const prev = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    const next = runningSnapshot(
+      db,
+      monitor,
+      decision({ evaluatedAt: NOW, price: 2.5, conditions: { emaUp: true } }),
+    );
+    const state = advanceNarration(prev, next, "alive", NOW);
+    expect(agentPose(state, next, botVital(next, false, NOW, NOW), NOW)).toBe(
+      "point",
+    );
+  });
+
   it("weak (degraded) never points, even with 2/3 conditions met", () => {
     const { db, monitor } = fixture();
     const d = runningSnapshot(
@@ -504,7 +543,7 @@ describe("agent pose", () => {
     d.safety.connectivity = "DEGRADED";
     const vital = botVital(d, false, NOW, NOW);
     expect(vital.state).toBe("weak");
-    expect(agentPose(emptyNarrationState(), d, vital)).toBe("normal");
+    expect(agentPose(emptyNarrationState(), d, vital, NOW)).toBe("normal");
   });
 
   it("a safety stop sleeps", () => {
@@ -514,7 +553,7 @@ describe("agent pose", () => {
     d.safety.botState = "ABNORMAL_STOP";
     const vital = botVital(d, false, NOW, NOW);
     expect(vital.state).toBe("flatlined");
-    expect(agentPose(emptyNarrationState(), d, vital)).toBe("sleep");
+    expect(agentPose(emptyNarrationState(), d, vital, NOW)).toBe("sleep");
   });
 
   it("an alive bot with fewer than two conditions met stays normal", () => {
@@ -522,11 +561,166 @@ describe("agent pose", () => {
     const d = runningSnapshot(db, monitor, decision({}));
     const vital = botVital(d, false, NOW, NOW);
     expect(vital.state).toBe("alive");
-    expect(agentPose(emptyNarrationState(), d, vital)).toBe("normal");
+    expect(agentPose(emptyNarrationState(), d, vital, NOW)).toBe("normal");
   });
 });
 
 describe("agent narration: fail-closed", () => {
+  it.each(["BUY", "WAIT", "SAFE_STOP"] as const)(
+    "narrates PENDING -> %s once, including after reconnect",
+    (finalAction) => {
+      const { db, monitor } = fixture();
+      const d = runningSnapshot(db, monitor, decision({}));
+      d.candidates = [candidate({ finalAction: "PENDING" })];
+      const first = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+      d.candidates = [candidate({ finalAction })];
+      const next = advanceNarration(first, d, "alive", NOW);
+      expect(next.entries).toHaveLength(first.entries.length + 1);
+      const again = advanceNarration(next, structuredClone(d), "alive", NOW);
+      expect(again.entries).toEqual(next.entries);
+      expect(again.entries).toBe(next.entries);
+    },
+  );
+
+  it.each([-1, 0, NOW + 1, NOW - 360_001, 9e20])(
+    "rejects invalid or expired decision time %s",
+    (at) => {
+      const { db, monitor } = fixture();
+      const dec = decision({});
+      dec.evidence!.evaluatedAt = at;
+      db.set("decision", dec);
+      expect(monitor.snapshot(NOW).decision).toBeNull();
+    },
+  );
+
+  it("rejects malformed optional telemetry without changing persisted state or gates", () => {
+    const { db, monitor } = fixture();
+    const before = monitor.snapshot(NOW);
+    const gate = monitor.ordersAllowed(undefined, NOW);
+    const set = vi.spyOn(db, "set");
+    const get = db.get.bind(db);
+    vi.spyOn(db, "get").mockImplementation((key) => {
+      if (key === "decision") throw new SyntaxError("invalid JSON");
+      return get(key);
+    });
+    expect(monitor.snapshot(NOW)).toEqual(before);
+    expect(monitor.ordersAllowed(undefined, NOW)).toBe(gate);
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it("does not suppress real database faults", () => {
+    const { db, monitor } = fixture();
+    vi.spyOn(db, "get").mockImplementation(() => {
+      throw new Error("DATABASE_UNAVAILABLE");
+    });
+    expect(() => monitor.decisionTelemetry(NOW)).toThrow(
+      "DATABASE_UNAVAILABLE",
+    );
+  });
+
+  it.each(["candle", "price", "entry", "rsi", "threshold", "rule", "purpose"])(
+    "rejects malformed %s evidence",
+    (field) => {
+      const { db, monitor } = fixture();
+      const dec = decision({});
+      const evidence = dec.evidence!;
+      if (field === "candle") evidence.candleTimestamp = NOW - 360_001;
+      if (field === "price") evidence.inputs.price = -1;
+      if (field === "entry") evidence.inputs.entryPrice = 0;
+      if (field === "rsi") evidence.inputs.current.rsi = 101;
+      if (field === "threshold") evidence.thresholds.stopLossPct = 2;
+      if (field === "rule")
+        (evidence as unknown as Record<string, unknown>).selectedRule = {};
+      if (field === "purpose")
+        (dec as unknown as Record<string, unknown>).sellPurpose = {};
+      db.set("decision", dec);
+      expect(monitor.snapshot(NOW).decision).toBeNull();
+    },
+  );
+
+  it("expires a trade pose even when no new narration arrives", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, null);
+    const state = emptyNarrationState();
+    state.entries = [{ id: "trade", at: NOW, kind: "trade", text: "recorded" }];
+    const vital = botVital(d, false, NOW, NOW);
+    expect(agentPose(state, d, vital, NOW)).toBe("pointSmile");
+    expect(agentPose(state, d, vital, NOW + 360_001)).toBe("normal");
+  });
+
+  it("does not narrate or point for old/future evidence or unconfirmed running state", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(
+      db,
+      monitor,
+      decision({ conditions: { emaUp: true, rsiRecovery: true } }),
+    );
+    const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    const vital = botVital(d, false, NOW, NOW);
+    for (const at of [NOW - 360_001, NOW + 1]) {
+      d.decision!.evaluatedAt = at;
+      expect(
+        advanceNarration(emptyNarrationState(), d, "alive", NOW).entries[0]
+          .kind,
+      ).toBe("status");
+      expect(agentPose(state, d, vital, NOW)).toBe("normal");
+    }
+    d.decision!.evaluatedAt = NOW;
+    expect(advanceNarration(state, d, "unknown", NOW).entries).toEqual(
+      state.entries,
+    );
+    for (const stopped of ["sleeping", "flatlined"] as const) {
+      expect(advanceNarration(state, d, stopped, NOW).entries).toEqual(
+        state.entries,
+      );
+      expect(agentPose(state, d, { ...vital, state: stopped }, NOW)).toBe(
+        "sleep",
+      );
+    }
+  });
+
+  it("keeps visible old records deduplicated through long sessions with bounded memory", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    const old = candidate({});
+    d.candidates = [old];
+    let state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    for (let i = 0; i < 1000; i++) {
+      d.events = [apiEvent(NOW + i, `API${i}`)];
+      state = advanceNarration(state, d, "alive", NOW + i);
+      expect(state.entries.length).toBeLessThanOrEqual(30);
+      expect(state.seen.length).toBeLessThanOrEqual(200);
+    }
+    expect(state.entries.every((entry) => entry.kind !== "trade")).toBe(true);
+    expect(
+      advanceNarration(state, structuredClone(d), "alive", NOW + 1000).entries,
+    ).toBe(state.entries);
+  });
+
+  it("keeps React keys unique when same-timestamp entries arrive after the history cap", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    let state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    for (let i = 0; i < 60; i++) {
+      d.events = [apiEvent(NOW, `API${i}`)];
+      state = advanceNarration(state, d, "alive", NOW);
+    }
+    expect(state.entries).toHaveLength(30);
+    expect(new Set(state.entries.map((e) => e.id)).size).toBe(30);
+  });
+
+  it("does not merge failures from different APIs at the same timestamp", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    d.events = [apiEvent(NOW, "DeepBook"), apiEvent(NOW, "Sui gRPC")];
+    expect(
+      advanceNarration(state, d, "alive", NOW).entries.filter(
+        (e) => e.kind === "warning",
+      ),
+    ).toHaveLength(2);
+  });
+
   it("no decision telemetry means no cycle narration", () => {
     const { db, monitor } = fixture();
     const d = runningSnapshot(db, monitor, null);

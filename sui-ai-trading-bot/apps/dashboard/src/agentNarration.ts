@@ -2,10 +2,7 @@ import type { OperationsSnapshot } from "./operationsTypes.ts";
 import type { DecisionTelemetry } from "../../worker/src/operations.ts";
 import type { BotVital, VitalState } from "./botVital.ts";
 import { operationReason } from "./operationLabels.ts";
-import {
-  number as fmtNumber,
-  percent as fmtPercent,
-} from "./presentation.ts";
+import { number as fmtNumber, percent as fmtPercent } from "./presentation.ts";
 
 /**
  * The agent narration feed: chat-style entries generated ONLY from
@@ -42,6 +39,8 @@ export interface NarrationEntry {
 
 export interface NarrationState {
   entries: NarrationEntry[];
+  nextEntryId: number;
+  priceRising: boolean;
   /** Dedupe keys for operation events (`e:...`) and candidates (`c:...`). */
   seen: string[];
   /** evaluatedAt of the newest decision already accounted for. */
@@ -55,10 +54,25 @@ export interface NarrationState {
 
 export const MAX_NARRATION_ENTRIES = 30;
 const MAX_SEEN_KEYS = 200;
+export const DECISION_FRESH_MS = 360_000;
+
+function freshDecision(dec: DecisionTelemetry | null | undefined, now: number) {
+  return (
+    dec != null &&
+    dec.evaluatedAt > 0 &&
+    dec.evaluatedAt <= now &&
+    now - dec.evaluatedAt <= DECISION_FRESH_MS &&
+    dec.candleTimestamp > 0 &&
+    dec.candleTimestamp <= dec.evaluatedAt &&
+    now - dec.candleTimestamp <= DECISION_FRESH_MS
+  );
+}
 
 export function emptyNarrationState(): NarrationState {
   return {
     entries: [],
+    nextEntryId: 0,
+    priceRising: false,
     seen: [],
     lastDecisionAt: null,
     prevDecisionPrice: null,
@@ -106,9 +120,7 @@ function unmetDistance(
     // Below the oversold line the recovery cross is the only missing
     // step, so it counts as close; above it, distance grows with the
     // points still to fall before the zone is even reached.
-    return dec.rsi <= dec.oversold
-      ? 0.2
-      : (dec.rsi - dec.oversold) / 10;
+    return dec.rsi <= dec.oversold ? 0.2 : (dec.rsi - dec.oversold) / 10;
   const delta = dec.previousHistogram - dec.histogram;
   return dec.atr > 0 ? delta / (dec.atr * 0.25) : 1;
 }
@@ -158,9 +170,7 @@ export function cycleNarrationText(
     return `出来高の異常を検出したため見送りました（出来高の変化 ${fmtPercent(dec.volumeChange)}、価格 ${price(dec.price)}）。`;
   if (dec.conditions.hasPosition && dec.entryPrice != null) {
     const pct =
-      dec.entryPrice > 0
-        ? signedPct(dec.price / dec.entryPrice - 1)
-        : "±0%";
+      dec.entryPrice > 0 ? signedPct(dec.price / dec.entryPrice - 1) : "±0%";
     return `保有中です。取得価格${price(dec.entryPrice)}に対して現在${price(dec.price)}（${pct}）。利確ライン（+${fmtPercent(dec.takeProfitPct)}）と損切りライン（-${fmtPercent(dec.stopLossPct)}）を見守っています。`;
   }
   const met = metEntryConditions(dec);
@@ -185,16 +195,14 @@ export function cycleNarrationText(
 type EntryDraft = Omit<NarrationEntry, "id">;
 
 function eventKey(e: OperationsSnapshot["events"][number]): string {
-  return `e:${e.timestamp}:${e.kind}:${e.code}:${e.apiFailure?.code ?? ""}`;
+  return `e:${e.timestamp}:${e.kind}:${e.code}:${e.apiFailure?.api ?? ""}:${e.apiFailure?.operation ?? ""}:${e.apiFailure?.code ?? ""}`;
 }
 function candidateKey(c: OperationsSnapshot["candidates"][number]): string {
-  return `c:${c.id}`;
+  return `c:${c.id}:${c.finalAction}`;
 }
 
 function stopReasonText(d: OperationsSnapshot): string {
-  return operationReason(
-    d.stopReason ?? d.safety?.lastStopReason ?? "UNKNOWN",
-  );
+  return operationReason(d.stopReason ?? d.safety?.lastStopReason ?? "UNKNOWN");
 }
 
 function initialEntry(
@@ -222,7 +230,7 @@ function initialEntry(
         };
   if (vitalState === "alive" || vitalState === "weak") {
     const dec = d.decision;
-    if (dec && now - dec.evaluatedAt <= 15 * 60_000)
+    if (dec && freshDecision(dec, now))
       return {
         at: dec.evaluatedAt,
         kind: "cycle",
@@ -286,7 +294,11 @@ export function advanceNarration(
   );
   for (const e of events) {
     const key = eventKey(e);
-    if (seen.has(key)) continue;
+    if (seen.has(key)) {
+      seen.delete(key);
+      seen.add(key);
+      continue;
+    }
     seen.add(key);
     if (e.kind === "STOP") {
       narratedStop = true;
@@ -361,15 +373,21 @@ export function advanceNarration(
   );
   for (const c of candidates) {
     const key = candidateKey(c);
-    if (seen.has(key)) continue;
+    if (seen.has(key)) {
+      seen.delete(key);
+      seen.add(key);
+      continue;
+    }
     seen.add(key);
     const qty =
       c.quantityAtomic != null && Number.isFinite(Number(c.quantityAtomic))
         ? `${fmtNumber(Number(c.quantityAtomic) / 1e9, 9)} SUI`
         : null;
     const quote =
-      c.quotePriceUsdc != null ? `${fmtNumber(c.quotePriceUsdc, 4)} USDC` : null;
-    const fill = [qty, quote ? `価格 ${quote}` : null]
+      c.quotePriceUsdc != null
+        ? `${fmtNumber(c.quotePriceUsdc, 4)} USDC`
+        : null;
+    const fill = [qty, quote ? `見積もり価格 ${quote}` : null]
       .filter(Boolean)
       .join("・");
     if (c.finalAction === "BUY" || c.finalAction === "SELL") {
@@ -404,15 +422,20 @@ export function advanceNarration(
   // --- strategy cycle, from the decision evidence --------------------
   let lastDecisionAt = prev.lastDecisionAt;
   let prevDecisionPrice = prev.prevDecisionPrice;
+  let priceRising = prev.priceRising;
   const dec = d.decision;
   if (dec && (lastDecisionAt == null || dec.evaluatedAt > lastDecisionAt)) {
-    if (d.status === "RUNNING" || d.status === "DATA_DELAYED") {
+    if (
+      (vitalState === "alive" || vitalState === "weak") &&
+      freshDecision(dec, now)
+    ) {
       drafts.push({
         at: dec.evaluatedAt,
         kind: "cycle",
         text: cycleNarrationText(dec, prevDecisionPrice),
       });
     }
+    priceRising = prevDecisionPrice != null && dec.price > prevDecisionPrice;
     prevDecisionPrice = dec.price;
     lastDecisionAt = dec.evaluatedAt;
   }
@@ -463,6 +486,7 @@ export function advanceNarration(
       seen: [...seen],
       lastDecisionAt,
       prevDecisionPrice,
+      priceRising,
       lastConnectivity,
       lastStatus,
     },
@@ -473,6 +497,7 @@ export function advanceNarration(
 function finish(state: NarrationState, drafts: EntryDraft[]): NarrationState {
   drafts.sort((a, b) => a.at - b.at);
   const entries = [...state.entries];
+  let nextEntryId = state.nextEntryId;
   for (const draft of drafts) {
     // Identical wording back-to-back (e.g. two cycles whose evidence
     // did not change) is noise, not narration.
@@ -480,12 +505,17 @@ function finish(state: NarrationState, drafts: EntryDraft[]): NarrationState {
       continue;
     entries.push({
       ...draft,
-      id: `${draft.at}:${draft.kind}:${entries.length}`,
+      id: `narration:${nextEntryId++}`,
     });
   }
   return {
     ...state,
-    entries: entries.slice(-MAX_NARRATION_ENTRIES),
+    nextEntryId,
+    entries:
+      entries.length === state.entries.length &&
+      entries.every((entry, i) => entry === state.entries[i])
+        ? state.entries
+        : entries.slice(-MAX_NARRATION_ENTRIES),
     seen: state.seen.slice(-MAX_SEEN_KEYS),
   };
 }
@@ -505,22 +535,23 @@ export function agentPose(
   state: NarrationState,
   d: OperationsSnapshot,
   vital: BotVital,
+  now = Date.now(),
 ): AgentPose {
-  if (vital.state === "sleeping" || vital.state === "flatlined")
-    return "sleep";
+  if (vital.state === "sleeping" || vital.state === "flatlined") return "sleep";
   if (vital.state !== "alive") return "normal";
-  if (state.entries.at(-1)?.kind === "trade") return "pointSmile";
+  const latest = state.entries.at(-1);
+  if (
+    latest?.kind === "trade" &&
+    now >= latest.at &&
+    now - latest.at <= DECISION_FRESH_MS
+  )
+    return "pointSmile";
   const dec = d.decision;
-  if (dec) {
+  if (dec && freshDecision(dec, now)) {
     if (dec.action === "BUY") return "point";
     const met = metEntryConditions(dec);
     if (met >= 2) return "point";
-    if (
-      met >= 1 &&
-      state.prevDecisionPrice != null &&
-      dec.price > state.prevDecisionPrice
-    )
-      return "point";
+    if (met >= 1 && state.priceRising) return "point";
   }
   return "normal";
 }
