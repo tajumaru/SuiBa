@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { applySafePreset } from "../apps/dashboard/src/settingsPresets.ts";
 
@@ -30,6 +31,11 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
     timestamp: 1,
   });
   seed.set("runtime", { ...seed.runtime(), running: true, emergency: true });
+  seed.set("decision", {});
+  // Corrupt only optional display JSON, leaving the ledger/runtime intact.
+  (seed as unknown as { db: DatabaseSync }).db
+    .prepare("UPDATE bot_runtime_state SET json=? WHERE key=?")
+    .run("{", "decision");
   seed.close();
   let child: ChildProcess | undefined;
   let failure = "";
@@ -120,6 +126,10 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
     const monitoring = await api("operations");
     expect(monitoring.status).toBe(200);
     expect(monitoring.value.status).toBe("ABNORMAL_STOP");
+    // The scheduler may already have replaced the corrupt display record
+    // with its evidence-less WAIT failure record. Both paths must stay usable.
+    expect([null, "WAIT"]).toContain(monitoring.value.decision?.action ?? null);
+    expect(monitoring.value.databaseHealth.healthy).toBe(true);
     expect(monitoring.value.reports).toHaveLength(2);
     for (const path of [
       "dashboard/summary",
@@ -130,6 +140,10 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
         401,
       );
     const summary = await api("dashboard/summary");
+    expect(summary.status).toBe(200);
+    expect([null, "WAIT"]).toContain(
+      summary.value.summary.decision?.action ?? null,
+    );
     expect(summary.value.schema).toBe(1);
     expect(summary.value.summary.runtime).toMatchObject({
       running: false,

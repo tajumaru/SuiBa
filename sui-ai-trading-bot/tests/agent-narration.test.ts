@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { OperationMonitor } from "../apps/worker/src/operations.ts";
+import { BotEngine } from "../apps/worker/src/engine.ts";
+import { DashboardService } from "../apps/worker/src/dashboard-feed.ts";
+import type { DatabaseSync } from "node:sqlite";
 import { botVital } from "../apps/dashboard/src/botVital.ts";
 import {
   advanceNarration,
@@ -566,6 +569,31 @@ describe("agent pose", () => {
 });
 
 describe("agent narration: fail-closed", () => {
+  it("keeps display snapshots available for actually corrupted stored decision JSON", () => {
+    const { db, monitor } = fixture();
+    db.set("decision", decision({}));
+    (db as unknown as { db: DatabaseSync }).db
+      .prepare("UPDATE bot_runtime_state SET json=? WHERE key=?")
+      .run("{", "decision");
+    const health = { healthy: true, checkedAt: NOW, failures: 0 };
+    const engine = new BotEngine(
+      db,
+      { candles: async () => [] },
+      {
+        getQuote: async () => {
+          throw new Error("UNEXPECTED_ORDER");
+        },
+        validateQuote: async () => false,
+      },
+      { health: async () => health, status: health },
+    );
+    expect(monitor.snapshot(NOW).decision).toBeNull();
+    expect(engine.snapshot().decision).toBeNull();
+    expect(
+      new DashboardService(engine, db).summary().summary.decision,
+    ).toBeNull();
+    expect(db.health().healthy).toBe(true);
+  });
   it.each(["BUY", "WAIT", "SAFE_STOP"] as const)(
     "narrates PENDING -> %s once, including after reconnect",
     (finalAction) => {
@@ -608,14 +636,91 @@ describe("agent narration: fail-closed", () => {
     expect(set).not.toHaveBeenCalled();
   });
 
-  it("does not suppress real database faults", () => {
+  it.each([
+    new Error("display read failed"),
+    new TypeError("invalid display data"),
+  ])("isolates optional read failure %s in all display snapshots", (error) => {
     const { db, monitor } = fixture();
-    vi.spyOn(db, "get").mockImplementation(() => {
-      throw new Error("DATABASE_UNAVAILABLE");
-    });
-    expect(() => monitor.decisionTelemetry(NOW)).toThrow(
-      "DATABASE_UNAVAILABLE",
+    const health = { healthy: true, checkedAt: NOW, failures: 0 };
+    const engine = new BotEngine(
+      db,
+      { candles: async () => [] },
+      {
+        getQuote: async () => {
+          throw new Error("UNEXPECTED_ORDER");
+        },
+        validateQuote: async () => false,
+      },
+      { health: async () => health, status: health },
     );
+    const before = monitor.snapshot(NOW);
+    const get = db.get.bind(db);
+    const set = vi.spyOn(db, "set");
+    vi.spyOn(db, "get").mockImplementation((key) => {
+      if (key === "decision") throw error;
+      return get(key);
+    });
+    expect(monitor.snapshot(NOW)).toEqual(before);
+    expect(engine.snapshot().decision).toBeNull();
+    expect(
+      new DashboardService(engine, db).summary().summary.decision,
+    ).toBeNull();
+    expect(db.health().healthy).toBe(true);
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it.each([5, 11, 10, 6])(
+    "keeps SQLite fault classification and immediate safety state for telemetry errcode %s",
+    (errcode) => {
+      const { db, monitor } = fixture();
+      db.set("runtime", { ...db.runtime(), running: true });
+      monitor.market(NOW, NOW - 300_000);
+      const get = db.get.bind(db);
+      const sql = (db as unknown as { sql<T>(fn: () => T): T }).sql.bind(db);
+      vi.spyOn(db, "get").mockImplementation((key) => {
+        if (key === "decision")
+          return sql(() => {
+            throw Object.assign(new Error("fixture SQL read failure"), {
+              errcode,
+            });
+          });
+        return get(key);
+      });
+      const snapshot = monitor.snapshot(NOW);
+      expect(snapshot.decision).toBeNull();
+      expect(db.health()).toMatchObject({
+        healthy: errcode === 5,
+        requiresRestart: errcode !== 5,
+      });
+      if (errcode !== 5) {
+        expect(snapshot.status).toBe("ABNORMAL_STOP");
+        expect(snapshot.stopReason).toBe("DATABASE_UNAVAILABLE");
+        expect(snapshot.safety.botState).toBe("ABNORMAL_STOP");
+        expect(snapshot.safety.ordersAllowed).toBe(false);
+        expect(db.runtime()).toMatchObject({
+          running: false,
+          error: "DATABASE_UNAVAILABLE",
+        });
+        expect(() => db.set("runtime", { running: true })).toThrow(
+          "DATABASE_UNAVAILABLE",
+        );
+        vi.restoreAllMocks();
+        expect(db.health().healthy).toBe(false);
+        expect(monitor.ordersAllowed(undefined, NOW)).toBe(false);
+      }
+      expect(db.history("paper_orders")).toEqual([]);
+      expect(db.history("paper_trades")).toEqual([]);
+    },
+  );
+
+  it("still propagates faults outside optional decision data", () => {
+    const { db, monitor } = fixture();
+    const get = db.get.bind(db);
+    vi.spyOn(db, "get").mockImplementation((key) => {
+      if (key === "portfolio") throw new Error("DATABASE_UNAVAILABLE");
+      return get(key);
+    });
+    expect(() => monitor.snapshot(NOW)).toThrow("DATABASE_UNAVAILABLE");
   });
 
   it.each(["candle", "price", "entry", "rsi", "threshold", "rule", "purpose"])(
@@ -707,6 +812,92 @@ describe("agent narration: fail-closed", () => {
     }
     expect(state.entries).toHaveLength(30);
     expect(new Set(state.entries.map((e) => e.id)).size).toBe(30);
+  });
+
+  it("does not replay evicted events or final candidates when old pages return after reconnect", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    let state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    const oldEvent = apiEvent(NOW + 1, "evicted-old-api");
+    const oldCandidate = candidate({
+      id: "evicted-old-fill",
+      createdAt: NOW + 1,
+      timestamp: NOW + 1,
+    });
+    for (let i = 1; i <= 1000; i++) {
+      d.events = [i === 1 ? oldEvent : apiEvent(NOW + i, `API${i}`)];
+      d.candidates = [
+        i === 1
+          ? oldCandidate
+          : candidate({
+              id: `fill-${i}`,
+              createdAt: NOW + i,
+              timestamp: NOW + i,
+              quotePriceUsdc: String(i),
+            }),
+      ];
+      state = advanceNarration(state, d, "alive", NOW + i);
+    }
+    expect(state.seen).toHaveLength(200);
+    expect(state.seen.some((key) => key.includes("evicted-old"))).toBe(false);
+    const entries = state.entries;
+    d.events = [oldEvent];
+    d.candidates = [oldCandidate];
+    state = advanceNarration(state, structuredClone(d), "alive", NOW + 2000);
+    expect(state.entries).toBe(entries);
+    expect(state.retiredEventThrough).toBeGreaterThan(NOW + 1);
+    expect(state.retiredCandidateThrough).toBeGreaterThan(NOW + 1);
+    d.events = [apiEvent(NOW + 2001, "new-api")];
+    d.candidates = [
+      candidate({
+        id: "new-fill",
+        createdAt: NOW + 2001,
+        timestamp: NOW + 2001,
+      }),
+    ];
+    state = advanceNarration(state, d, "alive", NOW + 2001);
+    expect(state.entries.slice(-2).map((entry) => entry.kind)).toEqual([
+      "warning",
+      "trade",
+    ]);
+    expect(state.entries).toHaveLength(30);
+    expect(state.seen.length).toBeLessThanOrEqual(200);
+  });
+
+  it("allows a known pending candidate to finish after its key was evicted", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    const pending = candidate({
+      id: "long-pending",
+      createdAt: NOW,
+      timestamp: NOW,
+      finalAction: "PENDING",
+    });
+    d.candidates = [pending];
+    let state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    for (let i = 1; i <= 300; i++) {
+      d.candidates = [
+        candidate({
+          id: `later-${i}`,
+          createdAt: NOW + i,
+          timestamp: NOW + i,
+          quotePriceUsdc: String(i),
+        }),
+      ];
+      d.events = [apiEvent(NOW + i, `API${i}`)];
+      state = advanceNarration(state, d, "alive", NOW + i);
+    }
+    expect(state.seen.some((key) => key.includes("long-pending"))).toBe(false);
+    expect(state.pendingCandidateIds).toContain("long-pending");
+    d.candidates = [{ ...pending, finalAction: "SELL" }];
+    d.events = [];
+    state = advanceNarration(state, d, "alive", NOW + 500);
+    expect(state.entries.at(-1)?.text).toContain("売りを記録");
+    expect(state.pendingCandidateIds).not.toContain("long-pending");
+    expect(advanceNarration(state, d, "alive", NOW + 501).entries).toBe(
+      state.entries,
+    );
+    expect(state.pendingCandidateIds.length).toBeLessThanOrEqual(50);
   });
 
   it("does not merge failures from different APIs at the same timestamp", () => {

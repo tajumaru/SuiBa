@@ -845,16 +845,17 @@ export class OperationMonitor {
       limits: paperRecoveryLimits,
     };
   }
-  decisionTelemetry(now = Date.now()): DecisionTelemetry | null {
-    let d: TradingDecision | undefined;
+  /** Optional display data only. SQL faults are latched by BotDatabase.sql;
+   * returning null here never clears that latch or grants order permission. */
+  displayDecision(): TradingDecision | null {
     try {
-      d = this.db.get<TradingDecision>("decision");
-    } catch (error) {
-      // Malformed optional telemetry must not hide the operations controls.
-      // Database faults still propagate through the existing safety handling.
-      if (error instanceof SyntaxError) return null;
-      throw error;
+      return this.db.get<TradingDecision>("decision") ?? null;
+    } catch {
+      return null;
     }
+  }
+  decisionTelemetry(now = Date.now()): DecisionTelemetry | null {
+    const d = this.displayDecision();
     const e = d?.evidence,
       t = e?.thresholds,
       cur = e?.inputs?.current,
@@ -961,6 +962,9 @@ export class OperationMonitor {
     };
   }
   snapshot(now = Date.now()) {
+    // Read optional telemetry first so a SQL fault discovered here is reflected
+    // in this same response's runtime, safety state and order gate.
+    const decision = this.decisionTelemetry(now);
     const s = this.state(),
       r = this.db.runtime();
     const p = this.db.portfolio(),
@@ -973,7 +977,7 @@ export class OperationMonitor {
     return {
       safety: this.safetySnapshot(now),
       timing: this.timing(now),
-      decision: this.decisionTelemetry(now),
+      decision,
       apis: apiAccess.snapshot(now),
       mode: "PAPER" as const,
       status:

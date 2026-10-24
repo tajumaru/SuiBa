@@ -180,7 +180,7 @@ test("Japanese screens preserve actions, ratios and epochs across all viewports"
 test("authentication errors show Japanese and retain the code", async ({
   page,
 }) => {
-  await page.route("**/api/state", (route) =>
+  await page.route("**/api/**", (route) =>
     route.fulfill({ status: 401, json: { error: "UNAUTHORIZED" } }),
   );
   await page.goto("/");

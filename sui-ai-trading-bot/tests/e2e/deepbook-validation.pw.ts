@@ -46,6 +46,7 @@ for (const begun of [false, true])
     await expect(panel).toBeVisible();
     if (begun) {
       await expect(panel).toContainText("検証途中");
+      await panel.locator("#validation-diagnostics > summary").click();
       await panel
         .getByText("AI判断・PAPER取引・安全停止履歴", { exact: true })
         .click();
@@ -60,9 +61,16 @@ for (const begun of [false, true])
     } else {
       await expect(panel).toContainText("未開始");
       expect(writes).toEqual([]);
-      await panel.getByRole("button", { name: "24時間計測を開始" }).click();
-      await expect(panel).toContainText("PAPER運用は別途、手動で開始");
-      expect(writes).toEqual(["/api/validation/start"]);
+      // Starting measurement moved to the confirmation-based control panel.
+      // The release readiness guard must remain NO-GO in this real fixture.
+      const control = page.getByRole("region", {
+        name: "運用検証コントロール",
+      });
+      await expect(
+        control.getByRole("button", { name: "24時間計測を開始", exact: true }),
+      ).toBeDisabled();
+      await expect(control).toContainText("NO-GO（開始禁止）");
+      expect(writes).toEqual([]);
     }
     const dims = await page.evaluate(() => ({
       width: innerWidth,

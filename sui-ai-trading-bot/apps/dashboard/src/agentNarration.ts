@@ -43,6 +43,12 @@ export interface NarrationState {
   priceRising: boolean;
   /** Dedupe keys for operation events (`e:...`) and candidates (`c:...`). */
   seen: string[];
+  /** Retirement barriers advance only when keys are evicted. Late records at
+   * or before retired times are omitted, while recent same-time arrivals work. */
+  retiredEventThrough: number | null;
+  retiredCandidateThrough: number | null;
+  /** Permit an observed PENDING candidate to finish behind the barrier. */
+  pendingCandidateIds: string[];
   /** evaluatedAt of the newest decision already accounted for. */
   lastDecisionAt: number | null;
   /** Price of the previous narrated cycle, for grounded price-move text. */
@@ -74,6 +80,9 @@ export function emptyNarrationState(): NarrationState {
     nextEntryId: 0,
     priceRising: false,
     seen: [],
+    retiredEventThrough: null,
+    retiredCandidateThrough: null,
+    pendingCandidateIds: [],
     lastDecisionAt: null,
     prevDecisionPrice: null,
     lastConnectivity: null,
@@ -198,7 +207,7 @@ function eventKey(e: OperationsSnapshot["events"][number]): string {
   return `e:${e.timestamp}:${e.kind}:${e.code}:${e.apiFailure?.api ?? ""}:${e.apiFailure?.operation ?? ""}:${e.apiFailure?.code ?? ""}`;
 }
 function candidateKey(c: OperationsSnapshot["candidates"][number]): string {
-  return `c:${c.id}:${c.finalAction}`;
+  return `c:${c.createdAt}:${c.id}:${c.finalAction}`;
 }
 
 function stopReasonText(d: OperationsSnapshot): string {
@@ -262,19 +271,26 @@ export function advanceNarration(
   now: number,
 ): NarrationState {
   const seen = new Set(prev.seen);
+  const pending = new Set(prev.pendingCandidateIds);
   const drafts: EntryDraft[] = [];
   let narratedStop = false;
   let narratedPaused = false;
   let narratedRecovered = false;
 
   if (!prev.initialized) {
-    for (const e of d.events ?? []) seen.add(eventKey(e));
-    for (const c of d.candidates ?? []) seen.add(candidateKey(c));
+    for (const e of d.events ?? []) {
+      seen.add(eventKey(e));
+    }
+    for (const c of d.candidates ?? []) {
+      seen.add(candidateKey(c));
+      if (c.finalAction === "PENDING") pending.add(c.id);
+    }
     drafts.push(initialEntry(d, vitalState, now));
     return finish(
       {
         ...prev,
         seen: [...seen],
+        pendingCandidateIds: [...pending].slice(-50),
         lastDecisionAt: d.decision?.evaluatedAt ?? null,
         prevDecisionPrice: d.decision?.price ?? null,
         lastConnectivity: d.safety?.connectivity ?? null,
@@ -299,6 +315,11 @@ export function advanceNarration(
       seen.add(key);
       continue;
     }
+    if (
+      prev.retiredEventThrough != null &&
+      e.timestamp <= prev.retiredEventThrough
+    )
+      continue;
     seen.add(key);
     if (e.kind === "STOP") {
       narratedStop = true;
@@ -373,11 +394,20 @@ export function advanceNarration(
   );
   for (const c of candidates) {
     const key = candidateKey(c);
+    const wasPending = pending.has(c.id);
+    if (c.finalAction !== "PENDING") pending.delete(c.id);
     if (seen.has(key)) {
       seen.delete(key);
       seen.add(key);
       continue;
     }
+    if (
+      !wasPending &&
+      prev.retiredCandidateThrough != null &&
+      c.createdAt <= prev.retiredCandidateThrough
+    )
+      continue;
+    if (c.finalAction === "PENDING") pending.add(c.id);
     seen.add(key);
     const qty =
       c.quantityAtomic != null && Number.isFinite(Number(c.quantityAtomic))
@@ -484,6 +514,7 @@ export function advanceNarration(
     {
       ...prev,
       seen: [...seen],
+      pendingCandidateIds: [...pending].slice(-50),
       lastDecisionAt,
       prevDecisionPrice,
       priceRising,
@@ -495,6 +526,19 @@ export function advanceNarration(
 }
 
 function finish(state: NarrationState, drafts: EntryDraft[]): NarrationState {
+  let retiredEventThrough = state.retiredEventThrough;
+  let retiredCandidateThrough = state.retiredCandidateThrough;
+  for (const key of state.seen.slice(
+    0,
+    Math.max(0, state.seen.length - MAX_SEEN_KEYS),
+  )) {
+    const [kind, timestamp] = key.split(":", 2);
+    const at = Number(timestamp);
+    if (kind === "e")
+      retiredEventThrough = Math.max(retiredEventThrough ?? at, at);
+    if (kind === "c")
+      retiredCandidateThrough = Math.max(retiredCandidateThrough ?? at, at);
+  }
   drafts.sort((a, b) => a.at - b.at);
   const entries = [...state.entries];
   let nextEntryId = state.nextEntryId;
@@ -510,6 +554,8 @@ function finish(state: NarrationState, drafts: EntryDraft[]): NarrationState {
   }
   return {
     ...state,
+    retiredEventThrough,
+    retiredCandidateThrough,
     nextEntryId,
     entries:
       entries.length === state.entries.length &&
