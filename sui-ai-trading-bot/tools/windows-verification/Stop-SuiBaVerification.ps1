@@ -10,7 +10,7 @@
 #      and container ID match the recorded run state.
 # It never touches any other container, project, volume or database.
 # Compatible with Windows PowerShell 5.1 and PowerShell 7.
-param([string]$RunRoot = '')
+param([string]$RunRoot = '', [int]$WaitSeconds = 60)
 
 $script:ToolDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:DockerExe = if ($env:SUIBA_WINVERIFY_DOCKER) { $env:SUIBA_WINVERIFY_DOCKER } else { 'docker' }
@@ -36,22 +36,54 @@ function Set-ObjProp {
 if ($RunRoot -eq '') { $RunRoot = Join-Path $script:ToolDir 'runs' }
 $pointerPath = Join-Path (Join-Path $RunRoot 'active') 'active-run.json'
 if (-not (Test-Path $pointerPath)) { Write-Host 'No active verification run was found.'; exit 0 }
-$pointer = (Get-Content $pointerPath -Raw) | ConvertFrom-Json
+
+# Read the pointer/state JSON defensively: a file that is corrupt (or
+# momentarily unreadable) must produce one clear message, not a chain of
+# binding/conversion errors.
+$corruptMessage = 'The verification pointer/state file is corrupted and could not be read. Nothing was stopped; check the run folder under the runs directory.'
+$pointer = $null
+try { $pointer = (Get-Content $pointerPath -Raw -ErrorAction Stop) | ConvertFrom-Json -ErrorAction Stop } catch { $pointer = $null }
+if ($null -eq $pointer -or [string]::IsNullOrWhiteSpace([string]$pointer.StateFile)) {
+    Write-Host $corruptMessage
+    exit 1
+}
 $statePath = $pointer.StateFile
 if (-not (Test-Path $statePath)) { Write-Host 'Run state file is missing.'; exit 1 }
-$state = (Get-Content $statePath -Raw) | ConvertFrom-Json
+$state = $null
+try { $state = (Get-Content $statePath -Raw -ErrorAction Stop) | ConvertFrom-Json -ErrorAction Stop } catch { $state = $null }
+if ($null -eq $state) {
+    Write-Host $corruptMessage
+    exit 1
+}
+
+# The run directory is recorded on the pointer, not on state.json: the
+# state object has no RunDir field, so reading $state.RunDir always
+# yielded $null and broke the graceful-stop request below with a
+# Join-Path binding error. Fall back to the state file's own folder if
+# the pointer does not carry a run directory.
+$runDir = [string]$pointer.RunDir
+if ([string]::IsNullOrWhiteSpace($runDir)) { $runDir = Split-Path -Parent $statePath }
+
+if ($state.Status -eq 'Preparing') {
+    Write-Host 'The recorded run is still being prepared (status: Preparing); it cannot be stopped from this menu yet. Wait until it is running, then stop it here.'
+    exit 0
+}
 if ($state.Status -ne 'Running') { Write-Host "The recorded run is not running (status: $($state.Status))."; exit 0 }
 
 Write-Host "Requesting graceful stop for run $($state.RunId)..."
-[IO.File]::WriteAllText((Join-Path $state.RunDir 'STOP_REQUEST'), (Get-Date).ToUniversalTime().ToString('o'))
+[IO.File]::WriteAllText((Join-Path $runDir 'STOP_REQUEST'), (Get-Date).ToUniversalTime().ToString('o'))
 
-# Give the monitor up to 60 seconds to finalize (it stops the container
-# and writes the reports).
-for ($i = 0; $i -lt 30; $i++) {
+# Give the monitor up to $WaitSeconds seconds to finalize (it stops the
+# container and writes the reports). A state read that fails mid-wait -
+# the monitor may be rewriting state.json at that moment - counts as
+# "not finished yet", never as "finished".
+$polls = [Math]::Max(1, [int][Math]::Ceiling($WaitSeconds / 2))
+for ($i = 0; $i -lt $polls; $i++) {
     Start-Sleep -Seconds 2
-    $now = (Get-Content $statePath -Raw) | ConvertFrom-Json
-    if ($now.Status -ne 'Running') {
-        Write-Host "Monitor finalized the run (status: $($now.Status)). Reports: $(Join-Path $state.RunDir 'reports')"
+    $now = $null
+    try { $now = (Get-Content $statePath -Raw -ErrorAction Stop) | ConvertFrom-Json -ErrorAction Stop } catch { $now = $null }
+    if ($null -ne $now -and $now.Status -ne 'Running') {
+        Write-Host "Monitor finalized the run (status: $($now.Status)). Reports: $(Join-Path $runDir 'reports')"
         exit 0
     }
 }
