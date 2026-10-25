@@ -31,16 +31,19 @@ describe("strategy / settings tab merge (main.tsx wiring)", () => {
   it("falls a restored Settings value back to the strategy tab", () => {
     expect(main).toContain('tab === "Settings"');
     expect(main).toContain('? "Strategy"');
+    // ... on its 設定 segment (see strategy-segments.test.tsx).
+    expect(main).toContain('tab === "Settings" ? "settings" : "rules"');
     // Any other unknown value still falls back to the dashboard.
     expect(main).toContain(': "Overview"');
   });
 
-  it("renders the diagram view, then the settings editor, on the strategy tab", () => {
+  it("renders the strategy tab composition on the strategy tab", () => {
+    // The diagram view and the settings editor are composed by
+    // StrategyTab (segment switch: ルール / 設定, with the PAPER
+    // operation controls always visible below the segments).
     const branch = main.slice(main.indexOf('activeTab === "Strategy"'));
-    expect(branch.indexOf("<StrategyPanel")).toBeGreaterThanOrEqual(0);
-    expect(branch.indexOf("<SettingsPage")).toBeGreaterThan(
-      branch.indexOf("<StrategyPanel"),
-    );
+    expect(branch).toContain("<StrategyTab");
+    expect(branch).toContain("segment={strategySegment}");
   });
 
   it("points the tab-independent notices at the strategy tab", () => {
