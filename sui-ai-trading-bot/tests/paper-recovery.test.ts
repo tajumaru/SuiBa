@@ -1,4 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { OperationMonitor } from "../apps/worker/src/operations.ts";
 import { recoverableReadFailure } from "../packages/shared/src/paper-recovery.ts";
@@ -20,6 +24,7 @@ export const failure = (patch: Partial<ApiFailure> = {}): ApiFailure => ({
   ...patch,
 });
 const databases: BotDatabase[] = [];
+const folders: string[] = [];
 function setup() {
   const db = new BotDatabase(":memory:");
   databases.push(db);
@@ -30,8 +35,127 @@ function setup() {
 }
 afterEach(() => {
   for (const db of databases.splice(0)) db.close();
+  for (const folder of folders.splice(0)) rmSync(folder, { recursive: true });
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+});
+
+it.each(["BUY", "SELL"] as const)(
+  "isolates recovery direction validation for a %s order",
+  (side) => {
+    for (const mismatch of [false, true]) {
+      const { db, monitor } = setup(),
+        start = Date.now();
+      const id = "direction-only";
+      db.append("paper_orders", id, { id, status: "FILLED", side }, start);
+      db.append(
+        "paper_trades",
+        id,
+        {
+          orderId: id,
+          side: mismatch ? (side === "BUY" ? "SELL" : "BUY") : side,
+          fee: "0",
+          costs: { gasUsdc: "0" },
+        },
+        start,
+      );
+      db.append(
+        "paper_checks",
+        id,
+        {
+          orderId: id,
+          ok: true,
+          expected: { ...db.portfolio(), gasUsdc: "0", tradeFee: "0" },
+        },
+        start,
+      );
+      expect(monitor.ledger().ok).toBe(true);
+      const f = failure({ occurredAt: start });
+      monitor.transientFailure(f.api, f.code, f, start);
+      monitor.market(start, start);
+      monitor.beginCycle();
+      expect(
+        monitor.recoveryCycle({ market: true, sui: true }, start + 1000),
+      ).toBe(false);
+      if (mismatch) {
+        expect(db.runtime().error).toBe("PAPER_ORDER_STATE_UNKNOWN");
+        expect(monitor.safety().resumePending).toBe(false);
+      } else expect(db.runtime().error).toBeNull();
+      monitor.beginCycle();
+      expect(
+        monitor.recoveryCycle({ market: true, sui: true }, start + 61000),
+      ).toBe(!mismatch);
+      expect(db.runtime().running).toBe(!mismatch);
+      if (mismatch) expect(monitor.ordersAllowed()).toBe(false);
+    }
+  },
+);
+
+it("closes the recovery gate on a separate SQLite writer lock", () => {
+  const folder = mkdtempSync(join(tmpdir(), "suiba-recovery-lock-"));
+  folders.push(folder);
+  const path = join(folder, "bot.sqlite"),
+    db = new BotDatabase(path);
+  databases.push(db);
+  db.set("runtime", { ...db.runtime(), running: true });
+  const monitor = new OperationMonitor(db),
+    start = Date.now();
+  const f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  monitor.market(start, start);
+  monitor.beginCycle();
+  const writer = new DatabaseSync(path);
+  try {
+    writer.exec("BEGIN IMMEDIATE");
+    expect(
+      monitor.recoveryCycle({ market: true, sui: true }, start + 1000),
+    ).toBe(false);
+    expect(monitor.ordersAllowed()).toBe(false);
+    expect(db.runtime().running).toBe(false);
+  } finally {
+    writer.exec("ROLLBACK");
+    writer.close();
+  }
+  // Even though both proof and stop persistence encountered BUSY, releasing the lock cannot reopen the gate.
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 61000),
+  ).toBe(false);
+  expect(monitor.ordersAllowed()).toBe(false);
+});
+
+it("rolls back a real deferred-constraint COMMIT failure during resume", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  const f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  monitor.market(start, start);
+  monitor.beginCycle();
+  monitor.recoveryCycle({ market: true, sui: true }, start + 1000);
+  const raw = (db as unknown as { db: DatabaseSync }).db;
+  raw.exec(`
+    CREATE TABLE commit_parent(id INTEGER PRIMARY KEY);
+    CREATE TABLE commit_child(parent INTEGER REFERENCES commit_parent(id) DEFERRABLE INITIALLY DEFERRED);
+    CREATE TRIGGER fail_resume_commit AFTER UPDATE ON bot_runtime_state
+    WHEN NEW.key='runtime' AND json_extract(NEW.json,'$.running')=1
+    BEGIN INSERT INTO commit_child VALUES(99); END;
+  `);
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 61000),
+  ).toBe(false);
+  expect(raw.prepare("SELECT * FROM commit_child").all()).toHaveLength(0);
+  expect(db.runtime()).toMatchObject({
+    running: false,
+    error: "PAPER_RECOVERY_READ_FAILED",
+  });
+  expect(monitor.safety().resumePending).toBe(false);
+  expect(
+    db
+      .history("operation_events")
+      .some((e) => e.reason === "PAPER_NETWORK_RECOVERED"),
+  ).toBe(false);
+  expect(monitor.ordersAllowed()).toBe(false);
 });
 
 it("blocks orders on the first evidenced BODY failure without latching a hard error", () => {
