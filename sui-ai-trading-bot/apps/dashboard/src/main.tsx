@@ -645,13 +645,6 @@ function App() {
           </main>
         </>
       )}
-      <footer>
-        PAPER（仮想売買）モード · 仮想売買のみ · 署名 / 取引送信なし ·
-        市場データ提供：
-        {data?.marketData
-          ? (data.marketData.source ?? "未取得")
-          : "GeckoTerminal"}
-      </footer>
     </>
   );
 }

@@ -5,8 +5,7 @@
   font-synthesis: none;
 }
 main,
-header,
-footer {
+header {
   overflow-wrap: anywhere;
 }
 .cards {
@@ -136,7 +135,7 @@ nav .active {
 main {
   max-width: 1400px;
   margin: auto;
-  padding: 12px 5% 80px;
+  padding: 12px 5% 24px;
 }
 .title {
   display: flex;
@@ -309,17 +308,6 @@ th {
   display: grid;
   place-items: center;
   color: #8196a8;
-}
-footer {
-  position: fixed;
-  bottom: 0;
-  width: 100%;
-  padding: 12px;
-  background: #0c1622;
-  border-top: 1px solid #263448;
-  color: #8fa7b9;
-  font-size: 11px;
-  text-align: center;
 }
 @media (max-width: 800px) {
   .cards {
@@ -543,15 +531,9 @@ footer {
   header button {
     min-height: 44px;
   }
-  /* Keep the end of the page clear of the fixed bar; the footer,
-     fixed on desktop, flows at the end of the page on mobile
-     instead of colliding with the bar. */
+  /* Keep the end of the page clear of the fixed bottom tab bar. */
   main {
     padding-bottom: calc(84px + env(safe-area-inset-bottom));
-  }
-  footer {
-    position: static;
-    margin-bottom: calc(72px + env(safe-area-inset-bottom));
   }
   .easy-settings .controls {
     flex-direction: column;
