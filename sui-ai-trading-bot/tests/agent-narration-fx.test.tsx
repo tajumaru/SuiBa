@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { AgentPoseFx } from "../apps/dashboard/src/AgentNarration.tsx";
 import type { AgentPose } from "../apps/dashboard/src/agentNarration.ts";
 
-const POSES: AgentPose[] = ["normal", "point", "pointSmile", "sleep"];
+const POSES: AgentPose[] = ["normal", "point", "pointSmile", "sleep", "laptop"];
 
 describe("agent pose expression overlay", () => {
   it("keys the fx layer to the current pose", () => {
@@ -48,9 +48,10 @@ describe("agent pose expression overlay", () => {
       );
     }
     // Groups stay hidden unless their pose is active, and the normal
-    // pose has no display rule at all.
+    // and laptop poses have no display rule at all.
     expect(css).toContain(".agent-feed-fx-grp {\n  position: absolute;");
     expect(css).not.toContain('data-pose="normal"]');
+    expect(css).not.toContain('data-pose="laptop"]');
   });
 
   it("animates only when reduced motion is not requested", () => {

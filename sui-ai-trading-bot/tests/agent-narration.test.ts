@@ -605,7 +605,7 @@ describe("agent pose", () => {
     );
   });
 
-  it("weak (degraded) never points, even with 2/3 conditions met", () => {
+  it("weak (degraded) works at the laptop and never points, even with 2/3 conditions met", () => {
     const { db, monitor } = fixture();
     const d = runningSnapshot(
       db,
@@ -617,7 +617,7 @@ describe("agent pose", () => {
     d.safety.connectivity = "DEGRADED";
     const vital = botVital(d, false, NOW, NOW);
     expect(vital.state).toBe("weak");
-    expect(agentPose(emptyNarrationState(), d, vital, NOW)).toBe("normal");
+    expect(agentPose(emptyNarrationState(), d, vital, NOW)).toBe("laptop");
   });
 
   it("a safety stop sleeps", () => {
@@ -630,12 +630,24 @@ describe("agent pose", () => {
     expect(agentPose(emptyNarrationState(), d, vital, NOW)).toBe("sleep");
   });
 
-  it("an alive bot with fewer than two conditions met stays normal", () => {
+  it("an alive bot with fewer than two conditions met works at the laptop", () => {
     const { db, monitor } = fixture();
     const d = runningSnapshot(db, monitor, decision({}));
     const vital = botVital(d, false, NOW, NOW);
     expect(vital.state).toBe("alive");
-    expect(agentPose(emptyNarrationState(), d, vital, NOW)).toBe("normal");
+    expect(agentPose(emptyNarrationState(), d, vital, NOW)).toBe("laptop");
+  });
+
+  it("an unconfirmed (unknown) state keeps the normal pose, never the laptop", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    const vital = botVital(d, false, NOW, NOW);
+    expect(vital.state).toBe("alive");
+    // With the run state unconfirmed the agent must not claim to be
+    // working: the plain pose stays.
+    expect(agentPose(emptyNarrationState(), d, { ...vital, state: "unknown" }, NOW)).toBe(
+      "normal",
+    );
   });
 });
 
@@ -821,7 +833,7 @@ describe("agent narration: fail-closed", () => {
     state.entries = [{ id: "trade", at: NOW, kind: "trade", text: "recorded" }];
     const vital = botVital(d, false, NOW, NOW);
     expect(agentPose(state, d, vital, NOW)).toBe("pointSmile");
-    expect(agentPose(state, d, vital, NOW + 360_001)).toBe("normal");
+    expect(agentPose(state, d, vital, NOW + 360_001)).toBe("laptop");
   });
 
   it("does not narrate or point for old/future evidence or unconfirmed running state", () => {
@@ -839,7 +851,7 @@ describe("agent narration: fail-closed", () => {
         advanceNarration(emptyNarrationState(), d, "alive", NOW).entries[0]
           .kind,
       ).toBe("status");
-      expect(agentPose(state, d, vital, NOW)).toBe("normal");
+      expect(agentPose(state, d, vital, NOW)).toBe("laptop");
     }
     d.decision!.evaluatedAt = NOW;
     expect(advanceNarration(state, d, "unknown", NOW).entries).toEqual(
@@ -2214,7 +2226,7 @@ describe("agent narration: spike alerts", () => {
     expect(agentPose(up.state, up.last, upVital, NOW)).toBe("point");
 
     // Same shape with no alert: fewer than two conditions met and
-    // nothing else to celebrate, so the pose stays normal.
+    // nothing else to celebrate, so the pose stays at the laptop.
     const calm = feedRun(seq([{}, {}, {}, { price: 2.41 }]));
     expect(alertsOf(calm.state)).toHaveLength(0);
     expect(
@@ -2224,7 +2236,7 @@ describe("agent narration: spike alerts", () => {
         botVital(calm.last, false, NOW, NOW),
         NOW,
       ),
-    ).toBe("normal");
+    ).toBe("laptop");
 
     const down = feedRun(seq([{}, {}, {}, { price: 2.3448 }]));
     expect(down.state.lastAlert?.direction).toBe("down");
@@ -2235,7 +2247,7 @@ describe("agent narration: spike alerts", () => {
         botVital(down.last, false, NOW, NOW),
         NOW,
       ),
-    ).toBe("normal");
+    ).toBe("laptop");
   });
 
   it("spikeAlert fails closed on unusable evidence", () => {
