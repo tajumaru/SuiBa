@@ -343,12 +343,17 @@ function App() {
             ログアウト
           </button>
         )}
-        {/* The narration character lives in the header as a round
-            avatar docked at the top centre, on every tab — but only
-            once connected: the login screen has no bot state to
-            show, so no avatar (and no placeholder) is rendered. */}
-        {token && <AgentHeaderAvatar pose={agentPose} />}
       </header>
+      {/* The narration character rides at the top centre of the app
+          as a round avatar, on every tab — but only once connected:
+          the login screen has no bot state to show, so no avatar
+          (and no placeholder) is rendered. It is a sibling of the
+          header, not a child, so its sticky dock (see
+          .agent-avatar-dock in style.css) can travel the whole
+          page: at rest it floats half over the header's bottom
+          edge, and on scroll it sticks to the top of the viewport
+          instead of scrolling away with the header. */}
+      {token && <AgentHeaderAvatar pose={agentPose} />}
       {!token ? (
         <main className="login">
           <h1>市場を検証する。</h1>

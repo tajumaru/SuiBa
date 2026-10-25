@@ -1484,29 +1484,39 @@ th {
   display: none;
 }
 /* Agent header avatar: the narration character as a round avatar
-   docked at the top centre of the header, half floating over the
-   header's bottom edge, with its status pill underneath (see
-   AgentHeaderAvatar). The dock is positioned against the header;
-   the tab bar (or, on mobile, the page top) carries the extra top
-   padding that keeps following content clear of it — see
-   nav.has-avatar and main.has-avatar. The artwork is clipped to
-   the circle by the bob wrapper, whose transform carries the
-   gentle bob so the two typing frames never drift apart. The
-   detailed expression marks of the old in-feed stage do not fit a
-   92px circle, so only two coarse marks remain: a floating "Zzz"
-   while asleep and a twinkling star while pointing. Motion lives
-   only in the no-preference block below; under
-   prefers-reduced-motion everything rests still, the typing frame
-   stays invisible, and the Zzz / star marks rest as faint marks. */
+   at the top centre of the app, half floating over the header's
+   bottom edge at rest, with its status pill underneath (see
+   AgentHeaderAvatar). The dock is rendered as a sibling of the
+   header, a direct child of the app root, so its sticky
+   containing block spans the whole page. The negative margins
+   pull the dock half over the header's bottom edge and hand the
+   lower half back to the flow, which reproduces the resting
+   layout exactly: the tab bar (or, on mobile, the page top)
+   carries the extra top padding that keeps following content
+   clear of the dock at rest — see nav.has-avatar and
+   main.has-avatar. When the page scrolls, the header slides away
+   but the dock sticks 9px below the viewport top and stays in
+   view, floating over the content that flows underneath (it is
+   pointer-events: none, and its z-index keeps it above the tab
+   content and below the mobile bottom bar). The artwork is
+   clipped to the circle by the bob wrapper, whose transform
+   carries the gentle bob so the two typing frames never drift
+   apart. The detailed expression marks of the old in-feed stage
+   do not fit a 92px circle, so only two coarse marks remain: a
+   floating "Zzz" while asleep and a twinkling star while
+   pointing. Motion lives only in the no-preference block below;
+   under prefers-reduced-motion everything rests still, the
+   typing frame stays invisible, and the Zzz / star marks rest as
+   faint marks. */
 .agent-avatar-dock {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  transform: translate(-50%, 50%);
+  position: sticky;
+  top: 9px;
+  z-index: 5;
   display: flex;
   flex-direction: column;
   align-items: center;
-  z-index: 5;
+  width: fit-content;
+  margin: -64px auto -64px;
   pointer-events: none;
 }
 .agent-avatar {
@@ -1654,8 +1664,8 @@ th {
   }
 }
 /* Agent narration feed: a chat-style timeline on its own tab. The
-   character that used to be staged here now lives in the app
-   header as a round avatar (see .agent-avatar-dock above); this
+   character that used to be staged here now lives at the top of
+   the app as a round avatar (see .agent-avatar-dock above); this
    panel keeps the narration itself — condition chips, the watch
    strip, the declaration score and the entries. */
 .agent-feed {

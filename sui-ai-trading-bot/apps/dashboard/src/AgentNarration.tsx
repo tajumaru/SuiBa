@@ -69,9 +69,9 @@ const AVATAR_DOT_TONE: Record<AgentPose, "run" | "near" | "stop"> = {
 };
 
 /**
- * The narration character as a round avatar docked at the top
- * centre of the app header (main.tsx renders it on every tab): the
- * pose artwork clipped to a circle and gently bobbing, with the
+ * The narration character as a round avatar at the top centre of
+ * the app (main.tsx renders it on every tab): the pose artwork
+ * clipped to a circle and gently bobbing, with the
  * pose's status label — the same POSE_LABEL the feed stage used to
  * show — in a pill underneath. The detailed expression overlay of
  * the old in-feed stage (a Zzz stream, a snot bubble, fingertip
@@ -80,9 +80,12 @@ const AVATAR_DOT_TONE: Record<AgentPose, "run" | "near" | "stop"> = {
  * asleep and a twinkling star while pointing, drawn as plain spans
  * keyed to the pose-* class in style.css. The artwork itself is
  * decorative (the pill carries the status text), so the circle is
- * aria-hidden. Motion is defined only under
- * prefers-reduced-motion: no-preference in style.css; under reduce
- * everything rests still and the marks stay as faint marks.
+ * aria-hidden. The dock is sticky (see .agent-avatar-dock in
+ * style.css): it rests half over the header's bottom edge and
+ * then stays at the top of the viewport while the page scrolls.
+ * Motion is defined only under prefers-reduced-motion:
+ * no-preference in style.css; under reduce everything rests
+ * still and the marks stay as faint marks.
  */
 export function AgentHeaderAvatar({ pose }: { pose: AgentPose }) {
   return (
@@ -127,9 +130,10 @@ const timeText = (at: number) =>
  * component itself invents nothing, and when the display goes stale
  * the feed stops advancing, just like the vital signs.
  *
- * The character itself no longer lives in this panel: it sits in
- * the app header as a round avatar (AgentHeaderAvatar) on every
- * tab, and this feed — the one place that advances the narration
+ * The character itself no longer lives in this panel: it rides
+ * at the top of the app as a round avatar (AgentHeaderAvatar) on
+ * every tab, staying in view while the page scrolls, and this
+ * feed — the one place that advances the narration
  * state — reports each derived pose through onPoseChange so the
  * avatar and the narration can never disagree. The artwork is
  * AI-generated raster imagery; the pose is a symbol of the recorded
