@@ -120,7 +120,10 @@ describe("ema gap shrink: the shrink measure", () => {
   });
 
   it("breaks when the latest candle widens the gap again", () => {
-    const dropped = toCandles([...tunedCloses(), tunedCloses().at(-1)! * 0.975]);
+    const dropped = toCandles([
+      ...tunedCloses(),
+      tunedCloses().at(-1)! * 0.975,
+    ]);
     expect(emaGapShrinking(dropped, 3)).toBe(false);
   });
 });
@@ -160,7 +163,10 @@ describe("ema gap shrink: strategy", () => {
   });
 
   it("on: a gap that widens again on the last candle does not qualify", async () => {
-    const dropped = toCandles([...tunedCloses(), tunedCloses().at(-1)! * 0.975]);
+    const dropped = toCandles([
+      ...tunedCloses(),
+      tunedCloses().at(-1)! * 0.975,
+    ]);
     const d = await new RuleBasedStrategy(on).analyze(
       liveContext(dropped, now),
     );
@@ -282,9 +288,9 @@ describe("ema gap shrink: telemetry and backtest paths", () => {
       );
     const enabled = await compareBacktests(series, options, on);
     expect(buys(enabled).length).toBeGreaterThan(0);
-    expect(
-      buys(enabled)[0].decision.evidence?.conditions.emaGapShrinking,
-    ).toBe(true);
+    expect(buys(enabled)[0].decision.evidence?.conditions.emaGapShrinking).toBe(
+      true,
+    );
     const disabled = await compareBacktests(series, options, defaults);
     expect(buys(disabled)).toHaveLength(0);
   });

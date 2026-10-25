@@ -171,9 +171,7 @@ describe("strategy view: condition cards", () => {
     expect(c.ema.viaShrink).toBe(true);
     expect(c.ema.gapPct).toBeLessThan(0);
     // The plain cross route is not a shrink.
-    expect(strategyConditions(telemetry(), 4, NOW).ema.viaShrink).toBe(
-      false,
-    );
+    expect(strategyConditions(telemetry(), 4, NOW).ema.viaShrink).toBe(false);
   });
 
   it("judges the volume guard by the strategy's own comparison", () => {
