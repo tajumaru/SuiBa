@@ -18,6 +18,7 @@ import {
 } from "./settingsEditor.ts";
 import { number, errorCode, reason } from "./presentation.ts";
 import { startRejectionReason } from "./operationLabels.ts";
+import { OperationIcon } from "./operationIcons.tsx";
 type State = ReturnType<BotEngine["snapshot"]>;
 export type Field = {
   key: keyof Settings;
@@ -575,16 +576,47 @@ export function PaperOperationControls({
   return (
     <section aria-label="PAPER運用の操作">
       <hr />
-      <h3 className={`paper-operation ${running ? "running" : "stopped"}`}>
-        PAPER運用：
-        {emergency
-          ? "緊急停止中"
-          : error
-            ? "安全停止中"
-            : running
-              ? "運用中"
-              : "停止中"}
-      </h3>
+      <div className="paper-operation-head">
+        <h3 className={`paper-operation ${running ? "running" : "stopped"}`}>
+          PAPER運用：
+          {emergency
+            ? "緊急停止中"
+            : error
+              ? "安全停止中"
+              : running
+                ? "運用中"
+                : "停止中"}
+        </h3>
+        <div className="paper-operation-actions">
+          <button
+            type="button"
+            className="operation-icon-button start"
+            aria-label="PAPER運用開始"
+            title="PAPER運用開始"
+            disabled={
+              busy ||
+              dirty ||
+              conflict ||
+              !!switchTo ||
+              running ||
+              emergency ||
+              !!error
+            }
+            onClick={() => void start()}
+          >
+            <OperationIcon kind="start" />
+          </button>
+          <button
+            type="button"
+            className="operation-icon-button stop"
+            aria-label="PAPER運用停止"
+            title="PAPER運用停止"
+            onClick={() => void control("stop")}
+          >
+            <OperationIcon kind="stop" />
+          </button>
+        </div>
+      </div>
       {running ? (
         <p>運用中です。保存済みの設定で仮想売買を行っています。</p>
       ) : startBlocked.length > 0 ? (
@@ -604,39 +636,20 @@ export function PaperOperationControls({
           開始できませんでした。{startRejectionReason(startFailure)}
         </p>
       )}
-      <div className="controls">
-        <div className="control-action">
-          <button
-            type="button"
-            disabled={
-              busy ||
-              dirty ||
-              conflict ||
-              !!switchTo ||
-              running ||
-              emergency ||
-              !!error
-            }
-            onClick={() => void start()}
-          >
-            PAPER運用開始
-          </button>
-          <small>
-            保存済みの設定で仮想売買を始めます。条件がそろうまで売買はしません。
-          </small>
-        </div>
-        <div className="control-action">
-          <button type="button" onClick={() => void control("stop")}>
-            PAPER運用停止
-          </button>
-          <small>
-            仮想売買を止めます。保有中の仮想ポジションは残り、再開後に管理を続けます。
-          </small>
-        </div>
-      </div>
       {(emergency || error) && (
         <section className="stop-release">
-          <h4>停止状態の解除</h4>
+          <div className="stop-release-head">
+            <h4>停止状態の解除</h4>
+            <button
+              type="button"
+              className="operation-icon-button release"
+              aria-label="停止解除（再開は手動）"
+              title="停止解除（再開は手動）"
+              onClick={() => void control("reset")}
+            >
+              <OperationIcon kind="release" />
+            </button>
+          </div>
           <p>
             {emergency
               ? "緊急停止が押され、PAPER運用を止めています。"
@@ -646,14 +659,11 @@ export function PaperOperationControls({
             <li>
               停止理由と「運用検証」の診断で、原因と接続状態を確認します。
             </li>
-            <li>問題がなければ、下のボタンで停止状態を解除します。</li>
+            <li>問題がなければ、上のボタンで停止状態を解除します。</li>
             <li>
               解除後に「PAPER運用開始」を押すと再開します。解除だけでは自動で再開しません。
             </li>
           </ol>
-          <button type="button" onClick={() => void control("reset")}>
-            停止解除（再開は手動）
-          </button>
         </section>
       )}
     </section>
