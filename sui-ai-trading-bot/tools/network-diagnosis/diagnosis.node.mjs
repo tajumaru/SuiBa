@@ -74,6 +74,21 @@ test("default CLI and Windows wrapper do not execute network or resolve Node/Doc
     );
     assert.equal(ps.status, 0, ps.stderr);
     assert.equal(JSON.parse(ps.stdout).networkRequests, 0);
+    const bat = spawnSync(
+      "cmd.exe",
+      ["/d", "/c", "Start-SuiBaNetworkDiagnosis.bat", "--plan"],
+      {
+        cwd: tool,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CI: "true",
+          SUIBA_DIAGNOSTIC_NODE: "Z:/missing-node.exe",
+        },
+      },
+    );
+    assert.equal(bat.status, 0, bat.stdout + bat.stderr);
+    assert.equal(JSON.parse(bat.stdout).networkRequests, 0);
   }
 });
 test("supported Node range and explicit arguments", () => {
