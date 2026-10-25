@@ -192,7 +192,19 @@ export class OperationMonitor {
       this.cycleGeneration !== s.generation
     )
       return false;
-    if (!checks.market || !checks.sui || apiAccess.blocked()) return false;
+    if (!checks.market || !checks.sui || apiAccess.blocked()) {
+      this.saveSafety({
+        connectivity: "DEGRADED",
+        healthyCycles: 0,
+        firstHealthyAt: null,
+        lastHealthyCycleAt: null,
+      });
+      return false;
+    }
+    if (!this.recoveryOrdersKnown(now)) {
+      this.failCycle("PAPER_ORDER_STATE_UNKNOWN", now);
+      return false;
+    }
     if (!this.ledger().ok) {
       this.failCycle("PAPER_RECONCILIATION_FAILED", now);
       return false;
@@ -253,6 +265,40 @@ export class OperationMonitor {
       });
     }
     return resume;
+  }
+
+  /** PAPER fills are atomic; pending/unknown or unmatched records require operator review. */
+  private recoveryOrdersKnown(now: number) {
+    const orders = this.db.range<{ id: string; status: string }>(
+      "paper_orders",
+      0,
+      now,
+    );
+    const trades = this.db.range<Fill>("paper_trades", 0, now);
+    const checks = this.db.range<AccountingCheck>("paper_checks", 0, now);
+    const filled = new Set(
+      orders.filter((o) => o.status === "FILLED").map((o) => o.id),
+    );
+    const tradeCounts = new Map<string, number>(),
+      checkCounts = new Map<string, number>();
+    for (const t of trades)
+      tradeCounts.set(t.orderId, (tradeCounts.get(t.orderId) ?? 0) + 1);
+    for (const c of checks)
+      if (c.ok)
+        checkCounts.set(c.orderId, (checkCounts.get(c.orderId) ?? 0) + 1);
+    return (
+      orders.every(
+        (o) =>
+          typeof o.id === "string" &&
+          o.id.length > 0 &&
+          (o.status === "REJECTED" ||
+            (o.status === "FILLED" &&
+              tradeCounts.get(o.id) === 1 &&
+              checkCounts.get(o.id) === 1)),
+      ) &&
+      trades.every((t) => filled.has(t.orderId)) &&
+      checks.every((c) => c.ok && filled.has(c.orderId))
+    );
   }
 
   private fetchMono: number | null = null;

@@ -177,3 +177,56 @@ it("counts a completed cycle only once and caps repeated failures", () => {
   for (let i = 1; i < 9; i++) monitor.transientFailure(f.api, f.code, f);
   expect(db.runtime().error).toBe("PAPER_RECOVERY_EXHAUSTED");
 });
+
+it.each(["PENDING", "UNKNOWN", "FILLED", "CANCELLED"])(
+  "requires review for unresolved %s orders",
+  (status) => {
+    const { db, monitor } = setup();
+    const start = Date.now();
+    const f = failure({ occurredAt: start });
+    monitor.transientFailure(f.api, f.code, f, start);
+    db.append("paper_orders", "orphan", { id: "orphan", status }, start);
+    monitor.market(start, start);
+    monitor.beginCycle();
+    expect(
+      monitor.recoveryCycle({ market: true, sui: true }, start + 1000),
+    ).toBe(false);
+    expect(db.runtime()).toMatchObject({
+      running: false,
+      error: "PAPER_ORDER_STATE_UNKNOWN",
+    });
+    expect(monitor.safety().resumePending).toBe(false);
+    monitor.beginCycle();
+    expect(
+      monitor.recoveryCycle({ market: true, sui: true }, start + 61000),
+    ).toBe(false);
+    expect(monitor.ordersAllowed()).toBe(false);
+  },
+);
+
+it("requires consecutive healthy proofs after a missing market or Sui proof", () => {
+  const { db, monitor } = setup();
+  const start = Date.now(),
+    f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  monitor.market(start, start);
+  monitor.beginCycle();
+  monitor.recoveryCycle({ market: true, sui: true }, start + 1000);
+  expect(monitor.safety().healthyCycles).toBe(1);
+  monitor.beginCycle();
+  monitor.recoveryCycle({ market: false, sui: true }, start + 31000);
+  expect(monitor.safety()).toMatchObject({
+    connectivity: "DEGRADED",
+    healthyCycles: 0,
+    firstHealthyAt: null,
+  });
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 61000),
+  ).toBe(false);
+  expect(db.runtime().running).toBe(false);
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 121000),
+  ).toBe(true);
+});
