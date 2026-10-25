@@ -1879,20 +1879,45 @@ describe("agent narration: watch score and review", () => {
     // No recorded start (or current) price: the price line is
     // omitted entirely rather than invented.
     expect(
-      reviewNarrationTexts({ declared: 4, hits: 3, misses: 1 }, null, 2.483, false),
+      reviewNarrationTexts(
+        { declared: 4, hits: 3, misses: 1 },
+        null,
+        2.483,
+        false,
+      ),
     ).toHaveLength(1);
     expect(
-      reviewNarrationTexts({ declared: 4, hits: 3, misses: 1 }, 2.412, null, false),
+      reviewNarrationTexts(
+        { declared: 4, hits: 3, misses: 1 },
+        2.412,
+        null,
+        false,
+      ),
     ).toHaveLength(1);
     expect(
-      reviewNarrationTexts({ declared: 4, hits: 3, misses: 1 }, 0, 2.483, false),
+      reviewNarrationTexts(
+        { declared: 4, hits: 3, misses: 1 },
+        0,
+        2.483,
+        false,
+      ),
     ).toHaveLength(1);
     // The verdict follows the recorded balance only.
     expect(
-      reviewNarrationTexts({ declared: 3, hits: 0, misses: 2 }, null, null, false)[0],
+      reviewNarrationTexts(
+        { declared: 3, hits: 0, misses: 2 },
+        null,
+        null,
+        false,
+      )[0],
     ).toContain("外れが多めだなあ");
     expect(
-      reviewNarrationTexts({ declared: 2, hits: 1, misses: 1 }, null, null, false)[0],
+      reviewNarrationTexts(
+        { declared: 2, hits: 1, misses: 1 },
+        null,
+        null,
+        false,
+      )[0],
     ).toContain("五分五分だね");
   });
 

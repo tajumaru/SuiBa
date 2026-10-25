@@ -178,9 +178,7 @@ export function AgentNarrationFeed({
     ? null
     : currentWatch(narration, data.decision, vital.state, now);
   // The declaration score, under the same freshness rule.
-  const score = stale
-    ? null
-    : currentWatchScore(narration, data.decision, now);
+  const score = stale ? null : currentWatchScore(narration, data.decision, now);
 
   return (
     <section className="agent-feed" aria-label="エージェント実況">
