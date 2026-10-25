@@ -3,8 +3,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { AgentHeaderAvatar } from "../apps/dashboard/src/AgentNarration.tsx";
+import {
+  AgentHeaderAvatar,
+  AgentNarrationFeed,
+} from "../apps/dashboard/src/AgentNarration.tsx";
 import type { AgentPose } from "../apps/dashboard/src/agentNarration.ts";
+import type { OperationsSnapshot } from "../apps/dashboard/src/operationsTypes.ts";
 
 const POSES: AgentPose[] = ["normal", "point", "pointSmile", "sleep", "laptop"];
 
@@ -135,6 +139,56 @@ describe("agent header avatar stylesheet", () => {
     // Mobile: the tab bar is fixed, so the page top carries it.
     expect(css).toContain("main.has-avatar {");
     expect(css).toContain("padding-top: 78px;");
+  });
+});
+
+describe("narration feed after the stage removal", () => {
+  const stopped = {
+    status: "STOPPED",
+    decision: null,
+    events: [],
+    candidates: [],
+  } as unknown as OperationsSnapshot;
+
+  it("renders the feed without any stage, artwork or pose label", () => {
+    const html = renderToStaticMarkup(
+      <AgentNarrationFeed data={stopped} stale={false} />,
+    );
+    // The section keeps its accessible name and its entries area…
+    expect(html).toContain('aria-label="エージェント実況"');
+    expect(html).toContain("実況を準備中です");
+    expect(html).toContain("agent-feed-note");
+    // …but the stage block (artwork, heading, pose label) is gone:
+    // the character and its status live in the header avatar now.
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("agent-feed-stage");
+    expect(html).not.toContain("Botの実況");
+    expect(html).not.toContain("様子を見ています");
+  });
+
+  it("leaves no stage or expression-overlay code behind", () => {
+    const component = readFileSync(
+      resolve("apps/dashboard/src/AgentNarration.tsx"),
+      "utf8",
+    );
+    expect(component).not.toContain("agent-feed-stage");
+    expect(component).not.toContain("AgentPoseFx");
+    expect(component).not.toContain("AgentStageArtwork");
+    const css = readFileSync(
+      new URL("../apps/dashboard/src/style.css", import.meta.url),
+      "utf8",
+    );
+    expect(css).not.toContain(".agent-feed-stage");
+    expect(css).not.toContain(".agent-feed-fx");
+    expect(css).not.toContain(".agent-feed-head");
+  });
+
+  it("reports the derived pose to the app shell", () => {
+    const component = readFileSync(
+      resolve("apps/dashboard/src/AgentNarration.tsx"),
+      "utf8",
+    );
+    expect(component).toContain("onPoseChange?.(pose)");
   });
 });
 

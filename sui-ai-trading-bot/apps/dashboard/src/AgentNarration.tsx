@@ -33,72 +33,6 @@ const POSE_LABEL: Record<AgentPose, string> = {
   laptop: "様子を見ています",
 };
 
-const SPARK_PATH =
-  "M12 1 L14.2 9.8 L23 12 L14.2 14.2 L12 23 L9.8 14.2 L1 12 L9.8 9.8 Z";
-
-/**
- * The stage artwork for the current pose. Only the laptop pose has
- * a second frame — the same scene with the near hand's index finger
- * raised — stacked on top of the base frame; style.css flips the
- * two in a two-frame typing loop (about 0.26s per frame) purely with
- * CSS keyframes, and only when reduced motion is not requested.
- * Under prefers-reduced-motion the second frame rests invisible,
- * so the laptop pose is the still base frame, like every other
- * pose's single image.
- */
-export function AgentStageArtwork({ pose }: { pose: AgentPose }) {
-  return (
-    <>
-      <img src={POSE_IMAGE[pose]} alt="" />
-      {pose === "laptop" && (
-        <img
-          className="agent-feed-stage-typing"
-          src={imgLaptopTyping}
-          alt=""
-        />
-      )}
-    </>
-  );
-}
-
-/**
- * Expression overlay drawn on top of the character artwork (the JPGs
- * themselves are never modified). Each pose gets a small CSS/SVG
- * effect anchored to coordinates measured on the artwork: a floating
- * "Zzz" and a breathing snot bubble while asleep, twinkling stars at
- * the fingertip while pointing, and a musical note plus a star
- * drifting up after a trade. The normal and laptop poses have no
- * effect. Motion is
- * defined only under prefers-reduced-motion: no-preference in
- * style.css; under reduce the effects rest as faint still marks.
- */
-export function AgentPoseFx({ pose }: { pose: AgentPose }) {
-  return (
-    <div className="agent-feed-fx" data-pose={pose} aria-hidden="true">
-      <div className="agent-feed-fx-grp fx-g-sleep">
-        <span className="agent-feed-fx-zzz z1">Z</span>
-        <span className="agent-feed-fx-zzz z2">Z</span>
-        <span className="agent-feed-fx-zzz z3">Z</span>
-        <div className="agent-feed-fx-noseb" />
-      </div>
-      <div className="agent-feed-fx-grp fx-g-point">
-        <svg className="agent-feed-fx-spark s1" viewBox="0 0 24 24">
-          <path d={SPARK_PATH} fill="#ffd166" />
-        </svg>
-        <svg className="agent-feed-fx-spark s2" viewBox="0 0 24 24">
-          <path d={SPARK_PATH} fill="#ffe9a8" />
-        </svg>
-      </div>
-      <div className="agent-feed-fx-grp fx-g-smile">
-        <span className="agent-feed-fx-note n1">♪</span>
-        <svg className="agent-feed-fx-star" viewBox="0 0 24 24">
-          <path d={SPARK_PATH} fill="#ffd166" />
-        </svg>
-      </div>
-    </div>
-  );
-}
-
 /**
  * The avatar artwork for the current pose. Only the laptop pose has
  * a second frame — the same scene with the near hand's index finger
@@ -193,17 +127,14 @@ const timeText = (at: number) =>
  * component itself invents nothing, and when the display goes stale
  * the feed stops advancing, just like the vital signs.
  *
- * The character artwork is AI-generated raster imagery (the stage
- * background matches the images' own #12161f backdrop so they blend
- * in); the pose is a symbol of the recorded state, not a measurement.
- * The laptop pose alone carries a second, finger-raised frame that
- * style.css swaps against the base frame as a two-frame typing loop
- * (see AgentStageArtwork); it is decoration on the same recorded
+ * The character itself no longer lives in this panel: it sits in
+ * the app header as a round avatar (AgentHeaderAvatar) on every
+ * tab, and this feed — the one place that advances the narration
+ * state — reports each derived pose through onPoseChange so the
+ * avatar and the narration can never disagree. The artwork is
+ * AI-generated raster imagery; the pose is a symbol of the recorded
+ * state, not a measurement, and decoration on the same recorded
  * state, never a signal of its own.
- * On top of the artwork sits a pure CSS/SVG expression overlay
- * (AgentPoseFx) keyed to the same pose: Zzz and a snot bubble while
- * asleep, stars at the fingertip while pointing, a note and a star
- * after a trade; it never carries information of its own.
  *
  * Under the condition chips, the "いまの注目" strip shows the one
  * entry condition the narration has declared it is watching (the
@@ -304,19 +235,6 @@ export function AgentNarrationFeed({
 
   return (
     <section className="agent-feed" aria-label="エージェント実況">
-      <div className="agent-feed-head">
-        <div className={`agent-feed-stage pose-${pose}`} aria-hidden="true">
-          <AgentStageArtwork pose={pose} />
-          <AgentPoseFx pose={pose} />
-        </div>
-        <div className="agent-feed-title">
-          <h2>Botの実況</h2>
-          <p className="agent-feed-pose" role="status">
-            {POSE_LABEL[pose]}
-          </p>
-          <small>エージェントが、Botの記録をもとに今の様子を実況します。</small>
-        </div>
-      </div>
       {chips && (
         <div className="agent-feed-chips" aria-label="買い条件">
           <span className="agent-feed-chips-title">買い条件</span>
