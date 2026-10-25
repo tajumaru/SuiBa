@@ -518,7 +518,6 @@ function App() {
                   <>
                     <div className="cards">
                       {[
-                        ["SUI価格", data.price, "USDC"],
                         ["仮想総資産", data.equity, "USDC"],
                         ["累計損益", data.pnl, "USDC"],
                         [
