@@ -62,7 +62,7 @@ function Get-SuiBaOverallVerdict {
     param($Report)
     $p = $Report.performance
     # Known failures take precedence even if the communication sample is small.
-    if (@($Report.incidents).Count -gt 0 -or $Report.containerOOMKilled -or
+    if (@($Report.incidents | Where-Object { $null -ne $_ -and -not ($Report.reason -eq 'USER_STOPPED' -and $_.Reason -eq 'USER_STOPPED') }).Count -gt 0 -or $Report.containerOOMKilled -or
         ($null -ne $Report.containerExitCode -and $Report.containerExitCode -ne 0) -or
         $p.sqlite.failures -gt 0 -or
         @(@($p.writers.sqlite, $p.writers.spikes) | Where-Object { $_.flushFailures -gt 0 }).Count -gt 0) { return 'FAIL' }
@@ -70,6 +70,10 @@ function Get-SuiBaOverallVerdict {
         if ($Report.reason -eq 'USER_STOPPED') { return 'INCONCLUSIVE' }
         return 'FAIL'
     }
+    $context = $Report.qualityWindow.context
+    if ($context -and ($context.runId -ne $Report.runId -or $context.sha -ne $Report.sha -or
+        $context.imageId -ne $Report.imageId -or $context.durationMinutes -ne $Report.durationMinutesPlanned -or
+        $context.perfDetailEnabled -ne $p.enabled)) { return 'FAIL' }
     if ($Report.preflightSummaryVerdict -eq 'NO-GO') { return 'FAIL' }
     if ($Report.preflightSummaryVerdict -ne 'GO') { return 'INCONCLUSIVE' }
     if (-not $Report.qualityChecks -or @($Report.qualityChecks.PSObject.Properties).Count -eq 0 -or
@@ -92,6 +96,8 @@ function New-SuiBaNextActions {
     $s = $null
     if (Test-Path -LiteralPath $summaryPath) { $s = [IO.File]::ReadAllText($summaryPath) | ConvertFrom-Json -ErrorAction Stop }
     $r | Add-Member -NotePropertyName qualityChecks -NotePropertyValue $s.checks -Force
+    $r | Add-Member -NotePropertyName qualityCriteria -NotePropertyValue $s.criteria -Force
+    $r | Add-Member -NotePropertyName qualityWindow -NotePropertyValue $s.window -Force
     $hashes = @($Rows | Where-Object { $_.kind -eq 'sample' -and $_.settingsSha256 } | ForEach-Object { $_.settingsSha256 } | Sort-Object -Unique)
     $r | Add-Member -NotePropertyName settingsHashes -NotePropertyValue $hashes -Force
     $verdict = Get-SuiBaOverallVerdict $r
@@ -104,7 +110,13 @@ function New-SuiBaNextActions {
     [void]$md.AppendLine("`n## 未達・未確認の品質基準")
     if (Test-Path -LiteralPath $summaryPath) {
         $failed = @($s.checks.PSObject.Properties | Where-Object { $_.Value -ne $true })
-        foreach ($f in $failed) { [void]$md.AppendLine("- $($f.Name): 未達または未確認") }
+        foreach ($f in $failed) {
+            $criterion = $s.criteria.($f.Name)
+            if ($criterion) {
+                [void]$md.AppendLine("- $($f.Name): $($criterion.status) / 実測=$($criterion.actual) / 基準=$($criterion.threshold) $($criterion.unit) / 入力=$($criterion.source)")
+            } else { [void]$md.AppendLine("- $($f.Name): 未達または未確認") }
+        }
+        if ($s.checks.suiMinAttempts -eq $false) { [void]$md.AppendLine('- Suiは実HTTP試行100件以上が必要です。healthキャッシュの成功を試行数に加算しません。2時間完了だけでは母数を保証せず、基準を維持した追加の独立検証が必要です。') }
         if (-not $s.checks -or @($s.checks.PSObject.Properties).Count -eq 0) { [void]$md.AppendLine('- 品質基準の内訳なし。合格の証拠として扱えません。') }
         elseif ($failed.Count -eq 0) { [void]$md.AppendLine('- 保存された通信品質チェックはすべて達成。取引検証の合格ではありません。') }
     } else { [void]$md.AppendLine('- 通信品質サマリ欠落。判定できません。') }

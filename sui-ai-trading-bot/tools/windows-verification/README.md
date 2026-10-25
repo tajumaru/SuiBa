@@ -1,4 +1,4 @@
-# Windows無人検証ツール（ダブルクリック実行）
+﻿# Windows無人検証ツール（ダブルクリック実行）
 
 AIエージェントを起動し続けなくても、Windows 11 上で .bat のダブルクリックだけで
 Docker実通信の長時間検証（30分／2時間／6時間／24時間）を実行し、終了後に
@@ -247,3 +247,12 @@ Windows PowerShell 5.1の自己テストはUTF-8のレポートを明示的に�
 この変更はWindows PowerShell 5.1とPowerShell 7でスタブ/fixtureを使用して確認します。
 実Docker Desktopでの新しい30分以上の通信検証、Explorerの実画面表示、6時間・24時間実行は
 今回実施しません。初回実通信はユーザーの明示承認後に30分から開始してください。
+
+
+## 品質ゲートと終了時の証拠
+
+品質判定はCOMPLETEDと別です。実観測2時間以上、Sui/DeepBook各100実HTTP試行以上、終了時の板鮮度10秒以内などの既存基準を維持します。healthキャッシュ成功はHTTP試行に加算しないため、2時間正常完了でもSuiの母数不足になり得ます。
+
+観測期限は最初の実sampleから数えます。正常完了時だけ、監査プロセスが公開SUI_USDC板を1回GET（8秒期限、retryなし）し、DBのread-only最終snapshotとともに保存します。安全停止・手動停止では追加GETを行いません。これはWorkerの保持板の更新や取引開始ではなく、終了時の独立した外部データ確認です。通常API成功率の分母へ加算しません。
+
+run-context.json、observer、auditのrunId/SHA/image/予定期間/計測モードを照合し、欠落はINCONCLUSIVE、不一致や既知の品質違反はFAILへ反映します。旧形式にない証拠は後付けせず、必要なら新形式で再検証してください。詳細と保存runの再評価は [品質ゲート調査](../../docs/WINDOWS_2H_QUALITY_GATES_20261025.md) を参照してください。

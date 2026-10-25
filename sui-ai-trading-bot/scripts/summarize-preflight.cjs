@@ -18,12 +18,141 @@ const counts = (values) =>
       .sort()
       .map((k) => [k, values.filter((x) => x === k).length]),
   );
-function summarize(rows, audit, inspection) {
+const limits = Object.freeze({
+  durationMs: 7200000,
+  minAttempts: 100,
+  bookAgeMs: 10000,
+});
+function summarize(rows, audit, inspection, context = null) {
+  const observer = rows.find((r) => r.kind === "observer");
+  const observedSamples = rows.filter((r) => r.kind === "sample");
+  const knownUnsafe =
+    audit?.runtime?.running === true ||
+    inspection?.State?.OOMKilled === true ||
+    observedSamples.some(
+      (s) =>
+        s.runtime?.running === true ||
+        Object.values(s.counts ?? {}).some((n) => n > 0),
+    );
+  const invalidInput =
+    !observer ||
+    !audit ||
+    !inspection ||
+    !inspection.Image ||
+    !Number.isInteger(inspection.RestartCount) ||
+    !Array.isArray(audit.cycles) ||
+    !Array.isArray(audit.events) ||
+    !Array.isArray(audit.candles) ||
+    !Array.isArray(audit.integrity) ||
+    audit.integrity.length === 0 ||
+    !audit.runtime ||
+    !audit.tables ||
+    !audit.build ||
+    !audit.operations?.ledger ||
+    !observedSamples.length ||
+    observedSamples.some(
+      (s) =>
+        !Number.isFinite(s.at) ||
+        !s.runtime ||
+        !s.safety ||
+        !s.counts ||
+        !s.build ||
+        !s.settingsSha256 ||
+        !s.portfolio ||
+        s.validationSession === undefined ||
+        typeof s.profitGuard !== "boolean",
+    ) ||
+    rows.some(
+      (r) => (r.kind === "api" && !r.data) || (r.kind === "cycle" && !r.frames),
+    );
+  if (invalidInput)
+    return {
+      verdict: knownUnsafe ? "NO-GO" : "INCONCLUSIVE",
+      checks: {
+        evidenceComplete: null,
+        ...(knownUnsafe ? { safety: false } : {}),
+      },
+      criteria: {
+        evidenceComplete: {
+          status: "MISSING",
+          source: "observer/audit/inspection",
+          actual: null,
+        },
+      },
+    };
+  const identityFields = [
+    "runId",
+    "project",
+    "sha",
+    "durationMinutes",
+    "measurementMode",
+    "perfDetailEnabled",
+  ];
+  const identityAvailable =
+    context &&
+    audit.runIdentity &&
+    observer &&
+    identityFields.every(
+      (key) =>
+        context[key] != null &&
+        observer[key] != null &&
+        audit.runIdentity[key] != null,
+    ) &&
+    context.imageId != null &&
+    observer.image != null &&
+    audit.runIdentity.imageId != null;
+  const identity = identityAvailable
+    ? context.schemaVersion === 1 &&
+      context.runId === observer?.runId &&
+      context.sha === observer?.sha &&
+      context.imageId === observer?.image &&
+      context.durationMinutes === observer?.durationMinutes &&
+      context.measurementMode === observer?.measurementMode &&
+      context.perfDetailEnabled === observer?.perfDetailEnabled &&
+      context.project === observer?.project &&
+      context.project === inspection.Project &&
+      context.project === audit.runIdentity?.project &&
+      context.runId === audit.runIdentity?.runId &&
+      context.sha === audit.runIdentity?.sha &&
+      context.imageId === audit.runIdentity?.imageId &&
+      context.durationMinutes === audit.runIdentity?.durationMinutes &&
+      context.measurementMode === audit.runIdentity?.measurementMode &&
+      context.perfDetailEnabled === audit.runIdentity?.perfDetailEnabled &&
+      typeof context.runId === "string" &&
+      context.runId.length > 0 &&
+      Number.isFinite(context.durationMinutes) &&
+      context.durationMinutes > 0 &&
+      context.measurementMode === "passive-health-cache-v1" &&
+      typeof context.perfDetailEnabled === "boolean"
+    : null;
+  // Only a versioned, identity-bound read-only terminal snapshot can extend the window.
+  const candidate = audit.terminalSample;
+  const terminal =
+    identity === true &&
+    candidate?.kind === "sample" &&
+    candidate.at === audit.at &&
+    candidate.runtime &&
+    candidate.safety &&
+    candidate.counts &&
+    candidate.portfolio &&
+    candidate.build &&
+    candidate.settingsSha256 &&
+    Array.isArray(candidate.integrity) &&
+    candidate.validationSession !== undefined &&
+    typeof candidate.profitGuard === "boolean"
+      ? candidate
+      : null;
+  if (terminal) rows = [...rows, terminal];
   const allSamples = rows.filter((r) => r.kind === "sample");
   const start = allSamples[0].at;
   // Freeze the window at the last real heartbeat before the final read-only audit.
   // Include faults occurring during evidence collection after the 2h minimum.
-  const end = allSamples.filter((r) => r.at <= audit.at).at(-1).at;
+  const boundedSamples = allSamples.filter(
+    (r) => Number.isFinite(r.at) && r.at <= audit.at,
+  );
+  if (!boundedSamples.length)
+    return { verdict: "INCONCLUSIVE", checks: { evidenceComplete: null } };
+  const end = boundedSamples.at(-1).at;
   const inWindow = (r) => r.at >= start && r.at <= end;
   const samples = allSamples.filter(inWindow);
   const cycles = rows.filter((r) => r.kind === "cycle" && inWindow(r));
@@ -198,11 +327,18 @@ function summarize(rows, audit, inspection) {
       ? null
       : lastSuccessfulCycle.at - lastSuccessfulCycle.market.bookAt;
   const checks = {
-    twoHours: end - start >= 7200000,
-    deepbookMinAttempts: apis["DeepBook Indexer"].attempts >= 100,
-    suiMinAttempts: apis["Sui gRPC"].attempts >= 100,
-    deepbookSuccess: apis["DeepBook Indexer"].successRate >= 0.99,
-    suiSuccess: apis["Sui gRPC"].successRate >= 0.99,
+    twoHours: end - start >= limits.durationMs,
+    deepbookMinAttempts:
+      apis["DeepBook Indexer"].attempts >= limits.minAttempts,
+    suiMinAttempts: apis["Sui gRPC"].attempts >= limits.minAttempts,
+    deepbookSuccess:
+      apis["DeepBook Indexer"].successRate == null
+        ? null
+        : apis["DeepBook Indexer"].successRate >= 0.99,
+    suiSuccess:
+      apis["Sui gRPC"].successRate == null
+        ? null
+        : apis["Sui gRPC"].successRate >= 0.99,
     cycleSuccess:
       cycles.length > 0 && successCycles.length / cycles.length >= 0.99,
     allFramesCurrent: [300, 900, 3600].every(
@@ -247,6 +383,8 @@ function summarize(rows, audit, inspection) {
       invariant.settingsHashes.length === 1 &&
       JSON.stringify(audit.build) === JSON.stringify(first.build) &&
       audit.settingsSha256 === first.settingsSha256 &&
+      first.build.declaredSha === observer?.sha &&
+      first.build.declaredImage === observer?.image &&
       inspection.Image === first.build.declaredImage &&
       inspection.RestartCount === 0,
   };
@@ -271,8 +409,28 @@ function summarize(rows, audit, inspection) {
   checks.reconstructionWithinBudget = Object.values(frames).every(
     (f) => f.reconstructionMs.max === null || f.reconstructionMs.max <= 45000,
   );
+  const endProbeValid =
+    terminal &&
+    audit.finalBook?.source === "DeepBook:SUI_USDC" &&
+    audit.finalBook.error === null &&
+    Number.isFinite(audit.finalBook.startedAt) &&
+    Number.isFinite(audit.finalBook.completedAt) &&
+    audit.finalBook.completedAt >= audit.finalBook.startedAt &&
+    audit.finalBook.completedAt <= end;
+  const finalBookAt = terminal
+    ? endProbeValid
+      ? audit.finalBook.timestamp
+      : null
+    : last.market?.bookAt;
+  const finalBookAge = Number.isFinite(finalBookAt) ? end - finalBookAt : null;
   checks.bookFreshAtEnd =
-    last.market?.bookAt != null && end - last.market.bookAt <= 10000;
+    finalBookAge === null
+      ? null
+      : finalBookAge >= 0 && finalBookAge <= limits.bookAgeMs;
+  checks.runIdentity = identity;
+  checks.terminalEvidence = terminal ? true : null;
+  checks.plannedDuration =
+    identity === true ? end - start >= context.durationMinutes * 60000 : null;
   checks.latestCycleSucceeded = lastCycle?.error === null;
   const invalidDbCandles = audit.candles.filter(
     (c) =>
@@ -289,11 +447,80 @@ function summarize(rows, audit, inspection) {
   );
   invariant.invalidStoredCandles = invalidDbCandles.length;
   checks.integrity = checks.integrity && invalidDbCandles.length === 0;
+  const requiredChecks = Object.keys(checks);
+  const missing = requiredChecks.some((key) => checks[key] == null);
+  const criteria = Object.fromEntries(
+    requiredChecks.map((key) => [
+      key,
+      {
+        status:
+          checks[key] == null
+            ? "MISSING"
+            : checks[key]
+              ? "PASS"
+              : [
+                    "twoHours",
+                    "deepbookMinAttempts",
+                    "suiMinAttempts",
+                    "plannedDuration",
+                  ].includes(key)
+                ? "INSUFFICIENT"
+                : "FAIL",
+        actual: checks[key],
+        source: "preflight observer + final audit",
+      },
+    ]),
+  );
+  Object.assign(criteria.twoHours, {
+    actual: end - start,
+    threshold: limits.durationMs,
+    unit: "ms",
+    source:
+      "first observer sample to final identity-bound snapshot (legacy: last heartbeat)",
+  });
+  for (const [key, api] of [
+    ["suiMinAttempts", "Sui gRPC"],
+    ["deepbookMinAttempts", "DeepBook Indexer"],
+  ])
+    Object.assign(criteria[key], {
+      actual: apis[api].attempts,
+      threshold: limits.minAttempts,
+      unit: "HTTP attempts",
+      source: "kind=api; cache hits excluded",
+    });
+  Object.assign(criteria.plannedDuration, {
+    actual: end - start,
+    threshold: context ? context.durationMinutes * 60000 : null,
+    unit: "ms",
+    source: "run-context planned observation duration",
+  });
+  Object.assign(criteria.bookFreshAtEnd, {
+    actual: finalBookAge,
+    threshold: limits.bookAgeMs,
+    unit: "ms",
+    evaluatedAt: end,
+    bookAt: finalBookAt ?? null,
+    source: terminal
+      ? "audit.finalBook (independent read-only end probe)"
+      : "last observer market.bookAt",
+  });
+  Object.assign(criteria.runIdentity, {
+    actual: context,
+    source: "run-context/observer/audit",
+  });
   const insufficient =
-    !checks.twoHours || !checks.deepbookMinAttempts || !checks.suiMinAttempts;
+    !checks.twoHours ||
+    !checks.deepbookMinAttempts ||
+    !checks.suiMinAttempts ||
+    checks.plannedDuration === false;
   const hardFailure = Object.entries(checks).some(
     ([k, v]) =>
-      !["twoHours", "deepbookMinAttempts", "suiMinAttempts"].includes(k) && !v,
+      ![
+        "twoHours",
+        "deepbookMinAttempts",
+        "suiMinAttempts",
+        "plannedDuration",
+      ].includes(k) && v === false,
   );
   return {
     start,
@@ -324,25 +551,37 @@ function summarize(rows, audit, inspection) {
           .map((c) => c.at - c.market.bookAt),
       ),
       latestAcquisitionAgeMs: latestBookAge,
-      latestSnapshotAgeAtEndMs:
-        last.market?.bookAt == null ? null : end - last.market.bookAt,
+      latestSnapshotAgeAtEndMs: finalBookAge,
       indexerLagMs: stats(
         successCycles.map((c) => c.market?.diagnostics?.indexerLagMs),
       ),
     },
     safety: invariant,
     checks,
-    verdict: insufficient ? "INCONCLUSIVE" : hardFailure ? "NO-GO" : "GO",
+    criteria,
+    limits,
+    window: {
+      start,
+      end,
+      source: terminal ? "terminal-audit" : "legacy-heartbeat",
+      context,
+    },
+    verdict: hardFailure
+      ? "NO-GO"
+      : missing || insufficient
+        ? "INCONCLUSIVE"
+        : "GO",
   };
 }
 if (require.main === module) {
-  const [evidence, audit, inspection, out] = process.argv.slice(2);
+  const [evidence, audit, inspection, out, context] = process.argv.slice(2);
   const bytes = fs.readFileSync(evidence);
   const rows = bytes.toString("utf8").trim().split(/\r?\n/).map(JSON.parse);
   const result = summarize(
     rows,
     JSON.parse(fs.readFileSync(audit, "utf8")),
     JSON.parse(fs.readFileSync(inspection, "utf8")),
+    context ? JSON.parse(fs.readFileSync(context, "utf8")) : null,
   );
   result.evidence = {
     fileSha256: hash(bytes),
