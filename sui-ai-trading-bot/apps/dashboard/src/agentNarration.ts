@@ -38,6 +38,15 @@ import { number as fmtNumber, percent as fmtPercent } from "./presentation.ts";
  * (review) built only from those recorded counts and the session's
  * first-to-current price move.
  *
+ * The feed also keeps a short history of the narrated cycles'
+ * decision prices, so a sudden market move — the price jumping at
+ * least ±1% against three cycles ago, or the recorded volume change
+ * spiking past +200% — can break in as a 速報 (alert). An alert is
+ * market news, not a trading judgement: it never replaces the
+ * cycle's own line, it stays silent until the price history has
+ * warmed up, and after one fires the next is held back for five
+ * narrated cycles so a continuing move is not re-announced.
+ *
  * All functions here are pure: the component keeps a NarrationState,
  * feeds each new snapshot through `advanceNarration`, and renders the
  * accumulated entries. `agentPose` derives the character's pose from
@@ -54,6 +63,7 @@ export type NarrationKind =
   | "start" // the bot started
   | "recovery" // connectivity recovered / run resumed
   | "review" // a ふりかえり look-back over the watch score so far
+  | "alert" // a 速報 breaking in on a sudden price / volume move
   | "status"; // feed-initialised status line
 
 export interface NarrationEntry {
@@ -95,10 +105,23 @@ export interface WatchScore {
   unreviewed: number;
 }
 
+/** Which way a spike alert jumped; "volume" is a volume-only spike. */
+export type SpikeAlertDirection = "up" | "down" | "volume";
+
 export interface NarrationState {
   entries: NarrationEntry[];
   nextEntryId: number;
   priceRising: boolean;
+  /** Decision prices of recent narrated cycles (oldest first,
+   * capped), the look-back the spike alerts compare against. Seeded
+   * by the feed's first recorded decision. */
+  priceHistory: number[];
+  /** Narrated cycles still silenced after the last spike alert. */
+  alertCooldown: number;
+  /** The newest spike alert, for pose linkage: the character points
+   * on the very cycle an upward alert fired, and never celebrates a
+   * downward one. */
+  lastAlert: { at: number; direction: SpikeAlertDirection } | null;
   /** The declared watch target, or null when nothing is watched. */
   watch: WatchTarget | null;
   /** Cumulative session score of declared watches (see WatchScore). */
@@ -147,6 +170,9 @@ export function emptyNarrationState(): NarrationState {
     entries: [],
     nextEntryId: 0,
     priceRising: false,
+    priceHistory: [],
+    alertCooldown: 0,
+    lastAlert: null,
     watch: null,
     watchScore: { declared: 0, hits: 0, misses: 0, unreviewed: 0 },
     sessionStartPrice: null,
@@ -472,6 +498,26 @@ export const REVIEW_SETTLED_THRESHOLD = 3;
 /** A BUY milestone reviews early only with at least this many
  * settlements still unreviewed. */
 export const REVIEW_BUY_MIN_SETTLED = 2;
+
+/** Spike alerts compare the current decision price against the one
+ * this many narrated cycles back. */
+export const ALERT_PRICE_LOOKBACK = 3;
+/** A price move of at least this ratio (±1%) against the look-back
+ * price is alert-worthy. */
+export const ALERT_PRICE_THRESHOLD = 0.01;
+/**
+ * The recorded volume change is a ratio — the newest candle's
+ * volume over the previous one's, minus one (see the indicators
+ * package) — so this volume-spike threshold of 2 means the change
+ * `fmtPercent` would print as +200%.
+ */
+export const ALERT_VOLUME_THRESHOLD = 2;
+/** After an alert fires, this many narrated cycles pass before the
+ * next one may fire. Counted in decision cycles, never in polls. */
+export const ALERT_COOLDOWN_CYCLES = 5;
+/** Price points kept for the alert look-back (only the newest
+ * ALERT_PRICE_LOOKBACK + 1 are ever consulted). */
+const ALERT_HISTORY_KEEP = 12;
 
 /**
  * The closest unmet entry condition, by the same normalised
@@ -1006,6 +1052,76 @@ export function reviewNarrationTexts(
   return lines;
 }
 
+export interface SpikeAlert {
+  direction: SpikeAlertDirection;
+  text: string;
+}
+
+/**
+ * Alert price moves always print with exactly one decimal place
+ * ("+1.8%", "-1.0%"). The volume change inside an alert keeps the
+ * feed's existing volume style (`signedPct`: "+250%", "+350%"),
+ * the same shape the VOLUME_REJECT line already prints.
+ */
+const alertPct = (ratio: number) =>
+  `${ratio > 0 ? "+" : ""}${new Intl.NumberFormat("ja-JP", {
+    style: "percent",
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(ratio)}`;
+
+/**
+ * Detect a spike worth breaking in for, from the recorded evidence
+ * alone: the decision prices of the narrated cycles before this one
+ * (`history`, oldest first, not yet including `dec`) and this
+ * cycle's own decision. Returns null — silence — when:
+ * - the price history has not warmed up (fewer than
+ *   ALERT_PRICE_LOOKBACK earlier points, so no four-point move can
+ *   be stated);
+ * - the price or volume change is missing, non-finite, or unusable;
+ * - neither the ±1% price move nor the +200% volume change fired.
+ * When the price and the volume spike in the same cycle the alert is
+ * a single entry mentioning both. A volume spike the cycle's own
+ * narration already reports (a VOLUME_REJECT cycle prints the change
+ * itself) is never repeated: on such a cycle only a price move can
+ * still alert, and its text leaves the volume out.
+ */
+export function spikeAlert(
+  history: readonly number[],
+  dec: DecisionTelemetry,
+): SpikeAlert | null {
+  if (history.length < ALERT_PRICE_LOOKBACK) return null;
+  if (!Number.isFinite(dec.price) || dec.price <= 0) return null;
+  const base = history[history.length - ALERT_PRICE_LOOKBACK];
+  if (!Number.isFinite(base) || base <= 0) return null;
+  const ratio = dec.price / base - 1;
+  const priceUp = ratio >= ALERT_PRICE_THRESHOLD;
+  const priceDown = ratio <= -ALERT_PRICE_THRESHOLD;
+  const volumeSpike =
+    Number.isFinite(dec.volumeChange) &&
+    dec.volumeChange >= ALERT_VOLUME_THRESHOLD &&
+    dec.selectedRule !== "VOLUME_REJECT";
+  if (!priceUp && !priceDown && !volumeSpike) return null;
+  if (priceUp)
+    return {
+      direction: "up",
+      text: volumeSpike
+        ? `速報。SUI、短時間で${alertPct(ratio)}。出来高の変化も跳ねた`
+        : `速報。SUI、短時間で${alertPct(ratio)}。急に来た`,
+    };
+  if (priceDown)
+    return {
+      direction: "down",
+      text: volumeSpike
+        ? `速報。SUI、${alertPct(ratio)}。急落だ。出来高の変化も跳ねたから、ちょっと様子見る`
+        : `速報。SUI、${alertPct(ratio)}。急落だ。ちょっと様子見る`,
+    };
+  return {
+    direction: "volume",
+    text: `速報。出来高の変化が${signedPct(dec.volumeChange)}に跳ねた。何かあったかも`,
+  };
+}
+
 type EntryDraft = Omit<NarrationEntry, "id">;
 
 function eventKey(e: OperationsSnapshot["events"][number]): string {
@@ -1114,6 +1230,16 @@ export function advanceNarration(
         ...prev,
         watch: firstWatch,
         watchScore: firstScore,
+        // The first recorded decision seeds the spike alerts' price
+        // history — but only when it is fresh evidence; a stale
+        // first snapshot warms the alerts up from zero instead.
+        priceHistory:
+          firstDec &&
+          freshDecision(firstDec, now) &&
+          Number.isFinite(firstDec.price) &&
+          firstDec.price > 0
+            ? [firstDec.price]
+            : [],
         sessionStartPrice: prev.sessionStartPrice ?? firstDec?.price ?? null,
         seen: [...seen],
         pendingCandidateIds: [...pending].slice(-50),
@@ -1286,6 +1412,9 @@ export function advanceNarration(
   let watch = prev.watch;
   let watchScore = prev.watchScore;
   let sessionStartPrice = prev.sessionStartPrice;
+  let priceHistory = prev.priceHistory;
+  let alertCooldown = prev.alertCooldown;
+  let lastAlert = prev.lastAlert;
   const dec = d.decision;
   if (dec && (lastDecisionAt == null || dec.evaluatedAt > lastDecisionAt)) {
     if (sessionStartPrice == null) sessionStartPrice = dec.price;
@@ -1303,6 +1432,27 @@ export function advanceNarration(
         kind: "cycle",
         text: cycleNarrationText(dec, lastTrail),
       });
+      // A sudden market move breaks in right after the cycle's own
+      // line: it is market news alongside the decision, never a
+      // replacement for it. The price joins the look-back history
+      // either way; while the cooldown from the last alert runs,
+      // this cycle stays silent and counts the cooldown down.
+      if (alertCooldown > 0) {
+        alertCooldown -= 1;
+      } else {
+        const alert = spikeAlert(priceHistory, dec);
+        if (alert) {
+          drafts.push({
+            at: dec.evaluatedAt,
+            kind: "alert",
+            text: alert.text,
+          });
+          lastAlert = { at: dec.evaluatedAt, direction: alert.direction };
+          alertCooldown = ALERT_COOLDOWN_CYCLES;
+        }
+      }
+      if (Number.isFinite(dec.price) && dec.price > 0)
+        priceHistory = [...priceHistory, dec.price].slice(-ALERT_HISTORY_KEEP);
       drafts.push(...outcome.after);
       // Score the cycle's declaration / settlement, then — only at
       // a milestone — pause for a short look-back over the record.
@@ -1381,6 +1531,9 @@ export function advanceNarration(
       watch,
       watchScore,
       sessionStartPrice,
+      priceHistory,
+      alertCooldown,
+      lastAlert,
       seen: [...seen],
       pendingCandidateIds: [...pending].slice(-50),
       lastDecisionAt,
@@ -1442,6 +1595,8 @@ function finish(state: NarrationState, drafts: EntryDraft[]): NarrationState {
  * - running but degraded / recovering, or state unknown -> normal
  *   (an abnormal-but-awake bot does not celebrate)
  * - the newest entry is a recorded fill -> pointSmile
+ * - an upward spike alert fired on the current cycle -> point (a
+ *   downward or volume-only alert never celebrates)
  * - a buy signal just fired, or at least two entry conditions are met
  *   (with the price also rising since the previous cycle when only
  *   one is met) -> point （指立て）
@@ -1464,6 +1619,14 @@ export function agentPose(
     return "pointSmile";
   const dec = d.decision;
   if (dec && freshDecision(dec, now)) {
+    // Safety states have already returned above, so an upward spike
+    // alert on this very cycle may celebrate — and only upward: a
+    // plunge or a bare volume spike keeps the normal pose.
+    if (
+      state.lastAlert?.direction === "up" &&
+      state.lastAlert.at === dec.evaluatedAt
+    )
+      return "point";
     if (dec.action === "BUY") return "point";
     const met = metEntryConditions(dec);
     if (met >= 2) return "point";
