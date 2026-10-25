@@ -136,17 +136,22 @@ async function open(
     },
   };
 }
-for (const [status, label] of [
-  ["STOPPED", "手動停止"],
-  ["RUNNING", "正常稼働"],
-  ["DATA_DELAYED", "通信障害・一時待機"],
-  ["ABNORMAL_STOP", "安全停止"],
+for (const [status, tone, message] of [
+  ["STOPPED", "stopped", "Botは停止しています"],
+  ["RUNNING", "healthy", "売買条件を満たした場合のみ、PAPERで仮想売買します"],
+  ["DATA_DELAYED", "warning", "通信または市場データを確認してください"],
+  ["ABNORMAL_STOP", "error", "照合で不整合を検出したため停止"],
 ] as const) {
   test(`displays ${status}, zero-trade reports, sanitized candidate reasons and atomic tolerances`, async ({
     page,
   }, info) => {
     const api = await open(page, status);
-    await expect(page.locator(".operation-state")).toContainText(label);
+    // The hero's big state headline was removed as a duplicate of the
+    // operation bar; the hero now carries the state through its tone
+    // class and message instead.
+    const hero = page.locator(".operation-hero");
+    await expect(hero).toHaveClass(new RegExp(tone));
+    await expect(hero).toContainText(message);
     await expect(
       page.getByRole("article", { name: "24時間レポート" }),
     ).toContainText("0件");
@@ -269,8 +274,10 @@ test("does not show stale information as healthy after a monitoring API error", 
   await expect(page.getByRole("alert")).toContainText(
     "運用検証データを取得できません",
   );
-  await expect(page.locator(".operation-state")).toContainText("状態不明");
-  await expect(page.locator(".operation-state.healthy")).toHaveCount(0);
+  await expect(page.locator(".operation-hero")).toContainText(
+    "最新のAPI応答を確認できません",
+  );
+  await expect(page.locator(".operation-hero.healthy")).toHaveCount(0);
   expect(api.writes).toEqual([]);
 });
 
@@ -346,11 +353,16 @@ test("times out delayed operations and ignores a late response after a newer suc
   await page.clock.runFor(10000);
   await expect.poll(() => calls).toBe(1);
   await page.clock.runFor(8100);
-  await expect(page.locator(".operation-state")).toContainText("状態不明");
+  await expect(page.locator(".operation-hero")).toContainText(
+    "最新のAPI応答を確認できません",
+  );
   await page.clock.runFor(2000);
-  await expect(page.locator(".operation-state")).toContainText("手動停止");
+  await expect(page.locator(".operation-hero")).toHaveClass(/stopped/);
+  await expect(page.locator(".operation-hero")).toContainText(
+    "Botは停止しています",
+  );
   await release!();
-  await expect(page.locator(".operation-state")).toContainText("手動停止");
+  await expect(page.locator(".operation-hero")).toHaveClass(/stopped/);
 });
 
 test("vital animation follows errors, recovery, stop and reduced motion", async ({
@@ -417,7 +429,9 @@ test("vital animation follows errors, recovery, stop and reduced motion", async 
   fetchElapsedMs = 45_001;
   await page.clock.runFor(10_000);
   await expect(vital).toHaveClass("bot-vital unknown");
-  await expect(page.locator(".operation-state")).toContainText("状態不明");
+  await expect(page.locator(".operation-hero")).toContainText(
+    "最新のAPI応答を確認できません",
+  );
   fetchElapsedMs = 0;
   await page.clock.runFor(10_000);
   await expect(vital).toHaveClass("bot-vital alive");
@@ -440,6 +454,8 @@ test("vital expires immediately on page return and after API timeout", async ({
   await expect(page.locator(".bot-vital-drop")).toHaveCount(0);
   await page.route("**/api/operations", () => {});
   await page.clock.runFor(18_100);
-  await expect(page.locator(".operation-state")).toContainText("状態不明");
+  await expect(page.locator(".operation-hero")).toContainText(
+    "最新のAPI応答を確認できません",
+  );
   await expect(vital).toHaveClass("bot-vital unknown");
 });

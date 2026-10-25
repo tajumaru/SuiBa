@@ -199,15 +199,17 @@ test("confirms, prevents duplicate saving, rereads settings, then starts only on
   await page
     .getByRole("button", { name: "PAPER運用開始", exact: true })
     .click();
-  await expect(
-    page.getByRole("heading", { name: "PAPER運用：運用中", exact: true }),
-  ).toBeVisible();
+  // The controls heading no longer carries the state word; the
+  // operation bar (present on every tab) is the state label now.
+  await expect(page.locator(".operation-bar")).toContainText(
+    "PAPER運用：運用中",
+  );
   await page
     .getByRole("button", { name: "PAPER運用停止", exact: true })
     .click();
-  await expect(
-    page.getByRole("heading", { name: "PAPER運用：停止中", exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".operation-bar")).toContainText(
+    "PAPER運用：停止中",
+  );
   expect(api.commands).toEqual(["start", "stop"]);
 });
 
@@ -322,9 +324,9 @@ test("validates values and keeps emergency stop independent during saving", asyn
     page.locator(".easy-settings").getByRole("status"),
   ).toContainText("保存・サーバーへの再確認中");
   await page.getByRole("button", { name: "緊急停止", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "PAPER運用：緊急停止中", exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".operation-bar")).toContainText(
+    "PAPER運用：緊急停止中",
+  );
   release();
   await expect(
     page.locator(".easy-settings").getByRole("status"),
