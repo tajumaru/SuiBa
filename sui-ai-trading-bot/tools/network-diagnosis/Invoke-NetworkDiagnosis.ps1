@@ -36,6 +36,12 @@ function Start-Hidden([string]$File,[string[]]$Arguments){
     foreach($argument in $Arguments){[void]$info.ArgumentList.Add($argument)}
     return [Diagnostics.Process]::Start($info)
 }
+function Test-DiagnosticNormalEnd([string]$Side){
+    try {
+        $last=Get-Content -LiteralPath (Join-Path $run "$Side/events.jsonl") -Tail 1 -ErrorAction Stop | ConvertFrom-Json
+        return $last.runId -eq $runId -and $last.side -eq $Side -and $last.kind -eq 'end' -and $last.reason -eq 'RUN_DEADLINE'
+    } catch {return $false}
+}
 try {
     & $emit @{kind='collector-status';collector='runner';status='STARTING';node=$version;reason='EXPLICIT_LIVE_INVOCATION'}
     try {
@@ -86,7 +92,11 @@ try {
         Read-DiagnosticDockerLogs -Directory $logs -Offsets $offsets -Emit $emit
         Read-DiagnosticResources -ContainerId $container -Emit $emit
         $running=@(Invoke-DiagnosticDocker @('inspect','--format','{{.State.Running}}',$container))[0].Trim()
-        if($hostProcess.HasExited -or $running -ne 'true' -or (Test-Path -LiteralPath (Join-Path $run 'STOP'))){break}
+        if(Test-Path -LiteralPath (Join-Path $run 'STOP')){break}
+        if($hostProcess.HasExited -and $running -ne 'true'){break}
+        # A normally completed side must not truncate the other side's actual 30-minute window.
+        if($hostProcess.HasExited -and -not (Test-DiagnosticNormalEnd 'windows')){break}
+        if($running -ne 'true' -and -not (Test-DiagnosticNormalEnd 'docker')){break}
     }
 } catch { & $emit @{kind='collector-status';collector='runner';status='FAILED';reason='RUNNER_FAILURE'};throw }
 finally {

@@ -88,7 +88,10 @@ export class TraceObserver {
     });
     sub("undici:request:bodySent", ({ request }) => {
       const t = this.requests.get(request);
-      if (t) t.sentAt = performance.now();
+      if (t) {
+        t.sentAt = performance.now();
+        t.sentBasis = "undici-request-bodySent";
+      }
     });
     sub("undici:request:headers", ({ request }) => {
       const t = this.requests.get(request);
@@ -223,6 +226,7 @@ export function h2Transport(profile, observer, open = h2connect) {
           delete headers.connection;
           delete headers.host;
           delete headers["transfer-encoding"];
+          trace.queuedAt = performance.now();
           stream = c.session.request({
             ":method": init.method ?? "GET",
             ":path": url.pathname + url.search,
@@ -232,7 +236,26 @@ export function h2Transport(profile, observer, open = h2connect) {
             status = null,
             responseHeaders = {},
             chunks = [];
-          stream.once("ready", () => (trace.sentAt = performance.now()));
+          const markSent = () => {
+            if (trace.readyAt != null && trace.writeFinishedAt != null) {
+              trace.sentAt = Math.max(trace.readyAt, trace.writeFinishedAt);
+              trace.sentBasis = `http2-stream-ready-and-${trace.writeFinishObservation}`;
+            }
+          };
+          const ready = () => {
+            trace.readyAt ??= performance.now();
+            markSent();
+          };
+          // A connected session may assign the stream ID synchronously in request().
+          if (Number.isInteger(stream.id) && stream.id > 0) ready();
+          else stream.once("ready", ready);
+          const writeFinished = (observation) => {
+            trace.writeFinishedAt ??= performance.now();
+            trace.writeFinishObservation ??= observation;
+            markSent();
+          };
+          stream.once("finish", () => writeFinished("write-finish-event"));
+          if (stream.writableFinished) writeFinished("write-finish-state");
           stream.on("response", (h) => {
             trace.headersAt = performance.now();
             status = Number(h[":status"]);
@@ -301,6 +324,25 @@ export async function metadata(client, signal) {
     throw Error("INVALID_METADATA");
 }
 
+export const CONTROLLED_POOL = Object.freeze({
+  name: "diagnostic-15s-idle",
+  keepAliveTimeout: 15000,
+  keepAliveMaxTimeout: 15000,
+  keepAliveTimeoutThreshold: 1000,
+  serverMayShorten: true,
+});
+export function controlledAgentOptions(profile) {
+  return {
+    connections: 1,
+    pipelining: 1,
+    allowH2: false,
+    keepAliveTimeout: CONTROLLED_POOL.keepAliveTimeout,
+    keepAliveMaxTimeout: CONTROLLED_POOL.keepAliveMaxTimeout,
+    keepAliveTimeoutThreshold: CONTROLLED_POOL.keepAliveTimeoutThreshold,
+    connect: { ...(profile.family ? { family: profile.family } : {}) },
+  };
+}
+
 export async function createHarness() {
   const [{ Agent }] = await Promise.all([
     import("undici"),
@@ -308,20 +350,14 @@ export async function createHarness() {
   ]);
   const observer = new TraceObserver();
   const warm = new Map();
+  const previousEnds = new Map();
   const make = (profile) =>
     profile.protocol === "h2"
       ? h2Transport(profile, observer)
       : profile.protocol === "default-fetch"
         ? { close: async () => {}, fetch: (input, init) => fetch(input, init) }
         : (() => {
-            const agent = new Agent({
-              connections: 1,
-              pipelining: 1,
-              allowH2: false,
-              connect: {
-                ...(profile.family ? { family: profile.family } : {}),
-              },
-            });
+            const agent = new Agent(controlledAgentOptions(profile));
             return {
               close: () => agent.destroy(),
               fetch: (input, init) =>
@@ -337,6 +373,9 @@ export async function createHarness() {
         if (!warm.has(key)) warm.set(key, make(profile));
         transport = warm.get(key);
       }
+      const gapSincePreviousAttemptMs = previousEnds.has(key)
+        ? performance.now() - previousEnds.get(key)
+        : null;
       const trace = observer.trace(profile),
         startedAt = Date.now();
       const signal = AbortSignal.any([
@@ -391,6 +430,7 @@ export async function createHarness() {
       } finally {
         finished = performance.now();
         endedAt = Date.now();
+        previousEnds.set(key, finished);
         if (
           finished - trace.began >
           (profile.target === "sui" ? LIMITS.suiMs : LIMITS.deepbookMs)
@@ -405,6 +445,8 @@ export async function createHarness() {
         kind: "attempt",
         profile: { ...profile },
         mode,
+        poolPolicy: profile.protocol === "fetch" ? CONTROLLED_POOL : null,
+        gapSincePreviousAttemptMs,
         startedAt,
         endedAt,
         success: code === null,

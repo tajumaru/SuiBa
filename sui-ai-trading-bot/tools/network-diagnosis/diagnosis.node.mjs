@@ -1,3 +1,4 @@
+import "./clock.node.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
@@ -22,7 +23,14 @@ import {
   safeCode,
   writer,
 } from "./core.mjs";
-import { buffered, h2Transport, sdkClient, metadata } from "./transports.mjs";
+import {
+  buffered,
+  h2Transport,
+  sdkClient,
+  metadata,
+  controlledAgentOptions,
+  CONTROLLED_POOL,
+} from "./transports.mjs";
 import { parse, summarize, csv, generate } from "./report.mjs";
 const tool = fileURLToPath(new URL(".", import.meta.url));
 const temp = (fn) => {
@@ -238,6 +246,7 @@ function fakeSession() {
     stream.end = () =>
       queueMicrotask(() => {
         stream.emit("ready");
+        stream.emit("finish");
         stream.emit("response", {
           ":status": 200,
           "content-type": "application/json",
@@ -271,7 +280,31 @@ test("HTTP/2 reuse is measured; GOAWAY opens a fresh connection; cancellation de
     b = { began: performance.now() },
     c = { began: performance.now() };
   await transport.fetch(DEEP + BOOK_PATH, init, a);
+  // Reused stream: ready already happened synchronously in request(), before return.
+  const originalRequest = last.request;
+  last.request = () => {
+    const stream = originalRequest();
+    stream.id = 3;
+    return stream;
+  };
   await transport.fetch(DEEP + BOOK_PATH, init, b);
+  assert.ok(Number.isFinite(b.sentAt));
+  assert.equal(b.sentBasis, "http2-stream-ready-and-write-finish-event");
+  assert.ok(times(b).responseWaitMs >= 0);
+  assert.ok(times(b).queueMs >= 0);
+  last.request = () => {
+    const stream = originalRequest();
+    stream.id = 5;
+    stream.writableFinished = true;
+    return stream;
+  };
+  const alreadyFinished = { began: performance.now() };
+  await transport.fetch(DEEP + BOOK_PATH, init, alreadyFinished);
+  assert.equal(
+    alreadyFinished.sentBasis,
+    "http2-stream-ready-and-write-finish-state",
+  );
+  assert.ok(Number.isFinite(times(alreadyFinished).responseWaitMs));
   assert.equal(opens, 1);
   assert.equal(a.reused, false);
   assert.equal(b.reused, true);
@@ -371,6 +404,7 @@ test("missing/truncated evidence, mismatched identity and early termination neve
         side,
         runId: "netdiag-test",
         startAt: 100,
+        endAt: 100 + LIMITS.durationMs,
         node: "v24.22.1",
         sourceHash: "same",
       },
@@ -380,8 +414,26 @@ test("missing/truncated evidence, mismatched identity and early termination neve
         runId: "netdiag-test",
         at: 100 + LIMITS.durationMs,
         reason: "RUN_DEADLINE",
+        clock: {
+          start: { wallMs: 100, monotonicMs: 200 },
+          end: {
+            wallMs: 100 + LIMITS.durationMs,
+            monotonicMs: 200 + LIMITS.durationMs,
+          },
+          wallElapsedMs: LIMITS.durationMs,
+          monotonicElapsedMs: LIMITS.durationMs,
+          wallDriftMs: 0,
+        },
       },
     ]);
+    for (const side of ["windows", "docker"])
+      fixture.push({
+        kind: "measurement-start",
+        side,
+        runId: "netdiag-test",
+        at: 100,
+        clock: { wallMs: 100, monotonicMs: 200 },
+      });
     assert.equal(
       summarize([{ rows: fixture, badLines: 0 }]).evidenceComplete,
       false,
@@ -431,4 +483,57 @@ test("PowerShell sanitizers work offline without leaking raw log text", () => {
     { encoding: "utf8" },
   );
   assert.equal(child.status, 0, child.stdout + child.stderr);
+});
+
+test("controlled keep-alive is explicit, longer than spacing, and does not change request limits", () => {
+  const opts = controlledAgentOptions({ family: 4 });
+  assert.equal(opts.keepAliveTimeout, 15000);
+  assert.equal(opts.keepAliveMaxTimeout, 15000);
+  assert.ok(
+    opts.keepAliveTimeout - opts.keepAliveTimeoutThreshold > LIMITS.spacingMs,
+  );
+  assert.equal(CONTROLLED_POOL.serverMayShorten, true);
+  assert.equal(opts.connections, 1);
+  assert.equal(opts.pipelining, 1);
+  assert.equal(opts.connect.family, 4);
+  assert.equal(LIMITS.spacingMs, 5000);
+  assert.equal(LIMITS.maxAttempts, 90);
+  assert.equal(plan().measurement.nativeFetchPoolUnchanged, true);
+  assert.equal(
+    times({ began: 10, headersAt: 20, sentAt: 30 }, 40).responseWaitMs,
+    null,
+  );
+});
+
+test("warm without actual reuse stays NOT_OBSERVED, with policy and gap evidence", () => {
+  const rows = [
+    {
+      kind: "attempt",
+      side: "windows",
+      profile: { target: "sui", protocol: "fetch", family: 4 },
+      mode: "warm",
+      success: true,
+      timing: { totalMs: 200, reusedConnection: false },
+      poolPolicy: CONTROLLED_POOL,
+      gapSincePreviousAttemptMs: 5010,
+    },
+  ];
+  const m = summarize([{ rows, badLines: 0 }]);
+  assert.equal(m.profiles[0].reuseObservation, "NOT_OBSERVED");
+  assert.equal(m.profiles[0].poolPolicy.name, "diagnostic-15s-idle");
+  assert.equal(m.profiles[0].gapMs.p50, 5010);
+  const timeline = csv([
+    {
+      kind: "end",
+      clock: {
+        end: { wallMs: 42, monotonicMs: 43 },
+        monotonicElapsedMs: 1800000,
+        wallElapsedMs: 1800001,
+        wallDriftMs: 1,
+      },
+    },
+  ]);
+  assert.match(timeline, /monotonicElapsedMs/);
+  assert.match(timeline, /1800000/);
+  assert.equal(m.evidenceComplete, false);
 });

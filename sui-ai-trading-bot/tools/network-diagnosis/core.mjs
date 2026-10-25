@@ -28,7 +28,7 @@ export const PROFILES = Object.freeze([
   ]),
 ]);
 export const plan = () => ({
-  schema: 1,
+  schema: 2,
   limits: LIMITS,
   profiles: PROFILES,
   operations: ["SUI metadata GetCoinInfo (gRPC-Web)", "SUI_USDC orderbook GET"],
@@ -37,6 +37,12 @@ export const plan = () => ({
   maxRequestsPerSide: LIMITS.maxAttempts,
   maxCombinedRequests: LIMITS.maxAttempts * 2,
   qualityVerdict: "NOT_EVALUATED",
+  measurement: {
+    durationClocks: "wall-and-monotonic",
+    controlledFetchIdleMs: 15000,
+    controlledFetchServerMayShorten: true,
+    nativeFetchPoolUnchanged: true,
+  },
   note: "No trading, Bot imports, DB, retries, dotenv or listener. Actual reuse is measured, never assumed.",
 });
 export function assertNode(version = process.version) {
@@ -149,7 +155,7 @@ export function times(t, now = performance.now()) {
   const c = t.connection;
   const fresh = t.reused === false;
   const delta = (a, b) =>
-    a == null || b == null ? null : Math.max(0, Math.round(a - b));
+    a == null || b == null ? null : a >= b ? Math.round(a - b) : null;
   const phase =
     t.bodyEnd != null
       ? "COMPLETE"
@@ -181,6 +187,10 @@ export function times(t, now = performance.now()) {
     tlsMs: fresh ? delta(c?.tlsAt, c?.tcpAt) : null,
     headersMs: delta(t.headersAt, t.began),
     responseWaitMs: delta(t.headersAt, t.sentAt),
+    sendTimingBasis: t.sentBasis ?? null,
+    streamReadyMs: delta(t.readyAt, t.began),
+    writeFinishedMs: delta(t.writeFinishedAt, t.began),
+    queueMs: delta(t.readyAt, t.queuedAt),
     bodyMs: delta(t.bodyEnd, t.headersAt),
     totalMs: delta(now, t.began),
     phaseElapsedMs: delta(

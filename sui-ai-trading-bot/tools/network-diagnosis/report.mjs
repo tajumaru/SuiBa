@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { stat, LIMITS, assertNode } from "./core.mjs";
+import { durationEvidence } from "./clock.mjs";
 export function parse(text) {
   const rows = [];
   let badLines = 0;
@@ -35,7 +36,16 @@ export function summarize(inputs) {
       }
     }) &&
     rows
-      .filter((r) => ["attempt", "end"].includes(r.kind))
+      .filter((r) =>
+        [
+          "attempt",
+          "end",
+          "measurement-start",
+          "cycle",
+          "unavailable",
+          "skipped-slot",
+        ].includes(r.kind),
+      )
       .every(
         (r) =>
           r.runId === environments[0]?.runId &&
@@ -82,6 +92,8 @@ export function summarize(inputs) {
         actualNew: 0,
         unknownReuse: 0,
         latencies: [],
+        gaps: [],
+        poolPolicy: a.poolPolicy ?? null,
       };
       profiles.push(g);
     }
@@ -91,6 +103,7 @@ export function summarize(inputs) {
     g.actualNew += a.timing.reusedConnection === false ? 1 : 0;
     g.unknownReuse += a.timing.reusedConnection == null ? 1 : 0;
     g.latencies.push(a.timing.totalMs);
+    g.gaps.push(a.gapSincePreviousAttemptMs);
   }
   const failures = attempts
     .filter((r) => !r.success)
@@ -125,6 +138,22 @@ export function summarize(inputs) {
           cpuPercent: o.cpuPercent,
         })),
     }));
+  const durations = ["windows", "docker"].map((side) => {
+    const starts = rows.filter(
+      (r) => r.side === side && r.kind === "measurement-start",
+    );
+    const ends = rows.filter((r) => r.side === side && r.kind === "end");
+    return {
+      side,
+      ...(starts.length === 1 && ends.length === 1
+        ? durationEvidence(
+            starts[0],
+            ends[0],
+            environments.find((e) => e.side === side),
+          )
+        : { complete: false, reason: "MISSING_OR_DUPLICATE_CLOCK_EVIDENCE" }),
+    };
+  });
   return {
     schema: 1,
     qualityVerdict: "NOT_EVALUATED",
@@ -149,23 +178,21 @@ export function summarize(inputs) {
               .map((r) => r.slot),
           ).size === 30,
       ) &&
-      ["windows", "docker"].every((side) =>
-        rows.some(
-          (r) =>
-            r.side === side &&
-            r.kind === "end" &&
-            r.reason === "RUN_DEADLINE" &&
-            r.at >=
-              environments.find((e) => e.side === side)?.startAt +
-                LIMITS.durationMs,
-        ),
-      ),
+      durations.every((d) => d.complete),
+    durations,
     missingFiles: inputs.filter((i) => i.missing).map((i) => i.missing),
     badLines: inputs.reduce((n, i) => n + i.badLines, 0),
     comparison,
-    profiles: profiles.map(({ key, latencies, ...g }) => ({
+    profiles: profiles.map(({ key, latencies, gaps, ...g }) => ({
       ...g,
       latencyMs: stat(latencies),
+      gapMs: stat(gaps),
+      reuseObservation:
+        g.mode !== "warm"
+          ? "NOT_REQUESTED"
+          : g.actualReused > 0
+            ? "OBSERVED"
+            : "NOT_OBSERVED",
     })),
     failures,
     environments,
@@ -222,6 +249,16 @@ export function csv(rows) {
     "bodyMs",
     "totalMs",
     "phaseElapsedMs",
+    "sendTimingBasis",
+    "streamReadyMs",
+    "writeFinishedMs",
+    "queueMs",
+    "gapSincePreviousAttemptMs",
+    "clockWallMs",
+    "clockMonotonicMs",
+    "monotonicElapsedMs",
+    "wallElapsedMs",
+    "wallDriftMs",
     "category",
     "collector",
     "status",
@@ -247,6 +284,11 @@ export function csv(rows) {
           requestedFamily: r.profile?.family,
           requestedProtocol: r.profile?.protocol,
           ...r.timing,
+          clockWallMs: r.clock?.end?.wallMs ?? r.clock?.wallMs,
+          clockMonotonicMs: r.clock?.end?.monotonicMs ?? r.clock?.monotonicMs,
+          monotonicElapsedMs: r.clock?.monotonicElapsedMs,
+          wallElapsedMs: r.clock?.wallElapsedMs,
+          wallDriftMs: r.clock?.wallDriftMs,
         };
         return fields.map((k) => flat[k]);
       }),
@@ -268,12 +310,18 @@ export function markdown(m) {
         `| ${c.side} | ${c.target} | ${c.attempts} | ${c.success} | ${c.timeouts} | ${c.latencyMs.p50 ?? "unknown"} / ${c.latencyMs.p95 ?? "unknown"} |`,
     ),
     "",
+    "## Duration evidence (wall and monotonic clocks)",
+    ...m.durations.map(
+      (d) =>
+        `- ${d.side}: complete=${d.complete}, reason=${d.reason}, wall=${d.wallElapsedMs ?? "unknown"}ms, monotonic=${d.monotonicElapsedMs ?? "unknown"}ms, drift=${d.wallDriftMs ?? "unknown"}ms.`,
+    ),
+    "",
     "## Controlled profiles and observed reuse",
-    "| Side | Target / transport / requested IP | Mode | Success / attempts | Actual reused / new / unknown | P95 ms |",
+    "| Side | Target / transport / requested IP | Mode / pool / observation | Success / attempts | Actual reused / new / unknown | P95 ms |",
     "| --- | --- | --- | --- | --- | --- |",
     ...m.profiles.map(
       (p) =>
-        `| ${p.side} | ${p.profile.target} / ${p.profile.protocol} / ${p.profile.family || "auto"} | ${p.mode} | ${p.success}/${p.attempts} | ${p.actualReused}/${p.actualNew}/${p.unknownReuse} | ${p.latencyMs.p95 ?? "unknown"} |`,
+        `| ${p.side} | ${p.profile.target} / ${p.profile.protocol} / ${p.profile.family || "auto"} | ${p.mode} / ${p.poolPolicy?.name ?? (p.profile.protocol === "fetch" ? "unknown" : "unchanged")} / ${p.reuseObservation} | ${p.success}/${p.attempts} | ${p.actualReused}/${p.actualNew}/${p.unknownReuse} | ${p.latencyMs.p95 ?? "unknown"} |`,
     ),
     "",
     "## Cause candidates and evidence",
@@ -287,7 +335,7 @@ export function markdown(m) {
     "## Next steps",
     "- Compare per-profile warm/cold and actual connection IDs/families in network-timeline.csv, rather than assuming reuse.",
     "- Correlate failure windows with resource/event-loop samples, Windows DNS events, Docker logs and optional packet evidence.",
-    "- Do not switch DNS, force IPv4, change pools/retries/timeouts, relax safety gates, or start trading from these results.",
+    "- Do not switch DNS, force IPv4, change production pools/retries/timeouts, relax safety gates, or start trading from these results.",
     "",
     "## Missing evidence",
     ...m.missingFiles.map((f) => "- " + f),
