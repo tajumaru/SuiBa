@@ -450,13 +450,15 @@ export function AgentNarrationFeed({
         ) : (
           // Newest first: the list flows with the page (no inner scroll
           // box), so the latest entry belongs at the top.
-          [...narration.entries].reverse().map((entry) => (
-            <AgentFeedEntryRow
-              key={entry.id}
-              entry={entry}
-              justBought={celebration?.entryId === entry.id}
-            />
-          ))
+          [...narration.entries]
+            .reverse()
+            .map((entry) => (
+              <AgentFeedEntryRow
+                key={entry.id}
+                entry={entry}
+                justBought={celebration?.entryId === entry.id}
+              />
+            ))
         )}
       </div>
       <small className="agent-feed-note">

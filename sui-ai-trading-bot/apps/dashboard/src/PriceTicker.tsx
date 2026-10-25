@@ -36,11 +36,8 @@ const SPARK_MAX_POINTS = 40;
  * the sparkline are simply not rendered.
  */
 
-export function formatTickerPrice(
-  price: number | null | undefined,
-): string {
-  if (price == null || !Number.isFinite(price) || price <= 0)
-    return "—";
+export function formatTickerPrice(price: number | null | undefined): string {
+  if (price == null || !Number.isFinite(price) || price <= 0) return "—";
   if (price >= 1000)
     return `$${new Intl.NumberFormat("en-US", {
       minimumFractionDigits: 2,

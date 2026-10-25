@@ -1726,6 +1726,8 @@ export function buyCelebrationActive(
   now: number,
 ): boolean {
   return (
-    startedAt != null && now >= startedAt && now - startedAt < BUY_CELEBRATION_MS
+    startedAt != null &&
+    now >= startedAt &&
+    now - startedAt < BUY_CELEBRATION_MS
   );
 }

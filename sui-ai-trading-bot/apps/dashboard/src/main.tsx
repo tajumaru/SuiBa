@@ -20,10 +20,7 @@ import { Reason } from "./Reason.tsx";
 import { StrategyTab, type StrategySegment } from "./StrategyTab.tsx";
 import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
-import {
-  BUY_CELEBRATION_MS,
-  type AgentPose,
-} from "./agentNarration.ts";
+import { BUY_CELEBRATION_MS, type AgentPose } from "./agentNarration.ts";
 import { NAV_SHORT_LABELS, NavTabIcon } from "./navTabs.tsx";
 import { PriceChart } from "./PriceChart.tsx";
 import { BacktestComparison } from "./BacktestComparison.tsx";
