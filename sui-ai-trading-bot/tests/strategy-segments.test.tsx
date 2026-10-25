@@ -136,7 +136,7 @@ describe("strategy tab segments", () => {
     expect(strategyTab).toContain('hidden={segment !== "rules"}');
     expect(strategyTab).toContain('hidden={segment !== "settings"}');
     expect(strategyTab).toContain('role="tablist"');
-    expect(strategyTab).toContain('aria-selected={segment === s.id}');
+    expect(strategyTab).toContain("aria-selected={segment === s.id}");
   });
 
   it("opens the 設定 segment for a restored Settings tab value", () => {
