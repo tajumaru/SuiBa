@@ -255,7 +255,10 @@ function unmetAside(key: EntryCondKey, dec: DecisionTelemetry): string {
 }
 
 /** The one remaining condition, named with its recorded number. */
-function singleRemainingText(key: EntryCondKey, dec: DecisionTelemetry): string {
+function singleRemainingText(
+  key: EntryCondKey,
+  dec: DecisionTelemetry,
+): string {
   if (key === "emaUp") {
     const gap =
       dec.price > 0 ? Math.abs((dec.ema20 - dec.ema50) / dec.price) : 1;
@@ -435,9 +438,7 @@ function chooseWatchTarget(
   dec: DecisionTelemetry,
   exclude?: EntryCondKey,
 ): EntryCondKey | null {
-  const unmet = entryConditions(dec).filter(
-    (c) => !c.met && c.key !== exclude,
-  );
+  const unmet = entryConditions(dec).filter((c) => !c.met && c.key !== exclude);
   if (!unmet.length) return null;
   return unmet.reduce((a, b) =>
     unmetDistance(dec, b.key) < unmetDistance(dec, a.key) ? b : a,
@@ -502,8 +503,10 @@ function hitWatchText(key: EntryCondKey, dec: DecisionTelemetry): string {
 }
 
 function withdrawWatchText(key: EntryCondKey): string {
-  if (key === "emaUp") return "注目してたEMAの差、開いてきたなあ。宣言は取り下げ";
-  if (key === "rsiRecovery") return "注目してたRSI、遠のいたなあ。宣言は取り下げ";
+  if (key === "emaUp")
+    return "注目してたEMAの差、開いてきたなあ。宣言は取り下げ";
+  if (key === "rsiRecovery")
+    return "注目してたRSI、遠のいたなあ。宣言は取り下げ";
   return "注目してたMACD、遠のいたなあ。宣言は取り下げ";
 }
 
@@ -613,9 +616,23 @@ export function entryConditionChips(
 ): EntryConditionChip[] {
   const emaGap = dec.price > 0 ? (dec.ema50 - dec.ema20) / dec.price : 1;
   const ema: EntryConditionChip = dec.conditions.emaUp
-    ? { key: "ema", label: "EMA", met: true, status: "✓", tone: "met", watching: false }
+    ? {
+        key: "ema",
+        label: "EMA",
+        met: true,
+        status: "✓",
+        tone: "met",
+        watching: false,
+      }
     : prev?.emaUp
-      ? { key: "ema", label: "EMA", met: false, status: "後退", tone: "back", watching: false }
+      ? {
+          key: "ema",
+          label: "EMA",
+          met: false,
+          status: "後退",
+          tone: "back",
+          watching: false,
+        }
       : emaGap <= 0.003
         ? {
             key: "ema",
@@ -625,14 +642,42 @@ export function entryConditionChips(
             tone: "close",
             watching: false,
           }
-        : { key: "ema", label: "EMA", met: false, status: "逆並び", tone: "far", watching: false };
+        : {
+            key: "ema",
+            label: "EMA",
+            met: false,
+            status: "逆並び",
+            tone: "far",
+            watching: false,
+          };
   const points = rsiPoints(dec.rsi, dec.oversold);
   const rsi: EntryConditionChip = dec.conditions.rsiRecovery
-    ? { key: "rsi", label: "RSI", met: true, status: "✓", tone: "met", watching: false }
+    ? {
+        key: "rsi",
+        label: "RSI",
+        met: true,
+        status: "✓",
+        tone: "met",
+        watching: false,
+      }
     : prev?.rsiRecovery
-      ? { key: "rsi", label: "RSI", met: false, status: "後退", tone: "back", watching: false }
+      ? {
+          key: "rsi",
+          label: "RSI",
+          met: false,
+          status: "後退",
+          tone: "back",
+          watching: false,
+        }
       : dec.rsi <= dec.oversold
-        ? { key: "rsi", label: "RSI", met: false, status: "圏内", tone: "close", watching: false }
+        ? {
+            key: "rsi",
+            label: "RSI",
+            met: false,
+            status: "圏内",
+            tone: "close",
+            watching: false,
+          }
         : {
             key: "rsi",
             label: "RSI",
@@ -642,7 +687,14 @@ export function entryConditionChips(
             watching: false,
           };
   const macd: EntryConditionChip = dec.conditions.histogramImproving
-    ? { key: "macd", label: "MACD", met: true, status: "✓", tone: "met", watching: false }
+    ? {
+        key: "macd",
+        label: "MACD",
+        met: true,
+        status: "✓",
+        tone: "met",
+        watching: false,
+      }
     : prev?.histogramImproving
       ? {
           key: "macd",
@@ -655,7 +707,14 @@ export function entryConditionChips(
       : dec.histogram < 0 &&
           dec.atr > 0 &&
           Math.abs(dec.histogram) <= dec.atr * 0.05
-        ? { key: "macd", label: "MACD", met: false, status: "あと1", tone: "close", watching: false }
+        ? {
+            key: "macd",
+            label: "MACD",
+            met: false,
+            status: "あと1",
+            tone: "close",
+            watching: false,
+          }
         : dec.histogram < 0
           ? {
               key: "macd",
@@ -696,8 +755,7 @@ export function currentConditionChips(
   if (!dec || !freshDecision(dec, now)) return null;
   let prev: DecisionTrail | null = null;
   if (state.lastTrail) {
-    if (dec.evaluatedAt === state.lastTrail.evaluatedAt)
-      prev = state.prevTrail;
+    if (dec.evaluatedAt === state.lastTrail.evaluatedAt) prev = state.prevTrail;
     else if (dec.evaluatedAt > state.lastTrail.evaluatedAt)
       prev = state.lastTrail;
     else prev = state.prevTrail;
@@ -758,7 +816,12 @@ export function currentWatch(
       detail: "保有中。条件が崩れたら声かける",
     };
   if (metEntryConditions(dec) === 3)
-    return { key: null, label: "なし", value: "", detail: "3つ揃ったので注目は終了" };
+    return {
+      key: null,
+      label: "なし",
+      value: "",
+      detail: "3つ揃ったので注目は終了",
+    };
   const declared =
     state.watch && !dec.conditions[state.watch.key] ? state.watch : null;
   const key = declared ? declared.key : chooseWatchTarget(dec);
