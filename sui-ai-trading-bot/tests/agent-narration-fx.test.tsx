@@ -2,7 +2,10 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { AgentPoseFx } from "../apps/dashboard/src/AgentNarration.tsx";
+import {
+  AgentPoseFx,
+  AgentStageArtwork,
+} from "../apps/dashboard/src/AgentNarration.tsx";
 import type { AgentPose } from "../apps/dashboard/src/agentNarration.ts";
 
 const POSES: AgentPose[] = ["normal", "point", "pointSmile", "sleep", "laptop"];
@@ -72,5 +75,53 @@ describe("agent pose expression overlay", () => {
     }
     // Under reduce the effects rest as faint still marks.
     expect(css).toContain(".agent-feed-fx-noseb {\n    opacity: 0.9;");
+  });
+});
+
+describe("agent laptop two-frame typing", () => {
+  const readCss = () =>
+    readFileSync(
+      new URL("../apps/dashboard/src/style.css", import.meta.url),
+      "utf8",
+    ).replace(/\r\n/g, "\n");
+
+  it("stacks a second frame only for the laptop pose", () => {
+    const laptop = renderToStaticMarkup(<AgentStageArtwork pose="laptop" />);
+    expect(laptop.match(/<img/g)).toHaveLength(2);
+    expect(laptop).toContain('class="agent-feed-stage-typing"');
+    expect(laptop).toContain("agent-white-laptop-typing");
+    for (const pose of POSES.filter((p) => p !== "laptop")) {
+      const html = renderToStaticMarkup(<AgentStageArtwork pose={pose} />);
+      expect(html.match(/<img/g)).toHaveLength(1);
+      expect(html).not.toContain("agent-feed-stage-typing");
+    }
+  });
+
+  it("rests the typing frame invisible and flips it only with motion allowed", () => {
+    const css = readCss();
+    // Base rule: stacked on the base frame, invisible at rest.
+    expect(css).toContain(
+      ".agent-feed-stage img.agent-feed-stage-typing {\n  position: absolute;\n  inset: 0;\n  opacity: 0;\n}",
+    );
+    // The flip exists only inside a no-preference media block, on a
+    // 0.52s cycle (about 0.26s per frame), riding the shared bob so
+    // the two frames never drift apart.
+    const noPreferenceAt = css.indexOf(
+      "@media (prefers-reduced-motion: no-preference)",
+    );
+    expect(noPreferenceAt).toBeGreaterThanOrEqual(0);
+    expect(css.indexOf("@keyframes agent-feed-typing")).toBeGreaterThan(
+      noPreferenceAt,
+    );
+    const noPreference = css.slice(noPreferenceAt);
+    expect(noPreference).toContain("agent-feed-typing 0.52s linear infinite");
+    expect(noPreference).toContain("agent-feed-bob 3.2s ease-in-out infinite");
+    // Before that block the typing frame is never animated.
+    expect(css.slice(0, noPreferenceAt)).not.toContain("agent-feed-typing");
+    // Under reduce the feed-wide rule kills every feed animation, so
+    // the typing frame stays invisible and the base frame is still.
+    expect(css).toContain(
+      "@media (prefers-reduced-motion: reduce) {\n  .agent-feed *,\n  .agent-feed *::before,\n  .agent-feed *::after {\n    animation: none !important;",
+    );
   });
 });
