@@ -16,8 +16,7 @@ import {
   sameSettings,
   type Mode,
 } from "./settingsEditor.ts";
-import { number, percent, errorCode } from "./presentation.ts";
-import { Reason } from "./Reason.tsx";
+import { number, errorCode } from "./presentation.ts";
 type State = ReturnType<BotEngine["snapshot"]>;
 export type Field = {
   key: keyof Settings;
@@ -227,63 +226,6 @@ export function AdvancedSettings(props: {
         利益条件の設定です。見積もり・費用・数量の検証とリスク制限は常に適用されます。
       </small>
     </details>
-  );
-}
-export function ProfitGuardSummary({ data }: { data: State }) {
-  const r = data.profitGuard;
-  const insufficient =
-    r &&
-    ["MINIMUM_NET_PROFIT_NOT_MET", "PROJECTED_NET_INSUFFICIENT"].includes(
-      r.reason,
-    );
-  const reasons: Record<string, string> = {
-    MINIMUM_NET_PROFIT_NOT_MET:
-      "手数料込みの利益が基準に届かないため、売買を見送りました",
-    PROJECTED_NET_INSUFFICIENT:
-      "想定利益が費用または最低基準に届かないため、購入を見送りました",
-    QUOTE_EXPIRED: "価格情報が古いため、売買を見送りました",
-    QUOTE_UNAVAILABLE: "価格の見積もりを取得できません",
-    UNKNOWN_COSTS: "費用を確認できないため、売買を見送りました",
-    INVALID_QUOTE: "見積もりの数量・方向などが不正です",
-    INVALID_POSITION: "保有数量または取得原価が不正です",
-    INSUFFICIENT_POSITION: "売却数量が保有数量を超えています",
-    INVALID_PROFIT_CONFIG: "利益保護の設定が不正です",
-    PROFIT_DATA_UNKNOWN: "利益計算に必要なデータが不足しています",
-    PROTECTIVE_EXIT_PROFIT_DATA_UNAVAILABLE:
-      "リスク削減では利益条件のみ免除します。安全性の検証は必須です",
-    PROTECTIVE_EXIT_PROFIT_BYPASS:
-      "損切り・リスク削減のため利益条件のみ免除しました",
-    MINIMUM_NET_PROFIT_MET: "費用控除後の最低利益を満たしました",
-    PROJECTED_NET_EXCEEDS_ROUND_TRIP_COST:
-      "想定純利益が往復費用と最低基準を満たしました",
-    PROFIT_GUARD_DISABLED: "利益条件は無効です。安全性の検証は継続します",
-  };
-  return (
-    <div className="profit-summary">
-      <h3>利益保護：{data.settings.profitGuardEnabled ? "有効" : "無効"}</h3>
-      <p>
-        最低純利益：{number(data.settings.minNetProfitUsdc)} USDC ／
-        最低利益率：
-        {percent(data.settings.minNetProfitPct)}
-      </p>
-      <p>
-        最後の判定：
-        {!r
-          ? "データ不足"
-          : r.allowed
-            ? "取引許可"
-            : insufficient
-              ? "利益不足で見送り"
-              : "データ不足"}
-      </p>
-      <small>
-        {r
-          ? (reasons[r.reason] ??
-            "安全性を確認できないため、売買を見送りました")
-          : "判定データはまだありません。"}{" "}
-        {r && <Reason code={r.reason} />}判定通過後もリスク制限が確認します。
-      </small>
-    </div>
   );
 }
 export function SettingsChanges({
@@ -526,7 +468,10 @@ export function SettingsPage({
           最大取引額：{number(saved.maxOrder)} USDC ／ 1日の購入上限：
           {number(saved.dailyBuyLimit)} USDC
         </p>
-        <ProfitGuardSummary data={{ ...data, settings: saved }} />
+        {/* The profit-guard state (enabled flag, minimums and the
+            latest verdict) is shown once on this tab, in the
+            strategy view's ProfitGuard card and detail panel above;
+            the toggle stays in the advanced settings. */}
       </div>
       <hr />
       <h3

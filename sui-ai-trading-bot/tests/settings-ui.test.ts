@@ -10,7 +10,6 @@ import {
 } from "../apps/dashboard/src/settingsPresets.ts";
 import {
   SettingsPage,
-  ProfitGuardSummary,
   AdvancedSettings,
   PresetSelector,
   fields,
@@ -130,31 +129,14 @@ it("renders a custom saved configuration without saving or starting", () => {
   );
   expect(html).toContain("保存済み：カスタム");
   expect(html).toContain("PAPER運用開始");
-  expect(html).toContain("データ不足");
+  // The profit-guard state summary is no longer duplicated here:
+  // on the merged strategy tab it lives in the strategy view's
+  // ProfitGuard card, and only the toggle remains in the editor.
+  expect(html).not.toContain("最後の判定");
   expect(html).not.toContain("<details open");
   expect(api).not.toHaveBeenCalled();
   expect(control).not.toHaveBeenCalled();
 });
-it.each([
-  ["MINIMUM_NET_PROFIT_NOT_MET", false, "利益不足で見送り", "手数料込みの利益"],
-  ["QUOTE_EXPIRED", false, "データ不足", "価格情報が古い"],
-  ["MINIMUM_NET_PROFIT_MET", true, "取引許可", "最低利益を満たしました"],
-])(
-  "shows a Japanese Profit Guard reason for %s",
-  (reason, allowed, status, detail) => {
-    const data = {
-      settings: applySafePreset(defaults),
-      profitGuard: { reason, allowed },
-    } as unknown as Parameters<typeof ProfitGuardSummary>[0]["data"];
-    const html = renderToStaticMarkup(
-      React.createElement(ProfitGuardSummary, { data }),
-    );
-    expect(html).toContain(status);
-    expect(html).toContain(detail);
-    expect(html).toContain("1.5");
-  },
-);
-
 it.each([defaults, { ...defaults, maxOrder: 3, gasUsdc: 0.08 }])(
   "shows a non-modal recommendation for default and existing custom settings without guessing first use",
   (settings) => {
