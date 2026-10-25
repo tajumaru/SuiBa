@@ -17,6 +17,7 @@ import {
   entryConditionChips,
   MAX_NARRATION_ENTRIES,
   reviewNarrationTexts,
+  spikeAlert,
   type NarrationState,
 } from "../apps/dashboard/src/agentNarration.ts";
 import type { DecisionTelemetry } from "../apps/worker/src/operations.ts";
@@ -1934,6 +1935,307 @@ describe("agent narration: watch score and review", () => {
       expect(line.length).toBeLessThanOrEqual(80);
       expect(line).not.toMatch(/です|ます|ました|確認できました|総括/);
       expect(line).toMatch(/\d/);
+    }
+  });
+});
+
+describe("agent narration: spike alerts", () => {
+  type DecisionOverrides = Parameters<typeof decision>[0];
+  /** A decision sequence with strictly increasing evaluatedAt,
+   * the last one at NOW, so every step is a fresh narrated cycle
+   * (the first one initialises the feed). */
+  const seq = (list: DecisionOverrides[]) =>
+    list.map((o, i) =>
+      decision({
+        ...o,
+        evaluatedAt: NOW - (list.length - 1 - i) * 10_000,
+      }),
+    );
+
+  function feedRun(
+    decisions: (TradingDecision | null)[],
+    vital: "alive" | "sleeping" = "alive",
+  ) {
+    const { db, monitor } = fixture();
+    let state = emptyNarrationState();
+    let last = runningSnapshot(db, monitor, null);
+    for (const dec of decisions) {
+      last = runningSnapshot(db, monitor, dec);
+      state = advanceNarration(state, last, vital, NOW);
+    }
+    return { state, last };
+  }
+  const feed = (decisions: (TradingDecision | null)[]) =>
+    feedRun(decisions).state;
+  const alertsOf = (state: NarrationState) =>
+    state.entries.filter((e) => e.kind === "alert");
+
+  function telemetry(
+    overrides: Omit<Partial<DecisionTelemetry>, "conditions"> & {
+      conditions?: Partial<DecisionTelemetry["conditions"]>;
+    } = {},
+  ): DecisionTelemetry {
+    const { conditions, ...rest } = overrides;
+    return {
+      evaluatedAt: NOW - 60_000,
+      candleTimestamp: NOW - 300_000,
+      action: "WAIT",
+      reason: "",
+      selectedRule: "NO_SIGNAL",
+      sellPurpose: null,
+      price: 2.4,
+      entryPrice: null,
+      ema20: 2.38,
+      ema50: 2.42,
+      rsi: 44,
+      previousRsi: 42,
+      histogram: -0.003,
+      previousHistogram: -0.002,
+      atr: 0.02,
+      volumeChange: 0.05,
+      oversold: 30,
+      overbought: 70,
+      stopLossPct: 0.02,
+      takeProfitPct: 0.03,
+      ...rest,
+      conditions: {
+        emaUp: false,
+        rsiRecovery: false,
+        histogramImproving: false,
+        hasPosition: false,
+        stopLoss: false,
+        takeProfit: false,
+        ...(conditions ?? {}),
+      },
+    };
+  }
+  const warmed = [2.4, 2.4, 2.4];
+
+  it("stays silent during warm-up: fewer than four price points", () => {
+    // Unit level: even a huge volume spike cannot alert yet.
+    expect(spikeAlert([], telemetry({ volumeChange: 3.5 }))).toBeNull();
+    expect(spikeAlert([2.4, 2.4], telemetry({ volumeChange: 3.5 }))).toBeNull();
+    // Feed level: three recorded decisions are only three points.
+    const state = feed(
+      seq([
+        { volumeChange: 3.5 },
+        { volumeChange: 3.5 },
+        { volumeChange: 3.5 },
+      ]),
+    );
+    expect(alertsOf(state)).toHaveLength(0);
+    expect(state.lastAlert).toBeNull();
+  });
+
+  it("alerts at exactly +1% against three cycles ago, and not below", () => {
+    expect(alertsOf(feed(seq([{}, {}, {}, { price: 2.4216 }])))).toHaveLength(
+      0,
+    );
+    const state = feed(seq([{}, {}, {}, { price: 2.424 }]));
+    const alerts = alertsOf(state);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toContain("+1.0%");
+    // The alert follows the cycle's own narration in the same cycle.
+    expect(state.entries.at(-1)?.kind).toBe("alert");
+  });
+
+  it("alerts at exactly -1% with the plunge wording", () => {
+    expect(alertsOf(feed(seq([{}, {}, {}, { price: 2.3784 }])))).toHaveLength(
+      0,
+    );
+    const alerts = alertsOf(feed(seq([{}, {}, {}, { price: 2.376 }])));
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toBe("速報。SUI、-1.0%。急落だ。ちょっと様子見る");
+  });
+
+  it("a volume-only spike alerts on its own, at the +200% boundary", () => {
+    expect(spikeAlert(warmed, telemetry({ volumeChange: 1.99 }))).toBeNull();
+    const edge = spikeAlert(warmed, telemetry({ volumeChange: 2 }));
+    expect(edge?.direction).toBe("volume");
+    expect(edge?.text).toContain("+200%");
+    const state = feed(seq([{}, {}, {}, { volumeChange: 2.5 }]));
+    const alerts = alertsOf(state);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toBe(
+      "速報。出来高の変化が+250%に跳ねた。何かあったかも",
+    );
+    expect(state.lastAlert?.direction).toBe("volume");
+  });
+
+  it("merges a simultaneous price and volume spike into one entry", () => {
+    const state = feed(seq([{}, {}, {}, { price: 2.4432, volumeChange: 3 }]));
+    const alerts = alertsOf(state);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toBe(
+      "速報。SUI、短時間で+1.8%。出来高の変化も跳ねた",
+    );
+    expect(state.lastAlert?.direction).toBe("up");
+  });
+
+  it("an upward price spike alone uses the short surge wording", () => {
+    const alerts = alertsOf(feed(seq([{}, {}, {}, { price: 2.4432 }])));
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toBe("速報。SUI、短時間で+1.8%。急に来た");
+  });
+
+  it("a downward spike with a volume spike still mentions both, once", () => {
+    const alerts = alertsOf(
+      feed(seq([{}, {}, {}, { price: 2.3448, volumeChange: 3 }])),
+    );
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toContain("-2.3%");
+    expect(alerts[0].text).toContain("出来高の変化も跳ねた");
+    expect(alerts[0].text).toContain("急落だ");
+  });
+
+  it("cools down for five narrated cycles, then can fire again", () => {
+    const spike = { volumeChange: 3 };
+    const decisions = seq([
+      {},
+      {},
+      {},
+      spike, // 4th point: fires, cooldown starts
+      spike,
+      spike,
+      spike,
+      spike,
+      spike, // five suppressed cycles
+      { volumeChange: 2.5 }, // cooldown over: fires again
+    ]);
+    const during = feed(decisions.slice(0, 9));
+    expect(alertsOf(during)).toHaveLength(1);
+    const state = feed(decisions);
+    const alerts = alertsOf(state);
+    expect(alerts).toHaveLength(2);
+    expect(alerts[0].text).toContain("+300%");
+    expect(alerts[1].text).toContain("+250%");
+    expect(state.alertCooldown).toBe(5);
+  });
+
+  it("never duplicates the volume story of a VOLUME_REJECT cycle", () => {
+    const reject = {
+      selectedRule: "VOLUME_REJECT",
+      volumeChange: 3.5,
+    };
+    const quiet = feed(seq([{}, {}, {}, reject]));
+    expect(alertsOf(quiet)).toHaveLength(0);
+    // The cycle's own line already printed the volume change.
+    expect(quiet.entries.some((e) => e.text.includes("変化は350%"))).toBe(true);
+    // A price spike on a reject cycle still alerts — price only.
+    const loud = feed(seq([{}, {}, {}, { ...reject, price: 2.4432 }]));
+    const alerts = alertsOf(loud);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toContain("+1.8%");
+    expect(alerts[0].text).not.toContain("出来高");
+  });
+
+  it("alerts while holding a position (the plunge watch)", () => {
+    const hold = {
+      conditions: { hasPosition: true },
+      entryPrice: 2.4,
+    };
+    const state = feed(
+      seq([
+        { ...hold, price: 2.4 },
+        { ...hold, price: 2.4 },
+        { ...hold, price: 2.4 },
+        { ...hold, price: 2.3448 },
+      ]),
+    );
+    const alerts = alertsOf(state);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toContain("急落だ");
+    expect(state.entries.some((e) => e.text.includes("保有中だよ"))).toBe(true);
+  });
+
+  it("does not alert while sleeping, and a re-fed snapshot adds nothing", () => {
+    const decisions = seq([{}, {}, {}, { price: 2.4432 }]);
+    const { db, monitor } = fixture();
+    let state = emptyNarrationState();
+    decisions.forEach((dec, i) => {
+      const d = runningSnapshot(db, monitor, dec);
+      state = advanceNarration(state, d, i < 3 ? "alive" : "sleeping", NOW);
+    });
+    expect(alertsOf(state)).toHaveLength(0);
+    expect(state.lastAlert).toBeNull();
+
+    const { state: fired, last } = feedRun(
+      seq([{}, {}, {}, { price: 2.4432 }]),
+    );
+    expect(alertsOf(fired)).toHaveLength(1);
+    const again = advanceNarration(fired, last, "alive", NOW);
+    expect(again.entries).toBe(fired.entries);
+    expect(alertsOf(again)).toHaveLength(1);
+  });
+
+  it("points on the upward alert cycle only; a plunge never points", () => {
+    const up = feedRun(seq([{}, {}, {}, { price: 2.4432 }]));
+    expect(alertsOf(up.state)).toHaveLength(1);
+    const upVital = botVital(up.last, false, NOW, NOW);
+    expect(upVital.state).toBe("alive");
+    expect(agentPose(up.state, up.last, upVital, NOW)).toBe("point");
+
+    // Same shape with no alert: fewer than two conditions met and
+    // nothing else to celebrate, so the pose stays normal.
+    const calm = feedRun(seq([{}, {}, {}, { price: 2.41 }]));
+    expect(alertsOf(calm.state)).toHaveLength(0);
+    expect(
+      agentPose(
+        calm.state,
+        calm.last,
+        botVital(calm.last, false, NOW, NOW),
+        NOW,
+      ),
+    ).toBe("normal");
+
+    const down = feedRun(seq([{}, {}, {}, { price: 2.3448 }]));
+    expect(down.state.lastAlert?.direction).toBe("down");
+    expect(
+      agentPose(
+        down.state,
+        down.last,
+        botVital(down.last, false, NOW, NOW),
+        NOW,
+      ),
+    ).toBe("normal");
+  });
+
+  it("spikeAlert fails closed on unusable evidence", () => {
+    expect(spikeAlert(warmed, telemetry({ price: Number.NaN }))).toBeNull();
+    expect(spikeAlert(warmed, telemetry({ price: 0 }))).toBeNull();
+    expect(spikeAlert(warmed, telemetry({ price: -1 }))).toBeNull();
+    expect(
+      spikeAlert([Number.NaN, 2.4, 2.4], telemetry({ price: 2.4432 })),
+    ).toBeNull();
+    // A broken volume change cannot alert on its own, but a clean
+    // price spike on the same cycle still can.
+    expect(
+      spikeAlert(warmed, telemetry({ volumeChange: Number.NaN })),
+    ).toBeNull();
+    expect(
+      spikeAlert(warmed, telemetry({ volumeChange: Number.NaN, price: 2.4432 }))
+        ?.direction,
+    ).toBe("up");
+  });
+
+  it("alert texts keep the tone: short, one-decimal percents, no report style", () => {
+    const samples = [
+      spikeAlert(warmed, telemetry({ price: 2.4432 })),
+      spikeAlert(warmed, telemetry({ price: 2.4432, volumeChange: 3 })),
+      spikeAlert(warmed, telemetry({ price: 2.3448 })),
+      spikeAlert(warmed, telemetry({ price: 2.3448, volumeChange: 3 })),
+      spikeAlert(warmed, telemetry({ volumeChange: 2.5 })),
+    ];
+    for (const sample of samples) {
+      expect(sample).not.toBeNull();
+      const text = sample!.text;
+      const sentences = text.split("。").filter((s) => s.length > 0);
+      expect(sentences.length).toBeLessThanOrEqual(4);
+      expect(text.length).toBeLessThanOrEqual(80);
+      expect(text).not.toMatch(/です|ます|ました|確認できました|総括/);
+      expect(text).not.toMatch(/\d\.\d{2,}%/);
+      expect(text).toMatch(/\d/);
+      expect(text.startsWith("速報。")).toBe(true);
     }
   });
 });
