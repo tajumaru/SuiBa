@@ -22,6 +22,7 @@ export interface MarketStatus {
   spread: number | null;
 }
 export interface MarketDataProvider {
+  bookSnapshot?(): import("./deepbook.ts").Book | null;
   candles(timeframe: Timeframe, now?: number): Promise<Candle[]>;
   frames?(now?: number): Promise<Frames>;
   assertReady?(now: number): void;

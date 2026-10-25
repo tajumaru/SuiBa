@@ -307,7 +307,15 @@ function ResultPanel({
           </p>
           <div className="strategy-chips">
             <span className="strategy-chip">
-              確信度 <b>{percent(decision.confidence)}</b>
+              判断スコア（未校正・勝率ではありません）{" "}
+              <b>
+                {typeof decision.confidence === "number" &&
+                Number.isFinite(decision.confidence) &&
+                decision.confidence >= 0 &&
+                decision.confidence <= 1
+                  ? `${Math.round(decision.confidence * 100)} / 100`
+                  : "未取得"}
+              </b>
             </span>
             <span className="strategy-chip">
               損切り{" "}

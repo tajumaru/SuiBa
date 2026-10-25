@@ -32,6 +32,7 @@ const eventTables = [
   "validation_events",
   "cycle_audits",
   "sui_observations",
+  "book_observations",
 ] as const;
 type EventTable = (typeof eventTables)[number];
 /**

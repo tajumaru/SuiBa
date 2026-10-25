@@ -1,4 +1,5 @@
 import type { MarketDataProvider } from "../../../packages/market-data/src/provider.ts";
+import { analyzeBook } from "../../../packages/market-data/src/book-analysis.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
 import { randomUUID } from "node:crypto";
 import {
@@ -181,13 +182,40 @@ export class BotEngine {
         current = calculate(c),
         previous = calculate(c.slice(0, -1));
       const reg = new StrategyRegistry();
+      let book:
+        import("../../../packages/shared/src/index.ts").BookFeatures | null =
+        null;
+      const snapshot = this.market.bookSnapshot?.() ?? null;
+      const observedAt = Date.now();
+      try {
+        if (snapshot)
+          book = analyzeBook(
+            snapshot,
+            observedAt,
+            [
+              s.maxOrder / price / 2,
+              s.maxOrder / price,
+              (s.maxOrder / price) * 2,
+            ],
+            s.maxSlippage,
+          );
+      } catch {
+        /* Optional analytical input fails closed in the opt-in strategy. */
+      }
+      this.db.append(
+        "book_observations",
+        cycle.cycleId,
+        { observedAt, healthy: book !== null, book: snapshot },
+        observedAt,
+      );
       reg.register("rule-based", new RuleBasedStrategy(s));
       const decision = await reg.get(s.strategy).analyze({
         candles: c,
         current,
         previous,
         entryPrice: p.sui > 0 ? p.costBasis / p.sui : null,
-        now,
+        now: Date.now(),
+        book,
       });
       cycle.analysis = {
         cycleId: cycle.cycleId,

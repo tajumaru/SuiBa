@@ -19,6 +19,8 @@ export class MarketSelection implements MarketDataProvider {
         bid: number;
         ask: number;
         spread: number;
+        bids?: number[][];
+        asks?: number[][];
       } | null;
     },
   ) {
@@ -42,6 +44,16 @@ export class MarketSelection implements MarketDataProvider {
       quality: this.deep.quality?.(),
       diagnostics: this.deep.diagnostics?.(),
     };
+  }
+  bookSnapshot() {
+    const b = this.deep.book;
+    return this.value.healthy &&
+      this.value.source === "DeepBook" &&
+      !this.value.fallback &&
+      b?.bids &&
+      b?.asks
+      ? structuredClone({ ...b, bids: b.bids, asks: b.asks })
+      : null;
   }
   async candles(tf: Timeframe, now = Date.now()) {
     return (await this.frames(now))[tf];
