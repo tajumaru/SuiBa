@@ -59,17 +59,36 @@ pre {
 body {
   margin: 0;
 }
+/* Slim two-row header (design A): the title and the PAPER badge
+   share the top row; the emergency stop, the market meta line and
+   the (mobile-only) logout link share the row underneath, so the
+   header no longer stacks title, subtitle and controls in three
+   bands. The copy is unchanged — the old subtitle simply moved
+   into the second row. */
 header {
   position: relative;
   display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 23px 5%;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 5% 12px;
   border-bottom: 1px solid #243146;
   background: #101a27;
 }
+.header-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.header-row-main {
+  gap: 8px;
+}
+/* The sub row wraps on narrow screens: the meta line gives way
+   instead of squeezing the emergency stop or the logout link. */
+.header-row-sub {
+  flex-wrap: wrap;
+}
 header strong {
-  font-size: 21px;
+  font-size: 16px;
 }
 small {
   display: block;
@@ -77,16 +96,27 @@ small {
   font-size: 12px;
   letter-spacing: 0.04em;
 }
-header small {
-  margin-top: 5px;
+.header-meta {
+  font-size: 11px;
+  min-width: 0;
+}
+/* The emergency stop stays a wide pill, but slimmer than a
+   standard button so the sub row stays compact. */
+header .danger {
+  min-height: 36px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 .badge {
   margin-left: auto;
   border: 1px solid #41d9b0;
   color: #41d9b0;
-  padding: 7px 12px;
+  padding: 3px 9px;
   border-radius: 20px;
-  font-size: 12px;
+  font-size: 11px;
+  white-space: nowrap;
 }
 button {
   cursor: pointer;
@@ -132,7 +162,7 @@ nav .active {
    behind it. The nav only exists while connected — exactly when
    the avatar does — so the clearance needs no other condition. */
 nav.has-avatar {
-  padding-top: 78px;
+  padding-top: 70px;
 }
 /* Mobile bottom-bar pieces (icon, short label, header logout link):
    hidden until the <= 600px rules at the bottom turn them on. */
@@ -480,9 +510,10 @@ th {
     flex-wrap: wrap;
   }
   /* On mobile the logout leaves the tab bar and lives in the header
-     as a small text link instead. */
+     as a small text link instead, at the right end of the sub row. */
   .logout-link {
     display: inline-block;
+    margin-left: auto;
     background: transparent;
     border-color: transparent;
     padding: 10px 4px;
@@ -548,7 +579,7 @@ th {
      avatar's clearance falls on the top of the page instead (the
      desktop clearance lives on the tab bar, see nav.has-avatar). */
   main.has-avatar {
-    padding-top: 78px;
+    padding-top: 70px;
   }
   .easy-settings .controls {
     flex-direction: column;
@@ -1494,7 +1525,12 @@ th {
    layout exactly: the tab bar (or, on mobile, the page top)
    carries the extra top padding that keeps following content
    clear of the dock at rest — see nav.has-avatar and
-   main.has-avatar. When the page scrolls, the header slides away
+   main.has-avatar. The numbers: the dock is 112px tall (76px
+   avatar + 8px pill margin + ~28px pill), so the margins are
+   -56px (half the dock, which centres the dock on the header's
+   bottom edge) and the clearance is 70px (the 56px the pill
+   extends below that edge, plus the same ~14px breathing room
+   the 92px avatar had). When the page scrolls, the header slides away
    but the dock sticks 9px below the viewport top and stays in
    view, floating over the content that flows underneath (it is
    pointer-events: none, and its z-index keeps it above the tab
@@ -1502,7 +1538,7 @@ th {
    clipped to the circle by the bob wrapper, whose transform
    carries the gentle bob so the two typing frames never drift
    apart. The detailed expression marks of the old in-feed stage
-   do not fit a 92px circle, so only two coarse marks remain: a
+   do not fit a 76px circle, so only two coarse marks remain: a
    floating "Zzz" while asleep and a twinkling star while
    pointing. Motion lives only in the no-preference block below;
    under prefers-reduced-motion everything rests still, the
@@ -1516,13 +1552,13 @@ th {
   flex-direction: column;
   align-items: center;
   width: fit-content;
-  margin: -64px auto -64px;
+  margin: -56px auto -56px;
   pointer-events: none;
 }
 .agent-avatar {
   position: relative;
-  width: 92px;
-  height: 92px;
+  width: 76px;
+  height: 76px;
   border-radius: 50%;
   border: 3px solid #344e65;
   background: #12161f;

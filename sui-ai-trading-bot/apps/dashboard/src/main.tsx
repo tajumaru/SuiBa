@@ -326,23 +326,27 @@ function App() {
   return (
     <>
       <header>
-        <div>
+        <div className="header-row header-row-main">
           <strong>◈ Sui Paper Lab</strong>
-          <small>SUI / ネイティブUSDC · メインネットの市場データ</small>
+          <span className="badge">PAPER（仮想売買）専用</span>
         </div>
-        <span className="badge">PAPER（仮想売買）専用</span>
-        <button
-          className="danger"
-          disabled={!data}
-          onClick={() => void control("emergency")}
-        >
-          緊急停止
-        </button>
-        {token && (
-          <button className="logout-link" onClick={logout}>
-            ログアウト
+        <div className="header-row header-row-sub">
+          <button
+            className="danger"
+            disabled={!data}
+            onClick={() => void control("emergency")}
+          >
+            緊急停止
           </button>
-        )}
+          <small className="header-meta">
+            SUI / ネイティブUSDC · メインネットの市場データ
+          </small>
+          {token && (
+            <button className="logout-link" onClick={logout}>
+              ログアウト
+            </button>
+          )}
+        </div>
       </header>
       {/* The narration character rides at the top centre of the app
           as a round avatar, on every tab — but only once connected:

@@ -75,7 +75,7 @@ const AVATAR_DOT_TONE: Record<AgentPose, "run" | "near" | "stop"> = {
  * pose's status label — the same POSE_LABEL the feed stage used to
  * show — in a pill underneath. The detailed expression overlay of
  * the old in-feed stage (a Zzz stream, a snot bubble, fingertip
- * stars positioned on the artwork) does not fit a 92px circle, so
+ * stars positioned on the artwork) does not fit a 76px circle, so
  * the avatar keeps only two coarse marks: a floating "Zzz" while
  * asleep and a twinkling star while pointing, drawn as plain spans
  * keyed to the pose-* class in style.css. The artwork itself is
