@@ -247,7 +247,7 @@ test("narration survives polling, reconnects and stops without duplicates or uns
   await page.clock.runFor(10_000);
   await expect(feed.locator(".agent-feed-stage")).toHaveClass(/pose-sleep/);
   await expect(feed.locator(".agent-feed-entry").last()).toContainText(
-    "止まりました",
+    "止まったよ",
   );
   expect(
     await page.evaluate(
