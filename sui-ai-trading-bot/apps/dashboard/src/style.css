@@ -1377,6 +1377,7 @@ footer {
   gap: 18px;
 }
 .agent-feed-stage {
+  position: relative;
   flex: 0 0 auto;
   width: 128px;
   height: 128px;
@@ -1406,6 +1407,211 @@ footer {
 .agent-feed-stage.pose-sleep {
   filter: saturate(0.55) brightness(0.85);
 }
+/* Expression overlay on the character artwork (AgentPoseFx). Only
+   the group matching the current pose is shown; positions are
+   percentages of the stage box, anchored to coordinates measured
+   on the artwork (nose tip ~59.5%/58%, fingertip ~83.8%/30.2%,
+   head top-right for the Zzz and the smile marks). Font sizes are
+   scaled from the 216px prototype stage to this 128px stage. */
+.agent-feed-fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.agent-feed-fx-grp {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+.agent-feed-fx[data-pose="sleep"] .fx-g-sleep {
+  display: block;
+}
+.agent-feed-fx[data-pose="point"] .fx-g-point {
+  display: block;
+}
+.agent-feed-fx[data-pose="pointSmile"] .fx-g-smile {
+  display: block;
+}
+.agent-feed-fx-zzz {
+  position: absolute;
+  font-weight: 900;
+  line-height: 1;
+  color: #a9c6ff;
+  text-shadow: 0 1px 6px rgba(90, 140, 255, 0.45);
+  opacity: 0;
+}
+.agent-feed-fx-zzz.z1 {
+  left: 65%;
+  top: 31%;
+  font-size: 8px;
+}
+.agent-feed-fx-zzz.z2 {
+  left: 70.5%;
+  top: 26.5%;
+  font-size: 12px;
+}
+.agent-feed-fx-zzz.z3 {
+  left: 77%;
+  top: 21%;
+  font-size: 16px;
+}
+.agent-feed-fx-noseb {
+  position: absolute;
+  left: 59.5%;
+  top: 58%;
+  width: 15%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 32% 28%,
+    rgba(255, 255, 255, 0.95),
+    rgba(174, 216, 255, 0.55) 46%,
+    rgba(120, 180, 245, 0.34)
+  );
+  border: 1.5px solid rgba(196, 228, 255, 0.9);
+  box-shadow: inset -2px -3px 6px rgba(90, 150, 230, 0.25);
+  opacity: 0;
+  transform-origin: 6% 4%;
+}
+.agent-feed-fx-spark {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  filter: drop-shadow(0 0 5px rgba(255, 209, 102, 0.65));
+}
+.agent-feed-fx-spark.s1 {
+  left: 83.8%;
+  top: 30.2%;
+  width: 13%;
+}
+.agent-feed-fx-spark.s2 {
+  left: 75.5%;
+  top: 21.5%;
+  width: 8%;
+}
+.agent-feed-fx-note {
+  position: absolute;
+  font-weight: 900;
+  opacity: 0;
+  line-height: 1;
+}
+.agent-feed-fx-note.n1 {
+  left: 69%;
+  top: 33%;
+  font-size: 12px;
+  color: #5ad1c8;
+  text-shadow: 0 1px 6px rgba(90, 209, 200, 0.4);
+}
+.agent-feed-fx-star {
+  position: absolute;
+  left: 59%;
+  top: 23%;
+  width: 9%;
+  opacity: 0;
+  filter: drop-shadow(0 0 5px rgba(255, 209, 102, 0.55));
+}
+@media (prefers-reduced-motion: no-preference) {
+  .agent-feed-fx-zzz {
+    animation: agent-feed-fx-zfloat 5.2s ease-in-out infinite;
+  }
+  .agent-feed-fx-zzz.z2 {
+    animation-delay: 1.15s;
+  }
+  .agent-feed-fx-zzz.z3 {
+    animation-delay: 2.3s;
+  }
+  @keyframes agent-feed-fx-zfloat {
+    0% {
+      opacity: 0;
+      transform: translate(0, 7px) scale(0.65) rotate(-7deg);
+    }
+    28% {
+      opacity: 0.95;
+    }
+    68% {
+      opacity: 0.75;
+    }
+    100% {
+      opacity: 0;
+      transform: translate(9px, -18px) scale(1.18) rotate(9deg);
+    }
+  }
+  .agent-feed-fx-noseb {
+    animation: agent-feed-fx-breath 3.9s ease-in-out infinite;
+  }
+  @keyframes agent-feed-fx-breath {
+    0%,
+    100% {
+      opacity: 0.92;
+      transform: scale(0.3);
+    }
+    46%,
+    58% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  .agent-feed-fx-spark {
+    animation: agent-feed-fx-twinkle 1.8s ease-in-out infinite;
+  }
+  .agent-feed-fx-spark.s2 {
+    animation-delay: 0.9s;
+  }
+  @keyframes agent-feed-fx-twinkle {
+    0%,
+    100% {
+      opacity: 0.15;
+      transform: translate(-50%, -50%) scale(0.35) rotate(0deg);
+    }
+    50% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1) rotate(22deg);
+    }
+  }
+  .agent-feed-fx-note.n1 {
+    animation: agent-feed-fx-floatup 3.6s ease-in-out infinite;
+  }
+  .agent-feed-fx-star {
+    animation: agent-feed-fx-floatup 3.6s ease-in-out 0.9s infinite;
+  }
+  @keyframes agent-feed-fx-floatup {
+    0% {
+      opacity: 0;
+      transform: translate(0, 5px) scale(0.7);
+    }
+    30% {
+      opacity: 0.95;
+    }
+    72% {
+      opacity: 0.85;
+    }
+    100% {
+      opacity: 0;
+      transform: translate(4px, -14px) scale(1.05);
+    }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The feed-wide rule below also kills these animations; here the
+     effects rest as faint still marks instead of vanishing. */
+  .agent-feed-fx-zzz.z3 {
+    opacity: 0.5;
+  }
+  .agent-feed-fx-noseb {
+    opacity: 0.9;
+    transform: scale(0.68);
+  }
+  .agent-feed-fx-spark.s1 {
+    opacity: 0.85;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+  .agent-feed-fx-note.n1 {
+    opacity: 0.85;
+  }
+  .agent-feed-fx-star {
+    opacity: 0.85;
+  }
+}
 .agent-feed-title h2 {
   margin: 0;
   font-size: 18px;
@@ -1421,6 +1627,130 @@ footer {
   display: block;
   margin-top: 5px;
   color: #9aafbf;
+}
+/* Buy-condition chips: the same decision evidence as the narration,
+   compressed to three short status words (met / close / far / back). */
+.agent-feed-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.agent-feed-chips-title {
+  font-size: 12px;
+  color: #9aafbf;
+}
+.agent-feed-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 10px;
+  background: #1a2632;
+  border: 1px solid #344e65;
+  border-radius: 999px;
+  font-size: 13px;
+  color: #dce8f0;
+}
+.agent-feed-chip-label {
+  font-weight: 600;
+}
+.agent-feed-chip.tone-met {
+  border-color: #4caf7d;
+}
+.agent-feed-chip.tone-met .agent-feed-chip-status {
+  color: #4caf7d;
+}
+.agent-feed-chip.tone-close {
+  border-color: #edc980;
+}
+.agent-feed-chip.tone-close .agent-feed-chip-status {
+  color: #edc980;
+}
+.agent-feed-chip.tone-back {
+  border-color: #e06c75;
+}
+.agent-feed-chip.tone-back .agent-feed-chip-status {
+  color: #e06c75;
+}
+.agent-feed-chip.tone-far .agent-feed-chip-status {
+  color: #9aafbf;
+}
+/* The declared watch target's chip is ringed in gold with a ●. */
+.agent-feed-chip.watching {
+  border-color: #ffd166;
+  box-shadow: 0 0 0 1.5px #ffd166;
+}
+.agent-feed-chip-watch {
+  color: #ffd166;
+  font-size: 10px;
+}
+/* The "いまの注目" strip under the chips: the one condition the
+   narration declared it is watching, its current value, and how it
+   has moved since the declaration (or why there is no watch). */
+.agent-feed-watch {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: rgba(255, 209, 102, 0.06);
+  border: 1px dashed #a97e1f;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #dce8f0;
+}
+.agent-feed-watch-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #ffd166;
+}
+.agent-feed-watch-value {
+  font-weight: 700;
+  color: #ffd166;
+}
+.agent-feed-watch-detail {
+  font-size: 12px;
+  color: #9aafbf;
+}
+/* The declaration score strip under the watch: quiet numbers only,
+   with the counting definitions spelled out next to them. */
+.agent-feed-score {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 8px;
+  padding: 7px 12px;
+  background: #1a2632;
+  border: 1px solid #2c4356;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #dce8f0;
+}
+.agent-feed-score-item small {
+  margin-right: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #9aafbf;
+}
+.agent-feed-score-item.hit {
+  color: #39d98a;
+}
+.agent-feed-score-item.miss {
+  color: #ff9c9c;
+}
+.agent-feed-score-item.prog {
+  color: #ffd166;
+}
+.agent-feed-score-note {
+  font-size: 10.5px;
+  font-weight: 400;
+  color: #71809a;
 }
 .agent-feed-list {
   margin-top: 14px;
@@ -1474,6 +1804,32 @@ footer {
 }
 .agent-feed-entry.rejection {
   border-left-color: #b08968;
+}
+/* A ふりかえり look-back stands out quietly: purple border and tag. */
+.agent-feed-entry.review {
+  border-left-color: #b48ce8;
+}
+.agent-feed-entry-tag {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: 1px;
+  padding: 1px 7px;
+  border: 1px solid #b48ce8;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #b48ce8;
+}
+/* A 速報 breaks in warmer: orange-red border, a faint warm
+   background, and its own tag colours. */
+.agent-feed-entry.alert {
+  border-left-color: #ff7a2f;
+  background: #2b1e12;
+}
+.agent-feed-entry-tag.alert {
+  border-color: rgba(255, 140, 50, 0.55);
+  color: #ffb27a;
 }
 .agent-feed-note {
   display: block;

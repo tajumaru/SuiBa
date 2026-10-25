@@ -8,11 +8,19 @@ import { botVital } from "../apps/dashboard/src/botVital.ts";
 import {
   advanceNarration,
   agentPose,
+  currentConditionChips,
+  currentWatch,
+  currentWatchScore,
   cycleNarrationText,
+  decisionTrail,
   emptyNarrationState,
+  entryConditionChips,
   MAX_NARRATION_ENTRIES,
+  reviewNarrationTexts,
+  spikeAlert,
   type NarrationState,
 } from "../apps/dashboard/src/agentNarration.ts";
+import type { DecisionTelemetry } from "../apps/worker/src/operations.ts";
 import type { TradingDecision } from "../packages/shared/src/index.ts";
 import type {
   CandidateAudit,
@@ -251,7 +259,7 @@ describe("agent narration: initialisation", () => {
       NOW,
     );
     expect(state.entries).toHaveLength(1);
-    expect(state.entries[0].text).toContain("停止中です");
+    expect(state.entries[0].text).toContain("停止中だよ");
     const vital = botVital(d, false, NOW, NOW);
     expect(agentPose(state, d, vital, NOW)).toBe("sleep");
   });
@@ -262,8 +270,8 @@ describe("agent narration: initialisation", () => {
     const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
     expect(state.entries).toHaveLength(1);
     expect(state.entries[0].kind).toBe("cycle");
-    expect(state.entries[0].text).toContain("買い条件は0/3");
-    expect(state.entries[0].text).toContain("EMA20（2.38）がEMA50（2.42）");
+    expect(state.entries[0].text).toContain("EMAの差は-1.6667%");
+    expect(state.entries[0].text).toContain("遠いなあ");
     // Re-advancing the very same snapshot adds nothing.
     const again = advanceNarration(state, d, "alive", NOW);
     expect(again.entries).toHaveLength(1);
@@ -289,10 +297,12 @@ describe("agent narration: cycles", () => {
     return { state, d2 };
   }
 
-  it("a new cycle with 2/3 conditions met narrates progress and points", () => {
+  it("a new cycle with 2/3 conditions met names the one remaining and points", () => {
     const { state, d2 } = twoCycles();
-    expect(state.entries).toHaveLength(2);
-    expect(state.entries[1].text).toContain("買い条件が2/3そろってきました");
+    // The watched MACD clicked this cycle, so the cycle line is
+    // framed by the watch hit and the next declaration.
+    const texts = state.entries.map((e) => e.text);
+    expect(texts.some((t) => t.includes("あとEMAだけ"))).toBe(true);
     const vital = botVital(d2, false, NOW, NOW);
     expect(agentPose(state, d2, vital, NOW)).toBe("point");
   });
@@ -308,7 +318,7 @@ describe("agent narration: cycles", () => {
         sellPurpose: null,
         price: 2.4,
         entryPrice: null,
-        ema20: 2.418,
+        ema20: 2.3,
         ema50: 2.42,
         rsi: 28,
         previousRsi: 33,
@@ -331,9 +341,35 @@ describe("agent narration: cycles", () => {
       },
       null,
     );
-    expect(text).toContain("買い条件が1/3そろってきました");
-    expect(text).toContain("売られすぎライン（30）の下");
-    expect(text).toContain("反発の起点待ち");
+    expect(text).toContain("RSIは28で圏内、上抜け待ち");
+    expect(text).toContain("条件は1/3だね");
+  });
+
+  it("a condition that was met and then breaks narrates a step back", () => {
+    const { db, monitor } = fixture();
+    const d1 = runningSnapshot(
+      db,
+      monitor,
+      decision({
+        conditions: { histogramImproving: true },
+        histogram: -0.001,
+        previousHistogram: -0.002,
+      }),
+    );
+    let state = advanceNarration(emptyNarrationState(), d1, "alive", NOW);
+    const d2 = runningSnapshot(
+      db,
+      monitor,
+      decision({
+        evaluatedAt: NOW,
+        histogram: -0.003,
+        previousHistogram: -0.001,
+      }),
+    );
+    state = advanceNarration(state, d2, "alive", NOW);
+    expect(state.entries).toHaveLength(2);
+    expect(state.entries[1].text).toContain("MACDが崩れて-0.003");
+    expect(state.entries[1].text).toContain("一歩さがったなあ");
   });
 
   it("identical consecutive cycle evidence is not narrated twice", () => {
@@ -379,9 +415,8 @@ describe("agent narration: cycles", () => {
       },
       null,
     );
-    expect(text).toContain("保有中です");
-    expect(text).toContain("取得価格2.3 USDCに対して現在2.4 USDC");
-    expect(text).toContain("+4.3478%");
+    expect(text).toContain("保有中だよ");
+    expect(text).toContain("取得2.3 USDCから今は+4.3478%");
   });
 
   it("a volume rejection narrates the measured volume change", () => {
@@ -393,7 +428,7 @@ describe("agent narration: cycles", () => {
     );
     const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
     expect(state.entries[0].text).toContain(
-      "出来高の異常を検出したため見送りました",
+      "出来高が急に変わったから見送ったよ",
     );
     expect(state.entries[0].text).toContain("350%");
   });
@@ -415,7 +450,7 @@ describe("agent narration: trades and rejections from candidate audits", () => {
     state = advanceNarration(state, d2, "alive", NOW + 1000);
     const trade = state.entries.at(-1)!;
     expect(trade.kind).toBe("trade");
-    expect(trade.text).toContain("PAPERで買いを記録しました");
+    expect(trade.text).toContain("PAPERで買いを記録したよ");
     expect(trade.text).toContain("0.5 SUI");
     expect(trade.text).toContain("2.4312 USDC");
     const vital = botVital(d2, false, NOW, NOW);
@@ -439,7 +474,7 @@ describe("agent narration: trades and rejections from candidate audits", () => {
     state = advanceNarration(state, d2, "alive", NOW + 500);
     const rejection = state.entries.at(-1)!;
     expect(rejection.kind).toBe("rejection");
-    expect(rejection.text).toContain("買いシグナルは出ましたが、見送りました");
+    expect(rejection.text).toContain("買いシグナルは出たけど、見送ったよ");
     expect(rejection.text).toContain(
       "手数料込みの利益が基準に届かないため見送り",
     );
@@ -465,15 +500,13 @@ describe("agent narration: events", () => {
     ];
     const next = advanceNarration(state, d, "alive", at + 1000);
     const texts = next.entries.map((e) => e.text);
-    expect(texts.some((t) => t.includes("DeepBookの通信に失敗しました"))).toBe(
+    expect(texts.some((t) => t.includes("DeepBookと通信できなかったよ"))).toBe(
       true,
     );
-    expect(texts.some((t) => t.includes("処理中にエラーが発生しました"))).toBe(
-      false,
-    );
+    expect(texts.some((t) => t.includes("処理でエラーが出たよ"))).toBe(false);
     expect(
       texts.some((t) =>
-        t.includes("止まりました。理由：APIの連続エラーを検出しました"),
+        t.includes("止まったよ。理由：APIの連続エラーを検出しました"),
       ),
     ).toBe(true);
   });
@@ -487,7 +520,7 @@ describe("agent narration: events", () => {
     );
     degraded.safety.connectivity = "DEGRADED";
     const s2 = advanceNarration(state, degraded, "weak", NOW);
-    expect(s2.entries.at(-1)!.text).toContain("通信が不安定になっています");
+    expect(s2.entries.at(-1)!.text).toContain("通信が不安定だよ");
     const recovering = runningSnapshot(
       db,
       monitor,
@@ -496,7 +529,7 @@ describe("agent narration: events", () => {
     recovering.safety.connectivity = "RECOVERING";
     recovering.safety.healthyCycles = 2;
     const s3 = advanceNarration(s2, recovering, "weak", NOW);
-    expect(s3.entries.at(-1)!.text).toContain("正常サイクル2回を確認");
+    expect(s3.entries.at(-1)!.text).toContain("正常サイクル2回");
     const healthyAgain = runningSnapshot(
       db,
       monitor,
@@ -504,7 +537,7 @@ describe("agent narration: events", () => {
     );
     const s4 = advanceNarration(s3, healthyAgain, "alive", NOW);
     expect(s4.entries.at(-1)!.kind).toBe("recovery");
-    expect(s4.entries.at(-1)!.text).toContain("通信が復旧しました");
+    expect(s4.entries.at(-1)!.text).toContain("通信が復旧したよ");
   });
 
   it("entries are capped", () => {
@@ -938,5 +971,1271 @@ describe("agent narration: fail-closed", () => {
     const d2 = monitor.snapshot(NOW);
     state = advanceNarration(state, d2, "sleeping", NOW);
     expect(state.entries.length).toBe(count);
+  });
+});
+
+describe("narration tone: reasons, softly and shortly", () => {
+  function telemetry(
+    overrides: Omit<Partial<DecisionTelemetry>, "conditions"> & {
+      conditions?: Partial<DecisionTelemetry["conditions"]>;
+    } = {},
+  ): DecisionTelemetry {
+    const { conditions, ...rest } = overrides;
+    return {
+      evaluatedAt: NOW - 60_000,
+      candleTimestamp: NOW - 300_000,
+      action: "WAIT",
+      reason: "",
+      selectedRule: "NO_SIGNAL",
+      sellPurpose: null,
+      price: 2.4,
+      entryPrice: null,
+      ema20: 2.38,
+      ema50: 2.42,
+      rsi: 44,
+      previousRsi: 42,
+      histogram: -0.003,
+      previousHistogram: -0.002,
+      atr: 0.02,
+      volumeChange: 0.05,
+      oversold: 30,
+      overbought: 70,
+      stopLossPct: 0.02,
+      takeProfitPct: 0.03,
+      ...rest,
+      conditions: {
+        emaUp: false,
+        rsiRecovery: false,
+        histogramImproving: false,
+        hasPosition: false,
+        stopLoss: false,
+        takeProfit: false,
+        ...(conditions ?? {}),
+      },
+    };
+  }
+
+  const farWait = telemetry();
+  const newlyMet = telemetry({
+    previousRsi: 28,
+    rsi: 34,
+    conditions: { rsiRecovery: true },
+  });
+  const progress = telemetry({
+    ema20: 2.43,
+    ema50: 2.42,
+    conditions: { emaUp: true },
+  });
+  const oneRemaining = telemetry({
+    ema20: 2.43,
+    ema50: 2.42,
+    previousRsi: 28,
+    rsi: 34,
+    histogram: -0.0004,
+    previousHistogram: -0.0002,
+    conditions: { emaUp: true, rsiRecovery: true },
+  });
+  const brokeBefore = telemetry({
+    histogram: -0.001,
+    previousHistogram: -0.002,
+    conditions: { histogramImproving: true },
+  });
+  const brokeNow = telemetry({
+    histogram: -0.003,
+    previousHistogram: -0.001,
+  });
+  const buyAll = telemetry({
+    action: "BUY",
+    selectedRule: "BUY_SIGNAL",
+    ema20: 2.431,
+    ema50: 2.424,
+    previousRsi: 28,
+    rsi: 39,
+    histogram: 0.0009,
+    previousHistogram: -0.001,
+    conditions: {
+      emaUp: true,
+      rsiRecovery: true,
+      histogramImproving: true,
+    },
+  });
+  const holding = telemetry({
+    price: 2.35,
+    entryPrice: 2.3,
+    conditions: { hasPosition: true },
+  });
+  const sellNoEntry = telemetry({
+    action: "SELL",
+    sellPurpose: "TAKE_PROFIT",
+    price: 2.4,
+    entryPrice: null,
+  });
+  const volumeReject = telemetry({
+    selectedRule: "VOLUME_REJECT",
+    volumeChange: 3.5,
+  });
+
+  const scenarios: [string, string][] = [
+    ["far WAIT", cycleNarrationText(farWait, null)],
+    ["newly met", cycleNarrationText(newlyMet, decisionTrail(farWait))],
+    ["progress", cycleNarrationText(progress, null)],
+    ["one remaining", cycleNarrationText(oneRemaining, null)],
+    ["regression", cycleNarrationText(brokeNow, decisionTrail(brokeBefore))],
+    ["buy summary", cycleNarrationText(buyAll, null)],
+    ["holding", cycleNarrationText(holding, null)],
+    ["sell without entry", cycleNarrationText(sellNoEntry, null)],
+    ["volume reject", cycleNarrationText(volumeReject, null)],
+  ];
+
+  it.each(scenarios)("%s stays within two short sentences", (_name, text) => {
+    const sentences = text.split("。").filter((s) => s.length > 0);
+    expect(sentences.length).toBeLessThanOrEqual(3);
+    expect(text.length).toBeLessThanOrEqual(80);
+  });
+
+  it.each(scenarios)("%s avoids report-style phrasing", (_name, text) => {
+    expect(text).not.toMatch(/です|ます|ました|確認できました|総括/);
+  });
+
+  it("a far WAIT still carries a recorded number", () => {
+    const text = cycleNarrationText(farWait, null);
+    expect(text).toMatch(/\d/);
+    expect(text).toContain("EMAの差は-1.6667%");
+  });
+
+  it("a WAIT whose furthest condition approached says so", () => {
+    // Same evidence twice: the furthest condition (EMA) did not move.
+    const still = cycleNarrationText(farWait, decisionTrail(farWait));
+    expect(still).toContain("まだ遠いなあ");
+    // EMA gap narrowed since the previous cycle: an approach.
+    const before = telemetry({ ema20: 2.3, ema50: 2.42 });
+    const approached = cycleNarrationText(
+      telemetry({ ema20: 2.36, ema50: 2.42 }),
+      decisionTrail(before),
+    );
+    expect(approached).toContain("EMAの差は-2.5%");
+    expect(approached).toContain("少し近づいてきたね");
+  });
+
+  it("2/3 met names the single missing condition", () => {
+    const text = cycleNarrationText(oneRemaining, null);
+    expect(text).toContain("あとMACDだけ");
+    expect(text).toContain("-0.0004、ほぼゼロ");
+  });
+
+  it("a broken condition narrates the step back with its number", () => {
+    const text = cycleNarrationText(brokeNow, decisionTrail(brokeBefore));
+    expect(text).toContain("MACDが崩れて-0.003");
+    expect(text).toContain("一歩さがったなあ");
+  });
+
+  it("a newly met condition is announced with the crossing numbers", () => {
+    const text = cycleNarrationText(newlyMet, decisionTrail(farWait));
+    expect(text).toContain("RSIが28→34で上抜けた");
+    expect(text).toContain("残りはEMAとMACD");
+  });
+
+  it("a BUY narrates the summary of why, from the evidence", () => {
+    const text = cycleNarrationText(buyAll, null);
+    expect(text).toContain("3つ揃ったよ");
+    expect(text).toContain("EMAは順並び");
+    expect(text).toContain("RSIは28→39まで回復");
+    expect(text).toContain("MACDもプラス");
+    expect(text).toContain("だから買うね");
+  });
+
+  it("a position watch counts down to the take-profit line", () => {
+    const text = cycleNarrationText(holding, null);
+    expect(text).toContain("保有中だよ");
+    expect(text).toContain("今は+2.1739%");
+    expect(text).toContain("利確まであと0.8261%");
+  });
+
+  it("missing entry price is not invented for a SELL", () => {
+    const text = cycleNarrationText(sellNoEntry, null);
+    expect(text).toContain("利確のラインに触れたよ");
+    expect(text).toContain("価格は2.4 USDCだね");
+    expect(text).not.toContain("取得から");
+    expect(text).not.toMatch(/NaN|undefined/);
+  });
+
+  it("a BUY without all conditions recorded does not claim a summary", () => {
+    const text = cycleNarrationText(
+      telemetry({ action: "BUY", selectedRule: "BUY_SIGNAL" }),
+      null,
+    );
+    expect(text).toContain("買いシグナルが出たよ");
+    expect(text).not.toContain("3つ揃ったよ");
+  });
+});
+
+describe("agent narration: watch declaration", () => {
+  /** Feed a sequence of recorded decisions through the narration. */
+  function feed(decisions: (TradingDecision | null)[]) {
+    const { db, monitor } = fixture();
+    let state = emptyNarrationState();
+    for (const dec of decisions) {
+      const d = runningSnapshot(db, monitor, dec);
+      state = advanceNarration(state, d, "alive", NOW);
+    }
+    return state;
+  }
+  const texts = (state: NarrationState) => state.entries.map((e) => e.text);
+  const count = (state: NarrationState, part: string) =>
+    texts(state).filter((t) => t.includes(part)).length;
+
+  it("selects the closest unmet condition as the watch target", () => {
+    // Defaults: MACD is closest (histogram nearly done improving).
+    expect(feed([decision({})]).watch?.key).toBe("histogramImproving");
+    // RSI two points above the line beats a MACD still far away.
+    expect(
+      feed([
+        decision({ rsi: 32, histogram: -0.006, previousHistogram: -0.003 }),
+      ]).watch?.key,
+    ).toBe("rsiRecovery");
+    // A nearly-closed EMA gap beats both when MACD is far (falling).
+    expect(
+      feed([
+        decision({
+          ema20: 2.415,
+          ema50: 2.42,
+          histogram: -0.008,
+          previousHistogram: -0.001,
+        }),
+      ]).watch?.key,
+    ).toBe("emaUp");
+  });
+
+  it("the first watch is set silently, with no declaration entry", () => {
+    const state = feed([decision({})]);
+    expect(state.watch?.key).toBe("histogramImproving");
+    expect(state.entries).toHaveLength(1);
+    expect(count(state, "見てる")).toBe(0);
+  });
+
+  it("declares once when a watch appears, and not again while it lasts", () => {
+    const holding = decision({
+      conditions: { hasPosition: true },
+      entryPrice: 2.3,
+      price: 2.35,
+    });
+    const state = feed([
+      holding,
+      decision({ evaluatedAt: NOW - 50_000 }),
+      decision({ evaluatedAt: NOW - 40_000 }),
+    ]);
+    expect(
+      count(state, "次はMACDを見てる。今-0.003、プラスに転じたら声かけるね"),
+    ).toBe(1);
+    expect(state.watch?.key).toBe("histogramImproving");
+  });
+
+  it("calls out the approach once per declaration, at half the distance", () => {
+    const state = feed([
+      decision({}),
+      decision({ evaluatedAt: NOW - 50_000, histogram: -0.0014 }),
+      decision({ evaluatedAt: NOW - 40_000, histogram: -0.0012 }),
+    ]);
+    expect(
+      count(state, "MACD、-0.0014まで戻った。宣言してたやつ、来てるよ"),
+    ).toBe(1);
+    expect(count(state, "来てるよ")).toBe(1);
+    expect(state.watch?.called).toBe(true);
+  });
+
+  it("a hit ties back to the declaration and declares the next watch", () => {
+    const state = feed([
+      decision({}),
+      decision({
+        evaluatedAt: NOW - 50_000,
+        conditions: { histogramImproving: true },
+        histogram: -0.001,
+        previousHistogram: -0.002,
+      }),
+    ]);
+    const all = texts(state);
+    const hit = all.findIndex((t) => t.includes("宣言どおりだね"));
+    const next = all.findIndex((t) => t.includes("次の注目はRSIに決めた"));
+    expect(all[hit]).toContain("MACD、成立した。今-0.001");
+    expect(hit).toBeGreaterThanOrEqual(0);
+    expect(next).toBeGreaterThan(hit);
+    expect(state.watch?.key).toBe("rsiRecovery");
+    expect(state.watch?.called).toBe(false);
+  });
+
+  it("withdraws a drifted watch and switches to the next candidate", () => {
+    const state = feed([
+      decision({ rsi: 31 }),
+      decision({ evaluatedAt: NOW - 50_000, rsi: 32 }),
+    ]);
+    expect(count(state, "注目してたRSI、遠のいたなあ。宣言は取り下げ")).toBe(1);
+    expect(count(state, "注目はMACDに切り替える。今-0.003だよ")).toBe(1);
+    expect(state.watch?.key).toBe("histogramImproving");
+  });
+
+  it("hysteresis: a small wobble past the declared distance keeps the watch", () => {
+    const far = {
+      ema20: 2.3,
+      ema50: 2.42,
+      histogram: -0.008,
+      previousHistogram: -0.001,
+    };
+    const state = feed([
+      decision({ ...far, rsi: 35 }),
+      // Distance 5 -> 6 points: ratio 1.2, inside the 1.25 hysteresis.
+      decision({ ...far, evaluatedAt: NOW - 50_000, rsi: 36 }),
+    ]);
+    expect(state.watch?.key).toBe("rsiRecovery");
+    expect(count(state, "取り下げ")).toBe(0);
+    // Distance 7 points: ratio 1.4, clearly beyond — withdrawn.
+    const drifted = feed([
+      decision({ ...far, rsi: 35 }),
+      decision({ ...far, evaluatedAt: NOW - 50_000, rsi: 36 }),
+      decision({ ...far, evaluatedAt: NOW - 40_000, rsi: 37 }),
+    ]);
+    expect(count(drifted, "注目してたRSI、遠のいたなあ。宣言は取り下げ")).toBe(
+      1,
+    );
+    expect(drifted.watch?.key).toBe("histogramImproving");
+  });
+
+  it("never declares without material, while holding, or when all met", () => {
+    expect(feed([null]).watch).toBeNull();
+    expect(
+      feed([
+        decision({
+          conditions: { hasPosition: true },
+          entryPrice: 2.3,
+          price: 2.35,
+        }),
+      ]).watch,
+    ).toBeNull();
+    expect(
+      feed([
+        decision({
+          conditions: {
+            emaUp: true,
+            rsiRecovery: true,
+            histogramImproving: true,
+          },
+          ema20: 2.43,
+          ema50: 2.42,
+          rsi: 39,
+          previousRsi: 28,
+          histogram: 0.001,
+          previousHistogram: -0.001,
+        }),
+      ]).watch,
+    ).toBeNull();
+    expect(
+      feed([decision({ action: "BUY", selectedRule: "BUY_SIGNAL" })]).watch,
+    ).toBeNull();
+  });
+
+  it("a watch ends silently when a position opens", () => {
+    const state = feed([
+      decision({}),
+      decision({
+        evaluatedAt: NOW - 50_000,
+        conditions: { hasPosition: true },
+        entryPrice: 2.3,
+        price: 2.35,
+      }),
+    ]);
+    expect(state.watch).toBeNull();
+    expect(count(state, "取り下げ")).toBe(0);
+  });
+
+  it("watch narration keeps the approved tone: short, soft, no report style", () => {
+    const state = feed([
+      decision({
+        conditions: { hasPosition: true },
+        entryPrice: 2.3,
+        price: 2.35,
+      }),
+      // Declare EMA (closest here), then let it click.
+      decision({
+        evaluatedAt: NOW - 50_000,
+        ema20: 2.415,
+        ema50: 2.42,
+        histogram: -0.008,
+        previousHistogram: -0.001,
+      }),
+      decision({
+        evaluatedAt: NOW - 40_000,
+        ema20: 2.43,
+        ema50: 2.42,
+        conditions: { emaUp: true },
+        histogram: -0.0014,
+        previousHistogram: -0.003,
+      }),
+    ]);
+    const watchLines = texts(state).filter((t) =>
+      /注目|宣言|見てる|切り替える|決めた/.test(t),
+    );
+    expect(watchLines.length).toBeGreaterThanOrEqual(3);
+    for (const line of watchLines) {
+      const sentences = line.split("。").filter((s) => s.length > 0);
+      expect(sentences.length).toBeLessThanOrEqual(3);
+      expect(line.length).toBeLessThanOrEqual(80);
+      expect(line).not.toMatch(/です|ます|ました|確認できました|総括/);
+      expect(line).toMatch(/\d/);
+    }
+  });
+
+  it("currentWatch shows the target, its value and the change since declaration", () => {
+    const { db, monitor } = fixture();
+    const d1 = runningSnapshot(db, monitor, decision({}));
+    const state = advanceNarration(emptyNarrationState(), d1, "alive", NOW);
+    const shown = currentWatch(state, d1.decision, "alive", NOW);
+    expect(shown).toMatchObject({
+      key: "histogramImproving",
+      label: "MACD",
+      value: "今-0.003",
+      detail: "宣言したところ。プラス転換待ち",
+    });
+    const d2 = runningSnapshot(
+      db,
+      monitor,
+      decision({ evaluatedAt: NOW - 50_000, histogram: -0.0014 }),
+    );
+    const approached = advanceNarration(state, d2, "alive", NOW);
+    expect(currentWatch(approached, d2.decision, "alive", NOW)).toMatchObject({
+      key: "histogramImproving",
+      value: "今-0.0014",
+      detail: "宣言時の半分以下。来てる",
+    });
+  });
+
+  it("currentWatch explains why there is no watch, and hides without material", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    expect(currentWatch(state, null, "alive", NOW)).toBeNull();
+    expect(currentWatch(state, d.decision, "sleeping", NOW)).toMatchObject({
+      key: null,
+      label: "なし",
+      detail: "止まってるから注目はお休み",
+    });
+    const holding = runningSnapshot(
+      db,
+      monitor,
+      decision({
+        evaluatedAt: NOW - 50_000,
+        conditions: { hasPosition: true },
+        entryPrice: 2.3,
+        price: 2.35,
+      }),
+    );
+    expect(currentWatch(state, holding.decision, "alive", NOW)).toMatchObject({
+      key: null,
+      detail: "保有中。条件が崩れたら声かける",
+    });
+    const allMet = runningSnapshot(
+      db,
+      monitor,
+      decision({
+        evaluatedAt: NOW - 40_000,
+        conditions: {
+          emaUp: true,
+          rsiRecovery: true,
+          histogramImproving: true,
+        },
+        ema20: 2.43,
+        ema50: 2.42,
+        rsi: 39,
+        previousRsi: 28,
+        histogram: 0.001,
+        previousHistogram: -0.001,
+      }),
+    );
+    expect(currentWatch(state, allMet.decision, "alive", NOW)).toMatchObject({
+      key: null,
+      detail: "3つ揃ったので注目は終了",
+    });
+  });
+
+  it("the watched condition's chip carries the marker", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    const chips = currentConditionChips(state, d.decision, NOW)!;
+    expect(chips.find((c) => c.key === "macd")?.watching).toBe(true);
+    expect(chips.find((c) => c.key === "ema")?.watching).toBe(false);
+    expect(chips.find((c) => c.key === "rsi")?.watching).toBe(false);
+  });
+});
+
+describe("buy-condition chips", () => {
+  function telemetry(
+    overrides: Omit<Partial<DecisionTelemetry>, "conditions"> & {
+      conditions?: Partial<DecisionTelemetry["conditions"]>;
+    } = {},
+  ): DecisionTelemetry {
+    const { conditions, ...rest } = overrides;
+    return {
+      evaluatedAt: NOW - 60_000,
+      candleTimestamp: NOW - 300_000,
+      action: "WAIT",
+      reason: "",
+      selectedRule: "NO_SIGNAL",
+      sellPurpose: null,
+      price: 2.4,
+      entryPrice: null,
+      ema20: 2.38,
+      ema50: 2.42,
+      rsi: 44,
+      previousRsi: 42,
+      histogram: -0.003,
+      previousHistogram: -0.002,
+      atr: 0.02,
+      volumeChange: 0.05,
+      oversold: 30,
+      overbought: 70,
+      stopLossPct: 0.02,
+      takeProfitPct: 0.03,
+      ...rest,
+      conditions: {
+        emaUp: false,
+        rsiRecovery: false,
+        histogramImproving: false,
+        hasPosition: false,
+        stopLoss: false,
+        takeProfit: false,
+        ...(conditions ?? {}),
+      },
+    };
+  }
+  const byKey = (chips: ReturnType<typeof entryConditionChips>) =>
+    Object.fromEntries(chips.map((c) => [c.key, c]));
+
+  it("all three met shows checkmarks", () => {
+    const chips = entryConditionChips(
+      telemetry({
+        conditions: {
+          emaUp: true,
+          rsiRecovery: true,
+          histogramImproving: true,
+        },
+      }),
+      null,
+    );
+    expect(chips.map((c) => c.status)).toEqual(["✓", "✓", "✓"]);
+    expect(chips.every((c) => c.tone === "met")).toBe(true);
+  });
+
+  it("far conditions use the prototype's status words", () => {
+    const chips = byKey(entryConditionChips(telemetry(), null));
+    expect(chips.ema.status).toBe("逆並び");
+    expect(chips.rsi.status).toBe("あと14");
+    expect(chips.rsi.tone).toBe("far");
+    expect(chips.macd.status).toBe("マイナス");
+  });
+
+  it("RSI points to the line are whole points from the evidence", () => {
+    const chips = byKey(entryConditionChips(telemetry({ rsi: 41 }), null));
+    expect(chips.rsi.status).toBe("あと11");
+  });
+
+  it("RSI inside the oversold zone reads 圏内", () => {
+    const chips = byKey(
+      entryConditionChips(telemetry({ rsi: 28, previousRsi: 33 }), null),
+    );
+    expect(chips.rsi.status).toBe("圏内");
+    expect(chips.rsi.tone).toBe("close");
+  });
+
+  it("a nearly-closed EMA gap reads あと少し", () => {
+    const chips = byKey(
+      entryConditionChips(telemetry({ ema20: 2.415, ema50: 2.42 }), null),
+    );
+    expect(chips.ema.status).toBe("あと少し");
+  });
+
+  it("a histogram a hair below zero reads あと1", () => {
+    const chips = byKey(
+      entryConditionChips(
+        telemetry({ histogram: -0.0004, previousHistogram: -0.0002 }),
+        null,
+      ),
+    );
+    expect(chips.macd.status).toBe("あと1");
+    expect(chips.macd.tone).toBe("close");
+  });
+
+  it("without an ATR the near-zero MACD status is not claimed", () => {
+    const chips = byKey(
+      entryConditionChips(
+        telemetry({
+          histogram: -0.0004,
+          previousHistogram: -0.0002,
+          atr: 0,
+        }),
+        null,
+      ),
+    );
+    expect(chips.macd.status).toBe("マイナス");
+  });
+
+  it("conditions met last cycle and broken now read 後退", () => {
+    const before = telemetry({
+      conditions: {
+        emaUp: true,
+        rsiRecovery: true,
+        histogramImproving: true,
+      },
+    });
+    const chips = byKey(
+      entryConditionChips(telemetry(), decisionTrail(before)),
+    );
+    expect(chips.ema.status).toBe("後退");
+    expect(chips.rsi.status).toBe("後退");
+    expect(chips.macd.status).toBe("後退");
+    expect(chips.macd.tone).toBe("back");
+  });
+
+  it("currentConditionChips is null without a fresh decision", () => {
+    const state = emptyNarrationState();
+    expect(currentConditionChips(state, null, NOW)).toBeNull();
+    const stale = telemetry({ evaluatedAt: NOW - 360_001 });
+    expect(currentConditionChips(state, stale, NOW)).toBeNull();
+    const fresh = telemetry({ evaluatedAt: NOW - 1_000 });
+    const chips = currentConditionChips(state, fresh, NOW);
+    expect(chips).not.toBeNull();
+    expect(chips!.map((c) => c.label)).toEqual(["EMA", "RSI", "MACD"]);
+  });
+});
+
+describe("agent narration: watch score and review", () => {
+  /** Feed a sequence of recorded decisions through the narration. */
+  function feed(decisions: (TradingDecision | null)[]) {
+    const { db, monitor } = fixture();
+    let state = emptyNarrationState();
+    for (const dec of decisions) {
+      const d = runningSnapshot(db, monitor, dec);
+      state = advanceNarration(state, d, "alive", NOW);
+    }
+    return state;
+  }
+  const reviews = (state: NarrationState) =>
+    state.entries.filter((e) => e.kind === "review");
+  const macdClicks = {
+    conditions: { histogramImproving: true },
+    histogram: -0.001,
+    previousHistogram: -0.002,
+  };
+
+  it("scores a hit, and the follow-up declaration as a new one", () => {
+    const state = feed([
+      decision({}),
+      decision({ evaluatedAt: NOW - 50_000, ...macdClicks }),
+    ]);
+    // The silent first watch counts as a declaration; the MACD hit
+    // settles it, and the next watch (RSI) is a second declaration.
+    expect(state.watchScore).toMatchObject({
+      declared: 2,
+      hits: 1,
+      misses: 0,
+      unreviewed: 1,
+    });
+    expect(state.watch?.key).toBe("rsiRecovery");
+    expect(reviews(state)).toHaveLength(0);
+  });
+
+  it("scores a miss on withdrawal; the switch target is a new declaration", () => {
+    const state = feed([
+      decision({ rsi: 31 }),
+      decision({ evaluatedAt: NOW - 50_000, rsi: 32 }),
+    ]);
+    expect(state.watchScore).toMatchObject({
+      declared: 2,
+      hits: 0,
+      misses: 1,
+      unreviewed: 1,
+    });
+    expect(state.watch?.key).toBe("histogramImproving");
+  });
+
+  it("a watch that ends silently is neither a hit nor a miss", () => {
+    const state = feed([
+      decision({}),
+      decision({
+        evaluatedAt: NOW - 50_000,
+        conditions: { hasPosition: true },
+        entryPrice: 2.3,
+        price: 2.35,
+      }),
+    ]);
+    expect(state.watch).toBeNull();
+    expect(state.watchScore).toMatchObject({
+      declared: 1,
+      hits: 0,
+      misses: 0,
+      unreviewed: 0,
+    });
+  });
+
+  it("the last condition clicking into a BUY still scores a hit", () => {
+    const state = feed([
+      decision({
+        conditions: { emaUp: true, rsiRecovery: true },
+        ema20: 2.43,
+        ema50: 2.42,
+        rsi: 39,
+        previousRsi: 28,
+        histogram: -0.001,
+        previousHistogram: -0.002,
+      }),
+      decision({
+        evaluatedAt: NOW - 50_000,
+        action: "BUY",
+        selectedRule: "BUY_SIGNAL",
+        conditions: {
+          emaUp: true,
+          rsiRecovery: true,
+          histogramImproving: true,
+        },
+        ema20: 2.43,
+        ema50: 2.42,
+        rsi: 39,
+        previousRsi: 28,
+        histogram: 0.001,
+        previousHistogram: -0.001,
+      }),
+    ]);
+    expect(state.watchScore).toMatchObject({
+      declared: 1,
+      hits: 1,
+      misses: 0,
+      unreviewed: 1,
+    });
+    expect(state.watch).toBeNull();
+    // One settlement is not enough for the BUY early review either.
+    expect(reviews(state)).toHaveLength(0);
+  });
+
+  it("reviews once when three settlements pile up, then resets", () => {
+    const settled = feed([
+      decision({}),
+      decision({ evaluatedAt: NOW - 55_000, ...macdClicks }),
+      decision({
+        evaluatedAt: NOW - 50_000,
+        conditions: { histogramImproving: true, rsiRecovery: true },
+        rsi: 36,
+        previousRsi: 31,
+        histogram: 0.0005,
+        previousHistogram: -0.002,
+      }),
+      decision({
+        evaluatedAt: NOW - 45_000,
+        conditions: { rsiRecovery: true, histogramImproving: true },
+        ema20: 2.3,
+        ema50: 2.42,
+        price: 2.45,
+        histogram: 0.0005,
+        previousHistogram: -0.002,
+      }),
+    ]);
+    // Hit (MACD), hit (RSI), miss (EMA withdrawn): the third
+    // settlement triggers exactly one look-back (two lines).
+    expect(settled.watchScore).toMatchObject({
+      declared: 3,
+      hits: 2,
+      misses: 1,
+      unreviewed: 0,
+    });
+    const lines = reviews(settled);
+    expect(lines).toHaveLength(2);
+    expect(lines[0].text).toBe(
+      "ふりかえり。ここまでの宣言は3回、的中2回、外れ1回。悪くないね",
+    );
+    expect(lines[1].text).toContain("価格は$2.4から$2.45");
+    expect(lines[1].text).toContain("上がってきたね");
+    // One more settlement after the reset does not re-review.
+    const more = feed([
+      decision({}),
+      decision({ evaluatedAt: NOW - 55_000, ...macdClicks }),
+      decision({
+        evaluatedAt: NOW - 50_000,
+        conditions: { histogramImproving: true, rsiRecovery: true },
+        rsi: 36,
+        previousRsi: 31,
+        histogram: 0.0005,
+        previousHistogram: -0.002,
+      }),
+      decision({
+        evaluatedAt: NOW - 45_000,
+        conditions: { rsiRecovery: true, histogramImproving: true },
+        ema20: 2.3,
+        ema50: 2.42,
+        price: 2.45,
+        histogram: 0.0005,
+        previousHistogram: -0.002,
+      }),
+      decision({ evaluatedAt: NOW - 40_000 }),
+      decision({ evaluatedAt: NOW - 35_000, ...macdClicks }),
+    ]);
+    expect(more.watchScore.unreviewed).toBe(1);
+    expect(reviews(more)).toHaveLength(2);
+  });
+
+  it("a BUY milestone reviews early with two unreviewed settlements", () => {
+    const state = feed([
+      decision({}),
+      decision({ evaluatedAt: NOW - 55_000, ...macdClicks }),
+      decision({
+        evaluatedAt: NOW - 50_000,
+        conditions: { emaUp: true, histogramImproving: true },
+        ema20: 2.43,
+        ema50: 2.42,
+        rsi: 50,
+        previousRsi: 44,
+        histogram: 0.0005,
+        previousHistogram: -0.001,
+      }),
+      decision({
+        evaluatedAt: NOW - 45_000,
+        action: "BUY",
+        selectedRule: "BUY_SIGNAL",
+        conditions: {
+          emaUp: true,
+          rsiRecovery: true,
+          histogramImproving: true,
+        },
+        ema20: 2.43,
+        ema50: 2.42,
+        rsi: 39,
+        previousRsi: 28,
+        histogram: 0.001,
+        previousHistogram: -0.001,
+      }),
+    ]);
+    // Hit (MACD), miss (RSI withdrawn, no next watch), then the BUY
+    // itself settles nothing — the milestone alone fires the review.
+    expect(state.watchScore).toMatchObject({
+      declared: 2,
+      hits: 1,
+      misses: 1,
+      unreviewed: 0,
+    });
+    const lines = reviews(state);
+    expect(lines).toHaveLength(2);
+    expect(lines[0].text).toBe(
+      "ふりかえり。ここまでの宣言は2回、的中1回、外れ1回。五分五分だね",
+    );
+    expect(lines[1].text).toContain("最後は3つ揃ったよ");
+  });
+
+  it("a BUY with only one unreviewed settlement does not review", () => {
+    const state = feed([
+      decision({}),
+      decision({ evaluatedAt: NOW - 50_000, ...macdClicks }),
+      decision({
+        evaluatedAt: NOW - 45_000,
+        action: "BUY",
+        selectedRule: "BUY_SIGNAL",
+        conditions: { histogramImproving: true },
+        histogram: 0.001,
+        previousHistogram: -0.001,
+      }),
+    ]);
+    // The watched RSI never clicked in the BUY decision, so the BUY
+    // settles nothing and one past settlement is below the minimum.
+    expect(state.watchScore).toMatchObject({ hits: 1, unreviewed: 1 });
+    expect(reviews(state)).toHaveLength(0);
+  });
+
+  it("currentWatchScore mirrors the record and hides without fresh material", () => {
+    const { db, monitor } = fixture();
+    const d1 = runningSnapshot(db, monitor, decision({}));
+    const state = advanceNarration(emptyNarrationState(), d1, "alive", NOW);
+    expect(currentWatchScore(state, d1.decision, NOW)).toEqual({
+      declared: 1,
+      hits: 0,
+      misses: 0,
+      inProgress: 1,
+    });
+    expect(currentWatchScore(state, null, NOW)).toBeNull();
+    const stale = {
+      ...d1.decision!,
+      evaluatedAt: NOW - 400_000,
+      candleTimestamp: NOW - 500_000,
+    };
+    expect(currentWatchScore(state, stale, NOW)).toBeNull();
+  });
+
+  it("review lines are built only from the recorded facts handed in", () => {
+    const counts = reviewNarrationTexts(
+      { declared: 4, hits: 3, misses: 1 },
+      2.412,
+      2.483,
+      true,
+    );
+    expect(counts[0]).toBe(
+      "ふりかえり。ここまでの宣言は4回、的中3回、外れ1回。悪くないね",
+    );
+    expect(counts).toHaveLength(2);
+    expect(counts[1]).toContain("価格は$2.412から$2.483、+2.9%");
+    expect(counts[1]).toContain("最後は3つ揃ったよ");
+    // No recorded start (or current) price: the price line is
+    // omitted entirely rather than invented.
+    expect(
+      reviewNarrationTexts(
+        { declared: 4, hits: 3, misses: 1 },
+        null,
+        2.483,
+        false,
+      ),
+    ).toHaveLength(1);
+    expect(
+      reviewNarrationTexts(
+        { declared: 4, hits: 3, misses: 1 },
+        2.412,
+        null,
+        false,
+      ),
+    ).toHaveLength(1);
+    expect(
+      reviewNarrationTexts(
+        { declared: 4, hits: 3, misses: 1 },
+        0,
+        2.483,
+        false,
+      ),
+    ).toHaveLength(1);
+    // The verdict follows the recorded balance only.
+    expect(
+      reviewNarrationTexts(
+        { declared: 3, hits: 0, misses: 2 },
+        null,
+        null,
+        false,
+      )[0],
+    ).toContain("外れが多めだなあ");
+    expect(
+      reviewNarrationTexts(
+        { declared: 2, hits: 1, misses: 1 },
+        null,
+        null,
+        false,
+      )[0],
+    ).toContain("五分五分だね");
+  });
+
+  it("review narration keeps the approved tone: short, soft, no report style", () => {
+    const lines = reviewNarrationTexts(
+      { declared: 4, hits: 3, misses: 1 },
+      2.412,
+      2.483,
+      true,
+    );
+    for (const line of lines) {
+      const sentences = line.split("。").filter((s) => s.length > 0);
+      expect(sentences.length).toBeLessThanOrEqual(3);
+      expect(line.length).toBeLessThanOrEqual(80);
+      expect(line).not.toMatch(/です|ます|ました|確認できました|総括/);
+      expect(line).toMatch(/\d/);
+    }
+  });
+});
+
+describe("agent narration: spike alerts", () => {
+  type DecisionOverrides = Parameters<typeof decision>[0];
+  /** A decision sequence with strictly increasing evaluatedAt,
+   * the last one at NOW, so every step is a fresh narrated cycle
+   * (the first one initialises the feed). */
+  const seq = (list: DecisionOverrides[]) =>
+    list.map((o, i) =>
+      decision({
+        ...o,
+        evaluatedAt: NOW - (list.length - 1 - i) * 10_000,
+      }),
+    );
+
+  function feedRun(
+    decisions: (TradingDecision | null)[],
+    vital: "alive" | "sleeping" = "alive",
+  ) {
+    const { db, monitor } = fixture();
+    let state = emptyNarrationState();
+    let last = runningSnapshot(db, monitor, null);
+    for (const dec of decisions) {
+      last = runningSnapshot(db, monitor, dec);
+      state = advanceNarration(state, last, vital, NOW);
+    }
+    return { state, last };
+  }
+  const feed = (decisions: (TradingDecision | null)[]) =>
+    feedRun(decisions).state;
+  const alertsOf = (state: NarrationState) =>
+    state.entries.filter((e) => e.kind === "alert");
+
+  function telemetry(
+    overrides: Omit<Partial<DecisionTelemetry>, "conditions"> & {
+      conditions?: Partial<DecisionTelemetry["conditions"]>;
+    } = {},
+  ): DecisionTelemetry {
+    const { conditions, ...rest } = overrides;
+    return {
+      evaluatedAt: NOW - 60_000,
+      candleTimestamp: NOW - 300_000,
+      action: "WAIT",
+      reason: "",
+      selectedRule: "NO_SIGNAL",
+      sellPurpose: null,
+      price: 2.4,
+      entryPrice: null,
+      ema20: 2.38,
+      ema50: 2.42,
+      rsi: 44,
+      previousRsi: 42,
+      histogram: -0.003,
+      previousHistogram: -0.002,
+      atr: 0.02,
+      volumeChange: 0.05,
+      oversold: 30,
+      overbought: 70,
+      stopLossPct: 0.02,
+      takeProfitPct: 0.03,
+      ...rest,
+      conditions: {
+        emaUp: false,
+        rsiRecovery: false,
+        histogramImproving: false,
+        hasPosition: false,
+        stopLoss: false,
+        takeProfit: false,
+        ...(conditions ?? {}),
+      },
+    };
+  }
+  const warmed = [2.4, 2.4, 2.4];
+
+  it("stays silent during warm-up: fewer than four price points", () => {
+    // Unit level: even a huge volume spike cannot alert yet.
+    expect(spikeAlert([], telemetry({ volumeChange: 3.5 }))).toBeNull();
+    expect(spikeAlert([2.4, 2.4], telemetry({ volumeChange: 3.5 }))).toBeNull();
+    // Feed level: three recorded decisions are only three points.
+    const state = feed(
+      seq([
+        { volumeChange: 3.5 },
+        { volumeChange: 3.5 },
+        { volumeChange: 3.5 },
+      ]),
+    );
+    expect(alertsOf(state)).toHaveLength(0);
+    expect(state.lastAlert).toBeNull();
+  });
+
+  it("alerts at exactly +1% against three cycles ago, and not below", () => {
+    expect(alertsOf(feed(seq([{}, {}, {}, { price: 2.4216 }])))).toHaveLength(
+      0,
+    );
+    const state = feed(seq([{}, {}, {}, { price: 2.424 }]));
+    const alerts = alertsOf(state);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toContain("+1.0%");
+    // The alert follows the cycle's own narration in the same cycle.
+    expect(state.entries.at(-1)?.kind).toBe("alert");
+  });
+
+  it("alerts at exactly -1% with the plunge wording", () => {
+    expect(alertsOf(feed(seq([{}, {}, {}, { price: 2.3784 }])))).toHaveLength(
+      0,
+    );
+    const alerts = alertsOf(feed(seq([{}, {}, {}, { price: 2.376 }])));
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toBe("速報。SUI、-1.0%。急落だ。ちょっと様子見る");
+  });
+
+  it("a volume-only spike alerts on its own, at the +200% boundary", () => {
+    expect(spikeAlert(warmed, telemetry({ volumeChange: 1.99 }))).toBeNull();
+    const edge = spikeAlert(warmed, telemetry({ volumeChange: 2 }));
+    expect(edge?.direction).toBe("volume");
+    expect(edge?.text).toContain("+200%");
+    const state = feed(seq([{}, {}, {}, { volumeChange: 2.5 }]));
+    const alerts = alertsOf(state);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toBe(
+      "速報。出来高の変化が+250%に跳ねた。何かあったかも",
+    );
+    expect(state.lastAlert?.direction).toBe("volume");
+  });
+
+  it("merges a simultaneous price and volume spike into one entry", () => {
+    const state = feed(seq([{}, {}, {}, { price: 2.4432, volumeChange: 3 }]));
+    const alerts = alertsOf(state);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toBe(
+      "速報。SUI、短時間で+1.8%。出来高の変化も跳ねた",
+    );
+    expect(state.lastAlert?.direction).toBe("up");
+  });
+
+  it("an upward price spike alone uses the short surge wording", () => {
+    const alerts = alertsOf(feed(seq([{}, {}, {}, { price: 2.4432 }])));
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toBe("速報。SUI、短時間で+1.8%。急に来た");
+  });
+
+  it("a downward spike with a volume spike still mentions both, once", () => {
+    const alerts = alertsOf(
+      feed(seq([{}, {}, {}, { price: 2.3448, volumeChange: 3 }])),
+    );
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toContain("-2.3%");
+    expect(alerts[0].text).toContain("出来高の変化も跳ねた");
+    expect(alerts[0].text).toContain("急落だ");
+  });
+
+  it("cools down for five narrated cycles, then can fire again", () => {
+    const spike = { volumeChange: 3 };
+    const decisions = seq([
+      {},
+      {},
+      {},
+      spike, // 4th point: fires, cooldown starts
+      spike,
+      spike,
+      spike,
+      spike,
+      spike, // five suppressed cycles
+      { volumeChange: 2.5 }, // cooldown over: fires again
+    ]);
+    const during = feed(decisions.slice(0, 9));
+    expect(alertsOf(during)).toHaveLength(1);
+    const state = feed(decisions);
+    const alerts = alertsOf(state);
+    expect(alerts).toHaveLength(2);
+    expect(alerts[0].text).toContain("+300%");
+    expect(alerts[1].text).toContain("+250%");
+    expect(state.alertCooldown).toBe(5);
+  });
+
+  it("never duplicates the volume story of a VOLUME_REJECT cycle", () => {
+    const reject = {
+      selectedRule: "VOLUME_REJECT",
+      volumeChange: 3.5,
+    };
+    const quiet = feed(seq([{}, {}, {}, reject]));
+    expect(alertsOf(quiet)).toHaveLength(0);
+    // The cycle's own line already printed the volume change.
+    expect(quiet.entries.some((e) => e.text.includes("変化は350%"))).toBe(true);
+    // A price spike on a reject cycle still alerts — price only.
+    const loud = feed(seq([{}, {}, {}, { ...reject, price: 2.4432 }]));
+    const alerts = alertsOf(loud);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toContain("+1.8%");
+    expect(alerts[0].text).not.toContain("出来高");
+  });
+
+  it("alerts while holding a position (the plunge watch)", () => {
+    const hold = {
+      conditions: { hasPosition: true },
+      entryPrice: 2.4,
+    };
+    const state = feed(
+      seq([
+        { ...hold, price: 2.4 },
+        { ...hold, price: 2.4 },
+        { ...hold, price: 2.4 },
+        { ...hold, price: 2.3448 },
+      ]),
+    );
+    const alerts = alertsOf(state);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toContain("急落だ");
+    expect(state.entries.some((e) => e.text.includes("保有中だよ"))).toBe(true);
+  });
+
+  it("does not alert while sleeping, and a re-fed snapshot adds nothing", () => {
+    const decisions = seq([{}, {}, {}, { price: 2.4432 }]);
+    const { db, monitor } = fixture();
+    let state = emptyNarrationState();
+    decisions.forEach((dec, i) => {
+      const d = runningSnapshot(db, monitor, dec);
+      state = advanceNarration(state, d, i < 3 ? "alive" : "sleeping", NOW);
+    });
+    expect(alertsOf(state)).toHaveLength(0);
+    expect(state.lastAlert).toBeNull();
+
+    const { state: fired, last } = feedRun(
+      seq([{}, {}, {}, { price: 2.4432 }]),
+    );
+    expect(alertsOf(fired)).toHaveLength(1);
+    const again = advanceNarration(fired, last, "alive", NOW);
+    expect(again.entries).toBe(fired.entries);
+    expect(alertsOf(again)).toHaveLength(1);
+  });
+
+  it("points on the upward alert cycle only; a plunge never points", () => {
+    const up = feedRun(seq([{}, {}, {}, { price: 2.4432 }]));
+    expect(alertsOf(up.state)).toHaveLength(1);
+    const upVital = botVital(up.last, false, NOW, NOW);
+    expect(upVital.state).toBe("alive");
+    expect(agentPose(up.state, up.last, upVital, NOW)).toBe("point");
+
+    // Same shape with no alert: fewer than two conditions met and
+    // nothing else to celebrate, so the pose stays normal.
+    const calm = feedRun(seq([{}, {}, {}, { price: 2.41 }]));
+    expect(alertsOf(calm.state)).toHaveLength(0);
+    expect(
+      agentPose(
+        calm.state,
+        calm.last,
+        botVital(calm.last, false, NOW, NOW),
+        NOW,
+      ),
+    ).toBe("normal");
+
+    const down = feedRun(seq([{}, {}, {}, { price: 2.3448 }]));
+    expect(down.state.lastAlert?.direction).toBe("down");
+    expect(
+      agentPose(
+        down.state,
+        down.last,
+        botVital(down.last, false, NOW, NOW),
+        NOW,
+      ),
+    ).toBe("normal");
+  });
+
+  it("spikeAlert fails closed on unusable evidence", () => {
+    expect(spikeAlert(warmed, telemetry({ price: Number.NaN }))).toBeNull();
+    expect(spikeAlert(warmed, telemetry({ price: 0 }))).toBeNull();
+    expect(spikeAlert(warmed, telemetry({ price: -1 }))).toBeNull();
+    expect(
+      spikeAlert([Number.NaN, 2.4, 2.4], telemetry({ price: 2.4432 })),
+    ).toBeNull();
+    // A broken volume change cannot alert on its own, but a clean
+    // price spike on the same cycle still can.
+    expect(
+      spikeAlert(warmed, telemetry({ volumeChange: Number.NaN })),
+    ).toBeNull();
+    expect(
+      spikeAlert(warmed, telemetry({ volumeChange: Number.NaN, price: 2.4432 }))
+        ?.direction,
+    ).toBe("up");
+  });
+
+  it("alert texts keep the tone: short, one-decimal percents, no report style", () => {
+    const samples = [
+      spikeAlert(warmed, telemetry({ price: 2.4432 })),
+      spikeAlert(warmed, telemetry({ price: 2.4432, volumeChange: 3 })),
+      spikeAlert(warmed, telemetry({ price: 2.3448 })),
+      spikeAlert(warmed, telemetry({ price: 2.3448, volumeChange: 3 })),
+      spikeAlert(warmed, telemetry({ volumeChange: 2.5 })),
+    ];
+    for (const sample of samples) {
+      expect(sample).not.toBeNull();
+      const text = sample!.text;
+      const sentences = text.split("。").filter((s) => s.length > 0);
+      expect(sentences.length).toBeLessThanOrEqual(4);
+      expect(text.length).toBeLessThanOrEqual(80);
+      expect(text).not.toMatch(/です|ます|ました|確認できました|総括/);
+      expect(text).not.toMatch(/\d\.\d{2,}%/);
+      expect(text).toMatch(/\d/);
+      expect(text.startsWith("速報。")).toBe(true);
+    }
   });
 });
