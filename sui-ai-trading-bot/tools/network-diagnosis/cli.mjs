@@ -21,6 +21,8 @@ import {
   DEEP,
 } from "./core.mjs";
 
+import { measurementWindow, waitUntil } from "./clock.mjs";
+
 export async function run(args) {
   if (!authorize(args)) return plan();
   const startAt = Number(args.startAt),
@@ -38,6 +40,7 @@ export async function run(args) {
     resources,
     stopWatch,
     deadline;
+  const window = measurementWindow(startAt);
   const stop = (why) => {
     reason = why;
     control.abort(Error(why));
@@ -119,7 +122,13 @@ export async function run(args) {
       undici: process.versions.undici,
       sourceHash: createHash("sha256")
         .update(
-          ["cli.mjs", "core.mjs", "transports.mjs", "package-lock.json"]
+          [
+            "cli.mjs",
+            "core.mjs",
+            "clock.mjs",
+            "transports.mjs",
+            "package-lock.json",
+          ]
             .map((f) => readFileSync(new URL(f, import.meta.url)))
             .join("\n"),
         )
@@ -167,13 +176,21 @@ export async function run(args) {
     stopWatch = setInterval(() => {
       if (existsSync(stopFile(out))) stop("USER_STOP");
     }, 500);
-    deadline = setTimeout(
-      () => stop("RUN_DEADLINE"),
-      Math.max(0, startAt + LIMITS.durationMs - Date.now()),
-    );
-    const anchor = performance.now() + startAt - Date.now();
+    const actualStart = await window.start(control.signal);
+    emit({
+      kind: "measurement-start",
+      at: actualStart.wallMs,
+      clock: actualStart,
+    });
+    const anchor = actualStart.monotonicMs;
+    deadline = window
+      .waitEnd(control.signal)
+      .then(() => stop("RUN_DEADLINE"))
+      .catch((e) => {
+        if (!control.signal.aborted) stop(safeCode(e));
+      });
     let failures = 0,
-      lastSuccessAt = startAt,
+      lastSuccessAt = anchor,
       attempts = 0;
     for (let slot = 0; slot < LIMITS.durationMs / LIMITS.intervalMs; slot++) {
       const due = anchor + slot * LIMITS.intervalMs;
@@ -181,11 +198,15 @@ export async function run(args) {
         emit({ kind: "skipped-slot", slot, at: Date.now(), reason: "OVERDUE" });
         continue;
       }
-      await pause(due - performance.now(), control.signal);
+      await waitUntil(null, due, control.signal);
       control.signal.throwIfAborted();
       const profile = PROFILES[slot % PROFILES.length],
         host = new URL(profile.target === "sui" ? SUI : DEEP).hostname;
-      const stale = cycleStop({ failures, lastSuccessAt, now: Date.now() });
+      const stale = cycleStop({
+        failures,
+        lastSuccessAt,
+        now: performance.now(),
+      });
       if (stale) {
         stop(stale);
         break;
@@ -231,7 +252,7 @@ export async function run(args) {
         if (!record.success) break; // No per-request retry and no recovery traffic after failure.
       }
       failures = success ? 0 : failures + 1;
-      if (success) lastSuccessAt = Date.now();
+      if (success) lastSuccessAt = performance.now();
       emit({
         kind: "cycle",
         at: Date.now(),
@@ -244,7 +265,7 @@ export async function run(args) {
       const why = cycleStop({
         failures,
         lastSuccessAt,
-        now: Date.now(),
+        now: performance.now(),
         status,
       });
       if (why) {
@@ -252,14 +273,15 @@ export async function run(args) {
         break;
       }
     }
-    if (!control.signal.aborted)
-      await pause(startAt + LIMITS.durationMs - Date.now(), control.signal);
+    if (!control.signal.aborted) await deadline;
   } catch (e) {
     if (!control.signal.aborted) reason = safeCode(e);
   } finally {
     clearInterval(resources);
     clearInterval(stopWatch);
-    clearTimeout(deadline);
+    const clock = window.snapshot();
+    if (!control.signal.aborted) control.abort(Error(reason));
+    await deadline;
     try {
       sample();
     } catch {
@@ -271,6 +293,7 @@ export async function run(args) {
       kind: "end",
       at: Date.now(),
       reason,
+      clock,
       qualityVerdict: "NOT_EVALUATED",
     });
     await emit.flush();
