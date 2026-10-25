@@ -1,5 +1,6 @@
 import React from "react";
 import type { BotEngine } from "../../worker/src/engine.ts";
+import { OperationIcon } from "./operationIcons.tsx";
 
 type State = ReturnType<BotEngine["snapshot"]>;
 
@@ -23,6 +24,10 @@ type State = ReturnType<BotEngine["snapshot"]>;
  * - 緊急停止中 / 安全停止中: 「解除の手順へ」 jumps to the
  *   strategy tab, where the always-visible release section now
  *   sits at the top of the page.
+ *
+ * The button shows its line icon only; its wording above is the
+ * aria-label (and title), kept distinct from the full controls'
+ * button names so role+name lookups stay unambiguous.
  */
 export function OperationBar({
   runtime,
@@ -42,7 +47,11 @@ export function OperationBar({
       : running
         ? "運用中"
         : "停止中";
-  const tone = stoppedState ? "tone-alert" : running ? "tone-ok" : "tone-caution";
+  const tone = stoppedState
+    ? "tone-alert"
+    : running
+      ? "tone-ok"
+      : "tone-caution";
   return (
     <div className={`operation-bar ${tone}`}>
       <span className="operation-bar-state">
@@ -50,16 +59,34 @@ export function OperationBar({
         PAPER運用：{state}
       </span>
       {running ? (
-        <button type="button" onClick={() => void control("stop")}>
-          停止
+        <button
+          type="button"
+          className="operation-icon-button stop"
+          aria-label="停止"
+          title="停止"
+          onClick={() => void control("stop")}
+        >
+          <OperationIcon kind="stop" />
         </button>
       ) : stoppedState ? (
-        <button type="button" onClick={onOpenStrategy}>
-          解除の手順へ
+        <button
+          type="button"
+          className="operation-icon-button release"
+          aria-label="解除の手順へ"
+          title="解除の手順へ"
+          onClick={onOpenStrategy}
+        >
+          <OperationIcon kind="release" />
         </button>
       ) : (
-        <button type="button" onClick={onOpenStrategy}>
-          開始へ
+        <button
+          type="button"
+          className="operation-icon-button go"
+          aria-label="開始へ"
+          title="開始へ"
+          onClick={onOpenStrategy}
+        >
+          <OperationIcon kind="go" />
         </button>
       )}
     </div>
