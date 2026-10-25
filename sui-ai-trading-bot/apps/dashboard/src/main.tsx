@@ -320,15 +320,23 @@ function App() {
   useEffect(() => {
     if (token) void refresh();
   }, [tab, timeframe]);
-  async function control(command: string) {
+  // Resolves to null on success, or to the server's machine-readable
+  // error code on failure, so the surface that issued the command
+  // (for example the PAPER operation controls) can show the reason
+  // where the operator acted. The global error banner keeps showing
+  // as before.
+  async function control(command: string): Promise<string | null> {
     try {
       serialRef.current++;
       const runtime = await api("control", { command });
       if (typeof runtime?.running === "boolean")
         setData((previous) => (previous ? { ...previous, runtime } : previous));
       await refresh();
+      return null;
     } catch (e) {
-      setError(errorCode(e));
+      const code = errorCode(e);
+      setError(code);
+      return code;
     }
   }
   return (

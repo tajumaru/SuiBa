@@ -62,6 +62,10 @@ export function operationReason(code: string): string {
       "注文確認中に設定または残高が変わったため見送りました",
     PAPER_RECOVERY_EXHAUSTED: "通信復旧の時間または失敗回数が上限に達しました",
     PAPER_RECOVERY_REQUIRED: "通信と市場データの安全確認が必要です",
+    RESET_REQUIRED: "停止状態が解除されていないため開始できません",
+    HEALTH_CHECK_REQUIRED: "Sui接続の状態確認が正常でないため開始できません",
+    ACCOUNTING_CHECK_REQUIRED:
+      "帳簿の整合性チェックで問題が見つかったため開始できません",
     PAPER_NETWORK_PAUSED: "通信障害を検出し、PAPER注文を一時停止しました",
     PAPER_NETWORK_RECOVERED: "安全確認が完了し、PAPER検証を再開しました",
     MARKET_DATA_STALLED: "市場データの更新が停止しています",
@@ -115,4 +119,31 @@ export function operationReason(code: string): string {
   if (code.startsWith("MISMATCH_") || code.startsWith("LEDGER_"))
     return "記録された残高・損益と独立した計算結果が一致しません";
   return "安全条件またはデータの整合性を確認できません";
+}
+/**
+ * Why the server refused a PAPER start (the 409 codes of
+ * /api/control), phrased as what the operator should do next. The
+ * start gate's conditions are unchanged; this only translates its
+ * answer where the operator pressed the button. Codes outside the
+ * start gate's contract fall back to a generic retry message.
+ */
+export function startRejectionReason(code: string): string {
+  const labels: Record<string, string> = {
+    MARKET_FETCH_IN_PROGRESS:
+      "市場データの取得が終わっていないため開始できませんでした。取得が終わるまで少し待ってから、もう一度開始してください",
+    PAPER_RECOVERY_REQUIRED:
+      "通信の復旧確認が完了していないため開始できませんでした。「運用検証」の診断で接続状態を確認してください",
+    API_BACKOFF:
+      "APIの再試行待機中のため開始できませんでした。待機が終わってからもう一度開始してください（次に試せる時刻は「運用検証」で確認できます）",
+    RESET_REQUIRED:
+      "停止状態が解除されていないため開始できませんでした。下の手順で停止状態を解除してから開始してください",
+    HEALTH_CHECK_REQUIRED:
+      "Sui接続の状態確認が正常でない、または古いため開始できませんでした。「運用検証」の診断で接続状態を確認してください",
+    ACCOUNTING_CHECK_REQUIRED:
+      "帳簿の整合性チェックで問題が見つかったため開始できませんでした。「運用検証」で照合記録を確認してください",
+  };
+  return (
+    labels[code] ??
+    "サーバーが開始を受け付けませんでした。運用状態を確認してから再試行してください"
+  );
 }
