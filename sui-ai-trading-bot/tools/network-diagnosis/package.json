@@ -1,0 +1,17 @@
+{
+  "name": "suiba-independent-network-diagnosis",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.22.1 <25"
+  },
+  "scripts": {
+    "test": "node --test diagnosis.node.mjs",
+    "plan": "node cli.mjs"
+  },
+  "dependencies": {
+    "@mysten/sui": "2.37.0",
+    "undici": "7.30.1"
+  }
+}

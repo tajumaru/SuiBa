@@ -9,11 +9,19 @@ const tasks = {
     ["node_modules/vite/bin/vite.js", "build", "apps/dashboard"],
   ],
   test: [
-    ["--test", "tests/preflight-quality.node.cjs"],
+    [
+      "--test",
+      "tests/preflight-quality.node.cjs",
+      "tools/network-diagnosis/diagnosis.node.mjs",
+    ],
     ["node_modules/vitest/vitest.mjs", "run"],
   ],
   "test:offline": [
-    ["--test", "tests/preflight-quality.node.cjs"],
+    [
+      "--test",
+      "tests/preflight-quality.node.cjs",
+      "tools/network-diagnosis/diagnosis.node.mjs",
+    ],
     [
       "node_modules/vitest/vitest.mjs",
       "run",
