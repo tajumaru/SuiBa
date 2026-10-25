@@ -233,6 +233,22 @@ const price = (v: number) => `${fmtNumber(v, 4)} USDC`;
 const signedPct = (ratio: number) =>
   `${ratio > 0 ? "+" : ""}${fmtPercent(ratio)}`;
 
+/**
+ * A recorded volume change is a ratio against the previous candle,
+ * and that candle can be nearly empty: a change off a base of 0.01
+ * prints as +499,900%, which reads as a bug even though the
+ * division is honest. From this ratio up — the newest candle
+ * carried about ten times the previous one's volume — the
+ * narration speaks in multiples （約50倍） instead of a
+ * percentage. Non-finite changes never reach either shape: the
+ * callers fall back to printing no number at all.
+ */
+const VOLUME_MULTIPLE_THRESHOLD = 9;
+const volumeMultiple = (ratio: number): number | null =>
+  Number.isFinite(ratio) && ratio >= VOLUME_MULTIPLE_THRESHOLD
+    ? Math.round(ratio + 1)
+    : null;
+
 /** The three strategy entry conditions, in display order. */
 function entryConditions(dec: DecisionTelemetry) {
   return [
@@ -445,8 +461,14 @@ export function cycleNarrationText(
         return `売り判定だよ。価格は${price(dec.price)}だね`;
     }
   }
-  if (dec.selectedRule === "VOLUME_REJECT")
+  if (dec.selectedRule === "VOLUME_REJECT") {
+    const multiple = volumeMultiple(dec.volumeChange);
+    if (multiple != null)
+      return `出来高が急に変わったから見送ったよ。変化は約${multiple}倍だね`;
+    if (!Number.isFinite(dec.volumeChange))
+      return `出来高が急に変わったから見送ったよ`;
     return `出来高が急に変わったから見送ったよ。変化は${fmtPercent(dec.volumeChange)}だね`;
+  }
   if (dec.conditions.hasPosition && dec.entryPrice != null) {
     const gain = dec.entryPrice > 0 ? dec.price / dec.entryPrice - 1 : 0;
     if (gain >= 0 && dec.takeProfitPct - gain > 0)
@@ -1061,7 +1083,9 @@ export interface SpikeAlert {
  * Alert price moves always print with exactly one decimal place
  * ("+1.8%", "-1.0%"). The volume change inside an alert keeps the
  * feed's existing volume style (`signedPct`: "+250%", "+350%"),
- * the same shape the VOLUME_REJECT line already prints.
+ * the same shape the VOLUME_REJECT line already prints — except
+ * when the recorded change is huge, where both lines switch to a
+ * multiple instead (see `volumeMultiple`).
  */
 const alertPct = (ratio: number) =>
   `${ratio > 0 ? "+" : ""}${new Intl.NumberFormat("ja-JP", {
@@ -1116,9 +1140,15 @@ export function spikeAlert(
         ? `速報。SUI、${alertPct(ratio)}。急落だ。出来高の変化も跳ねたから、ちょっと様子見る`
         : `速報。SUI、${alertPct(ratio)}。急落だ。ちょっと様子見る`,
     };
+  const multiple = volumeMultiple(dec.volumeChange);
   return {
     direction: "volume",
-    text: `速報。出来高の変化が${signedPct(dec.volumeChange)}に跳ねた。何かあったかも`,
+    text:
+      multiple != null
+        ? `速報。出来高が約${multiple}倍に跳ねた。何かあったかも`
+        : Number.isFinite(dec.volumeChange)
+          ? `速報。出来高の変化が${signedPct(dec.volumeChange)}に跳ねた。何かあったかも`
+          : `速報。出来高の変化が跳ねた。何かあったかも`,
   };
 }
 
