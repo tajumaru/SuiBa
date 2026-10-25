@@ -470,6 +470,66 @@ describe("agent narration: cycles", () => {
     );
     expect(state.entries[0].text).toContain("350%");
   });
+
+  it("a huge volume change narrates as a multiple, not an astronomical percent", () => {
+    const { db, monitor } = fixture();
+    // A change off a nearly empty previous candle: 49 as a percent
+    // would print +4,900% and far worse for thinner bases.
+    const d = runningSnapshot(
+      db,
+      monitor,
+      decision({ selectedRule: "VOLUME_REJECT", volumeChange: 49 }),
+    );
+    const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    expect(state.entries[0].text).toBe(
+      "出来高が急に変わったから見送ったよ。変化は約50倍だね",
+    );
+  });
+
+  it("the multiple switch sits at a change of nine (ten times the volume)", () => {
+    const { db, monitor } = fixture();
+    const at = runningSnapshot(
+      db,
+      monitor,
+      decision({ selectedRule: "VOLUME_REJECT", volumeChange: 9 }),
+    );
+    expect(
+      advanceNarration(emptyNarrationState(), at, "alive", NOW).entries[0]
+        .text,
+    ).toContain("変化は約10倍だね");
+    const below = runningSnapshot(
+      db,
+      monitor,
+      decision({ selectedRule: "VOLUME_REJECT", volumeChange: 8.9 }),
+    );
+    expect(
+      advanceNarration(emptyNarrationState(), below, "alive", NOW)
+        .entries[0].text,
+    ).toContain("変化は890%だね");
+  });
+
+  it("a non-finite volume change never reaches the narration", () => {
+    const { db, monitor } = fixture();
+    // The worker's telemetry validation is fail-closed on
+    // non-finite numbers, so an infinite change cannot be
+    // narrated — and the display-side guard keeps it that way
+    // even if one ever slipped through.
+    const d = runningSnapshot(
+      db,
+      monitor,
+      decision({
+        selectedRule: "VOLUME_REJECT",
+        volumeChange: Number.POSITIVE_INFINITY,
+      }),
+    );
+    expect(d.decision).toBeNull();
+    const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    expect(
+      state.entries.every(
+        (e) => !e.text.includes("Infinity") && !e.text.includes("∞"),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("agent narration: trades and rejections from candidate audits", () => {
@@ -2110,6 +2170,19 @@ describe("agent narration: spike alerts", () => {
       "速報。出来高の変化が+250%に跳ねた。何かあったかも",
     );
     expect(state.lastAlert?.direction).toBe("volume");
+  });
+
+  it("a huge volume spike alerts as a multiple, not an astronomical percent", () => {
+    const huge = spikeAlert(warmed, telemetry({ volumeChange: 49 }));
+    expect(huge?.direction).toBe("volume");
+    expect(huge?.text).toBe("速報。出来高が約50倍に跳ねた。何かあったかも");
+    // The switch matches the reject line: nine is the boundary.
+    expect(
+      spikeAlert(warmed, telemetry({ volumeChange: 9 }))?.text,
+    ).toBe("速報。出来高が約10倍に跳ねた。何かあったかも");
+    expect(
+      spikeAlert(warmed, telemetry({ volumeChange: 8.9 }))?.text,
+    ).toBe("速報。出来高の変化が+890%に跳ねた。何かあったかも");
   });
 
   it("merges a simultaneous price and volume spike into one entry", () => {
