@@ -154,6 +154,7 @@ export async function buffered(response, trace, signal) {
 export function h2Transport(profile, observer, open = h2connect) {
   let connection = null;
   const close = () => {
+    connection?.cleanup();
     connection?.session.destroy();
     connection = null;
   };
@@ -180,25 +181,46 @@ export function h2Transport(profile, observer, open = h2connect) {
         };
         connection = c;
         session.on("error", () => {});
-        session.socket.once("lookup", (error) => {
+        const socket = session.socket;
+        // Node's socket proxy becomes unbound after destroy. Capture the bound
+        // removal method while attached; even cleanup must not re-read the proxy.
+        const removeSocketListener = socket?.removeListener.bind(socket);
+        let cleaned = false;
+        const active = () =>
+          connection === c && !session.closed && !session.destroyed;
+        const lookup = (error) => {
+          if (!active()) return;
           c.dnsAt = performance.now();
           c.dnsError = !!error;
-        });
-        session.socket.once("connect", () => {
+        };
+        const connected = () => {
+          if (!active()) return;
           c.tcpAt = performance.now();
-          c.family = session.socket.remoteFamily;
-          c.peerAddress = session.socket.remoteAddress;
-          c.localPort = session.socket.localPort;
-        });
-        session.once("connect", () => {
+          c.family = socket.remoteFamily;
+          c.peerAddress = socket.remoteAddress;
+          c.localPort = socket.localPort;
+        };
+        const secure = () => {
+          if (!active()) return;
           c.tlsAt = performance.now();
           c.protocol = session.alpnProtocol;
-        });
+        };
+        c.cleanup = () => {
+          if (cleaned) return;
+          cleaned = true;
+          removeSocketListener?.("lookup", lookup);
+          removeSocketListener?.("connect", connected);
+          session.removeListener("connect", secure);
+        };
+        socket?.once("lookup", lookup);
+        socket?.once("connect", connected);
+        session.once("connect", secure);
         session.once("goaway", () => {
           if (connection === c) connection = null;
           session.close();
         });
         session.once("close", () => {
+          c.cleanup();
           if (connection === c) connection = null;
         });
       }
@@ -214,6 +236,7 @@ export function h2Transport(profile, observer, open = h2connect) {
           signal.removeEventListener("abort", abort);
           if (error) {
             stream?.close(constants.NGHTTP2_CANCEL);
+            c.cleanup();
             c.session.destroy();
             if (connection === c) connection = null;
             reject(error);

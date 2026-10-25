@@ -536,7 +536,11 @@ test("missing/truncated evidence, mismatched identity and early termination neve
 test("PowerShell sanitizers work offline without leaking raw log text", () => {
   if (process.platform !== "win32") return;
   for (const shell of ["powershell.exe", "pwsh"]) {
-    for (const file of ["collectors.node.ps1", "windows-process.node.ps1"]) {
+    for (const file of [
+      "collectors.node.ps1",
+      "windows-process.node.ps1",
+      "progress.node.ps1",
+    ]) {
       const child = spawnSync(
         shell,
         [
@@ -607,4 +611,73 @@ test("warm without actual reuse stays NOT_OBSERVED, with policy and gap evidence
   assert.match(timeline, /monotonicElapsedMs/);
   assert.match(timeline, /1800000/);
   assert.equal(m.evidenceComplete, false);
+});
+
+test("late DNS/TCP/TLS events after an aborted H2 connection cannot crash diagnosis", async () => {
+  for (const unavailable of [
+    "undefined",
+    "throwing-getter",
+    "detached-proxy",
+    "peer-close-before-abort",
+  ]) {
+    const socket = new EventEmitter();
+    socket.remoteFamily = "IPv4";
+    const session = new EventEmitter();
+    session.socket =
+      unavailable.includes("proxy") || unavailable.includes("peer-close")
+        ? new Proxy(socket, {
+            get(target, key) {
+              if (session.destroyed) throw Error("ERR_HTTP2_SOCKET_UNBOUND");
+              const value = Reflect.get(target, key);
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          })
+        : socket;
+    session.alpnProtocol = "h2";
+    session.destroy = () => {
+      session.destroyed = true;
+      if (unavailable === "undefined") session.socket = undefined;
+      else if (unavailable === "throwing-getter")
+        Object.defineProperty(session, "socket", {
+          get() {
+            throw Error("ERR_HTTP2_INVALID_SESSION");
+          },
+          configurable: true,
+        });
+    };
+    session.request = () => {
+      const stream = new EventEmitter();
+      stream.end = () => {};
+      stream.close = () => stream.emit("close");
+      return stream;
+    };
+    const transport = h2Transport(
+      { target: "deepbook", family: 4 },
+      { serial: 0 },
+      () => session,
+    );
+    const control = new AbortController(),
+      trace = { began: performance.now() };
+    const pending = transport.fetch(
+      DEEP + BOOK_PATH,
+      { signal: control.signal },
+      trace,
+    );
+    if (unavailable === "peer-close-before-abort") {
+      session.destroy();
+      assert.doesNotThrow(() => session.emit("close"));
+    }
+    control.abort(Error("REQUEST_TIMEOUT"));
+    await assert.rejects(pending, /REQUEST_TIMEOUT/);
+    assert.doesNotThrow(() => {
+      socket.emit("lookup", null);
+      socket.emit("connect");
+      session.emit("connect");
+      session.emit("close");
+    });
+    assert.equal(trace.connection.tcpAt, undefined);
+    assert.equal(trace.connection.tlsAt, undefined);
+    assert.equal(socket.listenerCount("connect"), 0);
+    transport.close();
+  }
 });
