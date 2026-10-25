@@ -404,6 +404,28 @@ section svg {
   min-width: 24px;
   height: 24px;
 }
+/* Buy celebration: while the celebration window is open the
+   ticker carries the glow class and pulses gold once. Under
+   reduced motion the class changes nothing at all. */
+@media (prefers-reduced-motion: no-preference) {
+  .price-ticker.glow {
+    animation: price-ticker-glow 1.6s ease-out;
+  }
+  @keyframes price-ticker-glow {
+    0% {
+      box-shadow: 0 0 0 0 rgba(237, 201, 128, 0);
+      border-color: #2b3f5f;
+    }
+    20% {
+      box-shadow: 0 0 18px 2px rgba(237, 201, 128, 0.45);
+      border-color: #edc980;
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(237, 201, 128, 0);
+      border-color: #2b3f5f;
+    }
+  }
+}
 /* Connectivity strip (dashboard only): the safety message and the
    headline chips stay on one or two lines, with the full detail list
    one expansion away. Tones come from connectivityStatus() so an
@@ -1810,6 +1832,75 @@ th {
 .agent-avatar.pose-pointSmile .agent-avatar-star {
   opacity: 0.95;
 }
+/* Buy celebration (AgentHeaderAvatar): while a celebration runs,
+   the pill turns gold — under reduced motion the gold pill and
+   the borrowed smile are the whole show. The burst marks are
+   rendered only when motion is allowed; they rest invisible
+   here and their drift lives in the no-preference block below. */
+.agent-avatar-burst {
+  position: absolute;
+  inset: -16px;
+  pointer-events: none;
+}
+.agent-avatar-burst span {
+  position: absolute;
+  line-height: 1;
+  opacity: 0;
+}
+.agent-avatar-burst .s1 {
+  left: 2%;
+  top: 30%;
+  font-size: 17px;
+  color: #edc980;
+}
+.agent-avatar-burst .s2 {
+  right: 4%;
+  top: 8%;
+  font-size: 13px;
+  color: #edc980;
+}
+.agent-avatar-burst .s3 {
+  right: 14%;
+  top: 48%;
+  font-size: 15px;
+  color: #ffe9b0;
+}
+.agent-avatar-burst .n1 {
+  left: 10%;
+  top: 0;
+  font-size: 16px;
+  color: #8fd0ff;
+}
+.agent-avatar-burst .n2 {
+  right: 0;
+  top: 62%;
+  font-size: 13px;
+  color: #8fd0ff;
+}
+.agent-avatar-burst .s4 {
+  left: 28%;
+  top: -6%;
+  font-size: 12px;
+  color: #edc980;
+}
+.agent-avatar-burst .s5 {
+  right: 30%;
+  top: -4%;
+  font-size: 12px;
+  color: #ffe9b0;
+}
+.agent-avatar-burst .n3 {
+  left: 0;
+  top: 55%;
+  font-size: 12px;
+  color: #8fd0ff;
+}
+.agent-avatar-pill.celebrate {
+  background: #edc980;
+  border-color: #edc980;
+  color: #0b1220;
+  font-weight: 700;
+}
 .agent-avatar-pill {
   display: flex;
   align-items: center;
@@ -1852,6 +1943,57 @@ th {
   .agent-avatar.pose-point .agent-avatar-star,
   .agent-avatar.pose-pointSmile .agent-avatar-star {
     animation: agent-avatar-star 1.6s ease-in-out infinite;
+  }
+  .agent-avatar.celebrating {
+    animation: agent-avatar-hop 0.55s ease;
+  }
+  .agent-avatar.celebrating .agent-avatar-burst span {
+    animation: agent-avatar-burst 1.15s ease-out both;
+  }
+  .agent-avatar.celebrating .agent-avatar-burst .s2 {
+    animation-delay: 0.08s;
+  }
+  .agent-avatar.celebrating .agent-avatar-burst .s3 {
+    animation-delay: 0.15s;
+  }
+  .agent-avatar.celebrating .agent-avatar-burst .n1 {
+    animation-delay: 0.05s;
+  }
+  .agent-avatar.celebrating .agent-avatar-burst .n2 {
+    animation-delay: 0.2s;
+  }
+  .agent-avatar.celebrating .agent-avatar-burst .s4 {
+    animation-delay: 0.12s;
+  }
+  .agent-avatar.celebrating .agent-avatar-burst .s5 {
+    animation-delay: 0.02s;
+  }
+  .agent-avatar.celebrating .agent-avatar-burst .n3 {
+    animation-delay: 0.25s;
+  }
+  @keyframes agent-avatar-hop {
+    0% {
+      transform: translateY(0);
+    }
+    35% {
+      transform: translateY(-7px);
+    }
+    100% {
+      transform: translateY(0);
+    }
+  }
+  @keyframes agent-avatar-burst {
+    0% {
+      opacity: 0;
+      transform: translateY(8px) scale(0.6);
+    }
+    25% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-20px) scale(1.15);
+    }
   }
   @keyframes agent-avatar-bob {
     0%,
@@ -2116,6 +2258,33 @@ th {
 .agent-feed-entry-tag.alert {
   border-color: rgba(255, 140, 50, 0.55);
   color: #ffb27a;
+}
+/* A recorded buy fill keeps a gold frame and tag for good, so a
+   buy stays recognisable in the history. The pulse below plays
+   once, on the entry whose arrival opened a celebration. */
+.agent-feed-entry.buy {
+  border-left-color: #edc980;
+  background: linear-gradient(90deg, rgba(237, 201, 128, 0.16), #1a2632 65%);
+}
+.agent-feed-entry-tag.buy {
+  border-color: #edc980;
+  color: #edc980;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .agent-feed-entry.just-bought {
+    animation: agent-feed-buy-pulse 1.6s ease-out;
+  }
+  @keyframes agent-feed-buy-pulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(237, 201, 128, 0);
+    }
+    20% {
+      box-shadow: 0 0 14px 1px rgba(237, 201, 128, 0.5);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(237, 201, 128, 0);
+    }
+  }
 }
 .agent-feed-note {
   display: block;

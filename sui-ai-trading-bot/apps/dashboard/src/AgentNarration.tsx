@@ -4,11 +4,16 @@ import { botVital } from "./botVital.ts";
 import {
   advanceNarration,
   agentPose,
+  BUY_CELEBRATION_MS,
+  CELEBRATION_FRESH_MS,
   currentConditionChips,
   currentWatch,
   currentWatchScore,
   emptyNarrationState,
+  findNewBuyEntry,
+  isBuyTradeEntry,
   type AgentPose,
+  type NarrationEntry,
   type NarrationState,
 } from "./agentNarration.ts";
 import imgNormal from "./assets/agent-white-normal.jpg";
@@ -17,6 +22,36 @@ import imgPointSmile from "./assets/agent-white-point-smile.jpg";
 import imgSleep from "./assets/agent-white-sleep.jpg";
 import imgLaptop from "./assets/agent-white-laptop.jpg";
 import imgLaptopTyping from "./assets/agent-white-laptop-typing.jpg";
+
+/**
+ * The display's reduced-motion preference, read synchronously on
+ * first render when a media query list is available (tests stub
+ * it) and kept current through its change events. Components use
+ * it to leave animated celebration marks out entirely under
+ * reduce; style.css independently defines every animation only
+ * under no-preference, so the two layers agree.
+ */
+export function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState<boolean>(
+    () =>
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    )
+      return;
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = () => setReduced(query.matches);
+    onChange();
+    query.addEventListener?.("change", onChange);
+    return () => query.removeEventListener?.("change", onChange);
+  }, []);
+  return reduced;
+}
 
 const POSE_IMAGE: Record<AgentPose, string> = {
   normal: imgNormal,
@@ -87,26 +122,73 @@ const AVATAR_DOT_TONE: Record<AgentPose, "run" | "near" | "stop"> = {
  * no-preference in style.css; under reduce everything rests
  * still and the marks stay as faint marks.
  */
-export function AgentHeaderAvatar({ pose }: { pose: AgentPose }) {
+/**
+ * The burst marks of a buy celebration, in the approved flashy
+ * arrangement: gold stars and pale-blue notes scattered around the
+ * circle. They exist only while celebrating and only when motion
+ * is allowed — under reduced motion the celebration is the still
+ * smile and the gold pill alone, so the marks are never rendered.
+ */
+const AVATAR_BURST_MARKS = [
+  { className: "s1", mark: "✦" },
+  { className: "s2", mark: "✦" },
+  { className: "s3", mark: "✦" },
+  { className: "n1", mark: "♪" },
+  { className: "n2", mark: "♪" },
+  { className: "s4", mark: "✦" },
+  { className: "s5", mark: "✦" },
+  { className: "n3", mark: "♪" },
+] as const;
+
+/**
+ * While `celebrating`, the avatar borrows the smile artwork
+ * whatever the derived pose is, hops once and throws the burst
+ * marks (motion permitting), and the pill turns gold with
+ * 「買えた！」. The override is render-local: the feed keeps
+ * reporting the pose derived from the records, so when the
+ * celebration ends the avatar falls back to exactly that pose.
+ */
+export function AgentHeaderAvatar({
+  pose,
+  celebrating = false,
+}: {
+  pose: AgentPose;
+  celebrating?: boolean;
+}) {
+  const reducedMotion = usePrefersReducedMotion();
+  const shownPose: AgentPose = celebrating ? "pointSmile" : pose;
+  const animated = celebrating && !reducedMotion;
   return (
     <div className="agent-avatar-dock">
       <div
-        className={`agent-avatar pose-${pose}`}
-        data-pose={pose}
+        className={`agent-avatar pose-${shownPose}${animated ? " celebrating" : ""}`}
+        data-pose={shownPose}
         aria-hidden="true"
       >
         <div className="agent-avatar-bob">
-          <AgentAvatarArtwork pose={pose} />
+          <AgentAvatarArtwork pose={shownPose} />
         </div>
         <span className="agent-avatar-zzz">Zzz</span>
         <span className="agent-avatar-star">✦</span>
+        {animated && (
+          <span className="agent-avatar-burst">
+            {AVATAR_BURST_MARKS.map((m) => (
+              <span key={m.className} className={m.className}>
+                {m.mark}
+              </span>
+            ))}
+          </span>
+        )}
       </div>
-      <p className="agent-avatar-pill" role="status">
+      <p
+        className={`agent-avatar-pill${celebrating ? " celebrate" : ""}`}
+        role="status"
+      >
         <span
-          className={`agent-avatar-dot tone-${AVATAR_DOT_TONE[pose]}`}
+          className={`agent-avatar-dot tone-${AVATAR_DOT_TONE[shownPose]}`}
           aria-hidden="true"
         />
-        {POSE_LABEL[pose]}
+        {celebrating ? "買えた！" : POSE_LABEL[shownPose]}
       </p>
     </div>
   );
@@ -158,17 +240,63 @@ const timeText = (at: number) =>
  * border, tagged): agentNarration.ts detects it from the recorded
  * decision prices and volume change, with a warm-up and a cooldown
  * so it cannot chatter. The component only renders the tag.
+ *
+ * A recorded buy fill wears a gold frame and a 「買えた！」 tag for
+ * good. When one lands as genuinely new this session — an advance
+ * after the initialising one adds a fresh buy entry — the feed
+ * also reports a celebration through onCelebrate and pulses the
+ * new entry once; the loaded history and sell fills never do.
  */
+/**
+ * One feed entry row. A recorded buy fill is marked for good —
+ * gold frame and a 「買えた！」 tag — so a buy stays recognisable
+ * in the history, while a sell fill keeps the plain trade look.
+ * `justBought` adds the one-shot pulse class for the entry whose
+ * arrival just opened a celebration (the pulse itself is defined
+ * only when motion is allowed, in style.css).
+ */
+export function AgentFeedEntryRow({
+  entry,
+  justBought = false,
+}: {
+  entry: NarrationEntry;
+  justBought?: boolean;
+}) {
+  const buy = isBuyTradeEntry(entry);
+  return (
+    <div
+      className={`agent-feed-entry ${entry.kind}${buy ? " buy" : ""}${justBought ? " just-bought" : ""}`}
+    >
+      <time dateTime={new Date(entry.at).toISOString()}>
+        {timeText(entry.at)}
+      </time>
+      {entry.kind === "review" && (
+        <span className="agent-feed-entry-tag">ふりかえり</span>
+      )}
+      {entry.kind === "alert" && (
+        <span className="agent-feed-entry-tag alert">速報</span>
+      )}
+      {buy && <span className="agent-feed-entry-tag buy">買えた！</span>}
+      <p>{entry.text}</p>
+    </div>
+  );
+}
+
 export function AgentNarrationFeed({
   data,
   stale,
   onPoseChange,
+  onCelebrate,
 }: {
   data: OperationsSnapshot;
   stale: boolean;
   /** Reports the derived pose to the app shell (the header avatar),
    * so the avatar and the feed always agree on the pose. */
   onPoseChange?: (pose: AgentPose) => void;
+  /** Fires once when a brand-new recorded buy fill joins the feed
+   * this session (never for the loaded history, never for a sell),
+   * so the app shell can run the buy celebration. */
+  onCelebrate?: () => void;
 }) {
   const [narration, setNarration] = useState<NarrationState>(() =>
     emptyNarrationState(),
@@ -176,6 +304,25 @@ export function AgentNarrationFeed({
   const [now, setNow] = useState(() => Date.now());
   const [receivedAt, setReceivedAt] = useState(() => Date.now());
   const receivedRef = useRef(receivedAt);
+  // The state the next advance builds on, mirrored in a ref so the
+  // advance effect can diff entries before and after and spot a
+  // buy fill that is genuinely new to this session.
+  const narrationRef = useRef(narration);
+  // The entry whose arrival opened the running celebration, and
+  // when it opened; the pulse class rides on it until the timer
+  // clears it, BUY_CELEBRATION_MS after the fill landed.
+  const [celebration, setCelebration] = useState<{
+    entryId: string;
+    startedAt: number;
+  } | null>(null);
+  const celebrationTimerRef = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (celebrationTimerRef.current != null)
+        window.clearTimeout(celebrationTimerRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     const update = () => setNow(Date.now());
@@ -198,15 +345,32 @@ export function AgentNarrationFeed({
     // A stale display must not narrate: the feed freezes with the
     // snapshot until fresh records arrive again.
     if (stale) return;
-    setNarration((prev) =>
-      advanceNarration(
-        prev,
-        data,
-        botVital(data, stale, Date.now(), receivedRef.current).state,
-        Date.now(),
-      ),
+    const prev = narrationRef.current;
+    const next = advanceNarration(
+      prev,
+      data,
+      botVital(data, stale, Date.now(), receivedRef.current).state,
+      Date.now(),
     );
-  }, [data, stale]);
+    narrationRef.current = next;
+    setNarration(next);
+    // A buy celebration opens only here: on an advance after the
+    // feed initialised (the initialising advance lays down the
+    // recorded history and must never celebrate it), when the
+    // advance added a buy fill entry that is fresh news rather
+    // than a backlog catching up.
+    if (!prev.initialized) return;
+    const hit = findNewBuyEntry(prev.entries, next.entries);
+    if (!hit || Math.abs(Date.now() - hit.at) > CELEBRATION_FRESH_MS) return;
+    setCelebration({ entryId: hit.id, startedAt: Date.now() });
+    onCelebrate?.();
+    if (celebrationTimerRef.current != null)
+      window.clearTimeout(celebrationTimerRef.current);
+    celebrationTimerRef.current = window.setTimeout(
+      () => setCelebration(null),
+      BUY_CELEBRATION_MS,
+    );
+  }, [data, stale, onCelebrate]);
   const vital = botVital(data, stale, now, receivedAt);
   const pose = agentPose(narration, data, vital, now);
   useEffect(() => {
@@ -287,18 +451,11 @@ export function AgentNarrationFeed({
           // Newest first: the list flows with the page (no inner scroll
           // box), so the latest entry belongs at the top.
           [...narration.entries].reverse().map((entry) => (
-            <div key={entry.id} className={`agent-feed-entry ${entry.kind}`}>
-              <time dateTime={new Date(entry.at).toISOString()}>
-                {timeText(entry.at)}
-              </time>
-              {entry.kind === "review" && (
-                <span className="agent-feed-entry-tag">ふりかえり</span>
-              )}
-              {entry.kind === "alert" && (
-                <span className="agent-feed-entry-tag alert">速報</span>
-              )}
-              <p>{entry.text}</p>
-            </div>
+            <AgentFeedEntryRow
+              key={entry.id}
+              entry={entry}
+              justBought={celebration?.entryId === entry.id}
+            />
           ))
         )}
       </div>
