@@ -24,7 +24,7 @@ import type { AgentPose } from "./agentNarration.ts";
 import { NAV_SHORT_LABELS, NavTabIcon } from "./navTabs.tsx";
 import { PriceChart } from "./PriceChart.tsx";
 import { BacktestComparison } from "./BacktestComparison.tsx";
-import { ProfitGuardPanel } from "./ProfitGuardPanel.tsx";
+import { ProfitGuardSummary } from "./ProfitGuardPanel.tsx";
 import { useIndicatorHistory } from "./StrategyPanel.tsx";
 type State = ReturnType<BotEngine["snapshot"]>;
 const NAV_TABS = [
@@ -542,7 +542,7 @@ function App() {
                         </section>
                       ))}
                     </div>
-                    <ProfitGuardPanel data={data} />
+                    <ProfitGuardSummary data={data} />
                     <label>
                       時間足
                       <select

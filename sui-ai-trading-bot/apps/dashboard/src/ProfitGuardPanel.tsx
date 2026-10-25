@@ -7,11 +7,55 @@ const money = (v: number | null | undefined) => number(v, 4);
 const precise = (v: string | null | undefined) =>
   v == null ? "不明" : `${number(v)} USDC`;
 
+/** Japanese text for each profit-guard verdict reason code. */
+const profitGuardReasonText: Record<string, string> = {
+  PROFIT_GUARD_DISABLED:
+    "最低利益条件は無効です。費用・見積もり検証とリスク制限は継続します",
+  QUOTE_UNAVAILABLE: "最新の有効な見積もりを取得できません",
+  QUOTE_EXPIRED: "見積もりの有効期限が切れています",
+  INVALID_QUOTE: "見積もりの方向・数量・最低受取額などが不正です",
+  UNKNOWN_COSTS: "ガス代または追加手数料が不明・不正です",
+  INVALID_POSITION: "保有数量または取得原価が不正です",
+  INSUFFICIENT_POSITION: "売却数量が保有数量を超えています",
+  INVALID_PROFIT_CONFIG: "利益保護の設定値が不正です",
+  MINIMUM_NET_PROFIT_MET: "最低純利益額・利益率を満たしています",
+  MINIMUM_NET_PROFIT_NOT_MET: "手数料控除後の利益が最低条件に届きません",
+  PROTECTIVE_EXIT_PROFIT_BYPASS: "損切り・リスク削減のため利益条件は適用しません",
+  PROTECTIVE_EXIT_PROFIT_DATA_UNAVAILABLE:
+    "リスク削減のための売却は利益条件の対象外です。見積もり・リスク制限の確認は別途必要です",
+  PROFIT_DATA_UNKNOWN: "ガス代・見積もり・原価などが不明です",
+  PROJECTED_NET_EXCEEDS_ROUND_TRIP_COST:
+    "想定利確時の純利益が往復コストを上回ります",
+  PROJECTED_NET_INSUFFICIENT:
+    "想定利確時の純利益が往復コストまたは最低条件に届きません",
+};
+
+/**
+ * One-line profit-guard summary for the dashboard tab: whether the
+ * guard is enabled and, when a verdict exists, its latest reason.
+ * The full detail lives on the strategy tab (ProfitGuardPanel).
+ */
+export function ProfitGuardSummary({ data }: { data: State }) {
+  const r = data.profitGuard;
+  return (
+    <section aria-label="利益保護の要約">
+      <p>
+        利益保護：{data.settings.profitGuardEnabled ? "有効" : "無効"}
+        {r
+          ? ` · 直近の判定：${profitGuardReasonText[r.reason] ?? "利益判定の安全性を確認できません"}`
+          : " · 判定データはまだありません"}
+        。詳細は戦略タブで確認できます。
+      </p>
+    </section>
+  );
+}
+
 /**
  * The full profit-guard detail panel (cost breakdown after fees and
- * gas). Rendered on the dashboard tab as-is, and inside a disclosure
- * on the strategy tab so the strategy view can lead with a compact
- * status card without dropping any of this detail.
+ * gas). Rendered inside a disclosure on the strategy tab so the
+ * strategy view can lead with a compact status card without dropping
+ * any of this detail. The dashboard tab shows ProfitGuardSummary
+ * instead.
  */
 export function ProfitGuardPanel({ data }: { data: State }) {
   const r = data.profitGuard,
@@ -81,31 +125,8 @@ export function ProfitGuardPanel({ data }: { data: State }) {
                     ? "利確可能（試算）"
                     : "利益不足・見送り"}{" "}
             ·{" "}
-            {(
-              {
-                PROFIT_GUARD_DISABLED:
-                  "最低利益条件は無効です。費用・見積もり検証とリスク制限は継続します",
-                QUOTE_UNAVAILABLE: "最新の有効な見積もりを取得できません",
-                QUOTE_EXPIRED: "見積もりの有効期限が切れています",
-                INVALID_QUOTE: "見積もりの方向・数量・最低受取額などが不正です",
-                UNKNOWN_COSTS: "ガス代または追加手数料が不明・不正です",
-                INVALID_POSITION: "保有数量または取得原価が不正です",
-                INSUFFICIENT_POSITION: "売却数量が保有数量を超えています",
-                INVALID_PROFIT_CONFIG: "利益保護の設定値が不正です",
-                MINIMUM_NET_PROFIT_MET: "最低純利益額・利益率を満たしています",
-                MINIMUM_NET_PROFIT_NOT_MET:
-                  "手数料控除後の利益が最低条件に届きません",
-                PROTECTIVE_EXIT_PROFIT_BYPASS:
-                  "損切り・リスク削減のため利益条件は適用しません",
-                PROTECTIVE_EXIT_PROFIT_DATA_UNAVAILABLE:
-                  "リスク削減のための売却は利益条件の対象外です。見積もり・リスク制限の確認は別途必要です",
-                PROFIT_DATA_UNKNOWN: "ガス代・見積もり・原価などが不明です",
-                PROJECTED_NET_EXCEEDS_ROUND_TRIP_COST:
-                  "想定利確時の純利益が往復コストを上回ります",
-                PROJECTED_NET_INSUFFICIENT:
-                  "想定利確時の純利益が往復コストまたは最低条件に届きません",
-              } as Record<string, string>
-            )[r.reason] ?? "利益判定の安全性を確認できません"}
+            {profitGuardReasonText[r.reason] ??
+              "利益判定の安全性を確認できません"}
             <small>コード：{r.reason}</small>
           </p>
           <p>
