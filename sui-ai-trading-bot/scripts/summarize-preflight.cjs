@@ -1,5 +1,6 @@
 const fs = require("node:fs");
 const crypto = require("node:crypto");
+const { endBookTiming } = require("./preflight-end-book.cjs");
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const stats = (values) => {
   const a = values.filter(Number.isFinite).sort((a, b) => a - b);
@@ -153,6 +154,19 @@ function summarize(rows, audit, inspection, context = null) {
   if (!boundedSamples.length)
     return { verdict: "INCONCLUSIVE", checks: { evidenceComplete: null } };
   const end = boundedSamples.at(-1).at;
+  if (end < start)
+    return {
+      verdict: "NO-GO",
+      checks: { endBookTiming: false },
+      criteria: {
+        endBookTiming: {
+          status: "FAIL",
+          reason: "AUDIT_BEFORE_OBSERVATION",
+          actual: { start, auditAt: audit.at },
+          source: "observer sample + audit.at",
+        },
+      },
+    };
   const inWindow = (r) => r.at >= start && r.at <= end;
   const samples = allSamples.filter(inWindow);
   const cycles = rows.filter((r) => r.kind === "cycle" && inWindow(r));
@@ -409,14 +423,10 @@ function summarize(rows, audit, inspection, context = null) {
   checks.reconstructionWithinBudget = Object.values(frames).every(
     (f) => f.reconstructionMs.max === null || f.reconstructionMs.max <= 45000,
   );
-  const endProbeValid =
-    terminal &&
-    audit.finalBook?.source === "DeepBook:SUI_USDC" &&
-    audit.finalBook.error === null &&
-    Number.isFinite(audit.finalBook.startedAt) &&
-    Number.isFinite(audit.finalBook.completedAt) &&
-    audit.finalBook.completedAt >= audit.finalBook.startedAt &&
-    audit.finalBook.completedAt <= end;
+  const probeTiming = terminal
+    ? endBookTiming(audit.finalBook, start, end)
+    : { status: "MISSING", reason: "END_BOOK_TIMING_MISSING" };
+  const endProbeValid = probeTiming.status === "PASS";
   const finalBookAt = terminal
     ? endProbeValid
       ? audit.finalBook.timestamp
@@ -424,9 +434,13 @@ function summarize(rows, audit, inspection, context = null) {
     : last.market?.bookAt;
   const finalBookAge = Number.isFinite(finalBookAt) ? end - finalBookAt : null;
   checks.bookFreshAtEnd =
-    finalBookAge === null
-      ? null
-      : finalBookAge >= 0 && finalBookAge <= limits.bookAgeMs;
+    probeTiming.status === "FAIL"
+      ? false
+      : finalBookAge === null
+        ? null
+        : finalBookAge >= 0 && finalBookAge <= limits.bookAgeMs;
+  checks.endBookTiming =
+    probeTiming.status === "MISSING" ? null : probeTiming.status === "PASS";
   checks.runIdentity = identity;
   checks.terminalEvidence = terminal ? true : null;
   checks.plannedDuration =
@@ -493,6 +507,19 @@ function summarize(rows, audit, inspection, context = null) {
     threshold: context ? context.durationMinutes * 60000 : null,
     unit: "ms",
     source: "run-context planned observation duration",
+  });
+  Object.assign(criteria.endBookTiming, {
+    actual: audit.finalBook
+      ? {
+          startedAt: audit.finalBook.startedAt ?? null,
+          completedAt: audit.finalBook.completedAt ?? null,
+          durationMs: audit.finalBook.durationMs ?? null,
+          upstreamTimestamp: audit.finalBook.timestamp ?? null,
+          auditAt: end,
+        }
+      : null,
+    reason: probeTiming.reason,
+    source: "audit.finalBook timing + audit.at",
   });
   Object.assign(criteria.bookFreshAtEnd, {
     actual: finalBookAge,

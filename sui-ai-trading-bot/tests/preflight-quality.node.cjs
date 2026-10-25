@@ -103,6 +103,7 @@ function fixture() {
       timestamp: end - 1000,
       startedAt: end - 500,
       completedAt: end - 100,
+      durationMs: 400,
       source: "DeepBook:SUI_USDC",
       error: null,
     },
@@ -270,8 +271,9 @@ test("missing end snapshot or incomplete identity cannot be GO", () => {
 test("end probe evidence must be from this audit window", () => {
   const f = fixture();
   f.audit.finalBook.completedAt = f.audit.at + 1;
-  assert.equal(result(f).checks.bookFreshAtEnd, null);
-  assert.equal(result(f).verdict, "INCONCLUSIVE");
+  assert.equal(result(f).checks.bookFreshAtEnd, false);
+  assert.equal(result(f).checks.endBookTiming, false);
+  assert.equal(result(f).verdict, "NO-GO");
 });
 
 test("read-only audit persists terminal evidence only on normal completion", () => {
@@ -392,5 +394,217 @@ test("missing safety or ledger inputs are incomplete; observed running still fai
   assert.equal(result(f).verdict, "NO-GO");
   const g = fixture();
   delete g.audit.operations.ledger;
+  assert.equal(result(g).verdict, "INCONCLUSIVE");
+});
+
+function fakeClock(...values) {
+  return () => {
+    assert.ok(values.length, "unexpected clock read");
+    return values.shift();
+  };
+}
+function bookResponse(timestamp) {
+  return new Response(
+    JSON.stringify({ timestamp, bids: [["1", "2"]], asks: [["2", "3"]] }),
+  );
+}
+
+test("upstream time may advance during acquisition, but must not exceed completion", async () => {
+  for (const offset of [-600, -300, -100, -50]) {
+    const f = fixture(),
+      end = f.audit.at;
+    f.audit.finalBook = await captureEndBook(
+      async () => bookResponse(end + offset),
+      fakeClock(end - 500, end - 100),
+      fakeClock(0, 400),
+    );
+    assert.equal(f.audit.finalBook.timestamp, end + offset);
+    assert.equal(
+      f.audit.finalBook.error,
+      offset > -100 ? "END_BOOK_FUTURE_TIMESTAMP" : null,
+    );
+    assert.equal(result(f).verdict, offset > -100 ? "NO-GO" : "GO");
+    // The invalid timestamp is earlier than audit.at; an audit-only future check misses it.
+    assert.ok(f.audit.finalBook.timestamp <= f.audit.at);
+  }
+});
+
+test("collector rejects wall-clock and monotonic reversals without clamping them", async () => {
+  for (const [wall, mono] of [
+    [
+      [10000, 9999],
+      [0, 100],
+    ],
+    [
+      [10000, 10100],
+      [100, 99],
+    ],
+  ]) {
+    const book = await captureEndBook(
+      async () => bookResponse(9990),
+      fakeClock(...wall),
+      fakeClock(...mono),
+    );
+    assert.equal(book.error, "END_BOOK_TIME_REVERSED");
+    const f = fixture();
+    f.audit.finalBook = book;
+    assert.equal(result(f).checks.endBookTiming, false);
+    assert.equal(result(f).verdict, "NO-GO");
+  }
+});
+
+test("a late successful response cannot become proof, even when the wall clock hides the delay", async () => {
+  for (const [wallMs, monoMs] of [
+    [8001, 8001],
+    [8001, 100],
+    [100, 8001],
+  ]) {
+    const f = fixture(),
+      end = f.audit.at;
+    f.audit.finalBook = await captureEndBook(
+      async () => bookResponse(end - 200),
+      fakeClock(end - 100 - wallMs, end - 100),
+      fakeClock(0, monoMs),
+    );
+    assert.equal(f.audit.finalBook.error, "END_BOOK_TIMEOUT");
+    assert.equal(result(f).verdict, "NO-GO");
+  }
+});
+
+test("a delayed body is included in acquisition time", async () => {
+  const f = fixture(),
+    end = f.audit.at;
+  let mono = 0;
+  f.audit.finalBook = await captureEndBook(
+    async () => ({
+      ok: true,
+      json: async () => {
+        mono = 8001;
+        return { timestamp: end - 200, bids: [["1", "2"]], asks: [["2", "3"]] };
+      },
+    }),
+    fakeClock(end - 500, end - 100),
+    () => mono,
+  );
+  assert.equal(f.audit.finalBook.durationMs, 8001);
+  assert.equal(f.audit.finalBook.error, "END_BOOK_TIMEOUT");
+  assert.equal(result(f).verdict, "NO-GO");
+});
+
+test("acquisition and freshness thresholds remain exactly eight and ten seconds", async () => {
+  for (const [duration, age, expected] of [
+    [8000, 10000, "GO"],
+    [8001, 10000, "NO-GO"],
+    [8000, 10001, "NO-GO"],
+  ]) {
+    const f = fixture(),
+      end = f.audit.at;
+    f.audit.finalBook = await captureEndBook(
+      async () => bookResponse(end - age),
+      fakeClock(end - duration, end),
+      fakeClock(0, duration),
+    );
+    assert.equal(result(f).verdict, expected);
+    assert.equal(result(f).limits.minAttempts, 100);
+    assert.equal(result(f).limits.bookAgeMs, 10000);
+  }
+});
+
+test("time reversal and acquisition outside the observation window prohibit GO", () => {
+  for (const change of [
+    (f) => {
+      f.audit.finalBook.completedAt = f.audit.finalBook.startedAt - 1;
+    },
+    (f) => {
+      f.audit.finalBook.startedAt =
+        f.rows.find((r) => r.kind === "sample").at - 1;
+    },
+    (f) => {
+      f.audit.finalBook.completedAt = f.audit.at + 1;
+    },
+    (f) => {
+      f.audit.finalBook.durationMs = -1;
+    },
+    (f) => {
+      f.audit.at = f.rows.find((r) => r.kind === "sample").at - 1;
+      f.audit.terminalSample.at = f.audit.at;
+    },
+  ]) {
+    const f = fixture();
+    change(f);
+    assert.equal(result(f).verdict, "NO-GO");
+    assert.equal(result(f).checks.endBookTiming, false);
+  }
+});
+
+test("delay after completion is evaluated at audit time, not at request completion", () => {
+  for (const [age, expected] of [
+    [10000, "GO"],
+    [10001, "NO-GO"],
+  ]) {
+    const f = fixture(),
+      end = f.audit.at;
+    f.audit.finalBook = {
+      ...f.audit.finalBook,
+      startedAt: end - age - 100,
+      completedAt: end - age,
+      durationMs: 100,
+      timestamp: end - age,
+    };
+    assert.equal(result(f).verdict, expected);
+  }
+});
+
+test("transport, HTTP, body and schema failures cannot use the worker's cached book as fallback", async () => {
+  for (const transport of [
+    async () => {
+      throw Error("network failed");
+    },
+    async () => new Response("", { status: 503 }),
+    async () => ({
+      ok: true,
+      json: async () => {
+        throw Error("body failed");
+      },
+    }),
+    async () => new Response("{}"),
+  ]) {
+    const f = fixture(),
+      end = f.audit.at;
+    f.audit.finalBook = await captureEndBook(
+      transport,
+      fakeClock(end - 500, end - 100),
+      fakeClock(0, 400),
+    );
+    assert.equal(f.audit.finalBook.timestamp, null);
+    assert.equal(result(f).checks.bookFreshAtEnd, null);
+    assert.equal(result(f).verdict, "INCONCLUSIVE");
+  }
+});
+
+test("missing or non-finite timing evidence is incomplete rather than a zero-duration success", () => {
+  for (const key of [
+    "startedAt",
+    "completedAt",
+    "durationMs",
+    "timestamp",
+    "source",
+    "error",
+  ]) {
+    const f = fixture();
+    delete f.audit.finalBook[key];
+    assert.equal(result(f).verdict, "INCONCLUSIVE", key);
+  }
+  for (const value of [null, NaN, Infinity]) {
+    const f = fixture();
+    f.audit.finalBook.durationMs = value;
+    assert.equal(result(f).checks.endBookTiming, null);
+    assert.equal(result(f).verdict, "INCONCLUSIVE");
+  }
+  const f = fixture();
+  delete f.audit.finalBook;
+  assert.equal(result(f).verdict, "INCONCLUSIVE");
+  const g = fixture();
+  delete g.audit.at;
   assert.equal(result(g).verdict, "INCONCLUSIVE");
 });

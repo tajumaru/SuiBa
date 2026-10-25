@@ -37,7 +37,7 @@ describe("agent pose expression overlay", () => {
     const css = readFileSync(
       new URL("../apps/dashboard/src/style.css", import.meta.url),
       "utf8",
-    );
+    ).replace(/\r\n/g, "\n");
     for (const [pose, group] of [
       ["sleep", "fx-g-sleep"],
       ["point", "fx-g-point"],
@@ -57,7 +57,7 @@ describe("agent pose expression overlay", () => {
     const css = readFileSync(
       new URL("../apps/dashboard/src/style.css", import.meta.url),
       "utf8",
-    );
+    ).replace(/\r\n/g, "\n");
     const noPreference = css.slice(
       css.indexOf("@media (prefers-reduced-motion: no-preference)"),
     );
