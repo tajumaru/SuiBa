@@ -71,6 +71,10 @@ export interface NarrationEntry {
   at: number;
   kind: NarrationKind;
   text: string;
+  /** Fill side, recorded only on trade entries (from the candidate
+   * audit's finalAction). Lets the display tell a buy fill from a
+   * sell fill without re-reading the wording. */
+  side?: "BUY" | "SELL";
 }
 
 /**
@@ -1418,6 +1422,7 @@ export function advanceNarration(
       drafts.push({
         at: c.timestamp,
         kind: "trade",
+        side: c.finalAction,
         text: `PAPERで${c.finalAction === "BUY" ? "買い" : "売り"}を記録したよ${fill ? `：${fill}` : ""}`,
       });
     } else if (c.finalAction === "WAIT") {
@@ -1677,4 +1682,50 @@ export function agentPose(
     if (met >= 1 && state.priceRising) return "point";
   }
   return "laptop";
+}
+
+/** How long a buy celebration lasts (avatar, pill, ticker glow). */
+export const BUY_CELEBRATION_MS = 4000;
+
+/**
+ * A buy entry only celebrates when it is fresh news: an entry whose
+ * recorded time sits far from the moment the feed picked it up is
+ * history catching up (a stale display resuming, a backlog
+ * draining), not a fill that just happened.
+ */
+export const CELEBRATION_FRESH_MS = 120_000;
+
+/** A recorded PAPER buy fill (a sell fill is not a celebration). */
+export function isBuyTradeEntry(entry: NarrationEntry): boolean {
+  return entry.kind === "trade" && entry.side === "BUY";
+}
+
+/**
+ * The newest buy fill `next` gained over `prev`, or null when the
+ * advance added none. Entries are matched by id, so re-rendering
+ * the same state — or the session's first advance, whose entries
+ * are the recorded history — can never produce a hit: the caller
+ * only consults this for advances after the feed initialised.
+ */
+export function findNewBuyEntry(
+  prev: NarrationEntry[],
+  next: NarrationEntry[],
+): NarrationEntry | null {
+  const known = new Set(prev.map((e) => e.id));
+  let hit: NarrationEntry | null = null;
+  for (const entry of next) {
+    if (!known.has(entry.id) && isBuyTradeEntry(entry)) hit = entry;
+  }
+  return hit;
+}
+
+/** Whether the celebration window that opened at `startedAt` is
+ * still open at `now`. */
+export function buyCelebrationActive(
+  startedAt: number | null,
+  now: number,
+): boolean {
+  return (
+    startedAt != null && now >= startedAt && now - startedAt < BUY_CELEBRATION_MS
+  );
 }
