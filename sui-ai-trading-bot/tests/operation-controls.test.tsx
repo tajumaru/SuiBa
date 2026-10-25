@@ -133,15 +133,80 @@ describe("paper operation controls clarity", () => {
       "運用中です。保存済みの設定で仮想売買を行っています。",
     );
   });
+});
 
-  it("explains what each button does", () => {
+describe("operation icon buttons", () => {
+  const buttonTag = (html: string, label: string) => {
+    const at = html.indexOf(`aria-label="${label}"`);
+    expect(at).toBeGreaterThanOrEqual(0);
+    return html.slice(html.lastIndexOf("<button", at), html.indexOf(">", at));
+  };
+
+  it("renders start and stop as icon buttons in the heading row", () => {
     const html = render({});
-    expect(html).toContain(
-      "保存済みの設定で仮想売買を始めます。条件がそろうまで売買はしません。",
+    // The buttons ride at the right end of the state heading's
+    // row, after the heading — not in a button row of their own.
+    const headAt = html.indexOf('class="paper-operation-head"');
+    const startAt = html.indexOf('aria-label="PAPER運用開始"');
+    const stopAt = html.indexOf('aria-label="PAPER運用停止"');
+    expect(headAt).toBeGreaterThanOrEqual(0);
+    expect(startAt).toBeGreaterThan(headAt);
+    expect(stopAt).toBeGreaterThan(startAt);
+    expect(html).toContain('class="paper-operation-actions"');
+    // Icon only: the names live in aria-label and title, the
+    // same wording the text buttons carried.
+    expect(buttonTag(html, "PAPER運用開始")).toContain(
+      'class="operation-icon-button start"',
     );
-    expect(html).toContain(
-      "仮想売買を止めます。保有中の仮想ポジションは残り、再開後に管理を続けます。",
+    expect(buttonTag(html, "PAPER運用開始")).toContain('title="PAPER運用開始"');
+    expect(buttonTag(html, "PAPER運用停止")).toContain(
+      'class="operation-icon-button stop"',
     );
+    expect(buttonTag(html, "PAPER運用停止")).toContain('title="PAPER運用停止"');
+    // Each button shows its line icon in the meaning colour.
+    expect(html).toContain('stroke="#43dfb2"');
+    expect(html).toContain('stroke="#ff7d9c"');
+  });
+
+  it("drops the per-button captions and the old button row", () => {
+    const html = render({});
+    expect(html).not.toContain("条件がそろうまで売買はしません");
+    expect(html).not.toContain("保有中の仮想ポジションは残り");
+    expect(html).not.toContain("control-action");
+    expect(html).not.toContain('class="controls"');
+  });
+
+  it("keeps the start gate on the icon button", () => {
+    expect(buttonTag(render({}), "PAPER運用開始")).not.toContain("disabled");
+    expect(buttonTag(render({ running: true }), "PAPER運用開始")).toContain(
+      "disabled",
+    );
+    expect(buttonTag(render({}, { dirty: true }), "PAPER運用開始")).toContain(
+      "disabled",
+    );
+    expect(buttonTag(render({ emergency: true }), "PAPER運用開始")).toContain(
+      "disabled",
+    );
+  });
+
+  it("puts the release icon button at the top of the release section", () => {
+    const html = render({ emergency: true });
+    const releaseAt = html.indexOf('aria-label="停止解除（再開は手動）"');
+    expect(html).toContain('class="stop-release-head"');
+    expect(releaseAt).toBeGreaterThan(html.indexOf('class="stop-release"'));
+    // The button sits in the heading row, above the explanation
+    // and the steps it acts on.
+    expect(releaseAt).toBeLessThan(html.indexOf("緊急停止が押され"));
+    expect(buttonTag(html, "停止解除（再開は手動）")).toContain(
+      'class="operation-icon-button release"',
+    );
+    expect(buttonTag(html, "停止解除（再開は手動）")).toContain(
+      'title="停止解除（再開は手動）"',
+    );
+    expect(html).toContain('stroke="#edc980"');
+    // The steps point at the button's new position.
+    expect(html).toContain("上のボタンで停止状態を解除します");
+    expect(html).not.toContain("下のボタンで停止状態を解除します");
   });
 });
 

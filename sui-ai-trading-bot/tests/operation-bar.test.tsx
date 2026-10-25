@@ -32,11 +32,15 @@ function render(runtime: Partial<Runtime>) {
 }
 
 describe("operation bar states", () => {
-  it("shows 運用中 with a stop button that acts in place", () => {
+  it("shows 運用中 with a stop icon button that acts in place", () => {
     const html = render({ running: true });
     expect(html).toContain("PAPER運用：運用中");
     expect(html).toContain("operation-bar tone-ok");
-    expect(html).toContain('<button type="button">停止</button>');
+    // Icon only: the name lives in aria-label/title, unchanged.
+    expect(html).toContain(
+      '<button type="button" class="operation-icon-button stop" aria-label="停止" title="停止">',
+    );
+    expect(html).toContain('stroke="#ff7d9c"');
     expect(html).not.toContain("開始へ");
     expect(html).not.toContain("解除の手順へ");
   });
@@ -45,7 +49,10 @@ describe("operation bar states", () => {
     const html = render({});
     expect(html).toContain("PAPER運用：停止中");
     expect(html).toContain("operation-bar tone-caution");
-    expect(html).toContain('<button type="button">開始へ</button>');
+    expect(html).toContain(
+      '<button type="button" class="operation-icon-button go" aria-label="開始へ" title="開始へ">',
+    );
+    expect(html).toContain('stroke="#dbe7f5"');
     expect(html).not.toContain("解除の手順へ");
     // The bar has no start of its own: the only control command it
     // can issue is stop (see the wiring test below as well).
@@ -57,11 +64,16 @@ describe("operation bar states", () => {
     const emergency = render({ emergency: true });
     expect(emergency).toContain("PAPER運用：緊急停止中");
     expect(emergency).toContain("operation-bar tone-alert");
-    expect(emergency).toContain('<button type="button">解除の手順へ</button>');
+    expect(emergency).toContain(
+      '<button type="button" class="operation-icon-button release" aria-label="解除の手順へ" title="解除の手順へ">',
+    );
+    expect(emergency).toContain('stroke="#edc980"');
     const safety = render({ error: "UPSTREAM_HTTP_504" });
     expect(safety).toContain("PAPER運用：安全停止中");
     expect(safety).toContain("operation-bar tone-alert");
-    expect(safety).toContain('<button type="button">解除の手順へ</button>');
+    expect(safety).toContain(
+      '<button type="button" class="operation-icon-button release" aria-label="解除の手順へ" title="解除の手順へ">',
+    );
     // A stopped state never offers the in-place stop or a start.
     expect(emergency).not.toContain("開始へ");
     expect(safety).not.toContain("開始へ");
@@ -93,7 +105,9 @@ describe("operation bar wiring (main.tsx)", () => {
     // Before connecting there is no main content at all, so the
     // bar cannot appear on the login screen.
     expect(main).toContain('<main className="login">');
-    expect(barAt).toBeGreaterThan(main.indexOf('<main className="has-avatar">'));
+    expect(barAt).toBeGreaterThan(
+      main.indexOf('<main className="has-avatar">'),
+    );
   });
 
   it("feeds the live runtime and jumps via the app tab switch", () => {
@@ -113,5 +127,15 @@ describe("operation bar wiring (main.tsx)", () => {
     expect(block).toContain("justify-content: space-between;");
     expect(block).not.toContain("position:");
     expect(css).toContain("nav.has-avatar {\n  padding-top: 70px;\n}");
+  });
+
+  it("sizes the bar's icon button at 30px, the shared icon button at 38px", () => {
+    expect(css).toContain(
+      ".operation-bar .operation-icon-button {\n  width: 30px;\n  height: 30px;\n  min-height: 30px;\n  border-radius: 9px;\n}",
+    );
+    expect(css).toContain(
+      "\n.operation-icon-button {\n  display: inline-flex;",
+    );
+    expect(css).toContain("width: 38px;\n  height: 38px;\n  min-height: 38px;");
   });
 });
