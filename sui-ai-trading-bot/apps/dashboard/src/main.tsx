@@ -15,7 +15,7 @@ import {
   errorCode,
 } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
-import { SettingsPage, SettingsChanges } from "./SettingsPage.tsx";
+import { SettingsPage } from "./SettingsPage.tsx";
 import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed } from "./AgentNarration.tsx";
 import { NAV_SHORT_LABELS, NavTabIcon } from "./navTabs.tsx";
@@ -23,6 +23,7 @@ import { MarketDataPanel } from "./MarketDataPanel.tsx";
 import { PriceChart } from "./PriceChart.tsx";
 import { BacktestComparison } from "./BacktestComparison.tsx";
 import { ProfitGuardPanel } from "./ProfitGuardPanel.tsx";
+import { StrategyPanel, useIndicatorHistory } from "./StrategyPanel.tsx";
 type State = ReturnType<BotEngine["snapshot"]>;
 const NAV_TABS = [
   "Live",
@@ -172,27 +173,6 @@ function Chart(props: {
     <IndicatorChart {...props} />
   );
 }
-function DecisionView({ value }: { value: unknown }) {
-  if (!value || typeof value !== "object")
-    return <p>判定はまだありません。市場データの取得をお待ちください。</p>;
-  const d = value as Record<string, unknown>;
-  return (
-    <div>
-      <p>取引判定：{label(d.action)}</p>
-      <p>
-        理由：
-        <Reason code={String(d.reason ?? "STRATEGY_WAIT")} />
-      </p>
-      <p>判定日時：{dateTime(String(d.timestamp))}</p>
-      <p>
-        確信度：{percent(d.confidence as number)} ／ 損切り：
-        {percent(d.stopLossPct as number)} ／ 利確：
-        {percent(d.takeProfitPct as number)}
-      </p>
-      {d.sellPurpose != null && <p>売却目的：{label(d.sellPurpose)}</p>}
-    </div>
-  );
-}
 function OrderHistory({ orders }: { orders: Record<string, unknown>[] }) {
   if (!orders.length) return <p>注文はまだありません。</p>;
   return (
@@ -279,6 +259,11 @@ function App() {
   // operations tab (see useOperationsFeed). It polls only while
   // logged in.
   const operations = useOperationsFeed(api, token !== "");
+  // Short indicator history for the strategy tab's mini charts,
+  // accumulated at the App level so tab switches keep it.
+  const indicatorHistory = useIndicatorHistory(
+    operations.data?.decision ?? null,
+  );
   async function refresh() {
     const feed = feedRef.current;
     if (!feed) return;
@@ -576,28 +561,11 @@ function App() {
                   </>
                 )}
                 {activeTab === "Strategy" && (
-                  <>
-                    <ProfitGuardPanel data={data} />
-                    <section>
-                      <h3>ルールベース戦略</h3>
-                      <p>
-                        EMA20 /
-                        EMA50、RSIの閾値交差、MACD方向、出来高異常を組み合わせます。
-                      </p>
-                      <DecisionView value={data.decision} />
-                      <h3>戦略パラメータ</h3>
-                      <SettingsChanges
-                        before={data.settings}
-                        after={data.settings}
-                        keys={
-                          Object.keys(
-                            data.settings,
-                          ) as (keyof State["settings"])[]
-                        }
-                      />
-                      <p>DeepSeek：未実装（拡張用インターフェースのみ）</p>
-                    </section>
-                  </>
+                  <StrategyPanel
+                    data={data}
+                    telemetry={operations.data?.decision ?? null}
+                    history={indicatorHistory}
+                  />
                 )}
                 {activeTab === "Trading History" && (
                   <>
