@@ -5,8 +5,7 @@
   font-synthesis: none;
 }
 main,
-header,
-footer {
+header {
   overflow-wrap: anywhere;
 }
 .cards {
@@ -136,7 +135,7 @@ nav .active {
 main {
   max-width: 1400px;
   margin: auto;
-  padding: 12px 5% 80px;
+  padding: 12px 5% 24px;
 }
 .title {
   display: flex;
@@ -193,6 +192,59 @@ section svg {
   background: #3d2028;
   color: #ffbac4;
   border-radius: 8px;
+}
+/* Connectivity strip (dashboard only): the safety message and the
+   headline chips stay on one or two lines, with the full detail list
+   one expansion away. Tones come from connectivityStatus() so an
+   abnormal state (communication failure, safety or emergency stop)
+   reads by color as well as by text. */
+.connectivity-strip {
+  padding: 14px 22px;
+}
+.connectivity-strip-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.connectivity-strip-head h2 {
+  font-size: 15px;
+  margin: 0;
+}
+.connectivity-strip-head p {
+  margin: 0;
+}
+.connectivity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.connectivity-chips li {
+  border: 1px solid #263448;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  color: #a7c5d9;
+}
+.connectivity-strip.tone-alert {
+  border-color: #7a3040;
+  background: #331a24;
+}
+.connectivity-strip.tone-caution {
+  border-color: #7a5c1e;
+  background: #2e2511;
+}
+.connectivity-strip.tone-ok {
+  border-color: #1f5c4d;
+}
+.connectivity-details summary {
+  min-height: 0;
+  padding: 8px 0 0;
+  font-size: 13px;
+  color: #a7c5d9;
 }
 pre {
   font-size: 12px;
@@ -256,17 +308,6 @@ th {
   display: grid;
   place-items: center;
   color: #8196a8;
-}
-footer {
-  position: fixed;
-  bottom: 0;
-  width: 100%;
-  padding: 12px;
-  background: #0c1622;
-  border-top: 1px solid #263448;
-  color: #8fa7b9;
-  font-size: 11px;
-  text-align: center;
 }
 @media (max-width: 800px) {
   .cards {
@@ -490,15 +531,9 @@ footer {
   header button {
     min-height: 44px;
   }
-  /* Keep the end of the page clear of the fixed bar; the footer,
-     fixed on desktop, flows at the end of the page on mobile
-     instead of colliding with the bar. */
+  /* Keep the end of the page clear of the fixed bottom tab bar. */
   main {
     padding-bottom: calc(84px + env(safe-area-inset-bottom));
-  }
-  footer {
-    position: static;
-    margin-bottom: calc(72px + env(safe-area-inset-bottom));
   }
   .easy-settings .controls {
     flex-direction: column;

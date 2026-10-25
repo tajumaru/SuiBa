@@ -51,6 +51,8 @@ const code = (value: string) =>
  */
 export interface DecisionTelemetry {
   evaluatedAt: number;
+  /** Closed five-minute candle time in milliseconds. Evidence stores its
+   * opening time in seconds, matching the strategy's Candle contract. */
   candleTimestamp: number;
   action: TradingDecision["action"];
   reason: string;
@@ -896,13 +898,16 @@ export class OperationMonitor {
       "takeProfit",
     ] as const;
     if (!conditionKeys.every((k) => typeof cond[k] === "boolean")) return null;
+    const candleTimestamp = (e.candleTimestamp + 300) * 1000;
     if (
       e.evaluatedAt <= 0 ||
       e.evaluatedAt > now ||
       now - e.evaluatedAt > monitoringLimits.marketStaleMs ||
       e.candleTimestamp <= 0 ||
-      e.candleTimestamp > e.evaluatedAt ||
-      now - e.candleTimestamp > monitoringLimits.marketStaleMs ||
+      !Number.isSafeInteger(e.candleTimestamp) ||
+      !Number.isSafeInteger(candleTimestamp) ||
+      candleTimestamp > e.evaluatedAt ||
+      now - candleTimestamp > monitoringLimits.marketStaleMs ||
       e.inputs.price <= 0 ||
       (entry !== null && entry <= 0) ||
       cur.ema20 <= 0 ||
@@ -932,7 +937,7 @@ export class OperationMonitor {
       return null;
     return {
       evaluatedAt: e.evaluatedAt,
-      candleTimestamp: e.candleTimestamp,
+      candleTimestamp,
       action: d.action,
       reason: typeof d.reason === "string" ? d.reason : "",
       selectedRule: e.selectedRule,
