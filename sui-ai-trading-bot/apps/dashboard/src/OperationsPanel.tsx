@@ -48,6 +48,12 @@ export function OperationsView({
         api={api}
         refresh={refresh}
       />
+      {/* The market-data connection diagnostics live only on this tab,
+          at the top of its content (moved out of the diagnostics
+          details and off the other tabs). */}
+      {state?.marketData && (
+        <MarketDataPanel value={state.marketData} unavailable={stale} />
+      )}
       {data.validation && (
         <DeepBookValidation
           report={data.validation}
@@ -218,9 +224,6 @@ export function OperationsView({
       </section>
       <details id="operation-diagnostics" className="operation-diagnostics">
         <summary>詳細診断 · API通信・停止理由・品質・会計・監査ログ</summary>
-        {state?.marketData && (
-          <MarketDataPanel value={state.marketData} unavailable={stale} />
-        )}
         <ConnectivityPanel
           safety={data.safety}
           timing={data.timing}

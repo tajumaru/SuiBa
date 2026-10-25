@@ -1,4 +1,4 @@
-import { ConnectivityPanel } from "./ConnectivityPanel.tsx";
+import { ConnectivityStrip } from "./ConnectivityPanel.tsx";
 import { DashboardClient } from "./dashboardClient.ts";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
@@ -19,7 +19,6 @@ import { SettingsPage } from "./SettingsPage.tsx";
 import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed } from "./AgentNarration.tsx";
 import { NAV_SHORT_LABELS, NavTabIcon } from "./navTabs.tsx";
-import { MarketDataPanel } from "./MarketDataPanel.tsx";
 import { PriceChart } from "./PriceChart.tsx";
 import { BacktestComparison } from "./BacktestComparison.tsx";
 import { ProfitGuardPanel } from "./ProfitGuardPanel.tsx";
@@ -429,16 +428,13 @@ function App() {
                         : "未接続"}
                   </span>
                 </div>
-                {data.marketData &&
-                  activeTab !== "運用検証" &&
-                  activeTab !== "Live" && (
-                    <MarketDataPanel
-                      value={data.marketData}
-                      unavailable={!!error}
-                    />
-                  )}
-                {activeTab !== "運用検証" && activeTab !== "Live" && (
-                  <ConnectivityPanel safety={data.safety} stale={!!error} />
+                {/* The market-data diagnostics live on the operations
+                    tab, and the connectivity safety summary is a thin
+                    strip on the dashboard only, so neither panel follows
+                    the reader across every tab. The tab-independent
+                    emergency / stopped notices below stay as they are. */}
+                {activeTab === "Overview" && (
+                  <ConnectivityStrip safety={data.safety} stale={!!error} />
                 )}
                 {data.runtime.emergency && (
                   <p className="error">
