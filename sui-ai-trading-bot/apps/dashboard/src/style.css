@@ -194,6 +194,59 @@ section svg {
   color: #ffbac4;
   border-radius: 8px;
 }
+/* Connectivity strip (dashboard only): the safety message and the
+   headline chips stay on one or two lines, with the full detail list
+   one expansion away. Tones come from connectivityStatus() so an
+   abnormal state (communication failure, safety or emergency stop)
+   reads by color as well as by text. */
+.connectivity-strip {
+  padding: 14px 22px;
+}
+.connectivity-strip-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.connectivity-strip-head h2 {
+  font-size: 15px;
+  margin: 0;
+}
+.connectivity-strip-head p {
+  margin: 0;
+}
+.connectivity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.connectivity-chips li {
+  border: 1px solid #263448;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  color: #a7c5d9;
+}
+.connectivity-strip.tone-alert {
+  border-color: #7a3040;
+  background: #331a24;
+}
+.connectivity-strip.tone-caution {
+  border-color: #7a5c1e;
+  background: #2e2511;
+}
+.connectivity-strip.tone-ok {
+  border-color: #1f5c4d;
+}
+.connectivity-details summary {
+  min-height: 0;
+  padding: 8px 0 0;
+  font-size: 13px;
+  color: #a7c5d9;
+}
 pre {
   font-size: 12px;
   line-height: 1.7;
