@@ -6,6 +6,7 @@ import {
   agentPose,
   currentConditionChips,
   currentWatch,
+  currentWatchScore,
   emptyNarrationState,
   type AgentPose,
   type NarrationState,
@@ -100,6 +101,13 @@ const timeText = (at: number) =>
  * how it has moved since the declaration — or, when there is no
  * watch, why not. Like the chips, it derives only from the fresh
  * decision evidence via currentWatch and vanishes when stale.
+ *
+ * Under the watch strip, a quiet score strip keeps the session's
+ * declaration record （宣言/的中/外れ/進行中） with its counting
+ * definitions, and at a milestone the feed itself pauses for a
+ * ふりかえり entry (purple border, tagged) built from that same
+ * record — both come from agentNarration.ts, never from the
+ * component.
  */
 export function AgentNarrationFeed({
   data,
@@ -169,6 +177,10 @@ export function AgentNarrationFeed({
   const watch = stale
     ? null
     : currentWatch(narration, data.decision, vital.state, now);
+  // The declaration score, under the same freshness rule.
+  const score = stale
+    ? null
+    : currentWatchScore(narration, data.decision, now);
 
   return (
     <section className="agent-feed" aria-label="エージェント実況">
@@ -214,6 +226,29 @@ export function AgentNarrationFeed({
           <span className="agent-feed-watch-detail">{watch.detail}</span>
         </div>
       )}
+      {score && (
+        <div className="agent-feed-score" aria-label="宣言の成績">
+          <span className="agent-feed-score-item">
+            <small>宣言</small>
+            {score.declared}回
+          </span>
+          <span className="agent-feed-score-item hit">
+            <small>的中</small>
+            {score.hits}
+          </span>
+          <span className="agent-feed-score-item miss">
+            <small>外れ</small>
+            {score.misses}
+          </span>
+          <span className="agent-feed-score-item prog">
+            <small>進行中</small>
+            {score.inProgress}
+          </span>
+          <span className="agent-feed-score-note">
+            的中＝注目中に成立／外れ＝遠のいて取り下げ。切替先は別の宣言
+          </span>
+        </div>
+      )}
       <div className="agent-feed-list" ref={listRef}>
         {narration.entries.length === 0 ? (
           <p className="agent-feed-empty">
@@ -225,6 +260,9 @@ export function AgentNarrationFeed({
               <time dateTime={new Date(entry.at).toISOString()}>
                 {timeText(entry.at)}
               </time>
+              {entry.kind === "review" && (
+                <span className="agent-feed-entry-tag">ふりかえり</span>
+              )}
               <p>{entry.text}</p>
             </div>
           ))
