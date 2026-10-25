@@ -99,6 +99,82 @@ export function AgentPoseFx({ pose }: { pose: AgentPose }) {
   );
 }
 
+/**
+ * The avatar artwork for the current pose. Only the laptop pose has
+ * a second frame — the same scene with the near hand's index finger
+ * raised — stacked on top of the base frame; style.css flips the
+ * two in a two-frame typing loop (about 0.26s per frame) purely with
+ * CSS keyframes, and only when reduced motion is not requested.
+ * Under prefers-reduced-motion the second frame rests invisible,
+ * so the laptop pose is the still base frame, like every other
+ * pose's single image.
+ */
+export function AgentAvatarArtwork({ pose }: { pose: AgentPose }) {
+  return (
+    <>
+      <img src={POSE_IMAGE[pose]} alt="" />
+      {pose === "laptop" && (
+        <img className="agent-avatar-typing" src={imgLaptopTyping} alt="" />
+      )}
+    </>
+  );
+}
+
+/**
+ * Pill dot tone per pose, in the dashboard's usual state colours:
+ * the laptop pose (awake at the desk, watching) burns green, the
+ * pointing poses (a condition just clicked, or the hunt closing in)
+ * burn gold, and the sleeping / unconfirmed poses stay grey.
+ */
+const AVATAR_DOT_TONE: Record<AgentPose, "run" | "near" | "stop"> = {
+  normal: "stop",
+  point: "near",
+  pointSmile: "near",
+  sleep: "stop",
+  laptop: "run",
+};
+
+/**
+ * The narration character as a round avatar docked at the top
+ * centre of the app header (main.tsx renders it on every tab): the
+ * pose artwork clipped to a circle and gently bobbing, with the
+ * pose's status label — the same POSE_LABEL the feed stage used to
+ * show — in a pill underneath. The detailed expression overlay of
+ * the old in-feed stage (a Zzz stream, a snot bubble, fingertip
+ * stars positioned on the artwork) does not fit a 92px circle, so
+ * the avatar keeps only two coarse marks: a floating "Zzz" while
+ * asleep and a twinkling star while pointing, drawn as plain spans
+ * keyed to the pose-* class in style.css. The artwork itself is
+ * decorative (the pill carries the status text), so the circle is
+ * aria-hidden. Motion is defined only under
+ * prefers-reduced-motion: no-preference in style.css; under reduce
+ * everything rests still and the marks stay as faint marks.
+ */
+export function AgentHeaderAvatar({ pose }: { pose: AgentPose }) {
+  return (
+    <div className="agent-avatar-dock">
+      <div
+        className={`agent-avatar pose-${pose}`}
+        data-pose={pose}
+        aria-hidden="true"
+      >
+        <div className="agent-avatar-bob">
+          <AgentAvatarArtwork pose={pose} />
+        </div>
+        <span className="agent-avatar-zzz">Zzz</span>
+        <span className="agent-avatar-star">✦</span>
+      </div>
+      <p className="agent-avatar-pill" role="status">
+        <span
+          className={`agent-avatar-dot tone-${AVATAR_DOT_TONE[pose]}`}
+          aria-hidden="true"
+        />
+        {POSE_LABEL[pose]}
+      </p>
+    </div>
+  );
+}
+
 const timeText = (at: number) =>
   new Intl.DateTimeFormat("ja-JP", {
     timeZone: "Asia/Tokyo",
@@ -151,9 +227,13 @@ const timeText = (at: number) =>
 export function AgentNarrationFeed({
   data,
   stale,
+  onPoseChange,
 }: {
   data: OperationsSnapshot;
   stale: boolean;
+  /** Reports the derived pose to the app shell (the header avatar),
+   * so the avatar and the feed always agree on the pose. */
+  onPoseChange?: (pose: AgentPose) => void;
 }) {
   const [narration, setNarration] = useState<NarrationState>(() =>
     emptyNarrationState(),
@@ -207,6 +287,9 @@ export function AgentNarrationFeed({
 
   const vital = botVital(data, stale, now, receivedAt);
   const pose = agentPose(narration, data, vital, now);
+  useEffect(() => {
+    onPoseChange?.(pose);
+  }, [pose, onPoseChange]);
   // Buy-condition chips come from the same fresh decision evidence
   // as the narration; a stale display shows no chips at all.
   const chips = stale

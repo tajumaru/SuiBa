@@ -17,7 +17,8 @@ import {
 import { Reason } from "./Reason.tsx";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
-import { AgentNarrationFeed } from "./AgentNarration.tsx";
+import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
+import type { AgentPose } from "./agentNarration.ts";
 import { NAV_SHORT_LABELS, NavTabIcon } from "./navTabs.tsx";
 import { PriceChart } from "./PriceChart.tsx";
 import { BacktestComparison } from "./BacktestComparison.tsx";
@@ -229,6 +230,11 @@ function App() {
     setToken("");
     setData(null);
   };
+  // The header avatar's pose, reported by the narration feed — the
+  // one place that advances the narration state — so the header and
+  // the feed can never show different poses. Before the feed first
+  // reports (no snapshot yet), the unconfirmed "normal" pose shows.
+  const [agentPose, setAgentPose] = useState<AgentPose>("normal");
   const feedRef = useRef<DashboardClient | null>(null),
     serialRef = useRef(0),
     viewRef = useRef({ tab: activeTab, timeframe });
@@ -337,6 +343,11 @@ function App() {
             ログアウト
           </button>
         )}
+        {/* The narration character lives in the header as a round
+            avatar docked at the top centre, on every tab — but only
+            once connected: the login screen has no bot state to
+            show, so no avatar (and no placeholder) is rendered. */}
+        {token && <AgentHeaderAvatar pose={agentPose} />}
       </header>
       {!token ? (
         <main className="login">
@@ -365,7 +376,7 @@ function App() {
         </main>
       ) : (
         <>
-          <nav>
+          <nav className="has-avatar">
             {NAV_TABS.map((t) => {
               const formal = label(t) === "未確認" ? t : label(t);
               return (
@@ -389,7 +400,7 @@ function App() {
               ログアウト
             </button>
           </nav>
-          <main>
+          <main className="has-avatar">
             {channelError && (
               <p role="alert" className="error">
                 {channelError}
@@ -471,6 +482,7 @@ function App() {
                     <AgentNarrationFeed
                       data={operations.data}
                       stale={!!operations.error}
+                      onPoseChange={setAgentPose}
                     />
                   ) : (
                     <p role="status">

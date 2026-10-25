@@ -60,6 +60,7 @@ body {
   margin: 0;
 }
 header {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 24px;
@@ -124,6 +125,14 @@ nav button {
 nav .active {
   background: #173448;
   color: #72d1ff;
+}
+/* While connected, the agent avatar docks half below the header's
+   bottom edge (see .agent-avatar-dock): the tab bar's top padding
+   grows so the tabs start below the avatar's pill instead of
+   behind it. The nav only exists while connected — exactly when
+   the avatar does — so the clearance needs no other condition. */
+nav.has-avatar {
+  padding-top: 78px;
 }
 /* Mobile bottom-bar pieces (icon, short label, header logout link):
    hidden until the <= 600px rules at the bottom turn them on. */
@@ -534,6 +543,12 @@ th {
   /* Keep the end of the page clear of the fixed bottom tab bar. */
   main {
     padding-bottom: calc(84px + env(safe-area-inset-bottom));
+  }
+  /* On mobile the tab bar is fixed to the bottom, so the header
+     avatar's clearance falls on the top of the page instead (the
+     desktop clearance lives on the tab bar, see nav.has-avatar). */
+  main.has-avatar {
+    padding-top: 78px;
   }
   .easy-settings .controls {
     flex-direction: column;
@@ -1467,6 +1482,176 @@ th {
    the feed history survives tab switches. */
 .narration-tab[hidden] {
   display: none;
+}
+/* Agent header avatar: the narration character as a round avatar
+   docked at the top centre of the header, half floating over the
+   header's bottom edge, with its status pill underneath (see
+   AgentHeaderAvatar). The dock is positioned against the header;
+   the tab bar (or, on mobile, the page top) carries the extra top
+   padding that keeps following content clear of it — see
+   nav.has-avatar and main.has-avatar. The artwork is clipped to
+   the circle by the bob wrapper, whose transform carries the
+   gentle bob so the two typing frames never drift apart. The
+   detailed expression marks of the old in-feed stage do not fit a
+   92px circle, so only two coarse marks remain: a floating "Zzz"
+   while asleep and a twinkling star while pointing. Motion lives
+   only in the no-preference block below; under
+   prefers-reduced-motion everything rests still, the typing frame
+   stays invisible, and the Zzz / star marks rest as faint marks. */
+.agent-avatar-dock {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translate(-50%, 50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 5;
+  pointer-events: none;
+}
+.agent-avatar {
+  position: relative;
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  border: 3px solid #344e65;
+  background: #12161f;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+.agent-avatar-bob {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+}
+.agent-avatar-bob img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* Second frame of the laptop pose (AgentAvatarArtwork): the same
+   scene with the near hand's index finger raised, stacked exactly
+   on the base frame. It rests invisible; only when motion is
+   allowed does it flip against the base frame in a two-frame
+   typing loop (0.52s per cycle, about 0.26s per frame). */
+.agent-avatar-bob img.agent-avatar-typing {
+  opacity: 0;
+}
+.agent-avatar-zzz {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  font-weight: 800;
+  font-size: 16px;
+  line-height: 1;
+  color: #9fd0ff;
+  opacity: 0;
+}
+.agent-avatar-star {
+  position: absolute;
+  top: -4px;
+  right: -2px;
+  font-size: 15px;
+  line-height: 1;
+  color: #ffd166;
+  opacity: 0;
+}
+.agent-avatar.pose-sleep .agent-avatar-zzz {
+  opacity: 0.9;
+}
+.agent-avatar.pose-point .agent-avatar-star,
+.agent-avatar.pose-pointSmile .agent-avatar-star {
+  opacity: 0.95;
+}
+.agent-avatar-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 0 0;
+  padding: 4px 12px;
+  background: rgba(10, 18, 32, 0.88);
+  border: 1px solid #344e65;
+  border-radius: 999px;
+  font-size: 12.5px;
+  white-space: nowrap;
+  color: #dce8f0;
+}
+.agent-avatar-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8fa7b9;
+}
+.agent-avatar-dot.tone-run {
+  background: #43dfb2;
+}
+.agent-avatar-dot.tone-near {
+  background: #ffd166;
+}
+.agent-avatar-dot.tone-stop {
+  background: #8fa7b9;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .agent-avatar-bob {
+    animation: agent-avatar-bob 3.2s ease-in-out infinite;
+  }
+  .agent-avatar-bob img.agent-avatar-typing {
+    animation: agent-avatar-typing 0.52s linear infinite;
+  }
+  .agent-avatar.pose-sleep .agent-avatar-zzz {
+    animation: agent-avatar-zzz 2.6s ease-in-out infinite;
+  }
+  .agent-avatar.pose-point .agent-avatar-star,
+  .agent-avatar.pose-pointSmile .agent-avatar-star {
+    animation: agent-avatar-star 1.6s ease-in-out infinite;
+  }
+  @keyframes agent-avatar-bob {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-3px);
+    }
+  }
+  @keyframes agent-avatar-typing {
+    0%,
+    49.9% {
+      opacity: 0;
+    }
+    50%,
+    100% {
+      opacity: 1;
+    }
+  }
+  @keyframes agent-avatar-zzz {
+    0% {
+      opacity: 0;
+      transform: translateY(3px) scale(0.8);
+    }
+    30% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-8px) scale(1.1);
+    }
+  }
+  @keyframes agent-avatar-star {
+    0%,
+    100% {
+      opacity: 0.15;
+      transform: scale(0.8);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.15);
+    }
+  }
 }
 /* Agent narration feed: a character stage plus a chat-style timeline
    on its own tab. The stage background is the character
