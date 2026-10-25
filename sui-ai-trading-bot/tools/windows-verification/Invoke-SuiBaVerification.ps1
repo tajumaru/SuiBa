@@ -396,7 +396,10 @@ function Finalize-SuiBaRun {
         # Final read-only audit inside the dedicated container (uses the
         # per-run secret file inside the container; the token value is
         # never printed or saved by the audit script itself).
-        $audit = Invoke-Docker @('compose', '-p', $script:State.Project, '-f', (Join-Path (Join-Path $script:RepoRoot 'docker') 'compose.preflight-30m.yaml'), '-f', $script:State.OverrideFile, 'exec', '-T', 'bot', 'node', 'scripts/preflight-audit.cjs') -TimeoutSec 120
+        $auditArgs = @('compose', '-p', $script:State.Project, '-f', (Join-Path (Join-Path $script:RepoRoot 'docker') 'compose.preflight-30m.yaml'), '-f', $script:State.OverrideFile, 'exec', '-T', 'bot', 'node', 'scripts/preflight-audit.cjs')
+        # Never add an upstream read/delay to an abnormal or user-requested stop.
+        if ($Reason -eq 'COMPLETED') { $auditArgs += '--end-book' }
+        $audit = Invoke-Docker $auditArgs -TimeoutSec 120
         if ($audit.ExitCode -eq 0 -and $audit.Output.Count -gt 0) {
             [IO.File]::WriteAllText((Join-Path $evidenceDir 'audit.json'), ($audit.Output -join "`n"), [Text.UTF8Encoding]::new($false))
         } else {
@@ -427,11 +430,17 @@ function Finalize-SuiBaRun {
 
     # Existing summarizer, run inside a one-off container from the same
     # verified image so the Windows host needs no Node.js installation.
+    $contextPath = Join-Path $evidenceDir 'run-context.json'
+    $context = [ordered]@{ schemaVersion = 1; runId = $script:State.RunId; project = $script:State.Project
+        sha = $script:State.Sha; imageId = $script:State.ImageId; durationMinutes = $script:State.DurationMinutes
+        measurementMode = 'passive-health-cache-v1'; perfDetailEnabled = [bool]$script:State.PerfDetailEnabled
+        reason = $Reason }
+    [IO.File]::WriteAllText($contextPath, ($context | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
     $auditPath = Join-Path $evidenceDir 'audit.json'
     $evidencePath = Join-Path $evidenceDir 'preflight-evidence.jsonl'
     $inspectPath = Join-Path $evidenceDir 'inspection.json'
     if ((Test-Path $auditPath) -and (Test-Path $evidencePath) -and (Test-Path $inspectPath)) {
-        $sum = Invoke-Docker @('run', '--rm', '-v', "${evidenceDir}:/evidence:ro", '-v', "${reportsDir}:/out", '--entrypoint', 'node', $script:State.ImageId, 'scripts/summarize-preflight.cjs', '/evidence/preflight-evidence.jsonl', '/evidence/audit.json', '/evidence/inspection.json', '/out/preflight-summary.json') -TimeoutSec 180
+        $sum = Invoke-Docker @('run', '--rm', '-v', "${evidenceDir}:/evidence:ro", '-v', "${reportsDir}:/out", '--entrypoint', 'node', $script:State.ImageId, 'scripts/summarize-preflight.cjs', '/evidence/preflight-evidence.jsonl', '/evidence/audit.json', '/evidence/inspection.json', '/out/preflight-summary.json', '/evidence/run-context.json') -TimeoutSec 180
         if ($sum.ExitCode -eq 0 -and (Test-Path (Join-Path $reportsDir 'preflight-summary.json'))) {
             try { $summaryVerdict = ((Get-Content (Join-Path $reportsDir 'preflight-summary.json') -Raw) | ConvertFrom-Json).verdict } catch { }
         } else {
@@ -646,7 +655,7 @@ try {
     $overrideFile = Join-Path $script:RunDir 'compose.override.yaml'
     $perfDetailFlag = if ($SkipPerfDetail) { '0' } else { '1' }
     $perfThresholdMs = if ($env:SUIBA_WINVERIFY_PERF_THRESHOLD_MS) { $env:SUIBA_WINVERIFY_PERF_THRESHOLD_MS } else { '500' }
-    $overrideYaml = "services:`n  bot:`n    environment:`n      NODE_OPTIONS: `"--import ./scripts/winverify-deadline.mjs`"`n      SUIBA_WINVERIFY_MAX_RUNTIME_MS: `"$maxRuntimeMs`"`n      SUIBA_PERF_DETAIL: `"$perfDetailFlag`"`n      SUIBA_PERF_DETAIL_DIR: `"/app/reports`"`n      SUIBA_PERF_EVENT_LOOP_THRESHOLD_MS: `"$perfThresholdMs`"`n"
+    $overrideYaml = "services:`n  bot:`n    environment:`n      NODE_OPTIONS: `"--import ./scripts/winverify-deadline.mjs`"`n      SUIBA_WINVERIFY_MAX_RUNTIME_MS: `"$maxRuntimeMs`"`n      SUIBA_PERF_DETAIL: `"$perfDetailFlag`"`n      SUIBA_WINVERIFY_RUN_ID: `"$runId`"`n      SUIBA_PREFLIGHT_PROJECT: `"$project`"`n      SUIBA_WINVERIFY_DURATION_MINUTES: `"$DurationMinutes`"`n      SUIBA_PREFLIGHT_MEASUREMENT_MODE: `"passive-health-cache-v1`"`n      SUIBA_PERF_DETAIL_DIR: `"/app/reports`"`n      SUIBA_PERF_EVENT_LOOP_THRESHOLD_MS: `"$perfThresholdMs`"`n"
     [IO.File]::WriteAllText($overrideFile, $overrideYaml, [Text.UTF8Encoding]::new($false))
     $script:State.OverrideFile = $overrideFile
 
@@ -716,7 +725,13 @@ try {
     Write-Log 'First sample verified: running=false, orders=0, session=null.'
 
     # ------------------------------------------------------------ monitor
-    $deadline = $startedAt.AddMinutes($DurationMinutes)
+    # Quality duration starts at the first actual observer sample, not Compose up.
+    $firstSampleAt = [long](@($allRows | Where-Object { $_.kind -eq 'sample' })[0].at)
+    $observationStart = [DateTimeOffset]::FromUnixTimeMilliseconds($firstSampleAt)
+    $deadline = $observationStart.AddMinutes($DurationMinutes).LocalDateTime
+    $script:State.ObservationStartedAtUtc = $observationStart.UtcDateTime.ToString('o')
+    $script:State.ObservationDeadlineUtc = $observationStart.AddMinutes($DurationMinutes).UtcDateTime.ToString('o')
+    Save-State
     $reason = 'COMPLETED'
     $copyFailStreak = 0
     $unhealthyStreak = 0
@@ -725,7 +740,12 @@ try {
     $diskAbort = $false; $diskAbortReason = ''
     $latestMetrics = $null
 
-    while ((Get-Date) -lt $deadline) {
+    # A stop request can arrive during the initial sample wait, before this loop.
+    if (Test-Path (Join-Path $script:RunDir 'STOP_REQUEST')) {
+        $reason = 'USER_STOPPED'
+        Add-Incident -Reason 'USER_STOPPED' -Detail 'Stop requested before monitoring.'
+    }
+    while ($reason -eq 'COMPLETED' -and (Get-Date) -lt $deadline) {
         Start-Sleep -Seconds $PollSeconds
         $stopReq = Join-Path $script:RunDir 'STOP_REQUEST'
         if (Test-Path $stopReq) { $reason = 'USER_STOPPED'; Add-Incident -Reason 'USER_STOPPED' -Detail 'Stop requested via Stop bat.'; break }
