@@ -1,14 +1,10 @@
 import { timeSql } from "../../shared/src/api-timing.ts";
 import { DatabaseSync } from "node:sqlite";
+import { mkdirSync } from "node:fs";
 import {
-  mkdirSync,
-  openSync,
-  writeFileSync,
-  fsyncSync,
-  closeSync,
-  readFileSync,
-} from "node:fs";
-import { createHash } from "node:crypto";
+  persistBookArchive,
+  readVerifiedBookArchive,
+} from "./book-history-archive.ts";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
@@ -436,7 +432,10 @@ export class BotDatabase {
       return { deleted: 0, archivePath: null, sha256: null };
     return this.transaction(() => {
       // Capture and delete the exact same rows under the database write lock.
-      if (this.runtime().running)
+      if (
+        this.runtime().running ||
+        this.get<{ resumePending?: boolean }>("paper_safety")?.resumePending
+      )
         throw new Error("BOOK_MAINTENANCE_REQUIRES_STOP");
       const rows = this.prepare(
         "SELECT id,timestamp,json FROM book_observations ORDER BY timestamp,id",
@@ -449,30 +448,19 @@ export class BotDatabase {
       );
       if (!remove.length)
         return { deleted: 0, archivePath: null, sha256: null };
-      const bytes = Buffer.from(
-        JSON.stringify({ version: 1, createdAt: now, policy, rows: remove }),
-      );
-      // Exclusive creation refuses existing files, including a mistakenly selected database path.
-      const fd = openSync(archivePath, "wx");
-      try {
-        writeFileSync(fd, bytes);
-        fsyncSync(fd);
-      } finally {
-        closeSync(fd);
-      }
-      const sha256 = createHash("sha256").update(bytes).digest("hex");
-      if (
-        createHash("sha256").update(readFileSync(archivePath)).digest("hex") !==
-        sha256
-      )
-        throw new Error("BOOK_ARCHIVE_VERIFICATION_FAILED");
+      const durable = persistBookArchive(archivePath, {
+        version: 1,
+        createdAt: now,
+        policy,
+        rows: remove,
+      });
       const statement = this.prepare(
         "DELETE FROM book_observations WHERE id=? AND timestamp=? AND json=?",
       );
       for (const row of remove)
         if (statement.run(row.id, row.timestamp, row.json).changes !== 1)
           throw new Error("BOOK_ARCHIVE_ROW_CHANGED");
-      const receipt = { deleted: remove.length, archivePath, sha256 };
+      const receipt = { deleted: remove.length, ...durable };
       this.append(
         "book_history_archives",
         randomUUID(),
@@ -480,6 +468,38 @@ export class BotDatabase {
         now,
       );
       return receipt;
+    });
+  }
+  /** Explicit restore only: never overwrites conflicting rows; rerunning exact rows is idempotent. */
+  restoreBookHistoryArchive(archivePath: string, expectedSha256: string) {
+    const archive = readVerifiedBookArchive(archivePath, expectedSha256);
+    return this.transaction(() => {
+      if (
+        this.runtime().running ||
+        this.get<{ resumePending?: boolean }>("paper_safety")?.resumePending
+      )
+        throw new Error("BOOK_MAINTENANCE_REQUIRES_STOP");
+      let restored = 0;
+      for (const row of archive.rows) {
+        const existing = this.prepare(
+          "SELECT timestamp,json FROM book_observations WHERE id=?",
+        ).get(row.id);
+        if (existing) {
+          if (
+            existing.timestamp !== row.timestamp ||
+            existing.json !== row.json
+          )
+            throw new Error("BOOK_ARCHIVE_RESTORE_CONFLICT");
+        } else {
+          this.prepare("INSERT INTO book_observations VALUES(?,?,?)").run(
+            row.id,
+            row.timestamp,
+            row.json,
+          );
+          restored++;
+        }
+      }
+      return { restored, alreadyPresent: archive.rows.length - restored };
     });
   }
   range<T>(table: EventTable, from: number, until: number): T[] {

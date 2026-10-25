@@ -65,42 +65,48 @@ it("preserves all history with retention disabled", () => {
   ).toBe(0);
   expect(db.history("book_observations").length).toBe(10);
 });
-it("archives exact expired rows durably, preserves boundary/latest and decision evidence", () => {
-  const { db, path } = fixture();
-  const receipt = db.archiveAndPruneBookHistory(
-    path,
-    { retentionMs: 5000, maxRows: 0 },
-    10000,
-  );
-  expect(receipt.deleted).toBe(4);
-  const archive = JSON.parse(readFileSync(path, "utf8"));
-  expect(archive.rows.map((r: { id: string }) => r.id)).toEqual(
-    [1, 2, 3, 4].map((i) => `observation:${i}`),
-  );
-  expect(JSON.parse(archive.rows[0].json).observedAt).toBe(1000);
-  expect(db.range("book_observations", 5000, 10000)).toHaveLength(6);
-  expect(db.history("strategy_decisions")[0]).toMatchObject({
-    evidence: { reason: "preserved" },
-  });
-  expect(db.history("book_history_archives")[0]).toMatchObject({
-    sha256: receipt.sha256,
-    deleted: 4,
-  });
-});
-it("applies maxRows only after archive and can reconstruct the exact original comparison input", () => {
-  const { db, path } = fixture();
-  const before = db.range("book_observations", 0, 10000);
-  expect(
-    db.archiveAndPruneBookHistory(path, { retentionMs: 0, maxRows: 3 }, 10000)
-      .deleted,
-  ).toBe(7);
-  const archived = JSON.parse(readFileSync(path, "utf8")).rows.map(
-    (r: { json: string }) => JSON.parse(r.json),
-  );
-  expect([...archived, ...db.range("book_observations", 0, 10000)]).toEqual(
-    before,
-  );
-});
+it.runIf(process.platform === "linux")(
+  "archives exact expired rows durably, preserves boundary/latest and decision evidence",
+  () => {
+    const { db, path } = fixture();
+    const receipt = db.archiveAndPruneBookHistory(
+      path,
+      { retentionMs: 5000, maxRows: 0 },
+      10000,
+    );
+    expect(receipt.deleted).toBe(4);
+    const archive = JSON.parse(readFileSync(path, "utf8"));
+    expect(archive.rows.map((r: { id: string }) => r.id)).toEqual(
+      [1, 2, 3, 4].map((i) => `observation:${i}`),
+    );
+    expect(JSON.parse(archive.rows[0].json).observedAt).toBe(1000);
+    expect(db.range("book_observations", 5000, 10000)).toHaveLength(6);
+    expect(db.history("strategy_decisions")[0]).toMatchObject({
+      evidence: { reason: "preserved" },
+    });
+    expect(db.history("book_history_archives")[0]).toMatchObject({
+      sha256: receipt.sha256,
+      deleted: 4,
+    });
+  },
+);
+it.runIf(process.platform === "linux")(
+  "applies maxRows only after archive and can reconstruct the exact original comparison input",
+  () => {
+    const { db, path } = fixture();
+    const before = db.range("book_observations", 0, 10000);
+    expect(
+      db.archiveAndPruneBookHistory(path, { retentionMs: 0, maxRows: 3 }, 10000)
+        .deleted,
+    ).toBe(7);
+    const archived = JSON.parse(readFileSync(path, "utf8")).rows.map(
+      (r: { json: string }) => JSON.parse(r.json),
+    );
+    expect([...archived, ...db.range("book_observations", 0, 10000)]).toEqual(
+      before,
+    );
+  },
+);
 it("never deletes when archive creation fails or would overwrite a file", () => {
   const { db, path } = fixture();
   writeFileSync(path, "existing");
@@ -111,18 +117,26 @@ it("never deletes when archive creation fails or would overwrite a file", () => 
   expect(readFileSync(path, "utf8")).toBe("existing");
   expect(db.history("book_history_archives")).toHaveLength(0);
 });
-it("rolls back deletion if archiving receipt fails", () => {
-  const { db, path } = fixture();
-  db.append("book_history_archives", "bad", {});
-  const raw = (db as unknown as { db: import("node:sqlite").DatabaseSync }).db;
-  raw.exec(
-    "CREATE TRIGGER fail_archive BEFORE INSERT ON book_history_archives BEGIN SELECT RAISE(ABORT,'fixture'); END;",
-  );
-  expect(() =>
-    db.archiveAndPruneBookHistory(path, { retentionMs: 1, maxRows: 2 }, 10000),
-  ).toThrow();
-  expect(db.history("book_observations")).toHaveLength(10);
-});
+it.runIf(process.platform === "linux")(
+  "rolls back deletion if archiving receipt fails",
+  () => {
+    const { db, path } = fixture();
+    db.append("book_history_archives", "bad", {});
+    const raw = (db as unknown as { db: import("node:sqlite").DatabaseSync })
+      .db;
+    raw.exec(
+      "CREATE TRIGGER fail_archive BEFORE INSERT ON book_history_archives BEGIN SELECT RAISE(ABORT,'fixture'); END;",
+    );
+    expect(() =>
+      db.archiveAndPruneBookHistory(
+        path,
+        { retentionMs: 1, maxRows: 2 },
+        10000,
+      ),
+    ).toThrow();
+    expect(db.history("book_observations")).toHaveLength(10);
+  },
+);
 it("requires stopped PAPER and rejects malformed retention", () => {
   const { db, path } = fixture();
   expect(() =>

@@ -35,7 +35,7 @@ node --import tsx scripts/book-history-maintenance.ts data/bot.sqlite archives/b
 
 MODEがPAPER以外なら拒否する。期間7日と100000件の上限は引数で設定し、どちらかの条件を超えた古い行が対象。DB runtime.runningもトランザクション内で再確認する。
 
-archiveAndPruneBookHistory()はBEGIN IMMEDIATEで行を固定し、削除候補のID/SQL時刻/JSONを**そのまま**新規専用アーカイブへ保存する。既存ファイルは上書き不可。fsync、再読込、SHA-256照合の後、完全一致する候補だけ削除し、アーカイブのパス/ハッシュ/ポリシーをbook_history_archivesへ同じトランザクションで記録する。書込・検証・receiptの失敗は削除をロールバックする。
+archiveAndPruneBookHistory()はBEGIN IMMEDIATEで行を固定し、削除候補のID/SQL時刻/JSONを**そのまま**新規専用アーカイブへ保存する。既存ファイルは上書き不可。ファイルfsync、再読込、SHA-256照合、Linuxの親ディレクトリfsyncの後、完全一致する候補だけ削除し、アーカイブのパス/ハッシュ/ポリシーをbook_history_archivesへ同じトランザクションで記録する。書込・検証・ディレクトリ同期・receipt・COMMITの失敗は削除をロールバックする。Windowsなど親ディレクトリの同期保証が未対応の環境では削除しない。最終修正の保証範囲・検証・復元手順は[アーカイブ永続化](book-archive-durability.md)を参照。
 
 strategy_decisions、注文、約定、台帳は削除しない。判断のbookObservationIdから、DBまたはアーカイブの同一IDの生板へ結合できる。削除候補は全件アーカイブに残るため、比較用の期間を失わない。比較には各archive.rowsのJSONと現DBの範囲を観測時刻順に連結して使用し、重複ID・同時刻・破損は解消せず検出する。SHA-256をreceiptと照合してから利用する。
 
