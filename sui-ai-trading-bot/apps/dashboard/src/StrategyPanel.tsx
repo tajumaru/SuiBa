@@ -612,7 +612,7 @@ export function StrategyPanel({
       </section>
       <h3 className="strategy-params-title">戦略パラメータ</h3>
       <p className="strategy-lead">
-        設定タブで変更できる値です。バーの印が現在の値、薄い帯が選べる範囲を表します（この画面では変更できません）。
+        このページ下部の「かんたん設定」で変更できる値です。バーの印が現在の値、薄い帯が選べる範囲を表します。
       </p>
       <div className="strategy-groups">
         {STRATEGY_PARAM_GROUPS.map((group) => (

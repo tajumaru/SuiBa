@@ -13,7 +13,6 @@ export const NAV_SHORT_LABELS: Record<string, string> = {
   Overview: "概要",
   Strategy: "戦略",
   "Trading History": "履歴",
-  Settings: "設定",
   運用検証: "検証",
   バックテスト比較: "比較",
 };
@@ -51,14 +50,6 @@ const ICON_BODY: Record<string, React.ReactNode> = {
       <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6.3L3.5 8" />
       <path d="M3.5 3.5V8H8" />
       <path d="M12 8v4.2l2.6 2" />
-    </>
-  ),
-  // 設定: gear (ring, hub and eight teeth).
-  Settings: (
-    <>
-      <circle cx="12" cy="12" r="6.4" />
-      <circle cx="12" cy="12" r="2.3" />
-      <path d="M12 2.7v2.9M12 18.4v2.9M2.7 12h2.9M18.4 12h2.9M5.4 5.4l2.1 2.1M16.5 16.5l2.1 2.1M18.6 5.4l-2.1 2.1M7.5 16.5l-2.1 2.1" />
     </>
   ),
   // 検証 (運用検証): shield with a check.

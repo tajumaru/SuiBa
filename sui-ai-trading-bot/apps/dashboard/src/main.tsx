@@ -29,7 +29,6 @@ const NAV_TABS = [
   "Overview",
   "Strategy",
   "Trading History",
-  "Settings",
   "運用検証",
   "バックテスト比較",
 ];
@@ -219,10 +218,17 @@ function App() {
     [channelError, setChannelError] = useState<string | null>(null),
     [tab, setTab] = useState("Live"),
     [timeframe, setTimeframe] = useState<300 | 900 | 3600>(300);
-  // A tab value that no longer exists (for example a restored
-  // "Chart" from before the chart tab was merged into the
-  // dashboard) falls back to the dashboard instead of breaking.
-  const activeTab = NAV_TABS.includes(tab) ? tab : "Overview";
+  // A tab value that no longer exists falls back instead of
+  // breaking: the settings tab merged into the strategy tab, so a
+  // restored "Settings" opens the strategy tab, and any other
+  // unknown value (for example a restored "Chart" from before the
+  // chart tab was merged into the dashboard) opens the dashboard.
+  const activeTab =
+    tab === "Settings"
+      ? "Strategy"
+      : NAV_TABS.includes(tab)
+        ? tab
+        : "Overview";
   const logout = () => {
     setToken("");
     setData(null);
@@ -438,7 +444,7 @@ function App() {
                 )}
                 {data.runtime.emergency && (
                   <p className="error">
-                    緊急停止中です。原因と接続状態を確認し、設定の「停止状態の解除」から解除後、PAPER運用を手動で開始してください。
+                    緊急停止中です。原因と接続状態を確認し、戦略の「停止状態の解除」から解除後、PAPER運用を手動で開始してください。
                   </p>
                 )}
                 {!data.runtime.running &&
@@ -446,7 +452,7 @@ function App() {
                   !data.runtime.emergency &&
                   !data.safety?.resumePending && (
                     <p>
-                      停止中です。設定で保存済みの条件を確認し、「PAPER運用開始」を押してください。
+                      停止中です。戦略で保存済みの条件を確認し、「PAPER運用開始」を押してください。
                     </p>
                   )}
                 {data.runtime.error && (
@@ -557,11 +563,19 @@ function App() {
                   </>
                 )}
                 {activeTab === "Strategy" && (
-                  <StrategyPanel
-                    data={data}
-                    telemetry={operations.data?.decision ?? null}
-                    history={indicatorHistory}
-                  />
+                  <>
+                    <StrategyPanel
+                      data={data}
+                      telemetry={operations.data?.decision ?? null}
+                      history={indicatorHistory}
+                    />
+                    <SettingsPage
+                      data={data}
+                      api={api}
+                      onSaved={refresh}
+                      control={control}
+                    />
+                  </>
                 )}
                 {activeTab === "Trading History" && (
                   <>
@@ -631,14 +645,6 @@ function App() {
                 )}
                 {activeTab === "運用検証" && (
                   <OperationsFeedView api={api} feed={operations} />
-                )}
-                {activeTab === "Settings" && (
-                  <SettingsPage
-                    data={data}
-                    api={api}
-                    onSaved={refresh}
-                    control={control}
-                  />
                 )}
               </>
             )}
