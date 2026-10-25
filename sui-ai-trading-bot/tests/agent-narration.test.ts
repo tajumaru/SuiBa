@@ -10,11 +10,13 @@ import {
   agentPose,
   currentConditionChips,
   currentWatch,
+  currentWatchScore,
   cycleNarrationText,
   decisionTrail,
   emptyNarrationState,
   entryConditionChips,
   MAX_NARRATION_ENTRIES,
+  reviewNarrationTexts,
   type NarrationState,
 } from "../apps/dashboard/src/agentNarration.ts";
 import type { DecisionTelemetry } from "../apps/worker/src/operations.ts";
@@ -1600,5 +1602,313 @@ describe("buy-condition chips", () => {
     const chips = currentConditionChips(state, fresh, NOW);
     expect(chips).not.toBeNull();
     expect(chips!.map((c) => c.label)).toEqual(["EMA", "RSI", "MACD"]);
+  });
+});
+
+describe("agent narration: watch score and review", () => {
+  /** Feed a sequence of recorded decisions through the narration. */
+  function feed(decisions: (TradingDecision | null)[]) {
+    const { db, monitor } = fixture();
+    let state = emptyNarrationState();
+    for (const dec of decisions) {
+      const d = runningSnapshot(db, monitor, dec);
+      state = advanceNarration(state, d, "alive", NOW);
+    }
+    return state;
+  }
+  const reviews = (state: NarrationState) =>
+    state.entries.filter((e) => e.kind === "review");
+  const macdClicks = {
+    conditions: { histogramImproving: true },
+    histogram: -0.001,
+    previousHistogram: -0.002,
+  };
+
+  it("scores a hit, and the follow-up declaration as a new one", () => {
+    const state = feed([
+      decision({}),
+      decision({ evaluatedAt: NOW - 50_000, ...macdClicks }),
+    ]);
+    // The silent first watch counts as a declaration; the MACD hit
+    // settles it, and the next watch (RSI) is a second declaration.
+    expect(state.watchScore).toMatchObject({
+      declared: 2,
+      hits: 1,
+      misses: 0,
+      unreviewed: 1,
+    });
+    expect(state.watch?.key).toBe("rsiRecovery");
+    expect(reviews(state)).toHaveLength(0);
+  });
+
+  it("scores a miss on withdrawal; the switch target is a new declaration", () => {
+    const state = feed([
+      decision({ rsi: 31 }),
+      decision({ evaluatedAt: NOW - 50_000, rsi: 32 }),
+    ]);
+    expect(state.watchScore).toMatchObject({
+      declared: 2,
+      hits: 0,
+      misses: 1,
+      unreviewed: 1,
+    });
+    expect(state.watch?.key).toBe("histogramImproving");
+  });
+
+  it("a watch that ends silently is neither a hit nor a miss", () => {
+    const state = feed([
+      decision({}),
+      decision({
+        evaluatedAt: NOW - 50_000,
+        conditions: { hasPosition: true },
+        entryPrice: 2.3,
+        price: 2.35,
+      }),
+    ]);
+    expect(state.watch).toBeNull();
+    expect(state.watchScore).toMatchObject({
+      declared: 1,
+      hits: 0,
+      misses: 0,
+      unreviewed: 0,
+    });
+  });
+
+  it("the last condition clicking into a BUY still scores a hit", () => {
+    const state = feed([
+      decision({
+        conditions: { emaUp: true, rsiRecovery: true },
+        ema20: 2.43,
+        ema50: 2.42,
+        rsi: 39,
+        previousRsi: 28,
+        histogram: -0.001,
+        previousHistogram: -0.002,
+      }),
+      decision({
+        evaluatedAt: NOW - 50_000,
+        action: "BUY",
+        selectedRule: "BUY_SIGNAL",
+        conditions: {
+          emaUp: true,
+          rsiRecovery: true,
+          histogramImproving: true,
+        },
+        ema20: 2.43,
+        ema50: 2.42,
+        rsi: 39,
+        previousRsi: 28,
+        histogram: 0.001,
+        previousHistogram: -0.001,
+      }),
+    ]);
+    expect(state.watchScore).toMatchObject({
+      declared: 1,
+      hits: 1,
+      misses: 0,
+      unreviewed: 1,
+    });
+    expect(state.watch).toBeNull();
+    // One settlement is not enough for the BUY early review either.
+    expect(reviews(state)).toHaveLength(0);
+  });
+
+  it("reviews once when three settlements pile up, then resets", () => {
+    const settled = feed([
+      decision({}),
+      decision({ evaluatedAt: NOW - 55_000, ...macdClicks }),
+      decision({
+        evaluatedAt: NOW - 50_000,
+        conditions: { histogramImproving: true, rsiRecovery: true },
+        rsi: 36,
+        previousRsi: 31,
+        histogram: 0.0005,
+        previousHistogram: -0.002,
+      }),
+      decision({
+        evaluatedAt: NOW - 45_000,
+        conditions: { rsiRecovery: true, histogramImproving: true },
+        ema20: 2.3,
+        ema50: 2.42,
+        price: 2.45,
+        histogram: 0.0005,
+        previousHistogram: -0.002,
+      }),
+    ]);
+    // Hit (MACD), hit (RSI), miss (EMA withdrawn): the third
+    // settlement triggers exactly one look-back (two lines).
+    expect(settled.watchScore).toMatchObject({
+      declared: 3,
+      hits: 2,
+      misses: 1,
+      unreviewed: 0,
+    });
+    const lines = reviews(settled);
+    expect(lines).toHaveLength(2);
+    expect(lines[0].text).toBe(
+      "ふりかえり。ここまでの宣言は3回、的中2回、外れ1回。悪くないね",
+    );
+    expect(lines[1].text).toContain("価格は$2.4から$2.45");
+    expect(lines[1].text).toContain("上がってきたね");
+    // One more settlement after the reset does not re-review.
+    const more = feed([
+      decision({}),
+      decision({ evaluatedAt: NOW - 55_000, ...macdClicks }),
+      decision({
+        evaluatedAt: NOW - 50_000,
+        conditions: { histogramImproving: true, rsiRecovery: true },
+        rsi: 36,
+        previousRsi: 31,
+        histogram: 0.0005,
+        previousHistogram: -0.002,
+      }),
+      decision({
+        evaluatedAt: NOW - 45_000,
+        conditions: { rsiRecovery: true, histogramImproving: true },
+        ema20: 2.3,
+        ema50: 2.42,
+        price: 2.45,
+        histogram: 0.0005,
+        previousHistogram: -0.002,
+      }),
+      decision({ evaluatedAt: NOW - 40_000 }),
+      decision({ evaluatedAt: NOW - 35_000, ...macdClicks }),
+    ]);
+    expect(more.watchScore.unreviewed).toBe(1);
+    expect(reviews(more)).toHaveLength(2);
+  });
+
+  it("a BUY milestone reviews early with two unreviewed settlements", () => {
+    const state = feed([
+      decision({}),
+      decision({ evaluatedAt: NOW - 55_000, ...macdClicks }),
+      decision({
+        evaluatedAt: NOW - 50_000,
+        conditions: { emaUp: true, histogramImproving: true },
+        ema20: 2.43,
+        ema50: 2.42,
+        rsi: 50,
+        previousRsi: 44,
+        histogram: 0.0005,
+        previousHistogram: -0.001,
+      }),
+      decision({
+        evaluatedAt: NOW - 45_000,
+        action: "BUY",
+        selectedRule: "BUY_SIGNAL",
+        conditions: {
+          emaUp: true,
+          rsiRecovery: true,
+          histogramImproving: true,
+        },
+        ema20: 2.43,
+        ema50: 2.42,
+        rsi: 39,
+        previousRsi: 28,
+        histogram: 0.001,
+        previousHistogram: -0.001,
+      }),
+    ]);
+    // Hit (MACD), miss (RSI withdrawn, no next watch), then the BUY
+    // itself settles nothing — the milestone alone fires the review.
+    expect(state.watchScore).toMatchObject({
+      declared: 2,
+      hits: 1,
+      misses: 1,
+      unreviewed: 0,
+    });
+    const lines = reviews(state);
+    expect(lines).toHaveLength(2);
+    expect(lines[0].text).toBe(
+      "ふりかえり。ここまでの宣言は2回、的中1回、外れ1回。五分五分だね",
+    );
+    expect(lines[1].text).toContain("最後は3つ揃ったよ");
+  });
+
+  it("a BUY with only one unreviewed settlement does not review", () => {
+    const state = feed([
+      decision({}),
+      decision({ evaluatedAt: NOW - 50_000, ...macdClicks }),
+      decision({
+        evaluatedAt: NOW - 45_000,
+        action: "BUY",
+        selectedRule: "BUY_SIGNAL",
+        conditions: { histogramImproving: true },
+        histogram: 0.001,
+        previousHistogram: -0.001,
+      }),
+    ]);
+    // The watched RSI never clicked in the BUY decision, so the BUY
+    // settles nothing and one past settlement is below the minimum.
+    expect(state.watchScore).toMatchObject({ hits: 1, unreviewed: 1 });
+    expect(reviews(state)).toHaveLength(0);
+  });
+
+  it("currentWatchScore mirrors the record and hides without fresh material", () => {
+    const { db, monitor } = fixture();
+    const d1 = runningSnapshot(db, monitor, decision({}));
+    const state = advanceNarration(emptyNarrationState(), d1, "alive", NOW);
+    expect(currentWatchScore(state, d1.decision, NOW)).toEqual({
+      declared: 1,
+      hits: 0,
+      misses: 0,
+      inProgress: 1,
+    });
+    expect(currentWatchScore(state, null, NOW)).toBeNull();
+    const stale = {
+      ...d1.decision!,
+      evaluatedAt: NOW - 400_000,
+      candleTimestamp: NOW - 500_000,
+    };
+    expect(currentWatchScore(state, stale, NOW)).toBeNull();
+  });
+
+  it("review lines are built only from the recorded facts handed in", () => {
+    const counts = reviewNarrationTexts(
+      { declared: 4, hits: 3, misses: 1 },
+      2.412,
+      2.483,
+      true,
+    );
+    expect(counts[0]).toBe(
+      "ふりかえり。ここまでの宣言は4回、的中3回、外れ1回。悪くないね",
+    );
+    expect(counts).toHaveLength(2);
+    expect(counts[1]).toContain("価格は$2.412から$2.483、+2.94");
+    expect(counts[1]).toContain("最後は3つ揃ったよ");
+    // No recorded start (or current) price: the price line is
+    // omitted entirely rather than invented.
+    expect(
+      reviewNarrationTexts({ declared: 4, hits: 3, misses: 1 }, null, 2.483, false),
+    ).toHaveLength(1);
+    expect(
+      reviewNarrationTexts({ declared: 4, hits: 3, misses: 1 }, 2.412, null, false),
+    ).toHaveLength(1);
+    expect(
+      reviewNarrationTexts({ declared: 4, hits: 3, misses: 1 }, 0, 2.483, false),
+    ).toHaveLength(1);
+    // The verdict follows the recorded balance only.
+    expect(
+      reviewNarrationTexts({ declared: 3, hits: 0, misses: 2 }, null, null, false)[0],
+    ).toContain("外れが多めだなあ");
+    expect(
+      reviewNarrationTexts({ declared: 2, hits: 1, misses: 1 }, null, null, false)[0],
+    ).toContain("五分五分だね");
+  });
+
+  it("review narration keeps the approved tone: short, soft, no report style", () => {
+    const lines = reviewNarrationTexts(
+      { declared: 4, hits: 3, misses: 1 },
+      2.412,
+      2.483,
+      true,
+    );
+    for (const line of lines) {
+      const sentences = line.split("。").filter((s) => s.length > 0);
+      expect(sentences.length).toBeLessThanOrEqual(3);
+      expect(line.length).toBeLessThanOrEqual(80);
+      expect(line).not.toMatch(/です|ます|ました|確認できました|総括/);
+      expect(line).toMatch(/\d/);
+    }
   });
 });
