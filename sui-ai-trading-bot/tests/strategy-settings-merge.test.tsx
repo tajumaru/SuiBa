@@ -77,7 +77,7 @@ describe("merged strategy tab content", () => {
         data={data}
         api={vi.fn()}
         onSaved={async () => {}}
-        control={async () => {}}
+        control={async () => null}
       />
     </>,
   );

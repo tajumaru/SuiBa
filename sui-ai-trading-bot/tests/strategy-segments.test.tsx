@@ -32,7 +32,7 @@ function render(segment: "rules" | "settings") {
       data={data}
       api={vi.fn()}
       onSaved={async () => {}}
-      control={async () => {}}
+      control={async () => null}
       telemetry={null}
       history={[]}
       segment={segment}
