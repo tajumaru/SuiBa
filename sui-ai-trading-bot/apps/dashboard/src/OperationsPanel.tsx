@@ -88,18 +88,6 @@ export function OperationsView({
             </p>
             <div className="operation-kpis">
               <article>
-                <h3>取引回数</h3>
-                <strong>{report.tradeCount}件</strong>
-                <small>
-                  買い {report.buyCount} / 売り {report.sellCount}
-                </small>
-              </article>
-              <article>
-                <h3>純損益</h3>
-                <strong>{usdc(report.netPnl)}</strong>
-                <small>保有分の評価損益を含む</small>
-              </article>
-              <article>
                 <h3>稼働時間・稼働率</h3>
                 <strong>集計不可</strong>
                 <small>
