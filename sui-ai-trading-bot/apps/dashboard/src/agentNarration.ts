@@ -29,6 +29,15 @@ import { number as fmtNumber, percent as fmtPercent } from "./presentation.ts";
  * clicks, and is honestly withdrawn, with hysteresis so small wobbles
  * cannot flap it, when it drifts clearly further away than declared.
  *
+ * Every declaration is also scored: a watch that clicks while it is
+ * being watched is a 的中 (hit), one withdrawn for drifting away is
+ * an 外れ (miss), and a watch that ends silently (a position opened,
+ * the material went away) is neither. Once enough settlements have
+ * piled up since the last look-back — or a BUY closes a chapter with
+ * at least a couple waiting — the feed pauses for a short ふりかえり
+ * (review) built only from those recorded counts and the session's
+ * first-to-current price move.
+ *
  * All functions here are pure: the component keeps a NarrationState,
  * feeds each new snapshot through `advanceNarration`, and renders the
  * accumulated entries. `agentPose` derives the character's pose from
@@ -44,6 +53,7 @@ export type NarrationKind =
   | "stop" // the bot stopped (manual or safety)
   | "start" // the bot started
   | "recovery" // connectivity recovered / run resumed
+  | "review" // a ふりかえり look-back over the watch score so far
   | "status"; // feed-initialised status line
 
 export interface NarrationEntry {
@@ -66,12 +76,35 @@ export interface WatchTarget {
   called: boolean;
 }
 
+/**
+ * The session score of declared watches. `declared` counts every
+ * watch ever declared this session (a switch target is a new
+ * declaration of its own; the silent first watch counts too, as in
+ * the approved prototype). `hits` / `misses` count settled watches:
+ * a hit is a watched condition that clicked while watched —
+ * including clicking as the last condition into a BUY — and a miss
+ * is a watch withdrawn by the drift hysteresis. A watch that ends
+ * silently is neither. `unreviewed` counts settlements since the
+ * last review entry; it drives the review milestone and resets when
+ * a review is told, while the other counters are cumulative.
+ */
+export interface WatchScore {
+  declared: number;
+  hits: number;
+  misses: number;
+  unreviewed: number;
+}
+
 export interface NarrationState {
   entries: NarrationEntry[];
   nextEntryId: number;
   priceRising: boolean;
   /** The declared watch target, or null when nothing is watched. */
   watch: WatchTarget | null;
+  /** Cumulative session score of declared watches (see WatchScore). */
+  watchScore: WatchScore;
+  /** Price of the first decision evidence this session received. */
+  sessionStartPrice: number | null;
   /** Dedupe keys for operation events (`e:...`) and candidates (`c:...`). */
   seen: string[];
   /** Retirement barriers advance only when keys are evicted. Late records at
@@ -115,6 +148,8 @@ export function emptyNarrationState(): NarrationState {
     nextEntryId: 0,
     priceRising: false,
     watch: null,
+    watchScore: { declared: 0, hits: 0, misses: 0, unreviewed: 0 },
+    sessionStartPrice: null,
     seen: [],
     retiredEventThrough: null,
     retiredCandidateThrough: null,
@@ -428,6 +463,17 @@ export const WATCH_APPROACH_RATIO = 0.5;
 export const WATCH_WITHDRAW_RATIO = 1.25;
 
 /**
+ * Review milestone: a ふりかえり look-back is told once this many
+ * watch settlements have piled up since the previous review — or
+ * sooner, when a BUY closes a chapter (see REVIEW_BUY_MIN_SETTLED).
+ * Settlements are never reviewed one by one.
+ */
+export const REVIEW_SETTLED_THRESHOLD = 3;
+/** A BUY milestone reviews early only with at least this many
+ * settlements still unreviewed. */
+export const REVIEW_BUY_MIN_SETTLED = 2;
+
+/**
  * The closest unmet entry condition, by the same normalised
  * `unmetDistance` the cycle narration already uses to pick what to
  * talk about — the watch invents no ruler of its own. Ties keep the
@@ -517,6 +563,13 @@ interface WatchOutcome {
   /** Drafts told after it (the next declaration following a hit). */
   after: EntryDraft[];
   watch: WatchTarget | null;
+  /** A new watch was declared this cycle (scores one declaration). */
+  created: boolean;
+  /** How the previous watch settled this cycle, if it did: "hit"
+   * when the watched condition clicked while watched, "miss" when
+   * it was withdrawn for drifting away. A watch that ends silently
+   * (position opened, material gone) settles as null — neither. */
+  settled: "hit" | "miss" | null;
 }
 
 /**
@@ -535,7 +588,19 @@ function processWatch(
     kind: "cycle",
     text,
   });
-  if (!watchEligible(dec)) return { before: [], after: [], watch: null };
+  if (!watchEligible(dec))
+    // The watch ends here. If the watched condition clicked in this
+    // very decision — the last condition falling into place for a
+    // BUY, or all three met — that still counts as a hit; any other
+    // silent end (a position opened, the hunt is over) is neither a
+    // hit nor a miss.
+    return {
+      before: [],
+      after: [],
+      watch: null,
+      created: false,
+      settled: current && dec.conditions[current.key] ? "hit" : null,
+    };
 
   if (current && dec.conditions[current.key]) {
     // 的中: tie the click back to the declaration, then declare the
@@ -551,6 +616,8 @@ function processWatch(
           ]
         : [],
       watch: next ? makeWatch(next, dec) : null,
+      created: next != null,
+      settled: "hit",
     };
   }
 
@@ -569,6 +636,8 @@ function processWatch(
         before,
         after: [],
         watch: next ? makeWatch(next, dec) : null,
+        created: next != null,
+        settled: "miss",
       };
     }
     if (!current.called && ratio <= WATCH_APPROACH_RATIO)
@@ -576,8 +645,16 @@ function processWatch(
         before: [draft(approachWatchText(current.key, dec))],
         after: [],
         watch: { ...current, called: true },
+        created: false,
+        settled: null,
       };
-    return { before: [], after: [], watch: current };
+    return {
+      before: [],
+      after: [],
+      watch: current,
+      created: false,
+      settled: null,
+    };
   }
 
   const target = chooseWatchTarget(dec);
@@ -586,8 +663,10 @@ function processWatch(
         before: [draft(declareWatchText(target, dec))],
         after: [],
         watch: makeWatch(target, dec),
+        created: true,
+        settled: null,
       }
-    : { before: [], after: [], watch: null };
+    : { before: [], after: [], watch: null, created: false, settled: null };
 }
 
 export type ConditionChipTone = "met" | "close" | "far" | "back";
@@ -843,6 +922,83 @@ export function currentWatch(
   return { key, label: WATCH_NAME[key], value: watchValue(key, dec), detail };
 }
 
+export interface WatchScoreDisplay {
+  declared: number;
+  hits: number;
+  misses: number;
+  /** 1 while a watch is live, otherwise 0. */
+  inProgress: number;
+}
+
+/**
+ * The score strip for the snapshot on screen: null unless the
+ * decision is fresh (the same fail-closed rule as the chips and the
+ * watch strip). The counts are the session's cumulative record;
+ * 進行中 simply mirrors whether a watch is live right now.
+ */
+export function currentWatchScore(
+  state: NarrationState,
+  dec: DecisionTelemetry | null | undefined,
+  now: number,
+): WatchScoreDisplay | null {
+  if (!dec || !freshDecision(dec, now)) return null;
+  return {
+    declared: state.watchScore.declared,
+    hits: state.watchScore.hits,
+    misses: state.watchScore.misses,
+    inProgress: state.watch ? 1 : 0,
+  };
+}
+
+const reviewPrice = (v: number) => `$${fmtNumber(v, 3)}`;
+
+/**
+ * The ふりかえり look-back lines, built ONLY from the recorded
+ * session facts handed in: the cumulative declaration score and the
+ * price move from the session's first evidence to now. A missing or
+ * unusable price omits the price line entirely — the review never
+ * invents a move it did not record. The verdict follows the recorded
+ * hit/miss balance, nothing else.
+ */
+export function reviewNarrationTexts(
+  score: { declared: number; hits: number; misses: number },
+  startPrice: number | null,
+  currentPrice: number | null,
+  buyMilestone: boolean,
+): string[] {
+  const verdict =
+    score.hits > score.misses
+      ? "悪くないね"
+      : score.misses > score.hits
+        ? "外れが多めだなあ"
+        : score.hits > 0
+          ? "五分五分だね"
+          : "まだ決着なしだね";
+  const lines = [
+    `ふりかえり。ここまでの宣言は${score.declared}回、的中${score.hits}回、外れ${score.misses}回。${verdict}`,
+  ];
+  if (
+    startPrice != null &&
+    currentPrice != null &&
+    Number.isFinite(startPrice) &&
+    Number.isFinite(currentPrice) &&
+    startPrice > 0
+  ) {
+    const change = currentPrice / startPrice - 1;
+    const tail = buyMilestone
+      ? "最後は3つ揃ったよ"
+      : change > 0.001
+        ? "上がってきたね"
+        : change < -0.001
+          ? "少し下げてるね"
+          : "ほぼ横ばいだね";
+    lines.push(
+      `価格は${reviewPrice(startPrice)}から${reviewPrice(currentPrice)}、${signedPct(change)}。${tail}`,
+    );
+  }
+  return lines;
+}
+
 type EntryDraft = Omit<NarrationEntry, "id">;
 
 function eventKey(e: OperationsSnapshot["events"][number]): string {
@@ -929,8 +1085,10 @@ export function advanceNarration(
     }
     drafts.push(initialEntry(d, vitalState, now));
     // The first watch is set silently: the declaration is only
-    // narrated when the target changes, never on page load.
+    // narrated when the target changes, never on page load. It still
+    // counts as a declaration on the score, like in the prototype.
     let firstWatch: WatchTarget | null = null;
+    let firstScore = prev.watchScore;
     const firstDec = d.decision;
     if (
       (vitalState === "alive" || vitalState === "weak") &&
@@ -939,12 +1097,17 @@ export function advanceNarration(
       watchEligible(firstDec)
     ) {
       const target = chooseWatchTarget(firstDec);
-      if (target) firstWatch = makeWatch(target, firstDec);
+      if (target) {
+        firstWatch = makeWatch(target, firstDec);
+        firstScore = { ...firstScore, declared: firstScore.declared + 1 };
+      }
     }
     return finish(
       {
         ...prev,
         watch: firstWatch,
+        watchScore: firstScore,
+        sessionStartPrice: prev.sessionStartPrice ?? firstDec?.price ?? null,
         seen: [...seen],
         pendingCandidateIds: [...pending].slice(-50),
         lastDecisionAt: d.decision?.evaluatedAt ?? null,
@@ -1114,8 +1277,11 @@ export function advanceNarration(
   let prevTrail = prev.prevTrail;
   let priceRising = prev.priceRising;
   let watch = prev.watch;
+  let watchScore = prev.watchScore;
+  let sessionStartPrice = prev.sessionStartPrice;
   const dec = d.decision;
   if (dec && (lastDecisionAt == null || dec.evaluatedAt > lastDecisionAt)) {
+    if (sessionStartPrice == null) sessionStartPrice = dec.price;
     if (
       (vitalState === "alive" || vitalState === "weak") &&
       freshDecision(dec, now)
@@ -1131,6 +1297,29 @@ export function advanceNarration(
         text: cycleNarrationText(dec, lastTrail),
       });
       drafts.push(...outcome.after);
+      // Score the cycle's declaration / settlement, then — only at
+      // a milestone — pause for a short look-back over the record.
+      const settled = outcome.settled != null;
+      watchScore = {
+        declared: watchScore.declared + (outcome.created ? 1 : 0),
+        hits: watchScore.hits + (outcome.settled === "hit" ? 1 : 0),
+        misses: watchScore.misses + (outcome.settled === "miss" ? 1 : 0),
+        unreviewed: watchScore.unreviewed + (settled ? 1 : 0),
+      };
+      const buyMilestone = dec.action === "BUY";
+      if (
+        watchScore.unreviewed >= REVIEW_SETTLED_THRESHOLD ||
+        (buyMilestone && watchScore.unreviewed >= REVIEW_BUY_MIN_SETTLED)
+      ) {
+        for (const text of reviewNarrationTexts(
+          watchScore,
+          sessionStartPrice,
+          dec.price,
+          buyMilestone,
+        ))
+          drafts.push({ at: dec.evaluatedAt, kind: "review", text });
+        watchScore = { ...watchScore, unreviewed: 0 };
+      }
     }
     priceRising = prevDecisionPrice != null && dec.price > prevDecisionPrice;
     prevDecisionPrice = dec.price;
@@ -1183,6 +1372,8 @@ export function advanceNarration(
     {
       ...prev,
       watch,
+      watchScore,
+      sessionStartPrice,
       seen: [...seen],
       pendingCandidateIds: [...pending].slice(-50),
       lastDecisionAt,
