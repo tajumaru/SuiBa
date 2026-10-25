@@ -1,4 +1,4 @@
-# PowerShell 7. Read-only collectors. No commands run when this file is dot-sourced.
+# Windows PowerShell 5.1 / PowerShell 7. Read-only collectors. No commands run when this file is dot-sourced.
 function ConvertTo-DiagnosticDockerLine {
     param([string]$Line, [long]$ObservedAt)
     $category = if ($Line -match '(?i)\bdns\b|resolv') { 'DNS' }
@@ -77,8 +77,9 @@ function Read-DiagnosticPackets {
             $arguments=@('-n','-r',$file.FullName,'-c','10000','-Y','dns or tcp.analysis.retransmission or tls.handshake or tcp.flags.syn == 1','-T','fields',
                 '-e','frame.time_epoch','-e','dns.qry.name','-e','dns.flags.response','-e','tcp.analysis.retransmission','-e','tls.handshake.type',
                 '-e','tcp.flags.syn','-e','tcp.flags.ack','-e','tcp.stream')
-            $lines=@(& $tshark.Source @arguments 2>$null)
-            if($LASTEXITCODE -ne 0){throw 'packet analysis failed'}
+            $result=Invoke-DiagnosticNative -File $tshark.Source -Arguments $arguments
+            $lines=@($result.Stdout -split "`r?`n")
+            if($result.ExitCode -ne 0){throw 'packet analysis failed'}
             foreach($line in $lines){$safe=ConvertTo-DiagnosticPacket $line;if($safe){& $Emit $safe}}
             & $Emit @{kind='collector-status';collector='packet-analysis';status='BOUNDED';reason='FIRST_10000_PACKETS_PER_FILE_SNAPLEN_128_TLS13_ENCRYPTED'}
         } catch {& $Emit @{kind='collector-status';collector='packet-analysis';status='UNAVAILABLE';reason='PARSE_FAILED'}}
@@ -112,9 +113,9 @@ function Read-DiagnosticResources {
     } catch {& $Emit @{kind='collector-status';collector='host-resource';status='UNAVAILABLE';reason='CIM_FAILED'}}
     if($ContainerId){
         try {
-            $raw=@(& docker stats --no-stream --format '{{json .}}' $ContainerId 2>$null)
-            if($LASTEXITCODE -ne 0){throw 'stats'}
-            $s=$raw[0]|ConvertFrom-Json
+            $result=Invoke-DiagnosticNative -File (Get-Command docker -ErrorAction Stop).Source -Arguments @('stats','--no-stream','--format','{{json .}}',$ContainerId)
+            if($result.ExitCode -ne 0){throw 'stats'}
+            $s=$result.Stdout|ConvertFrom-Json
             & $Emit @{kind='docker-resource';at=[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds();cpuPercent=$s.CPUPerc;
                 memory=$s.MemUsage;memoryPercent=$s.MemPerc}
         } catch {& $Emit @{kind='collector-status';collector='docker-resource';status='UNAVAILABLE';reason='STATS_FAILED'}}

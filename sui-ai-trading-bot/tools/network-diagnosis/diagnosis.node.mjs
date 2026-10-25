@@ -61,19 +61,42 @@ test("default CLI and Windows wrapper do not execute network or resolve Node/Doc
     /FORBIDDEN_IN_CI/,
   );
   if (process.platform === "win32") {
-    const ps = spawnSync(
-      "pwsh",
-      [
-        "-NoProfile",
-        "-File",
-        join(tool, "Invoke-NetworkDiagnosis.ps1"),
-        "-NodePath",
-        "Z:/missing-node.exe",
-      ],
-      { encoding: "utf8" },
-    );
-    assert.equal(ps.status, 0, ps.stderr);
-    assert.equal(JSON.parse(ps.stdout).networkRequests, 0);
+    for (const shell of ["powershell.exe", "pwsh"]) {
+      const ps = spawnSync(
+        shell,
+        [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          join(tool, "Invoke-NetworkDiagnosis.ps1"),
+          "-NodePath",
+          "Z:/missing-node.exe",
+        ],
+        { encoding: "utf8" },
+      );
+      assert.equal(ps.status, 0, ps.stdout + ps.stderr);
+      assert.equal(JSON.parse(ps.stdout).networkRequests, 0);
+      const blocked = spawnSync(
+        shell,
+        [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          join(tool, "Invoke-NetworkDiagnosis.ps1"),
+          "-ExecuteLive",
+          "-NodePath",
+          "Z:/missing-node.exe",
+        ],
+        { encoding: "utf8", env: { ...process.env, CI: "true" } },
+      );
+      assert.notEqual(blocked.status, 0);
+      assert.match(
+        blocked.stdout + blocked.stderr,
+        /Live diagnosis is forbidden in CI/,
+      );
+    }
     const bat = spawnSync(
       "cmd.exe",
       ["/d", "/c", "Start-SuiBaNetworkDiagnosis.bat", "--plan"],
@@ -89,6 +112,26 @@ test("default CLI and Windows wrapper do not execute network or resolve Node/Doc
     );
     assert.equal(bat.status, 0, bat.stdout + bat.stderr);
     assert.equal(JSON.parse(bat.stdout).networkRequests, 0);
+    const windowsRoot = process.env.SystemRoot ?? "C:\Windows";
+    const fallback = spawnSync(
+      "cmd.exe",
+      ["/d", "/c", "Start-SuiBaNetworkDiagnosis.bat", "--plan"],
+      {
+        cwd: tool,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CI: "true",
+          SUIBA_DIAGNOSTIC_NODE: "Z:/missing-node.exe",
+          PATH: [
+            join(windowsRoot, "System32"),
+            join(windowsRoot, "System32", "WindowsPowerShell", "v1.0"),
+          ].join(";"),
+        },
+      },
+    );
+    assert.equal(fallback.status, 0, fallback.stdout + fallback.stderr);
+    assert.equal(JSON.parse(fallback.stdout).networkRequests, 0);
   }
 });
 test("supported Node range and explicit arguments", () => {
@@ -492,12 +535,25 @@ test("missing/truncated evidence, mismatched identity and early termination neve
   }));
 test("PowerShell sanitizers work offline without leaking raw log text", () => {
   if (process.platform !== "win32") return;
-  const child = spawnSync(
-    "pwsh",
-    ["-NoProfile", "-File", join(tool, "collectors.node.ps1")],
-    { encoding: "utf8" },
-  );
-  assert.equal(child.status, 0, child.stdout + child.stderr);
+  for (const shell of ["powershell.exe", "pwsh"]) {
+    for (const file of ["collectors.node.ps1", "windows-process.node.ps1"]) {
+      const child = spawnSync(
+        shell,
+        [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          join(tool, file),
+          ...(file === "windows-process.node.ps1"
+            ? ["-NodePath", process.execPath]
+            : []),
+        ],
+        { encoding: "utf8" },
+      );
+      assert.equal(child.status, 0, child.stdout + child.stderr);
+    }
+  }
 });
 
 test("controlled keep-alive is explicit, longer than spacing, and does not change request limits", () => {
