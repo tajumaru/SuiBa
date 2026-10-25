@@ -41,17 +41,19 @@ function render(segment: "rules" | "settings") {
   );
 }
 
-// The rendered regions of the strategy tab, sliced at the segment
-// panel boundaries: rules panel, settings panel, then the always
-// visible operation controls below them.
+// The rendered regions of the strategy tab, sliced at the region
+// boundaries: the always visible operation controls at the top of
+// the page, then the segment switch, then the rules and settings
+// panels.
 function regions(html: string) {
+  const operationsAt = html.indexOf('aria-label="PAPER運用の操作"');
+  const tablistAt = html.indexOf('role="tablist"');
   const rulesAt = html.indexOf('id="strategy-segment-panel-rules"');
   const settingsAt = html.indexOf('id="strategy-segment-panel-settings"');
-  const operationsAt = html.indexOf('aria-label="PAPER運用の操作"');
   return {
+    operations: html.slice(operationsAt, tablistAt),
     rules: html.slice(rulesAt, settingsAt),
-    settings: html.slice(settingsAt, operationsAt),
-    operations: html.slice(operationsAt),
+    settings: html.slice(settingsAt),
   };
 }
 
@@ -126,6 +128,20 @@ describe("strategy tab segments", () => {
       expect(settings).not.toContain("PAPER運用開始");
       expect(settings).not.toContain("停止状態の解除");
     }
+  });
+
+  it("puts the operation controls at the top of the page, above the segment switch", () => {
+    const html = render("rules");
+    const operationsAt = html.indexOf('aria-label="PAPER運用の操作"');
+    const tablistAt = html.indexOf('role="tablist"');
+    const rulesAt = html.indexOf('id="strategy-segment-panel-rules"');
+    expect(operationsAt).toBeGreaterThanOrEqual(0);
+    expect(operationsAt).toBeLessThan(tablistAt);
+    expect(tablistAt).toBeLessThan(rulesAt);
+    // The source renders the controls before the tablist, too.
+    expect(
+      strategyTab.indexOf("<PaperOperationControls"),
+    ).toBeLessThan(strategyTab.indexOf('role="tablist"'));
   });
 
   it("mounts the editor state once, above the segment panels", () => {
