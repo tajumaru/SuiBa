@@ -5,6 +5,7 @@ import {
   advanceNarration,
   agentPose,
   currentConditionChips,
+  currentWatch,
   emptyNarrationState,
   type AgentPose,
   type NarrationState,
@@ -92,6 +93,13 @@ const timeText = (at: number) =>
  * (AgentPoseFx) keyed to the same pose: Zzz and a snot bubble while
  * asleep, stars at the fingertip while pointing, a note and a star
  * after a trade; it never carries information of its own.
+ *
+ * Under the condition chips, the "いまの注目" strip shows the one
+ * entry condition the narration has declared it is watching (the
+ * watched chip carries a ● marker): its current recorded value and
+ * how it has moved since the declaration — or, when there is no
+ * watch, why not. Like the chips, it derives only from the fresh
+ * decision evidence via currentWatch and vanishes when stale.
  */
 export function AgentNarrationFeed({
   data,
@@ -157,6 +165,10 @@ export function AgentNarrationFeed({
   const chips = stale
     ? null
     : currentConditionChips(narration, data.decision, now);
+  // The declared watch, from the same evidence and freshness rule.
+  const watch = stale
+    ? null
+    : currentWatch(narration, data.decision, vital.state, now);
 
   return (
     <section className="agent-feed" aria-label="エージェント実況">
@@ -179,12 +191,27 @@ export function AgentNarrationFeed({
           {chips.map((chip) => (
             <span
               key={chip.key}
-              className={`agent-feed-chip tone-${chip.tone}`}
+              className={`agent-feed-chip tone-${chip.tone}${chip.watching ? " watching" : ""}`}
             >
+              {chip.watching && (
+                <span className="agent-feed-chip-watch" aria-hidden="true">
+                  ●
+                </span>
+              )}
               <span className="agent-feed-chip-label">{chip.label}</span>
               <span className="agent-feed-chip-status">{chip.status}</span>
             </span>
           ))}
+        </div>
+      )}
+      {watch && (
+        <div className="agent-feed-watch" aria-label="いまの注目">
+          <span className="agent-feed-watch-title">いまの注目</span>
+          <strong>{watch.label}</strong>
+          {watch.value && (
+            <span className="agent-feed-watch-value">{watch.value}</span>
+          )}
+          <span className="agent-feed-watch-detail">{watch.detail}</span>
         </div>
       )}
       <div className="agent-feed-list" ref={listRef}>

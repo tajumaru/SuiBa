@@ -20,6 +20,15 @@ import { number as fmtNumber, percent as fmtPercent } from "./presentation.ts";
  * cycle's DecisionTrail — whether things approached, newly clicked,
  * or fell back since last time.
  *
+ * On top of the per-cycle lines, the feed keeps a declared "watch":
+ * the one unmet entry condition that looks closest to clicking (by
+ * the same normalised distances the narration already uses to pick
+ * what to talk about). The watch is announced once when the target
+ * changes, gets a single call-out when it closes to half its declared
+ * distance, is celebrated — tied back to the declaration — when it
+ * clicks, and is honestly withdrawn, with hysteresis so small wobbles
+ * cannot flap it, when it drifts clearly further away than declared.
+ *
  * All functions here are pure: the component keeps a NarrationState,
  * feeds each new snapshot through `advanceNarration`, and renders the
  * accumulated entries. `agentPose` derives the character's pose from
@@ -44,10 +53,25 @@ export interface NarrationEntry {
   text: string;
 }
 
+/**
+ * The declared watch: one unmet entry condition the narration has
+ * announced it is keeping an eye on. `declaredDistance` is the
+ * empirical distance (see watchDistance) at declaration time and is
+ * the baseline for the approach call-out and the withdrawal
+ * hysteresis; `called` makes the call-out once per declaration.
+ */
+export interface WatchTarget {
+  key: "emaUp" | "rsiRecovery" | "histogramImproving";
+  declaredDistance: number;
+  called: boolean;
+}
+
 export interface NarrationState {
   entries: NarrationEntry[];
   nextEntryId: number;
   priceRising: boolean;
+  /** The declared watch target, or null when nothing is watched. */
+  watch: WatchTarget | null;
   /** Dedupe keys for operation events (`e:...`) and candidates (`c:...`). */
   seen: string[];
   /** Retirement barriers advance only when keys are evicted. Late records at
@@ -90,6 +114,7 @@ export function emptyNarrationState(): NarrationState {
     entries: [],
     nextEntryId: 0,
     priceRising: false,
+    watch: null,
     seen: [],
     retiredEventThrough: null,
     retiredCandidateThrough: null,
@@ -369,6 +394,199 @@ export function cycleNarrationText(
   return waitNarration(dec, prev);
 }
 
+/**
+ * Empirical per-condition distance, on the same scales as
+ * trailDistance (EMA gap as a share of price, RSI points above the
+ * oversold line, negated histogram). Used ONLY as the watch's own
+ * baseline: the current value is compared against the value recorded
+ * at declaration time, never shown as a number of its own.
+ */
+function watchDistance(key: EntryCondKey, dec: DecisionTelemetry): number {
+  if (key === "emaUp")
+    return dec.price > 0 ? (dec.ema50 - dec.ema20) / dec.price : 0;
+  if (key === "rsiRecovery") return dec.rsi - dec.oversold;
+  return -dec.histogram;
+}
+
+/** Current distance as a ratio of the declared baseline. */
+function watchRatio(watch: WatchTarget, dec: DecisionTelemetry): number {
+  const current = watchDistance(watch.key, dec);
+  if (watch.declaredDistance <= 0) return current <= 0 ? 0 : 1;
+  return current / watch.declaredDistance;
+}
+
+/** The approach call-out fires once, at half the declared distance. */
+export const WATCH_APPROACH_RATIO = 0.5;
+/**
+ * Withdrawal hysteresis: the watched condition must drift beyond
+ * 125% of its declared distance before the declaration is dropped,
+ * so small wobbles never flap declare/withdraw back and forth.
+ */
+export const WATCH_WITHDRAW_RATIO = 1.25;
+
+/**
+ * The closest unmet entry condition, by the same normalised
+ * `unmetDistance` the cycle narration already uses to pick what to
+ * talk about — the watch invents no ruler of its own. Ties keep the
+ * display order (EMA, RSI, MACD). `exclude` bars instantly
+ * re-declaring a target that was just withdrawn.
+ */
+function chooseWatchTarget(
+  dec: DecisionTelemetry,
+  exclude?: EntryCondKey,
+): EntryCondKey | null {
+  const unmet = entryConditions(dec).filter(
+    (c) => !c.met && c.key !== exclude,
+  );
+  if (!unmet.length) return null;
+  return unmet.reduce((a, b) =>
+    unmetDistance(dec, b.key) < unmetDistance(dec, a.key) ? b : a,
+  ).key;
+}
+
+function makeWatch(key: EntryCondKey, dec: DecisionTelemetry): WatchTarget {
+  return { key, declaredDistance: watchDistance(key, dec), called: false };
+}
+
+/** A watch only lives while the bot is flat and still hunting. */
+function watchEligible(dec: DecisionTelemetry): boolean {
+  return (
+    dec.action === "WAIT" &&
+    !dec.conditions.hasPosition &&
+    metEntryConditions(dec) < 3
+  );
+}
+
+const WATCH_NAME: Record<EntryCondKey, string> = {
+  emaUp: "EMAの差",
+  rsiRecovery: "RSI",
+  histogramImproving: "MACD",
+};
+
+/** Current-value phrase for a watch target ("今-0.38%", "今29で圏内"…). */
+function watchValue(key: EntryCondKey, dec: DecisionTelemetry): string {
+  if (key === "emaUp") return `今${emaGapPct(dec)}`;
+  if (key === "rsiRecovery")
+    return dec.rsi <= dec.oversold
+      ? `今${fmtNumber(dec.rsi, 1)}で圏内`
+      : `今${fmtNumber(dec.rsi, 1)}、ラインまで${rsiPoints(dec.rsi, dec.oversold)}`;
+  return `今${fmtNumber(dec.histogram, 4)}`;
+}
+
+function declareWatchText(key: EntryCondKey, dec: DecisionTelemetry): string {
+  if (key === "emaUp")
+    return `次はEMAの差を見てる。今${emaGapPct(dec)}、縮んできたら声かけるね`;
+  if (key === "rsiRecovery")
+    return dec.rsi <= dec.oversold
+      ? `次はRSIを見てる。今${fmtNumber(dec.rsi, 1)}で圏内、上抜けたら声かけるね`
+      : `次はRSIを見てる。今${fmtNumber(dec.rsi, 1)}、ラインまで${rsiPoints(dec.rsi, dec.oversold)}。近づいたら声かけるね`;
+  return `次はMACDを見てる。今${fmtNumber(dec.histogram, 4)}、プラスに転じたら声かけるね`;
+}
+
+function approachWatchText(key: EntryCondKey, dec: DecisionTelemetry): string {
+  if (key === "emaUp")
+    return `EMAの差、${emaGapPct(dec)}まで縮んだ。宣言してたやつ、来てるよ`;
+  if (key === "rsiRecovery")
+    return dec.rsi <= dec.oversold
+      ? "RSI、圏内まで来たよ。宣言してたやつ、上抜け待ちだね"
+      : `RSI、ラインまで${rsiPoints(dec.rsi, dec.oversold)}まで来た。宣言してたやつ、来てるよ`;
+  return `MACD、${fmtNumber(dec.histogram, 4)}まで戻った。宣言してたやつ、来てるよ`;
+}
+
+function hitWatchText(key: EntryCondKey, dec: DecisionTelemetry): string {
+  if (key === "emaUp")
+    return `EMA、成立した。${fmtNumber(dec.ema20, 4)}が${fmtNumber(dec.ema50, 4)}の上、宣言どおりだね`;
+  if (key === "rsiRecovery")
+    return `RSI、上抜けた。${fmtNumber(dec.previousRsi, 1)}→${fmtNumber(dec.rsi, 1)}、宣言どおりだね`;
+  return `MACD、成立した。今${fmtNumber(dec.histogram, 4)}、宣言どおりだね`;
+}
+
+function withdrawWatchText(key: EntryCondKey): string {
+  if (key === "emaUp") return "注目してたEMAの差、開いてきたなあ。宣言は取り下げ";
+  if (key === "rsiRecovery") return "注目してたRSI、遠のいたなあ。宣言は取り下げ";
+  return "注目してたMACD、遠のいたなあ。宣言は取り下げ";
+}
+
+interface WatchOutcome {
+  /** Drafts told before the cycle's own narration (declare / call /
+   * hit / withdraw / switch). */
+  before: EntryDraft[];
+  /** Drafts told after it (the next declaration following a hit). */
+  after: EntryDraft[];
+  watch: WatchTarget | null;
+}
+
+/**
+ * Advance the declared watch by one narrated cycle. The caller has
+ * already established that the decision is fresh, the bot is awake,
+ * and the watch may live (see watchEligible for when it silently
+ * ends instead: a fill, a position, or all conditions met are told
+ * by their own narration, so the watch never talks over them).
+ */
+function processWatch(
+  current: WatchTarget | null,
+  dec: DecisionTelemetry,
+): WatchOutcome {
+  const draft = (text: string): EntryDraft => ({
+    at: dec.evaluatedAt,
+    kind: "cycle",
+    text,
+  });
+  if (!watchEligible(dec)) return { before: [], after: [], watch: null };
+
+  if (current && dec.conditions[current.key]) {
+    // 的中: tie the click back to the declaration, then declare the
+    // next watch right away (told after the cycle's own line).
+    const next = chooseWatchTarget(dec);
+    return {
+      before: [draft(hitWatchText(current.key, dec))],
+      after: next
+        ? [
+            draft(
+              `次の注目は${WATCH_NAME[next]}に決めた。${watchValue(next, dec)}だよ`,
+            ),
+          ]
+        : [],
+      watch: next ? makeWatch(next, dec) : null,
+    };
+  }
+
+  if (current) {
+    const ratio = watchRatio(current, dec);
+    if (ratio > WATCH_WITHDRAW_RATIO) {
+      const before = [draft(withdrawWatchText(current.key))];
+      const next = chooseWatchTarget(dec, current.key);
+      if (next)
+        before.push(
+          draft(
+            `注目は${WATCH_NAME[next]}に切り替える。${watchValue(next, dec)}だよ`,
+          ),
+        );
+      return {
+        before,
+        after: [],
+        watch: next ? makeWatch(next, dec) : null,
+      };
+    }
+    if (!current.called && ratio <= WATCH_APPROACH_RATIO)
+      return {
+        before: [draft(approachWatchText(current.key, dec))],
+        after: [],
+        watch: { ...current, called: true },
+      };
+    return { before: [], after: [], watch: current };
+  }
+
+  const target = chooseWatchTarget(dec);
+  return target
+    ? {
+        before: [draft(declareWatchText(target, dec))],
+        after: [],
+        watch: makeWatch(target, dec),
+      }
+    : { before: [], after: [], watch: null };
+}
+
 export type ConditionChipTone = "met" | "close" | "far" | "back";
 export interface EntryConditionChip {
   key: "ema" | "rsi" | "macd";
@@ -377,6 +595,8 @@ export interface EntryConditionChip {
   /** Short status word shown next to the label ("✓", "あと3", …). */
   status: string;
   tone: ConditionChipTone;
+  /** True while this condition is the declared watch target. */
+  watching: boolean;
 }
 
 /**
@@ -393,9 +613,9 @@ export function entryConditionChips(
 ): EntryConditionChip[] {
   const emaGap = dec.price > 0 ? (dec.ema50 - dec.ema20) / dec.price : 1;
   const ema: EntryConditionChip = dec.conditions.emaUp
-    ? { key: "ema", label: "EMA", met: true, status: "✓", tone: "met" }
+    ? { key: "ema", label: "EMA", met: true, status: "✓", tone: "met", watching: false }
     : prev?.emaUp
-      ? { key: "ema", label: "EMA", met: false, status: "後退", tone: "back" }
+      ? { key: "ema", label: "EMA", met: false, status: "後退", tone: "back", watching: false }
       : emaGap <= 0.003
         ? {
             key: "ema",
@@ -403,24 +623,26 @@ export function entryConditionChips(
             met: false,
             status: "あと少し",
             tone: "close",
+            watching: false,
           }
-        : { key: "ema", label: "EMA", met: false, status: "逆並び", tone: "far" };
+        : { key: "ema", label: "EMA", met: false, status: "逆並び", tone: "far", watching: false };
   const points = rsiPoints(dec.rsi, dec.oversold);
   const rsi: EntryConditionChip = dec.conditions.rsiRecovery
-    ? { key: "rsi", label: "RSI", met: true, status: "✓", tone: "met" }
+    ? { key: "rsi", label: "RSI", met: true, status: "✓", tone: "met", watching: false }
     : prev?.rsiRecovery
-      ? { key: "rsi", label: "RSI", met: false, status: "後退", tone: "back" }
+      ? { key: "rsi", label: "RSI", met: false, status: "後退", tone: "back", watching: false }
       : dec.rsi <= dec.oversold
-        ? { key: "rsi", label: "RSI", met: false, status: "圏内", tone: "close" }
+        ? { key: "rsi", label: "RSI", met: false, status: "圏内", tone: "close", watching: false }
         : {
             key: "rsi",
             label: "RSI",
             met: false,
             status: `あと${points}`,
             tone: points <= 3 ? "close" : "far",
+            watching: false,
           };
   const macd: EntryConditionChip = dec.conditions.histogramImproving
-    ? { key: "macd", label: "MACD", met: true, status: "✓", tone: "met" }
+    ? { key: "macd", label: "MACD", met: true, status: "✓", tone: "met", watching: false }
     : prev?.histogramImproving
       ? {
           key: "macd",
@@ -428,11 +650,12 @@ export function entryConditionChips(
           met: false,
           status: "後退",
           tone: "back",
+          watching: false,
         }
       : dec.histogram < 0 &&
           dec.atr > 0 &&
           Math.abs(dec.histogram) <= dec.atr * 0.05
-        ? { key: "macd", label: "MACD", met: false, status: "あと1", tone: "close" }
+        ? { key: "macd", label: "MACD", met: false, status: "あと1", tone: "close", watching: false }
         : dec.histogram < 0
           ? {
               key: "macd",
@@ -440,6 +663,7 @@ export function entryConditionChips(
               met: false,
               status: "マイナス",
               tone: "far",
+              watching: false,
             }
           : {
               key: "macd",
@@ -447,9 +671,16 @@ export function entryConditionChips(
               met: false,
               status: "下向き",
               tone: "far",
+              watching: false,
             };
   return [ema, rsi, macd];
 }
+
+const CHIP_KEY_OF_WATCH: Record<EntryCondKey, EntryConditionChip["key"]> = {
+  emaUp: "ema",
+  rsiRecovery: "rsi",
+  histogramImproving: "macd",
+};
 
 /**
  * Chips for the snapshot on screen: null unless the decision is
@@ -471,7 +702,82 @@ export function currentConditionChips(
       prev = state.lastTrail;
     else prev = state.prevTrail;
   }
-  return entryConditionChips(dec, prev);
+  const chips = entryConditionChips(dec, prev);
+  if (state.watch)
+    for (const chip of chips)
+      if (chip.key === CHIP_KEY_OF_WATCH[state.watch.key] && !chip.met)
+        chip.watching = true;
+  return chips;
+}
+
+export interface WatchDisplay {
+  /** The watched condition, or null when there is no watch. */
+  key: EntryCondKey | null;
+  /** Target name ("EMAの差" / "RSI" / "MACD"), or "なし". */
+  label: string;
+  /** Current value phrase ("今 -0.38%"), empty when there is no watch. */
+  value: string;
+  /** Change since the declaration, or why there is no watch. */
+  detail: string;
+}
+
+const JUST_DECLARED_DETAIL: Record<EntryCondKey, string> = {
+  emaUp: "宣言したところ。縮んだら声かける",
+  rsiRecovery: "宣言したところ。上抜け待ち",
+  histogramImproving: "宣言したところ。プラス転換待ち",
+};
+
+/**
+ * The "いまの注目" strip for the snapshot on screen: null unless the
+ * decision is fresh (same fail-closed rule as the chips). When the
+ * bot is stopped, holding, or all conditions are met, there is no
+ * watch and the strip says so with the reason; otherwise it shows
+ * the declared target — or, for a snapshot the feed has not consumed
+ * yet, the target the declaration rule would pick — with its current
+ * value and how it has moved since the declaration.
+ */
+export function currentWatch(
+  state: NarrationState,
+  dec: DecisionTelemetry | null | undefined,
+  vitalState: VitalState,
+  now: number,
+): WatchDisplay | null {
+  if (!dec || !freshDecision(dec, now)) return null;
+  if (vitalState === "sleeping" || vitalState === "flatlined")
+    return {
+      key: null,
+      label: "なし",
+      value: "",
+      detail: "止まってるから注目はお休み",
+    };
+  if (dec.conditions.hasPosition)
+    return {
+      key: null,
+      label: "なし",
+      value: "",
+      detail: "保有中。条件が崩れたら声かける",
+    };
+  if (metEntryConditions(dec) === 3)
+    return { key: null, label: "なし", value: "", detail: "3つ揃ったので注目は終了" };
+  const declared =
+    state.watch && !dec.conditions[state.watch.key] ? state.watch : null;
+  const key = declared ? declared.key : chooseWatchTarget(dec);
+  if (!key) return null;
+  let detail: string;
+  if (declared) {
+    const ratio = watchRatio(declared, dec);
+    detail =
+      declared.declaredDistance > 0 && ratio <= WATCH_APPROACH_RATIO
+        ? "宣言時の半分以下。来てる"
+        : ratio < 1
+          ? "宣言時より縮んだ"
+          : ratio > 1
+            ? "少し遠のいたけど様子見"
+            : JUST_DECLARED_DETAIL[key];
+  } else {
+    detail = "いちばん届きそうなやつを見てる";
+  }
+  return { key, label: WATCH_NAME[key], value: watchValue(key, dec), detail };
 }
 
 type EntryDraft = Omit<NarrationEntry, "id">;
@@ -559,9 +865,23 @@ export function advanceNarration(
       if (c.finalAction === "PENDING") pending.add(c.id);
     }
     drafts.push(initialEntry(d, vitalState, now));
+    // The first watch is set silently: the declaration is only
+    // narrated when the target changes, never on page load.
+    let firstWatch: WatchTarget | null = null;
+    const firstDec = d.decision;
+    if (
+      (vitalState === "alive" || vitalState === "weak") &&
+      firstDec &&
+      freshDecision(firstDec, now) &&
+      watchEligible(firstDec)
+    ) {
+      const target = chooseWatchTarget(firstDec);
+      if (target) firstWatch = makeWatch(target, firstDec);
+    }
     return finish(
       {
         ...prev,
+        watch: firstWatch,
         seen: [...seen],
         pendingCandidateIds: [...pending].slice(-50),
         lastDecisionAt: d.decision?.evaluatedAt ?? null,
@@ -730,17 +1050,24 @@ export function advanceNarration(
   let lastTrail = prev.lastTrail;
   let prevTrail = prev.prevTrail;
   let priceRising = prev.priceRising;
+  let watch = prev.watch;
   const dec = d.decision;
   if (dec && (lastDecisionAt == null || dec.evaluatedAt > lastDecisionAt)) {
     if (
       (vitalState === "alive" || vitalState === "weak") &&
       freshDecision(dec, now)
     ) {
+      // The declared watch advances with the same cycle: its lines
+      // frame the cycle's own narration (before / after).
+      const outcome = processWatch(watch, dec);
+      watch = outcome.watch;
+      drafts.push(...outcome.before);
       drafts.push({
         at: dec.evaluatedAt,
         kind: "cycle",
         text: cycleNarrationText(dec, lastTrail),
       });
+      drafts.push(...outcome.after);
     }
     priceRising = prevDecisionPrice != null && dec.price > prevDecisionPrice;
     prevDecisionPrice = dec.price;
@@ -792,6 +1119,7 @@ export function advanceNarration(
   return finish(
     {
       ...prev,
+      watch,
       seen: [...seen],
       pendingCandidateIds: [...pending].slice(-50),
       lastDecisionAt,
