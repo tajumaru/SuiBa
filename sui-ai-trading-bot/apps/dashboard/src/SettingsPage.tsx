@@ -578,14 +578,7 @@ export function PaperOperationControls({
       <hr />
       <div className="paper-operation-head">
         <h3 className={`paper-operation ${running ? "running" : "stopped"}`}>
-          PAPER運用：
-          {emergency
-            ? "緊急停止中"
-            : error
-              ? "安全停止中"
-              : running
-                ? "運用中"
-                : "停止中"}
+          PAPER運用
         </h3>
         <div className="paper-operation-actions">
           <button
