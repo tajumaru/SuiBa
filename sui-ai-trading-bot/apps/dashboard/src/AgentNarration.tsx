@@ -16,6 +16,7 @@ import imgPoint from "./assets/agent-white-point.jpg";
 import imgPointSmile from "./assets/agent-white-point-smile.jpg";
 import imgSleep from "./assets/agent-white-sleep.jpg";
 import imgLaptop from "./assets/agent-white-laptop.jpg";
+import imgLaptopTyping from "./assets/agent-white-laptop-typing.jpg";
 
 const POSE_IMAGE: Record<AgentPose, string> = {
   normal: imgNormal,
@@ -34,6 +35,31 @@ const POSE_LABEL: Record<AgentPose, string> = {
 
 const SPARK_PATH =
   "M12 1 L14.2 9.8 L23 12 L14.2 14.2 L12 23 L9.8 14.2 L1 12 L9.8 9.8 Z";
+
+/**
+ * The stage artwork for the current pose. Only the laptop pose has
+ * a second frame — the same scene with the near hand's index finger
+ * raised — stacked on top of the base frame; style.css flips the
+ * two in a two-frame typing loop (about 0.26s per frame) purely with
+ * CSS keyframes, and only when reduced motion is not requested.
+ * Under prefers-reduced-motion the second frame rests invisible,
+ * so the laptop pose is the still base frame, like every other
+ * pose's single image.
+ */
+export function AgentStageArtwork({ pose }: { pose: AgentPose }) {
+  return (
+    <>
+      <img src={POSE_IMAGE[pose]} alt="" />
+      {pose === "laptop" && (
+        <img
+          className="agent-feed-stage-typing"
+          src={imgLaptopTyping}
+          alt=""
+        />
+      )}
+    </>
+  );
+}
 
 /**
  * Expression overlay drawn on top of the character artwork (the JPGs
@@ -94,6 +120,10 @@ const timeText = (at: number) =>
  * The character artwork is AI-generated raster imagery (the stage
  * background matches the images' own #12161f backdrop so they blend
  * in); the pose is a symbol of the recorded state, not a measurement.
+ * The laptop pose alone carries a second, finger-raised frame that
+ * style.css swaps against the base frame as a two-frame typing loop
+ * (see AgentStageArtwork); it is decoration on the same recorded
+ * state, never a signal of its own.
  * On top of the artwork sits a pure CSS/SVG expression overlay
  * (AgentPoseFx) keyed to the same pose: Zzz and a snot bubble while
  * asleep, stars at the fingertip while pointing, a note and a star
@@ -193,7 +223,7 @@ export function AgentNarrationFeed({
     <section className="agent-feed" aria-label="エージェント実況">
       <div className="agent-feed-head">
         <div className={`agent-feed-stage pose-${pose}`} aria-hidden="true">
-          <img src={POSE_IMAGE[pose]} alt="" />
+          <AgentStageArtwork pose={pose} />
           <AgentPoseFx pose={pose} />
         </div>
         <div className="agent-feed-title">

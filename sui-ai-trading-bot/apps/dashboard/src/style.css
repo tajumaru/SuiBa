@@ -1512,6 +1512,36 @@ th {
     transform: translateY(-4px);
   }
 }
+/* Second frame of the laptop pose (AgentStageArtwork): the same
+   scene with the near hand's index finger raised, stacked exactly
+   on the base frame. It rests invisible; only when motion is
+   allowed does it flip against the base frame in a two-frame
+   typing loop (0.52s per cycle, about 0.26s per frame), riding the
+   same bob as the base frame so the pair never drifts apart. Under
+   prefers-reduced-motion the feed-wide rule below kills the
+   animation and the pose stays the still base frame. */
+.agent-feed-stage img.agent-feed-stage-typing {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .agent-feed-stage img.agent-feed-stage-typing {
+    animation:
+      agent-feed-bob 3.2s ease-in-out infinite,
+      agent-feed-typing 0.52s linear infinite;
+  }
+  @keyframes agent-feed-typing {
+    0%,
+    49.9% {
+      opacity: 0;
+    }
+    50%,
+    100% {
+      opacity: 1;
+    }
+  }
+}
 .agent-feed-stage.pose-sleep {
   filter: saturate(0.55) brightness(0.85);
 }
