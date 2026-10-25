@@ -161,10 +161,11 @@ it("places the market panel only on the operations tab and the strip only on the
     resolve("apps/dashboard/src/OperationsPanel.tsx"),
     "utf8",
   );
-  // Exactly one market panel on the operations tab, above the
-  // diagnostics details rather than inside it.
+  // Exactly one market panel on the operations tab, inside the
+  // diagnostics details (layering details are covered by
+  // operations-layers.test.tsx).
   expect(operations.match(/<MarketDataPanel/g)).toHaveLength(1);
-  expect(operations.indexOf("<MarketDataPanel")).toBeLessThan(
+  expect(operations.indexOf("<MarketDataPanel")).toBeGreaterThan(
     operations.indexOf('id="operation-diagnostics"'),
   );
 });
