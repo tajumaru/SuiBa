@@ -48,19 +48,6 @@ export function OperationsView({
         api={api}
         refresh={refresh}
       />
-      {/* The market-data connection diagnostics live only on this tab,
-          at the top of its content (moved out of the diagnostics
-          details and off the other tabs). */}
-      {state?.marketData && (
-        <MarketDataPanel value={state.marketData} unavailable={stale} />
-      )}
-      {data.validation && (
-        <DeepBookValidation
-          report={data.validation}
-          operations={data}
-          stale={stale}
-        />
-      )}
       <OperationSummary data={data} stale={stale} />
       {!!data.validation?.candles?.unresolved && (
         <p className="warning" role="alert">
@@ -224,6 +211,20 @@ export function OperationsView({
       </section>
       <details id="operation-diagnostics" className="operation-diagnostics">
         <summary>詳細診断 · API通信・停止理由・品質・会計・監査ログ</summary>
+        {/* The market-data connection and DeepBook validation blocks
+            live only on this tab, at the head of its diagnostics
+            details (off the always-visible layers and off the
+            other tabs). */}
+        {state?.marketData && (
+          <MarketDataPanel value={state.marketData} unavailable={stale} />
+        )}
+        {data.validation && (
+          <DeepBookValidation
+            report={data.validation}
+            operations={data}
+            stale={stale}
+          />
+        )}
         <ConnectivityPanel
           safety={data.safety}
           timing={data.timing}
