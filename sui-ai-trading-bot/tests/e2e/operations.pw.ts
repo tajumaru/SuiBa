@@ -201,6 +201,9 @@ test("narration survives polling, reconnects and stops without duplicates or uns
     name: "エージェント実況",
     exact: true,
   });
+  // The character's pose hook (pose-* class) lives on the header
+  // avatar now; the in-feed stage was removed.
+  const avatar = page.locator(".agent-avatar");
   const operations = (await page.evaluate(async () =>
     (await fetch("/api/operations")).json(),
   )) as OperationsSnapshot;
@@ -224,15 +227,13 @@ test("narration survives polling, reconnects and stops without duplicates or uns
   operations.lastHeartbeatAt = stamp + 20_000;
   await page.clock.runFor(10_000);
   await expect(feed.locator(".agent-feed-entry.trade")).toHaveCount(1);
-  await expect(feed.locator(".agent-feed-stage")).toHaveClass(
-    /pose-pointSmile/,
-  );
+  await expect(avatar).toHaveClass(/pose-pointSmile/);
   await expect(feed.locator(".agent-feed-entry")).toHaveCount(count + 1);
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await expect(feed.locator("img")).toHaveCSS("animation-name", "none");
+  await expect(avatar.locator("img")).toHaveCSS("animation-name", "none");
   fail = true;
   await page.clock.runFor(10_000);
-  await expect(feed.locator(".agent-feed-stage")).toHaveClass(/pose-normal/);
+  await expect(avatar).toHaveClass(/pose-normal/);
   fail = false;
   operations.lastHeartbeatAt = stamp + 40_000;
   await page.clock.runFor(10_000);
@@ -240,12 +241,12 @@ test("narration survives polling, reconnects and stops without duplicates or uns
   operations.status = "STOPPED";
   operations.safety.botState = "MANUAL_STOP";
   await page.clock.runFor(10_000);
-  await expect(feed.locator(".agent-feed-stage")).toHaveClass(/pose-sleep/);
+  await expect(avatar).toHaveClass(/pose-sleep/);
   operations.status = "ABNORMAL_STOP";
   operations.stopReason = "PAPER_RECONCILIATION_FAILED";
   operations.safety.botState = "ABNORMAL_STOP";
   await page.clock.runFor(10_000);
-  await expect(feed.locator(".agent-feed-stage")).toHaveClass(/pose-sleep/);
+  await expect(avatar).toHaveClass(/pose-sleep/);
   await expect(feed.locator(".agent-feed-entry").last()).toContainText(
     "止まったよ",
   );
