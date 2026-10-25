@@ -176,7 +176,6 @@ export function AgentNarrationFeed({
   const [now, setNow] = useState(() => Date.now());
   const [receivedAt, setReceivedAt] = useState(() => Date.now());
   const receivedRef = useRef(receivedAt);
-  const listRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const update = () => setNow(Date.now());
@@ -208,18 +207,6 @@ export function AgentNarrationFeed({
       ),
     );
   }, [data, stale]);
-  useEffect(() => {
-    const el = listRef.current;
-    if (!el) return;
-    const reduced = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    el.scrollTo({
-      top: el.scrollHeight,
-      behavior: reduced ? "auto" : "smooth",
-    });
-  }, [narration.entries]);
-
   const vital = botVital(data, stale, now, receivedAt);
   const pose = agentPose(narration, data, vital, now);
   useEffect(() => {
@@ -291,13 +278,15 @@ export function AgentNarrationFeed({
           </span>
         </div>
       )}
-      <div className="agent-feed-list" ref={listRef}>
+      <div className="agent-feed-list">
         {narration.entries.length === 0 ? (
           <p className="agent-feed-empty">
             実況を準備中です。Botの記録が届くと、ここに実況が流れます。
           </p>
         ) : (
-          narration.entries.map((entry) => (
+          // Newest first: the list flows with the page (no inner scroll
+          // box), so the latest entry belongs at the top.
+          [...narration.entries].reverse().map((entry) => (
             <div key={entry.id} className={`agent-feed-entry ${entry.kind}`}>
               <time dateTime={new Date(entry.at).toISOString()}>
                 {timeText(entry.at)}
