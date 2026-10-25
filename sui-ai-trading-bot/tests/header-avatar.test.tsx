@@ -285,9 +285,12 @@ describe("slim two-row header (design A)", () => {
     expect(css).toContain(
       ".header-row {\n  display: flex;\n  align-items: center;\n  gap: 12px;\n}",
     );
-    // The sub row wraps instead of squeezing its items on narrow
-    // screens (the meta line gives way, the copy is not shortened).
-    expect(css).toContain(".header-row-sub {\n  flex-wrap: wrap;\n}");
+    // The sub row never wraps, so the header keeps one height on
+    // every tab; the meta line ellipsises and the scrollbar gutter
+    // is reserved so page length cannot change the layout width.
+    expect(css).toContain(".header-row-sub {\n  flex-wrap: nowrap;\n}");
+    expect(css).toContain("text-overflow: ellipsis;");
+    expect(css).toContain("scrollbar-gutter: stable;");
     expect(css).toContain("header strong {\n  font-size: 16px;\n}");
     expect(css).toContain(
       ".badge {\n  margin-left: auto;\n  border: 1px solid #41d9b0;\n  color: #41d9b0;\n  padding: 3px 9px;",

@@ -4,6 +4,12 @@
   background: #0b111b;
   font-synthesis: none;
 }
+/* Reserve the scrollbar gutter on every page so the viewport width
+   (and with it the header's layout) does not change between tabs
+   whose content is longer or shorter than the viewport. */
+html {
+  scrollbar-gutter: stable;
+}
 main,
 header {
   overflow-wrap: anywhere;
@@ -82,10 +88,11 @@ header {
 .header-row-main {
   gap: 8px;
 }
-/* The sub row wraps on narrow screens: the meta line gives way
-   instead of squeezing the emergency stop or the logout link. */
+/* The sub row never wraps: a wrapped meta line would make the
+   header taller on some pages than on others. The meta line
+   shrinks and ellipsises instead (see .header-meta). */
 .header-row-sub {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 header strong {
   font-size: 16px;
@@ -99,6 +106,9 @@ small {
 .header-meta {
   font-size: 11px;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* The emergency stop stays a wide pill, but slimmer than a
    standard button so the sub row stays compact. */
