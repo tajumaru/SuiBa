@@ -1,5 +1,6 @@
 import { ConnectivityStrip } from "./ConnectivityPanel.tsx";
 import { OperationBar } from "./OperationBar.tsx";
+import { PriceTicker } from "./PriceTicker.tsx";
 import { DashboardClient } from "./dashboardClient.ts";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
@@ -450,6 +451,17 @@ function App() {
                   runtime={data.runtime}
                   control={control}
                   onOpenStrategy={() => setTab("Strategy")}
+                />
+                {/* The SUI price ticker rides directly under the
+                    operation bar on every tab, under the same
+                    condition (first snapshot arrived). It reads
+                    only what this state already holds — snapshot
+                    price plus the recorded candle frames — and
+                    hides its change/sparkline until a frame can
+                    ground them. */}
+                <PriceTicker
+                  price={data.price}
+                  candlesByTimeframe={data.candlesByTimeframe}
                 />
                 {/* The market-data diagnostics live on the operations
                     tab, and the connectivity safety summary is a thin
