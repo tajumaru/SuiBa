@@ -6,6 +6,10 @@ Bot・取引・DB のコードは読み込みません。既存コンテナ、DB
 
 ## 準備と手動開始
 
+Windowsでは同じフォルダーの **`Start-SuiBaNetworkDiagnosis.bat` をダブルクリック**して手動開始できます。Docker Desktopを起動し、下記の依存関係の準備を済ませてください。batの起動自体が実通信開始の明示操作です。結果は同じフォルダーの `results/netdiag-.../` に保存します。終了時はキー入力まで画面を残します。
+
+batは `SUIBA_DIAGNOSTIC_NODE` が設定済みならそれを使い、未設定ならユーザーのCodex runtimeのNode、なければPATHのNodeを使います。バージョンは起動スクリプトで検証します。計画だけ確認する場合は `Start-SuiBaNetworkDiagnosis.bat --plan` としてください。この場合は診断・Node探索・Docker操作を行いません。
+
 PowerShell 7、Docker Desktop の Linux engine、**Windows 側も Node.js >=24.22.1 <25** が必要です。PATH 上の Node が古い場合は `-NodePath` で対応する実行ファイルの絶対パスを指定します。`.env` やウォレット、秘密鍵は不要です。
 
 プロジェクトの `sui-ai-trading-bot` ディレクトリで実行してください。
