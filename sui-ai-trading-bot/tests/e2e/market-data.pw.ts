@@ -68,9 +68,12 @@ test("shows Japanese source fallback and stale state without starting PAPER", as
   await page.goto("/");
   await page.getByLabel("管理トークン").fill("test-only-no-real-credential");
   await page.getByRole("button", { name: "接続", exact: true }).click();
-  // The market-data connection panel lives only on the operations tab.
+  // The market-data connection panel lives only on the operations tab,
+  // inside its diagnostics details.
   await page.getByRole("button", { name: "運用検証", exact: true }).click();
+  await page.locator("#operation-diagnostics > summary").click();
   const region = page.getByRole("region", { name: "市場データ接続" });
+  await expect(region).toBeVisible();
   await expect(region).toContainText("現在の取得元：GeckoTerminal");
   await expect(region).toContainText("取得停止・データ遅延");
   await expect(region).toContainText("代替取得中");
