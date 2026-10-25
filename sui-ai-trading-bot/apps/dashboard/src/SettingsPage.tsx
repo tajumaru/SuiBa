@@ -124,6 +124,12 @@ export const fields: Field[] = [
     scale: 100,
     help: "費用控除後に必要な利益率。最大100%。",
   },
+  {
+    key: "emaGapShrinkCandles",
+    label: "縮小とみなす連続本数",
+    unit: "本",
+    help: "EMA20とEMA50の差が何本連続で縮めば「縮小中」とみなすか。2〜10本。「EMAの差が縮小中も成立にする」が有効な時だけ使います。",
+  },
 ];
 export const formatSettingValue = (s: Settings, f: Field) =>
   typeof s[f.key] === "number"
@@ -227,6 +233,22 @@ export function AdvancedSettings(props: {
       <small>
         利益条件の設定です。見積もり・費用・数量の検証とリスク制限は常に適用されます。
       </small>
+      <label>
+        <input
+          type="checkbox"
+          checked={props.draft.emaGapShrinkEnabled}
+          onChange={(e) =>
+            props.setDraft({
+              ...props.draft,
+              emaGapShrinkEnabled: e.target.checked,
+            })
+          }
+        />
+        EMAの差が縮小中も成立にする
+      </label>
+      <small>
+        買い条件のEMAは通常「短期（EMA20）が長期（EMA50）より上」で成立します。有効にすると、短期がまだ下でも、差が「縮小とみなす連続本数」だけ縮み続いていれば成立として扱います。既定は無効です。
+      </small>
     </details>
   );
 }
@@ -248,10 +270,16 @@ export function SettingsChanges({
     <ul className="settings-diff">
       {changed.map((key) => {
         const field = fields.find((f) => f.key === key);
+        const boolLabel =
+          key === "profitGuardEnabled"
+            ? "利益保護"
+            : key === "emaGapShrinkEnabled"
+              ? "EMAの差の縮小"
+              : "戦略";
         const display = (s: Settings) =>
           field
             ? formatSettingValue(s, field)
-            : key === "profitGuardEnabled"
+            : key === "profitGuardEnabled" || key === "emaGapShrinkEnabled"
               ? s[key]
                 ? "有効"
                 : "無効"
@@ -260,10 +288,7 @@ export function SettingsChanges({
                 : String(s[key]);
         return (
           <li key={key}>
-            <span>
-              {field?.label ??
-                (key === "profitGuardEnabled" ? "利益保護" : "戦略")}
-            </span>
+            <span>{field?.label ?? boolLabel}</span>
             <span>
               {display(before)} → <strong>{display(after)}</strong>
             </span>

@@ -168,13 +168,17 @@ export type ConditionState = "met" | "unmet" | "unknown";
 export type VolumeState = "ok" | "exceeded" | "unknown";
 
 export interface StrategyConditions {
-  /** EMA trend: EMA20 above EMA50 (conditions.emaUp). */
+  /** EMA trend: met when EMA20 is above EMA50, or — with the
+   * gap-shrink setting on — when the still-open gap has been
+   * shrinking (conditions.emaUp / conditions.emaGapShrinking). */
   ema: {
     state: ConditionState;
     ema20: number | null;
     ema50: number | null;
     /** Signed gap (EMA20 − EMA50) as a share of price. */
     gapPct: number | null;
+    /** Met via the gap-shrink route: EMA20 is still below EMA50. */
+    viaShrink: boolean;
   };
   /** RSI recovery: dipped to/below the buy line, then rose above it. */
   rsi: {
@@ -206,7 +210,13 @@ export interface StrategyConditions {
 }
 
 const UNKNOWN_CONDITIONS = (limit: number): StrategyConditions => ({
-  ema: { state: "unknown", ema20: null, ema50: null, gapPct: null },
+  ema: {
+    state: "unknown",
+    ema20: null,
+    ema50: null,
+    gapPct: null,
+    viaShrink: false,
+  },
   rsi: {
     state: "unknown",
     rsi: null,
@@ -237,6 +247,7 @@ export function strategyConditions(
       ema20: dec.ema20,
       ema50: dec.ema50,
       gapPct: (dec.ema20 - dec.ema50) / dec.price,
+      viaShrink: cond.emaGapShrinking,
     },
     rsi: {
       state: cond.rsiRecovery ? "met" : "unmet",
@@ -352,6 +363,7 @@ export const STRATEGY_PARAM_GROUPS: readonly StrategyParamGroup[] = [
     description: "買うかどうかを決める物差し",
     params: [
       { key: "oversold", bar: true, domain: [0, 100] },
+      { key: "emaGapShrinkCandles", bar: true, domain: null },
       { key: "maxVolumeChange", bar: true, domain: null },
       { key: "intervalMs", bar: false, domain: null },
     ],
