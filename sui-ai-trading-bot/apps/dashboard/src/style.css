@@ -515,6 +515,26 @@ th {
 .paper-operation.stopped {
   color: #edc980;
 }
+/* Each operation button carries its own one-line explanation. */
+.control-action {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 340px;
+}
+/* The stop-state release is a standing section while the bot is
+   stopped, not a disclosure: the way out of a stopped state must
+   be visible without opening anything. */
+.stop-release {
+  padding: 16px;
+  margin: 16px 0;
+  border: 1px solid #6e2438;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+.stop-release h4 {
+  margin-top: 0;
+}
 @media (max-width: 600px) {
   header {
     flex-wrap: wrap;

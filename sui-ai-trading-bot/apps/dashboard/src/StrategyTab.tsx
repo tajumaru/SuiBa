@@ -41,7 +41,7 @@ export function StrategyTab({
   data: State;
   api: SettingsApi;
   onSaved: () => Promise<void>;
-  control: (c: string) => Promise<void>;
+  control: (c: string) => Promise<string | null>;
   telemetry: DecisionTelemetry | null;
   history: IndicatorPoint[];
   segment: StrategySegment;

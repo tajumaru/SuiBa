@@ -1,4 +1,4 @@
-import React, { useEffect, useReducer, useRef } from "react";
+import React, { useEffect, useReducer, useRef, useState } from "react";
 import {
   settingsSchema,
   type Settings,
@@ -16,7 +16,8 @@ import {
   sameSettings,
   type Mode,
 } from "./settingsEditor.ts";
-import { number, errorCode } from "./presentation.ts";
+import { number, errorCode, reason } from "./presentation.ts";
+import { startRejectionReason } from "./operationLabels.ts";
 type State = ReturnType<BotEngine["snapshot"]>;
 export type Field = {
   key: keyof Settings;
@@ -529,57 +530,131 @@ export function PaperOperationControls({
 }: {
   data: State;
   editor: SettingsEditor;
-  control: (c: string) => Promise<void>;
+  control: (c: string) => Promise<string | null>;
 }) {
   const { busy, dirty, conflict, switchTo } = editor;
+  const { running, emergency, error } = data.runtime;
+  // The server-side start gate can still refuse a start the client
+  // expected to pass (a long market fetch, an API backoff, a ledger
+  // check...). control() hands its code back, translated below into
+  // the reason shown where the operator pressed the button.
+  const [startFailure, setStartFailure] = useState<string | null>(null);
+  useEffect(() => {
+    setStartFailure(null);
+  }, [running, emergency, error]);
+  async function start() {
+    setStartFailure(await control("start"));
+  }
+  // Every client-side reason the start button is disabled right
+  // now, spelled out next to the button: a disabled button must
+  // never leave the operator guessing. The gate conditions
+  // themselves are unchanged.
+  const startBlocked: string[] = [];
+  if (emergency)
+    startBlocked.push(
+      "緊急停止中です。開始するには、先に下の手順で停止状態を解除してください。",
+    );
+  if (error)
+    startBlocked.push(
+      "安全停止中です。開始するには、先に下の手順で停止状態を解除してください。",
+    );
+  if (dirty)
+    startBlocked.push(
+      "未保存の変更があります。開始には保存済みの設定を使うため、先に保存するか、保存済みに戻してください。",
+    );
+  if (conflict)
+    startBlocked.push(
+      "編集中にサーバー側の設定が変わり、この画面の内容と競合しています。画面を再読み込みして、最新の保存済み設定を確認してください。",
+    );
+  if (switchTo)
+    startBlocked.push(
+      "運用スタイルの切り替えが保留中です。切り替えを確定するか取り消してから開始してください。",
+    );
+  if (busy)
+    startBlocked.push("設定を保存中です。保存が終わってから開始してください。");
   return (
     <section aria-label="PAPER運用の操作">
       <hr />
-      <h3
-        className={`paper-operation ${data.runtime.running ? "running" : "stopped"}`}
-      >
+      <h3 className={`paper-operation ${running ? "running" : "stopped"}`}>
         PAPER運用：
-        {data.runtime.emergency
+        {emergency
           ? "緊急停止中"
-          : data.runtime.error
+          : error
             ? "安全停止中"
-            : data.runtime.running
+            : running
               ? "運用中"
               : "停止中"}
       </h3>
-      <p>
-        {dirty || conflict
-          ? "未保存の変更を保存するか、保存済みに戻してから開始してください。"
-          : "開始すると、上の保存済み設定で仮想売買を行います。"}
-      </p>
+      {running ? (
+        <p>運用中です。保存済みの設定で仮想売買を行っています。</p>
+      ) : startBlocked.length > 0 ? (
+        <>
+          <p>今は開始できません：</p>
+          <ul>
+            {startBlocked.map((text) => (
+              <li key={text}>{text}</li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p>開始すると、保存済みの設定で仮想売買を行います。</p>
+      )}
+      {startFailure && (
+        <p className="error" role="alert">
+          開始できませんでした。{startRejectionReason(startFailure)}
+        </p>
+      )}
       <div className="controls">
-        <button
-          type="button"
-          disabled={
-            busy ||
-            dirty ||
-            conflict ||
-            !!switchTo ||
-            data.runtime.running ||
-            data.runtime.emergency ||
-            !!data.runtime.error
-          }
-          onClick={() => void control("start")}
-        >
-          PAPER運用開始
-        </button>
-        <button type="button" onClick={() => void control("stop")}>
-          PAPER運用停止
-        </button>
+        <div className="control-action">
+          <button
+            type="button"
+            disabled={
+              busy ||
+              dirty ||
+              conflict ||
+              !!switchTo ||
+              running ||
+              emergency ||
+              !!error
+            }
+            onClick={() => void start()}
+          >
+            PAPER運用開始
+          </button>
+          <small>
+            保存済みの設定で仮想売買を始めます。条件がそろうまで売買はしません。
+          </small>
+        </div>
+        <div className="control-action">
+          <button type="button" onClick={() => void control("stop")}>
+            PAPER運用停止
+          </button>
+          <small>
+            仮想売買を止めます。保有中の仮想ポジションは残り、再開後に管理を続けます。
+          </small>
+        </div>
       </div>
-      {(data.runtime.emergency || data.runtime.error) && (
-        <details>
-          <summary>停止状態の解除</summary>
-          <p>原因を確認後に解除してください。再開は別途手動です。</p>
+      {(emergency || error) && (
+        <section className="stop-release">
+          <h4>停止状態の解除</h4>
+          <p>
+            {emergency
+              ? "緊急停止が押され、PAPER運用を止めています。"
+              : `安全停止中です。停止理由：${reason(error ?? "")}`}
+          </p>
+          <ol>
+            <li>
+              停止理由と「運用検証」の診断で、原因と接続状態を確認します。
+            </li>
+            <li>問題がなければ、下のボタンで停止状態を解除します。</li>
+            <li>
+              解除後に「PAPER運用開始」を押すと再開します。解除だけでは自動で再開しません。
+            </li>
+          </ol>
           <button type="button" onClick={() => void control("reset")}>
             停止解除（再開は手動）
           </button>
-        </details>
+        </section>
       )}
     </section>
   );
@@ -600,7 +675,7 @@ export function SettingsPage({
   data: State;
   api: SettingsApi;
   onSaved: () => Promise<void>;
-  control: (c: string) => Promise<void>;
+  control: (c: string) => Promise<string | null>;
 }) {
   const editor = useSettingsEditor(data, api, onSaved);
   return (
