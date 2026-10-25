@@ -117,10 +117,6 @@ export function OperationSummary({
           ? "仮想売買・実資金は使用しません"
           : "実資金の売買"}
       </small>
-      <h2 className="operation-state" role="status">
-        <span aria-hidden="true">{v.tone === "healthy" ? "✓" : "!"}</span>{" "}
-        {v.title}
-      </h2>
       <p>{v.message}</p>
       <BotVitalSigns vital={vital} />
     </section>
