@@ -266,6 +266,9 @@ section svg {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .operation-bar-dot {
   width: 9px;
