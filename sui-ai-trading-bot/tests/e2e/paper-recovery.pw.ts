@@ -58,7 +58,13 @@ for (const phase of [
     await page.goto("/");
     await page.getByLabel("管理トークン").fill("mock-only");
     await page.getByRole("button", { name: "接続", exact: true }).click();
+    // The connectivity summary is a strip on the dashboard tab only;
+    // its detail list holds the per-item state the assertions read.
+    await page
+      .getByRole("button", { name: "ダッシュボード", exact: true })
+      .click();
     const panel = page.getByLabel("通信とPAPER注文の状態");
+    await panel.locator("summary").click();
     await expect(panel).toContainText("現在の通信状態");
     await expect(panel).toContainText(
       phase === "HEALTHY" ? "注文可能" : "注文禁止",
