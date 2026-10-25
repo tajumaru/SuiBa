@@ -34,9 +34,7 @@ describe("agent header avatar", () => {
       expect(html).toContain('class="agent-avatar-pill"');
       expect(html).toContain('role="status"');
       expect(html).toContain(EXPECTED[pose].label);
-      expect(html).toContain(
-        `class="agent-avatar-dot ${EXPECTED[pose].dot}"`,
-      );
+      expect(html).toContain(`class="agent-avatar-dot ${EXPECTED[pose].dot}"`);
     }
   });
 
@@ -91,7 +89,7 @@ describe("agent header avatar stylesheet", () => {
 
   it("shows the Zzz / star marks per pose and colours the pill dot", () => {
     expect(section).toContain(
-      '.agent-avatar.pose-sleep .agent-avatar-zzz {\n  opacity: 0.9;\n}',
+      ".agent-avatar.pose-sleep .agent-avatar-zzz {\n  opacity: 0.9;\n}",
     );
     expect(section).toContain(".agent-avatar.pose-point .agent-avatar-star,");
     expect(section).toContain(
