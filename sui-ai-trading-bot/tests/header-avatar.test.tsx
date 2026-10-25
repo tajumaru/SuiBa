@@ -73,10 +73,19 @@ describe("agent header avatar stylesheet", () => {
     css.indexOf("/* Agent narration feed:"),
   );
 
-  it("docks a 92px circle at the header's top centre, half floating", () => {
+  it("sticks a 92px circle to the top centre, half over the header at rest", () => {
+    // The dock is sticky, not positioned against the header: its
+    // containing block spans the whole page, so after the header
+    // scrolls away it stays 9px below the viewport top. The
+    // negative margins centre the resting dock on the header's
+    // bottom edge (half over it), exactly where it used to float.
     expect(section).toContain(
-      ".agent-avatar-dock {\n  position: absolute;\n  left: 50%;\n  bottom: 0;\n  transform: translate(-50%, 50%);",
+      ".agent-avatar-dock {\n  position: sticky;\n  top: 9px;\n  z-index: 5;",
     );
+    expect(section).toContain("width: fit-content;");
+    expect(section).toContain("margin: -64px auto -64px;");
+    expect(section).toContain("pointer-events: none;");
+    expect(section).not.toContain("translate(-50%, 50%)");
     expect(section).toContain(
       ".agent-avatar {\n  position: relative;\n  width: 92px;\n  height: 92px;\n  border-radius: 50%;",
     );
@@ -193,10 +202,20 @@ describe("narration feed after the stage removal", () => {
 describe("agent header avatar wiring (main.tsx)", () => {
   const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
 
-  it("renders the avatar in the header, fed by the narration feed", () => {
+  it("renders the avatar at the app top, fed by the narration feed", () => {
     expect(main).toContain("{token && <AgentHeaderAvatar pose={agentPose} />}");
     expect(main).toContain("onPoseChange={setAgentPose}");
     expect(main).toContain('useState<AgentPose>("normal")');
+  });
+
+  it("renders the avatar outside the header, as its sibling", () => {
+    // The dock can only stick for the whole page if it is not a
+    // child of the header (a sticky element travels only within
+    // its parent), so the single render site sits between the
+    // header and the tab bar, under the app root.
+    const avatarAt = main.indexOf("<AgentHeaderAvatar");
+    expect(avatarAt).toBeGreaterThan(main.indexOf("</header>"));
+    expect(avatarAt).toBeLessThan(main.indexOf("<nav"));
   });
 
   it("renders no avatar at all before connecting", () => {
