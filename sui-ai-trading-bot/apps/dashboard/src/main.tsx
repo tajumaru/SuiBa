@@ -20,7 +20,10 @@ import { Reason } from "./Reason.tsx";
 import { StrategyTab, type StrategySegment } from "./StrategyTab.tsx";
 import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
-import type { AgentPose } from "./agentNarration.ts";
+import {
+  BUY_CELEBRATION_MS,
+  type AgentPose,
+} from "./agentNarration.ts";
 import { NAV_SHORT_LABELS, NavTabIcon } from "./navTabs.tsx";
 import { PriceChart } from "./PriceChart.tsx";
 import { BacktestComparison } from "./BacktestComparison.tsx";
@@ -245,6 +248,30 @@ function App() {
   // the feed can never show different poses. Before the feed first
   // reports (no snapshot yet), the unconfirmed "normal" pose shows.
   const [agentPose, setAgentPose] = useState<AgentPose>("normal");
+  // The buy celebration window, opened by the narration feed when
+  // a brand-new recorded buy fill joins it this session. While it
+  // runs, the header avatar borrows the smile and the price ticker
+  // glows; the pose reporting itself never pauses, so the moment
+  // the window closes the avatar shows the pose the records call
+  // for at that point.
+  const [buyCelebration, setBuyCelebration] = useState(false);
+  const buyCelebrationTimerRef = useRef<number | null>(null);
+  const handleBuyCelebration = useCallback(() => {
+    setBuyCelebration(true);
+    if (buyCelebrationTimerRef.current != null)
+      window.clearTimeout(buyCelebrationTimerRef.current);
+    buyCelebrationTimerRef.current = window.setTimeout(
+      () => setBuyCelebration(false),
+      BUY_CELEBRATION_MS,
+    );
+  }, []);
+  useEffect(
+    () => () => {
+      if (buyCelebrationTimerRef.current != null)
+        window.clearTimeout(buyCelebrationTimerRef.current);
+    },
+    [],
+  );
   const feedRef = useRef<DashboardClient | null>(null),
     serialRef = useRef(0),
     viewRef = useRef({ tab: activeTab, timeframe });
@@ -375,7 +402,9 @@ function App() {
           page: at rest it floats half over the header's bottom
           edge, and on scroll it sticks to the top of the viewport
           instead of scrolling away with the header. */}
-      {token && <AgentHeaderAvatar pose={agentPose} />}
+      {token && (
+        <AgentHeaderAvatar pose={agentPose} celebrating={buyCelebration} />
+      )}
       {!token ? (
         <main className="login">
           <h1>市場を検証する。</h1>
@@ -462,6 +491,7 @@ function App() {
                 <PriceTicker
                   price={data.price}
                   candlesByTimeframe={data.candlesByTimeframe}
+                  glow={buyCelebration}
                 />
                 {/* The market-data diagnostics live on the operations
                     tab, and the connectivity safety summary is a thin
@@ -505,6 +535,7 @@ function App() {
                       data={operations.data}
                       stale={!!operations.error}
                       onPoseChange={setAgentPose}
+                      onCelebrate={handleBuyCelebration}
                     />
                   ) : (
                     <p role="status">
