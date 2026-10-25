@@ -18,6 +18,7 @@ import { Reason } from "./Reason.tsx";
 import { SettingsPage, SettingsChanges } from "./SettingsPage.tsx";
 import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed } from "./AgentNarration.tsx";
+import { NAV_SHORT_LABELS, NavTabIcon } from "./navTabs.tsx";
 import { MarketDataPanel } from "./MarketDataPanel.tsx";
 import { PriceChart } from "./PriceChart.tsx";
 import { BacktestComparison } from "./BacktestComparison.tsx";
@@ -413,6 +414,10 @@ function App() {
   // "Chart" from before the chart tab was merged into the
   // dashboard) falls back to the dashboard instead of breaking.
   const activeTab = NAV_TABS.includes(tab) ? tab : "Overview";
+  const logout = () => {
+    setToken("");
+    setData(null);
+  };
   const feedRef = useRef<DashboardClient | null>(null),
     serialRef = useRef(0),
     viewRef = useRef({ tab: activeTab, timeframe });
@@ -511,6 +516,11 @@ function App() {
         >
           緊急停止
         </button>
+        {token && (
+          <button className="logout-link" onClick={logout}>
+            ログアウト
+          </button>
+        )}
       </header>
       {!token ? (
         <main className="login">
@@ -540,23 +550,26 @@ function App() {
       ) : (
         <>
           <nav>
-            {NAV_TABS.map((t) => (
-              <button
-                className={activeTab === t ? "active" : ""}
-                key={t}
-                onClick={() => {
-                  setTab(t);
-                }}
-              >
-                {label(t) === "未確認" ? t : label(t)}
-              </button>
-            ))}
-            <button
-              onClick={() => {
-                setToken("");
-                setData(null);
-              }}
-            >
+            {NAV_TABS.map((t) => {
+              const formal = label(t) === "未確認" ? t : label(t);
+              return (
+                <button
+                  className={activeTab === t ? "active" : ""}
+                  key={t}
+                  aria-label={formal}
+                  onClick={() => {
+                    setTab(t);
+                  }}
+                >
+                  <NavTabIcon tab={t} />
+                  <span className="nav-label-full">{formal}</span>
+                  <span className="nav-label-short" aria-hidden="true">
+                    {NAV_SHORT_LABELS[t] ?? formal}
+                  </span>
+                </button>
+              );
+            })}
+            <button className="nav-logout" onClick={logout}>
               ログアウト
             </button>
           </nav>

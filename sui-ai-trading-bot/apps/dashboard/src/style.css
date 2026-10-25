@@ -126,6 +126,13 @@ nav .active {
   background: #173448;
   color: #72d1ff;
 }
+/* Mobile bottom-bar pieces (icon, short label, header logout link):
+   hidden until the <= 600px rules at the bottom turn them on. */
+.nav-tab-icon,
+.nav-label-short,
+.logout-link {
+  display: none;
+}
 main {
   max-width: 1400px;
   margin: auto;
@@ -419,14 +426,79 @@ footer {
   color: #edc980;
 }
 @media (max-width: 600px) {
-  nav {
+  header {
     flex-wrap: wrap;
+  }
+  /* On mobile the logout leaves the tab bar and lives in the header
+     as a small text link instead. */
+  .logout-link {
+    display: inline-block;
+    background: transparent;
+    border-color: transparent;
+    padding: 10px 4px;
+    color: #8fa7b9;
+    font-size: 12px;
+    text-decoration: underline;
+  }
+  /* Bottom tab bar: fixed to the screen bottom, tabs only. The
+     active tab keeps the usual highlight and gains a top line, and
+     the icon follows the button colour via currentColor. */
+  nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    flex-wrap: nowrap;
     overflow: visible;
-    gap: 4px;
+    gap: 2px;
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+    background: #101a27;
+    border-top: 1px solid #243146;
+  }
+  nav button {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 5px 1px;
+  }
+  nav .active {
+    box-shadow: inset 0 2px 0 #72d1ff;
+  }
+  .nav-tab-icon {
+    display: block;
+    width: 24px;
+    height: 24px;
+    flex: none;
+  }
+  .nav-label-full {
+    display: none;
+  }
+  .nav-label-short {
+    display: block;
+    font-size: 10px;
+    line-height: 1.2;
+  }
+  .nav-logout {
+    display: none;
   }
   nav button,
   header button {
     min-height: 44px;
+  }
+  /* Keep the end of the page clear of the fixed bar; the footer,
+     fixed on desktop, flows at the end of the page on mobile
+     instead of colliding with the bar. */
+  main {
+    padding-bottom: calc(84px + env(safe-area-inset-bottom));
+  }
+  footer {
+    position: static;
+    margin-bottom: calc(72px + env(safe-area-inset-bottom));
   }
   .easy-settings .controls {
     flex-direction: column;
