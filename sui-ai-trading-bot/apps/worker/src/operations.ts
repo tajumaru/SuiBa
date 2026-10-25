@@ -74,6 +74,11 @@ export interface DecisionTelemetry {
   takeProfitPct: number;
   conditions: {
     emaUp: boolean;
+    /** EMA counted as met via the gap-shrink route, not the cross.
+     * Absent in evidence recorded before the option existed; the
+     * mapping below reads that as false rather than failing closed,
+     * because this flag only steers display wording. */
+    emaGapShrinking: boolean;
     rsiRecovery: boolean;
     histogramImproving: boolean;
     hasPosition: boolean;
@@ -958,6 +963,7 @@ export class OperationMonitor {
       takeProfitPct: t.takeProfitPct,
       conditions: {
         emaUp: cond.emaUp,
+        emaGapShrinking: cond.emaGapShrinking === true,
         rsiRecovery: cond.rsiRecovery,
         histogramImproving: cond.histogramImproving,
         hasPosition: cond.hasPosition,
