@@ -112,9 +112,10 @@ button:disabled {
 }
 nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 22px 5%;
-  overflow: auto;
+  overflow: visible;
 }
 nav button {
   background: transparent;
