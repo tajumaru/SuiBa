@@ -186,12 +186,6 @@ main {
   margin: auto;
   padding: 12px 5% 24px;
 }
-.title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 12px 0 26px;
-}
 h1 {
   font-size: 32px;
   margin: 8px 0;
@@ -459,13 +453,6 @@ th {
   }
   header {
     gap: 10px;
-  }
-  .title {
-    display: block;
-  }
-  .status {
-    display: block;
-    margin-top: 15px;
   }
 }
 @media (max-width: 450px) {

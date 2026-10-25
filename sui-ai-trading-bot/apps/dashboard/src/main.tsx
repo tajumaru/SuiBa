@@ -440,33 +440,6 @@ function App() {
             )}
             {data && (
               <>
-                <div className="title">
-                  <div>
-                    <small>仮想売買の検証</small>
-                    <h1>
-                      {label(activeTab) === "未確認"
-                        ? activeTab
-                        : label(activeTab)}
-                    </h1>
-                  </div>
-                  <span className="status">
-                    {error
-                      ? "状態不明"
-                      : data.runtime.emergency
-                        ? "緊急停止"
-                        : data.runtime.error
-                          ? "安全停止"
-                          : data.runtime.running
-                            ? "稼働中"
-                            : "停止中"}{" "}
-                    · gRPC（Sui読み取り接続）
-                    {error
-                      ? "状態不明（最終取得時点）"
-                      : data.connection.healthy
-                        ? "接続済み"
-                        : "未接続"}
-                  </span>
-                </div>
                 {/* The PAPER operation bar rides at the top of the
                     content on every tab: state plus the one action
                     that fits it (stop in place, or a jump to the
