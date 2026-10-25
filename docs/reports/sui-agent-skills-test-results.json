@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "baseSha": "6c775c0f39b1b340ef4c1113bcfc8e271dddd91f",
+  "node": "24.22.1",
+  "existingCheck": "node scripts/run-project.mjs typecheck; build; test:offline -- --maxWorkers=1",
+  "testEnvironment": {
+    "isolatedContainer": true,
+    "network": "none",
+    "temporaryTestStorage": "tmpfs"
+  },
+  "before": {
+    "typecheck": "success",
+    "build": "success",
+    "vitestFiles": 54,
+    "passed": 803,
+    "skipped": 7,
+    "failed": 0
+  },
+  "after": {
+    "typecheck": "success",
+    "build": "success",
+    "vitestFiles": 54,
+    "passed": 803,
+    "skipped": 7,
+    "failed": 0
+  },
+  "newChecks": {
+    "skillIntegrity": 2,
+    "sessionsPoc": 7,
+    "windows": "passed",
+    "linuxNetworkNone": "passed"
+  },
+  "transactionsSubmitted": 0,
+  "onchainSessionsVerified": false,
+  "codexLocalSkillList": {
+    "exitCode": 0,
+    "requiredSkillsDetected": 7
+  }
+}

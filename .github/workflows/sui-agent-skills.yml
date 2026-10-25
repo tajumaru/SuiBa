@@ -1,0 +1,43 @@
+name: Sui agent skills and Sessions PoC
+on:
+  push:
+    paths:
+      [
+        ".agents/**",
+        ".gitattributes",
+        "AGENTS.md",
+        "skills-lock.json",
+        "scripts/verify-mysten-skills*",
+        "sui-ai-trading-bot/tools/deepbook-sessions-testnet/**",
+        ".github/workflows/sui-agent-skills.yml",
+      ]
+  pull_request:
+    paths:
+      [
+        ".agents/**",
+        ".gitattributes",
+        "AGENTS.md",
+        "skills-lock.json",
+        "scripts/verify-mysten-skills*",
+        "sui-ai-trading-bot/tools/deepbook-sessions-testnet/**",
+        ".github/workflows/sui-agent-skills.yml",
+      ]
+permissions:
+  contents: read
+jobs:
+  official-skills-and-poc:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.22.1"
+      - run: node scripts/verify-mysten-skills.mjs
+      - run: node --test scripts/verify-mysten-skills.node.mjs
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: sui-ai-trading-bot/tools/deepbook-sessions-testnet
+      - run: npm test
+        working-directory: sui-ai-trading-bot/tools/deepbook-sessions-testnet

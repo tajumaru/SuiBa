@@ -1,0 +1,8 @@
+# Keep official skill bytes reproducible across Windows/Linux checkouts.
+/.agents/skills/deepbook-sdk/** text eol=lf
+/.agents/skills/deepbook-overview/** text eol=lf
+/.agents/skills/sui-ts-sdk-backend/** text eol=lf
+/.agents/skills/sui-sdks/** text eol=lf
+/.agents/skills/ptbs/** text eol=lf
+/.agents/skills/sui-client/** text eol=lf
+/.agents/skills/accessing-data/** text eol=lf

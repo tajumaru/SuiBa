@@ -1,0 +1,105 @@
+{
+  "schema": 1,
+  "source": "https://github.com/MystenLabs/skills",
+  "revision": "e31b38016723e2dcee36161d59c50e028e13b52a",
+  "checkedAt": "2026-10-26",
+  "license": "Apache-2.0",
+  "installScope": "project .agents/skills (no global changes)",
+  "audit": {
+    "listCommand": "npx skills add mystenlabs/skills --list",
+    "cli": "skills@1.7.4",
+    "cliRepository": "https://github.com/vercel-labs/skills",
+    "cliIntegrity": "sha512-lHZJksE8UImNAr+LL6unqq7jERjdFw5EJasm17srycwL7rXHGdCmgu1L1ttLxUO9i3rdH+QQig+px0icHqLmRw==",
+    "lifecycleScripts": false,
+    "telemetry": false,
+    "credentialEnvironmentPassed": false,
+    "availableSkillCount": 31
+  },
+  "skills": {
+    "deepbook-sdk": {
+      "path": ".agents/skills/deepbook-sdk/SKILL.md",
+      "files": {
+        "client-setup.md": "958568b88dbbbb9d15262e38ba7579151c1c2e50e30799edb0f508c77d0d6f3f",
+        "evals/evals.json": "4874cd0fbc8e1456ac3012efa8b5293d14ab8df3c14d4fb91b4deac68da43367",
+        "fees.md": "56a8ee4f9fd71bc3cd24f39d4ba9802eff1d392c67f7a331989e09900fe77fc6",
+        "SKILL.md": "3e5dfe74e94390790afa3da0b383ae12de28fc9f515a7a185d847d90b45d901f",
+        "trading.md": "dfc585d01f21512018456bf19cf3318b62940b576bd8064ef57427b463df5f86"
+      },
+      "executables": []
+    },
+    "deepbook-overview": {
+      "path": ".agents/skills/deepbook-overview/SKILL.md",
+      "files": {
+        "contract-info.md": "9817328fab5e68ac8ef644b445d56cad425ed9bafe8491e4c83501b085cdf2ee",
+        "design.md": "f89156a27bfe2386ecee782601fc9f5d36ce787faf4aaec9758b97225b9a0807",
+        "evals/evals.json": "ecec6adfe84eb54a19bc5d1c99a5057de45ccdae2cf15433e5ffb8a3bcacf3ab",
+        "SKILL.md": "4e997a4373ac1fa6a077d10392f33d9b1f4e4cd697e2fe9ba7369e6c06c94971"
+      },
+      "executables": []
+    },
+    "sui-ts-sdk-backend": {
+      "path": ".agents/skills/sui-ts-sdk-backend/SKILL.md",
+      "files": {
+        "bootstrap.md": "3382def3ad8724fb12cdf19b273b839a3545b3ecf6f254ab3f8cb8e34dbceaa8",
+        "evals/evals.json": "a781472fd41044b40b5267705cfac640b0af00accdf659970caca6aee419f3dd",
+        "executors.md": "d380d99ca3b83981dcc8e0dbca526b54b5c380c649457989c5f55bca10aa1c34",
+        "publishing.md": "6b0345a149466dee43866871b117fa104d6060850ba3a2d2ead93f4bdd1f0f50",
+        "signing.md": "38bf81f30683def48b221e73596c5e57f40290d8239ad2880b1bd716bb33bbcf",
+        "SKILL.md": "a6af517c9be63e5336ce60813169f188839936f3e3f438cd2a332b766bd9204a",
+        "sponsorship.md": "70c6c521d3e4cc5e55b948a1aacc2b1011e9343d55fa36d4c912922821a60500",
+        "transactions.md": "f8fcfd95c57deb616f0276eee17e989010440f8ab4a1df9b79ab8e5d227ef829"
+      },
+      "executables": []
+    },
+    "sui-sdks": {
+      "path": ".agents/skills/sui-sdks/SKILL.md",
+      "files": {
+        "community.md": "91d1a9ec0d73594cddfec3957473eab171de12dd88337215fe4c0c11c4019f8e",
+        "evals/code-evals.json": "a8217b486b1fd3e92e18a3f7e28feb2c7524328a99e386035e4a88c36ef6feb4",
+        "evals/evals.json": "3554c22d98fc6a218dc474c905fc21a3327deacd27e675f5fd43a146f83e39db",
+        "llm-docs.md": "bcb3a076a4c8300933d170c4da0479a5df148e648b9997cde69d418f756c3ed1",
+        "mapping.md": "cf1f9f07b6547f69371a34ac6ad6d33d2fb0f461601239761043cd69ae938a3a",
+        "rust.md": "bacb0cdc02d5e371a7dccbd0e1af0ed7e2dbee9cce121602b66b9498f0d1137d",
+        "SKILL.md": "35b4d61a0ca099ab6b25a46f8721f52b23a149568c2f76841ff5f61b9624f166",
+        "typescript.md": "dcb7e6c7a2d81aad93b63691d5ef38696f3938aa1b209501177837ff269ebf9b"
+      },
+      "executables": []
+    },
+    "ptbs": {
+      "path": ".agents/skills/ptbs/SKILL.md",
+      "files": {
+        "building.md": "dc3d8ffbb2f82d87289043b5f289a91aead8a74537653a850386dd2318d6f1a2",
+        "cli.md": "8696a6cc6c49d8b2772ca92db56c9b66e765434696ef40d31f377eba803e7b7d",
+        "commands.md": "5ec8ff4481e7810c880551b688c2bcbf94b56ab1ea6b15b223fea3a13d452dde",
+        "evals/code-evals.json": "ee447e5638a326654a8db6f030e3f48e56a7a7241540b6f2895bf078e3c3de0b",
+        "evals/evals.json": "8f7a6c9a093d74cdfacf495237a3b1a69974076f91e527e216bb3ce504c5b51e",
+        "fundamentals.md": "fb020c24d34321d6ea741d614a004bf7a6c4f1b99f825d8a0afa1bdebc2dc878",
+        "SKILL.md": "4471b53a801261ea587896551a4bb1b729e6dd2068b621f382aefc78dcf361be",
+        "troubleshooting.md": "f989ba70cd82d73f05a0fe7b2aafd274344547d8715ff7d01c9c551d1882d41d"
+      },
+      "executables": []
+    },
+    "sui-client": {
+      "path": ".agents/skills/sui-client/SKILL.md",
+      "files": {
+        "evals/evals.json": "4328d060a2f0a3b8eb8c52bdbe3077f25fb618bf7c36d615f64ef656333b56ab",
+        "SKILL.md": "0fc91bd3f9a33182deec015cb59e2757ffeca254b31d66d2f8a1f9a7a0480cf7"
+      },
+      "executables": []
+    },
+    "accessing-data": {
+      "path": ".agents/skills/accessing-data/SKILL.md",
+      "files": {
+        "archival.md": "c0e98270000cf256b95db87d8be07c52bbdf5288a620b4a62d6a2b881f025156",
+        "evals/evals.json": "566ed2981f298442e8b54b2ba9e240d1b17d9751ab9ce2eda47500a42e61e65e",
+        "graphql.md": "a770feb6d39453e66a970e25b2a28e15fe28da3e42429047f1ba0e5ac92c4927",
+        "grpc.md": "f61036a3aec28b8b876a9e8d5d64d311024f2db191ef7c73525fcdbc96fc2a8c",
+        "indexers.md": "17c749144edc9b4a7a92336dfec5a958daf369011ad3f1bd6c709960673c3df6",
+        "SKILL.md": "b2bc3645a2f6f9625d2cfd58390ca39b4d31b25640109201f5bac4608404e1e7",
+        "use-cases.md": "e8b72a799ceaf1574fa7c0d344a48154d1adddc855a322805ef683820b39ab24",
+        "walrus.md": "124e3b051b137354cbe94912553fc97835170e4df5c28fcf992a827b1f1431a0"
+      },
+      "executables": []
+    }
+  }
+}
