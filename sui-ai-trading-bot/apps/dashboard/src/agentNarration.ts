@@ -952,6 +952,13 @@ export function currentWatchScore(
 
 const reviewPrice = (v: number) => `$${fmtNumber(v, 3)}`;
 
+/** Review lines keep the move readable: one decimal place, signed. */
+const reviewPct = (ratio: number) =>
+  `${ratio > 0 ? "+" : ""}${new Intl.NumberFormat("ja-JP", {
+    style: "percent",
+    maximumFractionDigits: 1,
+  }).format(ratio)}`;
+
 /**
  * The ふりかえり look-back lines, built ONLY from the recorded
  * session facts handed in: the cumulative declaration score and the
@@ -993,7 +1000,7 @@ export function reviewNarrationTexts(
           ? "少し下げてるね"
           : "ほぼ横ばいだね";
     lines.push(
-      `価格は${reviewPrice(startPrice)}から${reviewPrice(currentPrice)}、${signedPct(change)}。${tail}`,
+      `価格は${reviewPrice(startPrice)}から${reviewPrice(currentPrice)}、${reviewPct(change)}。${tail}`,
     );
   }
   return lines;

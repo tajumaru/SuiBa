@@ -1874,7 +1874,7 @@ describe("agent narration: watch score and review", () => {
       "ふりかえり。ここまでの宣言は4回、的中3回、外れ1回。悪くないね",
     );
     expect(counts).toHaveLength(2);
-    expect(counts[1]).toContain("価格は$2.412から$2.483、+2.94");
+    expect(counts[1]).toContain("価格は$2.412から$2.483、+2.9%");
     expect(counts[1]).toContain("最後は3つ揃ったよ");
     // No recorded start (or current) price: the price line is
     // omitted entirely rather than invented.
