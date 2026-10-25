@@ -108,6 +108,11 @@ const timeText = (at: number) =>
  * ふりかえり entry (purple border, tagged) built from that same
  * record — both come from agentNarration.ts, never from the
  * component.
+ *
+ * A sudden market move breaks in as a 速報 entry (orange-red
+ * border, tagged): agentNarration.ts detects it from the recorded
+ * decision prices and volume change, with a warm-up and a cooldown
+ * so it cannot chatter. The component only renders the tag.
  */
 export function AgentNarrationFeed({
   data,
@@ -260,6 +265,9 @@ export function AgentNarrationFeed({
               </time>
               {entry.kind === "review" && (
                 <span className="agent-feed-entry-tag">ふりかえり</span>
+              )}
+              {entry.kind === "alert" && (
+                <span className="agent-feed-entry-tag alert">速報</span>
               )}
               <p>{entry.text}</p>
             </div>

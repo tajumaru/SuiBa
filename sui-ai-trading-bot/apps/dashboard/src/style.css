@@ -1821,6 +1821,16 @@ footer {
   letter-spacing: 0.04em;
   color: #b48ce8;
 }
+/* A 速報 breaks in warmer: orange-red border, a faint warm
+   background, and its own tag colours. */
+.agent-feed-entry.alert {
+  border-left-color: #ff7a2f;
+  background: #2b1e12;
+}
+.agent-feed-entry-tag.alert {
+  border-color: rgba(255, 140, 50, 0.55);
+  color: #ffb27a;
+}
 .agent-feed-note {
   display: block;
   margin-top: 12px;
