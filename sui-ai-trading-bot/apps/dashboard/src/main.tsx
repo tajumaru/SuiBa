@@ -15,7 +15,7 @@ import {
   errorCode,
 } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
-import { SettingsPage } from "./SettingsPage.tsx";
+import { StrategyTab, type StrategySegment } from "./StrategyTab.tsx";
 import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
 import type { AgentPose } from "./agentNarration.ts";
@@ -23,7 +23,7 @@ import { NAV_SHORT_LABELS, NavTabIcon } from "./navTabs.tsx";
 import { PriceChart } from "./PriceChart.tsx";
 import { BacktestComparison } from "./BacktestComparison.tsx";
 import { ProfitGuardPanel } from "./ProfitGuardPanel.tsx";
-import { StrategyPanel, useIndicatorHistory } from "./StrategyPanel.tsx";
+import { useIndicatorHistory } from "./StrategyPanel.tsx";
 type State = ReturnType<BotEngine["snapshot"]>;
 const NAV_TABS = [
   "Live",
@@ -221,11 +221,19 @@ function App() {
     [timeframe, setTimeframe] = useState<300 | 900 | 3600>(300);
   // A tab value that no longer exists falls back instead of
   // breaking: the settings tab merged into the strategy tab, so a
-  // restored "Settings" opens the strategy tab, and any other
-  // unknown value (for example a restored "Chart" from before the
-  // chart tab was merged into the dashboard) opens the dashboard.
+  // restored "Settings" opens the strategy tab on its 設定
+  // segment, and any other unknown value (for example a restored
+  // "Chart" from before the chart tab was merged into the
+  // dashboard) opens the dashboard.
   const activeTab =
     tab === "Settings" ? "Strategy" : NAV_TABS.includes(tab) ? tab : "Overview";
+  // The strategy tab's segment: ルール by default, or 設定 when
+  // arriving through the restored "Settings" value, until the
+  // reader picks a segment explicitly.
+  const [strategySegmentChoice, setStrategySegmentChoice] =
+    useState<StrategySegment | null>(null);
+  const strategySegment: StrategySegment =
+    strategySegmentChoice ?? (tab === "Settings" ? "settings" : "rules");
   const logout = () => {
     setToken("");
     setData(null);
@@ -580,19 +588,16 @@ function App() {
                   </>
                 )}
                 {activeTab === "Strategy" && (
-                  <>
-                    <StrategyPanel
-                      data={data}
-                      telemetry={operations.data?.decision ?? null}
-                      history={indicatorHistory}
-                    />
-                    <SettingsPage
-                      data={data}
-                      api={api}
-                      onSaved={refresh}
-                      control={control}
-                    />
-                  </>
+                  <StrategyTab
+                    data={data}
+                    api={api}
+                    onSaved={refresh}
+                    control={control}
+                    telemetry={operations.data?.decision ?? null}
+                    history={indicatorHistory}
+                    segment={strategySegment}
+                    onSegmentChange={setStrategySegmentChoice}
+                  />
                 )}
                 {activeTab === "Trading History" && (
                   <>

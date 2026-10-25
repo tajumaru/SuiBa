@@ -1998,6 +1998,29 @@ th {
   }
 }
 
+/* Strategy tab segments: the rule diagram and the settings editor
+   are separate tools, switched by a tablist at the top of the tab.
+   Only one panel shows at a time; the PAPER operation controls
+   below the panels are outside the segments and always visible. */
+.strategy-segments {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+.strategy-segments [role="tab"] {
+  background: transparent;
+  border: 1px solid #243146;
+  border-radius: 999px;
+  color: #dce8f0;
+  padding: 8px 20px;
+  white-space: nowrap;
+}
+.strategy-segments [role="tab"].active {
+  background: #173448;
+  border-color: #173448;
+  color: #72d1ff;
+}
+
 /* Strategy tab (diagram-first): condition cards fed by the recorded
    decision evidence, a result panel, and grouped parameter cards with
    scale bars whose ranges come from the shared settings schema. */
