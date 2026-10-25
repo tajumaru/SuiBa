@@ -1902,12 +1902,18 @@ th {
    the app as a round avatar (see .agent-avatar-dock above); this
    panel keeps the narration itself — condition chips, the watch
    strip, the declaration score and the entries. */
+/* The feed panel sets its own type scale: 14px body (entry text),
+   12px supporting (chips, strips, timestamps, the closing note)
+   and 11px smallest (strip titles, tags, definitions). Nothing in
+   the panel may fall back to the browser default or outsize the
+   narration itself. */
 .agent-feed {
   margin-top: 18px;
   padding: 14px 18px;
   background: #141d24;
   border: 1px solid #344e65;
   border-radius: 12px;
+  font-size: 14px;
 }
 /* Buy-condition chips: the same decision evidence as the narration,
    compressed to three short status words (met / close / far / back). */
@@ -1930,7 +1936,7 @@ th {
   background: #1a2632;
   border: 1px solid #344e65;
   border-radius: 999px;
-  font-size: 13px;
+  font-size: 12px;
   color: #dce8f0;
 }
 .agent-feed-chip-label {
@@ -1964,7 +1970,7 @@ th {
 }
 .agent-feed-chip-watch {
   color: #ffd166;
-  font-size: 10px;
+  font-size: 11px;
 }
 /* The "いまの注目" strip under the chips: the one condition the
    narration declared it is watching, its current value, and how it
@@ -1979,7 +1985,7 @@ th {
   background: rgba(255, 209, 102, 0.06);
   border: 1px dashed #a97e1f;
   border-radius: 10px;
-  font-size: 13px;
+  font-size: 12px;
   color: #dce8f0;
 }
 .agent-feed-watch-title {
@@ -2008,7 +2014,7 @@ th {
   background: #1a2632;
   border: 1px solid #2c4356;
   border-radius: 10px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   color: #dce8f0;
 }
@@ -2029,7 +2035,7 @@ th {
   color: #ffd166;
 }
 .agent-feed-score-note {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 400;
   color: #71809a;
 }
@@ -2041,6 +2047,7 @@ th {
 }
 .agent-feed-empty {
   margin: 0;
+  font-size: 14px;
   color: #9aafbf;
 }
 .agent-feed-entry {
@@ -2062,6 +2069,7 @@ th {
 }
 .agent-feed-entry p {
   margin: 0;
+  font-size: 14px;
   color: #dce8f0;
   line-height: 1.55;
 }
@@ -2094,7 +2102,7 @@ th {
   padding: 1px 7px;
   border: 1px solid #b48ce8;
   border-radius: 999px;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
   color: #b48ce8;
