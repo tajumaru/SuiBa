@@ -78,7 +78,10 @@ describe("strategy view: decision freshness (fail-closed)", () => {
     expect(isFreshDecision(undefined, NOW)).toBe(false);
     expect(
       isFreshDecision(
-        telemetry({ evaluatedAt: NOW - 400_000, candleTimestamp: NOW - 400_000 }),
+        telemetry({
+          evaluatedAt: NOW - 400_000,
+          candleTimestamp: NOW - 400_000,
+        }),
         NOW,
       ),
     ).toBe(false);
@@ -159,8 +162,7 @@ describe("strategy view: condition cards", () => {
       limit: 4,
     });
     expect(
-      strategyConditions(telemetry({ volumeChange: 4.5 }), 4, NOW).volume
-        .state,
+      strategyConditions(telemetry({ volumeChange: 4.5 }), 4, NOW).volume.state,
     ).toBe("exceeded");
     expect(
       strategyConditions(telemetry({ volumeChange: -4.5 }), 4, NOW).volume
@@ -227,9 +229,7 @@ describe("strategy view: parameter groups and scales", () => {
     const grouped = STRATEGY_PARAM_GROUPS.flatMap((g) =>
       g.params.map((p) => p.key),
     );
-    expect([...grouped].sort()).toEqual(
-      fields.map((f) => f.key).sort(),
-    );
+    expect([...grouped].sort()).toEqual(fields.map((f) => f.key).sort());
     expect(new Set(grouped).size).toBe(grouped.length);
     expect(STRATEGY_PARAM_GROUPS.map((g) => g.title)).toEqual([
       "買い条件",
@@ -269,9 +269,7 @@ describe("strategy view: parameter groups and scales", () => {
       bandLeft: 0.1,
       marker: 0.3,
     });
-    expect(
-      paramScale(defaults, def("oversold")).bandWidth,
-    ).toBeCloseTo(0.35);
+    expect(paramScale(defaults, def("oversold")).bandWidth).toBeCloseTo(0.35);
     // Stop loss: domain is the selectable range itself, band fills it.
     expect(paramScale(defaults, def("stopLossPct"))).toMatchObject({
       value: 0.02,

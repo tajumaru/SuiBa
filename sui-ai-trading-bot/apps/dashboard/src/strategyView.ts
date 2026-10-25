@@ -26,16 +26,14 @@ export function isFreshDecision(
   now: number,
 ): dec is DecisionTelemetry {
   if (dec == null) return false;
-  if (
-    !(
-      dec.evaluatedAt > 0 &&
-      dec.evaluatedAt <= now &&
-      now - dec.evaluatedAt <= DECISION_FRESH_MS &&
-      dec.candleTimestamp > 0 &&
-      dec.candleTimestamp <= dec.evaluatedAt &&
-      now - dec.candleTimestamp <= DECISION_FRESH_MS
-    )
-  )
+  if (!(
+    dec.evaluatedAt > 0 &&
+    dec.evaluatedAt <= now &&
+    now - dec.evaluatedAt <= DECISION_FRESH_MS &&
+    dec.candleTimestamp > 0 &&
+    dec.candleTimestamp <= dec.evaluatedAt &&
+    now - dec.candleTimestamp <= DECISION_FRESH_MS
+  ))
     return false;
   return (
     Number.isFinite(dec.price) &&
@@ -78,13 +76,13 @@ export const MAX_INDICATOR_HISTORY = 12;
  * charts only ever draw decisions that actually happened, in order.
  */
 export function appendIndicatorPoint(
-  history: readonly IndicatorPoint[],
+  history: IndicatorPoint[],
   dec: DecisionTelemetry | null | undefined,
   now: number,
 ): IndicatorPoint[] {
-  if (!isFreshDecision(dec, now)) return [...history];
+  if (!isFreshDecision(dec, now)) return history;
   const last = history.at(-1);
-  if (last && dec.evaluatedAt <= last.evaluatedAt) return [...history];
+  if (last && dec.evaluatedAt <= last.evaluatedAt) return history;
   const point: IndicatorPoint = {
     evaluatedAt: dec.evaluatedAt,
     price: dec.price,
@@ -253,8 +251,7 @@ export function strategyConditions(
       previousHistogram: dec.previousHistogram,
     },
     volume: {
-      state:
-        Math.abs(dec.volumeChange) > maxVolumeChange ? "exceeded" : "ok",
+      state: Math.abs(dec.volumeChange) > maxVolumeChange ? "exceeded" : "ok",
       multiple: 1 + dec.volumeChange,
       limit: maxVolumeChange,
     },
@@ -414,8 +411,7 @@ export function paramScale(
     domainMin,
     domainMax,
     bandLeft,
-    bandWidth:
-      scaleFraction(range.max, domainMin, domainMax) - bandLeft,
+    bandWidth: scaleFraction(range.max, domainMin, domainMax) - bandLeft,
     marker: scaleFraction(value, domainMin, domainMax),
   };
 }
