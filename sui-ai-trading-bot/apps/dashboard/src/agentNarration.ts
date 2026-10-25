@@ -52,7 +52,7 @@ import { number as fmtNumber, percent as fmtPercent } from "./presentation.ts";
  * accumulated entries. `agentPose` derives the character's pose from
  * the same state, so pose and text can never disagree.
  */
-export type AgentPose = "normal" | "point" | "pointSmile" | "sleep";
+export type AgentPose = "normal" | "point" | "pointSmile" | "sleep" | "laptop";
 
 export type NarrationKind =
   | "cycle" // a strategy analysis cycle (WAIT / signal / position watch)
@@ -1592,15 +1592,17 @@ function finish(state: NarrationState, drafts: EntryDraft[]): NarrationState {
 /**
  * The character's pose, derived from the vital state and the feed:
  * - stopped / safety-stopped -> sleep (the narration stops too)
- * - running but degraded / recovering, or state unknown -> normal
- *   (an abnormal-but-awake bot does not celebrate)
+ * - state unknown -> normal (nothing is confirmed, so the agent
+ *   neither works at the laptop nor celebrates)
+ * - running but degraded / recovering -> laptop (awake and watching
+ *   at the desk, but an abnormal-but-awake bot does not celebrate)
  * - the newest entry is a recorded fill -> pointSmile
  * - an upward spike alert fired on the current cycle -> point (a
  *   downward or volume-only alert never celebrates)
  * - a buy signal just fired, or at least two entry conditions are met
  *   (with the price also rising since the previous cycle when only
  *   one is met) -> point （指立て）
- * - otherwise -> normal
+ * - otherwise -> laptop (working at the laptop while watching)
  */
 export function agentPose(
   state: NarrationState,
@@ -1609,6 +1611,8 @@ export function agentPose(
   now = Date.now(),
 ): AgentPose {
   if (vital.state === "sleeping" || vital.state === "flatlined") return "sleep";
+  if (vital.state === "unknown") return "normal";
+  if (vital.state === "weak") return "laptop";
   if (vital.state !== "alive") return "normal";
   const latest = state.entries.at(-1);
   if (
@@ -1621,7 +1625,7 @@ export function agentPose(
   if (dec && freshDecision(dec, now)) {
     // Safety states have already returned above, so an upward spike
     // alert on this very cycle may celebrate — and only upward: a
-    // plunge or a bare volume spike keeps the normal pose.
+    // plunge or a bare volume spike keeps the laptop pose.
     if (
       state.lastAlert?.direction === "up" &&
       state.lastAlert.at === dec.evaluatedAt
@@ -1632,5 +1636,5 @@ export function agentPose(
     if (met >= 2) return "point";
     if (met >= 1 && state.priceRising) return "point";
   }
-  return "normal";
+  return "laptop";
 }
