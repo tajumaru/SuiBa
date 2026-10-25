@@ -43,6 +43,7 @@ function telemetry(
     ...rest,
     conditions: {
       emaUp: true,
+      emaGapShrinking: false,
       rsiRecovery: true,
       histogramImproving: false,
       hasPosition: false,
@@ -110,6 +111,24 @@ describe("strategy panel: diagram-first layout", () => {
     expect(html).toContain("DeepSeek：未実装（拡張用インターフェースのみ）");
     // No editable inputs on this read-only tab.
     expect(html).not.toContain("<input");
+    // The cross-route EMA card carries no shrink note.
+    expect(html).not.toContain("設定により成立として扱っています");
+  });
+
+  it("explains on the EMA card when the condition was met via the shrink route", () => {
+    const html = render(
+      data(waitDecision),
+      telemetry({
+        ema20: 2.41,
+        ema50: 2.42,
+        conditions: { emaUp: true, emaGapShrinking: true },
+      }),
+    );
+    expect(html).toContain(
+      "今回は差の縮小が続いたため、設定により成立として扱っています（短期はまだ長期の下）",
+    );
+    // Still counted as met, from the recorded flag alone.
+    expect(html).toContain("買い条件 3つ中 2つ成立");
   });
 
   it("shows the buy verdict with the buy tone when the decision is BUY", () => {

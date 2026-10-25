@@ -49,6 +49,7 @@ function telemetry(
     ...rest,
     conditions: {
       emaUp: true,
+      emaGapShrinking: false,
       rsiRecovery: true,
       histogramImproving: false,
       hasPosition: false,
@@ -143,6 +144,7 @@ describe("strategy view: condition cards", () => {
       telemetry({
         conditions: {
           emaUp: false,
+          emaGapShrinking: false,
           rsiRecovery: false,
           histogramImproving: true,
         },
@@ -153,6 +155,25 @@ describe("strategy view: condition cards", () => {
     expect(none.ema.state).toBe("unmet");
     expect(none.macd.state).toBe("met");
     expect(none.metCount).toBe(1);
+  });
+
+  it("marks an EMA met via the shrink route as viaShrink", () => {
+    const c = strategyConditions(
+      telemetry({
+        ema20: 2.41,
+        ema50: 2.42,
+        conditions: { emaUp: true, emaGapShrinking: true },
+      }),
+      4,
+      NOW,
+    );
+    expect(c.ema.state).toBe("met");
+    expect(c.ema.viaShrink).toBe(true);
+    expect(c.ema.gapPct).toBeLessThan(0);
+    // The plain cross route is not a shrink.
+    expect(strategyConditions(telemetry(), 4, NOW).ema.viaShrink).toBe(
+      false,
+    );
   });
 
   it("judges the volume guard by the strategy's own comparison", () => {
@@ -254,6 +275,7 @@ describe("strategy view: parameter groups and scales", () => {
     expect(settingRange("gasUsdc")).toEqual({ min: 0, max: 1 });
     expect(settingRange("minNetProfitUsdc")).toEqual({ min: 0, max: 5 });
     expect(settingRange("minNetProfitPct")).toEqual({ min: 0, max: 1 });
+    expect(settingRange("emaGapShrinkCandles")).toEqual({ min: 2, max: 10 });
   });
 
   it("positions markers and selectable bands inside the display domain", () => {
