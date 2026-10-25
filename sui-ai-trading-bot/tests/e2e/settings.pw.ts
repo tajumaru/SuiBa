@@ -7,6 +7,9 @@ import {
 import { BotDatabase } from "../../packages/database/src/index.ts";
 import { BotEngine } from "../../apps/worker/src/engine.ts";
 
+// The settings editor lives on the strategy tab since the two tabs
+// merged; opening it means navigating to 戦略 and using the
+// かんたん設定 area below the diagram view.
 async function openSettings(
   page: Page,
   initial: Settings = {
@@ -76,7 +79,7 @@ async function openSettings(
     .getByLabel("管理トークン")
     .fill("e2e-test-only-no-real-credential");
   await page.getByRole("button", { name: "接続", exact: true }).click();
-  await page.getByRole("button", { name: "設定", exact: true }).click();
+  await page.getByRole("button", { name: "戦略", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "かんたん設定", exact: true }),
   ).toBeVisible();
@@ -148,7 +151,7 @@ test("recommends safe settings without guessing first use, and previews without 
     .getByLabel("管理トークン")
     .fill("e2e-test-only-no-real-credential");
   await page.getByRole("button", { name: "接続", exact: true }).click();
-  await page.getByRole("button", { name: "設定", exact: true }).click();
+  await page.getByRole("button", { name: "戦略", exact: true }).click();
   await expect(maximum(page)).toHaveValue("5");
   expect(api.writes).toHaveLength(0);
   expect(api.commands).toHaveLength(0);

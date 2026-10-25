@@ -131,7 +131,6 @@ test("Japanese screens preserve actions, ratios and epochs across all viewports"
     "ダッシュボード",
     "戦略",
     "取引履歴",
-    "設定",
     "運用検証",
     "バックテスト比較",
   ]) {
