@@ -242,6 +242,61 @@ section svg {
   color: #ffbac4;
   border-radius: 8px;
 }
+/* PAPER operation bar (every tab): one slim line — state dot,
+   state label, one contextual button — so the operation state is
+   reachable from any tab. Tones mirror the connectivity strip so
+   a stopped state reads by color as well as by text. The button
+   is a touch shorter than the standard 44px control (the same
+   scoped exception as the slim header's emergency stop) to keep
+   the bar to a single line. */
+.operation-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #111d2b;
+  border: 1px solid #263448;
+  border-radius: 10px;
+  padding: 6px 8px 6px 16px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+.operation-bar-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.operation-bar-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #edc980;
+  flex: none;
+}
+.operation-bar.tone-ok {
+  border-color: #1f5c4d;
+}
+.operation-bar.tone-ok .operation-bar-dot {
+  background: #43dfb2;
+}
+.operation-bar.tone-caution {
+  border-color: #7a5c1e;
+  background: #2e2511;
+}
+.operation-bar.tone-alert {
+  border-color: #7a3040;
+  background: #331a24;
+}
+.operation-bar.tone-alert .operation-bar-dot {
+  background: #f77d8f;
+}
+.operation-bar button {
+  min-height: 36px;
+  padding: 4px 14px;
+  white-space: nowrap;
+  flex: none;
+}
 /* Connectivity strip (dashboard only): the safety message and the
    headline chips stay on one or two lines, with the full detail list
    one expansion away. Tones come from connectivityStatus() so an

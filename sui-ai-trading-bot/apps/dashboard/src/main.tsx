@@ -1,4 +1,5 @@
 import { ConnectivityStrip } from "./ConnectivityPanel.tsx";
+import { OperationBar } from "./OperationBar.tsx";
 import { DashboardClient } from "./dashboardClient.ts";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
@@ -466,6 +467,17 @@ function App() {
                         : "未接続"}
                   </span>
                 </div>
+                {/* The PAPER operation bar rides at the top of the
+                    content on every tab: state plus the one action
+                    that fits it (stop in place, or a jump to the
+                    operation controls at the top of the strategy
+                    tab). It renders with the first snapshot, like
+                    the tab-independent notices below. */}
+                <OperationBar
+                  runtime={data.runtime}
+                  control={control}
+                  onOpenStrategy={() => setTab("Strategy")}
+                />
                 {/* The market-data diagnostics live on the operations
                     tab, and the connectivity safety summary is a thin
                     strip on the dashboard only, so neither panel follows
