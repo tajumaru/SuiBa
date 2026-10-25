@@ -228,6 +228,7 @@ export class BotEngine {
         connectivityAtAnalysis: this.monitor.safety().connectivity,
       };
       decision.analysisContext = cycle.analysis;
+      decision.bookObservationId = cycle.cycleId;
       cycle.outcome = "ANALYZED";
       this.db.recordAnalysis(cycle.cycleId, decision, current, now);
       measuredAction = decision.action;

@@ -140,6 +140,7 @@ export interface CycleEvidence {
   outcome: string;
 }
 export interface TradingDecision {
+  bookObservationId?: string;
   scoreEvidence?: {
     version: 1;
     kind: "UNCALIBRATED_SCORE";

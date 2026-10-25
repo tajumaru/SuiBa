@@ -5,6 +5,7 @@ import {
 } from "./index.ts";
 import { BookAwareStrategy } from "../../strategy-engine/src/index.ts";
 import { analyzeBook } from "../../market-data/src/book-analysis.ts";
+import { observationAt } from "./book-observation-search.ts";
 import type { Book } from "../../market-data/src/deepbook.ts";
 import {
   defaults,
@@ -51,7 +52,7 @@ export async function compareStrategies(
       strategyFactory: (s) => ({
         analyze: async (c) => {
           // No later observation can backfill an earlier decision. Failed observations invalidate old books.
-          const observation = saved.findLast((o) => o.observedAt <= c.now);
+          const observation = observationAt(saved, c.now);
           let book = null;
           try {
             if (observation?.healthy && observation.book)
