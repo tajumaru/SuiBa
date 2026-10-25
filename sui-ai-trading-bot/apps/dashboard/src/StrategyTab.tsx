@@ -26,7 +26,9 @@ const SEGMENTS = [
  * hidden, like the app's tab panels, so unsaved settings edits
  * survive switching segments. Starting/stopping PAPER operation
  * and releasing a stopped state are safety operations, not part of
- * either segment: they render below the panels, always visible.
+ * either segment: they render above the segment switch, always
+ * visible — the first thing on the page, not a panel at the
+ * bottom of a long scroll.
  */
 export function StrategyTab({
   data,
@@ -50,6 +52,7 @@ export function StrategyTab({
   const editor = useSettingsEditor(data, api, onSaved);
   return (
     <>
+      <PaperOperationControls data={data} editor={editor} control={control} />
       <div
         className="strategy-segments"
         role="tablist"
@@ -86,7 +89,6 @@ export function StrategyTab({
       >
         <SettingsForm editor={editor} />
       </div>
-      <PaperOperationControls data={data} editor={editor} control={control} />
     </>
   );
 }
