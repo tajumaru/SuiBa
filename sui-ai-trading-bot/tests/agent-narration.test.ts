@@ -78,8 +78,8 @@ function decision(overrides: {
     evidence: {
       version: 1,
       evaluatedAt: o.evaluatedAt ?? NOW - 60_000,
-      candleTimestamp: NOW - 300_000,
-      previousCandleTimestamp: NOW - 600_000,
+      candleTimestamp: (NOW - 600_000) / 1000,
+      previousCandleTimestamp: (NOW - 900_000) / 1000,
       inputs: {
         price: o.price ?? 2.4,
         latestVolume: 1000,
@@ -199,6 +199,44 @@ function candidate(overrides: Partial<CandidateAudit>): CandidateAudit {
 }
 
 describe("worker decision telemetry (read-only, fail-closed)", () => {
+  it("normalizes real seconds-based candle evidence to its close time in milliseconds", () => {
+    const { db, monitor } = fixture();
+    const dec = decision({ evaluatedAt: NOW - 10_000 });
+    dec.evidence!.candleTimestamp = (NOW - 550_000) / 1000;
+    db.set("decision", dec);
+    const snapshot = runningSnapshot(db, monitor);
+    expect(snapshot.decision?.candleTimestamp).toBe(NOW - 250_000);
+    expect(snapshot.decision?.evaluatedAt).toBe(NOW - 10_000);
+    const state = advanceNarration(
+      emptyNarrationState(),
+      snapshot,
+      "alive",
+      NOW,
+    );
+    expect(state.entries.some((entry) => entry.kind === "cycle")).toBe(true);
+    expect(db.get<TradingDecision>("decision")!.evidence!.candleTimestamp).toBe(
+      dec.evidence!.candleTimestamp,
+    );
+  });
+
+  it.each(["stale", "unclosed", "milliseconds", "fractional"])(
+    "rejects %s candle evidence without weakening freshness limits",
+    (kind) => {
+      const { db, monitor } = fixture();
+      const dec = decision({ evaluatedAt: NOW });
+      dec.evidence!.candleTimestamp =
+        kind === "stale"
+          ? (NOW - 661_000) / 1000
+          : kind === "unclosed"
+            ? (NOW - 100_000) / 1000
+            : kind === "milliseconds"
+              ? NOW - 300_000
+              : (NOW - 600_000) / 1000 + 0.5;
+      db.set("decision", dec);
+      expect(monitor.snapshot(NOW).decision).toBeNull();
+    },
+  );
+
   it("is null when no decision was recorded", () => {
     const { monitor } = fixture();
     expect(monitor.snapshot(NOW).decision).toBeNull();
