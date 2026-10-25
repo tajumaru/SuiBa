@@ -117,6 +117,10 @@ export interface StrategyEvidence {
     maxVolumeChange: number;
     stopLossPct: number;
     takeProfitPct: number;
+    /** EMA gap-shrink option in force for this decision. Absent in
+     * evidence recorded before the option existed. */
+    emaGapShrinkEnabled?: boolean;
+    emaGapShrinkCandles?: number;
   };
   conditions: Record<string, boolean>;
   selectedRule: string;
@@ -242,6 +246,8 @@ export const settingsSchema = z
     strategy: z.literal("rule-based"),
     oversold: z.number().min(10).max(45),
     overbought: z.number().min(55).max(90),
+    emaGapShrinkEnabled: z.boolean().default(false),
+    emaGapShrinkCandles: z.number().int().min(2).max(10).default(3),
     stopLossPct: z.number().positive().max(0.1),
     takeProfitPct: z.number().positive().max(0.3),
     maxVolumeChange: z.number().positive().max(20),
@@ -263,6 +269,8 @@ export const defaults: Settings = {
   strategy: "rule-based",
   oversold: 30,
   overbought: 70,
+  emaGapShrinkEnabled: false,
+  emaGapShrinkCandles: 3,
   stopLossPct: 0.02,
   takeProfitPct: 0.04,
   maxVolumeChange: 4,
