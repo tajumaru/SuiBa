@@ -224,11 +224,7 @@ function App() {
   // unknown value (for example a restored "Chart" from before the
   // chart tab was merged into the dashboard) opens the dashboard.
   const activeTab =
-    tab === "Settings"
-      ? "Strategy"
-      : NAV_TABS.includes(tab)
-        ? tab
-        : "Overview";
+    tab === "Settings" ? "Strategy" : NAV_TABS.includes(tab) ? tab : "Overview";
   const logout = () => {
     setToken("");
     setData(null);
