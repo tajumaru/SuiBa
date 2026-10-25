@@ -261,7 +261,7 @@ try {
         Assert 'happy: Sui gRPC 2/2' ($report.summary.Apis.'Sui gRPC'.Successes -eq 2)
         Assert 'happy: cycles 3/3' ($report.summary.Cycles.Count -eq 3 -and $report.summary.Cycles.Successes -eq 3)
         Assert 'happy: reason COMPLETED' ($report.reason -eq 'COMPLETED')
-        Assert 'happy: COMPLETED is INCONCLUSIVE quality, not PASS' ($report.overallVerdict -eq 'INCONCLUSIVE')
+        Assert 'happy: fixture SQLite failure overrides incomplete summary' ($report.overallVerdict -eq 'FAIL')
         $stateHappy = (Get-Content (Join-Path $happy.RunDir.FullName 'state.json') -Raw) | ConvertFrom-Json
         Assert 'happy: state Completed' ($stateHappy.Status -eq 'Completed')
         Assert 'happy: state project name is compose-valid lowercase' (Test-SuiBaComposeProjectName $stateHappy.Project)

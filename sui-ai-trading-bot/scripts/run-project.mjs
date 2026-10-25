@@ -8,8 +8,12 @@ const tasks = {
     ["node_modules/typescript/bin/tsc", "--noEmit"],
     ["node_modules/vite/bin/vite.js", "build", "apps/dashboard"],
   ],
-  test: [["node_modules/vitest/vitest.mjs", "run"]],
+  test: [
+    ["--test", "tests/preflight-quality.node.cjs"],
+    ["node_modules/vitest/vitest.mjs", "run"],
+  ],
   "test:offline": [
+    ["--test", "tests/preflight-quality.node.cjs"],
     [
       "node_modules/vitest/vitest.mjs",
       "run",

@@ -36,6 +36,10 @@ try {
     $writer = [pscustomobject]@{ flushFailures=0; truncated=$false; dropped=0; queued=0 }
     $r.performance = [pscustomobject]@{ enabled=$true; reason=$null; sqlite=@{ available=$true; badLines=0 }; spikes=@{ available=$true; badLines=0 }; writers=@{sqlite=$writer;spikes=$writer} }
     Assert 'complete GO can PASS' ((Get-SuiBaOverallVerdict $r) -eq 'PASS')
+    $r | Add-Member qualityWindow ([pscustomobject]@{ context=[pscustomobject]@{ runId='other-run' } })
+    Assert 'another run summary cannot PASS' ((Get-SuiBaOverallVerdict $r) -eq 'FAIL')
+    $r.PSObject.Properties.Remove('qualityWindow')
+
     $writer.truncated=$true
     Assert 'truncated detail is incomplete' ((Get-SuiBaOverallVerdict $r) -eq 'INCONCLUSIVE')
     $writer.truncated=$false; $writer.flushFailures=1

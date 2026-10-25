@@ -1,0 +1,333 @@
+{
+  "runId": "winverify-20261024T233151002Z-df2afd7",
+  "sha": "df2afd7243c9b27e0c11944968d8e02ae8f3ebf1",
+  "imageId": "sha256:1ceda70bf5bbc88c57064664234a39e14461be0358ac40fe579ac8dff7165aec",
+  "historical": {
+    "verdict": "INCONCLUSIVE",
+    "checks": {
+      "twoHours": false,
+      "deepbookMinAttempts": true,
+      "suiMinAttempts": false,
+      "deepbookSuccess": true,
+      "suiSuccess": true,
+      "cycleSuccess": true,
+      "allFramesCurrent": true,
+      "bookFreshAtAcquisition": true,
+      "indexerFresh": true,
+      "safety": true,
+      "integrity": true,
+      "evidenceComplete": true,
+      "fixedBuild": true,
+      "reconstructionWithinBudget": true,
+      "bookFreshAtEnd": false,
+      "latestCycleSucceeded": true
+    },
+    "durationMs": 7199516,
+    "suiAttempts": 82,
+    "bookAgeAtEndMs": 18932
+  },
+  "recomputed": {
+    "verdict": "NO-GO",
+    "checks": {
+      "twoHours": false,
+      "deepbookMinAttempts": true,
+      "suiMinAttempts": false,
+      "deepbookSuccess": true,
+      "suiSuccess": true,
+      "cycleSuccess": true,
+      "allFramesCurrent": true,
+      "bookFreshAtAcquisition": true,
+      "indexerFresh": true,
+      "safety": true,
+      "integrity": true,
+      "evidenceComplete": true,
+      "fixedBuild": true,
+      "reconstructionWithinBudget": true,
+      "bookFreshAtEnd": false,
+      "runIdentity": null,
+      "terminalEvidence": null,
+      "plannedDuration": null,
+      "latestCycleSucceeded": true
+    },
+    "criteria": {
+      "twoHours": {
+        "status": "INSUFFICIENT",
+        "actual": 7199516,
+        "source": "first observer sample to final identity-bound snapshot (legacy: last heartbeat)",
+        "threshold": 7200000,
+        "unit": "ms"
+      },
+      "deepbookMinAttempts": {
+        "status": "PASS",
+        "actual": 772,
+        "source": "kind=api; cache hits excluded",
+        "threshold": 100,
+        "unit": "HTTP attempts"
+      },
+      "suiMinAttempts": {
+        "status": "INSUFFICIENT",
+        "actual": 82,
+        "source": "kind=api; cache hits excluded",
+        "threshold": 100,
+        "unit": "HTTP attempts"
+      },
+      "deepbookSuccess": {
+        "status": "PASS",
+        "actual": true,
+        "source": "preflight observer + final audit"
+      },
+      "suiSuccess": {
+        "status": "PASS",
+        "actual": true,
+        "source": "preflight observer + final audit"
+      },
+      "cycleSuccess": {
+        "status": "PASS",
+        "actual": true,
+        "source": "preflight observer + final audit"
+      },
+      "allFramesCurrent": {
+        "status": "PASS",
+        "actual": true,
+        "source": "preflight observer + final audit"
+      },
+      "bookFreshAtAcquisition": {
+        "status": "PASS",
+        "actual": true,
+        "source": "preflight observer + final audit"
+      },
+      "indexerFresh": {
+        "status": "PASS",
+        "actual": true,
+        "source": "preflight observer + final audit"
+      },
+      "safety": {
+        "status": "PASS",
+        "actual": true,
+        "source": "preflight observer + final audit"
+      },
+      "integrity": {
+        "status": "PASS",
+        "actual": true,
+        "source": "preflight observer + final audit"
+      },
+      "evidenceComplete": {
+        "status": "PASS",
+        "actual": true,
+        "source": "preflight observer + final audit"
+      },
+      "fixedBuild": {
+        "status": "PASS",
+        "actual": true,
+        "source": "preflight observer + final audit"
+      },
+      "reconstructionWithinBudget": {
+        "status": "PASS",
+        "actual": true,
+        "source": "preflight observer + final audit"
+      },
+      "bookFreshAtEnd": {
+        "status": "FAIL",
+        "actual": 18932,
+        "source": "last observer market.bookAt",
+        "threshold": 10000,
+        "unit": "ms",
+        "evaluatedAt": 1792892012074,
+        "bookAt": 1792891993142
+      },
+      "runIdentity": {
+        "status": "MISSING",
+        "actual": null,
+        "source": "run-context/observer/audit"
+      },
+      "terminalEvidence": {
+        "status": "MISSING",
+        "actual": null,
+        "source": "preflight observer + final audit"
+      },
+      "plannedDuration": {
+        "status": "MISSING",
+        "actual": 7199516,
+        "source": "run-context planned observation duration",
+        "threshold": null,
+        "unit": "ms"
+      },
+      "latestCycleSucceeded": {
+        "status": "PASS",
+        "actual": true,
+        "source": "preflight observer + final audit"
+      }
+    },
+    "durationMs": 7199516,
+    "note": "Legacy evidence; no terminal snapshot or run identity is fabricated."
+  },
+  "performance": {
+    "sqliteRecords": 4782,
+    "sqliteFailures": 0,
+    "spikeCount": 117,
+    "spikesOverlappingSqlite": 117,
+    "maximumSpike": {
+      "startedAt": 1792890071190,
+      "windowMs": 2733,
+      "maxDelayMs": 2166.358,
+      "sqliteUnionMs": 2208
+    },
+    "slowestSqlite": [
+      {
+        "v": 1,
+        "kind": "sqlite",
+        "op": "set",
+        "table": "bot_runtime_state",
+        "key": "operation_state",
+        "rows": 1,
+        "startedAt": 1792888872189,
+        "endedAt": 1792888872686,
+        "durationMs": 497.217,
+        "jsonMs": 0.016,
+        "sqlMs": 497.192,
+        "beginMs": null,
+        "bodyMs": null,
+        "commitMs": null,
+        "rollbackMs": null,
+        "ok": true,
+        "errorCode": null,
+        "cycleId": "024b51ba-1a56-4699-b3be-22b6b74912ba",
+        "cyclePhase": null,
+        "context": null
+      },
+      {
+        "v": 1,
+        "kind": "sqlite",
+        "op": "saveCandles",
+        "table": "market_candles",
+        "key": null,
+        "rows": 1005,
+        "startedAt": 1792887973427,
+        "endedAt": 1792887973827,
+        "durationMs": 400.672,
+        "jsonMs": 2.359,
+        "sqlMs": 2.281,
+        "beginMs": null,
+        "bodyMs": null,
+        "commitMs": null,
+        "rollbackMs": null,
+        "ok": true,
+        "errorCode": null,
+        "cycleId": "815bf734-a5dc-4c70-ae7a-377296bb5cb5",
+        "cyclePhase": null,
+        "context": "saveCandles"
+      },
+      {
+        "v": 1,
+        "kind": "sqlite",
+        "op": "transaction",
+        "table": null,
+        "key": null,
+        "rows": 0,
+        "startedAt": 1792887973427,
+        "endedAt": 1792887973827,
+        "durationMs": 400.585,
+        "jsonMs": null,
+        "sqlMs": null,
+        "beginMs": 0.008,
+        "bodyMs": 4.889,
+        "commitMs": 395.668,
+        "rollbackMs": null,
+        "ok": true,
+        "errorCode": null,
+        "cycleId": "815bf734-a5dc-4c70-ae7a-377296bb5cb5",
+        "cyclePhase": null,
+        "context": "saveCandles"
+      },
+      {
+        "v": 1,
+        "kind": "sqlite",
+        "op": "saveCandles",
+        "table": "market_candles",
+        "key": null,
+        "rows": 672,
+        "startedAt": 1792891332169,
+        "endedAt": 1792891332562,
+        "durationMs": 392.278,
+        "jsonMs": 2.774,
+        "sqlMs": 2.267,
+        "beginMs": null,
+        "bodyMs": null,
+        "commitMs": null,
+        "rollbackMs": null,
+        "ok": true,
+        "errorCode": null,
+        "cycleId": "a65d8aa7-184e-42e1-ad90-43cc79ab913f",
+        "cyclePhase": null,
+        "context": "saveCandles"
+      },
+      {
+        "v": 1,
+        "kind": "sqlite",
+        "op": "transaction",
+        "table": null,
+        "key": null,
+        "rows": 0,
+        "startedAt": 1792891332169,
+        "endedAt": 1792891332562,
+        "durationMs": 392.23,
+        "jsonMs": null,
+        "sqlMs": null,
+        "beginMs": 0.024,
+        "bodyMs": 5.318,
+        "commitMs": 386.871,
+        "rollbackMs": null,
+        "ok": true,
+        "errorCode": null,
+        "cycleId": "a65d8aa7-184e-42e1-ad90-43cc79ab913f",
+        "cyclePhase": null,
+        "context": "saveCandles"
+      }
+    ],
+    "transactionDurationSumMs": 48569.964,
+    "transactionCommitSumMs": 45032.337,
+    "note": "Union excludes parent/child double counting. COMMIT includes unseparated fsync/checkpoint/disk/scheduling costs; GC unmeasured."
+  },
+  "sourceManifest": [
+    {
+      "path": "evidence/preflight-evidence.jsonl",
+      "sha256": "3971db159b46bbc3c5d5cae21103e78cd807861842ed794aeecbf9449ebdd0a8",
+      "bytes": 4581041
+    },
+    {
+      "path": "evidence/audit.json",
+      "sha256": "3656660279a098c52672ee74f9dfd06cb79d63a830cbe91367b604fa336beac2",
+      "bytes": 743661
+    },
+    {
+      "path": "evidence/inspection.json",
+      "sha256": "15141b02bc260eb80ebc2fd1d9cbe62f0017fe43b54127b2510e74184a558e10",
+      "bytes": 1163
+    },
+    {
+      "path": "evidence/sqlite-timing.jsonl",
+      "sha256": "17eadcfda42d43b1698194d285f4e98ba8fa560aeee41c48708489daa156efe8",
+      "bytes": 1722795
+    },
+    {
+      "path": "evidence/event-loop-spikes.jsonl",
+      "sha256": "1b724b827d7e7c43f20148a1aefee48e6d72ebbda22c48cf8478cb971690ab7f",
+      "bytes": 941028
+    },
+    {
+      "path": "reports/report.json",
+      "sha256": "d77d0c8b9657f987cc90ad9d4db70c6749a5dd31701634d7fe2da611739c3996",
+      "bytes": 99108
+    },
+    {
+      "path": "reports/preflight-summary.json",
+      "sha256": "412dafbaeacee3f8df4289a36128047f7ff530677d6fae954952b55983391dc1",
+      "bytes": 11770
+    },
+    {
+      "path": "compose.override.yaml",
+      "sha256": "9364920576e6d28c9b878da6e0d5208cd67b007e870401bb8a2a06f59a905a73",
+      "bytes": 267
+    }
+  ]
+}
