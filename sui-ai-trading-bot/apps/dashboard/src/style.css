@@ -245,10 +245,10 @@ section svg {
 /* PAPER operation bar (every tab): one slim line — state dot,
    state label, one contextual button — so the operation state is
    reachable from any tab. Tones mirror the connectivity strip so
-   a stopped state reads by color as well as by text. The button
-   is a touch shorter than the standard 44px control (the same
-   scoped exception as the slim header's emergency stop) to keep
-   the bar to a single line. */
+   a stopped state reads by color as well as by text. Its one
+   action is a 30px icon button (a scoped exception to the
+   standard 44px control height, like the slim header's
+   emergency stop) to keep the bar to a single line. */
 .operation-bar {
   display: flex;
   align-items: center;
@@ -294,11 +294,48 @@ section svg {
 .operation-bar.tone-alert .operation-bar-dot {
   background: #f77d8f;
 }
-.operation-bar button {
-  min-height: 36px;
-  padding: 4px 14px;
-  white-space: nowrap;
+.operation-bar .operation-icon-button {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  border-radius: 9px;
+}
+.operation-bar .operation-icon-button svg {
+  width: 15px;
+  height: 15px;
+}
+/* Operation icon buttons (operation bar + operation panel):
+   squared like the app's regular buttons, with a line icon whose
+   stroke — and a thinner tint of it on the border — carries the
+   meaning (green start, red stop, amber release). The visible
+   text label is gone; the action's name lives in the button's
+   aria-label and title. */
+.operation-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+  background: #16233a;
+  border: 1px solid #2b3f5f;
+  border-radius: 10px;
+}
+.operation-icon-button svg {
+  width: 19px;
+  height: 19px;
+  flex: none;
+}
+.operation-icon-button.start {
+  border-color: rgba(47, 191, 155, 0.55);
+}
+.operation-icon-button.stop {
+  border-color: rgba(255, 125, 156, 0.55);
+}
+.operation-icon-button.release {
+  border-color: rgba(237, 201, 128, 0.55);
 }
 /* Connectivity strip (dashboard only): the safety message and the
    headline chips stay on one or two lines, with the full detail list
@@ -573,12 +610,24 @@ th {
 .paper-operation.stopped {
   color: #edc980;
 }
-/* Each operation button carries its own one-line explanation. */
-.control-action {
+/* The start/stop icon buttons ride at the right end of the
+   state heading's row instead of taking a row of their own; the
+   state text and the start-block reasons below carry the
+   explanation the buttons' captions used to give. */
+.paper-operation-head {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-width: 340px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.paper-operation-head h3 {
+  flex: 1;
+  margin: 0;
+}
+.paper-operation-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
 }
 /* The stop-state release is a standing section while the bot is
    stopped, not a disclosure: the way out of a stopped state must
@@ -592,6 +641,17 @@ th {
 }
 .stop-release h4 {
   margin-top: 0;
+}
+/* The release icon button rides at the right end of the release
+   heading's row, at the top of the section it acts on. */
+.stop-release-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.stop-release-head h4 {
+  flex: 1;
+  margin: 0;
 }
 @media (max-width: 600px) {
   header {
