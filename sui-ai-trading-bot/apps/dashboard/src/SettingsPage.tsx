@@ -274,17 +274,19 @@ export function SettingsChanges({
   );
 }
 const modeLabel = (mode: Mode) => (mode === "safe" ? "安全重視" : "カスタム");
-export function SettingsPage({
-  data,
-  api,
-  onSaved,
-  control,
-}: {
-  data: State;
-  api: SettingsApi;
-  onSaved: () => Promise<void>;
-  control: (c: string) => Promise<void>;
-}) {
+/**
+ * The settings editor state, shared by the settings form and the
+ * PAPER operation controls: the start button must stay disabled
+ * while the form holds unsaved edits, so both pieces read the same
+ * editor instance. The strategy tab mounts this hook once and keeps
+ * it mounted across segment switches, so unsaved edits survive
+ * moving between the ルール and 設定 segments.
+ */
+export function useSettingsEditor(
+  data: State,
+  api: SettingsApi,
+  onSaved: () => Promise<void>,
+) {
   const [editor, dispatch] = useReducer(
     settingsEditor,
     data.settings,
@@ -330,6 +332,43 @@ export function SettingsPage({
       lock.current = false;
     }
   }
+  return {
+    saved,
+    draft,
+    selected,
+    review,
+    switchTo,
+    status,
+    error,
+    conflict,
+    busy,
+    dirty,
+    choose,
+    edit,
+    confirm,
+    save,
+    dispatch,
+  };
+}
+export type SettingsEditor = ReturnType<typeof useSettingsEditor>;
+export function SettingsForm({ editor }: { editor: SettingsEditor }) {
+  const {
+    saved,
+    draft,
+    selected,
+    review,
+    switchTo,
+    status,
+    error,
+    conflict,
+    busy,
+    dirty,
+    choose,
+    edit,
+    confirm,
+    save,
+    dispatch,
+  } = editor;
   return (
     <section className="easy-settings" aria-busy={busy}>
       <h2>かんたん設定</h2>
@@ -470,9 +509,31 @@ export function SettingsPage({
         </p>
         {/* The profit-guard state (enabled flag, minimums and the
             latest verdict) is shown once on this tab, in the
-            strategy view's ProfitGuard card and detail panel above;
+            strategy view's ProfitGuard card and detail panel;
             the toggle stays in the advanced settings. */}
       </div>
+    </section>
+  );
+}
+/**
+ * Starting/stopping PAPER operation and releasing a stopped state
+ * are safety operations, not settings: on the strategy tab they
+ * render outside the ルール/設定 segments so they stay visible
+ * whichever segment is open. The start gate still reads the shared
+ * editor state (unsaved edits block starting).
+ */
+export function PaperOperationControls({
+  data,
+  editor,
+  control,
+}: {
+  data: State;
+  editor: SettingsEditor;
+  control: (c: string) => Promise<void>;
+}) {
+  const { busy, dirty, conflict, switchTo } = editor;
+  return (
+    <section aria-label="PAPER運用の操作">
       <hr />
       <h3
         className={`paper-operation ${data.runtime.running ? "running" : "stopped"}`}
@@ -521,5 +582,31 @@ export function SettingsPage({
         </details>
       )}
     </section>
+  );
+}
+/**
+ * The settings form and the operation controls composed as one
+ * page, in their historical order. The strategy tab renders the
+ * two pieces separately (form inside the 設定 segment, operations
+ * always visible); this composition keeps the combined rendering
+ * available unchanged.
+ */
+export function SettingsPage({
+  data,
+  api,
+  onSaved,
+  control,
+}: {
+  data: State;
+  api: SettingsApi;
+  onSaved: () => Promise<void>;
+  control: (c: string) => Promise<void>;
+}) {
+  const editor = useSettingsEditor(data, api, onSaved);
+  return (
+    <>
+      <SettingsForm editor={editor} />
+      <PaperOperationControls data={data} editor={editor} control={control} />
+    </>
   );
 }
