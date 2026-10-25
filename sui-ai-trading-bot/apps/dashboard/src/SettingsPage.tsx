@@ -19,7 +19,7 @@ import {
 import { number, percent, errorCode } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
 type State = ReturnType<BotEngine["snapshot"]>;
-type Field = {
+export type Field = {
   key: keyof Settings;
   label: string;
   help: string;
@@ -124,7 +124,7 @@ export const fields: Field[] = [
     help: "費用控除後に必要な利益率。最大100%。",
   },
 ];
-const format = (s: Settings, f: Field) =>
+export const formatSettingValue = (s: Settings, f: Field) =>
   typeof s[f.key] === "number"
     ? `${number(Number((Number(s[f.key]) * (f.scale ?? 1)).toPrecision(12)))} ${f.unit ?? ""}`
     : String(s[f.key]);
@@ -306,7 +306,7 @@ export function SettingsChanges({
         const field = fields.find((f) => f.key === key);
         const display = (s: Settings) =>
           field
-            ? format(s, field)
+            ? formatSettingValue(s, field)
             : key === "profitGuardEnabled"
               ? s[key]
                 ? "有効"
