@@ -73,21 +73,23 @@ describe("agent header avatar stylesheet", () => {
     css.indexOf("/* Agent narration feed:"),
   );
 
-  it("sticks a 92px circle to the top centre, half over the header at rest", () => {
+  it("sticks a 76px circle to the top centre, half over the header at rest", () => {
     // The dock is sticky, not positioned against the header: its
     // containing block spans the whole page, so after the header
     // scrolls away it stays 9px below the viewport top. The
     // negative margins centre the resting dock on the header's
     // bottom edge (half over it), exactly where it used to float.
+    // The dock is 112px tall (76px avatar + 8px pill margin +
+    // ~28px pill), so each negative margin is half of that: 56px.
     expect(section).toContain(
       ".agent-avatar-dock {\n  position: sticky;\n  top: 9px;\n  z-index: 5;",
     );
     expect(section).toContain("width: fit-content;");
-    expect(section).toContain("margin: -64px auto -64px;");
+    expect(section).toContain("margin: -56px auto -56px;");
     expect(section).toContain("pointer-events: none;");
     expect(section).not.toContain("translate(-50%, 50%)");
     expect(section).toContain(
-      ".agent-avatar {\n  position: relative;\n  width: 92px;\n  height: 92px;\n  border-radius: 50%;",
+      ".agent-avatar {\n  position: relative;\n  width: 76px;\n  height: 76px;\n  border-radius: 50%;",
     );
     // The artwork is clipped to the circle by the bob wrapper.
     expect(section).toContain(
@@ -140,12 +142,15 @@ describe("agent header avatar stylesheet", () => {
   });
 
   it("keeps following content clear of the dock", () => {
+    // The pill's bottom edge rests 56px below the header's bottom
+    // edge (half the 112px dock); the clearance adds the same
+    // ~14px of breathing room the 92px avatar had: 56 + 14 = 70.
     // Desktop: the tab bar (rendered only while connected, like
     // the avatar) carries the clearance.
-    expect(css).toContain("nav.has-avatar {\n  padding-top: 78px;\n}");
+    expect(css).toContain("nav.has-avatar {\n  padding-top: 70px;\n}");
     // Mobile: the tab bar is fixed, so the page top carries it.
     expect(css).toContain("main.has-avatar {");
-    expect(css).toContain("padding-top: 78px;");
+    expect(css).toContain("padding-top: 70px;");
   });
 });
 
@@ -230,5 +235,80 @@ describe("agent header avatar wiring (main.tsx)", () => {
   it("gives the tab bar and the page the avatar clearance classes", () => {
     expect(main).toContain('<nav className="has-avatar">');
     expect(main).toContain('<main className="has-avatar">');
+  });
+});
+
+describe("slim two-row header (design A)", () => {
+  const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
+  const header = main.slice(
+    main.indexOf("<header>"),
+    main.indexOf("</header>"),
+  );
+  const rowMain = header.slice(
+    header.indexOf("header-row-main"),
+    header.indexOf("header-row-sub"),
+  );
+  const rowSub = header.slice(header.indexOf("header-row-sub"));
+  const css = readFileSync(
+    new URL("../apps/dashboard/src/style.css", import.meta.url),
+    "utf8",
+  ).replace(/\r\n/g, "\n");
+
+  it("puts the title and the PAPER badge on the top row", () => {
+    expect(rowMain).toContain("<strong>◈ Sui Paper Lab</strong>");
+    expect(rowMain).toContain('className="badge"');
+    expect(rowMain).toContain("PAPER（仮想売買）専用");
+    expect(rowMain).not.toContain("緊急停止");
+    expect(rowMain).not.toContain("ログアウト");
+  });
+
+  it("puts the emergency stop, the meta line and the logout on the sub row", () => {
+    expect(rowSub).toContain('className="danger"');
+    expect(rowSub).toContain("緊急停止");
+    expect(rowSub).toContain('className="header-meta"');
+    expect(rowSub).toContain("ログアウト");
+    expect(rowSub).toContain('className="logout-link"');
+  });
+
+  it("keeps the copy unchanged: the old subtitle sits verbatim in the sub row", () => {
+    // The subtitle moved rows but its text is untouched, and it
+    // still appears exactly once in the header.
+    expect(rowSub).toContain("SUI / ネイティブUSDC · メインネットの市場データ");
+    expect(header.match(/メインネットの市場データ/g)).toHaveLength(1);
+    expect(rowMain).not.toContain("メインネットの市場データ");
+  });
+
+  it("styles the header as two slim rows with a compact badge and stop pill", () => {
+    expect(css).toContain(
+      "header {\n  position: relative;\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n  padding: 10px 5% 12px;",
+    );
+    expect(css).toContain(
+      ".header-row {\n  display: flex;\n  align-items: center;\n  gap: 12px;\n}",
+    );
+    // The sub row wraps instead of squeezing its items on narrow
+    // screens (the meta line gives way, the copy is not shortened).
+    expect(css).toContain(".header-row-sub {\n  flex-wrap: wrap;\n}");
+    expect(css).toContain("header strong {\n  font-size: 16px;\n}");
+    expect(css).toContain(
+      ".badge {\n  margin-left: auto;\n  border: 1px solid #41d9b0;\n  color: #41d9b0;\n  padding: 3px 9px;",
+    );
+    expect(css).toContain("font-size: 11px;");
+    expect(css).toContain(
+      "header .danger {\n  min-height: 36px;\n  padding: 6px 14px;\n  border-radius: 999px;\n  font-size: 12px;",
+    );
+    // The old three-band subtitle spacing is gone.
+    expect(css).not.toContain("header small {");
+  });
+
+  it("keeps the dock geometry consistent with the 76px avatar", () => {
+    // Dock height 112px = 76 (avatar) + 8 (pill margin) + ~28
+    // (pill): negative margins are half the dock (56px) and the
+    // clearance is the below-edge half plus ~14px of air (70px).
+    const section = css.slice(
+      css.indexOf("/* Agent header avatar:"),
+      css.indexOf("/* Agent narration feed:"),
+    );
+    expect(section).toContain("margin: -56px auto -56px;");
+    expect(css).toContain("nav.has-avatar {\n  padding-top: 70px;\n}");
   });
 });
