@@ -562,6 +562,233 @@ textarea {
   color: #93adbf;
   line-height: 1.8;
 }
+/* Login gate: the white character keeps the gate (LoginScreen).
+   Asleep until touched, at the laptop while the token is typed,
+   pointing along while a pattern is traced, smiling on a
+   verified hello. The stage is a bigger cousin of the header
+   avatar's circle and reuses its artwork (including the
+   two-frame typing swap, keyed to the same keyframes). */
+.login-gate {
+  padding-top: 36px;
+}
+.login-stage {
+  position: relative;
+  width: 124px;
+  height: 124px;
+  margin: 0 auto 10px;
+}
+.login-stage-art {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 3px solid #344e65;
+  background: #12161f;
+}
+.login-stage-art img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.login-stage-art img.agent-avatar-typing {
+  opacity: 0;
+}
+.login-stage-zzz {
+  position: absolute;
+  top: -8px;
+  right: -4px;
+  font-weight: 800;
+  font-size: 17px;
+  line-height: 1;
+  color: #9fd0ff;
+}
+.login-cap {
+  text-align: center;
+  font-size: 13px;
+  color: #9aafbf;
+  margin: 0 0 18px;
+  min-height: 1.6em;
+}
+.login-alert {
+  color: #ff9c9c;
+  font-size: 13px;
+  margin-top: 12px;
+}
+.login-notice {
+  color: #edc980;
+  font-size: 13px;
+  margin-top: 12px;
+}
+.login-note {
+  color: #71809a;
+  font-size: 12.5px;
+  margin-top: 14px;
+}
+.login-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 14px;
+}
+.login-links button,
+.login-link {
+  background: none;
+  border: none;
+  padding: 6px 0;
+  min-height: 0;
+  color: #8fa7b9;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.login-gate.shake {
+  animation: login-gate-shake 0.4s ease;
+}
+@keyframes login-gate-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-7px);
+  }
+  75% {
+    transform: translateX(7px);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .login-stage-art img.agent-avatar-typing {
+    animation: agent-avatar-typing 0.52s linear infinite;
+  }
+  .login-stage-zzz {
+    animation: agent-avatar-zzz 2.8s ease-in-out infinite;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-gate.shake {
+    animation: none;
+  }
+}
+/* The 3x3 trace pad (PatternPad): dots on a 264-unit grid,
+   the traced line drawn by the component's own SVG. Pointer
+   only — the token form is the accessible alternative. */
+.pattern-pad {
+  position: relative;
+  width: 264px;
+  height: 264px;
+  max-width: 100%;
+  aspect-ratio: 1;
+  margin: 4px auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.pattern-pad svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.pattern-dot {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px solid #3d5a76;
+  background: #101a27;
+  pointer-events: none;
+}
+.pattern-dot::after {
+  content: "";
+  position: absolute;
+  inset: 11px;
+  border-radius: 50%;
+  background: #5f7d99;
+}
+.pattern-dot.on {
+  border-color: #4da2ff;
+  background: #173448;
+}
+.pattern-dot.on::after {
+  background: #72d1ff;
+}
+.pattern-pad.tone-error .pattern-dot.on {
+  border-color: #e06c75;
+}
+.pattern-pad.tone-error .pattern-dot.on::after {
+  background: #ff9c9c;
+}
+.pattern-pad.tone-success .pattern-dot.on {
+  border-color: #43dfb2;
+}
+.pattern-pad.tone-success .pattern-dot.on::after {
+  background: #43dfb2;
+}
+/* Pattern enrolment offer + dialog (PatternEnrollment). */
+.pattern-offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  background: #14202f;
+  border: 1px solid #2b3f5f;
+  border-radius: 10px;
+}
+.pattern-offer p {
+  margin: 0;
+  font-size: 13px;
+}
+.pattern-offer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+.pattern-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgb(0 0 0 / 70%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.pattern-dialog {
+  background: #18232c;
+  color: #e6edf3;
+  border: 1px solid #344e65;
+  border-radius: 12px;
+  padding: 20px;
+  width: min(380px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  text-align: center;
+}
+.pattern-dialog h3 {
+  margin-top: 0;
+}
+.pattern-dialog-note {
+  font-size: 12.5px;
+  color: #9aafbf;
+  line-height: 1.7;
+  text-align: left;
+}
+.pattern-dialog-message {
+  font-size: 13.5px;
+  min-height: 1.6em;
+  margin: 10px 0 6px;
+}
+.pattern-dialog-actions {
+  margin-top: 14px;
+}
 table {
   width: 100%;
   border-collapse: collapse;

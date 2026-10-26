@@ -102,9 +102,9 @@ describe("operation bar wiring (main.tsx)", () => {
     expect(barAt).toBeGreaterThan(main.indexOf('className="title"'));
     expect(barAt).toBeLessThan(main.indexOf('className="narration-tab"'));
     expect(barAt).toBeLessThan(main.indexOf('activeTab === "Strategy"'));
-    // Before connecting there is no main content at all, so the
-    // bar cannot appear on the login screen.
-    expect(main).toContain('<main className="login">');
+    // Before connecting, the login gate renders instead of the
+    // app main, so the bar cannot appear on the login screen.
+    expect(main).toContain("<LoginScreen");
     expect(barAt).toBeGreaterThan(
       main.indexOf('<main className="has-avatar">'),
     );

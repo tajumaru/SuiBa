@@ -1,6 +1,8 @@
 import { ConnectivityStrip } from "./ConnectivityPanel.tsx";
 import { OperationBar } from "./OperationBar.tsx";
 import { PriceTicker } from "./PriceTicker.tsx";
+import { LoginScreen, type VerifyResult } from "./LoginScreen.tsx";
+import { PatternEnrollmentOffer } from "./PatternEnrollment.tsx";
 import { DashboardClient } from "./dashboardClient.ts";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
@@ -213,9 +215,41 @@ function OrderHistory({ orders }: { orders: Record<string, unknown>[] }) {
     </div>
   );
 }
+/**
+ * Verify a candidate management token with the worker before
+ * the login gate opens: one summary request (with the legacy
+ * state fallback the dashboard client also uses). A 401 comes
+ * back as its UNAUTHORIZED code so the gate can say the token
+ * was wrong, as opposed to the worker being unreachable.
+ */
+async function verifyToken(candidate: string): Promise<VerifyResult> {
+  const attempt = async (
+    path: string,
+  ): Promise<{ ok: true; status: number } | { ok: false; code: string; status: number }> => {
+    const r = await fetch("/api/" + path, {
+      signal: AbortSignal.timeout(8000),
+      headers: { Authorization: "Bearer " + candidate },
+    });
+    if (r.ok) return { ok: true, status: r.status };
+    const body = (await r.json().catch(() => ({}))) as { error?: unknown };
+    return {
+      ok: false,
+      code: typeof body.error === "string" ? body.error : `HTTP_${r.status}`,
+      status: r.status,
+    };
+  };
+  try {
+    const first = await attempt("dashboard/summary");
+    if (first.ok || first.status !== 404) return first;
+    const legacy = await attempt("state");
+    return legacy;
+  } catch {
+    return { ok: false, code: "NETWORK" };
+  }
+}
+
 function App() {
   const [token, setToken] = useState(""),
-    [input, setInput] = useState(""),
     [data, setData] = useState<State | null>(null),
     [error, setError] = useState(""),
     [channelError, setChannelError] = useState<string | null>(null),
@@ -403,30 +437,10 @@ function App() {
         <AgentHeaderAvatar pose={agentPose} celebrating={buyCelebration} />
       )}
       {!token ? (
-        <main className="login">
-          <h1>市場を検証する。</h1>
-          <p>実資金を使わない、ルールベースの取引ラボ。</p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              setToken(input);
-              setInput("");
-            }}
-          >
-            <label>
-              管理トークン
-              <input
-                type="password"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                required
-                autoComplete="off"
-              />
-            </label>
-            <button>接続</button>
-          </form>
-          <p>トークンはメモリ内でのみ保持します。</p>
-        </main>
+        <LoginScreen
+          verify={verifyToken}
+          onAuthenticated={(verified) => setToken(verified)}
+        />
       ) : (
         <>
           <nav className="has-avatar">
@@ -454,6 +468,10 @@ function App() {
             </button>
           </nav>
           <main className="has-avatar">
+            {/* The pattern-enrolment offer rides at the very top
+                until the reader enrols this device, puts it off
+                or dismisses it; it renders nothing otherwise. */}
+            <PatternEnrollmentOffer token={token} />
             {channelError && (
               <p role="alert" className="error">
                 {channelError}
