@@ -19,7 +19,7 @@ const css = readFileSync(
   "utf8",
 ).replace(/\r\n/g, "\n");
 
-function render(runtime: Partial<Runtime>) {
+function render(runtime: Partial<Runtime>, startBlocked: string[] = []) {
   return renderToStaticMarkup(
     <OperationBar
       runtime={
@@ -27,6 +27,7 @@ function render(runtime: Partial<Runtime>) {
       }
       control={async () => null}
       onOpenStrategy={() => {}}
+      startBlocked={startBlocked}
     />,
   );
 }
@@ -36,28 +37,49 @@ describe("operation bar states", () => {
     const html = render({ running: true });
     expect(html).toContain("PAPER運用：運用中");
     expect(html).toContain("operation-bar tone-ok");
-    // Icon only: the name lives in aria-label/title, unchanged.
+    // Icon only: the name lives in aria-label/title — the same
+    // name the old strategy-tab panel used, so the app has
+    // exactly one stop.
     expect(html).toContain(
-      '<button type="button" class="operation-icon-button stop" aria-label="停止" title="停止">',
+      '<button type="button" class="operation-icon-button stop" aria-label="PAPER運用停止" title="PAPER運用停止">',
     );
     expect(html).toContain('stroke="#ff7d9c"');
-    expect(html).not.toContain("開始へ");
+    expect(html).not.toContain("PAPER運用開始");
     expect(html).not.toContain("解除の手順へ");
   });
 
-  it("shows 停止中 with a jump to the strategy tab, never a direct start", () => {
+  it("shows 停止中 with a direct start on the bar", () => {
     const html = render({});
     expect(html).toContain("PAPER運用：停止中");
     expect(html).toContain("operation-bar tone-caution");
     expect(html).toContain(
-      '<button type="button" class="operation-icon-button go" aria-label="開始へ" title="開始へ">',
+      '<button type="button" class="operation-icon-button start" aria-label="PAPER運用開始" title="PAPER運用開始">',
     );
-    expect(html).toContain('stroke="#dbe7f5"');
+    expect(html).toContain('stroke="#43dfb2"');
     expect(html).not.toContain("解除の手順へ");
-    // The bar has no start of its own: the only control command it
-    // can issue is stop (see the wiring test below as well).
-    expect(bar).not.toContain('control("start")');
+    expect(html).not.toContain("今は開始できません");
+    // The unified bar issues start and stop itself.
+    expect(bar).toContain('control("start")');
     expect(bar).toContain('control("stop")');
+  });
+
+  it("disables the start and lists every reason while the editor gate blocks it", () => {
+    const html = render({}, ["未保存の変更があります。テスト用の理由。"]);
+    const startAt = html.indexOf('aria-label="PAPER運用開始"');
+    const button = html.slice(
+      html.lastIndexOf("<button", startAt),
+      html.indexOf(">", startAt),
+    );
+    expect(button).toContain("disabled");
+    expect(html).toContain("今は開始できません：");
+    expect(html).toContain("未保存の変更があります。テスト用の理由。");
+    // The block strip only ever explains a plain stop.
+    expect(render({ running: true }, ["理由"])).not.toContain(
+      "今は開始できません",
+    );
+    expect(render({ emergency: true }, ["理由"])).not.toContain(
+      "今は開始できません",
+    );
   });
 
   it("shows 緊急停止中 / 安全停止中 with a jump to the release steps", () => {
@@ -75,8 +97,10 @@ describe("operation bar states", () => {
       '<button type="button" class="operation-icon-button release" aria-label="解除の手順へ" title="解除の手順へ">',
     );
     // A stopped state never offers the in-place stop or a start.
-    expect(emergency).not.toContain("開始へ");
-    expect(safety).not.toContain("開始へ");
+    expect(emergency).not.toContain("PAPER運用開始");
+    expect(safety).not.toContain("PAPER運用開始");
+    expect(emergency).not.toContain("PAPER運用停止");
+    expect(safety).not.toContain("PAPER運用停止");
   });
 
   it("carries a state dot whose tone follows the state", () => {
@@ -114,6 +138,11 @@ describe("operation bar wiring (main.tsx)", () => {
     expect(main).toContain("runtime={data.runtime}");
     expect(main).toContain("control={control}");
     expect(main).toContain('onOpenStrategy={() => setTab("Strategy")}');
+  });
+
+  it("feeds the bar the strategy editor's start blocks", () => {
+    expect(main).toContain("startBlocked={startBlocked}");
+    expect(main).toContain("onStartGateChange={setStartBlocked}");
   });
 
   it("stays a single slim line that cannot collide with the avatar dock spacing", () => {

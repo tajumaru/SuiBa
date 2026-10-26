@@ -1,12 +1,13 @@
-import React from "react";
+import React, { useEffect } from "react";
 import type { BotEngine } from "../../worker/src/engine.ts";
 import type { DecisionTelemetry } from "../../worker/src/operations.ts";
 import type { IndicatorPoint } from "./strategyView.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
 import { StrategyPanel } from "./StrategyPanel.tsx";
 import {
-  PaperOperationControls,
   SettingsForm,
+  StopReleaseSection,
+  startBlockedReasons,
   useSettingsEditor,
 } from "./SettingsPage.tsx";
 
@@ -25,10 +26,12 @@ const SEGMENTS = [
  * かんたん設定 editor). Both panels stay mounted and are only
  * hidden, like the app's tab panels, so unsaved settings edits
  * survive switching segments. Starting/stopping PAPER operation
- * and releasing a stopped state are safety operations, not part of
- * either segment: they render above the segment switch, always
- * visible — the first thing on the page, not a panel at the
- * bottom of a long scroll.
+ * lives in the operation bar (unified there); what stays on this
+ * page is the stop-state release section, rendered above the
+ * segment switch in a stopped state only — and the start gate:
+ * this tab owns the settings editor, so it reports the editor's
+ * start blocks up to the bar, which disables its start button
+ * and lists the reasons while this tab is open.
  */
 export function StrategyTab({
   data,
@@ -39,6 +42,7 @@ export function StrategyTab({
   history,
   segment,
   onSegmentChange,
+  onStartGateChange,
 }: {
   data: State;
   api: SettingsApi;
@@ -48,11 +52,21 @@ export function StrategyTab({
   history: IndicatorPoint[];
   segment: StrategySegment;
   onSegmentChange: (segment: StrategySegment) => void;
+  onStartGateChange?: (blocked: string[]) => void;
 }) {
   const editor = useSettingsEditor(data, api, onSaved);
+  // The bar's start gate: report this editor's blocks while the
+  // tab is mounted, and clear them on the way out (leaving the tab
+  // discards the editor, so its blocks end with it).
+  const blocked = startBlockedReasons(editor, data.runtime);
+  const blockedKey = blocked.join("\n");
+  useEffect(() => {
+    onStartGateChange?.(blocked);
+    return () => onStartGateChange?.([]);
+  }, [blockedKey]);
   return (
     <>
-      <PaperOperationControls data={data} editor={editor} control={control} />
+      <StopReleaseSection data={data} control={control} />
       <div
         className="strategy-segments"
         role="tablist"

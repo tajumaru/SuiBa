@@ -316,7 +316,29 @@ section svg {
   width: 15px;
   height: 15px;
 }
-/* Operation icon buttons (operation bar + operation panel):
+/* Under-bar strips: why the bar's start is currently blocked, and
+   the server-side refusal of a start pressed on the bar. Slim and
+   in-flow, directly under the bar they explain. */
+.operation-bar-notice {
+  background: #111d2b;
+  border: 1px solid #263448;
+  border-radius: 10px;
+  padding: 10px 16px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+.operation-bar-notice p {
+  margin: 0 0 6px;
+}
+.operation-bar-notice ul {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.7;
+}
+.operation-bar-failure {
+  margin: 0 0 14px;
+}
+/* Operation icon buttons (operation bar + release section):
    squared like the app's regular buttons, with a line icon whose
    stroke — and a thinner tint of it on the border — carries the
    meaning (green start, red stop, amber release). The visible

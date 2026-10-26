@@ -42,11 +42,11 @@ function render(segment: "rules" | "settings") {
 }
 
 // The rendered regions of the strategy tab, sliced at the region
-// boundaries: the always visible operation controls at the top of
-// the page, then the segment switch, then the rules and settings
-// panels.
+// boundaries: the stop-state release section at the top of the
+// page (start/stop themselves live in the operation bar), then
+// the segment switch, then the rules and settings panels.
 function regions(html: string) {
-  const operationsAt = html.indexOf('aria-label="PAPER運用の操作"');
+  const operationsAt = html.indexOf('class="stop-release"');
   const tablistAt = html.indexOf('role="tablist"');
   const rulesAt = html.indexOf('id="strategy-segment-panel-rules"');
   const settingsAt = html.indexOf('id="strategy-segment-panel-settings"');
@@ -116,32 +116,40 @@ describe("strategy tab segments", () => {
     expect(rulesTab).toContain('aria-selected="false"');
   });
 
-  it("keeps start/stop and the stop-state release outside the segments, visible in both", () => {
+  it("keeps the stop-state release outside the segments, visible in both", () => {
     for (const segment of ["rules", "settings"] as const) {
       const html = render(segment);
       const { rules, settings, operations } = regions(html);
-      expect(operations).toContain("PAPER運用開始");
-      expect(operations).toContain("PAPER運用停止");
+      // Start/stop were unified into the operation bar: the tab
+      // itself no longer carries those buttons, in either segment
+      // (the release steps still mention the start by name — as
+      // prose pointing at the bar, not as a button here).
+      expect(operations).not.toContain('aria-label="PAPER運用開始"');
+      expect(operations).not.toContain('aria-label="PAPER運用停止"');
+      expect(html).not.toContain('aria-label="PAPER運用開始"');
+      expect(html).not.toContain('aria-label="PAPER運用停止"');
+      // The release section stays: heading once, with its button.
       expect(operations.match(/停止状態の解除/g)).toHaveLength(1);
-      // Neither segment panel contains the safety operations.
-      expect(rules).not.toContain("PAPER運用開始");
-      expect(settings).not.toContain("PAPER運用開始");
+      expect(operations).toContain("停止解除（再開は手動）");
+      // Neither segment panel contains the release section.
+      expect(rules).not.toContain("停止状態の解除");
       expect(settings).not.toContain("停止状態の解除");
     }
   });
 
-  it("puts the operation controls at the top of the page, above the segment switch", () => {
+  it("puts the release section at the top of the page, above the segment switch", () => {
     const html = render("rules");
-    const operationsAt = html.indexOf('aria-label="PAPER運用の操作"');
+    const operationsAt = html.indexOf('class="stop-release"');
     const tablistAt = html.indexOf('role="tablist"');
     const rulesAt = html.indexOf('id="strategy-segment-panel-rules"');
     expect(operationsAt).toBeGreaterThanOrEqual(0);
     expect(operationsAt).toBeLessThan(tablistAt);
     expect(tablistAt).toBeLessThan(rulesAt);
-    // The source renders the controls before the tablist, too.
-    expect(
-      strategyTab.indexOf("<PaperOperationControls"),
-    ).toBeLessThan(strategyTab.indexOf('role="tablist"'));
+    // The source renders the section before the tablist, too.
+    expect(strategyTab.indexOf("<StopReleaseSection")).toBeLessThan(
+      strategyTab.indexOf('role="tablist"'),
+    );
+    expect(strategyTab).not.toContain("<PaperOperationControls");
   });
 
   it("mounts the editor state once, above the segment panels", () => {
