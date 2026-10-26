@@ -97,6 +97,8 @@ export const numericText = (value: unknown): string | null => {
   }
 };
 export class OperationMonitor {
+  // A failed recovery read cannot grant orders even if stop persistence also fails.
+  private recoveryReadFault = false;
   private cycleFailed = false;
   private cycleGeneration = 0;
   private softFailureThisCycle = false;
@@ -166,6 +168,7 @@ export class OperationMonitor {
       this.stop("PAPER_RECOVERY_EXHAUSTED", now);
   }
   ordersAllowed(generation?: number, now = Date.now()) {
+    if (this.recoveryReadFault) return false;
     if (!this.db.health().healthy) return false;
     const r = this.db.runtime(),
       s = this.state();
@@ -186,6 +189,24 @@ export class OperationMonitor {
   }
 
   recoveryCycle(checks: { market: boolean; sui: boolean }, now = Date.now()) {
+    if (this.recoveryReadFault) return false;
+    try {
+      // Hold the write lock through identity/ledger checks and the resume write.
+      return this.db.transaction(() => this.checkedRecoveryCycle(checks, now));
+    } catch {
+      this.recoveryReadFault = true;
+      try {
+        this.failCycle("PAPER_RECOVERY_READ_FAILED", now);
+      } catch {
+        /* Process-local gate remains closed. */
+      }
+      return false;
+    }
+  }
+  private checkedRecoveryCycle(
+    checks: { market: boolean; sui: boolean },
+    now: number,
+  ) {
     if (!this.db.health().healthy) return false;
     const s = this.safety(),
       r = this.db.runtime();
@@ -198,7 +219,19 @@ export class OperationMonitor {
       this.cycleGeneration !== s.generation
     )
       return false;
-    if (!checks.market || !checks.sui || apiAccess.blocked()) return false;
+    if (!checks.market || !checks.sui || apiAccess.blocked()) {
+      this.saveSafety({
+        connectivity: "DEGRADED",
+        healthyCycles: 0,
+        firstHealthyAt: null,
+        lastHealthyCycleAt: null,
+      });
+      return false;
+    }
+    if (!this.recoveryOrdersKnown(now)) {
+      this.failCycle("PAPER_ORDER_STATE_UNKNOWN", now);
+      return false;
+    }
     if (!this.ledger().ok) {
       this.failCycle("PAPER_RECONCILIATION_FAILED", now);
       return false;
@@ -208,6 +241,17 @@ export class OperationMonitor {
       this.failCycle("MARKET_DATA_STALLED", now, stalled);
       return false;
     }
+    const finalSafety = this.safety(),
+      finalRuntime = this.db.runtime();
+    if (
+      !this.db.health().healthy ||
+      finalSafety.generation !== s.generation ||
+      finalRuntime.error ||
+      finalRuntime.emergency ||
+      this.cycleFailed ||
+      this.softFailureThisCycle
+    )
+      return false;
     if (
       s.lastHealthyCycleAt != null &&
       now - s.lastHealthyCycleAt < paperRecoveryLimits.minimumCycleSpacingMs
@@ -230,6 +274,7 @@ export class OperationMonitor {
     }
     const resume =
       s.resumePending &&
+      finalSafety.resumePending &&
       !this.db.runtime().error &&
       !r.emergency &&
       this.mode === "PAPER";
@@ -259,6 +304,67 @@ export class OperationMonitor {
       });
     }
     return resume;
+  }
+
+  /** PAPER fills are atomic; pending/unknown or unmatched records require operator review. */
+  private recoveryOrdersKnown(now: number) {
+    const orders = new Map<
+      string,
+      { status: string; side: unknown; trades: number; checks: number }
+    >();
+    let known = true;
+    this.db.visitRecoveryRecords((table, row) => {
+      const value = JSON.parse(row.json);
+      if (
+        !value ||
+        typeof value !== "object" ||
+        !Number.isFinite(row.timestamp) ||
+        row.timestamp < 0 ||
+        row.timestamp > now
+      ) {
+        known = false;
+        return;
+      }
+      const id = table === "paper_orders" ? value.id : value.orderId;
+      if (typeof id !== "string" || !id.length || row.id !== id) {
+        known = false;
+        return;
+      }
+      if (table === "paper_orders") {
+        if (orders.has(id) || !["FILLED", "REJECTED"].includes(value.status))
+          known = false;
+        orders.set(id, {
+          status: value.status,
+          side: value.side,
+          trades: 0,
+          checks: 0,
+        });
+      } else {
+        const order = orders.get(id);
+        if (!order || order.status !== "FILLED") {
+          known = false;
+          return;
+        }
+        if (table === "paper_trades") {
+          if (
+            !["BUY", "SELL"].includes(value.side) ||
+            value.side !== order.side
+          )
+            known = false;
+          order.trades++;
+        } else {
+          if (value.ok !== true) known = false;
+          order.checks++;
+        }
+      }
+    });
+    for (const order of orders.values())
+      if (
+        order.status !== "REJECTED" &&
+        (order.trades !== 1 || order.checks !== 1)
+      )
+        known = false;
+    return known;
   }
 
   private fetchMono: number | null = null;

@@ -1,4 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { OperationMonitor } from "../apps/worker/src/operations.ts";
 import { recoverableReadFailure } from "../packages/shared/src/paper-recovery.ts";
@@ -20,6 +24,7 @@ export const failure = (patch: Partial<ApiFailure> = {}): ApiFailure => ({
   ...patch,
 });
 const databases: BotDatabase[] = [];
+const folders: string[] = [];
 function setup() {
   const db = new BotDatabase(":memory:");
   databases.push(db);
@@ -30,8 +35,127 @@ function setup() {
 }
 afterEach(() => {
   for (const db of databases.splice(0)) db.close();
+  for (const folder of folders.splice(0)) rmSync(folder, { recursive: true });
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+});
+
+it.each(["BUY", "SELL"] as const)(
+  "isolates recovery direction validation for a %s order",
+  (side) => {
+    for (const mismatch of [false, true]) {
+      const { db, monitor } = setup(),
+        start = Date.now();
+      const id = "direction-only";
+      db.append("paper_orders", id, { id, status: "FILLED", side }, start);
+      db.append(
+        "paper_trades",
+        id,
+        {
+          orderId: id,
+          side: mismatch ? (side === "BUY" ? "SELL" : "BUY") : side,
+          fee: "0",
+          costs: { gasUsdc: "0" },
+        },
+        start,
+      );
+      db.append(
+        "paper_checks",
+        id,
+        {
+          orderId: id,
+          ok: true,
+          expected: { ...db.portfolio(), gasUsdc: "0", tradeFee: "0" },
+        },
+        start,
+      );
+      expect(monitor.ledger().ok).toBe(true);
+      const f = failure({ occurredAt: start });
+      monitor.transientFailure(f.api, f.code, f, start);
+      monitor.market(start, start);
+      monitor.beginCycle();
+      expect(
+        monitor.recoveryCycle({ market: true, sui: true }, start + 1000),
+      ).toBe(false);
+      if (mismatch) {
+        expect(db.runtime().error).toBe("PAPER_ORDER_STATE_UNKNOWN");
+        expect(monitor.safety().resumePending).toBe(false);
+      } else expect(db.runtime().error).toBeNull();
+      monitor.beginCycle();
+      expect(
+        monitor.recoveryCycle({ market: true, sui: true }, start + 61000),
+      ).toBe(!mismatch);
+      expect(db.runtime().running).toBe(!mismatch);
+      if (mismatch) expect(monitor.ordersAllowed()).toBe(false);
+    }
+  },
+);
+
+it("closes the recovery gate on a separate SQLite writer lock", () => {
+  const folder = mkdtempSync(join(tmpdir(), "suiba-recovery-lock-"));
+  folders.push(folder);
+  const path = join(folder, "bot.sqlite"),
+    db = new BotDatabase(path);
+  databases.push(db);
+  db.set("runtime", { ...db.runtime(), running: true });
+  const monitor = new OperationMonitor(db),
+    start = Date.now();
+  const f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  monitor.market(start, start);
+  monitor.beginCycle();
+  const writer = new DatabaseSync(path);
+  try {
+    writer.exec("BEGIN IMMEDIATE");
+    expect(
+      monitor.recoveryCycle({ market: true, sui: true }, start + 1000),
+    ).toBe(false);
+    expect(monitor.ordersAllowed()).toBe(false);
+    expect(db.runtime().running).toBe(false);
+  } finally {
+    writer.exec("ROLLBACK");
+    writer.close();
+  }
+  // Even though both proof and stop persistence encountered BUSY, releasing the lock cannot reopen the gate.
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 61000),
+  ).toBe(false);
+  expect(monitor.ordersAllowed()).toBe(false);
+});
+
+it("rolls back a real deferred-constraint COMMIT failure during resume", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  const f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  monitor.market(start, start);
+  monitor.beginCycle();
+  monitor.recoveryCycle({ market: true, sui: true }, start + 1000);
+  const raw = (db as unknown as { db: DatabaseSync }).db;
+  raw.exec(`
+    CREATE TABLE commit_parent(id INTEGER PRIMARY KEY);
+    CREATE TABLE commit_child(parent INTEGER REFERENCES commit_parent(id) DEFERRABLE INITIALLY DEFERRED);
+    CREATE TRIGGER fail_resume_commit AFTER UPDATE ON bot_runtime_state
+    WHEN NEW.key='runtime' AND json_extract(NEW.json,'$.running')=1
+    BEGIN INSERT INTO commit_child VALUES(99); END;
+  `);
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 61000),
+  ).toBe(false);
+  expect(raw.prepare("SELECT * FROM commit_child").all()).toHaveLength(0);
+  expect(db.runtime()).toMatchObject({
+    running: false,
+    error: "PAPER_RECOVERY_READ_FAILED",
+  });
+  expect(monitor.safety().resumePending).toBe(false);
+  expect(
+    db
+      .history("operation_events")
+      .some((e) => e.reason === "PAPER_NETWORK_RECOVERED"),
+  ).toBe(false);
+  expect(monitor.ordersAllowed()).toBe(false);
 });
 
 it("blocks orders on the first evidenced BODY failure without latching a hard error", () => {
@@ -176,4 +300,285 @@ it("counts a completed cycle only once and caps repeated failures", () => {
   expect(db.runtime().running).toBe(false);
   for (let i = 1; i < 9; i++) monitor.transientFailure(f.api, f.code, f);
   expect(db.runtime().error).toBe("PAPER_RECOVERY_EXHAUSTED");
+});
+
+it.each(["PENDING", "UNKNOWN", "FILLED", "CANCELLED"])(
+  "requires review for unresolved %s orders",
+  (status) => {
+    const { db, monitor } = setup();
+    const start = Date.now();
+    const f = failure({ occurredAt: start });
+    monitor.transientFailure(f.api, f.code, f, start);
+    db.append("paper_orders", "orphan", { id: "orphan", status }, start);
+    monitor.market(start, start);
+    monitor.beginCycle();
+    expect(
+      monitor.recoveryCycle({ market: true, sui: true }, start + 1000),
+    ).toBe(false);
+    expect(db.runtime()).toMatchObject({
+      running: false,
+      error: "PAPER_ORDER_STATE_UNKNOWN",
+    });
+    expect(monitor.safety().resumePending).toBe(false);
+    monitor.beginCycle();
+    expect(
+      monitor.recoveryCycle({ market: true, sui: true }, start + 61000),
+    ).toBe(false);
+    expect(monitor.ordersAllowed()).toBe(false);
+  },
+);
+
+it("requires consecutive healthy proofs after a missing market or Sui proof", () => {
+  const { db, monitor } = setup();
+  const start = Date.now(),
+    f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  monitor.market(start, start);
+  monitor.beginCycle();
+  monitor.recoveryCycle({ market: true, sui: true }, start + 1000);
+  expect(monitor.safety().healthyCycles).toBe(1);
+  monitor.beginCycle();
+  monitor.recoveryCycle({ market: false, sui: true }, start + 31000);
+  expect(monitor.safety()).toMatchObject({
+    connectivity: "DEGRADED",
+    healthyCycles: 0,
+    firstHealthyAt: null,
+  });
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 61000),
+  ).toBe(false);
+  expect(db.runtime().running).toBe(false);
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 121000),
+  ).toBe(true);
+});
+
+it.each([
+  "duplicate-order-id",
+  "orphan-trade",
+  "orphan-check",
+  "failed-check",
+  "duplicate-trade",
+  "duplicate-check",
+  "wrong-side",
+  "future-order",
+  "invalid-state",
+])("refuses automatic restart for %s", (kind) => {
+  const { db, monitor } = setup(),
+    start = Date.now(),
+    f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  const order = { id: "known", status: "FILLED", side: "BUY" };
+  db.append("paper_orders", "known", order, start);
+  db.append("paper_trades", "known", { orderId: "known", side: "BUY" }, start);
+  db.append("paper_checks", "known", { orderId: "known", ok: true }, start);
+  if (kind === "duplicate-order-id")
+    db.append("paper_orders", "alias", order, start);
+  if (kind === "orphan-trade")
+    db.append(
+      "paper_trades",
+      "orphan",
+      { orderId: "orphan", side: "BUY" },
+      start,
+    );
+  if (kind === "orphan-check")
+    db.append("paper_checks", "orphan", { orderId: "orphan", ok: true }, start);
+  if (kind === "failed-check")
+    db.append("paper_checks", "failed", { orderId: "known", ok: false }, start);
+  if (kind === "duplicate-trade")
+    db.append(
+      "paper_trades",
+      "alias",
+      { orderId: "known", side: "BUY" },
+      start,
+    );
+  if (kind === "duplicate-check")
+    db.append("paper_checks", "alias", { orderId: "known", ok: true }, start);
+  if (kind === "wrong-side") {
+    db.append(
+      "paper_orders",
+      "wrong",
+      { id: "wrong", status: "FILLED", side: "SELL" },
+      start,
+    );
+    db.append(
+      "paper_trades",
+      "wrong",
+      { orderId: "wrong", side: "BUY" },
+      start,
+    );
+  }
+  if (kind === "future-order")
+    db.append(
+      "paper_orders",
+      "future",
+      { id: "future", status: "REJECTED" },
+      start + 999999,
+    );
+  if (kind === "invalid-state")
+    db.append(
+      "paper_orders",
+      "invalid",
+      { id: "invalid", status: "BOGUS" },
+      start,
+    );
+  monitor.market(start, start);
+  monitor.beginCycle();
+  expect(monitor.recoveryCycle({ market: true, sui: true }, start + 1000)).toBe(
+    false,
+  );
+  expect(db.runtime()).toMatchObject({
+    running: false,
+    error: "PAPER_ORDER_STATE_UNKNOWN",
+  });
+  expect(monitor.safety().resumePending).toBe(false);
+});
+
+it("latches a recovery read exception even when persisting the stop also fails", () => {
+  const { db, monitor } = setup(),
+    start = Date.now(),
+    f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  monitor.market(start, start);
+  monitor.beginCycle();
+  vi.spyOn(db, "visitRecoveryRecords").mockImplementation(() => {
+    throw new Error("read failed");
+  });
+  const write = vi.spyOn(db, "set").mockImplementation(() => {
+    throw new Error("write failed");
+  });
+  expect(monitor.recoveryCycle({ market: true, sui: true }, start + 1000)).toBe(
+    false,
+  );
+  write.mockRestore();
+  db.set("runtime", { ...db.runtime(), running: true });
+  expect(monitor.ordersAllowed()).toBe(false);
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 61000),
+  ).toBe(false);
+});
+
+it("durably stops on a ledger read exception", () => {
+  const { db, monitor } = setup(),
+    start = Date.now(),
+    f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  monitor.market(start, start);
+  monitor.beginCycle();
+  vi.spyOn(db, "range").mockImplementation(() => {
+    throw new Error("read failed");
+  });
+  expect(monitor.recoveryCycle({ market: true, sui: true }, start + 1000)).toBe(
+    false,
+  );
+  expect(db.runtime()).toMatchObject({
+    running: false,
+    error: "PAPER_RECOVERY_READ_FAILED",
+  });
+  expect(monitor.safety().resumePending).toBe(false);
+});
+
+it("detects an anomaly inserted immediately before the resume proof", () => {
+  const { db, monitor } = setup(),
+    start = Date.now(),
+    f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  monitor.market(start, start);
+  monitor.beginCycle();
+  monitor.recoveryCycle({ market: true, sui: true }, start + 1000);
+  db.append(
+    "paper_checks",
+    "late",
+    { orderId: "late", ok: true },
+    start + 60000,
+  );
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 61000),
+  ).toBe(false);
+  expect(monitor.ordersAllowed()).toBe(false);
+});
+
+it("rechecks a control change during the final ledger proof", () => {
+  const { db, monitor } = setup(),
+    start = Date.now(),
+    f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  monitor.market(start, start);
+  monitor.beginCycle();
+  monitor.recoveryCycle({ market: true, sui: true }, start + 1000);
+  const ledger = monitor.ledger.bind(monitor);
+  vi.spyOn(monitor, "ledger").mockImplementation(() => {
+    const result = ledger();
+    monitor.transition("MANUAL_STOP", start + 61000);
+    return result;
+  });
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 61000),
+  ).toBe(false);
+  expect(db.runtime().running).toBe(false);
+});
+
+it("scans all 30,000 records without sorting or skipping old history", () => {
+  const { db, monitor } = setup();
+  db.transaction(() => {
+    for (let i = 0; i < 10000; i++) {
+      const id = `bulk:${i}`;
+      db.append("paper_orders", id, { id, status: "FILLED", side: "BUY" }, i);
+      db.append("paper_trades", id, { orderId: id, side: "BUY" }, i);
+      db.append("paper_checks", id, { orderId: id, ok: true }, i);
+    }
+  });
+  const scan = (
+    monitor as unknown as { recoveryOrdersKnown(now: number): boolean }
+  ).recoveryOrdersKnown.bind(monitor);
+  expect(scan(Date.now())).toBe(true);
+  db.append("paper_trades", "old-orphan", { orderId: "old-orphan" }, 0);
+  expect(scan(Date.now())).toBe(false);
+});
+
+it("fails closed on an actual SQLite read error", () => {
+  const { db, monitor } = setup(),
+    start = Date.now(),
+    f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  monitor.market(start, start);
+  monitor.beginCycle();
+  const raw = (db as unknown as { db: import("node:sqlite").DatabaseSync }).db;
+  raw.exec("DROP TABLE paper_orders");
+  expect(monitor.recoveryCycle({ market: true, sui: true }, start + 1000)).toBe(
+    false,
+  );
+  expect(db.health().healthy).toBe(false);
+  expect(db.runtime().running).toBe(false);
+  expect(monitor.ordersAllowed()).toBe(false);
+});
+
+it("includes negative rowids and rowid gaps in the full scan", () => {
+  const { db, monitor } = setup();
+  const raw = (db as unknown as { db: import("node:sqlite").DatabaseSync }).db;
+  raw
+    .prepare(
+      "INSERT INTO paper_orders(rowid,id,timestamp,json) VALUES(?,?,?,?)",
+    )
+    .run(
+      -5,
+      "negative",
+      0,
+      JSON.stringify({ id: "negative", status: "UNKNOWN" }),
+    );
+  raw
+    .prepare(
+      "INSERT INTO paper_orders(rowid,id,timestamp,json) VALUES(?,?,?,?)",
+    )
+    .run(100000, "gap", 0, JSON.stringify({ id: "gap", status: "REJECTED" }));
+  expect(
+    (
+      monitor as unknown as { recoveryOrdersKnown(now: number): boolean }
+    ).recoveryOrdersKnown(Date.now()),
+  ).toBe(false);
 });

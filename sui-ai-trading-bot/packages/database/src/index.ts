@@ -407,6 +407,44 @@ export class BotDatabase {
   hasOrder(id: string) {
     return !!this.prepare("SELECT id FROM paper_orders WHERE id=?").get(id);
   }
+  /** Full safety scan, including out-of-window rows. No sorting or history truncation. */
+  visitRecoveryRecords(
+    visit: (
+      table: "paper_orders" | "paper_trades" | "paper_checks",
+      row: { id: string; timestamp: number; json: string },
+    ) => void,
+  ) {
+    this.sql(() => {
+      for (const table of [
+        "paper_orders",
+        "paper_trades",
+        "paper_checks",
+      ] as const) {
+        // Keyset batches bound temporary allocations. The caller's recovery proof lock prevents concurrent
+        // mutation between batches; the first query has no lower bound (negative rowids included).
+        let cursor: number | null = null;
+        for (;;) {
+          const rows = (
+            cursor === null
+              ? this.prepare(
+                  `SELECT rowid AS scanRowid,id,timestamp,json FROM ${table} ORDER BY rowid LIMIT 1024`,
+                ).all()
+              : this.prepare(
+                  `SELECT rowid AS scanRowid,id,timestamp,json FROM ${table} WHERE rowid>? ORDER BY rowid LIMIT 1024`,
+                ).all(cursor)
+          ) as {
+            scanRowid: number;
+            id: string;
+            timestamp: number;
+            json: string;
+          }[];
+          for (const row of rows) visit(table, row);
+          if (rows.length < 1024) break;
+          cursor = rows.at(-1)!.scanRowid;
+        }
+      }
+    });
+  }
   range<T>(table: EventTable, from: number, until: number): T[] {
     return (
       this.prepare(
