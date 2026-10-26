@@ -79,11 +79,17 @@ header {
   padding: 10px 5% 12px;
   border-bottom: 1px solid #243146;
   background: #101a27;
+  /* Narrow-screen safety net: a row that still cannot shrink
+     clips at the header's edge instead of widening the page
+     (overflow-x: clip, unlike hidden, creates no scroll
+     container, so the sticky avatar dock is unaffected). */
+  overflow-x: clip;
 }
 .header-row {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 .header-row-main {
   gap: 8px;
@@ -96,6 +102,13 @@ header {
 }
 header strong {
   font-size: 16px;
+  /* The title is the one shrinkable piece of the top row: the
+     PAPER badge keeps its full wording (flex: none below) and
+     the title ellipsises on very narrow screens. */
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 small {
   display: block;
@@ -118,6 +131,7 @@ header .danger {
   border-radius: 999px;
   font-size: 12px;
   white-space: nowrap;
+  flex: none;
 }
 .badge {
   margin-left: auto;
@@ -127,6 +141,7 @@ header .danger {
   border-radius: 20px;
   font-size: 11px;
   white-space: nowrap;
+  flex: none;
 }
 button {
   cursor: pointer;
@@ -185,6 +200,9 @@ main {
   max-width: 1400px;
   margin: auto;
   padding: 12px 5% 24px;
+  /* Same narrow-screen safety net as the header: one stubborn
+     child must never widen the whole page on a phone. */
+  overflow-x: clip;
 }
 h1 {
   font-size: 32px;
@@ -403,6 +421,29 @@ section svg {
   flex: 0 1 80px;
   min-width: 24px;
   height: 24px;
+}
+/* Very narrow screens (small phones, zoomed viewports): every
+   ticker child except the sparkline is nowrap and flex: none,
+   so their combined min-content can exceed the row and push
+   the whole page sideways. The range label is the one piece
+   that can go — the window stays announced in the ticker's
+   aria-label — and the gaps, price and sparkline give a
+   little each. */
+@media (max-width: 480px) {
+  .price-ticker {
+    gap: 7px;
+    padding: 8px 10px;
+  }
+  .price-ticker-price {
+    font-size: 16px;
+  }
+  .price-ticker-range {
+    display: none;
+  }
+  .price-ticker-spark {
+    flex-basis: 48px;
+    min-width: 16px;
+  }
 }
 /* Buy celebration: while the celebration window is open the
    ticker carries the glow class and pulses gold once. Under
@@ -757,6 +798,12 @@ th {
     color: #8fa7b9;
     font-size: 12px;
     text-decoration: underline;
+    /* Never the squeeze victim of the sub row: as a flex item
+       with Japanese text its min-content is a single character,
+       so without this the row crushes it into vertical text
+       (ログアウ／ト) and the meta line ellipsises instead. */
+    flex: none;
+    white-space: nowrap;
   }
   /* Bottom tab bar: fixed to the screen bottom, tabs only. The
      active tab keeps the usual highlight and gains a top line, and
@@ -2849,5 +2896,13 @@ th {
 @media (max-width: 700px) {
   .strategy-cond-row {
     grid-template-columns: 1fr;
+  }
+}
+/* Very narrow screens: the narration panel trades a little of
+   its side padding for content room (kept last so it wins over
+   the base .agent-feed rule by source order). */
+@media (max-width: 480px) {
+  .agent-feed {
+    padding: 14px 12px;
   }
 }
