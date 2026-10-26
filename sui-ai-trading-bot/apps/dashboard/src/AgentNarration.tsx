@@ -187,18 +187,41 @@ export function AgentHeaderAvatar({
       >
         <div className="agent-avatar-bob">
           <AgentAvatarArtwork pose={shownPose} />
+          {shouting && (
+            <svg className="agent-avatar-scream" viewBox="0 0 100 100">
+              {/* Placed on the normal artwork's measured face: eyes
+                  at (49, 52) and (69, 53), the straight mouth line
+                  at y≈65. The white rect erases that line, the eyes
+                  are redrawn wider, hands press both cheeks, and
+                  the open oval mouth sits under the line. Inside
+                  the bob wrapper so it rides the bobbing artwork. */}
+              <rect x="46.5" y="62.8" width="23.5" height="4" fill="#fff" />
+              <ellipse
+                className="hand"
+                cx="37.5"
+                cy="63"
+                rx="6"
+                ry="13"
+                transform="rotate(-6 37.5 63)"
+              />
+              <ellipse
+                className="hand"
+                cx="81"
+                cy="63"
+                rx="6"
+                ry="13"
+                transform="rotate(6 81 63)"
+              />
+              <ellipse className="eye" cx="49" cy="52.5" rx="3.8" ry="7" />
+              <ellipse className="eye" cx="69.5" cy="52.5" rx="3.8" ry="7" />
+              <ellipse className="mouth" cx="58.5" cy="69" rx="6" ry="9" />
+            </svg>
+          )}
         </div>
         <span className="agent-avatar-zzz">Zzz</span>
         <span className="agent-avatar-star">✦</span>
         {shouting && (
-          <>
-            <svg className="agent-avatar-scream" viewBox="0 0 100 100">
-              <ellipse className="hand" cx="24" cy="58" rx="10" ry="16" />
-              <ellipse className="hand" cx="76" cy="58" rx="10" ry="16" />
-              <ellipse className="mouth" cx="50" cy="62" rx="7.5" ry="11" />
-            </svg>
-            <span className="agent-avatar-bubble">{shout.message}</span>
-          </>
+          <span className="agent-avatar-bubble">{shout.message}</span>
         )}
         {animated && (
           <span className="agent-avatar-burst">

@@ -2129,7 +2129,8 @@ th {
   height: 100%;
   pointer-events: none;
 }
-.agent-avatar-scream .hand {
+.agent-avatar-scream .hand,
+.agent-avatar-scream .eye {
   fill: #fff;
   stroke: #20303f;
   stroke-width: 2.5;
