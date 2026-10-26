@@ -113,7 +113,7 @@ test("Japanese screens preserve actions, ratios and epochs across all viewports"
   await page.getByLabel("管理トークン").fill("test-only");
   await page.getByRole("button", { name: "接続", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "実況", exact: true }),
+    page.getByRole("region", { name: "エージェント実況", exact: true }),
   ).toBeVisible();
   await expect(page.locator("main")).toContainText(
     "安全条件またはデータの整合性を確認できません",
@@ -127,17 +127,32 @@ test("Japanese screens preserve actions, ratios and epochs across all viewports"
       ),
     ).toBe(true);
   await fits();
-  for (const tab of [
-    "ダッシュボード",
-    "戦略",
-    "取引履歴",
-    "運用検証",
-    "バックテスト比較",
-  ]) {
+  // Each tab exposes its own content landmark or control, rather than a
+  // shared page-title heading. Keep checking that navigation reveals content.
+  for (const [tab, content] of [
+    [
+      "ダッシュボード",
+      page.getByRole("region", { name: "通信とPAPER注文の状態", exact: true }),
+    ],
+    [
+      "戦略",
+      page.getByRole("tablist", { name: "戦略ページの表示切替", exact: true }),
+    ],
+    [
+      "取引履歴",
+      page.getByRole("heading", { name: "仮想約定履歴", exact: true }),
+    ],
+    ["運用検証", page.getByRole("region", { name: "運用状態", exact: true })],
+    [
+      "バックテスト比較",
+      page.getByRole("heading", {
+        name: "バックテスト比較 · PAPER（仮想売買）専用",
+        exact: true,
+      }),
+    ],
+  ] as const) {
     await page.getByRole("button", { name: tab, exact: true }).click();
-    await expect(
-      page.getByRole("heading", { name: tab, exact: true, level: 1 }),
-    ).toBeVisible();
+    await expect(content).toBeVisible();
     await fits();
     if (tab === "戦略")
       await expect(page.locator("main")).toContainText("取引判定：買い");
