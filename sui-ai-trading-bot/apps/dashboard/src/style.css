@@ -562,6 +562,116 @@ textarea {
   color: #93adbf;
   line-height: 1.8;
 }
+/* Login gate: the white character keeps the gate (LoginScreen).
+   Asleep until touched, at the laptop while the token is typed,
+   pointing along while a pattern is traced, smiling on a
+   verified hello. The stage is a bigger cousin of the header
+   avatar's circle and reuses its artwork (including the
+   two-frame typing swap, keyed to the same keyframes). */
+.login-gate {
+  padding-top: 36px;
+}
+.login-stage {
+  position: relative;
+  width: 124px;
+  height: 124px;
+  margin: 0 auto 10px;
+}
+.login-stage-art {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 3px solid #344e65;
+  background: #12161f;
+}
+.login-stage-art img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.login-stage-art img.agent-avatar-typing {
+  opacity: 0;
+}
+.login-stage-zzz {
+  position: absolute;
+  top: -8px;
+  right: -4px;
+  font-weight: 800;
+  font-size: 17px;
+  line-height: 1;
+  color: #9fd0ff;
+}
+.login-cap {
+  text-align: center;
+  font-size: 13px;
+  color: #9aafbf;
+  margin: 0 0 18px;
+  min-height: 1.6em;
+}
+.login-alert {
+  color: #ff9c9c;
+  font-size: 13px;
+  margin-top: 12px;
+}
+.login-notice {
+  color: #edc980;
+  font-size: 13px;
+  margin-top: 12px;
+}
+.login-note {
+  color: #71809a;
+  font-size: 12.5px;
+  margin-top: 14px;
+}
+.login-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 14px;
+}
+.login-links button,
+.login-link {
+  background: none;
+  border: none;
+  padding: 6px 0;
+  min-height: 0;
+  color: #8fa7b9;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.login-gate.shake {
+  animation: login-gate-shake 0.4s ease;
+}
+@keyframes login-gate-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-7px);
+  }
+  75% {
+    transform: translateX(7px);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .login-stage-art img.agent-avatar-typing {
+    animation: agent-avatar-typing 0.52s linear infinite;
+  }
+  .login-stage-zzz {
+    animation: agent-avatar-zzz 2.8s ease-in-out infinite;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-gate.shake {
+    animation: none;
+  }
+}
 table {
   width: 100%;
   border-collapse: collapse;

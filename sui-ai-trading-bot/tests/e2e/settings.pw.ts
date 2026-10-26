@@ -24,7 +24,7 @@ async function openSettings(
   const db = new BotDatabase(":memory:");
   db.updateSettings(initial);
   const health = { healthy: true, checkedAt: Date.now(), failures: 0 };
-  const state = new BotEngine(
+  const engine = new BotEngine(
     db,
     { candles: async () => [] },
     {
@@ -34,7 +34,9 @@ async function openSettings(
       validateQuote: async () => false,
     },
     { health: async () => health, status: health },
-  ).snapshot();
+  );
+  const state = engine.snapshot(),
+    operations = engine.monitor.snapshot();
   db.close();
   const writes: Settings[] = [],
     commands: string[] = [];
@@ -44,6 +46,7 @@ async function openSettings(
     if (new URL(route.request().url()).pathname === "/api/dashboard/summary")
       return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
     const path = new URL(route.request().url()).pathname;
+    if (path === "/api/operations") return route.fulfill({ json: operations });
     if (path === "/api/state") {
       if (failure === "read" && writes.length) {
         await route.abort();

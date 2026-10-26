@@ -49,6 +49,8 @@ for (const phase of [
     db.close();
     const writes: string[] = [];
     await page.route("**/api/**", (route) => {
+      if (new URL(route.request().url()).pathname === "/api/dashboard/summary")
+        return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
       if (route.request().method() !== "GET")
         writes.push(route.request().url());
       return route.fulfill({

@@ -1,6 +1,8 @@
 import { ConnectivityStrip } from "./ConnectivityPanel.tsx";
 import { OperationBar } from "./OperationBar.tsx";
 import { PriceTicker } from "./PriceTicker.tsx";
+import { LoginScreen } from "./LoginScreen.tsx";
+import { verifyToken } from "./verifyToken.ts";
 import { DashboardClient } from "./dashboardClient.ts";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
@@ -215,7 +217,6 @@ function OrderHistory({ orders }: { orders: Record<string, unknown>[] }) {
 }
 function App() {
   const [token, setToken] = useState(""),
-    [input, setInput] = useState(""),
     [data, setData] = useState<State | null>(null),
     [error, setError] = useState(""),
     [channelError, setChannelError] = useState<string | null>(null),
@@ -403,30 +404,10 @@ function App() {
         <AgentHeaderAvatar pose={agentPose} celebrating={buyCelebration} />
       )}
       {!token ? (
-        <main className="login">
-          <h1>市場を検証する。</h1>
-          <p>実資金を使わない、ルールベースの取引ラボ。</p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              setToken(input);
-              setInput("");
-            }}
-          >
-            <label>
-              管理トークン
-              <input
-                type="password"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                required
-                autoComplete="off"
-              />
-            </label>
-            <button>接続</button>
-          </form>
-          <p>トークンはメモリ内でのみ保持します。</p>
-        </main>
+        <LoginScreen
+          verify={verifyToken}
+          onAuthenticated={(verified) => setToken(verified)}
+        />
       ) : (
         <>
           <nav className="has-avatar">

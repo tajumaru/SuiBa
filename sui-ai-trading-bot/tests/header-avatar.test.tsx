@@ -225,13 +225,22 @@ describe("agent header avatar wiring (main.tsx)", () => {
     expect(avatarAt).toBeLessThan(main.indexOf("<nav"));
   });
 
-  it("renders no avatar at all before connecting", () => {
-    // The single render site is guarded by the token, and the
-    // login screen keeps its own untouched layout (no clearance
-    // class, no placeholder pose).
+  it("keeps the header avatar dock behind the token", () => {
+    // The dock's single render site is guarded by the token.
+    // Before connecting, the login gate (LoginScreen) renders
+    // instead: it carries its own gatekeeper artwork inside its
+    // own main, which is a different element from the dock —
+    // the dock itself still never appears pre-login, and the
+    // login main takes no avatar clearance class.
     expect(main.match(/<AgentHeaderAvatar/g)).toHaveLength(1);
-    expect(main).toContain('<main className="login">');
+    expect(main).toContain("<LoginScreen");
     expect(main).not.toContain('className="login has-avatar"');
+    const login = readFileSync(
+      resolve("apps/dashboard/src/LoginScreen.tsx"),
+      "utf8",
+    );
+    expect(login).not.toContain("AgentHeaderAvatar");
+    expect(login).toContain("AgentAvatarArtwork");
   });
 
   it("gives the tab bar and the page the avatar clearance classes", () => {
