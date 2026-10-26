@@ -144,6 +144,17 @@ export interface CycleEvidence {
   outcome: string;
 }
 export interface TradingDecision {
+  bookObservationId?: string;
+  scoreEvidence?: {
+    version: 1;
+    kind: "UNCALIBRATED_SCORE";
+    indicatorAgreement: number;
+    volumeQuality: number;
+    bookSupport: number | null;
+    spreadQuality: number | null;
+    score: number;
+    book: BookFeatures | null;
+  };
   evidence?: StrategyEvidence;
   analysisContext?: AnalysisContext;
   action: TradingAction;
@@ -160,11 +171,26 @@ export interface TradingDecision {
     | "EMERGENCY_EXIT";
 }
 export interface MarketContext {
+  book?: BookFeatures | null;
   candles: Candle[];
   current: Indicators;
   previous: Indicators;
   entryPrice: number | null;
   now: number;
+}
+export interface BookFeatures {
+  version: 1;
+  timestamp: number;
+  evaluatedAt: number;
+  bidDepthUsdc: number;
+  askDepthUsdc: number;
+  imbalance: number;
+  spreadBps: number;
+  estimates: {
+    quantitySui: number;
+    buyBps: number | null;
+    sellBps: number | null;
+  }[];
 }
 export interface TradingStrategy {
   analyze(context: MarketContext): Promise<TradingDecision>;

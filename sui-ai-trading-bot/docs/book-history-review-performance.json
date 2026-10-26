@@ -1,0 +1,55 @@
+{
+  "environment": {
+    "node": "v24.22.1",
+    "platform": "win32",
+    "arch": "x64"
+  },
+  "repeats": 5,
+  "fixture": "Synthetic sorted observations; lookup only, clone/validation/replay excluded",
+  "measurements": [
+    {
+      "rows": 1000,
+      "queries": 1000,
+      "beforeMedianMs": 3.279800000000023,
+      "afterMedianMs": 0.14920000000000755
+    },
+    {
+      "rows": 10000,
+      "queries": 1000,
+      "beforeMedianMs": 32.4837,
+      "afterMedianMs": 0.15859999999997854
+    },
+    {
+      "rows": 100000,
+      "queries": 1000,
+      "beforeMedianMs": 385.0272000000002,
+      "afterMedianMs": 0.2915000000002692
+    }
+  ],
+  "storage": {
+    "sampleRows": 10000,
+    "averageJsonBytes": 641,
+    "measuredSqliteBytesPerRow": 720.0768,
+    "estimates": [
+      {
+        "days": 1,
+        "default60sMiB": 0.9888750000000001,
+        "defaultWithAllBoundaryRechecksMiB": 1.18665,
+        "minimum30sMiB": 1.9777500000000001
+      },
+      {
+        "days": 7,
+        "default60sMiB": 6.922125,
+        "defaultWithAllBoundaryRechecksMiB": 8.306550000000001,
+        "minimum30sMiB": 13.84425
+      },
+      {
+        "days": 30,
+        "default60sMiB": 29.66625,
+        "defaultWithAllBoundaryRechecksMiB": 35.5995,
+        "minimum30sMiB": 59.3325
+      }
+    ]
+  },
+  "limitations": "Capacity is extrapolated from synthetic 10-level bids and asks with timestamp index; excludes other tables, WAL, archive duplication, and filesystem overhead."
+}

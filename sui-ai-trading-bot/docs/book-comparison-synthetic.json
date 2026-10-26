@@ -1,0 +1,86 @@
+{
+  "source": "SYNTHETIC, NOT MAINNET",
+  "coverage": {
+    "evaluated": 400,
+    "covered": 0,
+    "fraction": 0
+  },
+  "baseline": {
+    "signals": {
+      "BUY": 2,
+      "SELL": 0,
+      "WAIT": 398
+    },
+    "summary": {
+      "initialEquity": 100,
+      "finalEquity": 100,
+      "netProfitUsdc": 0,
+      "totalReturnPct": 0,
+      "maxDrawdown": 0,
+      "winRate": null,
+      "profitFactor": null,
+      "tradeCount": 0,
+      "buyCount": 0,
+      "sellCount": 0,
+      "averageProfit": null,
+      "averageLoss": null,
+      "totalFees": 0,
+      "additionalFees": 0,
+      "dexFees": 0,
+      "totalGas": 0,
+      "profitWaitCount": 2,
+      "safetyRejectCount": 0,
+      "maxLosingStreak": 0,
+      "unrealizedPnl": 0,
+      "realizedPnl": 0,
+      "winRateDefinition": "Each partial SELL is one cost-allocated outcome; zero PnL counts in denominator, resets losing streak. Profit factor=null when losses=0."
+    },
+    "averageNetSellPnl": null,
+    "skipReasons": {
+      "条件未成立": 398,
+      "PROJECTED_NET_INSUFFICIENT": 2
+    }
+  },
+  "candidate": {
+    "signals": {
+      "BUY": 0,
+      "SELL": 0,
+      "WAIT": 400
+    },
+    "summary": {
+      "initialEquity": 100,
+      "finalEquity": 100,
+      "netProfitUsdc": 0,
+      "totalReturnPct": 0,
+      "maxDrawdown": 0,
+      "winRate": null,
+      "profitFactor": null,
+      "tradeCount": 0,
+      "buyCount": 0,
+      "sellCount": 0,
+      "averageProfit": null,
+      "averageLoss": null,
+      "totalFees": 0,
+      "additionalFees": 0,
+      "dexFees": 0,
+      "totalGas": 0,
+      "profitWaitCount": 0,
+      "safetyRejectCount": 0,
+      "maxLosingStreak": 0,
+      "unrealizedPnl": 0,
+      "realizedPnl": 0,
+      "winRateDefinition": "Each partial SELL is one cost-allocated outcome; zero PnL counts in denominator, resets losing streak. Profit factor=null when losses=0."
+    },
+    "averageNetSellPnl": null,
+    "skipReasons": {
+      "条件未成立": 398,
+      "BOOK_MISSING_STALE_OR_INVALID": 2
+    }
+  },
+  "limitations": [
+    "Synthetic next-open quotes include configured fees, gas, spread and impact; not executable historical prices.",
+    "Book snapshots must have been observed by decision time and be at most 10 seconds old.",
+    "No calibrated win probability. Missing coverage is not evidence of improved performance.",
+    "Offline replay checks missing-book inhibition; transport recovery safety is tested separately with mocks."
+  ]
+}

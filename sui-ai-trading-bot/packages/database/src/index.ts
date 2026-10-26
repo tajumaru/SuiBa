@@ -1,6 +1,10 @@
 import { timeSql } from "../../shared/src/api-timing.ts";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
+import {
+  persistBookArchive,
+  readVerifiedBookArchive,
+} from "./book-history-archive.ts";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
@@ -32,6 +36,8 @@ const eventTables = [
   "validation_events",
   "cycle_audits",
   "sui_observations",
+  "book_observations",
+  "book_history_archives",
 ] as const;
 type EventTable = (typeof eventTables)[number];
 /**
@@ -200,6 +206,7 @@ export class BotDatabase {
       "portfolio_snapshots",
       "validation_events",
       "sui_observations",
+      "book_observations",
     ] as const)
       this.db.exec(
         `CREATE INDEX IF NOT EXISTS ${t}_timestamp ON ${t}(timestamp);`,
@@ -406,6 +413,94 @@ export class BotDatabase {
   }
   hasOrder(id: string) {
     return !!this.prepare("SELECT id FROM paper_orders WHERE id=?").get(id);
+  }
+  /** Explicit stopped-PAPER maintenance only. Zero limits preserve all rows by default. */
+  archiveAndPruneBookHistory(
+    archivePath: string,
+    policy: { retentionMs: number; maxRows: number },
+    now = Date.now(),
+  ) {
+    if (
+      ![policy.retentionMs, policy.maxRows, now].every(
+        (n) => Number.isSafeInteger(n) && n >= 0,
+      )
+    )
+      throw new Error("INVALID_BOOK_RETENTION");
+    if (this.runtime().running)
+      throw new Error("BOOK_MAINTENANCE_REQUIRES_STOP");
+    if (!policy.retentionMs && !policy.maxRows)
+      return { deleted: 0, archivePath: null, sha256: null };
+    return this.transaction(() => {
+      // Capture and delete the exact same rows under the database write lock.
+      if (
+        this.runtime().running ||
+        this.get<{ resumePending?: boolean }>("paper_safety")?.resumePending
+      )
+        throw new Error("BOOK_MAINTENANCE_REQUIRES_STOP");
+      const rows = this.prepare(
+        "SELECT id,timestamp,json FROM book_observations ORDER BY timestamp,id",
+      ).all() as { id: string; timestamp: number; json: string }[];
+      const remove = rows.filter(
+        (r, i) =>
+          i < rows.length - 1 &&
+          ((policy.retentionMs > 0 && r.timestamp < now - policy.retentionMs) ||
+            (policy.maxRows > 0 && i < rows.length - policy.maxRows)),
+      );
+      if (!remove.length)
+        return { deleted: 0, archivePath: null, sha256: null };
+      const durable = persistBookArchive(archivePath, {
+        version: 1,
+        createdAt: now,
+        policy,
+        rows: remove,
+      });
+      const statement = this.prepare(
+        "DELETE FROM book_observations WHERE id=? AND timestamp=? AND json=?",
+      );
+      for (const row of remove)
+        if (statement.run(row.id, row.timestamp, row.json).changes !== 1)
+          throw new Error("BOOK_ARCHIVE_ROW_CHANGED");
+      const receipt = { deleted: remove.length, ...durable };
+      this.append(
+        "book_history_archives",
+        randomUUID(),
+        { ...receipt, createdAt: now, policy },
+        now,
+      );
+      return receipt;
+    });
+  }
+  /** Explicit restore only: never overwrites conflicting rows; rerunning exact rows is idempotent. */
+  restoreBookHistoryArchive(archivePath: string, expectedSha256: string) {
+    const archive = readVerifiedBookArchive(archivePath, expectedSha256);
+    return this.transaction(() => {
+      if (
+        this.runtime().running ||
+        this.get<{ resumePending?: boolean }>("paper_safety")?.resumePending
+      )
+        throw new Error("BOOK_MAINTENANCE_REQUIRES_STOP");
+      let restored = 0;
+      for (const row of archive.rows) {
+        const existing = this.prepare(
+          "SELECT timestamp,json FROM book_observations WHERE id=?",
+        ).get(row.id);
+        if (existing) {
+          if (
+            existing.timestamp !== row.timestamp ||
+            existing.json !== row.json
+          )
+            throw new Error("BOOK_ARCHIVE_RESTORE_CONFLICT");
+        } else {
+          this.prepare("INSERT INTO book_observations VALUES(?,?,?)").run(
+            row.id,
+            row.timestamp,
+            row.json,
+          );
+          restored++;
+        }
+      }
+      return { restored, alreadyPresent: archive.rows.length - restored };
+    });
   }
   range<T>(table: EventTable, from: number, until: number): T[] {
     return (

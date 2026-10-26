@@ -116,7 +116,49 @@ export class RuleBasedStrategy implements TradingStrategy {
       selectedRule = "SELL_SIGNAL";
       sellPurpose = "STRATEGY_EXIT";
     }
+    const direction = action === "SELL" ? -1 : 1;
+    const agreement =
+      action === "SELL"
+        ? [
+            conditions.emaDown,
+            conditions.rsiReversal,
+            conditions.histogramDeclining,
+          ]
+        : [
+            conditions.emaUp,
+            conditions.rsiRecovery,
+            conditions.histogramImproving,
+          ];
+    const indicatorAgreement = agreement.filter(Boolean).length / 3;
+    const volumeQuality =
+      conditions.latestVolumePositive && conditions.previousVolumePositive
+        ? Math.max(0, 1 - Math.abs(i.volumeChange) / s.maxVolumeChange)
+        : 0;
+    const book = usableBook(c) ? c.book! : null;
+    const bookSupport = book ? (1 + direction * book.imbalance) / 2 : null;
+    const spreadQuality = book
+      ? Math.max(0, 1 - book.spreadBps / (s.maxSlippage * 10000))
+      : null;
+    // Descriptive weighted agreement only; no empirical win probability is claimed.
+    const score =
+      action === "WAIT"
+        ? 0
+        : (0.5 * indicatorAgreement +
+            0.2 * volumeQuality +
+            (bookSupport === null ? 0 : 0.2 * bookSupport) +
+            (spreadQuality === null ? 0 : 0.1 * spreadQuality)) /
+          (book ? 1 : 0.7);
     return {
+      scoreEvidence: {
+        version: 1,
+        kind: "UNCALIBRATED_SCORE",
+        indicatorAgreement,
+        volumeQuality,
+        bookSupport,
+        spreadQuality,
+        score,
+        book,
+      },
       evidence: {
         version: 1,
         evaluatedAt: c.now,
@@ -143,13 +185,79 @@ export class RuleBasedStrategy implements TradingStrategy {
         selectedRule,
       },
       action,
-      confidence: action === "WAIT" ? 0 : 0.7,
+      confidence: score,
       reason,
       stopLossPct: s.stopLossPct,
       takeProfitPct: s.takeProfitPct,
       timestamp: new Date(c.now).toISOString(),
       sellPurpose,
     };
+  }
+}
+function usableBook(c: MarketContext) {
+  const b = c.book;
+  return (
+    !!b &&
+    b.version === 1 &&
+    Number.isFinite(b.timestamp) &&
+    b.timestamp <= b.evaluatedAt &&
+    b.evaluatedAt <= c.now &&
+    c.now - b.timestamp <= 10000 &&
+    [b.bidDepthUsdc, b.askDepthUsdc, b.imbalance, b.spreadBps].every(
+      Number.isFinite,
+    ) &&
+    b.bidDepthUsdc > 0 &&
+    b.askDepthUsdc > 0 &&
+    Math.abs(b.imbalance) <= 1 &&
+    b.spreadBps > 0 &&
+    Array.isArray(b.estimates) &&
+    b.estimates.every(
+      (e) => Number.isFinite(e.quantitySui) && e.quantitySui > 0,
+    )
+  );
+}
+
+/** Opt-in offline/shadow strategy. Existing live worker registration remains rule-based. */
+export class BookAwareStrategy implements TradingStrategy {
+  constructor(private settings: Settings) {}
+  async analyze(c: MarketContext): Promise<TradingDecision> {
+    const d = await new RuleBasedStrategy(this.settings).analyze(c);
+    if (
+      d.action === "WAIT" ||
+      d.sellPurpose === "STOP_LOSS" ||
+      d.sellPurpose === "TAKE_PROFIT"
+    )
+      return d;
+    let reason: string | null = null;
+    if (!usableBook(c)) reason = "BOOK_MISSING_STALE_OR_INVALID";
+    else {
+      const b = c.book!,
+        direction = d.action === "BUY" ? 1 : -1;
+      const quantity = this.settings.maxOrder / c.candles.at(-1)!.close;
+      const estimate = b.estimates.find((e) => e.quantitySui >= quantity);
+      const impact = d.action === "BUY" ? estimate?.buyBps : estimate?.sellBps;
+      if (
+        impact == null ||
+        !Number.isFinite(impact) ||
+        impact < 0 ||
+        impact > this.settings.maxSlippage * 10000
+      )
+        reason = "BOOK_SLIPPAGE_OR_DEPTH";
+      else if (b.spreadBps > this.settings.maxSlippage * 10000)
+        reason = "BOOK_SPREAD";
+      else if (direction * b.imbalance < 0.1) reason = "BOOK_IMBALANCE";
+    }
+    return reason
+      ? {
+          ...d,
+          action: "WAIT",
+          confidence: 0,
+          reason,
+          scoreEvidence: d.scoreEvidence
+            ? { ...d.scoreEvidence, score: 0 }
+            : undefined,
+        }
+      : d;
   }
 }
 export class StrategyRegistry {

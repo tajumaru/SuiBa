@@ -93,8 +93,9 @@ describe("strategy panel: diagram-first layout", () => {
     expect(html).toContain("買い条件 3つ中 2つ成立");
     // The exact string the localization e2e asserts on this tab.
     expect(html).toContain("取引判定：見送り");
-    expect(html).toContain("確信度");
-    expect(html).toContain("55%");
+    expect(html).toContain("判断スコア（未校正・勝率ではありません）");
+    expect(html).toContain("55 / 100");
+    expect(html).not.toContain("55%");
     expect(html).toContain("損切り");
     expect(html).toContain("利確");
     expect(html).toContain("判定日時");
