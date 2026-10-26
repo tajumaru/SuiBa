@@ -739,6 +739,13 @@ th {
   header {
     flex-wrap: wrap;
   }
+  .header-row {
+    min-width: 0;
+    width: 100%;
+  }
+  .header-row-main {
+    flex-wrap: wrap;
+  }
   /* On mobile the logout leaves the tab bar and lives in the header
      as a small text link instead, at the right end of the sub row. */
   .logout-link {
@@ -766,6 +773,10 @@ th {
     padding: 4px 6px calc(4px + env(safe-area-inset-bottom));
     background: #101a27;
     border-top: 1px solid #243146;
+  }
+  /* The desktop avatar clearance must not enlarge the fixed bottom bar. */
+  nav.has-avatar {
+    padding-top: 4px;
   }
   nav button {
     flex: 1 1 0;

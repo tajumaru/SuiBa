@@ -8,8 +8,26 @@ import { apiAccess } from "../packages/shared/src/api.ts";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { withReadBudget } from "../packages/shared/src/read-budget-node.ts";
 const clients: ReadOnlySuiClient[] = [];
-afterEach(() => {
+afterEach(async () => {
   clients.splice(0).forEach((c) => c.close());
+  vi.restoreAllMocks();
+  // Independent fixtures must not inherit a previous fixture's outage.
+  // Close the breaker through its real probe path; reset cannot bypass it.
+  if (
+    apiAccess
+      .snapshot()
+      .some((a) => a.api === "Sui gRPC" && a.consecutiveFailures > 0)
+  ) {
+    vi.useFakeTimers();
+    const probe = apiAccess.run(
+      "Sui gRPC",
+      "fixture-cleanup",
+      async () => undefined,
+    );
+    await vi.runAllTimersAsync();
+    await probe;
+    vi.useRealTimers();
+  }
   apiAccess.reset();
   vi.restoreAllMocks();
 });

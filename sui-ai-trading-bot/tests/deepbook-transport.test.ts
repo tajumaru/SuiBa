@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import {
   createServer,
   connect,
@@ -268,13 +268,24 @@ it("transient failures stop before bounded retries and recovery never restarts a
     expect(failures).toBe(3);
     expect(f.requests()).toBe(3);
     expect(running).toBe(false);
+    const circuit = apiAccess.snapshot().find((a) => a.api === "h2 transient")!;
+    expect(circuit.circuit).toBe("OPEN");
+    expect(apiAccess.blocked()).toBe(true);
     f.handle((s) => {
       s.respond({ ":status": 200 });
       s.end("{}");
     });
-    await apiFetch("h2 transient", f.origin + "/status", undefined, 0, {
-      transport: f.transport.fetch,
-    });
+    // Advance only the circuit clock; retain real HTTP/2 I/O and timeouts.
+    const clock = vi
+      .spyOn(Date, "now")
+      .mockReturnValue(circuit.circuitUntil! + 1);
+    try {
+      await apiFetch("h2 transient", f.origin + "/status", undefined, 0, {
+        transport: f.transport.fetch,
+      });
+    } finally {
+      clock.mockRestore();
+    }
     expect(running).toBe(false);
   } finally {
     apiAccess.onTransientFailure = () => {};
