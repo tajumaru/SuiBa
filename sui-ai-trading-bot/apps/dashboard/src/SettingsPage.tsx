@@ -543,11 +543,13 @@ export function SettingsForm({ editor }: { editor: SettingsEditor }) {
   );
 }
 /**
- * Starting/stopping PAPER operation and releasing a stopped state
- * are safety operations, not settings: on the strategy tab they
- * render outside the ルール/設定 segments so they stay visible
- * whichever segment is open. The start gate still reads the shared
- * editor state (unsaved edits block starting).
+ * The full operation panel (start/stop with their gates, plus the
+ * release section), composed for the combined settings page below.
+ * The app's strategy tab no longer renders this panel: starting
+ * and stopping were unified into the operation bar, and the tab
+ * keeps only the release section (StopReleaseSection) for stopped
+ * states. The gates and wording are shared — startBlockedReasons
+ * feeds both this panel and the bar.
  */
 export function PaperOperationControls({
   data,
@@ -571,33 +573,7 @@ export function PaperOperationControls({
   async function start() {
     setStartFailure(await control("start"));
   }
-  // Every client-side reason the start button is disabled right
-  // now, spelled out next to the button: a disabled button must
-  // never leave the operator guessing. The gate conditions
-  // themselves are unchanged.
-  const startBlocked: string[] = [];
-  if (emergency)
-    startBlocked.push(
-      "緊急停止中です。開始するには、先に下の手順で停止状態を解除してください。",
-    );
-  if (error)
-    startBlocked.push(
-      "安全停止中です。開始するには、先に下の手順で停止状態を解除してください。",
-    );
-  if (dirty)
-    startBlocked.push(
-      "未保存の変更があります。開始には保存済みの設定を使うため、先に保存するか、保存済みに戻してください。",
-    );
-  if (conflict)
-    startBlocked.push(
-      "編集中にサーバー側の設定が変わり、この画面の内容と競合しています。画面を再読み込みして、最新の保存済み設定を確認してください。",
-    );
-  if (switchTo)
-    startBlocked.push(
-      "運用スタイルの切り替えが保留中です。切り替えを確定するか取り消してから開始してください。",
-    );
-  if (busy)
-    startBlocked.push("設定を保存中です。保存が終わってから開始してください。");
+  const startBlocked = startBlockedReasons(editor, data.runtime);
   return (
     <section aria-label="PAPER運用の操作">
       <hr />
@@ -654,36 +630,93 @@ export function PaperOperationControls({
           開始できませんでした。{startRejectionReason(startFailure)}
         </p>
       )}
-      {(emergency || error) && (
-        <section className="stop-release">
-          <div className="stop-release-head">
-            <h4>停止状態の解除</h4>
-            <button
-              type="button"
-              className="operation-icon-button release"
-              aria-label="停止解除（再開は手動）"
-              title="停止解除（再開は手動）"
-              onClick={() => void control("reset")}
-            >
-              <OperationIcon kind="release" />
-            </button>
-          </div>
-          <p>
-            {emergency
-              ? "緊急停止が押され、PAPER運用を止めています。"
-              : `安全停止中です。停止理由：${reason(error ?? "")}`}
-          </p>
-          <ol>
-            <li>
-              停止理由と「運用検証」の診断で、原因と接続状態を確認します。
-            </li>
-            <li>問題がなければ、上のボタンで停止状態を解除します。</li>
-            <li>
-              解除後に「PAPER運用開始」を押すと再開します。解除だけでは自動で再開しません。
-            </li>
-          </ol>
-        </section>
-      )}
+      <StopReleaseSection data={data} control={control} />
+    </section>
+  );
+}
+
+/**
+ * Every client-side reason a start is blocked right now, spelled
+ * out next to the start button wherever it lives (the operation
+ * bar since the controls were unified there; the composed page
+ * below): a disabled button must never leave the operator
+ * guessing. The gate conditions themselves are unchanged.
+ */
+export function startBlockedReasons(
+  editor: SettingsEditor,
+  runtime: State["runtime"],
+): string[] {
+  const { busy, dirty, conflict, switchTo } = editor;
+  const { emergency, error } = runtime;
+  const blocked: string[] = [];
+  if (emergency)
+    blocked.push(
+      "緊急停止中です。開始するには、先に下の手順で停止状態を解除してください。",
+    );
+  if (error)
+    blocked.push(
+      "安全停止中です。開始するには、先に下の手順で停止状態を解除してください。",
+    );
+  if (dirty)
+    blocked.push(
+      "未保存の変更があります。開始には保存済みの設定を使うため、先に保存するか、保存済みに戻してください。",
+    );
+  if (conflict)
+    blocked.push(
+      "編集中にサーバー側の設定が変わり、この画面の内容と競合しています。画面を再読み込みして、最新の保存済み設定を確認してください。",
+    );
+  if (switchTo)
+    blocked.push(
+      "運用スタイルの切り替えが保留中です。切り替えを確定するか取り消してから開始してください。",
+    );
+  if (busy)
+    blocked.push("設定を保存中です。保存が終わってから開始してください。");
+  return blocked;
+}
+
+/**
+ * The stop-state release: reason, confirmation steps and the
+ * release button. Renders only in a stopped state (緊急停止 /
+ * 安全停止). On the strategy tab it sits at the top of the page,
+ * outside the segments, now that the full operation panel has
+ * been unified into the operation bar — the bar's release icon
+ * jumps here.
+ */
+export function StopReleaseSection({
+  data,
+  control,
+}: {
+  data: State;
+  control: (c: string) => Promise<string | null>;
+}) {
+  const { emergency, error } = data.runtime;
+  if (!emergency && !error) return null;
+  return (
+    <section className="stop-release">
+      <div className="stop-release-head">
+        <h4>停止状態の解除</h4>
+        <button
+          type="button"
+          className="operation-icon-button release"
+          aria-label="停止解除（再開は手動）"
+          title="停止解除（再開は手動）"
+          onClick={() => void control("reset")}
+        >
+          <OperationIcon kind="release" />
+        </button>
+      </div>
+      <p>
+        {emergency
+          ? "緊急停止が押され、PAPER運用を止めています。"
+          : `安全停止中です。停止理由：${reason(error ?? "")}`}
+      </p>
+      <ol>
+        <li>停止理由と「運用検証」の診断で、原因と接続状態を確認します。</li>
+        <li>問題がなければ、上のボタンで停止状態を解除します。</li>
+        <li>
+          解除後に「PAPER運用開始」を押すと再開します。解除だけでは自動で再開しません。
+        </li>
+      </ol>
     </section>
   );
 }

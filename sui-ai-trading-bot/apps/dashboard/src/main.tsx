@@ -221,7 +221,12 @@ function App() {
     [error, setError] = useState(""),
     [channelError, setChannelError] = useState<string | null>(null),
     [tab, setTab] = useState("Live"),
-    [timeframe, setTimeframe] = useState<300 | 900 | 3600>(300);
+    [timeframe, setTimeframe] = useState<300 | 900 | 3600>(300),
+    // The operation bar's client-side start gate: the strategy
+    // tab's settings editor reports its blocks here while it is
+    // mounted (unsaved edits and friends), and clears them when
+    // the tab closes, so the bar never starts past an open editor.
+    [startBlocked, setStartBlocked] = useState<string[]>([]);
   // A tab value that no longer exists falls back instead of
   // breaking: the settings tab merged into the strategy tab, so a
   // restored "Settings" opens the strategy tab on its 設定
@@ -449,15 +454,18 @@ function App() {
             {data && (
               <>
                 {/* The PAPER operation bar rides at the top of the
-                    content on every tab: state plus the one action
-                    that fits it (stop in place, or a jump to the
-                    operation controls at the top of the strategy
-                    tab). It renders with the first snapshot, like
-                    the tab-independent notices below. */}
+                    content on every tab and is the single home of
+                    the operation state and its start/stop actions
+                    (the strategy tab's old panel is gone; the tab
+                    keeps only the stop-state release section and
+                    reports its editor's start blocks up here). It
+                    renders with the first snapshot, like the
+                    tab-independent notices below. */}
                 <OperationBar
                   runtime={data.runtime}
                   control={control}
                   onOpenStrategy={() => setTab("Strategy")}
+                  startBlocked={startBlocked}
                 />
                 {/* The SUI price ticker rides directly under the
                     operation bar on every tab, under the same
@@ -610,6 +618,7 @@ function App() {
                     history={indicatorHistory}
                     segment={strategySegment}
                     onSegmentChange={setStrategySegmentChoice}
+                    onStartGateChange={setStartBlocked}
                   />
                 )}
                 {activeTab === "Trading History" && (
