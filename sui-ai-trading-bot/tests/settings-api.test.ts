@@ -9,6 +9,7 @@ import { randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { applySafePreset } from "../apps/dashboard/src/settingsPresets.ts";
+import { verifyToken } from "../apps/dashboard/src/verifyToken.ts";
 
 it("keeps PAPER settings, history and stop gates through the real API and restart", async () => {
   const folder = mkdtempSync(join(tmpdir(), "suiba-settings-")),
@@ -103,6 +104,14 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
   cache.close();
   try {
     await start();
+    const loginRequest: typeof fetch = (path, init) =>
+      fetch(`http://127.0.0.1:${port}${path}`, init);
+    expect(
+      await verifyToken("incorrect-test-token", undefined, loginRequest),
+    ).toMatchObject({ ok: false, code: "UNAUTHORIZED" });
+    expect(await verifyToken(token, undefined, loginRequest)).toMatchObject({
+      ok: true,
+    });
     const health = await fetch(`http://127.0.0.1:${port}/healthz`);
     expect(health.status).toBe(200);
     expect(health.headers.get("server-timing")).toMatch(
