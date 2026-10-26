@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AgentAvatarArtwork } from "./AgentNarration.tsx";
 import type { AgentPose } from "./agentNarration.ts";
+import { LoginAttempts } from "./loginAttempt.ts";
 import {
   removeLegacyPatternLock,
   type PatternMigrationResult,
@@ -14,7 +15,7 @@ export function LoginScreen({
   verify,
   onAuthenticated,
 }: {
-  verify: (token: string) => Promise<VerifyResult>;
+  verify: (token: string, signal?: AbortSignal) => Promise<VerifyResult>;
   onAuthenticated: (token: string) => void;
 }) {
   const [phase, setPhase] = useState<
@@ -26,12 +27,17 @@ export function LoginScreen({
     null,
   );
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const attempts = useRef(new LoginAttempts());
+  const mounted = useRef(false);
   useEffect(() => {
+    mounted.current = true;
     const result = removeLegacyPatternLock();
     setMigration((previous) =>
       previous === "removed" && result === "empty" ? previous : result,
     );
     return () => {
+      mounted.current = false;
+      attempts.current.invalidate();
       if (timer.current !== null) clearTimeout(timer.current);
     };
   }, []);
@@ -57,23 +63,31 @@ export function LoginScreen({
 
   async function submitToken(e: React.FormEvent) {
     e.preventDefault();
-    if (busy || !input) return;
+    if (!mounted.current || !input) return;
+    const attempt = attempts.current.begin();
+    if (!attempt) return;
     const token = input;
     setInput("");
     setPhase("verifying");
     setAlertText(null);
     try {
-      const result = await verify(token);
+      const result = await verify(token, attempt.signal);
+      if (!mounted.current || !attempts.current.current(attempt)) return;
       if (result.ok) {
         setPhase("success");
         const reduced = window.matchMedia?.(
           "(prefers-reduced-motion: reduce)",
         ).matches;
         timer.current = setTimeout(
-          () => onAuthenticated(token),
+          () => {
+            timer.current = null;
+            if (mounted.current && attempts.current.complete(attempt))
+              onAuthenticated(token);
+          },
           reduced ? 0 : 900,
         );
       } else {
+        attempts.current.release(attempt);
         setPhase("error");
         setAlertText(
           result.code === "UNAUTHORIZED"
@@ -82,9 +96,18 @@ export function LoginScreen({
         );
       }
     } catch {
+      if (!mounted.current || !attempts.current.release(attempt)) return;
       setPhase("error");
       setAlertText("接続できませんでした。コード：NETWORK");
     }
+  }
+  function cancel() {
+    attempts.current.invalidate();
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+    setInput("");
+    setPhase("idle");
+    setAlertText(null);
   }
   return (
     <main className={`login login-gate${phase === "error" ? " shake" : ""}`}>
@@ -145,6 +168,11 @@ export function LoginScreen({
         </label>
         <button disabled={busy}>接続</button>
       </form>
+      {busy && (
+        <button type="button" onClick={cancel}>
+          認証を取り消す
+        </button>
+      )}
       {alertText && (
         <p id="login-error" role="alert" className="login-alert">
           {alertText}
