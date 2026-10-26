@@ -145,3 +145,48 @@ it("preserves the separate rate-limit stop and long Retry-After", async () => {
   });
   expect(a.blocked()).toBe(true);
 });
+
+it("keeps the breaker closed to orders when saving the recovery result fails", async () => {
+  vi.useFakeTimers();
+  const a = new ApiAccess();
+  await trip(a);
+  a.onCircuitChange = () => {
+    throw new Error("storage failure");
+  };
+  const result = expect(
+    a.run("DeepBook Indexer", "probe", async () => 1),
+  ).rejects.toThrow("VALIDATION_RECORD_FAILED");
+  await vi.advanceTimersByTimeAsync(30000);
+  await result;
+  expect(a.blocked()).toBe(true);
+  expect(status(a).circuit).toBe("OPEN");
+});
+
+it("survives 48 simulated hours with repeated outages and bounded recent telemetry", async () => {
+  vi.useFakeTimers();
+  const a = new ApiAccess();
+  let outages = 0;
+  for (let minute = 0; minute < 48 * 60; minute++) {
+    if (minute % 360 === 0) {
+      await trip(a);
+      outages++;
+      expect(a.blocked()).toBe(true);
+      const recovery = a.run(
+        "DeepBook Indexer",
+        "periodic",
+        async () => minute,
+      );
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(await recovery).toBe(minute);
+    } else {
+      expect(
+        await a.run("DeepBook Indexer", "periodic", async () => minute),
+      ).toBe(minute);
+    }
+    expect(a.blocked()).toBe(false);
+    expect(status(a).requestsPerMinute).toBeLessThanOrEqual(5);
+    await vi.advanceTimersByTimeAsync(60000);
+  }
+  expect(outages).toBe(8);
+  expect(status(a).requests).toBe(2880 + 24);
+});

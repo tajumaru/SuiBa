@@ -291,6 +291,8 @@ export class ApiAccess {
               try {
                 this.onCircuitChange();
               } catch {
+                // Persistence/monitoring failure cannot publish a closed gate.
+                s.circuitUntil = Date.now() + circuitLimits.baseOpenMs;
                 throw new Error("VALIDATION_RECORD_FAILED");
               }
             }
