@@ -756,8 +756,19 @@ export interface EntryConditionChip {
   key: "ema" | "rsi" | "macd";
   label: string;
   met: boolean;
-  /** Short status word shown next to the label ("✓", "あと3", …). */
+  /**
+   * The precise state word ("✓", "圏内", "後退", …). No longer shown
+   * as visible text — the chip leads with a traffic-light dot in the
+   * tone colour — but kept for assistive text and the hover title so
+   * the exact state is never more than a tap away.
+   */
   status: string;
+  /**
+   * The one figure still shown as text next to the dot: the RSI
+   * distance to the oversold line ("あと7"). Only the RSI chip sets
+   * it — a countdown in points is information, not a vague word.
+   */
+  detail?: string;
   tone: ConditionChipTone;
   /** True while this condition is the declared watch target. */
   watching: boolean;
@@ -844,6 +855,7 @@ export function entryConditionChips(
             label: "RSI",
             met: false,
             status: `あと${points}`,
+            detail: `あと${points}`,
             tone: points <= 3 ? "close" : "far",
             watching: false,
           };

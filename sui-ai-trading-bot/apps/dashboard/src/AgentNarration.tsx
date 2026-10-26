@@ -397,14 +397,14 @@ export function AgentNarrationFeed({
             <span
               key={chip.key}
               className={`agent-feed-chip tone-${chip.tone}${chip.watching ? " watching" : ""}`}
+              title={`${chip.label}：${chip.status}`}
             >
-              {chip.watching && (
-                <span className="agent-feed-chip-watch" aria-hidden="true">
-                  ●
-                </span>
-              )}
+              <span className="agent-feed-chip-dot" aria-hidden="true" />
               <span className="agent-feed-chip-label">{chip.label}</span>
-              <span className="agent-feed-chip-status">{chip.status}</span>
+              {chip.detail && (
+                <span className="agent-feed-chip-status">{chip.detail}</span>
+              )}
+              <span className="sr-only">{chip.status}</span>
             </span>
           ))}
         </div>

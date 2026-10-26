@@ -497,8 +497,7 @@ describe("agent narration: cycles", () => {
       decision({ selectedRule: "VOLUME_REJECT", volumeChange: 9 }),
     );
     expect(
-      advanceNarration(emptyNarrationState(), at, "alive", NOW).entries[0]
-        .text,
+      advanceNarration(emptyNarrationState(), at, "alive", NOW).entries[0].text,
     ).toContain("変化は約10倍だね");
     const below = runningSnapshot(
       db,
@@ -506,8 +505,8 @@ describe("agent narration: cycles", () => {
       decision({ selectedRule: "VOLUME_REJECT", volumeChange: 8.9 }),
     );
     expect(
-      advanceNarration(emptyNarrationState(), below, "alive", NOW)
-        .entries[0].text,
+      advanceNarration(emptyNarrationState(), below, "alive", NOW).entries[0]
+        .text,
     ).toContain("変化は890%だね");
   });
 
@@ -708,9 +707,9 @@ describe("agent pose", () => {
     expect(vital.state).toBe("alive");
     // With the run state unconfirmed the agent must not claim to be
     // working: the plain pose stays.
-    expect(agentPose(emptyNarrationState(), d, { ...vital, state: "unknown" }, NOW)).toBe(
-      "normal",
-    );
+    expect(
+      agentPose(emptyNarrationState(), d, { ...vital, state: "unknown" }, NOW),
+    ).toBe("normal");
   });
 });
 
@@ -1724,6 +1723,31 @@ describe("buy-condition chips", () => {
     expect(chips.rsi.status).toBe("あと11");
   });
 
+  it("only the RSI distance survives as visible chip detail", () => {
+    const chips = byKey(entryConditionChips(telemetry(), null));
+    expect(chips.rsi.detail).toBe("あと14");
+    expect(chips.ema.detail).toBeUndefined();
+    expect(chips.macd.detail).toBeUndefined();
+    const inZone = byKey(
+      entryConditionChips(telemetry({ rsi: 28, previousRsi: 33 }), null),
+    );
+    expect(inZone.rsi.detail).toBeUndefined();
+    const met = byKey(
+      entryConditionChips(
+        telemetry({
+          conditions: {
+            emaUp: true,
+            emaGapShrinking: false,
+            rsiRecovery: true,
+            histogramImproving: true,
+          },
+        }),
+        null,
+      ),
+    );
+    expect(met.rsi.detail).toBeUndefined();
+  });
+
   it("RSI inside the oversold zone reads 圏内", () => {
     const chips = byKey(
       entryConditionChips(telemetry({ rsi: 28, previousRsi: 33 }), null),
@@ -2258,12 +2282,12 @@ describe("agent narration: spike alerts", () => {
     expect(huge?.direction).toBe("volume");
     expect(huge?.text).toBe("速報。出来高が約50倍に跳ねた。何かあったかも");
     // The switch matches the reject line: nine is the boundary.
-    expect(
-      spikeAlert(warmed, telemetry({ volumeChange: 9 }))?.text,
-    ).toBe("速報。出来高が約10倍に跳ねた。何かあったかも");
-    expect(
-      spikeAlert(warmed, telemetry({ volumeChange: 8.9 }))?.text,
-    ).toBe("速報。出来高の変化が+890%に跳ねた。何かあったかも");
+    expect(spikeAlert(warmed, telemetry({ volumeChange: 9 }))?.text).toBe(
+      "速報。出来高が約10倍に跳ねた。何かあったかも",
+    );
+    expect(spikeAlert(warmed, telemetry({ volumeChange: 8.9 }))?.text).toBe(
+      "速報。出来高の変化が+890%に跳ねた。何かあったかも",
+    );
   });
 
   it("merges a simultaneous price and volume spike into one entry", () => {
