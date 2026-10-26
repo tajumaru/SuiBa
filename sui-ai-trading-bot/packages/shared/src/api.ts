@@ -13,6 +13,11 @@ export const apiLimits = {
   maxRetries: 2,
   baseMs: 1000,
 };
+export const circuitLimits = {
+  failureThreshold: 3,
+  baseOpenMs: 30000,
+  maxOpenMs: 60000,
+};
 export function retryAfter(
   value: string | null,
   now = Date.now(),
@@ -55,6 +60,9 @@ export type ApiAttempt = {
   failure?: ApiFailure;
 };
 type Stats = {
+  consecutiveFailures: number;
+  circuitUntil: number | null;
+  circuitTrips: number;
   lastLatencyMs: number | null;
   requests: number;
   rateLimits: number;
@@ -81,22 +89,42 @@ export class ApiAccess {
     failure?: ApiFailure,
   ) => void = () => {};
   onFailure: (failure: ApiFailure) => void = () => {};
+  onCircuitChange: () => void = () => {};
   recordFailure(failure: ApiFailure) {
     this.state(failure.api).lastFailure = failure;
     this.onFailure(failure);
   }
   restoreCooldowns(
-    values: { api: string; nextRetryAt: number | null; exhausted: boolean }[],
+    values: {
+      api: string;
+      nextRetryAt: number | null;
+      exhausted: boolean;
+      circuitUntil?: number | null;
+      consecutiveFailures?: number;
+      circuitTrips?: number;
+    }[],
   ) {
     for (const value of values) {
       const s = this.state(value.api);
       s.nextRetryAt = value.nextRetryAt;
       s.exhausted = value.exhausted;
+      if (Number.isFinite(value.circuitUntil) && value.circuitUntil! > 0) {
+        // Keep a pending probe across restart, including an expired open period.
+        s.circuitUntil = Math.min(
+          value.circuitUntil!,
+          Date.now() + circuitLimits.maxOpenMs,
+        );
+        s.consecutiveFailures = circuitLimits.failureThreshold;
+        s.circuitTrips = Math.max(1, Math.min(10, value.circuitTrips ?? 1));
+      }
     }
   }
   private state(api: string) {
     if (!this.states.has(api))
       this.states.set(api, {
+        consecutiveFailures: 0,
+        circuitUntil: null,
+        circuitTrips: 0,
         lastLatencyMs: null,
         requests: 0,
         rateLimits: 0,
@@ -119,6 +147,12 @@ export class ApiAccess {
       return {
         api,
         ...s,
+        circuit:
+          s.circuitUntil === null
+            ? ("CLOSED" as const)
+            : s.circuitUntil > now
+              ? ("OPEN" as const)
+              : ("HALF_OPEN" as const),
         recent: undefined,
         requestsPerMinute: s.recent.filter((t) => t > now - 60000).length,
         backoff: s.nextRetryAt !== null && s.nextRetryAt > now,
@@ -128,7 +162,10 @@ export class ApiAccess {
   }
   blocked() {
     return [...this.states.values()].some(
-      (s) => s.exhausted || (s.nextRetryAt ?? 0) > Date.now(),
+      (s) =>
+        s.exhausted ||
+        s.circuitUntil !== null ||
+        (s.nextRetryAt ?? 0) > Date.now(),
     );
   }
   reset() {
@@ -216,6 +253,10 @@ export class ApiAccess {
       if ((s.nextRetryAt ?? 0) > Date.now()) throw new Error("API_BACKOFF");
       s.active = true;
       try {
+        // Per-API queue admits one probe. Waiting consumes the acquisition budget;
+        // it does not create a detached timer or bypass the order gate.
+        const probing = s.circuitUntil !== null;
+        if (probing) await this.wait(s.circuitUntil!);
         for (let attempt = 0; ; attempt++) {
           this.controller.signal.throwIfAborted();
           budget?.signal.throwIfAborted();
@@ -243,6 +284,16 @@ export class ApiAccess {
               Math.round(performance.now() - began),
             );
             s.failed = false;
+            s.consecutiveFailures = 0;
+            s.circuitUntil = null;
+            s.circuitTrips = 0;
+            if (probing) {
+              try {
+                this.onCircuitChange();
+              } catch {
+                throw new Error("VALIDATION_RECORD_FAILED");
+              }
+            }
             s.nextRetryAt = null;
             s.lastSuccessAt = Date.now();
             if (ttl)
@@ -316,6 +367,30 @@ export class ApiAccess {
             }
             if (!(error instanceof RateLimited)) {
               recordFailure();
+              if (transient) {
+                s.consecutiveFailures++;
+                if (
+                  probing ||
+                  s.consecutiveFailures >= circuitLimits.failureThreshold
+                ) {
+                  s.circuitTrips++;
+                  s.circuitUntil =
+                    Date.now() +
+                    Math.min(
+                      circuitLimits.maxOpenMs,
+                      circuitLimits.baseOpenMs *
+                        2 ** Math.min(10, s.circuitTrips - 1),
+                    );
+                  s.nextRetryAt = null;
+                  this.caches.clear();
+                  try {
+                    this.onCircuitChange();
+                  } catch {
+                    throw new Error("VALIDATION_RECORD_FAILED");
+                  }
+                  throw error;
+                }
+              }
               if (
                 !transient ||
                 attempt >= Math.min(2, policy.maxTransientRetries ?? 0)

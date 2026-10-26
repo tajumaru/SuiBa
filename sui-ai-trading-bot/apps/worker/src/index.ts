@@ -101,6 +101,7 @@ apiAccess.onAttempt = (event) => {
 };
 validation?.sample(engine.marketStatus());
 apiAccess.restoreCooldowns(db.get("api_cooldowns") ?? []);
+apiAccess.onCircuitChange = () => db.set("api_cooldowns", apiAccess.snapshot());
 let lastExportAt = 0;
 function validationHeartbeat(final = false) {
   if (!validation) return;
