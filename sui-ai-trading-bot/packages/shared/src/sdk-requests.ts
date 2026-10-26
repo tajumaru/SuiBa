@@ -1,10 +1,13 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { apiFetch, rawFetch } from "./api.ts";
+import { abortable, currentReadBudget } from "./read-budget.ts";
+import { withReadBudget } from "./read-budget-node.ts";
+export const sdkRequestLimits = { deadlineMs: 20000 };
 const sdkContext = new AsyncLocalStorage<boolean>();
 let originalFetch: typeof fetch | undefined;
 // The SDK has no fetch injection and converts HTTP errors to route errors.
 // Scope interception to its async call tree; other fetch users are untouched.
-export function sdkRequests<T>(fn: () => Promise<T>): Promise<T> {
+export async function sdkRequests<T>(fn: () => Promise<T>): Promise<T> {
   if (!originalFetch) {
     originalFetch = rawFetch;
     globalThis.fetch = (input, init) =>
@@ -12,5 +15,25 @@ export function sdkRequests<T>(fn: () => Promise<T>): Promise<T> {
         ? apiFetch("Cetus", input, init)
         : originalFetch!(input, init);
   }
-  return sdkContext.run(true, fn);
+  const parent = currentReadBudget();
+  const deadline = new AbortController();
+  const timer = setTimeout(
+    () => deadline.abort(new Error("UPSTREAM_TIMEOUT")),
+    sdkRequestLimits.deadlineMs,
+  );
+  const signal = AbortSignal.any([
+    deadline.signal,
+    ...(parent ? [parent.signal] : []),
+  ]);
+  try {
+    signal.throwIfAborted();
+    return await withReadBudget(
+      signal,
+      parent?.fresh ?? false,
+      () => sdkContext.run(true, () => abortable(fn(), signal)),
+      parent?.cycleId,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
 }

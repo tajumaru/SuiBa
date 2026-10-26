@@ -303,6 +303,21 @@ export function OperationsView({
           {(data.apis ?? []).map((a) => (
             <article key={a.api}>
               <h4>{a.api}</h4>
+              <p>
+                連続通信障害への保護：
+                {stale
+                  ? "状態不明"
+                  : a.circuit === "OPEN"
+                    ? "通信を一時抑制しています"
+                    : a.circuit === "HALF_OPEN"
+                      ? "試験通信で復旧を確認します（注文は安全確認後）"
+                      : a.circuit === "CLOSED"
+                        ? "通信抑制なし"
+                        : "状態不明"}
+                {a.circuitUntil != null && (
+                  <> ／ 試験通信可能時刻：{date(a.circuitUntil)}</>
+                )}
+              </p>
               {a.lastFailure && (
                 <div className="warning">
                   <p>

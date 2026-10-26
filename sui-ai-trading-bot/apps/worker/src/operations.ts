@@ -1,4 +1,5 @@
 import { abortable } from "../../../packages/shared/src/read-budget.ts";
+import { botControlState } from "../../../packages/shared/src/bot-state.ts";
 import { withReadBudget } from "../../../packages/shared/src/read-budget-node.ts";
 import {
   initialPaperSafety,
@@ -74,6 +75,11 @@ export interface DecisionTelemetry {
   takeProfitPct: number;
   conditions: {
     emaUp: boolean;
+    /** EMA counted as met via the gap-shrink route, not the cross.
+     * Absent in evidence recorded before the option existed; the
+     * mapping below reads that as false rather than failing closed,
+     * because this flag only steers display wording. */
+    emaGapShrinking: boolean;
     rsiRecovery: boolean;
     histogramImproving: boolean;
     hasPosition: boolean;
@@ -931,6 +937,12 @@ export class OperationMonitor {
     const r = this.db.runtime();
     return {
       ...this.safety(),
+      controlState: botControlState({
+        ...r,
+        ...this.safety(),
+        databaseHealthy: this.db.health().healthy,
+        ordersAllowed: this.ordersAllowed(undefined, now),
+      }),
       botState: r.emergency
         ? "EMERGENCY_STOP"
         : r.error
@@ -1064,6 +1076,7 @@ export class OperationMonitor {
       takeProfitPct: t.takeProfitPct,
       conditions: {
         emaUp: cond.emaUp,
+        emaGapShrinking: cond.emaGapShrinking === true,
         rsiRecovery: cond.rsiRecovery,
         histogramImproving: cond.histogramImproving,
         hasPosition: cond.hasPosition,

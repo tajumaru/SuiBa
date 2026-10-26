@@ -195,3 +195,85 @@ it("classifies an actual socket disconnect without retrying or using a cached va
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
+
+it("rejects an interrupted response stream without caching partial JSON (offline fixture)", async () => {
+  const fetcher = vi.fn(
+    async () =>
+      new Response(
+        new ReadableStream({
+          start(stream) {
+            stream.enqueue(new TextEncoder().encode('{"partial":'));
+            queueMicrotask(() =>
+              stream.error(
+                new TypeError("terminated", {
+                  cause: Object.assign(new Error("socket closed"), {
+                    code: "UND_ERR_SOCKET",
+                  }),
+                }),
+              ),
+            );
+          },
+        }),
+        { status: 200 },
+      ),
+  );
+  const { apiAccess, apiFetch } = await transport(fetcher);
+  for (let i = 0; i < 2; i++)
+    await expect(
+      apiFetch("GeckoTerminal", url, undefined, 60000),
+    ).rejects.toThrow("UPSTREAM_NETWORK_FAILED");
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(
+    apiAccess.snapshot().find((a) => a.api === "GeckoTerminal"),
+  ).toMatchObject({
+    lastSuccessAt: null,
+    lastFailure: {
+      phase: "BODY",
+      status: 200,
+      code: "UPSTREAM_NETWORK_FAILED",
+      causeCode: "UND_ERR_SOCKET",
+    },
+  });
+});
+
+it("actual loopback rejects a truncated successful body and never caches or decodes its partial JSON", async () => {
+  let calls = 0;
+  const server = createServer((_, response) => {
+    calls++;
+    response.writeHead(200, {
+      "Content-Type": "application/json",
+      "Content-Length": "100",
+    });
+    response.flushHeaders();
+    response.write('{"partial":');
+    setTimeout(() => response.destroy(), 20);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { apiAccess, apiFetch } = await transport();
+  try {
+    const { port } = server.address() as { port: number };
+    for (let i = 0; i < 2; i++)
+      await expect(
+        apiFetch(
+          "GeckoTerminal",
+          `http://127.0.0.1:${port}/partial`,
+          undefined,
+          60000,
+        ),
+      ).rejects.toThrow("UPSTREAM_NETWORK_FAILED");
+    expect(calls).toBe(2);
+    expect(
+      apiAccess.snapshot().find((a) => a.api === "GeckoTerminal"),
+    ).toMatchObject({
+      lastSuccessAt: null,
+      lastFailure: {
+        phase: "BODY",
+        status: 200,
+        code: "UPSTREAM_NETWORK_FAILED",
+      },
+    });
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

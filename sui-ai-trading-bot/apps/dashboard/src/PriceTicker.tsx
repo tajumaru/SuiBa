@@ -36,11 +36,8 @@ const SPARK_MAX_POINTS = 40;
  * the sparkline are simply not rendered.
  */
 
-export function formatTickerPrice(
-  price: number | null | undefined,
-): string {
-  if (price == null || !Number.isFinite(price) || price <= 0)
-    return "—";
+export function formatTickerPrice(price: number | null | undefined): string {
+  if (price == null || !Number.isFinite(price) || price <= 0) return "—";
   if (price >= 1000)
     return `$${new Intl.NumberFormat("en-US", {
       minimumFractionDigits: 2,
@@ -189,9 +186,14 @@ export function sparklinePoints(
 export function PriceTicker({
   price,
   candlesByTimeframe,
+  glow = false,
 }: {
   price: State["price"];
   candlesByTimeframe: Frames;
+  /** Buy celebration: while true the ticker carries the glow
+   * class and pulses gold once (motion permitting — the glow is
+   * defined only under no-preference in style.css). */
+  glow?: boolean;
 }) {
   const change = tickerChange(candlesByTimeframe);
   const points = change ? sparklinePoints(change.closes) : null;
@@ -203,7 +205,11 @@ export function PriceTicker({
   const sparkStroke =
     tone === "up" ? "#43dfb2" : tone === "down" ? "#ff6b81" : "#9fb2c8";
   return (
-    <div className="price-ticker" role="img" aria-label={ariaLabel}>
+    <div
+      className={`price-ticker${glow ? " glow" : ""}`}
+      role="img"
+      aria-label={ariaLabel}
+    >
       <span className="price-ticker-coin" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="15" height="15" focusable="false">
           <path

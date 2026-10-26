@@ -71,6 +71,10 @@ export interface NarrationEntry {
   at: number;
   kind: NarrationKind;
   text: string;
+  /** Fill side, recorded only on trade entries (from the candidate
+   * audit's finalAction). Lets the display tell a buy fill from a
+   * sell fill without re-reading the wording. */
+  side?: "BUY" | "SELL";
 }
 
 /**
@@ -207,6 +211,7 @@ export interface DecisionTrail {
   atr: number;
   oversold: number;
   emaUp: boolean;
+  emaGapShrinking: boolean;
   rsiRecovery: boolean;
   histogramImproving: boolean;
   hasPosition: boolean;
@@ -223,6 +228,7 @@ export function decisionTrail(dec: DecisionTelemetry): DecisionTrail {
     atr: dec.atr,
     oversold: dec.oversold,
     emaUp: dec.conditions.emaUp,
+    emaGapShrinking: dec.conditions.emaGapShrinking,
     rsiRecovery: dec.conditions.rsiRecovery,
     histogramImproving: dec.conditions.histogramImproving,
     hasPosition: dec.conditions.hasPosition,
@@ -377,7 +383,9 @@ function waitNarration(
   if (broken.length) {
     const key = broken[0].key;
     if (key === "emaUp")
-      return `EMAの並びが崩れた。差は${emaGapPct(dec)}、一歩さがったなあ`;
+      return prev?.emaGapShrinking
+        ? `EMAの差の縮小が止まった。差は${emaGapPct(dec)}、一歩さがったなあ`
+        : `EMAの並びが崩れた。差は${emaGapPct(dec)}、一歩さがったなあ`;
     if (key === "rsiRecovery")
       return `RSIの回復が消えた。今は${fmtNumber(dec.rsi, 1)}、一歩さがったなあ`;
     return `MACDが崩れて${fmtNumber(dec.histogram, 4)}。一歩さがったなあ`;
@@ -397,7 +405,9 @@ function waitNarration(
       const n = newly[0].key;
       const lead =
         n === "emaUp"
-          ? "EMAが順並びになった"
+          ? dec.conditions.emaGapShrinking
+            ? "EMAの差が縮み続けて成立扱いになった"
+            : "EMAが順並びになった"
           : n === "rsiRecovery"
             ? `RSIが${fmtNumber(dec.previousRsi, 1)}→${fmtNumber(dec.rsi, 1)}で上抜けた`
             : `MACDが${fmtNumber(dec.previousHistogram, 4)}→${fmtNumber(dec.histogram, 4)}に上向いた`;
@@ -430,7 +440,9 @@ export function cycleNarrationText(
   if (dec.action === "BUY") {
     if (metEntryConditions(dec) === 3) {
       const parts = [
-        "EMAは順並び",
+        dec.conditions.emaGapShrinking
+          ? "EMAは差が縮み続けて成立扱い"
+          : "EMAは順並び",
         `RSIは${fmtNumber(dec.previousRsi, 1)}→${fmtNumber(dec.rsi, 1)}まで回復`,
         dec.histogram > 0 ? "MACDもプラス" : "MACDも上向き",
       ];
@@ -610,7 +622,9 @@ function approachWatchText(key: EntryCondKey, dec: DecisionTelemetry): string {
 
 function hitWatchText(key: EntryCondKey, dec: DecisionTelemetry): string {
   if (key === "emaUp")
-    return `EMA、成立した。${fmtNumber(dec.ema20, 4)}が${fmtNumber(dec.ema50, 4)}の上、宣言どおりだね`;
+    return dec.conditions.emaGapShrinking
+      ? `EMA、成立した。${fmtNumber(dec.ema20, 4)}はまだ${fmtNumber(dec.ema50, 4)}の下、差の縮小が続いての成立だね`
+      : `EMA、成立した。${fmtNumber(dec.ema20, 4)}が${fmtNumber(dec.ema50, 4)}の上、宣言どおりだね`;
   if (key === "rsiRecovery")
     return `RSI、上抜けた。${fmtNumber(dec.previousRsi, 1)}→${fmtNumber(dec.rsi, 1)}、宣言どおりだね`;
   return `MACD、成立した。今${fmtNumber(dec.histogram, 4)}、宣言どおりだね`;
@@ -1408,6 +1422,7 @@ export function advanceNarration(
       drafts.push({
         at: c.timestamp,
         kind: "trade",
+        side: c.finalAction,
         text: `PAPERで${c.finalAction === "BUY" ? "買い" : "売り"}を記録したよ${fill ? `：${fill}` : ""}`,
       });
     } else if (c.finalAction === "WAIT") {
@@ -1667,4 +1682,52 @@ export function agentPose(
     if (met >= 1 && state.priceRising) return "point";
   }
   return "laptop";
+}
+
+/** How long a buy celebration lasts (avatar, pill, ticker glow). */
+export const BUY_CELEBRATION_MS = 4000;
+
+/**
+ * A buy entry only celebrates when it is fresh news: an entry whose
+ * recorded time sits far from the moment the feed picked it up is
+ * history catching up (a stale display resuming, a backlog
+ * draining), not a fill that just happened.
+ */
+export const CELEBRATION_FRESH_MS = 120_000;
+
+/** A recorded PAPER buy fill (a sell fill is not a celebration). */
+export function isBuyTradeEntry(entry: NarrationEntry): boolean {
+  return entry.kind === "trade" && entry.side === "BUY";
+}
+
+/**
+ * The newest buy fill `next` gained over `prev`, or null when the
+ * advance added none. Entries are matched by id, so re-rendering
+ * the same state — or the session's first advance, whose entries
+ * are the recorded history — can never produce a hit: the caller
+ * only consults this for advances after the feed initialised.
+ */
+export function findNewBuyEntry(
+  prev: NarrationEntry[],
+  next: NarrationEntry[],
+): NarrationEntry | null {
+  const known = new Set(prev.map((e) => e.id));
+  let hit: NarrationEntry | null = null;
+  for (const entry of next) {
+    if (!known.has(entry.id) && isBuyTradeEntry(entry)) hit = entry;
+  }
+  return hit;
+}
+
+/** Whether the celebration window that opened at `startedAt` is
+ * still open at `now`. */
+export function buyCelebrationActive(
+  startedAt: number | null,
+  now: number,
+): boolean {
+  return (
+    startedAt != null &&
+    now >= startedAt &&
+    now - startedAt < BUY_CELEBRATION_MS
+  );
 }

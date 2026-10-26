@@ -101,7 +101,12 @@ describe("かんたん設定", () => {
   });
   it("keeps every schema field editable or fixed and advanced settings collapsed", () => {
     expect(
-      new Set([...fields.map((f) => f.key), "strategy", "profitGuardEnabled"]),
+      new Set([
+        ...fields.map((f) => f.key),
+        "strategy",
+        "profitGuardEnabled",
+        "emaGapShrinkEnabled",
+      ]),
     ).toEqual(new Set(Object.keys(defaults)));
     const html = renderToStaticMarkup(
       React.createElement(AdvancedSettings, {
@@ -112,6 +117,21 @@ describe("かんたん設定", () => {
     expect(html).toContain("<details>");
     expect(html).not.toContain("<details open");
     expect(html).toContain("MACD");
+    // The EMA gap-shrink toggle and its candle-count field ride along
+    // in the advanced section; the toggle starts unchecked (default
+    // off) and the count shows the default of 3.
+    expect(html).toContain("EMAの差が縮小中も成立にする");
+    expect(html).toContain("縮小とみなす連続本数");
+    expect(html).toContain('value="3"');
+    // Only the profit-guard box is checked under the defaults.
+    expect(html.match(/checked=""/g)).toHaveLength(1);
+    const on = renderToStaticMarkup(
+      React.createElement(AdvancedSettings, {
+        draft: { ...defaults, emaGapShrinkEnabled: true },
+        setDraft: () => {},
+      }),
+    );
+    expect(on.match(/checked=""/g)).toHaveLength(2);
   });
 });
 

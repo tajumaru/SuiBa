@@ -60,6 +60,7 @@ function decision(overrides: {
     previousVolumePositive: true,
     volumeChangeExceeded: false,
     emaUp: false,
+    emaGapShrinking: false,
     rsiRecovery: false,
     histogramImproving: false,
     emaDown: true,
@@ -370,6 +371,7 @@ describe("agent narration: cycles", () => {
         takeProfitPct: 0.03,
         conditions: {
           emaUp: false,
+          emaGapShrinking: false,
           rsiRecovery: false,
           histogramImproving: true,
           hasPosition: false,
@@ -444,6 +446,7 @@ describe("agent narration: cycles", () => {
         takeProfitPct: 0.03,
         conditions: {
           emaUp: true,
+          emaGapShrinking: false,
           rsiRecovery: false,
           histogramImproving: false,
           hasPosition: true,
@@ -1115,6 +1118,7 @@ describe("narration tone: reasons, softly and shortly", () => {
       ...rest,
       conditions: {
         emaUp: false,
+        emaGapShrinking: false,
         rsiRecovery: false,
         histogramImproving: false,
         hasPosition: false,
@@ -1165,6 +1169,7 @@ describe("narration tone: reasons, softly and shortly", () => {
     previousHistogram: -0.001,
     conditions: {
       emaUp: true,
+      emaGapShrinking: false,
       rsiRecovery: true,
       histogramImproving: true,
     },
@@ -1252,6 +1257,53 @@ describe("narration tone: reasons, softly and shortly", () => {
     expect(text).toContain("RSIは28→39まで回復");
     expect(text).toContain("MACDもプラス");
     expect(text).toContain("だから買うね");
+  });
+
+  it("a shrink-route BUY does not claim the EMAs are aligned", () => {
+    const text = cycleNarrationText(
+      telemetry({
+        action: "BUY",
+        selectedRule: "BUY_SIGNAL",
+        ema20: 2.418,
+        ema50: 2.424,
+        previousRsi: 28,
+        rsi: 39,
+        histogram: 0.0009,
+        previousHistogram: -0.001,
+        conditions: {
+          emaUp: true,
+          emaGapShrinking: true,
+          rsiRecovery: true,
+          histogramImproving: true,
+        },
+      }),
+      null,
+    );
+    expect(text).toContain("3つ揃ったよ");
+    expect(text).toContain("EMAは差が縮み続けて成立扱い");
+    expect(text).not.toContain("EMAは順並び");
+  });
+
+  it("a newly met EMA via the shrink route is announced as such", () => {
+    const text = cycleNarrationText(
+      telemetry({
+        ema20: 2.41,
+        ema50: 2.42,
+        conditions: { emaUp: true, emaGapShrinking: true },
+      }),
+      decisionTrail(farWait),
+    );
+    expect(text).toContain("EMAの差が縮み続けて成立扱いになった");
+    expect(text).not.toContain("EMAが順並びになった");
+  });
+
+  it("a broken shrink-route EMA narrates the shrink stopping", () => {
+    const before = telemetry({
+      conditions: { emaUp: true, emaGapShrinking: true },
+    });
+    const text = cycleNarrationText(farWait, decisionTrail(before));
+    expect(text).toContain("EMAの差の縮小が止まった");
+    expect(text).not.toContain("EMAの並びが崩れた");
   });
 
   it("a position watch counts down to the take-profit line", () => {
@@ -1373,6 +1425,27 @@ describe("agent narration: watch declaration", () => {
     expect(state.watch?.called).toBe(false);
   });
 
+  it("a watch hit via the shrink route says the gap shrank, not that EMA20 crossed above", () => {
+    const state = feed([
+      decision({
+        ema20: 2.415,
+        ema50: 2.42,
+        histogram: -0.008,
+        previousHistogram: -0.001,
+      }),
+      decision({
+        evaluatedAt: NOW - 50_000,
+        ema20: 2.418,
+        ema50: 2.42,
+        conditions: { emaUp: true, emaGapShrinking: true },
+      }),
+    ]);
+    const all = texts(state);
+    expect(all.some((t) => t.includes("差の縮小が続いての成立"))).toBe(true);
+    expect(all.some((t) => t.includes("の上、宣言どおりだね"))).toBe(false);
+    expect(state.watch?.key).not.toBe("emaUp");
+  });
+
   it("withdraws a drifted watch and switches to the next candidate", () => {
     const state = feed([
       decision({ rsi: 31 }),
@@ -1425,6 +1498,7 @@ describe("agent narration: watch declaration", () => {
         decision({
           conditions: {
             emaUp: true,
+            emaGapShrinking: false,
             rsiRecovery: true,
             histogramImproving: true,
           },
@@ -1548,6 +1622,7 @@ describe("agent narration: watch declaration", () => {
         evaluatedAt: NOW - 40_000,
         conditions: {
           emaUp: true,
+          emaGapShrinking: false,
           rsiRecovery: true,
           histogramImproving: true,
         },
@@ -1607,6 +1682,7 @@ describe("buy-condition chips", () => {
       ...rest,
       conditions: {
         emaUp: false,
+        emaGapShrinking: false,
         rsiRecovery: false,
         histogramImproving: false,
         hasPosition: false,
@@ -1624,6 +1700,7 @@ describe("buy-condition chips", () => {
       telemetry({
         conditions: {
           emaUp: true,
+          emaGapShrinking: false,
           rsiRecovery: true,
           histogramImproving: true,
         },
@@ -1691,6 +1768,7 @@ describe("buy-condition chips", () => {
     const before = telemetry({
       conditions: {
         emaUp: true,
+        emaGapShrinking: false,
         rsiRecovery: true,
         histogramImproving: true,
       },
@@ -1802,6 +1880,7 @@ describe("agent narration: watch score and review", () => {
         selectedRule: "BUY_SIGNAL",
         conditions: {
           emaUp: true,
+          emaGapShrinking: false,
           rsiRecovery: true,
           histogramImproving: true,
         },
@@ -1909,6 +1988,7 @@ describe("agent narration: watch score and review", () => {
         selectedRule: "BUY_SIGNAL",
         conditions: {
           emaUp: true,
+          emaGapShrinking: false,
           rsiRecovery: true,
           histogramImproving: true,
         },
@@ -2110,6 +2190,7 @@ describe("agent narration: spike alerts", () => {
       ...rest,
       conditions: {
         emaUp: false,
+        emaGapShrinking: false,
         rsiRecovery: false,
         histogramImproving: false,
         hasPosition: false,

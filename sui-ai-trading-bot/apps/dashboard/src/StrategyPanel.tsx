@@ -531,6 +531,8 @@ export function StrategyPanel({
                 <p className="strategy-note">
                   差 <b>{signedPct(conditions.ema.gapPct!)}</b>
                   。短期が長期より上なら上向きの流れ。
+                  {conditions.ema.viaShrink &&
+                    " 今回は差の縮小が続いたため、設定により成立として扱っています（短期はまだ長期の下）。"}
                 </p>
               </CardShell>
               <CardShell
