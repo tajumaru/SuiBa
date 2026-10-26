@@ -208,9 +208,10 @@ describe("agent header avatar wiring (main.tsx)", () => {
   const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
 
   it("renders the avatar at the app top, fed by the narration feed", () => {
-    expect(main).toContain(
-      "<AgentHeaderAvatar pose={agentPose} celebrating={buyCelebration} />",
-    );
+    expect(main).toContain("<AgentHeaderAvatar");
+    expect(main).toContain("pose={agentPose}");
+    expect(main).toContain("celebrating={buyCelebration}");
+    expect(main).toContain("shout={shout}");
     expect(main).toContain("onPoseChange={setAgentPose}");
     expect(main).toContain('useState<AgentPose>("normal")');
   });

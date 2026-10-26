@@ -22,6 +22,7 @@ import { Reason } from "./Reason.tsx";
 import { StrategyTab, type StrategySegment } from "./StrategyTab.tsx";
 import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
+import { errorShout } from "./errorShout.ts";
 import { BUY_CELEBRATION_MS, type AgentPose } from "./agentNarration.ts";
 import { NAV_SHORT_LABELS, NavTabIcon } from "./navTabs.tsx";
 import { PriceChart } from "./PriceChart.tsx";
@@ -258,6 +259,11 @@ function App() {
   // the window closes the avatar shows the pose the records call
   // for at that point.
   const [buyCelebration, setBuyCelebration] = useState(false);
+  // The header character's error shout, derived from the same
+  // safety snapshot the connectivity displays use (plus this
+  // screen's own fetch failure as staleness), so the avatar,
+  // the strip and the bar always agree about an error state.
+  const shout = errorShout(data?.safety ?? null, !!error);
   const buyCelebrationTimerRef = useRef<number | null>(null);
   const handleBuyCelebration = useCallback(() => {
     setBuyCelebration(true);
@@ -406,7 +412,11 @@ function App() {
           edge, and on scroll it sticks to the top of the viewport
           instead of scrolling away with the header. */}
       {token && (
-        <AgentHeaderAvatar pose={agentPose} celebrating={buyCelebration} />
+        <AgentHeaderAvatar
+          pose={agentPose}
+          celebrating={buyCelebration}
+          shout={shout}
+        />
       )}
       {!token ? (
         <LoginScreen

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { OperationsSnapshot } from "./operationsTypes.ts";
 import { botVital } from "./botVital.ts";
+import type { ErrorShout } from "./errorShout.ts";
 import {
   advanceNarration,
   agentPose,
@@ -147,21 +148,40 @@ const AVATAR_BURST_MARKS = [
  * 「買えた！」. The override is render-local: the feed keeps
  * reporting the pose derived from the records, so when the
  * celebration ends the avatar falls back to exactly that pose.
+ *
+ * An error shout (see errorShout.ts) outranks even the
+ * celebration: the avatar snaps to the plain face, throws a
+ * Munch-style scream — hands on cheeks and an open oval mouth,
+ * drawn over the artwork — shakes once, and calls out the short
+ * fixed line in a speech bubble while the pill carries the state
+ * label in alert colours. The scream and bubble stay for as long
+ * as the error state does; the shake replays when the kind of
+ * error changes (the avatar remounts on the kind key). Under
+ * reduced motion there is no shake or pop: the face, the bubble
+ * and the pill still change.
  */
 export function AgentHeaderAvatar({
   pose,
   celebrating = false,
+  shout = null,
 }: {
   pose: AgentPose;
   celebrating?: boolean;
+  shout?: ErrorShout | null;
 }) {
   const reducedMotion = usePrefersReducedMotion();
-  const shownPose: AgentPose = celebrating ? "pointSmile" : pose;
-  const animated = celebrating && !reducedMotion;
+  const shouting = shout !== null;
+  const shownPose: AgentPose = shouting
+    ? "normal"
+    : celebrating
+      ? "pointSmile"
+      : pose;
+  const animated = celebrating && !reducedMotion && !shouting;
   return (
     <div className="agent-avatar-dock">
       <div
-        className={`agent-avatar pose-${shownPose}${animated ? " celebrating" : ""}`}
+        key={shout ? shout.kind : "calm"}
+        className={`agent-avatar pose-${shownPose}${animated ? " celebrating" : ""}${shouting ? " shouting" : ""}`}
         data-pose={shownPose}
         aria-hidden="true"
       >
@@ -170,6 +190,16 @@ export function AgentHeaderAvatar({
         </div>
         <span className="agent-avatar-zzz">Zzz</span>
         <span className="agent-avatar-star">✦</span>
+        {shouting && (
+          <>
+            <svg className="agent-avatar-scream" viewBox="0 0 100 100">
+              <ellipse className="hand" cx="24" cy="58" rx="10" ry="16" />
+              <ellipse className="hand" cx="76" cy="58" rx="10" ry="16" />
+              <ellipse className="mouth" cx="50" cy="62" rx="7.5" ry="11" />
+            </svg>
+            <span className="agent-avatar-bubble">{shout.message}</span>
+          </>
+        )}
         {animated && (
           <span className="agent-avatar-burst">
             {AVATAR_BURST_MARKS.map((m) => (
@@ -181,14 +211,22 @@ export function AgentHeaderAvatar({
         )}
       </div>
       <p
-        className={`agent-avatar-pill${celebrating ? " celebrate" : ""}`}
+        className={`agent-avatar-pill${celebrating && !shouting ? " celebrate" : ""}${shouting ? " shout" : ""}`}
         role="status"
       >
         <span
-          className={`agent-avatar-dot tone-${AVATAR_DOT_TONE[shownPose]}`}
+          className={
+            shouting
+              ? "agent-avatar-dot shout"
+              : `agent-avatar-dot tone-${AVATAR_DOT_TONE[shownPose]}`
+          }
           aria-hidden="true"
         />
-        {celebrating ? "買えた！" : POSE_LABEL[shownPose]}
+        {shouting
+          ? shout.label
+          : celebrating
+            ? "買えた！"
+            : POSE_LABEL[shownPose]}
       </p>
     </div>
   );

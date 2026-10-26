@@ -2112,6 +2112,61 @@ th {
   color: #0b1220;
   font-weight: 700;
 }
+/* Error shout (AgentHeaderAvatar): while an error state lasts,
+   the circle rings red, the Munch scream (hands on cheeks, open
+   oval mouth) sits over the plain artwork, and the fixed short
+   line is called out in a speech bubble beside the face. The
+   shake and the bubble's pop live in the no-preference block
+   below; under reduced motion the face, bubble and pill simply
+   change and rest. */
+.agent-avatar.shouting {
+  border-color: #f0564a;
+}
+.agent-avatar-scream {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.agent-avatar-scream .hand {
+  fill: #fff;
+  stroke: #20303f;
+  stroke-width: 2.5;
+}
+.agent-avatar-scream .mouth {
+  fill: #20303f;
+}
+.agent-avatar-bubble {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 0;
+  background: #fff;
+  color: #20303f;
+  font-weight: 700;
+  font-size: 12.5px;
+  line-height: 1.3;
+  white-space: nowrap;
+  padding: 6px 10px;
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+.agent-avatar-bubble::after {
+  content: "";
+  position: absolute;
+  left: -5px;
+  bottom: 10px;
+  border: 6px solid transparent;
+  border-right-color: #fff;
+  border-left: 0;
+}
+.agent-avatar-pill.shout {
+  border-color: #f0564a;
+  color: #ff9c9c;
+}
+.agent-avatar-dot.shout {
+  background: #f0564a;
+}
 .agent-avatar-pill {
   display: flex;
   align-items: center;
@@ -2157,6 +2212,38 @@ th {
   }
   .agent-avatar.celebrating {
     animation: agent-avatar-hop 0.55s ease;
+  }
+  .agent-avatar.shouting {
+    animation: agent-avatar-shout-shake 0.45s ease;
+  }
+  .agent-avatar.shouting .agent-avatar-bubble {
+    animation: agent-avatar-bubble-pop 0.18s ease;
+  }
+  @keyframes agent-avatar-shout-shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    20% {
+      transform: translateX(-5px) rotate(-3deg);
+    }
+    40% {
+      transform: translateX(5px) rotate(3deg);
+    }
+    60% {
+      transform: translateX(-4px);
+    }
+    80% {
+      transform: translateX(4px);
+    }
+  }
+  @keyframes agent-avatar-bubble-pop {
+    from {
+      transform: scale(0.4);
+    }
+    to {
+      transform: scale(1);
+    }
   }
   .agent-avatar.celebrating .agent-avatar-burst span {
     animation: agent-avatar-burst 1.15s ease-out both;
