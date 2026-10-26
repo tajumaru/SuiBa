@@ -252,7 +252,7 @@ test("narration survives polling, reconnects and stops without duplicates or uns
   operations.safety.botState = "ABNORMAL_STOP";
   await page.clock.runFor(10_000);
   await expect(avatar).toHaveClass(/pose-sleep/);
-  await expect(feed.locator(".agent-feed-entry").last()).toContainText(
+  await expect(feed.locator(".agent-feed-entry").first()).toContainText(
     "止まったよ",
   );
   expect(

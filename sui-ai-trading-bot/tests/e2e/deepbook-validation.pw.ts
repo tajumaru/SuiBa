@@ -30,6 +30,8 @@ for (const begun of [false, true])
       writes: string[] = [];
     await page.route("**/api/**", async (route) => {
       const path = new URL(route.request().url()).pathname;
+      if (path === "/api/dashboard/summary")
+        return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
       if (route.request().method() !== "GET") writes.push(path);
       if (path === "/api/validation/start")
         return route.fulfill({ json: { status: "検証途中" } });

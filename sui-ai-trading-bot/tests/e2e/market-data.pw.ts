@@ -58,6 +58,8 @@ test("shows Japanese source fallback and stale state without starting PAPER", as
   };
   const writes: string[] = [];
   await page.route("**/api/**", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/dashboard/summary")
+      return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
     if (route.request().method() !== "GET") writes.push(route.request().url());
     await route.fulfill({
       json: route.request().url().endsWith("/api/state")

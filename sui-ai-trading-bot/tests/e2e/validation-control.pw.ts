@@ -21,6 +21,8 @@ for (const go of [false, true]) {
     await page.route("**/api/**", async (route) => {
       const req = route.request();
       const path = new URL(req.url()).pathname;
+      if (path === "/api/dashboard/summary")
+        return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
       if (req.method() === "POST") {
         const body = req.postDataJSON();
         writes.push({ path, body, auth: req.headers().authorization });
@@ -118,6 +120,8 @@ test("abnormal stop requires confirmed RESET and never auto starts", async ({
   const commands: unknown[] = [];
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (path === "/api/dashboard/summary")
+      return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
     if (route.request().method() === "POST") {
       commands.push(route.request().postDataJSON());
       fixture = validationFixture("stopped");
@@ -164,6 +168,8 @@ test("stale confirmation blocks a start; landscape and keyboard remain usable", 
     });
   });
   await page.route("**/api/**", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/dashboard/summary")
+      return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
     if (route.request().method() !== "GET") writes.push(route.request().url());
     if (unavailable && route.request().url().endsWith("/operations"))
       return route.fulfill({ status: 503, json: { error: "UNAVAILABLE" } });
