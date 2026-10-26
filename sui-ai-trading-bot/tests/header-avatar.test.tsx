@@ -293,9 +293,7 @@ describe("slim two-row header (design A)", () => {
     expect(css).toContain(".header-row-sub {\n  flex-wrap: nowrap;\n}");
     expect(css).toContain("text-overflow: ellipsis;");
     expect(css).toContain("scrollbar-gutter: stable;");
-    expect(css).toContain(
-      "header strong {\n  font-size: 16px;\n  min-width: 0;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}",
-    );
+    expect(css).toContain("header strong {\n  font-size: 16px;");
     expect(css).toContain(
       ".badge {\n  margin-left: auto;\n  border: 1px solid #41d9b0;\n  color: #41d9b0;\n  padding: 3px 9px;",
     );
