@@ -2,7 +2,6 @@ import { ConnectivityStrip } from "./ConnectivityPanel.tsx";
 import { OperationBar } from "./OperationBar.tsx";
 import { PriceTicker } from "./PriceTicker.tsx";
 import { LoginScreen, type VerifyResult } from "./LoginScreen.tsx";
-import { PatternEnrollmentOffer } from "./PatternEnrollment.tsx";
 import { DashboardClient } from "./dashboardClient.ts";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
@@ -470,10 +469,6 @@ function App() {
             </button>
           </nav>
           <main className="has-avatar">
-            {/* The pattern-enrolment offer rides at the very top
-                until the reader enrols this device, puts it off
-                or dismisses it; it renders nothing otherwise. */}
-            <PatternEnrollmentOffer token={token} />
             {channelError && (
               <p role="alert" className="error">
                 {channelError}
