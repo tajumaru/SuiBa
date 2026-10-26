@@ -27,6 +27,8 @@ test("shows publication wait and independent fetch/analysis/schedule times witho
     writes: string[] = [];
   db.close();
   await page.route("**/api/**", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/dashboard/summary")
+      return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
     if (route.request().method() !== "GET") writes.push(route.request().url());
     return route.fulfill({
       json: route.request().url().endsWith("/api/state") ? state : operations,

@@ -25,6 +25,8 @@ async function open(page: Page, empty = false, provisional = false) {
   await page.clock.pauseAt(new Date(now + 1000));
   const calls: string[] = [];
   await page.route("**/api/**", (route) => {
+    if (new URL(route.request().url()).pathname === "/api/dashboard/summary")
+      return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
     calls.push(
       `${route.request().method()} ${new URL(route.request().url()).pathname}`,
     );
@@ -35,6 +37,9 @@ async function open(page: Page, empty = false, provisional = false) {
   await page.goto("/");
   await page.getByLabel("管理トークン").fill("test-only-no-real-token");
   await page.getByRole("button", { name: "接続", exact: true }).click();
+  // Keep chart time deterministic while allowing authenticated navigation.
+  await expect(page.getByRole("status")).toHaveText("おはようございます！");
+  await page.clock.runFor(1000);
   await page
     .getByRole("button", { name: "ダッシュボード", exact: true })
     .click();

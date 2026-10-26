@@ -19,6 +19,8 @@ test("2016 bars share periods gestures and selection without repeated history tr
   const writes: string[] = [];
   await page.route("**/api/**", (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (path === "/api/dashboard/summary")
+      return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
     if (route.request().method() !== "GET") writes.push(path);
     if (path === "/api/chart/history") {
       historyRequests++;
@@ -43,6 +45,9 @@ test("2016 bars share periods gestures and selection without repeated history tr
   await page.goto("/");
   await page.getByLabel("管理トークン").fill("test-only-no-real-token");
   await page.getByRole("button", { name: "接続", exact: true }).click();
+  // The frozen chart clock must also advance the login success animation.
+  await expect(page.getByRole("status")).toHaveText("おはようございます！");
+  await page.clock.runFor(1000);
   await page
     .getByRole("button", { name: "ダッシュボード", exact: true })
     .click();

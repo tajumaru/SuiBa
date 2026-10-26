@@ -5,6 +5,8 @@ for (const scenario of scenarios)
     const { operations, state } = validationFixture(scenario);
     const writes: string[] = [];
     await page.route("**/api/**", async (route) => {
+      if (new URL(route.request().url()).pathname === "/api/dashboard/summary")
+        return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
       if (route.request().method() !== "GET")
         writes.push(route.request().url());
       return route.fulfill({
@@ -133,11 +135,16 @@ for (const kind of ["running-before-begin", "stale-display"] as const)
     const { operations, state } = validationFixture(
       kind === "running-before-begin" ? "unstarted" : "running",
     );
-    if (kind === "running-before-begin") operations.status = "RUNNING";
+    if (kind === "running-before-begin") {
+      operations.status = "RUNNING";
+      state.runtime.running = true;
+    }
     let fail = false;
     const writes: string[] = [];
     await page.clock.install();
     await page.route("**/api/**", async (route) => {
+      if (new URL(route.request().url()).pathname === "/api/dashboard/summary")
+        return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
       if (route.request().method() !== "GET")
         writes.push(route.request().url());
       if (fail && route.request().url().endsWith("/api/operations"))
@@ -153,21 +160,33 @@ for (const kind of ["running-before-begin", "stale-display"] as const)
     await page.locator("#operation-diagnostics > summary").click();
     const panel = page.getByRole("region", { name: "DeepBook 24時間検証" });
     await expect(panel).toBeVisible();
+    const control = page.getByRole("region", { name: "運用検証コントロール" });
     if (kind === "running-before-begin") {
       await expect(
-        page.getByRole("button", { name: "24時間計測を開始", exact: true }),
-      ).toBeDisabled();
+        control.getByRole("button", { name: "24時間計測を開始", exact: true }),
+      ).toHaveCount(0);
       await expect(
-        page.getByRole("region", { name: "運用検証コントロール" }),
-      ).toContainText("PAPER Botを停止してから計測を開始");
+        control.getByRole("button", { name: "PAPER Botを開始", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        control.getByRole("button", { name: "PAPER Botを停止", exact: true }),
+      ).toBeEnabled();
+      await expect(control.getByRole("status")).toContainText(
+        "PAPER Bot稼働中",
+      );
+      await expect(panel).toContainText("24時間検証：未開始");
     } else {
       fail = true;
       await page.clock.fastForward(11000);
       await expect(panel).toContainText("PAPER Bot：状態不明");
       await expect(panel).toContainText("DeepBook接続：状態不明");
+      await expect(control.getByRole("status")).toContainText("状態不明");
       await expect(
-        page.getByRole("region", { name: "運用検証コントロール" }),
-      ).toContainText("最新の状態を取得");
+        control.getByRole("button", { name: "PAPER Botを開始", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        control.getByRole("button", { name: "PAPER Botを停止", exact: true }),
+      ).toBeEnabled();
     }
     expect(writes).toEqual([]);
   });
