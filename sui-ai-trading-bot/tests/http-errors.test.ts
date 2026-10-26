@@ -196,7 +196,47 @@ it("classifies an actual socket disconnect without retrying or using a cached va
   }
 });
 
-it("rejects a truncated successful body and never caches or decodes its partial JSON", async () => {
+it("rejects an interrupted response stream without caching partial JSON (offline fixture)", async () => {
+  const fetcher = vi.fn(
+    async () =>
+      new Response(
+        new ReadableStream({
+          start(stream) {
+            stream.enqueue(new TextEncoder().encode('{"partial":'));
+            queueMicrotask(() =>
+              stream.error(
+                new TypeError("terminated", {
+                  cause: Object.assign(new Error("socket closed"), {
+                    code: "UND_ERR_SOCKET",
+                  }),
+                }),
+              ),
+            );
+          },
+        }),
+        { status: 200 },
+      ),
+  );
+  const { apiAccess, apiFetch } = await transport(fetcher);
+  for (let i = 0; i < 2; i++)
+    await expect(
+      apiFetch("GeckoTerminal", url, undefined, 60000),
+    ).rejects.toThrow("UPSTREAM_NETWORK_FAILED");
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(
+    apiAccess.snapshot().find((a) => a.api === "GeckoTerminal"),
+  ).toMatchObject({
+    lastSuccessAt: null,
+    lastFailure: {
+      phase: "BODY",
+      status: 200,
+      code: "UPSTREAM_NETWORK_FAILED",
+      causeCode: "UND_ERR_SOCKET",
+    },
+  });
+});
+
+it("actual loopback rejects a truncated successful body and never caches or decodes its partial JSON", async () => {
   let calls = 0;
   const server = createServer((_, response) => {
     calls++;

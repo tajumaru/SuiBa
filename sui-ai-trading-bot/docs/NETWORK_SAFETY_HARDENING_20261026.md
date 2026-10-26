@@ -105,3 +105,9 @@ docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges s
 - 新規Breaker、SDK締切、5状態、本文切断、注文ゲートの計21件を追加。既存安全条件の削除・緩和なし。
 
 全体完了には上記#17統合と実時間耐久試験等が残る。外部実注文・実資金試験は実施していない。
+
+## PR作成後のCI分類修正
+
+初回GitHub ActionsのUbuntuは追加した実HTTP本文切断テストがオフラインCIにも含まれ、`OFFLINE_NETWORK_FORBIDDEN`で失敗。Windowsはmatrixの失敗に伴いキャンセルされた。製品障害ではなく実通信テストの分類漏れだった。
+
+実HTTPテストに既存分類の`actual loopback`を付け、通常テストと専用Dockerでは引き続き実行する。オフラインCIにはネットワークを使わないReadableStream切断試験を追加し、BODY/HTTP200/UND_ERR_SOCKETの分類、最終成功なし、部分JSONのキャッシュ不採用と2回とも再取得を検証する。オフラインガード・除外設定・製品コード・安全条件は変更しない。本文関連22件と型チェックは成功。
