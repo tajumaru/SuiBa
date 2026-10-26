@@ -1,4 +1,5 @@
 import { abortable } from "../../../packages/shared/src/read-budget.ts";
+import { botControlState } from "../../../packages/shared/src/bot-state.ts";
 import { withReadBudget } from "../../../packages/shared/src/read-budget-node.ts";
 import {
   initialPaperSafety,
@@ -830,6 +831,12 @@ export class OperationMonitor {
     const r = this.db.runtime();
     return {
       ...this.safety(),
+      controlState: botControlState({
+        ...r,
+        ...this.safety(),
+        databaseHealthy: this.db.health().healthy,
+        ordersAllowed: this.ordersAllowed(undefined, now),
+      }),
       botState: r.emergency
         ? "EMERGENCY_STOP"
         : r.error

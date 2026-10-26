@@ -21,6 +21,10 @@ it("separates communication degradation from hard stops and never claims prematu
     );
   expect(render()).toContain("安全確認中");
   expect(render()).toContain("注文禁止");
+  expect(render()).toContain("安全確認待ち・注文停止");
+  expect(render()).toContain("再開に必要な確認");
+  expect(render()).toContain("残高・保有数量・注文と約定の整合性");
+  expect(render()).toContain("復旧待機の理由");
   expect(render()).not.toContain("PAPER検証を再開しました");
   db.set("runtime", { ...db.runtime(), emergency: true });
   expect(render()).toContain("緊急停止中");

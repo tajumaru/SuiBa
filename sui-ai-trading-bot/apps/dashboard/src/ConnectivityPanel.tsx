@@ -88,6 +88,18 @@ export function ConnectivityDetails({
         <dd>{stale ? "状態不明" : labels[safety.botState]}</dd>
         <dt>新規注文</dt>
         <dd>{allowed ? "注文可能（売買条件の確認後）" : "注文禁止"}</dd>
+        <dt>安全制御の状態</dt>
+        <dd>
+          {stale
+            ? "状態不明"
+            : ({
+                RUNNING: "正常稼働",
+                DEGRADED: "通信品質低下・注文停止",
+                PAUSED: "安全確認待ち・注文停止",
+                STOPPED: "手動停止・開始待ち",
+                FAULTED: "重大障害・異常解除が必要",
+              }[safety.controlState] ?? "状態不明")}
+        </dd>
         <dt>最後の安全停止理由</dt>
         <dd>
           {safety.lastStopReason ? (
@@ -116,6 +128,26 @@ export function ConnectivityDetails({
         <dt>最終正常取得</dt>
         <dd>
           {dateTime(timing?.lastFetchSuccessAt ?? safety.lastMarketSuccessAt)}
+        </dd>
+        <dt>再開に必要な確認</dt>
+        <dd>
+          全時間足と板が新しく欠損がないこと、Suiへの接続、残高・保有数量・注文と約定の整合性、通信の待機終了を確認します。
+          正常確認は{safety.limits.healthyCycles}周期以上、
+          {safety.limits.minimumHealthyMs / 1000}秒以上続く必要があります。
+          注文直前にもリスク制限と利益保護を確認します。
+        </dd>
+        <dt>復旧待機の理由</dt>
+        <dd>
+          {stale
+            ? "最新の状態を取得できていません。"
+            : allowed
+              ? "待機条件はありません。注文ごとの確認は継続します。"
+              : safety.botState === "ABNORMAL_STOP" ||
+                  safety.botState === "EMERGENCY_STOP"
+                ? "停止原因の解消と、明示的な異常解除・開始操作が必要です。"
+                : !safety.resumePending
+                  ? "自動再開の予定はありません。安全確認後に手動で開始してください。"
+                  : "通信と市場データの連続した正常確認を待っています。確認中は注文しません。"}
         </dd>
       </dl>
       {safety.resumePending && (
