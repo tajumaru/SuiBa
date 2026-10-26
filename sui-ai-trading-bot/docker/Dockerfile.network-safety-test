@@ -1,6 +1,11 @@
 ARG SUIBA_TEST_BASE=suiba-network-safety:20261026
 FROM ${SUIBA_TEST_BASE}
 # Dedicated disposable test image. Never mount an operational database.
+USER root
+# Vite writes a temporary config beside the source and a local test cache.
+# Only this disposable harness permits these writes; runtime image is unchanged.
+RUN mkdir -p /app/node_modules/.vite && chown node:node /app /app/node_modules/.vite
+USER node
 COPY --chown=node:node tests ./tests
 COPY --chown=node:node vitest.config.ts ./vitest.config.ts
-CMD ["node", "node_modules/vitest/vitest.mjs", "run", "--maxWorkers=1", "tests/circuit-breaker.test.ts", "tests/sdk-deadline.test.ts", "tests/bot-state.test.ts", "tests/api-access.test.ts", "tests/read-budget.test.ts", "tests/http-errors.test.ts", "tests/deepbook-transport.test.ts", "tests/sui-observations.test.ts", "tests/paper-recovery.test.ts", "tests/paper-recovery-engine.test.ts", "tests/operations.test.ts", "tests/sqlite-lock.test.ts"]
+CMD ["node", "node_modules/vitest/vitest.mjs", "run", "--maxWorkers=1", "tests/circuit-breaker.test.ts", "tests/circuit-order-gate.test.ts", "tests/sdk-deadline.test.ts", "tests/bot-state.test.ts", "tests/api-access.test.ts", "tests/read-budget.test.ts", "tests/http-errors.test.ts", "tests/deepbook-transport.test.ts", "tests/sui-observations.test.ts", "tests/paper-recovery.test.ts", "tests/paper-recovery-engine.test.ts", "tests/operations.test.ts", "tests/sqlite-lock.test.ts"]
