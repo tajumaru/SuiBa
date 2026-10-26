@@ -225,7 +225,9 @@ function OrderHistory({ orders }: { orders: Record<string, unknown>[] }) {
 async function verifyToken(candidate: string): Promise<VerifyResult> {
   const attempt = async (
     path: string,
-  ): Promise<{ ok: true; status: number } | { ok: false; code: string; status: number }> => {
+  ): Promise<
+    { ok: true; status: number } | { ok: false; code: string; status: number }
+  > => {
     const r = await fetch("/api/" + path, {
       signal: AbortSignal.timeout(8000),
       headers: { Authorization: "Bearer " + candidate },

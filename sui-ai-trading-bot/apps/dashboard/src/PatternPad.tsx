@@ -5,8 +5,9 @@ import { appendPatternDot } from "./patternLock.ts";
 export const PAD_SIZE = 264;
 const CENTERS = [44, 132, 220];
 const HIT_RADIUS = 40;
-const DOT_POSITIONS: ReadonlyArray<readonly [number, number]> =
-  CENTERS.flatMap((y) => CENTERS.map((x) => [x, y] as const));
+const DOT_POSITIONS: ReadonlyArray<readonly [number, number]> = CENTERS.flatMap(
+  (y) => CENTERS.map((x) => [x, y] as const),
+);
 
 export type PatternPadTone = "idle" | "error" | "success";
 
@@ -75,11 +76,7 @@ export function PatternPad({
   };
 
   const stroke =
-    tone === "error"
-      ? "#ff9c9c"
-      : tone === "success"
-        ? "#43dfb2"
-        : "#72d1ff";
+    tone === "error" ? "#ff9c9c" : tone === "success" ? "#43dfb2" : "#72d1ff";
   const points = [
     ...sequence.map((i) => DOT_POSITIONS[i].join(",")),
     ...(livePoint && sequence.length ? [livePoint.join(",")] : []),
@@ -108,8 +105,7 @@ export function PatternPad({
         const point = toLocal(e.clientX, e.clientY);
         if (!point) return;
         const dot = hitDot(point);
-        if (dot >= 0)
-          applySequence(appendPatternDot(sequenceRef.current, dot));
+        if (dot >= 0) applySequence(appendPatternDot(sequenceRef.current, dot));
         setLivePoint(point);
       }}
       onPointerUp={() => {
@@ -141,7 +137,10 @@ export function PatternPad({
         <span
           key={i}
           className={`pattern-dot${sequence.includes(i) ? " on" : ""}`}
-          style={{ left: `${(x / PAD_SIZE) * 100}%`, top: `${(y / PAD_SIZE) * 100}%` }}
+          style={{
+            left: `${(x / PAD_SIZE) * 100}%`,
+            top: `${(y / PAD_SIZE) * 100}%`,
+          }}
         />
       ))}
     </div>

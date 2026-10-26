@@ -99,9 +99,7 @@ describe("pattern enrolment storage", () => {
     clearEnrollment(e);
     expect(isEnrolled(e)).toBe(false);
     await expect(unlockWithPattern([2, 5, 8, 7], e)).resolves.toBeNull();
-    expect(isPatternLockSupported({ storage: null, crypto: null })).toBe(
-      false,
-    );
+    expect(isPatternLockSupported({ storage: null, crypto: null })).toBe(false);
     expect(loadEnrollment({ storage: null })).toBeNull();
   });
 

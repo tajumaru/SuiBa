@@ -135,9 +135,7 @@ function fromBase64(text: string): Uint8Array {
   return bytes;
 }
 
-export function loadEnrollment(
-  env?: PatternLockEnv,
-): EnrollmentRecord | null {
+export function loadEnrollment(env?: PatternLockEnv): EnrollmentRecord | null {
   const { storage } = resolveEnv(env);
   if (!storage) return null;
   try {
@@ -283,11 +281,7 @@ export async function unlockWithPattern(
   const record = loadEnrollment(env);
   if (!record || !crypto?.subtle) return null;
   try {
-    const key = await deriveKey(
-      crypto,
-      sequence,
-      fromBase64(record.salt),
-    );
+    const key = await deriveKey(crypto, sequence, fromBase64(record.salt));
     const plain = await crypto.subtle.decrypt(
       { name: "AES-GCM", iv: fromBase64(record.iv) as BufferSource },
       key,
