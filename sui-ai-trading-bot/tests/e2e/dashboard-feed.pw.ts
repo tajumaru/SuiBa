@@ -66,17 +66,22 @@ test("modern feed keeps status prompt, caches charts and recovers failed channel
   await page.getByLabel("管理トークン").fill("test-only");
   await page.getByRole("button", { name: "接続", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "実況", exact: true }),
+    page.getByRole("region", { name: "エージェント実況", exact: true }),
   ).toBeVisible();
   await page
     .getByRole("button", { name: "ダッシュボード", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "ダッシュボード", exact: true }),
+    page.getByRole("region", { name: "通信とPAPER注文の状態", exact: true }),
   ).toBeVisible();
   await expect.poll(() => frameCalls).toBe(1);
   await expect.poll(() => recordCalls).toBe(1);
-  console.info(JSON.stringify({viewport:info.project.name,readyMs:performance.now()-readyStart}));
+  console.info(
+    JSON.stringify({
+      viewport: info.project.name,
+      readyMs: performance.now() - readyStart,
+    }),
+  );
   await page.clock.runFor(11000);
   await expect.poll(() => summaryCalls).toBeGreaterThan(1);
   expect(frameCalls).toBe(1);
@@ -105,7 +110,7 @@ test("modern feed keeps status prompt, caches charts and recovers failed channel
   await page.clock.runFor(11000);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(
-    page.getByLabel("SUI/USDC価格表示", { exact: true }),
+    page.getByRole("img", { name: /SUI\/USDC 現在価格/ }),
   ).toBeVisible();
   expect(
     await page.evaluate(
