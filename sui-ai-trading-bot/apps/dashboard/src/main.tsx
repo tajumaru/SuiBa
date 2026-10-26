@@ -1,7 +1,8 @@
 import { ConnectivityStrip } from "./ConnectivityPanel.tsx";
 import { OperationBar } from "./OperationBar.tsx";
 import { PriceTicker } from "./PriceTicker.tsx";
-import { LoginScreen, type VerifyResult } from "./LoginScreen.tsx";
+import { LoginScreen } from "./LoginScreen.tsx";
+import { verifyToken } from "./verifyToken.ts";
 import { DashboardClient } from "./dashboardClient.ts";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
@@ -214,41 +215,6 @@ function OrderHistory({ orders }: { orders: Record<string, unknown>[] }) {
     </div>
   );
 }
-/**
- * Verify a candidate management token with the worker before
- * the login gate opens: one summary request (with the legacy
- * state fallback the dashboard client also uses). A 401 comes
- * back as its UNAUTHORIZED code so the gate can say the token
- * was wrong, as opposed to the worker being unreachable.
- */
-async function verifyToken(candidate: string): Promise<VerifyResult> {
-  const attempt = async (
-    path: string,
-  ): Promise<
-    { ok: true; status: number } | { ok: false; code: string; status: number }
-  > => {
-    const r = await fetch("/api/" + path, {
-      signal: AbortSignal.timeout(8000),
-      headers: { Authorization: "Bearer " + candidate },
-    });
-    if (r.ok) return { ok: true, status: r.status };
-    const body = (await r.json().catch(() => ({}))) as { error?: unknown };
-    return {
-      ok: false,
-      code: typeof body.error === "string" ? body.error : `HTTP_${r.status}`,
-      status: r.status,
-    };
-  };
-  try {
-    const first = await attempt("dashboard/summary");
-    if (first.ok || first.status !== 404) return first;
-    const legacy = await attempt("state");
-    return legacy;
-  } catch {
-    return { ok: false, code: "NETWORK" };
-  }
-}
-
 function App() {
   const [token, setToken] = useState(""),
     [data, setData] = useState<State | null>(null),
