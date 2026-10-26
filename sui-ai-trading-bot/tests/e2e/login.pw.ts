@@ -94,21 +94,27 @@ test("cancel during success animation invalidates its delayed notification", asy
 test("unmount invalidates pending results and aborts transport", async ({
   page,
 }) => {
+  await page.clock.install();
   await open(page);
   await submit(page, "test-token");
   await page.evaluate(() => window.loginHarness.hide());
   await expect(page.locator(".login-gate")).toHaveCount(0);
-  expect(
-    await page.evaluate(() => window.loginHarness.pending[0].signal?.aborted),
-  ).toBe(true);
+  // DOM removal can precede React's passive-effect cleanup, notably on WebKit.
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.loginHarness.pending[0].signal?.aborted),
+    )
+    .toBe(true);
   await settle(page, 0);
-  await page.waitForTimeout(100);
+  // A stale success must not notify, even after the longest success delay.
+  await page.clock.runFor(1000);
   expect(await page.evaluate(() => window.loginHarness.authenticated)).toEqual(
     [],
   );
   await page.evaluate(() => window.loginHarness.mount());
   await submit(page, "new-token");
   await settle(page, 1);
+  await page.clock.runFor(1000);
   await expect
     .poll(() => page.evaluate(() => window.loginHarness.authenticated))
     .toEqual(["new-token"]);
