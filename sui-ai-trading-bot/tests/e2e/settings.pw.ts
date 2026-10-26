@@ -336,7 +336,13 @@ test("validates values and keeps emergency stop independent during saving", asyn
   ).toContainText("適用済み");
   await expect(
     page.getByRole("button", { name: "PAPER運用開始", exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "解除の手順へ", exact: true }),
+  ).toBeEnabled();
+  await expect(page.locator(".operation-bar")).toContainText(
+    "PAPER運用：緊急停止中",
+  );
   expect(api.commands).toEqual(["emergency"]);
 });
 
