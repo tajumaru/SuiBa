@@ -1455,6 +1455,43 @@ describe("agent narration: watch declaration", () => {
     expect(state.watch?.key).toBe("histogramImproving");
   });
 
+  it("a called RSI watch that slips away is a near miss, still scored a miss", () => {
+    const far = {
+      ema20: 2.3,
+      ema50: 2.42,
+      histogram: -0.008,
+      previousHistogram: -0.001,
+    };
+    const state = feed([
+      decision({ ...far, rsi: 35 }),
+      // Distance 2 of the declared 5: the approach is called here.
+      decision({ ...far, evaluatedAt: NOW - 50_000, rsi: 32 }),
+      // Distance 7: ratio 1.4, beyond the withdrawal hysteresis.
+      decision({ ...far, evaluatedAt: NOW - 40_000, rsi: 37 }),
+    ]);
+    const nearMiss = state.entries.filter((e) => e.kind === "nearMiss");
+    expect(nearMiss).toHaveLength(1);
+    expect(nearMiss[0].text).toBe(
+      "RSI、あと2まで来てたのに…なんで離れるねん",
+    );
+    expect(count(state, "宣言は取り下げ")).toBe(0);
+    expect(state.watchScore.misses).toBe(1);
+  });
+
+  it("a called MACD watch that slips away names its closest histogram", () => {
+    const state = feed([
+      decision({}),
+      decision({ evaluatedAt: NOW - 50_000, histogram: -0.0014 }),
+      decision({ evaluatedAt: NOW - 40_000, histogram: -0.006 }),
+    ]);
+    const nearMiss = state.entries.filter((e) => e.kind === "nearMiss");
+    expect(nearMiss).toHaveLength(1);
+    expect(nearMiss[0].text).toBe(
+      "MACD、-0.0014まで戻してたのに、また下がってもうたわ…",
+    );
+    expect(state.watchScore.misses).toBe(1);
+  });
+
   it("hysteresis: a small wobble past the declared distance keeps the watch", () => {
     const far = {
       ema20: 2.3,

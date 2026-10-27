@@ -2591,6 +2591,17 @@ th {
   border-color: rgba(255, 140, 50, 0.55);
   color: #ffb27a;
 }
+/* A ニアミス (a called watch that slipped away) wears the gold of
+   the buy family — it was that close — on a faint warm wash, with
+   its own tag colours. */
+.agent-feed-entry.nearMiss {
+  border-left-color: #edc980;
+  background: #241d10;
+}
+.agent-feed-entry-tag.nearmiss {
+  border-color: rgba(237, 201, 128, 0.55);
+  color: #edc980;
+}
 /* A recorded buy fill keeps a gold frame and tag for good, so a
    buy stays recognisable in the history. The pulse below plays
    once, on the entry whose arrival opened a celebration. */

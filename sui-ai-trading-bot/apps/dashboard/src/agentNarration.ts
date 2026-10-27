@@ -28,6 +28,11 @@ import { number as fmtNumber, percent as fmtPercent } from "./presentation.ts";
  * distance, is celebrated — tied back to the declaration — when it
  * clicks, and is honestly withdrawn, with hysteresis so small wobbles
  * cannot flap it, when it drifts clearly further away than declared.
+ * A withdrawal after the call-out — it really did come close — is
+ * told as a ニアミス (near miss) instead: the closest distance seen
+ * while watching is named, and only that line slips into Kansai
+ * dialect, the character's disappointment leaking through. A watch
+ * that never came close is withdrawn in the plain words, as before.
  *
  * Every declaration is also scored: a watch that clicks while it is
  * being watched is a 的中 (hit), one withdrawn for drifting away is
@@ -63,6 +68,7 @@ export type NarrationKind =
   | "start" // the bot started
   | "recovery" // connectivity recovered / run resumed
   | "review" // a ふりかえり look-back over the watch score so far
+  | "nearMiss" // a called watch withdrawn — it came close, then slipped away
   | "alert" // a 速報 breaking in on a sudden price / volume move
   | "status"; // feed-initialised status line
 
@@ -83,11 +89,14 @@ export interface NarrationEntry {
  * empirical distance (see watchDistance) at declaration time and is
  * the baseline for the approach call-out and the withdrawal
  * hysteresis; `called` makes the call-out once per declaration.
+ * `closestDistance` is the smallest distance seen while watching —
+ * the near-miss line names it when a called watch slips away.
  */
 export interface WatchTarget {
   key: "emaUp" | "rsiRecovery" | "histogramImproving";
   declaredDistance: number;
   called: boolean;
+  closestDistance: number;
 }
 
 /**
@@ -572,7 +581,8 @@ function chooseWatchTarget(
 }
 
 function makeWatch(key: EntryCondKey, dec: DecisionTelemetry): WatchTarget {
-  return { key, declaredDistance: watchDistance(key, dec), called: false };
+  const declaredDistance = watchDistance(key, dec);
+  return { key, declaredDistance, called: false, closestDistance: declaredDistance };
 }
 
 /** A watch only lives while the bot is flat and still hunting. */
@@ -638,6 +648,20 @@ function withdrawWatchText(key: EntryCondKey): string {
   return "注目してたMACD、遠のいたなあ。宣言は取り下げ";
 }
 
+/**
+ * The near-miss line for a called watch that slipped away, naming
+ * the closest distance reached while watching (converted back to
+ * each condition's own scale). This is the one line told in Kansai
+ * dialect — the disappointment leaks out of the usual voice.
+ */
+function nearMissText(key: EntryCondKey, closestDistance: number): string {
+  if (key === "emaUp")
+    return `EMAの差、${fmtPercent(-closestDistance)}まで詰めてたのに、また開いてきたわ…`;
+  if (key === "rsiRecovery")
+    return `RSI、あと${Math.max(0, Math.round(closestDistance))}まで来てたのに…なんで離れるねん`;
+  return `MACD、${fmtNumber(-closestDistance, 4)}まで戻してたのに、また下がってもうたわ…`;
+}
+
 interface WatchOutcome {
   /** Drafts told before the cycle's own narration (declare / call /
    * hit / withdraw / switch). */
@@ -665,9 +689,9 @@ function processWatch(
   current: WatchTarget | null,
   dec: DecisionTelemetry,
 ): WatchOutcome {
-  const draft = (text: string): EntryDraft => ({
+  const draft = (text: string, kind: NarrationKind = "cycle"): EntryDraft => ({
     at: dec.evaluatedAt,
-    kind: "cycle",
+    kind,
     text,
   });
   if (!watchEligible(dec))
@@ -705,8 +729,19 @@ function processWatch(
 
   if (current) {
     const ratio = watchRatio(current, dec);
+    const closest = Math.min(
+      current.closestDistance,
+      watchDistance(current.key, dec),
+    );
     if (ratio > WATCH_WITHDRAW_RATIO) {
-      const before = [draft(withdrawWatchText(current.key))];
+      // A watch that had its approach called really did come close:
+      // its withdrawal is told as a near miss, naming how close it
+      // got. One that never came close keeps the plain withdrawal.
+      const before = [
+        current.called
+          ? draft(nearMissText(current.key, closest), "nearMiss")
+          : draft(withdrawWatchText(current.key)),
+      ];
       const next = chooseWatchTarget(dec, current.key);
       if (next)
         before.push(
@@ -726,14 +761,14 @@ function processWatch(
       return {
         before: [draft(approachWatchText(current.key, dec))],
         after: [],
-        watch: { ...current, called: true },
+        watch: { ...current, called: true, closestDistance: closest },
         created: false,
         settled: null,
       };
     return {
       before: [],
       after: [],
-      watch: current,
+      watch: { ...current, closestDistance: closest },
       created: false,
       settled: null,
     };

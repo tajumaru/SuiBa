@@ -313,6 +313,9 @@ export function AgentFeedEntryRow({
       {entry.kind === "alert" && (
         <span className="agent-feed-entry-tag alert">速報</span>
       )}
+      {entry.kind === "nearMiss" && (
+        <span className="agent-feed-entry-tag nearmiss">ニアミス</span>
+      )}
       {buy && <span className="agent-feed-entry-tag buy">買えた！</span>}
       <p>{entry.text}</p>
     </div>
