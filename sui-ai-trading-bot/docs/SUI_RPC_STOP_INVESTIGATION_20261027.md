@@ -1,6 +1,6 @@
 # Sui取得失敗とBot停止：最新main重点調査
 
-調査基点：`a6eb77e443ba358383420c2ba9d9db9634eecbc5`（2026-10-27取得のorigin/main）。専用ブランチ：`investigation/sui-rpc-stop-analysis`。Node.js **24.22.1**、固定lockのSDK **@mysten/sui 2.37.0**。本PRは文書・オフライン抽出スクリプト・テストのみ。本番コード、安全条件、timeout、retry、依存、設定を変更していない。既存Docker/Bot/DBへの操作・接続なし。テスト用の新規メモリDB／一時DBのみ使用。
+調査基点：`1d550fbc56f1be9f38cc0fd10a574b3849735857`（2026-10-27取得のorigin/main）。専用ブランチ：`investigation/sui-rpc-stop-analysis`。Node.js **24.22.1**、固定lockのSDK **@mysten/sui 2.37.0**。本PRは文書・オフライン抽出スクリプト・テストのみ。本番コード、安全条件、timeout、retry、依存、設定を変更していない。既存Docker/Bot/DBへの操作・接続なし。テスト用の新規メモリDB／一時DBのみ使用。
 
 ## 結論と確度
 
