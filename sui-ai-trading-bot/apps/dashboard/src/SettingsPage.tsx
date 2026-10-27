@@ -5,7 +5,6 @@ import {
 } from "../../../packages/shared/src/index.ts";
 import type { BotEngine } from "../../worker/src/engine.ts";
 import {
-  presetKeys,
   presetName,
   saveSettings,
   type SettingsApi,
@@ -399,29 +398,19 @@ export function SettingsForm({ editor }: { editor: SettingsEditor }) {
   return (
     <section className="easy-settings" aria-busy={busy}>
       <h2>かんたん設定</h2>
-      <p>PAPER専用 · 仮想売買のみ</p>
       <fieldset disabled={busy}>
         <legend>
           運用スタイル（保存済み：{modeLabel(presetName(saved))}）
         </legend>
-        <small>
-          選択しただけでは保存されません。PAPER運用には保存済みの設定を使います。
-        </small>
         {selected === "custom" && (
           <aside className="settings-tip" aria-label="安全重視のおすすめ">
             <strong>安全重視をおすすめ</strong>
-            <p>
-              初めての方には安全重視がおすすめです。少額の仮想売買でSuiBaの動作を確認できます。
-            </p>
             <button type="button" onClick={() => choose("safe")}>
               安全重視の設定を確認する
             </button>
           </aside>
         )}
         <PresetSelector value={selected} onChange={choose} />
-        <p>
-          選択中の運用スタイル：<strong>{modeLabel(selected)}</strong>
-        </p>
         {switchTo && (
           <div
             className="settings-review"
@@ -447,33 +436,8 @@ export function SettingsForm({ editor }: { editor: SettingsEditor }) {
             </button>
           </div>
         )}
-        <div className="settings-preview" aria-label="適用予定の設定">
-          <h3>
-            適用予定：{modeLabel(selected)}
-            {dirty ? "（未保存）" : "（保存済み値と同じ）"}
-          </h3>
-          {selected === "safe" && (
-            <p>
-              純利益0.05
-              USDC・1.5%以上を目標にする仮設定です。収益性は未検証です。選択だけでは保存・起動されません。
-            </p>
-          )}
-          <small>保存済み → 適用予定</small>
-          <SettingsChanges
-            before={saved}
-            after={draft}
-            keys={selected === "safe" ? presetKeys : undefined}
-          />
-        </div>
-        <h3>適用予定の数値を編集</h3>
-        <small>数値を編集すると選択中のスタイルはカスタムになります。</small>
         <BasicSettings draft={draft} setDraft={edit} />
         <AdvancedSettings draft={draft} setDraft={edit} />
-        {dirty && (
-          <p className="unsaved-note">
-            未保存の変更があります。保存するまでPAPER運用には反映されません。
-          </p>
-        )}
         <div className="controls">
           <button
             type="button"
@@ -497,9 +461,6 @@ export function SettingsForm({ editor }: { editor: SettingsEditor }) {
             <h3>保存前の確認</h3>
             <p>適用予定：{modeLabel(selected)}</p>
             <SettingsChanges before={saved} after={draft} />
-            <p>
-              ここに表示されない設定は保持します。設定の保存だけではボットは起動しません。
-            </p>
             <button type="button" onClick={() => void save()}>
               {selected === "safe" ? "安全重視を適用" : "変更を保存"}
             </button>
@@ -514,13 +475,12 @@ export function SettingsForm({ editor }: { editor: SettingsEditor }) {
       </fieldset>
       {busy && (
         <p className="settings-saving" role="status">
-          保存・サーバーへの再確認中です。完了までお待ちください…
+          保存しています…
         </p>
       )}
       {status === "applied" && (
         <p className="settings-success" role="status">
           適用済み：{modeLabel(selected)}
-          。保存完了後の設定をサーバーで確認しました。PAPER運用の開始は下のボタンから行ってください。
         </p>
       )}
       {error && (

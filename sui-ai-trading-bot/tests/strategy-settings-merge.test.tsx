@@ -91,8 +91,10 @@ describe("merged strategy tab content", () => {
     expect(release).toBeGreaterThan(editor);
     expect(html.match(/停止状態の解除/g)).toHaveLength(1);
     expect(html).toContain("停止解除（再開は手動）");
-    // The full save flow stays available on the merged tab.
-    expect(html).toContain("適用予定の設定");
+    // The full save flow stays available on the merged tab. The
+    // always-on preview box is gone — the diff shows only in the
+    // save review — while the saved values stay on the page.
+    expect(html).not.toContain("適用予定の設定");
     expect(html).toContain("保存済みの設定");
     expect(html).toContain("PAPER運用開始");
   });

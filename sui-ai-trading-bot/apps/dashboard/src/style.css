@@ -858,11 +858,6 @@ th {
   background: #142536;
   border-radius: 6px;
 }
-.settings-tip p {
-  font-size: 13px;
-  line-height: 1.8;
-}
-.settings-preview,
 .settings-saved {
   padding: 16px;
   border: 1px solid #344e65;
@@ -886,9 +881,6 @@ th {
 .settings-diff li span {
   min-width: 0;
   max-width: 100%;
-}
-.unsaved-note {
-  color: #edc980;
 }
 .settings-saving,
 .settings-success {
@@ -1049,7 +1041,6 @@ th {
   .easy-settings .controls button {
     width: 100%;
   }
-  .settings-preview,
   .settings-review,
   .settings-saved {
     padding: 12px;

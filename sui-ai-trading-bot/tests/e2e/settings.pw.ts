@@ -114,20 +114,18 @@ const modes = (page: Page) =>
     .getByRole("button");
 const maximum = (page: Page) =>
   page.getByRole("spinbutton", { name: /^1回の最大取引額/ });
-const planned = (page: Page) =>
-  page.getByLabel("適用予定の設定", { exact: true });
 const saved = (page: Page) =>
   page.getByLabel("保存済みの設定", { exact: true });
 const review = (page: Page) =>
   page.getByRole("group", { name: "保存前の変更内容確認", exact: true });
 
 // Every test runs at all three requested phone widths and at desktop width.
-test("recommends safe settings without guessing first use, and previews without saving or starting", async ({
+test("recommends safe settings without guessing first use, and reviews without saving or starting", async ({
   page,
 }) => {
   const api = await openSettings(page);
   await expect(page.getByLabel("安全重視のおすすめ")).toContainText(
-    "初めての方には安全重視がおすすめ",
+    "安全重視をおすすめ",
   );
   await expect(page.locator("legend")).toContainText("保存済み：カスタム");
   await expect(maximum(page)).toHaveValue("5");
@@ -135,10 +133,17 @@ test("recommends safe settings without guessing first use, and previews without 
     .getByRole("button", { name: "安全重視の設定を確認する", exact: true })
     .click();
   await expect(modes(page).nth(0)).toHaveAttribute("aria-pressed", "true");
-  await expect(planned(page)).toContainText("適用予定：安全重視（未保存）");
-  await expect(planned(page)).toContainText("5 USDC → 2 USDC");
-  await expect(planned(page)).toContainText("20 USDC → 10 USDC");
-  await expect(planned(page)).toContainText("1 % → 1.5 %");
+  // The diff lives only in the save review now — no preview box.
+  await page
+    .getByRole("button", { name: "変更内容を確認", exact: true })
+    .click();
+  await expect(review(page)).toContainText("適用予定：安全重視");
+  await expect(review(page)).toContainText("5 USDC → 2 USDC");
+  await expect(review(page)).toContainText("20 USDC → 10 USDC");
+  await expect(review(page)).toContainText("1 % → 1.5 %");
+  await review(page)
+    .getByRole("button", { name: "編集に戻る", exact: true })
+    .click();
   await expect(maximum(page)).toHaveValue("2");
   await expect(saved(page)).toContainText("最大取引額：5 USDC");
   await expect(
@@ -271,10 +276,10 @@ test("keeps custom edits until an explicit discard and uses saved settings for m
   await page.getByText("詳細設定を開く", { exact: true }).click();
   await page.getByRole("spinbutton", { name: /^PAPERガス代/ }).fill("0.06");
   await expect(modes(page).nth(1)).toHaveAttribute("aria-pressed", "true");
-  await expect(planned(page)).toContainText("適用予定：カスタム");
   await page
     .getByRole("button", { name: "変更内容を確認", exact: true })
     .click();
+  await expect(review(page)).toContainText("適用予定：カスタム");
   await review(page)
     .getByRole("button", { name: "変更を保存", exact: true })
     .click();
