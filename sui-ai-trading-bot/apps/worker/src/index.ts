@@ -26,7 +26,8 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { timingSafeEqual, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import { BrowserSessions, sessionMutationAllowed } from "./browser-session.ts";
 import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { resolve, extname } from "node:path";
@@ -45,6 +46,7 @@ const token = process.env.ADMIN_TOKEN_FILE
   : process.env.ADMIN_TOKEN;
 if (!token || token.length < 32)
   throw new Error("ADMIN_TOKEN must contain at least 32 characters");
+const browserSessions = new BrowserSessions(token);
 const marketMode = process.env.MARKET_DATA_PROVIDER ?? "geckoterminal";
 if (!["geckoterminal", "deepbook", "auto"].includes(marketMode))
   throw new Error("INVALID_MARKET_DATA_PROVIDER");
@@ -265,13 +267,26 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       res.end(data);
       return;
     }
-    const supplied = Buffer.from(req.headers.authorization ?? ""),
-      expected = Buffer.from("Bearer " + token);
-    if (
-      supplied.length !== expected.length ||
-      !timingSafeEqual(supplied, expected)
-    ) {
+    const bearer = browserSessions.bearer(req);
+    const session = browserSessions.valid(req.headers.cookie);
+    if (!bearer && !session) {
       send(401, { error: "UNAUTHORIZED" });
+      return;
+    }
+    if (req.method !== "GET" && !bearer && !sessionMutationAllowed(req)) {
+      send(403, { error: "FORBIDDEN" });
+      return;
+    }
+    if (url.pathname === "/api/auth/session") {
+      if (req.method === "POST") {
+        browserSessions.setCookie(req, res);
+      } else if (req.method === "DELETE") {
+        browserSessions.setCookie(req, res, true);
+      } else if (req.method !== "GET") {
+        send(405, { error: "METHOD" });
+        return;
+      }
+      send(200, { authenticated: true });
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/chart/history") {
@@ -386,7 +401,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       send(404, {});
       return;
     }
-    // No cookies: browser cannot attach a bearer credential to cross-origin form requests.
+    // Cookie-authenticated mutations passed the same-origin request guard above.
     let text = "";
     for await (const chunk of req) {
       text += chunk;

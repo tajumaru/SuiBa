@@ -2205,6 +2205,28 @@ th {
   .agent-avatar.shouting .agent-avatar-bubble {
     animation: agent-avatar-bubble-pop 0.18s ease;
   }
+  /* While the error lasts, the scream artwork itself keeps
+     trembling in small jitter steps (the entrance shake above is
+     one-shot on the whole avatar). The slight scale keeps the
+     jitter from opening gaps at the circle's edge. */
+  .agent-avatar.shouting .agent-avatar-scream {
+    animation: agent-avatar-scream-tremble 0.3s linear infinite;
+  }
+  @keyframes agent-avatar-scream-tremble {
+    0%,
+    100% {
+      transform: scale(1.05) translate(0, 0) rotate(0deg);
+    }
+    25% {
+      transform: scale(1.05) translate(0.7px, -0.5px) rotate(0.6deg);
+    }
+    50% {
+      transform: scale(1.05) translate(-0.6px, 0.4px) rotate(-0.5deg);
+    }
+    75% {
+      transform: scale(1.05) translate(0.5px, 0.6px) rotate(0.4deg);
+    }
+  }
   @keyframes agent-avatar-shout-shake {
     0%,
     100% {
@@ -2568,6 +2590,37 @@ th {
 .agent-feed-entry-tag.alert {
   border-color: rgba(255, 140, 50, 0.55);
   color: #ffb27a;
+}
+/* A ニアミス (a called watch that slipped away) wears the gold of
+   the buy family — it was that close — on a faint warm wash, with
+   its own tag colours. */
+.agent-feed-entry.nearMiss {
+  border-left-color: #edc980;
+  background: #241d10;
+}
+.agent-feed-entry-tag.nearmiss {
+  border-color: rgba(237, 201, 128, 0.55);
+  color: #edc980;
+}
+/* A 的中 (a declared watch that clicked) wears the green of a met
+   condition — the near miss's counterpart — with its own tag. */
+.agent-feed-entry.watchHit {
+  border-left-color: #3ecf6f;
+  background: #0f2318;
+}
+.agent-feed-entry-tag.hit {
+  border-color: rgba(62, 207, 111, 0.55);
+  color: #3ecf6f;
+}
+/* A 寝言 (sleep talk) drifts in soft blue, italic — the character
+   is asleep and dreaming of the session's facts. */
+.agent-feed-entry.sleepTalk p {
+  color: #b9d4f2;
+  font-style: italic;
+}
+.agent-feed-entry-tag.sleep {
+  border-color: rgba(159, 208, 255, 0.55);
+  color: #9fd0ff;
 }
 /* A recorded buy fill keeps a gold frame and tag for good, so a
    buy stays recognisable in the history. The pulse below plays

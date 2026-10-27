@@ -28,6 +28,14 @@ import { number as fmtNumber, percent as fmtPercent } from "./presentation.ts";
  * distance, is celebrated — tied back to the declaration — when it
  * clicks, and is honestly withdrawn, with hysteresis so small wobbles
  * cannot flap it, when it drifts clearly further away than declared.
+ * A withdrawal after the call-out — it really did come close — is
+ * told as a ニアミス (near miss) instead: the closest distance seen
+ * while watching is named, and only that line slips into Kansai
+ * dialect, the character's disappointment leaking through. A watch
+ * that never came close is withdrawn in the plain words, as before.
+ * The hit line is its counterpart: the facts stay as recorded, the
+ * close turns smug in the same dialect, and the pose flashes the
+ * pointing smile while the hit is fresh.
  *
  * Every declaration is also scored: a watch that clicks while it is
  * being watched is a 的中 (hit), one withdrawn for drifting away is
@@ -37,6 +45,13 @@ import { number as fmtNumber, percent as fmtPercent } from "./presentation.ts";
  * at least a couple waiting — the feed pauses for a short ふりかえり
  * (review) built only from those recorded counts and the session's
  * first-to-current price move.
+ *
+ * While the bot sleeps (a plain stop, never a safety stop), the
+ * character occasionally talks in its sleep: at most one mutter
+ * per quarter hour, built only from the session's recorded facts
+ * (a near miss, a told hit, a recorded buy), never the same one
+ * twice in a row, with a fact-free dream of SUI itself as the
+ * fallback when the session left nothing to dream about.
  *
  * The feed also keeps a short history of the narrated cycles'
  * decision prices, so a sudden market move — the price jumping at
@@ -63,6 +78,9 @@ export type NarrationKind =
   | "start" // the bot started
   | "recovery" // connectivity recovered / run resumed
   | "review" // a ふりかえり look-back over the watch score so far
+  | "nearMiss" // a called watch withdrawn — it came close, then slipped away
+  | "watchHit" // a declared watch clicked — the smug counterpart of a near miss
+  | "sleepTalk" // a mutter from the sleeping character, built from recorded facts
   | "alert" // a 速報 breaking in on a sudden price / volume move
   | "status"; // feed-initialised status line
 
@@ -83,11 +101,14 @@ export interface NarrationEntry {
  * empirical distance (see watchDistance) at declaration time and is
  * the baseline for the approach call-out and the withdrawal
  * hysteresis; `called` makes the call-out once per declaration.
+ * `closestDistance` is the smallest distance seen while watching —
+ * the near-miss line names it when a called watch slips away.
  */
 export interface WatchTarget {
   key: "emaUp" | "rsiRecovery" | "histogramImproving";
   declaredDistance: number;
   called: boolean;
+  closestDistance: number;
 }
 
 /**
@@ -126,6 +147,21 @@ export interface NarrationState {
    * on the very cycle an upward alert fired, and never celebrates a
    * downward one. */
   lastAlert: { at: number; direction: SpikeAlertDirection } | null;
+  /** When a watch hit was last TOLD (the smug line), for pose
+   * linkage: the character flashes its pointing smile while the
+   * hit is fresh. Silent settlements (a hit inside a BUY) do not
+   * set this — the trade celebration covers those. */
+  lastHitAt: number | null;
+  /** The most recent TOLD near miss (key + closest distance), the
+   * sleep talk's favourite material. */
+  lastNearMiss: { key: EntryCondKey; closestDistance: number } | null;
+  /** When the current sleep began (first advance seen sleeping),
+   * and the sleep talk's cadence state: the last mutter's time and
+   * text, so the same mutter never repeats back to back. All three
+   * reset when the bot wakes. */
+  sleepingSince: number | null;
+  lastSleepTalkAt: number | null;
+  lastSleepTalkText: string | null;
   /** The declared watch target, or null when nothing is watched. */
   watch: WatchTarget | null;
   /** Cumulative session score of declared watches (see WatchScore). */
@@ -177,6 +213,11 @@ export function emptyNarrationState(): NarrationState {
     priceHistory: [],
     alertCooldown: 0,
     lastAlert: null,
+    lastHitAt: null,
+    lastNearMiss: null,
+    sleepingSince: null,
+    lastSleepTalkAt: null,
+    lastSleepTalkText: null,
     watch: null,
     watchScore: { declared: 0, hits: 0, misses: 0, unreviewed: 0 },
     sessionStartPrice: null,
@@ -572,7 +613,8 @@ function chooseWatchTarget(
 }
 
 function makeWatch(key: EntryCondKey, dec: DecisionTelemetry): WatchTarget {
-  return { key, declaredDistance: watchDistance(key, dec), called: false };
+  const declaredDistance = watchDistance(key, dec);
+  return { key, declaredDistance, called: false, closestDistance: declaredDistance };
 }
 
 /** A watch only lives while the bot is flat and still hunting. */
@@ -620,14 +662,19 @@ function approachWatchText(key: EntryCondKey, dec: DecisionTelemetry): string {
   return `MACD、${fmtNumber(dec.histogram, 4)}まで戻った。宣言してたやつ、来てるよ`;
 }
 
+/**
+ * The hit line: the recorded facts stay exactly as measured, and
+ * the close turns smug — the Kansai catchphrase 「ほらな、言うてた
+ * やろ」, the counterpart of the near-miss line's dialect slip.
+ */
 function hitWatchText(key: EntryCondKey, dec: DecisionTelemetry): string {
   if (key === "emaUp")
     return dec.conditions.emaGapShrinking
-      ? `EMA、成立した。${fmtNumber(dec.ema20, 4)}はまだ${fmtNumber(dec.ema50, 4)}の下、差の縮小が続いての成立だね`
-      : `EMA、成立した。${fmtNumber(dec.ema20, 4)}が${fmtNumber(dec.ema50, 4)}の上、宣言どおりだね`;
+      ? `EMA、成立した。${fmtNumber(dec.ema20, 4)}はまだ${fmtNumber(dec.ema50, 4)}の下、差の縮小が続いての成立。ほらな、言うてたやろ`
+      : `EMA、成立した。${fmtNumber(dec.ema20, 4)}が${fmtNumber(dec.ema50, 4)}の上。ほらな、言うてたやろ`;
   if (key === "rsiRecovery")
-    return `RSI、上抜けた。${fmtNumber(dec.previousRsi, 1)}→${fmtNumber(dec.rsi, 1)}、宣言どおりだね`;
-  return `MACD、成立した。今${fmtNumber(dec.histogram, 4)}、宣言どおりだね`;
+    return `RSI、上抜けた。${fmtNumber(dec.previousRsi, 1)}→${fmtNumber(dec.rsi, 1)}。ほらな、言うてたやろ`;
+  return `MACD、成立した。今${fmtNumber(dec.histogram, 4)}。ほらな、言うてたやろ`;
 }
 
 function withdrawWatchText(key: EntryCondKey): string {
@@ -636,6 +683,60 @@ function withdrawWatchText(key: EntryCondKey): string {
   if (key === "rsiRecovery")
     return "注目してたRSI、遠のいたなあ。宣言は取り下げ";
   return "注目してたMACD、遠のいたなあ。宣言は取り下げ";
+}
+
+/**
+ * The near-miss line for a called watch that slipped away, naming
+ * the closest distance reached while watching (converted back to
+ * each condition's own scale). This is the one line told in Kansai
+ * dialect — the disappointment leaks out of the usual voice.
+ */
+function nearMissText(key: EntryCondKey, closestDistance: number): string {
+  if (key === "emaUp")
+    return `EMAの差、${fmtPercent(-closestDistance)}まで詰めてたのに、また開いてきたわ…`;
+  if (key === "rsiRecovery")
+    return `RSI、あと${Math.max(0, Math.round(closestDistance))}まで来てたのに…なんで離れるねん`;
+  return `MACD、${fmtNumber(-closestDistance, 4)}まで戻してたのに、また下がってもうたわ…`;
+}
+
+/** Sleep talk cadence: the first mutter comes this long after the
+ * sleep begins, and later mutters keep at least this much space. */
+export const SLEEP_TALK_INTERVAL_MS = 15 * 60_000;
+
+/**
+ * Sleep-talk candidates, in the order the sleeping character would
+ * reach for them: the session's near miss first, then a told hit,
+ * a recorded buy, a miss that was never a near miss — and always
+ * the fact-free dream mutters about SUI itself as the fallback.
+ * Every factual line is built only from what the state recorded;
+ * the caller picks the first candidate that is not a repeat of
+ * the previous mutter.
+ */
+function sleepTalkCandidates(state: {
+  lastNearMiss: NarrationState["lastNearMiss"];
+  lastHitAt: number | null;
+  entries: NarrationEntry[];
+  watchScore: WatchScore;
+}): string[] {
+  const out: string[] = [];
+  const nm = state.lastNearMiss;
+  if (nm) {
+    if (nm.key === "rsiRecovery")
+      out.push(
+        `RSIがあと${Math.max(0, Math.round(nm.closestDistance))}やったのに…むにゃ…`,
+      );
+    else if (nm.key === "emaUp")
+      out.push(
+        `EMAの差、${fmtPercent(-nm.closestDistance)}までいってたのに…むにゃ…`,
+      );
+    else out.push("MACD、あと少しやったのに…むにゃ…");
+  }
+  if (state.lastHitAt != null) out.push("ほらなって…言うたやろ…むにゃ…");
+  if (state.entries.some((e) => e.kind === "trade" && e.side === "BUY"))
+    out.push("買えたやつ…上がれ…むにゃ…");
+  if (state.watchScore.misses > 0 && !nm) out.push("次は当てる…むにゃ…");
+  out.push("すい…すい…", "むにゃ…すい…上がれ…");
+  return out;
 }
 
 interface WatchOutcome {
@@ -652,6 +753,9 @@ interface WatchOutcome {
    * it was withdrawn for drifting away. A watch that ends silently
    * (position opened, material gone) settles as null — neither. */
   settled: "hit" | "miss" | null;
+  /** Set when this cycle TOLD a near miss: its key and the closest
+   * distance reached, kept as the sleep talk's material. */
+  nearMiss: { key: EntryCondKey; closestDistance: number } | null;
 }
 
 /**
@@ -665,9 +769,9 @@ function processWatch(
   current: WatchTarget | null,
   dec: DecisionTelemetry,
 ): WatchOutcome {
-  const draft = (text: string): EntryDraft => ({
+  const draft = (text: string, kind: NarrationKind = "cycle"): EntryDraft => ({
     at: dec.evaluatedAt,
-    kind: "cycle",
+    kind,
     text,
   });
   if (!watchEligible(dec))
@@ -682,6 +786,7 @@ function processWatch(
       watch: null,
       created: false,
       settled: current && dec.conditions[current.key] ? "hit" : null,
+      nearMiss: null,
     };
 
   if (current && dec.conditions[current.key]) {
@@ -689,7 +794,7 @@ function processWatch(
     // next watch right away (told after the cycle's own line).
     const next = chooseWatchTarget(dec);
     return {
-      before: [draft(hitWatchText(current.key, dec))],
+      before: [draft(hitWatchText(current.key, dec), "watchHit")],
       after: next
         ? [
             draft(
@@ -700,13 +805,25 @@ function processWatch(
       watch: next ? makeWatch(next, dec) : null,
       created: next != null,
       settled: "hit",
+      nearMiss: null,
     };
   }
 
   if (current) {
     const ratio = watchRatio(current, dec);
+    const closest = Math.min(
+      current.closestDistance,
+      watchDistance(current.key, dec),
+    );
     if (ratio > WATCH_WITHDRAW_RATIO) {
-      const before = [draft(withdrawWatchText(current.key))];
+      // A watch that had its approach called really did come close:
+      // its withdrawal is told as a near miss, naming how close it
+      // got. One that never came close keeps the plain withdrawal.
+      const before = [
+        current.called
+          ? draft(nearMissText(current.key, closest), "nearMiss")
+          : draft(withdrawWatchText(current.key)),
+      ];
       const next = chooseWatchTarget(dec, current.key);
       if (next)
         before.push(
@@ -720,22 +837,27 @@ function processWatch(
         watch: next ? makeWatch(next, dec) : null,
         created: next != null,
         settled: "miss",
+        nearMiss: current.called
+          ? { key: current.key, closestDistance: closest }
+          : null,
       };
     }
     if (!current.called && ratio <= WATCH_APPROACH_RATIO)
       return {
         before: [draft(approachWatchText(current.key, dec))],
         after: [],
-        watch: { ...current, called: true },
+        watch: { ...current, called: true, closestDistance: closest },
         created: false,
         settled: null,
+        nearMiss: null,
       };
     return {
       before: [],
       after: [],
-      watch: current,
+      watch: { ...current, closestDistance: closest },
       created: false,
       settled: null,
+      nearMiss: null,
     };
   }
 
@@ -747,8 +869,9 @@ function processWatch(
         watch: makeWatch(target, dec),
         created: true,
         settled: null,
+        nearMiss: null,
       }
-    : { before: [], after: [], watch: null, created: false, settled: null };
+    : { before: [], after: [], watch: null, created: false, settled: null, nearMiss: null };
 }
 
 export type ConditionChipTone = "met" | "close" | "far" | "back";
@@ -1305,6 +1428,10 @@ export function advanceNarration(
         prevTrail: null,
         lastConnectivity: d.safety?.connectivity ?? null,
         lastStatus: d.status ?? null,
+        // Opening the feed on an already-sleeping bot starts its
+        // sleep here, so the first mutter still waits a full
+        // interval instead of arriving with the page.
+        sleepingSince: vitalState === "sleeping" ? now : null,
         initialized: true,
       },
       drafts,
@@ -1472,6 +1599,11 @@ export function advanceNarration(
   let priceHistory = prev.priceHistory;
   let alertCooldown = prev.alertCooldown;
   let lastAlert = prev.lastAlert;
+  let lastHitAt = prev.lastHitAt;
+  let lastNearMiss = prev.lastNearMiss;
+  let sleepingSince = prev.sleepingSince;
+  let lastSleepTalkAt = prev.lastSleepTalkAt;
+  let lastSleepTalkText = prev.lastSleepTalkText;
   const dec = d.decision;
   if (dec && (lastDecisionAt == null || dec.evaluatedAt > lastDecisionAt)) {
     if (sessionStartPrice == null) sessionStartPrice = dec.price;
@@ -1483,6 +1615,9 @@ export function advanceNarration(
       // frame the cycle's own narration (before / after).
       const outcome = processWatch(watch, dec);
       watch = outcome.watch;
+      if (outcome.before.some((draft) => draft.kind === "watchHit"))
+        lastHitAt = dec.evaluatedAt;
+      if (outcome.nearMiss) lastNearMiss = outcome.nearMiss;
       drafts.push(...outcome.before);
       drafts.push({
         at: dec.evaluatedAt,
@@ -1580,6 +1715,36 @@ export function advanceNarration(
         text: `止まったよ。理由：${stopReasonText(d)}`,
       });
   }
+  // Sleep talk: while the bot sleeps (a plain stop — a safety stop
+  // is flatlined and never mutters), the character occasionally
+  // talks in its sleep, only from recorded facts, never the same
+  // mutter twice in a row. Waking resets the cadence, so a later
+  // stop starts a fresh sleep.
+  if (vitalState === "sleeping") {
+    if (sleepingSince == null) sleepingSince = now;
+    if (
+      now - sleepingSince >= SLEEP_TALK_INTERVAL_MS &&
+      (lastSleepTalkAt == null ||
+        now - lastSleepTalkAt >= SLEEP_TALK_INTERVAL_MS)
+    ) {
+      const text = sleepTalkCandidates({
+        lastNearMiss,
+        lastHitAt,
+        entries: prev.entries,
+        watchScore,
+      }).find((candidate) => candidate !== lastSleepTalkText);
+      if (text) {
+        drafts.push({ at: now, kind: "sleepTalk", text });
+        lastSleepTalkAt = now;
+        lastSleepTalkText = text;
+      }
+    }
+  } else {
+    sleepingSince = null;
+    lastSleepTalkAt = null;
+    lastSleepTalkText = null;
+  }
+
   if (d.status) lastStatus = d.status;
 
   return finish(
@@ -1591,6 +1756,11 @@ export function advanceNarration(
       priceHistory,
       alertCooldown,
       lastAlert,
+      lastHitAt,
+      lastNearMiss,
+      sleepingSince,
+      lastSleepTalkAt,
+      lastSleepTalkText,
       seen: [...seen],
       pendingCandidateIds: [...pending].slice(-50),
       lastDecisionAt,
@@ -1693,6 +1863,18 @@ export function agentPose(
     if (met >= 2) return "point";
     if (met >= 1 && state.priceRising) return "point";
   }
+  // A watch hit told on a recent cycle flashes the smug smile while
+  // it is fresh — but only when the decision itself claims no
+  // pointing pose: a hit that leaves two conditions met still
+  // points at what remains. (The hit line sits a few entries back
+  // by now, framed by the cycle's own narration, so the pose keys
+  // off the recorded hit time, like the alert linkage above.)
+  if (
+    state.lastHitAt != null &&
+    now >= state.lastHitAt &&
+    now - state.lastHitAt <= DECISION_FRESH_MS
+  )
+    return "pointSmile";
   return "laptop";
 }
 

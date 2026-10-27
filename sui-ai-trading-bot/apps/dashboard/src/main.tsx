@@ -2,7 +2,7 @@ import { ConnectivityStrip } from "./ConnectivityPanel.tsx";
 import { OperationBar } from "./OperationBar.tsx";
 import { PriceTicker } from "./PriceTicker.tsx";
 import { LoginScreen } from "./LoginScreen.tsx";
-import { verifyToken } from "./verifyToken.ts";
+import { loginSession, SESSION } from "./browserSession.ts";
 import { DashboardClient } from "./dashboardClient.ts";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
@@ -217,6 +217,27 @@ function OrderHistory({ orders }: { orders: Record<string, unknown>[] }) {
   );
 }
 function App() {
+  const [restoringSession, setRestoringSession] = useState(true);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/auth/session", {
+      cache: "no-store",
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]),
+    })
+      .then(async (r) => {
+        if (
+          r.ok &&
+          (await r.json()).authenticated === true &&
+          !controller.signal.aborted
+        )
+          setToken(SESSION);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted) setRestoringSession(false);
+      });
+    return () => controller.abort();
+  }, []);
   const [token, setToken] = useState(""),
     [data, setData] = useState<State | null>(null),
     [error, setError] = useState(""),
@@ -243,9 +264,19 @@ function App() {
     useState<StrategySegment | null>(null);
   const strategySegment: StrategySegment =
     strategySegmentChoice ?? (tab === "Settings" ? "settings" : "rules");
-  const logout = () => {
-    setToken("");
-    setData(null);
+  const logout = async () => {
+    try {
+      const response = await fetch("/api/auth/session", {
+        method: "DELETE",
+        headers: { "X-SuiBa-Request": "1" },
+      });
+      if (!response.ok && response.status !== 401)
+        throw Error(`HTTP_${response.status}`);
+      setToken("");
+      setData(null);
+    } catch (e) {
+      setError(errorCode(e));
+    }
   };
   // The header avatar's pose, reported by the narration feed — the
   // one place that advances the narration state — so the header and
@@ -292,13 +323,18 @@ function App() {
           ? AbortSignal.timeout(8000)
           : undefined,
         headers: {
-          Authorization: "Bearer " + token,
+          ...(token !== SESSION ? { Authorization: "Bearer " + token } : {}),
+          "X-SuiBa-Request": "1",
           ...(body ? { "Content-Type": "application/json" } : {}),
         },
         method: body ? "POST" : "GET",
         body: body ? JSON.stringify(body) : undefined,
       });
       if (!r.ok) {
+        if (r.status === 401) {
+          setToken("");
+          setData(null);
+        }
         const body = await r.json().catch(() => ({}));
         throw new Error(
           typeof body.error === "string" ? body.error : `HTTP_${r.status}`,
@@ -418,10 +454,12 @@ function App() {
           shout={shout}
         />
       )}
-      {!token ? (
+      {restoringSession ? (
+        <p role="status">ログイン状態を確認しています…</p>
+      ) : !token ? (
         <LoginScreen
-          verify={verifyToken}
-          onAuthenticated={(verified) => setToken(verified)}
+          verify={loginSession}
+          onAuthenticated={() => setToken(SESSION)}
         />
       ) : (
         <>

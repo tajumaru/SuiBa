@@ -898,6 +898,16 @@ describe("agent narration: fail-closed", () => {
     expect(agentPose(state, d, vital, NOW + 360_001)).toBe("laptop");
   });
 
+  it("flashes the smug smile for a fresh watch hit, then lets it expire", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, null);
+    const state = emptyNarrationState();
+    state.lastHitAt = NOW;
+    const vital = botVital(d, false, NOW, NOW);
+    expect(agentPose(state, d, vital, NOW)).toBe("pointSmile");
+    expect(agentPose(state, d, vital, NOW + 360_001)).toBe("laptop");
+  });
+
   it("does not narrate or point for old/future evidence or unconfirmed running state", () => {
     const { db, monitor } = fixture();
     const d = runningSnapshot(
@@ -1415,13 +1425,19 @@ describe("agent narration: watch declaration", () => {
       }),
     ]);
     const all = texts(state);
-    const hit = all.findIndex((t) => t.includes("宣言どおりだね"));
+    const hit = all.findIndex((t) => t.includes("言うてたやろ"));
     const next = all.findIndex((t) => t.includes("次の注目はRSIに決めた"));
     expect(all[hit]).toContain("MACD、成立した。今-0.001");
     expect(hit).toBeGreaterThanOrEqual(0);
     expect(next).toBeGreaterThan(hit);
     expect(state.watch?.key).toBe("rsiRecovery");
     expect(state.watch?.called).toBe(false);
+    // The hit is its own entry kind, and it timestamps the pose link.
+    const hitEntry = state.entries.find((e) => e.kind === "watchHit");
+    expect(hitEntry?.text).toBe(
+      "MACD、成立した。今-0.001。ほらな、言うてたやろ",
+    );
+    expect(state.lastHitAt).toBe(NOW - 50_000);
   });
 
   it("a watch hit via the shrink route says the gap shrank, not that EMA20 crossed above", () => {
@@ -1441,7 +1457,7 @@ describe("agent narration: watch declaration", () => {
     ]);
     const all = texts(state);
     expect(all.some((t) => t.includes("差の縮小が続いての成立"))).toBe(true);
-    expect(all.some((t) => t.includes("の上、宣言どおりだね"))).toBe(false);
+    expect(all.some((t) => t.includes("の上。ほらな"))).toBe(false);
     expect(state.watch?.key).not.toBe("emaUp");
   });
 
@@ -1453,6 +1469,43 @@ describe("agent narration: watch declaration", () => {
     expect(count(state, "注目してたRSI、遠のいたなあ。宣言は取り下げ")).toBe(1);
     expect(count(state, "注目はMACDに切り替える。今-0.003だよ")).toBe(1);
     expect(state.watch?.key).toBe("histogramImproving");
+  });
+
+  it("a called RSI watch that slips away is a near miss, still scored a miss", () => {
+    const far = {
+      ema20: 2.3,
+      ema50: 2.42,
+      histogram: -0.008,
+      previousHistogram: -0.001,
+    };
+    const state = feed([
+      decision({ ...far, rsi: 35 }),
+      // Distance 2 of the declared 5: the approach is called here.
+      decision({ ...far, evaluatedAt: NOW - 50_000, rsi: 32 }),
+      // Distance 7: ratio 1.4, beyond the withdrawal hysteresis.
+      decision({ ...far, evaluatedAt: NOW - 40_000, rsi: 37 }),
+    ]);
+    const nearMiss = state.entries.filter((e) => e.kind === "nearMiss");
+    expect(nearMiss).toHaveLength(1);
+    expect(nearMiss[0].text).toBe(
+      "RSI、あと2まで来てたのに…なんで離れるねん",
+    );
+    expect(count(state, "宣言は取り下げ")).toBe(0);
+    expect(state.watchScore.misses).toBe(1);
+  });
+
+  it("a called MACD watch that slips away names its closest histogram", () => {
+    const state = feed([
+      decision({}),
+      decision({ evaluatedAt: NOW - 50_000, histogram: -0.0014 }),
+      decision({ evaluatedAt: NOW - 40_000, histogram: -0.006 }),
+    ]);
+    const nearMiss = state.entries.filter((e) => e.kind === "nearMiss");
+    expect(nearMiss).toHaveLength(1);
+    expect(nearMiss[0].text).toBe(
+      "MACD、-0.0014まで戻してたのに、また下がってもうたわ…",
+    );
+    expect(state.watchScore.misses).toBe(1);
   });
 
   it("hysteresis: a small wobble past the declared distance keeps the watch", () => {
@@ -1554,7 +1607,7 @@ describe("agent narration: watch declaration", () => {
       }),
     ]);
     const watchLines = texts(state).filter((t) =>
-      /注目|宣言|見てる|切り替える|決めた/.test(t),
+      /注目|宣言|見てる|切り替える|決めた|言うてたやろ/.test(t),
     );
     expect(watchLines.length).toBeGreaterThanOrEqual(3);
     for (const line of watchLines) {
@@ -2465,5 +2518,63 @@ describe("agent narration: spike alerts", () => {
       expect(text).toMatch(/\d/);
       expect(text.startsWith("速報。")).toBe(true);
     }
+  });
+});
+
+describe("agent narration: sleep talk", () => {
+  const talksOf = (state: NarrationState) =>
+    state.entries.filter((e) => e.kind === "sleepTalk");
+
+  it("mutters the session's near miss in its sleep, spaced out and never twice in a row", () => {
+    const { db, monitor } = fixture();
+    const far = {
+      ema20: 2.3,
+      ema50: 2.42,
+      histogram: -0.008,
+      previousHistogram: -0.001,
+    };
+    let state = emptyNarrationState();
+    for (const dec of [
+      decision({ ...far, rsi: 35 }),
+      decision({ ...far, evaluatedAt: NOW - 50_000, rsi: 32 }),
+      decision({ ...far, evaluatedAt: NOW - 40_000, rsi: 37 }),
+    ]) {
+      const d = runningSnapshot(db, monitor, dec);
+      state = advanceNarration(state, d, "alive", NOW);
+    }
+    expect(state.lastNearMiss).toMatchObject({ key: "rsiRecovery" });
+
+    const d = runningSnapshot(db, monitor, null);
+    // The sleep begins: no mutter yet.
+    state = advanceNarration(state, d, "sleeping", NOW);
+    expect(talksOf(state)).toHaveLength(0);
+    // A quarter hour in, the near miss surfaces as a mutter.
+    state = advanceNarration(state, d, "sleeping", NOW + 16 * 60_000);
+    expect(talksOf(state).map((e) => e.text)).toEqual([
+      "RSIがあと2やったのに…むにゃ…",
+    ]);
+    // Too soon for another.
+    state = advanceNarration(state, d, "sleeping", NOW + 20 * 60_000);
+    expect(talksOf(state)).toHaveLength(1);
+    // The next window brings a different mutter, never a repeat.
+    state = advanceNarration(state, d, "sleeping", NOW + 32 * 60_000);
+    expect(talksOf(state)).toHaveLength(2);
+    expect(talksOf(state)[1].text).not.toBe(talksOf(state)[0].text);
+  });
+
+  it("never mutters on a safety stop (flatlined)", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, null);
+    let state = advanceNarration(emptyNarrationState(), d, "flatlined", NOW);
+    state = advanceNarration(state, d, "flatlined", NOW + 60 * 60_000);
+    expect(talksOf(state)).toHaveLength(0);
+  });
+
+  it("dreams of SUI itself when the session left no facts", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, null);
+    let state = advanceNarration(emptyNarrationState(), d, "sleeping", NOW);
+    state = advanceNarration(state, d, "sleeping", NOW + 16 * 60_000);
+    expect(talksOf(state).map((e) => e.text)).toEqual(["すい…すい…"]);
   });
 });
