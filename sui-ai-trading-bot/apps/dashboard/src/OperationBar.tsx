@@ -28,8 +28,12 @@ type State = ReturnType<BotEngine["snapshot"]>;
  *   strategy tab, whose top carries the release section. A
  *   stopped state is never started or released from the bar.
  *
- * Visible labels identify the actions on touch screens. Safety and
- * settings gates only restrict starting; stopping stays available.
+ * Buttons are icon-only; their names live in aria-label/title,
+ * using the same names the old panel used so there is exactly one
+ * start and one stop in the app. The start button stays pressable
+ * outside the settings-editor block: the server is the start gate
+ * and its refusal reason renders under the bar. The recovery
+ * status only colours and names the bar's state label.
  */
 export function OperationBar({
   runtime,
@@ -79,8 +83,7 @@ export function OperationBar({
     setStartFailure(null);
   }, [running, emergency, error, recovery?.title, recovery?.canStart]);
   async function start() {
-    if (starting || startBlocked.length > 0 || (recovery && !recovery.canStart))
-      return;
+    if (starting || startBlocked.length > 0) return;
     setStarting(true);
     try {
       setStartFailure(await control("start"));
@@ -104,7 +107,6 @@ export function OperationBar({
             onClick={() => void control("stop")}
           >
             <OperationIcon kind="stop" />
-            <span>PAPER運用停止</span>
           </button>
         ) : stoppedState ? (
           <button
@@ -115,7 +117,6 @@ export function OperationBar({
             onClick={onOpenStrategy}
           >
             <OperationIcon kind="release" />
-            <span>解除の手順へ</span>
           </button>
         ) : (
           <button
@@ -123,20 +124,10 @@ export function OperationBar({
             className="operation-icon-button start"
             aria-label="PAPER運用開始"
             title="PAPER運用開始"
-            disabled={
-              starting ||
-              startBlocked.length > 0 ||
-              (recovery && !recovery.canStart)
-            }
-            aria-describedby={
-              recovery && !recovery.canStart
-                ? "recovery-start-block"
-                : undefined
-            }
+            disabled={starting || startBlocked.length > 0}
             onClick={() => void start()}
           >
             <OperationIcon kind="start" />
-            <span>{starting ? "開始確認中…" : "PAPER運用開始"}</span>
           </button>
         )}
       </div>

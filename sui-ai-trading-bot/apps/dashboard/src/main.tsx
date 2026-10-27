@@ -1,6 +1,5 @@
 import { ConnectivityStrip } from "./ConnectivityPanel.tsx";
 import { OperationBar } from "./OperationBar.tsx";
-import { RecoveryGuidance } from "./RecoveryGuidance.tsx";
 import { recoveryStatus } from "./recoveryState.ts";
 import { VITAL_RECEIPT_FRESH_MS } from "./botVital.ts";
 import { PriceTicker } from "./PriceTicker.tsx";
@@ -551,15 +550,6 @@ function App() {
                 操作を完了できませんでした。最新状態と通信診断を確認してください。
               </p>
             )}
-            {!data && (
-              <RecoveryGuidance
-                status={recovery}
-                onDiagnose={diagnose}
-                onRefresh={() => void refreshStatus()}
-                checking={checking}
-                onStop={() => void control("stop")}
-              />
-            )}
             {!data && activeTab === "運用検証" && (
               <OperationsFeedView api={api} feed={operations} />
             )}
@@ -580,13 +570,6 @@ function App() {
                   startBlocked={startBlocked}
                   recovery={recovery}
                   onDiagnose={diagnose}
-                />
-                <RecoveryGuidance
-                  status={recovery}
-                  onDiagnose={diagnose}
-                  onRefresh={() => void refreshStatus()}
-                  checking={checking}
-                  onStop={() => void control("stop")}
                 />
                 {/* The SUI price ticker rides directly under the
                     operation bar on every tab, under the same

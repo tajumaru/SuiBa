@@ -301,20 +301,13 @@ section svg {
   background: #f77d8f;
 }
 .operation-bar .operation-icon-button {
-  width: auto;
-  height: auto;
-  min-width: 44px;
-  min-height: 44px;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 9px;
-  font-size: 14px;
-  white-space: normal;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
 }
 .operation-bar .operation-icon-button svg {
-  width: 18px;
-  height: 18px;
-  flex: none;
+  width: 15px;
+  height: 15px;
 }
 /* Under-bar strips: why the bar's start is currently blocked, and
    the server-side refusal of a start pressed on the bar. Slim and
@@ -338,59 +331,6 @@ section svg {
 .operation-bar-failure {
   margin: 0 0 14px;
 }
-/* The recovery card follows the operation bar in document order so
-   the cause, safety gate and next action remain together on mobile. */
-.recovery-guidance {
-  padding: 18px;
-  border-color: #7a5c1e;
-  line-height: 1.6;
-  scroll-margin-block: 16px;
-}
-.recovery-guidance.tone-alert {
-  border-color: #a64d5c;
-}
-.recovery-guidance.tone-unknown {
-  border-color: #617b91;
-}
-.recovery-status-title {
-  margin: 0 0 14px;
-  font-size: 20px;
-  font-weight: 700;
-}
-.recovery-guidance dl {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 10px 14px;
-  margin: 0;
-}
-.recovery-guidance dt {
-  color: #abc1d2;
-  font-size: 14px;
-}
-.recovery-guidance dd {
-  margin: 0;
-  min-width: 0;
-  font-size: 16px;
-  overflow-wrap: anywhere;
-}
-.recovery-guidance-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 18px;
-}
-.recovery-guidance-actions button {
-  min-height: 44px;
-  padding: 11px 16px;
-  font-size: 16px;
-  line-height: 1.4;
-  white-space: normal;
-  touch-action: manipulation;
-}
-.recovery-guidance-actions .secondary {
-  background: transparent;
-}
-.recovery-guidance-actions button:focus-visible,
 .operation-bar button:focus-visible {
   outline: 2px solid #9fd0ff;
   outline-offset: 3px;
@@ -1090,23 +1030,11 @@ th {
   main {
     padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
   }
-  /* Mobile artwork occupies its own normal-flow space below the
-     header; it must not float over recovery actions while scrolling. */
+  /* On mobile the tab bar is fixed to the bottom, so the header
+     avatar's clearance falls on the top of the page instead (the
+     desktop clearance lives on the tab bar, see nav.has-avatar). */
   main.has-avatar {
-    padding-top: 16px;
-  }
-  .recovery-guidance dl {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
-  }
-  .recovery-guidance dd + dt {
-    margin-top: 10px;
-  }
-  .recovery-guidance-actions {
-    flex-direction: column;
-  }
-  .recovery-guidance-actions button {
-    width: 100%;
+    padding-top: 70px;
   }
   .operation-bar {
     padding: 10px 12px;
@@ -2270,30 +2198,6 @@ th {
 }
 .agent-avatar-dot.tone-stop {
   background: #8fa7b9;
-}
-@media (max-width: 600px), (max-width: 900px) and (max-height: 500px) {
-  .agent-avatar-dock {
-    position: relative;
-    top: auto;
-    z-index: auto;
-    max-width: calc(100% - 32px);
-    margin: 16px auto 0;
-  }
-  .agent-avatar-bubble {
-    width: max-content;
-    max-width: min(140px, calc((100vw - 128px) / 2));
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-  .agent-avatar-pill {
-    max-width: 100%;
-    white-space: normal;
-  }
-}
-@media (min-width: 601px) and (max-width: 900px) and (max-height: 500px) {
-  nav.has-avatar {
-    padding-top: 16px;
-  }
 }
 @media (prefers-reduced-motion: no-preference) {
   .agent-avatar-bob {

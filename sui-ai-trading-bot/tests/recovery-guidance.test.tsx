@@ -5,7 +5,6 @@ import { BotDatabase } from "../packages/database/src/index.ts";
 import { BotEngine } from "../apps/worker/src/engine.ts";
 import { initialPaperSafety } from "../packages/shared/src/paper-recovery.ts";
 import { recoveryStatus } from "../apps/dashboard/src/recoveryState.ts";
-import { RecoveryGuidance } from "../apps/dashboard/src/RecoveryGuidance.tsx";
 import { OperationBar } from "../apps/dashboard/src/OperationBar.tsx";
 
 function fixture() {
@@ -109,36 +108,24 @@ describe("recovery guidance grounded in backend safety", () => {
     expect(recoveryStatus(state, true).title).toBe("状態取得失敗");
   });
 
-  it("shows cause, safety, next action and named diagnostic buttons beside a disabled start", () => {
+  it("keeps the bar start pressable while recovering; the server stays the gate", () => {
     const state = fixture();
     state.safety.connectivity = "RECOVERING";
     const status = recoveryStatus(state);
+    expect(status.canStart).toBe(false);
     const html = renderToStaticMarkup(
-      <>
-        <OperationBar
-          runtime={state.runtime}
-          recovery={status}
-          control={async () => null}
-          startBlocked={[]}
-          onOpenStrategy={() => {}}
-        />
-        <RecoveryGuidance
-          status={status}
-          onDiagnose={() => {}}
-          onRefresh={() => {}}
-          checking={false}
-        />
-      </>,
+      <OperationBar
+        runtime={state.runtime}
+        recovery={status}
+        control={async () => null}
+        startBlocked={[]}
+        onOpenStrategy={() => {}}
+      />,
     );
-    expect(html).toMatch(/aria-label="PAPER運用開始"[^>]*disabled/);
-    expect(html).toContain('aria-describedby="recovery-start-block"');
-    for (const text of [
-      "原因",
-      "安全状態",
-      "次の操作",
-      "通信診断を開く",
-      "状態を再取得",
-    ])
-      expect(html).toContain(text);
+    // Icon-only button, not disabled by the recovery status: pressing
+    // it asks the server, whose refusal reason renders under the bar.
+    expect(html).toMatch(/aria-label="PAPER運用開始"(?!disabled)/);
+    expect(html).not.toContain("recovery-start-block");
+    expect(html).toContain("PAPER運用：通信確認中");
   });
 });

@@ -156,7 +156,7 @@ it("places the market panel only on the operations tab and the strip only on the
   expect(main).not.toContain("MarketDataPanel");
   expect(main).not.toContain("<ConnectivityPanel");
   // The tab-independent emergency notice stays visible on every tab.
-  expect(main).toContain("<RecoveryGuidance");
+  expect(main).not.toContain("<RecoveryGuidance");
   const operations = readFileSync(
     resolve("apps/dashboard/src/OperationsPanel.tsx"),
     "utf8",
