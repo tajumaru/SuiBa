@@ -81,10 +81,10 @@ export function operationReason(code: string): string {
     PROFIT_DATA_UNKNOWN: "利益計算に必要な情報が不足しています",
     MINIMUM_NET_PROFIT_NOT_MET: "手数料込みの利益が基準に届かないため見送り",
     PROJECTED_NET_INSUFFICIENT:
-      "想定純利益が往復費用または最低基準に届かないため見送り",
+      "手数料を引くと、残る利益が基準に届かないため見送り",
     MINIMUM_NET_PROFIT_MET: "最低純利益の条件を満たしました",
     PROJECTED_NET_EXCEEDS_ROUND_TRIP_COST:
-      "想定純利益が往復費用と最低基準を満たしました",
+      "手数料を引いても、残る利益が基準を満たしました",
     PROTECTIVE_EXIT_PROFIT_BYPASS: "損切り・リスク削減のため利益条件のみ免除",
     PROTECTIVE_EXIT_PROFIT_DATA_UNAVAILABLE:
       "保護的売却の利益条件のみ免除。安全性の確認は必須",

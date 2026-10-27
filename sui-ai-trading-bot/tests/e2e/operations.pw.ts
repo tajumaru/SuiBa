@@ -177,7 +177,7 @@ for (const [status, tone, message] of [
       "未評価（前段の条件未通過または処理中）",
     );
     await expect(page.locator(".operation-candidate")).toContainText(
-      "想定純利益が往復費用または最低基準に届かないため見送り",
+      "手数料を引くと、残る利益が基準に届かないため見送り",
     );
     expect(
       await page.evaluate(
