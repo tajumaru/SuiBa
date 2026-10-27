@@ -504,9 +504,6 @@ export function AgentNarrationFeed({
             ))
         )}
       </div>
-      <small className="agent-feed-note">
-        実況はBotの実際の記録（取得結果・指標・判定）から自動生成しています。数値はすべて記録に基づきます。表示はPAPER（仮想売買）の記録で、実売買は行いません。キャラクターのポーズは状態の模式表示です。
-      </small>
     </section>
   );
 }

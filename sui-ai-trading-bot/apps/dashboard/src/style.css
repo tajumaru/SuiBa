@@ -2639,12 +2639,7 @@ th {
     }
   }
 }
-.agent-feed-note {
-  display: block;
-  margin-top: 12px;
-  color: #9aafbf;
-  font-size: 12px;
-}
+
 /* Keep current operation separate from the recorded validation outcome. */
 .validation-control {
   padding: 20px 24px;
