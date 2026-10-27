@@ -40,6 +40,7 @@ function telemetry(
     overbought: 70,
     stopLossPct: 0.02,
     takeProfitPct: 0.04,
+    rsiLinePrice: null,
     ...rest,
     conditions: {
       emaUp: true,

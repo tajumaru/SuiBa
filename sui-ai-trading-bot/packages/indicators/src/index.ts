@@ -25,6 +25,35 @@ export function rsi(values: number[], period = 14) {
   }
   return loss === 0 ? (gain === 0 ? 50 : 100) : 100 - 100 / (1 + gain / loss);
 }
+/**
+ * The close price at which one more candle appended to `values`,
+ * closing at that price, would bring RSI exactly to `target` —
+ * solved by bisection over the shared rsi() above, so the answer
+ * always agrees with the indicator the strategy itself uses.
+ * Display-only derivation (a "where is the line" gauge); it feeds
+ * no decision. Returns null when the question has no answer below
+ * the latest close: RSI already at or under the target, too little
+ * data, or even a zero close could not pull RSI down to the target.
+ */
+export function rsiTargetPrice(
+  values: number[],
+  target: number,
+  period = 14,
+): number | null {
+  if (values.length <= period) return null;
+  const last = values.at(-1)!;
+  if (!(last > 0) || !(target > 0) || target >= 100) return null;
+  if (!(rsi(values, period) > target)) return null;
+  if (rsi([...values, 0], period) > target) return null;
+  let lo = 0,
+    hi = last;
+  for (let n = 0; n < 60; n++) {
+    const mid = (lo + hi) / 2;
+    if (rsi([...values, mid], period) > target) hi = mid;
+    else lo = mid;
+  }
+  return (lo + hi) / 2;
+}
 export function calculate(c: Candle[]): Indicators {
   if (c.length < 60) throw new Error("INSUFFICIENT_DATA");
   const p = c.map((x) => x.close),

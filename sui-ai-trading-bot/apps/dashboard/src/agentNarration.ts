@@ -80,6 +80,8 @@ export type NarrationKind =
   | "review" // a ふりかえり look-back over the watch score so far
   | "nearMiss" // a called watch withdrawn — it came close, then slipped away
   | "watchHit" // a declared watch clicked — the smug counterpart of a near miss
+  | "priceLine" // the buy-run line declared — RSI's target price, called out loud
+  | "priceLineReached" // the price touched the declared buy-run line
   | "sleepTalk" // a mutter from the sleeping character, built from recorded facts
   | "alert" // a 速報 breaking in on a sudden price / volume move
   | "status"; // feed-initialised status line
@@ -164,6 +166,10 @@ export interface NarrationState {
   lastSleepTalkText: string | null;
   /** The declared watch target, or null when nothing is watched. */
   watch: WatchTarget | null;
+  /** The declared buy-run line, or null: the RSI target price the
+   * feed called out, whether the price has touched it yet, and
+   * whether the one approaching murmur has already been told. */
+  priceLine: { price: number; reached: boolean; murmured: boolean } | null;
   /** Cumulative session score of declared watches (see WatchScore). */
   watchScore: WatchScore;
   /** Price of the first decision evidence this session received. */
@@ -215,6 +221,7 @@ export function emptyNarrationState(): NarrationState {
     lastAlert: null,
     lastHitAt: null,
     lastNearMiss: null,
+    priceLine: null,
     sleepingSince: null,
     lastSleepTalkAt: null,
     lastSleepTalkText: null,
@@ -256,6 +263,8 @@ export interface DecisionTrail {
   rsiRecovery: boolean;
   histogramImproving: boolean;
   hasPosition: boolean;
+  /** The buy-run line recorded with this decision, or null. */
+  rsiLinePrice: number | null;
 }
 
 export function decisionTrail(dec: DecisionTelemetry): DecisionTrail {
@@ -273,6 +282,7 @@ export function decisionTrail(dec: DecisionTelemetry): DecisionTrail {
     rsiRecovery: dec.conditions.rsiRecovery,
     histogramImproving: dec.conditions.histogramImproving,
     hasPosition: dec.conditions.hasPosition,
+    rsiLinePrice: dec.rsiLinePrice ?? null,
   };
 }
 
@@ -590,6 +600,10 @@ export const ALERT_VOLUME_THRESHOLD = 2;
 /** After an alert fires, this many narrated cycles pass before the
  * next one may fire. Counted in decision cycles, never in polls. */
 export const ALERT_COOLDOWN_CYCLES = 5;
+/** The buy-run line's one approaching murmur fires when the price
+ * closes to within this percent of the line (a negative distance:
+ * the line sits below the price until it is touched). */
+export const PRICE_LINE_MURMUR_PCT = -1.5;
 /** Price points kept for the alert look-back (only the newest
  * ALERT_PRICE_LOOKBACK + 1 are ever consulted). */
 const ALERT_HISTORY_KEEP = 12;
@@ -1404,11 +1418,30 @@ export function advanceNarration(
         firstScore = { ...firstScore, declared: firstScore.declared + 1 };
       }
     }
+    // The buy-run line is likewise adopted silently on page load:
+    // only a line that appears while the feed is open is declared.
+    const firstLine =
+      (vitalState === "alive" || vitalState === "weak") &&
+      firstDec &&
+      freshDecision(firstDec, now)
+        ? (firstDec.rsiLinePrice ?? null)
+        : null;
+    const firstPriceLine =
+      firstLine != null && firstDec
+        ? {
+            price: firstLine,
+            reached: firstDec.price <= firstLine,
+            murmured:
+              firstDec.price <= firstLine ||
+              (firstLine / firstDec.price - 1) * 100 >= PRICE_LINE_MURMUR_PCT,
+          }
+        : null;
     return finish(
       {
         ...prev,
         watch: firstWatch,
         watchScore: firstScore,
+        priceLine: firstPriceLine,
         // The first recorded decision seeds the spike alerts' price
         // history — but only when it is fresh evidence; a stale
         // first snapshot warms the alerts up from zero instead.
@@ -1601,6 +1634,7 @@ export function advanceNarration(
   let lastAlert = prev.lastAlert;
   let lastHitAt = prev.lastHitAt;
   let lastNearMiss = prev.lastNearMiss;
+  let priceLine = prev.priceLine;
   let sleepingSince = prev.sleepingSince;
   let lastSleepTalkAt = prev.lastSleepTalkAt;
   let lastSleepTalkText = prev.lastSleepTalkText;
@@ -1668,6 +1702,51 @@ export function advanceNarration(
         ))
           drafts.push({ at: dec.evaluatedAt, kind: "review", text });
         watchScore = { ...watchScore, unreviewed: 0 };
+      }
+      // The buy-run line: the telemetry records the next close at
+      // which RSI would reach its line whenever RSI is the only
+      // missing buy piece. The feed declares it, murmurs once when
+      // the price closes in, marks the touch, and withdraws it when
+      // the setup breaks — all from the recorded line and decision
+      // prices, never a forecast of its own. A BUY ends the story
+      // silently: the trade's own entries tell it.
+      const line = dec.rsiLinePrice ?? null;
+      if (priceLine && line == null) {
+        if (dec.action !== "BUY")
+          drafts.push({
+            at: dec.evaluatedAt,
+            kind: "cycle",
+            text: "買い走りラインは取り下げ。条件が崩れた",
+          });
+        priceLine = null;
+      } else if (priceLine && line != null) {
+        priceLine = { ...priceLine, price: line };
+        if (!priceLine.reached && dec.price <= line) {
+          priceLine = { ...priceLine, reached: true };
+          drafts.push({
+            at: dec.evaluatedAt,
+            kind: "priceLineReached",
+            text: `届いた！${price(line)}タッチ。あとはRSIの反発待ち`,
+          });
+        } else if (
+          !priceLine.reached &&
+          !priceLine.murmured &&
+          (line / dec.price - 1) * 100 >= PRICE_LINE_MURMUR_PCT
+        ) {
+          priceLine = { ...priceLine, murmured: true };
+          drafts.push({
+            at: dec.evaluatedAt,
+            kind: "cycle",
+            text: `ラインまで あと${((line / dec.price - 1) * 100).toFixed(1)}%。じわじわ来てる`,
+          });
+        }
+      } else if (!priceLine && line != null) {
+        priceLine = { price: line, reached: false, murmured: false };
+        drafts.push({
+          at: dec.evaluatedAt,
+          kind: "priceLine",
+          text: `宣言するよ。${price(line)}まで下がったらRSIがラインに届く。反発したら買いに走る`,
+        });
       }
     }
     priceRising = prevDecisionPrice != null && dec.price > prevDecisionPrice;
@@ -1758,6 +1837,7 @@ export function advanceNarration(
       lastAlert,
       lastHitAt,
       lastNearMiss,
+      priceLine,
       sleepingSince,
       lastSleepTalkAt,
       lastSleepTalkText,

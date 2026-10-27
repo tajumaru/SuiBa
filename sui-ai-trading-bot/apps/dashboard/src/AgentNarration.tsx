@@ -322,6 +322,12 @@ export function AgentFeedEntryRow({
       {entry.kind === "sleepTalk" && (
         <span className="agent-feed-entry-tag sleep">寝言</span>
       )}
+      {entry.kind === "priceLine" && (
+        <span className="agent-feed-entry-tag line">買い走りライン</span>
+      )}
+      {entry.kind === "priceLineReached" && (
+        <span className="agent-feed-entry-tag reached">到達</span>
+      )}
       {buy && <span className="agent-feed-entry-tag buy">買えた！</span>}
       <p>{entry.text}</p>
     </div>

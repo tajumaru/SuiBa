@@ -73,6 +73,12 @@ export interface DecisionTelemetry {
   overbought: number;
   stopLossPct: number;
   takeProfitPct: number;
+  /** The buy-run line (display-only): the next close at which RSI
+   * would reach the oversold line, recorded when RSI was the only
+   * missing buy piece. Absent or invalid in the evidence reads as
+   * null here rather than failing the whole telemetry closed,
+   * because the field only steers display. */
+  rsiLinePrice: number | null;
   conditions: {
     emaUp: boolean;
     /** EMA counted as met via the gap-shrink route, not the cross.
@@ -1074,6 +1080,12 @@ export class OperationMonitor {
       overbought: t.overbought,
       stopLossPct: t.stopLossPct,
       takeProfitPct: t.takeProfitPct,
+      rsiLinePrice:
+        typeof e.rsiLinePrice === "number" &&
+        Number.isFinite(e.rsiLinePrice) &&
+        e.rsiLinePrice > 0
+          ? e.rsiLinePrice
+          : null,
       conditions: {
         emaUp: cond.emaUp,
         emaGapShrinking: cond.emaGapShrinking === true,

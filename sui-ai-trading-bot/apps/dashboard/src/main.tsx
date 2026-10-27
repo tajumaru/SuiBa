@@ -542,6 +542,7 @@ function App() {
                   price={data.price}
                   candlesByTimeframe={data.candlesByTimeframe}
                   glow={buyCelebration}
+                  linePrice={operations.data?.decision?.rsiLinePrice ?? null}
                 />
                 {/* The market-data diagnostics live on the operations
                     tab, and the connectivity safety summary is a thin

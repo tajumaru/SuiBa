@@ -5,7 +5,7 @@ import type {
   Settings,
   Candle,
 } from "../../shared/src/index.ts";
-import { ema } from "../../indicators/src/index.ts";
+import { ema, rsiTargetPrice } from "../../indicators/src/index.ts";
 /**
  * Whether the EMA gap — (ema50 − ema20) as a share of the close —
  * shrank monotonically across the most recent `count` candles,
@@ -116,6 +116,24 @@ export class RuleBasedStrategy implements TradingStrategy {
       selectedRule = "SELL_SIGNAL";
       sellPurpose = "STRATEGY_EXIT";
     }
+    // The buy-run line for the dashboard: only when RSI is the one
+    // missing piece — EMA route met, histogram improving, volumes
+    // usable, no position open, RSI still above the oversold line.
+    // Pure display derivation from the same closes the decision
+    // used; it never feeds back into action, reason or gating.
+    const rsiLinePrice =
+      emaUp &&
+      conditions.histogramImproving &&
+      conditions.latestVolumePositive &&
+      conditions.previousVolumePositive &&
+      !conditions.volumeChangeExceeded &&
+      c.entryPrice === null &&
+      i.rsi > s.oversold
+        ? rsiTargetPrice(
+            c.candles.map((x) => x.close),
+            s.oversold,
+          )
+        : null;
     return {
       evidence: {
         version: 1,
@@ -141,6 +159,7 @@ export class RuleBasedStrategy implements TradingStrategy {
         },
         conditions,
         selectedRule,
+        rsiLinePrice,
       },
       action,
       confidence: action === "WAIT" ? 0 : 0.7,

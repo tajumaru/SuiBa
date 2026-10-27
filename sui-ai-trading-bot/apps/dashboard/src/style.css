@@ -444,6 +444,24 @@ section svg {
   min-width: 24px;
   height: 24px;
 }
+/* The buy-run line pill rides at the ticker's right end: gold
+   while it counts down, green once the price reaches the line. */
+.price-ticker-line {
+  flex: none;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #edc980;
+  background: #2a2113;
+  border: 1px solid rgba(237, 201, 128, 0.55);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+.price-ticker-line.reached {
+  color: #3ecf6f;
+  background: #123324;
+  border-color: rgba(62, 207, 111, 0.55);
+}
 /* Very narrow screens (small phones, zoomed viewports): every
    ticker child except the sparkline is nowrap and flex: none,
    so their combined min-content can exceed the row and push
@@ -465,6 +483,11 @@ section svg {
   .price-ticker-spark {
     flex-basis: 48px;
     min-width: 16px;
+  }
+  /* With a line pill present, the decorative sparkline gives up
+     its room on narrow screens so the row never overflows. */
+  .price-ticker:has(.price-ticker-line) .price-ticker-spark {
+    display: none;
   }
 }
 /* Buy celebration: while the celebration window is open the
@@ -2599,6 +2622,23 @@ th {
   background: #0f2318;
 }
 .agent-feed-entry-tag.hit {
+  border-color: rgba(62, 207, 111, 0.55);
+  color: #3ecf6f;
+}
+/* The buy-run line wears gold while it is a declaration to watch,
+   and the green of a met condition once the price touches it. */
+.agent-feed-entry.priceLine {
+  border-left-color: #edc980;
+}
+.agent-feed-entry-tag.line {
+  border-color: rgba(237, 201, 128, 0.55);
+  color: #edc980;
+}
+.agent-feed-entry.priceLineReached {
+  border-left-color: #3ecf6f;
+  background: #0f2318;
+}
+.agent-feed-entry-tag.reached {
   border-color: rgba(62, 207, 111, 0.55);
   color: #3ecf6f;
 }

@@ -30,6 +30,11 @@ const SPARK_MAX_POINTS = 40;
  * - Sparkline: the closes of the same frame and window that
  *   produced the change, downsampled to at most 40 points. It
  *   is decoration; the accessible name carries price + change.
+ * - Buy-run line: when the decision telemetry records a line
+ *   (the next close at which RSI would reach the oversold line,
+ *   with RSI the only missing buy piece), a pill counts down the
+ *   remaining percent and flips to the reached state at the
+ *   line. No line recorded, no pill.
  *
  * Fail-closed per element: a missing price renders 「—」, and
  * when no recorded frame can ground a change, the change and
@@ -187,6 +192,7 @@ export function PriceTicker({
   price,
   candlesByTimeframe,
   glow = false,
+  linePrice = null,
 }: {
   price: State["price"];
   candlesByTimeframe: Frames;
@@ -194,14 +200,38 @@ export function PriceTicker({
    * class and pulses gold once (motion permitting — the glow is
    * defined only under no-preference in style.css). */
   glow?: boolean;
+  /** The buy-run line from the decision telemetry (the next close
+   * at which RSI would reach its line), or null when no line is
+   * declared. Rendered as a countdown pill; at or under the line
+   * it turns into the reached state. */
+  linePrice?: number | null;
 }) {
   const change = tickerChange(candlesByTimeframe);
   const points = change ? sparklinePoints(change.closes) : null;
   const priceText = formatTickerPrice(price);
   const tone = change ? changeTone(change.pct) : null;
-  const ariaLabel = change
-    ? `SUI/USDC 現在価格 ${priceText}、${change.label}で${formatChangePct(change.pct)}`
-    : `SUI/USDC 現在価格 ${priceText}`;
+  const line =
+    linePrice != null &&
+    Number.isFinite(linePrice) &&
+    linePrice > 0 &&
+    price != null &&
+    Number.isFinite(price) &&
+    price > 0
+      ? {
+          reached: price <= linePrice,
+          pct: ((linePrice / price - 1) * 100).toFixed(1),
+          text: formatTickerPrice(linePrice),
+        }
+      : null;
+  const ariaLabel =
+    (change
+      ? `SUI/USDC 現在価格 ${priceText}、${change.label}で${formatChangePct(change.pct)}`
+      : `SUI/USDC 現在価格 ${priceText}`) +
+    (line
+      ? line.reached
+        ? `、買い走りライン ${line.text} に到達、反発待ち`
+        : `、買い走りライン ${line.text} まであと${line.pct}%`
+      : "");
   const sparkStroke =
     tone === "up" ? "#43dfb2" : tone === "down" ? "#ff6b81" : "#9fb2c8";
   return (
@@ -251,6 +281,16 @@ export function PriceTicker({
           />
         </svg>
       )}
+      {line &&
+        (line.reached ? (
+          <span className="price-ticker-line reached" aria-hidden="true">
+            ライン到達・反発待ち
+          </span>
+        ) : (
+          <span className="price-ticker-line" aria-hidden="true">
+            買い走りライン {line.text} あと{line.pct}%
+          </span>
+        ))}
     </div>
   );
 }

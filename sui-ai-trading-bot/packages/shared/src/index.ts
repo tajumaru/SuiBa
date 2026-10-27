@@ -124,6 +124,13 @@ export interface StrategyEvidence {
   };
   conditions: Record<string, boolean>;
   selectedRule: string;
+  /** Display-only derivation recorded with the decision: when every
+   * buy condition except RSI already held and no position was open,
+   * the next candle's close at which RSI would reach the oversold
+   * line (the dashboard's "buy-run line"). Never an input to any
+   * decision or order. Absent in evidence recorded before the field
+   * existed; null when not applicable. */
+  rsiLinePrice?: number | null;
 }
 export interface AnalysisContext {
   cycleId: string;

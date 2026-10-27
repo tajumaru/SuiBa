@@ -49,6 +49,7 @@ function decision(overrides: {
   histogram?: number;
   previousHistogram?: number;
   volumeChange?: number;
+  rsiLinePrice?: number | null;
   conditions?: Record<string, boolean>;
 }): TradingDecision {
   const o = overrides;
@@ -118,6 +119,7 @@ function decision(overrides: {
       },
       conditions,
       selectedRule: o.selectedRule ?? "NO_SIGNAL",
+      rsiLinePrice: o.rsiLinePrice ?? null,
     },
   };
 }
@@ -369,6 +371,7 @@ describe("agent narration: cycles", () => {
         overbought: 70,
         stopLossPct: 0.02,
         takeProfitPct: 0.03,
+        rsiLinePrice: null,
         conditions: {
           emaUp: false,
           emaGapShrinking: false,
@@ -444,6 +447,7 @@ describe("agent narration: cycles", () => {
         overbought: 70,
         stopLossPct: 0.02,
         takeProfitPct: 0.03,
+        rsiLinePrice: null,
         conditions: {
           emaUp: true,
           emaGapShrinking: false,
@@ -1124,6 +1128,7 @@ describe("narration tone: reasons, softly and shortly", () => {
       overbought: 70,
       stopLossPct: 0.02,
       takeProfitPct: 0.03,
+      rsiLinePrice: null,
       ...rest,
       conditions: {
         emaUp: false,
@@ -1731,6 +1736,7 @@ describe("buy-condition chips", () => {
       overbought: 70,
       stopLossPct: 0.02,
       takeProfitPct: 0.03,
+      rsiLinePrice: null,
       ...rest,
       conditions: {
         emaUp: false,
@@ -2264,6 +2270,7 @@ describe("agent narration: spike alerts", () => {
       overbought: 70,
       stopLossPct: 0.02,
       takeProfitPct: 0.03,
+      rsiLinePrice: null,
       ...rest,
       conditions: {
         emaUp: false,
@@ -2576,5 +2583,89 @@ describe("agent narration: sleep talk", () => {
     let state = advanceNarration(emptyNarrationState(), d, "sleeping", NOW);
     state = advanceNarration(state, d, "sleeping", NOW + 16 * 60_000);
     expect(talksOf(state).map((e) => e.text)).toEqual(["すい…すい…"]);
+  });
+});
+
+describe("buy-run line narration", () => {
+  function feed(decisions: (TradingDecision | null)[]) {
+    const { db, monitor } = fixture();
+    let state = emptyNarrationState();
+    for (const dec of decisions) {
+      const d = runningSnapshot(db, monitor, dec);
+      state = advanceNarration(state, d, "alive", NOW);
+    }
+    return state;
+  }
+  const ofKind = (state: NarrationState, kind: string) =>
+    state.entries.filter((e) => e.kind === kind);
+
+  it("declares the line, murmurs once on approach, and marks the touch", () => {
+    const state = feed([
+      decision({ evaluatedAt: NOW - 55_000, price: 2.4 }),
+      decision({ evaluatedAt: NOW - 50_000, price: 2.4, rsiLinePrice: 2.1 }),
+      // (2.1 / 2.13 - 1) * 100 = -1.41% — inside the murmur range.
+      decision({ evaluatedAt: NOW - 40_000, price: 2.13, rsiLinePrice: 2.1 }),
+      // Still close: no second murmur.
+      decision({ evaluatedAt: NOW - 30_000, price: 2.12, rsiLinePrice: 2.1 }),
+      // Touch: the decision price reaches the line.
+      decision({ evaluatedAt: NOW - 20_000, price: 2.09, rsiLinePrice: 2.1 }),
+    ]);
+    const declared = ofKind(state, "priceLine");
+    expect(declared).toHaveLength(1);
+    expect(declared[0].text).toBe(
+      "宣言するよ。2.1 USDCまで下がったらRSIがラインに届く。反発したら買いに走る",
+    );
+    const murmurs = state.entries.filter((e) =>
+      e.text.includes("じわじわ来てる"),
+    );
+    expect(murmurs).toHaveLength(1);
+    expect(murmurs[0].text).toBe("ラインまで あと-1.4%。じわじわ来てる");
+    const reached = ofKind(state, "priceLineReached");
+    expect(reached).toHaveLength(1);
+    expect(reached[0].text).toBe(
+      "届いた！2.1 USDCタッチ。あとはRSIの反発待ち",
+    );
+    expect(state.priceLine?.reached).toBe(true);
+  });
+
+  it("withdraws the line when the setup breaks", () => {
+    const state = feed([
+      decision({ evaluatedAt: NOW - 55_000, price: 2.4 }),
+      decision({ evaluatedAt: NOW - 50_000, price: 2.4, rsiLinePrice: 2.1 }),
+      decision({ evaluatedAt: NOW - 40_000, price: 2.4, rsiLinePrice: null }),
+    ]);
+    expect(
+      state.entries.filter((e) =>
+        e.text.includes("買い走りラインは取り下げ。条件が崩れた"),
+      ),
+    ).toHaveLength(1);
+    expect(state.priceLine).toBeNull();
+  });
+
+  it("a line already up when the feed opens is adopted silently", () => {
+    const state = feed([
+      decision({ evaluatedAt: NOW - 50_000, price: 2.4, rsiLinePrice: 2.1 }),
+    ]);
+    expect(ofKind(state, "priceLine")).toHaveLength(0);
+    expect(state.priceLine?.price).toBe(2.1);
+    expect(state.priceLine?.reached).toBe(false);
+  });
+
+  it("a BUY ends the line silently — the trade tells the story", () => {
+    const state = feed([
+      decision({ evaluatedAt: NOW - 55_000, price: 2.4 }),
+      decision({ evaluatedAt: NOW - 50_000, price: 2.4, rsiLinePrice: 2.1 }),
+      decision({
+        evaluatedAt: NOW - 40_000,
+        price: 2.2,
+        rsiLinePrice: null,
+        action: "BUY",
+        selectedRule: "BUY_SIGNAL",
+      }),
+    ]);
+    expect(
+      state.entries.filter((e) => e.text.includes("取り下げ")),
+    ).toHaveLength(0);
+    expect(state.priceLine).toBeNull();
   });
 });

@@ -219,6 +219,32 @@ describe("price ticker rendering", () => {
     expect(html).toContain("—");
     expect(html).toContain('aria-label="SUI/USDC 現在価格 —"');
   });
+
+  it("counts down to the buy-run line and flips at the touch", () => {
+    const down = renderToStaticMarkup(
+      <PriceTicker
+        price={0.9018}
+        candlesByTimeframe={frames({})}
+        linePrice={0.874}
+      />,
+    );
+    expect(down).toContain('class="price-ticker-line"');
+    expect(down).toContain("買い走りライン $0.874 あと-3.1%");
+    expect(down).toContain("買い走りライン $0.874 まであと-3.1%");
+    const reached = renderToStaticMarkup(
+      <PriceTicker
+        price={0.8731}
+        candlesByTimeframe={frames({})}
+        linePrice={0.874}
+      />,
+    );
+    expect(reached).toContain('class="price-ticker-line reached"');
+    expect(reached).toContain("ライン到達・反発待ち");
+    const none = renderToStaticMarkup(
+      <PriceTicker price={0.9018} candlesByTimeframe={frames({})} />,
+    );
+    expect(none).not.toContain("price-ticker-line");
+  });
 });
 
 describe("price ticker wiring and style", () => {
