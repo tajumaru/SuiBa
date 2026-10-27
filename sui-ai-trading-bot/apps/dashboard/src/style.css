@@ -644,11 +644,6 @@ textarea {
   font-size: 13px;
   margin-top: 12px;
 }
-.login-note {
-  color: #71809a;
-  font-size: 12.5px;
-  margin-top: 14px;
-}
 .login-links {
   display: flex;
   flex-wrap: wrap;
