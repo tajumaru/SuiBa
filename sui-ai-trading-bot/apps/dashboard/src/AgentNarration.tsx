@@ -23,6 +23,7 @@ import imgPointSmile from "./assets/agent-white-point-smile.jpg";
 import imgSleep from "./assets/agent-white-sleep.jpg";
 import imgLaptop from "./assets/agent-white-laptop.jpg";
 import imgLaptopTyping from "./assets/agent-white-laptop-typing.jpg";
+import imgScream from "./assets/agent-white-scream.jpg";
 
 /**
  * The display's reduced-motion preference, read synchronously on
@@ -150,15 +151,16 @@ const AVATAR_BURST_MARKS = [
  * celebration ends the avatar falls back to exactly that pose.
  *
  * An error shout (see errorShout.ts) outranks even the
- * celebration: the avatar snaps to the plain face, throws a
- * Munch-style scream — hands on cheeks and an open oval mouth,
- * drawn over the artwork — shakes once, and calls out the short
- * fixed line in a speech bubble while the pill carries the state
- * label in alert colours. The scream and bubble stay for as long
- * as the error state does; the shake replays when the kind of
- * error changes (the avatar remounts on the kind key). Under
- * reduced motion there is no shake or pop: the face, the bubble
- * and the pill still change.
+ * celebration: the avatar swaps to the dedicated scream artwork
+ * — the same character in a Munch-style pose, both hands with
+ * fingers pressed to its cheeks, wide hollow eyes and an open
+ * oval mouth — shakes once, and calls out the short fixed line
+ * in a speech bubble while the pill carries the state label in
+ * alert colours. The scream and bubble stay for as long as the
+ * error state does; the shake replays when the kind of error
+ * changes (the avatar remounts on the kind key). Under reduced
+ * motion there is no shake or pop: the face, the bubble and the
+ * pill still change.
  */
 export function AgentHeaderAvatar({
   pose,
@@ -186,36 +188,10 @@ export function AgentHeaderAvatar({
         aria-hidden="true"
       >
         <div className="agent-avatar-bob">
-          <AgentAvatarArtwork pose={shownPose} />
-          {shouting && (
-            <svg className="agent-avatar-scream" viewBox="0 0 100 100">
-              {/* Placed on the normal artwork's measured face: eyes
-                  at (49, 52) and (69, 53), the straight mouth line
-                  at y≈65. The white rect erases that line, the eyes
-                  are redrawn wider, hands press both cheeks, and
-                  the open oval mouth sits under the line. Inside
-                  the bob wrapper so it rides the bobbing artwork. */}
-              <rect x="46.5" y="62.8" width="23.5" height="4" fill="#fff" />
-              <ellipse
-                className="hand"
-                cx="37.5"
-                cy="63"
-                rx="6"
-                ry="13"
-                transform="rotate(-6 37.5 63)"
-              />
-              <ellipse
-                className="hand"
-                cx="81"
-                cy="63"
-                rx="6"
-                ry="13"
-                transform="rotate(6 81 63)"
-              />
-              <ellipse className="eye" cx="49" cy="52.5" rx="3.8" ry="7" />
-              <ellipse className="eye" cx="69.5" cy="52.5" rx="3.8" ry="7" />
-              <ellipse className="mouth" cx="58.5" cy="69" rx="6" ry="9" />
-            </svg>
+          {shouting ? (
+            <img className="agent-avatar-scream" src={imgScream} alt="" />
+          ) : (
+            <AgentAvatarArtwork pose={shownPose} />
           )}
         </div>
         <span className="agent-avatar-zzz">Zzz</span>

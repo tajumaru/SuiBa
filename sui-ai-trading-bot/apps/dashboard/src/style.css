@@ -2113,30 +2113,15 @@ th {
   font-weight: 700;
 }
 /* Error shout (AgentHeaderAvatar): while an error state lasts,
-   the circle rings red, the Munch scream (hands on cheeks, open
-   oval mouth) sits over the plain artwork, and the fixed short
+   the circle rings red, the artwork swaps to the dedicated
+   Munch-scream pose (agent-white-scream.jpg — it needs no rules
+   of its own; the bob's img rules size it), and the fixed short
    line is called out in a speech bubble beside the face. The
    shake and the bubble's pop live in the no-preference block
    below; under reduced motion the face, bubble and pill simply
    change and rest. */
 .agent-avatar.shouting {
   border-color: #f0564a;
-}
-.agent-avatar-scream {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-.agent-avatar-scream .hand,
-.agent-avatar-scream .eye {
-  fill: #fff;
-  stroke: #20303f;
-  stroke-width: 2.5;
-}
-.agent-avatar-scream .mouth {
-  fill: #20303f;
 }
 .agent-avatar-bubble {
   position: absolute;
