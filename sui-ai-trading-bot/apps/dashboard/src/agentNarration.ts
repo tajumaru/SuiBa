@@ -368,6 +368,19 @@ function trailDistance(key: EntryCondKey, t: DecisionTrail): number {
   return -t.histogram;
 }
 
+/**
+ * The MACD histogram in words. Its raw value is meaningless at SUI
+ * prices (0.0001 reads as precision without information), so the
+ * narration names only the side of zero — and "ほぼゼロ" inside the
+ * ATR-relative band the last-piece line already used. The exact
+ * histogram stays in the operations diagnostics.
+ */
+function macdWord(dec: { histogram: number; atr: number }): string {
+  if (dec.atr > 0 && Math.abs(dec.histogram) <= dec.atr * 0.05)
+    return "ほぼゼロ";
+  return dec.histogram < 0 ? "マイナス側" : "プラス側";
+}
+
 /** Number-carrying phrase for one unmet entry condition. */
 function unmetNumberPhrase(key: EntryCondKey, dec: DecisionTelemetry): string {
   if (key === "emaUp") return `EMAの差は${emaGapPct(dec)}`;
@@ -375,7 +388,7 @@ function unmetNumberPhrase(key: EntryCondKey, dec: DecisionTelemetry): string {
     return dec.rsi <= dec.oversold
       ? `RSIは${fmtNumber(dec.rsi, 1)}で圏内、上抜け待ち`
       : `RSI ${fmtNumber(dec.rsi, 1)}、ラインまでまだ${rsiPoints(dec.rsi, dec.oversold)}`;
-  return `MACDは${fmtNumber(dec.histogram, 4)}`;
+  return `MACDは${macdWord(dec)}`;
 }
 
 /** Number-free aside naming a second unmet entry condition. */
@@ -409,10 +422,10 @@ function singleRemainingText(
     dec.atr > 0 &&
     Math.abs(dec.histogram) <= dec.atr * 0.05
   )
-    return `あとMACDだけ。${fmtNumber(dec.histogram, 4)}、ほぼゼロ。次で揃うかも`;
+    return `あとMACDだけ。ほぼゼロ。次で揃うかも`;
   if (dec.histogram < 0)
-    return `あとMACDだけ。まだ${fmtNumber(dec.histogram, 4)}、マイナス側だね`;
-  return `あとMACDだけ。${fmtNumber(dec.histogram, 4)}でプラス圏だけど、下向きだね`;
+    return `あとMACDだけ。まだマイナス側だね`;
+  return `あとMACDだけ。プラス圏だけど、下向きだね`;
 }
 
 /**
@@ -439,7 +452,7 @@ function waitNarration(
         : `EMAの並びが崩れた。差は${emaGapPct(dec)}、一歩さがったなあ`;
     if (key === "rsiRecovery")
       return `RSIの回復が消えた。今は${fmtNumber(dec.rsi, 1)}、一歩さがったなあ`;
-    return `MACDが崩れて${fmtNumber(dec.histogram, 4)}。一歩さがったなあ`;
+    return `MACDの上向きが崩れた。一歩さがったなあ`;
   }
 
   if (!unmet.length) return "買い条件は3つ揃ったよ。今は様子見だね";
@@ -461,7 +474,7 @@ function waitNarration(
             : "EMAが順並びになった"
           : n === "rsiRecovery"
             ? `RSIが${fmtNumber(dec.previousRsi, 1)}→${fmtNumber(dec.rsi, 1)}で上抜けた`
-            : `MACDが${fmtNumber(dec.previousHistogram, 4)}→${fmtNumber(dec.histogram, 4)}に上向いた`;
+            : `MACDが${macdWord(dec)}で上向いた`;
       const rest = unmet.map((c) => COND_SHORT[c.key]).join("と");
       return `${lead}。残りは${rest}、${unmetNumberPhrase(closestUnmet().key, dec)}だね`;
     }
@@ -658,7 +671,7 @@ function watchValue(key: EntryCondKey, dec: DecisionTelemetry): string {
     return dec.rsi <= dec.oversold
       ? `今${fmtNumber(dec.rsi, 1)}で圏内`
       : `今${fmtNumber(dec.rsi, 1)}、ラインまで${rsiPoints(dec.rsi, dec.oversold)}`;
-  return `今${fmtNumber(dec.histogram, 4)}`;
+  return `今${macdWord(dec)}`;
 }
 
 function declareWatchText(key: EntryCondKey, dec: DecisionTelemetry): string {
@@ -668,7 +681,7 @@ function declareWatchText(key: EntryCondKey, dec: DecisionTelemetry): string {
     return dec.rsi <= dec.oversold
       ? `次はRSIを見てる。今${fmtNumber(dec.rsi, 1)}で圏内、上抜けたら声かけるね`
       : `次はRSIを見てる。今${fmtNumber(dec.rsi, 1)}、ラインまで${rsiPoints(dec.rsi, dec.oversold)}。近づいたら声かけるね`;
-  return `次はMACDを見てる。今${fmtNumber(dec.histogram, 4)}、プラスに転じたら声かけるね`;
+  return `次はMACDを見てる。今${macdWord(dec)}、プラスに転じたら声かけるね`;
 }
 
 function approachWatchText(key: EntryCondKey, dec: DecisionTelemetry): string {
@@ -678,7 +691,9 @@ function approachWatchText(key: EntryCondKey, dec: DecisionTelemetry): string {
     return dec.rsi <= dec.oversold
       ? "RSI、圏内まで来たよ。宣言してたやつ、上抜け待ちだね"
       : `RSI、ラインまで${rsiPoints(dec.rsi, dec.oversold)}まで来た。宣言してたやつ、来てるよ`;
-  return `MACD、${fmtNumber(dec.histogram, 4)}まで戻った。宣言してたやつ、来てるよ`;
+  return macdWord(dec) === "ほぼゼロ"
+    ? `MACD、ゼロ手前まで戻った。宣言してたやつ、来てるよ`
+    : `MACD、戻ってきた。宣言してたやつ、来てるよ`;
 }
 
 /**
@@ -693,7 +708,7 @@ function hitWatchText(key: EntryCondKey, dec: DecisionTelemetry): string {
       : `EMA、成立した。${fmtNumber(dec.ema20, 4)}が${fmtNumber(dec.ema50, 4)}の上。ほらな、言うてたやろ`;
   if (key === "rsiRecovery")
     return `RSI、上抜けた。${fmtNumber(dec.previousRsi, 1)}→${fmtNumber(dec.rsi, 1)}。ほらな、言うてたやろ`;
-  return `MACD、成立した。今${fmtNumber(dec.histogram, 4)}。ほらな、言うてたやろ`;
+  return `MACD、成立した。今${macdWord(dec)}。ほらな、言うてたやろ`;
 }
 
 function withdrawWatchText(key: EntryCondKey): string {
@@ -715,7 +730,7 @@ function nearMissText(key: EntryCondKey, closestDistance: number): string {
     return `EMAの差、${fmtPercent(-closestDistance)}まで詰めてたのに、また開いてきたわ…`;
   if (key === "rsiRecovery")
     return `RSI、あと${Math.max(0, Math.round(closestDistance))}まで来てたのに…なんで離れるねん`;
-  return `MACD、${fmtNumber(-closestDistance, 4)}まで戻してたのに、また下がってもうたわ…`;
+  return `MACD、ゼロ手前まで戻してたのに、また下がってもうたわ…`;
 }
 
 /** Sleep talk cadence: the first mutter comes this long after the

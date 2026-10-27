@@ -437,7 +437,7 @@ describe("agent narration: cycles", () => {
     );
     state = advanceNarration(state, d2, "alive", NOW);
     expect(state.entries).toHaveLength(2);
-    expect(state.entries[1].text).toContain("MACDが崩れて-0.003");
+    expect(state.entries[1].text).toContain("MACDの上向きが崩れた");
     expect(state.entries[1].text).toContain("一歩さがったなあ");
   });
 
@@ -1275,12 +1275,12 @@ describe("narration tone: reasons, softly and shortly", () => {
   it("2/3 met names the single missing condition", () => {
     const text = cycleNarrationText(oneRemaining, null);
     expect(text).toContain("あとMACDだけ");
-    expect(text).toContain("-0.0004、ほぼゼロ");
+    expect(text).toContain("あとMACDだけ。ほぼゼロ");
   });
 
   it("a broken condition narrates the step back with its number", () => {
     const text = cycleNarrationText(brokeNow, decisionTrail(brokeBefore));
-    expect(text).toContain("MACDが崩れて-0.003");
+    expect(text).toContain("MACDの上向きが崩れた");
     expect(text).toContain("一歩さがったなあ");
   });
 
@@ -1427,7 +1427,7 @@ describe("agent narration: watch declaration", () => {
       decision({ evaluatedAt: NOW - 40_000 }),
     ]);
     expect(
-      count(state, "次はMACDを見てる。今-0.003、プラスに転じたら声かけるね"),
+      count(state, "次はMACDを見てる。今マイナス側、プラスに転じたら声かけるね"),
     ).toBe(1);
     expect(state.watch?.key).toBe("histogramImproving");
   });
@@ -1439,7 +1439,7 @@ describe("agent narration: watch declaration", () => {
       decision({ evaluatedAt: NOW - 40_000, histogram: -0.0012 }),
     ]);
     expect(
-      count(state, "MACD、-0.0014まで戻った。宣言してたやつ、来てるよ"),
+      count(state, "MACD、戻ってきた。宣言してたやつ、来てるよ"),
     ).toBe(1);
     expect(count(state, "来てるよ")).toBe(1);
     expect(state.watch?.called).toBe(true);
@@ -1458,7 +1458,7 @@ describe("agent narration: watch declaration", () => {
     const all = texts(state);
     const hit = all.findIndex((t) => t.includes("言うてたやろ"));
     const next = all.findIndex((t) => t.includes("次の注目はRSIに決めた"));
-    expect(all[hit]).toContain("MACD、成立した。今-0.001");
+    expect(all[hit]).toContain("MACD、成立した。今ほぼゼロ");
     expect(hit).toBeGreaterThanOrEqual(0);
     expect(next).toBeGreaterThan(hit);
     expect(state.watch?.key).toBe("rsiRecovery");
@@ -1466,7 +1466,7 @@ describe("agent narration: watch declaration", () => {
     // The hit is its own entry kind, and it timestamps the pose link.
     const hitEntry = state.entries.find((e) => e.kind === "watchHit");
     expect(hitEntry?.text).toBe(
-      "MACD、成立した。今-0.001。ほらな、言うてたやろ",
+      "MACD、成立した。今ほぼゼロ。ほらな、言うてたやろ",
     );
     expect(state.lastHitAt).toBe(NOW - 50_000);
   });
@@ -1498,7 +1498,7 @@ describe("agent narration: watch declaration", () => {
       decision({ evaluatedAt: NOW - 50_000, rsi: 32 }),
     ]);
     expect(count(state, "注目してたRSI、遠のいたなあ。宣言は取り下げ")).toBe(1);
-    expect(count(state, "注目はMACDに切り替える。今-0.003だよ")).toBe(1);
+    expect(count(state, "注目はMACDに切り替える。今マイナス側だよ")).toBe(1);
     expect(state.watch?.key).toBe("histogramImproving");
   });
 
@@ -1523,7 +1523,7 @@ describe("agent narration: watch declaration", () => {
     expect(state.watchScore.misses).toBe(1);
   });
 
-  it("a called MACD watch that slips away names its closest histogram", () => {
+  it("a called MACD watch that slips away names how close it came", () => {
     const state = feed([
       decision({}),
       decision({ evaluatedAt: NOW - 50_000, histogram: -0.0014 }),
@@ -1532,7 +1532,7 @@ describe("agent narration: watch declaration", () => {
     const nearMiss = state.entries.filter((e) => e.kind === "nearMiss");
     expect(nearMiss).toHaveLength(1);
     expect(nearMiss[0].text).toBe(
-      "MACD、-0.0014まで戻してたのに、また下がってもうたわ…",
+      "MACD、ゼロ手前まで戻してたのに、また下がってもうたわ…",
     );
     expect(state.watchScore.misses).toBe(1);
   });
@@ -1644,7 +1644,8 @@ describe("agent narration: watch declaration", () => {
       expect(sentences.length).toBeLessThanOrEqual(3);
       expect(line.length).toBeLessThanOrEqual(80);
       expect(line).not.toMatch(/です|ます|ました|確認できました|総括/);
-      expect(line).toMatch(/\d/);
+      // Grounded: a number, or the MACD side-of-zero word.
+      expect(line).toMatch(/\d|マイナス側|プラス側|ほぼゼロ/);
     }
   });
 
@@ -1656,7 +1657,7 @@ describe("agent narration: watch declaration", () => {
     expect(shown).toMatchObject({
       key: "histogramImproving",
       label: "MACD",
-      value: "今-0.003",
+      value: "今マイナス側",
       detail: "宣言したところ。プラス転換待ち",
     });
     const d2 = runningSnapshot(
@@ -1667,7 +1668,7 @@ describe("agent narration: watch declaration", () => {
     const approached = advanceNarration(state, d2, "alive", NOW);
     expect(currentWatch(approached, d2.decision, "alive", NOW)).toMatchObject({
       key: "histogramImproving",
-      value: "今-0.0014",
+      value: "今マイナス側",
       detail: "宣言時の半分以下。来てる",
     });
   });
@@ -2231,7 +2232,8 @@ describe("agent narration: watch score and review", () => {
       expect(sentences.length).toBeLessThanOrEqual(3);
       expect(line.length).toBeLessThanOrEqual(80);
       expect(line).not.toMatch(/です|ます|ました|確認できました|総括/);
-      expect(line).toMatch(/\d/);
+      // Grounded: a number, or the MACD side-of-zero word.
+      expect(line).toMatch(/\d|マイナス側|プラス側|ほぼゼロ/);
     }
   });
 });
