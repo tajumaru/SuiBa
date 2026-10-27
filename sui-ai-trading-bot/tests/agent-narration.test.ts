@@ -2520,3 +2520,61 @@ describe("agent narration: spike alerts", () => {
     }
   });
 });
+
+describe("agent narration: sleep talk", () => {
+  const talksOf = (state: NarrationState) =>
+    state.entries.filter((e) => e.kind === "sleepTalk");
+
+  it("mutters the session's near miss in its sleep, spaced out and never twice in a row", () => {
+    const { db, monitor } = fixture();
+    const far = {
+      ema20: 2.3,
+      ema50: 2.42,
+      histogram: -0.008,
+      previousHistogram: -0.001,
+    };
+    let state = emptyNarrationState();
+    for (const dec of [
+      decision({ ...far, rsi: 35 }),
+      decision({ ...far, evaluatedAt: NOW - 50_000, rsi: 32 }),
+      decision({ ...far, evaluatedAt: NOW - 40_000, rsi: 37 }),
+    ]) {
+      const d = runningSnapshot(db, monitor, dec);
+      state = advanceNarration(state, d, "alive", NOW);
+    }
+    expect(state.lastNearMiss).toMatchObject({ key: "rsiRecovery" });
+
+    const d = runningSnapshot(db, monitor, null);
+    // The sleep begins: no mutter yet.
+    state = advanceNarration(state, d, "sleeping", NOW);
+    expect(talksOf(state)).toHaveLength(0);
+    // A quarter hour in, the near miss surfaces as a mutter.
+    state = advanceNarration(state, d, "sleeping", NOW + 16 * 60_000);
+    expect(talksOf(state).map((e) => e.text)).toEqual([
+      "RSIがあと2やったのに…むにゃ…",
+    ]);
+    // Too soon for another.
+    state = advanceNarration(state, d, "sleeping", NOW + 20 * 60_000);
+    expect(talksOf(state)).toHaveLength(1);
+    // The next window brings a different mutter, never a repeat.
+    state = advanceNarration(state, d, "sleeping", NOW + 32 * 60_000);
+    expect(talksOf(state)).toHaveLength(2);
+    expect(talksOf(state)[1].text).not.toBe(talksOf(state)[0].text);
+  });
+
+  it("never mutters on a safety stop (flatlined)", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, null);
+    let state = advanceNarration(emptyNarrationState(), d, "flatlined", NOW);
+    state = advanceNarration(state, d, "flatlined", NOW + 60 * 60_000);
+    expect(talksOf(state)).toHaveLength(0);
+  });
+
+  it("dreams of SUI itself when the session left no facts", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, null);
+    let state = advanceNarration(emptyNarrationState(), d, "sleeping", NOW);
+    state = advanceNarration(state, d, "sleeping", NOW + 16 * 60_000);
+    expect(talksOf(state).map((e) => e.text)).toEqual(["すい…すい…"]);
+  });
+});

@@ -319,6 +319,9 @@ export function AgentFeedEntryRow({
       {entry.kind === "watchHit" && (
         <span className="agent-feed-entry-tag hit">的中</span>
       )}
+      {entry.kind === "sleepTalk" && (
+        <span className="agent-feed-entry-tag sleep">寝言</span>
+      )}
       {buy && <span className="agent-feed-entry-tag buy">買えた！</span>}
       <p>{entry.text}</p>
     </div>

@@ -46,6 +46,13 @@ import { number as fmtNumber, percent as fmtPercent } from "./presentation.ts";
  * (review) built only from those recorded counts and the session's
  * first-to-current price move.
  *
+ * While the bot sleeps (a plain stop, never a safety stop), the
+ * character occasionally talks in its sleep: at most one mutter
+ * per quarter hour, built only from the session's recorded facts
+ * (a near miss, a told hit, a recorded buy), never the same one
+ * twice in a row, with a fact-free dream of SUI itself as the
+ * fallback when the session left nothing to dream about.
+ *
  * The feed also keeps a short history of the narrated cycles'
  * decision prices, so a sudden market move — the price jumping at
  * least ±1% against three cycles ago, or the recorded volume change
@@ -73,6 +80,7 @@ export type NarrationKind =
   | "review" // a ふりかえり look-back over the watch score so far
   | "nearMiss" // a called watch withdrawn — it came close, then slipped away
   | "watchHit" // a declared watch clicked — the smug counterpart of a near miss
+  | "sleepTalk" // a mutter from the sleeping character, built from recorded facts
   | "alert" // a 速報 breaking in on a sudden price / volume move
   | "status"; // feed-initialised status line
 
@@ -144,6 +152,16 @@ export interface NarrationState {
    * hit is fresh. Silent settlements (a hit inside a BUY) do not
    * set this — the trade celebration covers those. */
   lastHitAt: number | null;
+  /** The most recent TOLD near miss (key + closest distance), the
+   * sleep talk's favourite material. */
+  lastNearMiss: { key: EntryCondKey; closestDistance: number } | null;
+  /** When the current sleep began (first advance seen sleeping),
+   * and the sleep talk's cadence state: the last mutter's time and
+   * text, so the same mutter never repeats back to back. All three
+   * reset when the bot wakes. */
+  sleepingSince: number | null;
+  lastSleepTalkAt: number | null;
+  lastSleepTalkText: string | null;
   /** The declared watch target, or null when nothing is watched. */
   watch: WatchTarget | null;
   /** Cumulative session score of declared watches (see WatchScore). */
@@ -196,6 +214,10 @@ export function emptyNarrationState(): NarrationState {
     alertCooldown: 0,
     lastAlert: null,
     lastHitAt: null,
+    lastNearMiss: null,
+    sleepingSince: null,
+    lastSleepTalkAt: null,
+    lastSleepTalkText: null,
     watch: null,
     watchScore: { declared: 0, hits: 0, misses: 0, unreviewed: 0 },
     sessionStartPrice: null,
@@ -677,6 +699,46 @@ function nearMissText(key: EntryCondKey, closestDistance: number): string {
   return `MACD、${fmtNumber(-closestDistance, 4)}まで戻してたのに、また下がってもうたわ…`;
 }
 
+/** Sleep talk cadence: the first mutter comes this long after the
+ * sleep begins, and later mutters keep at least this much space. */
+export const SLEEP_TALK_INTERVAL_MS = 15 * 60_000;
+
+/**
+ * Sleep-talk candidates, in the order the sleeping character would
+ * reach for them: the session's near miss first, then a told hit,
+ * a recorded buy, a miss that was never a near miss — and always
+ * the fact-free dream mutters about SUI itself as the fallback.
+ * Every factual line is built only from what the state recorded;
+ * the caller picks the first candidate that is not a repeat of
+ * the previous mutter.
+ */
+function sleepTalkCandidates(state: {
+  lastNearMiss: NarrationState["lastNearMiss"];
+  lastHitAt: number | null;
+  entries: NarrationEntry[];
+  watchScore: WatchScore;
+}): string[] {
+  const out: string[] = [];
+  const nm = state.lastNearMiss;
+  if (nm) {
+    if (nm.key === "rsiRecovery")
+      out.push(
+        `RSIがあと${Math.max(0, Math.round(nm.closestDistance))}やったのに…むにゃ…`,
+      );
+    else if (nm.key === "emaUp")
+      out.push(
+        `EMAの差、${fmtPercent(-nm.closestDistance)}までいってたのに…むにゃ…`,
+      );
+    else out.push("MACD、あと少しやったのに…むにゃ…");
+  }
+  if (state.lastHitAt != null) out.push("ほらなって…言うたやろ…むにゃ…");
+  if (state.entries.some((e) => e.kind === "trade" && e.side === "BUY"))
+    out.push("買えたやつ…上がれ…むにゃ…");
+  if (state.watchScore.misses > 0 && !nm) out.push("次は当てる…むにゃ…");
+  out.push("すい…すい…", "むにゃ…すい…上がれ…");
+  return out;
+}
+
 interface WatchOutcome {
   /** Drafts told before the cycle's own narration (declare / call /
    * hit / withdraw / switch). */
@@ -691,6 +753,9 @@ interface WatchOutcome {
    * it was withdrawn for drifting away. A watch that ends silently
    * (position opened, material gone) settles as null — neither. */
   settled: "hit" | "miss" | null;
+  /** Set when this cycle TOLD a near miss: its key and the closest
+   * distance reached, kept as the sleep talk's material. */
+  nearMiss: { key: EntryCondKey; closestDistance: number } | null;
 }
 
 /**
@@ -721,6 +786,7 @@ function processWatch(
       watch: null,
       created: false,
       settled: current && dec.conditions[current.key] ? "hit" : null,
+      nearMiss: null,
     };
 
   if (current && dec.conditions[current.key]) {
@@ -739,6 +805,7 @@ function processWatch(
       watch: next ? makeWatch(next, dec) : null,
       created: next != null,
       settled: "hit",
+      nearMiss: null,
     };
   }
 
@@ -770,6 +837,9 @@ function processWatch(
         watch: next ? makeWatch(next, dec) : null,
         created: next != null,
         settled: "miss",
+        nearMiss: current.called
+          ? { key: current.key, closestDistance: closest }
+          : null,
       };
     }
     if (!current.called && ratio <= WATCH_APPROACH_RATIO)
@@ -779,6 +849,7 @@ function processWatch(
         watch: { ...current, called: true, closestDistance: closest },
         created: false,
         settled: null,
+        nearMiss: null,
       };
     return {
       before: [],
@@ -786,6 +857,7 @@ function processWatch(
       watch: { ...current, closestDistance: closest },
       created: false,
       settled: null,
+      nearMiss: null,
     };
   }
 
@@ -797,8 +869,9 @@ function processWatch(
         watch: makeWatch(target, dec),
         created: true,
         settled: null,
+        nearMiss: null,
       }
-    : { before: [], after: [], watch: null, created: false, settled: null };
+    : { before: [], after: [], watch: null, created: false, settled: null, nearMiss: null };
 }
 
 export type ConditionChipTone = "met" | "close" | "far" | "back";
@@ -1355,6 +1428,10 @@ export function advanceNarration(
         prevTrail: null,
         lastConnectivity: d.safety?.connectivity ?? null,
         lastStatus: d.status ?? null,
+        // Opening the feed on an already-sleeping bot starts its
+        // sleep here, so the first mutter still waits a full
+        // interval instead of arriving with the page.
+        sleepingSince: vitalState === "sleeping" ? now : null,
         initialized: true,
       },
       drafts,
@@ -1523,6 +1600,10 @@ export function advanceNarration(
   let alertCooldown = prev.alertCooldown;
   let lastAlert = prev.lastAlert;
   let lastHitAt = prev.lastHitAt;
+  let lastNearMiss = prev.lastNearMiss;
+  let sleepingSince = prev.sleepingSince;
+  let lastSleepTalkAt = prev.lastSleepTalkAt;
+  let lastSleepTalkText = prev.lastSleepTalkText;
   const dec = d.decision;
   if (dec && (lastDecisionAt == null || dec.evaluatedAt > lastDecisionAt)) {
     if (sessionStartPrice == null) sessionStartPrice = dec.price;
@@ -1536,6 +1617,7 @@ export function advanceNarration(
       watch = outcome.watch;
       if (outcome.before.some((draft) => draft.kind === "watchHit"))
         lastHitAt = dec.evaluatedAt;
+      if (outcome.nearMiss) lastNearMiss = outcome.nearMiss;
       drafts.push(...outcome.before);
       drafts.push({
         at: dec.evaluatedAt,
@@ -1633,6 +1715,36 @@ export function advanceNarration(
         text: `止まったよ。理由：${stopReasonText(d)}`,
       });
   }
+  // Sleep talk: while the bot sleeps (a plain stop — a safety stop
+  // is flatlined and never mutters), the character occasionally
+  // talks in its sleep, only from recorded facts, never the same
+  // mutter twice in a row. Waking resets the cadence, so a later
+  // stop starts a fresh sleep.
+  if (vitalState === "sleeping") {
+    if (sleepingSince == null) sleepingSince = now;
+    if (
+      now - sleepingSince >= SLEEP_TALK_INTERVAL_MS &&
+      (lastSleepTalkAt == null ||
+        now - lastSleepTalkAt >= SLEEP_TALK_INTERVAL_MS)
+    ) {
+      const text = sleepTalkCandidates({
+        lastNearMiss,
+        lastHitAt,
+        entries: prev.entries,
+        watchScore,
+      }).find((candidate) => candidate !== lastSleepTalkText);
+      if (text) {
+        drafts.push({ at: now, kind: "sleepTalk", text });
+        lastSleepTalkAt = now;
+        lastSleepTalkText = text;
+      }
+    }
+  } else {
+    sleepingSince = null;
+    lastSleepTalkAt = null;
+    lastSleepTalkText = null;
+  }
+
   if (d.status) lastStatus = d.status;
 
   return finish(
@@ -1645,6 +1757,10 @@ export function advanceNarration(
       alertCooldown,
       lastAlert,
       lastHitAt,
+      lastNearMiss,
+      sleepingSince,
+      lastSleepTalkAt,
+      lastSleepTalkText,
       seen: [...seen],
       pendingCandidateIds: [...pending].slice(-50),
       lastDecisionAt,

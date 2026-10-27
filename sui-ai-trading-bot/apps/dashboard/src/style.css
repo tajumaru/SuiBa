@@ -2612,6 +2612,16 @@ th {
   border-color: rgba(62, 207, 111, 0.55);
   color: #3ecf6f;
 }
+/* A 寝言 (sleep talk) drifts in soft blue, italic — the character
+   is asleep and dreaming of the session's facts. */
+.agent-feed-entry.sleepTalk p {
+  color: #b9d4f2;
+  font-style: italic;
+}
+.agent-feed-entry-tag.sleep {
+  border-color: rgba(159, 208, 255, 0.55);
+  color: #9fd0ff;
+}
 /* A recorded buy fill keeps a gold frame and tag for good, so a
    buy stays recognisable in the history. The pulse below plays
    once, on the entry whose arrival opened a celebration. */
