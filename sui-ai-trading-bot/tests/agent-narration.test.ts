@@ -497,8 +497,7 @@ describe("agent narration: cycles", () => {
     );
     state = advanceNarration(state, d2, "alive", NOW);
     expect(state.entries).toHaveLength(2);
-    expect(state.entries[1].text).toContain("MACDの上向きが崩れた");
-    expect(state.entries[1].text).toContain("一歩さがったなあ");
+    expect(state.entries[1].text).toBe("MACDの上向きが崩れた");
   });
 
   it("identical consecutive cycle evidence is not narrated twice", () => {
@@ -1338,10 +1337,9 @@ describe("narration tone: reasons, softly and shortly", () => {
     expect(text).toContain("あとMACDだけ。ほぼゼロ");
   });
 
-  it("a broken condition narrates the step back with its number", () => {
+  it("a broken condition narrates the step back in plain words", () => {
     const text = cycleNarrationText(brokeNow, decisionTrail(brokeBefore));
-    expect(text).toContain("MACDの上向きが崩れた");
-    expect(text).toContain("一歩さがったなあ");
+    expect(text).toBe("MACDの上向きが崩れた");
   });
 
   it("a newly met condition is announced with the crossing numbers", () => {

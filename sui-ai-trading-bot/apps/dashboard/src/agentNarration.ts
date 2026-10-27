@@ -448,11 +448,11 @@ function waitNarration(
     const key = broken[0].key;
     if (key === "emaUp")
       return prev?.emaGapShrinking
-        ? `EMAの差の縮小が止まった。差は${emaGapPct(dec)}、一歩さがったなあ`
-        : `EMAの並びが崩れた。差は${emaGapPct(dec)}、一歩さがったなあ`;
+        ? `EMAの差の縮小が止まった。差は${emaGapPct(dec)}`
+        : `EMAの並びが崩れた。差は${emaGapPct(dec)}`;
     if (key === "rsiRecovery")
-      return `RSIの回復が消えた。今は${fmtNumber(dec.rsi, 1)}、一歩さがったなあ`;
-    return `MACDの上向きが崩れた。一歩さがったなあ`;
+      return `RSIの上向きが崩れた。今は${fmtNumber(dec.rsi, 1)}`;
+    return `MACDの上向きが崩れた`;
   }
 
   if (!unmet.length) return "買い条件は3つ揃ったよ。今は様子見だね";
