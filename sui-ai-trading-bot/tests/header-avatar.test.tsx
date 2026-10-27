@@ -169,7 +169,8 @@ describe("narration feed after the stage removal", () => {
     // The section keeps its accessible name and its entries area…
     expect(html).toContain('aria-label="エージェント実況"');
     expect(html).toContain("実況を準備中です");
-    expect(html).toContain("agent-feed-note");
+    // …while the explanatory footnote under the feed is gone.
+    expect(html).not.toContain("agent-feed-note");
     // …but the stage block (artwork, heading, pose label) is gone:
     // the character and its status live in the header avatar now.
     expect(html).not.toContain("<img");
