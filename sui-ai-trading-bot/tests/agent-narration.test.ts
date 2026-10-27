@@ -6,6 +6,10 @@ import { DashboardService } from "../apps/worker/src/dashboard-feed.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { botVital } from "../apps/dashboard/src/botVital.ts";
 import {
+  persistNarration,
+  restoreNarration,
+} from "../apps/dashboard/src/narrationStorage.ts";
+import {
   advanceNarration,
   agentPose,
   currentConditionChips,
@@ -342,6 +346,62 @@ describe("agent narration: initialisation", () => {
     // Re-advancing the very same snapshot adds nothing.
     const again = advanceNarration(state, d, "alive", NOW);
     expect(again.entries).toHaveLength(1);
+  });
+});
+
+describe("agent narration: persistence across revisits", () => {
+  function storage() {
+    const values = new Map<string, string>();
+    return {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        values.set(key, value);
+      },
+    };
+  }
+
+  it("restores the feed and watch state without replaying a recorded cycle", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    const saved = storage();
+    persistNarration(state, saved);
+    const restored = restoreNarration(saved);
+    expect(restored).toEqual(state);
+    expect(advanceNarration(restored, d, "alive", NOW).entries).toEqual(
+      state.entries,
+    );
+    const next = runningSnapshot(
+      db,
+      monitor,
+      decision({ evaluatedAt: NOW + 1, price: 0.9 }),
+    );
+    expect(advanceNarration(restored, next, "alive", NOW + 1)).toEqual(
+      advanceNarration(state, next, "alive", NOW + 1),
+    );
+  });
+
+  it.each([
+    "{broken",
+    "{}",
+    JSON.stringify({ ...emptyNarrationState(), entries: [null] }),
+  ])("ignores invalid storage: %s", (raw) => {
+    expect(restoreNarration({ getItem: () => raw, setItem: () => {} })).toEqual(
+      emptyNarrationState(),
+    );
+  });
+
+  it("continues when browser storage is denied or full", () => {
+    const denied = {
+      getItem: () => {
+        throw Error("denied");
+      },
+      setItem: () => {
+        throw Error("quota");
+      },
+    };
+    expect(restoreNarration(denied)).toEqual(emptyNarrationState());
+    expect(() => persistNarration(emptyNarrationState(), denied)).not.toThrow();
   });
 });
 
@@ -1427,7 +1487,10 @@ describe("agent narration: watch declaration", () => {
       decision({ evaluatedAt: NOW - 40_000 }),
     ]);
     expect(
-      count(state, "次はMACDを見てる。今マイナス側、プラスに転じたら声かけるね"),
+      count(
+        state,
+        "次はMACDを見てる。今マイナス側、プラスに転じたら声かけるね",
+      ),
     ).toBe(1);
     expect(state.watch?.key).toBe("histogramImproving");
   });
@@ -1438,9 +1501,7 @@ describe("agent narration: watch declaration", () => {
       decision({ evaluatedAt: NOW - 50_000, histogram: -0.0014 }),
       decision({ evaluatedAt: NOW - 40_000, histogram: -0.0012 }),
     ]);
-    expect(
-      count(state, "MACD、戻ってきた。宣言してたやつ、来てるよ"),
-    ).toBe(1);
+    expect(count(state, "MACD、戻ってきた。宣言してたやつ、来てるよ")).toBe(1);
     expect(count(state, "来てるよ")).toBe(1);
     expect(state.watch?.called).toBe(true);
   });

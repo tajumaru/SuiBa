@@ -10,7 +10,6 @@ import {
   currentConditionChips,
   currentWatch,
   currentWatchScore,
-  emptyNarrationState,
   findNewBuyEntry,
   isBuyTradeEntry,
   type AgentPose,
@@ -24,6 +23,7 @@ import imgSleep from "./assets/agent-white-sleep.jpg";
 import imgLaptop from "./assets/agent-white-laptop.jpg";
 import imgLaptopTyping from "./assets/agent-white-laptop-typing.jpg";
 import imgScream from "./assets/agent-white-scream.jpg";
+import { persistNarration, restoreNarration } from "./narrationStorage.ts";
 
 /**
  * The display's reduced-motion preference, read synchronously on
@@ -351,7 +351,7 @@ export function AgentNarrationFeed({
   onCelebrate?: () => void;
 }) {
   const [narration, setNarration] = useState<NarrationState>(() =>
-    emptyNarrationState(),
+    restoreNarration(),
   );
   const [now, setNow] = useState(() => Date.now());
   const [receivedAt, setReceivedAt] = useState(() => Date.now());
@@ -360,6 +360,7 @@ export function AgentNarrationFeed({
   // advance effect can diff entries before and after and spot a
   // buy fill that is genuinely new to this session.
   const narrationRef = useRef(narration);
+  const hasAdvancedRef = useRef(false);
   // The entry whose arrival opened the running celebration, and
   // when it opened; the pulse class rides on it until the timer
   // clears it, BUY_CELEBRATION_MS after the fill landed.
@@ -405,13 +406,16 @@ export function AgentNarrationFeed({
       Date.now(),
     );
     narrationRef.current = next;
+    persistNarration(next);
     setNarration(next);
     // A buy celebration opens only here: on an advance after the
     // feed initialised (the initialising advance lays down the
     // recorded history and must never celebrate it), when the
     // advance added a buy fill entry that is fresh news rather
     // than a backlog catching up.
-    if (!prev.initialized) return;
+    const firstAdvance = !hasAdvancedRef.current;
+    hasAdvancedRef.current = true;
+    if (firstAdvance || !prev.initialized) return;
     const hit = findNewBuyEntry(prev.entries, next.entries);
     if (!hit || Math.abs(Date.now() - hit.at) > CELEBRATION_FRESH_MS) return;
     setCelebration({ entryId: hit.id, startedAt: Date.now() });
