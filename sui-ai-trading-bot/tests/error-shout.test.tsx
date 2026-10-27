@@ -40,22 +40,22 @@ describe("errorShout derivation", () => {
     });
     expect(errorShout(safety({ connectivity: "DEGRADED" }), false)).toEqual({
       kind: "connectivity",
-      label: "通信障害",
+      label: "通信異常",
       message: "つながらない…！",
     });
     expect(errorShout(null, true)).toEqual({
       kind: "unknown",
-      label: "状態不明",
-      message: "様子がわからない！",
+      label: "状態取得失敗",
+      message: "確認できないよ",
     });
   });
 
-  it("keeps latched stops ahead of staleness, and staleness ahead of a stale connectivity reading", () => {
+  it("does not claim current stop or connectivity from stale evidence", () => {
     expect(errorShout(safety({ botState: "EMERGENCY_STOP" }), true)?.kind).toBe(
-      "emergency",
+      "unknown",
     );
     expect(errorShout(safety({ botState: "ABNORMAL_STOP" }), true)?.kind).toBe(
-      "abnormal",
+      "unknown",
     );
     expect(errorShout(safety({ connectivity: "DEGRADED" }), true)?.kind).toBe(
       "unknown",
@@ -89,7 +89,7 @@ describe("header avatar shout rendering", () => {
   });
 
   it("is wired from the app shell's safety snapshot and fetch error", () => {
-    expect(main).toContain("errorShout(data?.safety ?? null, !!error)");
+    expect(main).toContain("errorShout(data?.safety ?? null, stateStale)");
     expect(main).toContain("shout={shout}");
   });
 });

@@ -1,0 +1,16 @@
+{"event":"NODE_VERSION_VERIFIED","required":">=24.22.1 <25","version":"v24.22.1","execPath":"C:\\Program Files\\nodejs\\node.exe","platform":"win32","arch":"x64"}
+
+ RUN  v3.2.7 D:/Source/SuiBa/.worktrees/mobile-recovery-guidance/sui-ai-trading-bot
+
+ ✓ tests/operation-bar.test.tsx (10 tests) 25ms
+ ✓ tests/header-avatar.test.tsx (19 tests) 31ms
+ ✓ tests/connectivity-ui.test.tsx (3 tests) 39ms
+ ✓ tests/panel-rehome.test.tsx (8 tests) 41ms
+ ✓ tests/operation-overview.test.ts (6 tests) 41ms
+ ✓ tests/recovery-guidance.test.tsx (8 tests) 48ms
+ ✓ tests/agent-narration.test.ts (156 tests) 701ms
+
+ Test Files  7 passed (7)
+      Tests  210 passed (210)
+   Start at  23:17:53
+   Duration  2.40s (transform 787ms, setup 497ms, collect 4.89s, tests 925ms, environment 2ms, prepare 1.76s)

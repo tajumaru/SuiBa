@@ -1,0 +1,161 @@
+{"event":"NODE_VERSION_VERIFIED","required":">=24.22.1 <25","version":"v24.22.1","execPath":"C:\\Program Files\\nodejs\\node.exe","platform":"win32","arch":"x64"}
+✔ two hours and all evidence yield GO without changing fixed thresholds (20.7375ms)
+✔ terminal audit can prove the boundary missing from periodic heartbeats (11.8371ms)
+✔ less than two hours is insufficient, never rounded to GO (5.3186ms)
+✔ 82 Sui attempts stay 82; cached cycle success is never an HTTP attempt (2.0597ms)
+✔ missing final book is unknown; stale or future book is a hard failure (6.6035ms)
+✔ insufficient attempts cannot mask a known freshness or safety failure (3.7628ms)
+✔ identity mismatches reject another run, SHA, image, duration or measurement mode (10.1924ms)
+✔ legacy evidence cannot invent run identity or terminal observations (1.6809ms)
+✔ missing audit evidence reports incomplete rather than crashing (0.8311ms)
+✔ communication and cycle failures still prohibit GO (4.7888ms)
+✔ end probe is GET-only, bounded, preserves upstream timestamp, and never retries (35.2704ms)
+✔ end probe missing, malformed and failed responses stay unknown (1.3637ms)
+✔ missing end snapshot or incomplete identity cannot be GO (7.4053ms)
+✔ end probe evidence must be from this audit window (6.2337ms)
+✔ read-only audit persists terminal evidence only on normal completion (502.9487ms)
+✔ a longer planned run cannot pass using only a two-hour window (3.2188ms)
+✔ missing safety or ledger inputs are incomplete; observed running still fails (1.513ms)
+✔ upstream time may advance during acquisition, but must not exceed completion (5.7208ms)
+✔ collector rejects wall-clock and monotonic reversals without clamping them (3.0872ms)
+✔ a late successful response cannot become proof, even when the wall clock hides the delay (3.5297ms)
+✔ a delayed body is included in acquisition time (1.0467ms)
+✔ acquisition and freshness thresholds remain exactly eight and ten seconds (6.6795ms)
+✔ time reversal and acquisition outside the observation window prohibit GO (7.2357ms)
+✔ delay after completion is evaluated at audit time, not at request completion (3.2121ms)
+✔ transport, HTTP, body and schema failures cannot use the worker's cached book as fallback (6.3203ms)
+✔ missing or non-finite timing evidence is incomplete rather than a zero-duration success (13.4842ms)
+✔ early timer wakes are rechecked at start and end, without a tolerance or real waiting (20.7592ms)
+✔ backwards wall clock waits longer and preserves the measured drift (5.5269ms)
+✔ forward wall-clock jumps cannot shorten the monotonic 30-minute window (6.5339ms)
+✔ monotonic-only slot waits recheck early wakes and cancellation remains effective (1.4365ms)
+✔ duration evidence fails closed for short, missing, reversed, mismatched and cleanup-padded clocks (0.823ms)
+✔ default CLI and Windows wrapper do not execute network or resolve Node/Docker (4397.9694ms)
+✔ supported Node range and explicit arguments (2.2391ms)
+✔ only fixed read-only requests allowed; transactions and arbitrary destinations rejected (0.3874ms)
+✔ phase accounting preserves missing/reused phases and partial timeouts (0.4376ms)
+✔ limits and circuit stops retain existing thresholds and rate-limit early exit (0.2865ms)
+✔ bounded buffering aborts rate limits, oversized bodies, and incomplete reads (22.7329ms)
+✔ real pinned Sui SDK performs one metadata RPC using an offline gRPC-Web fixture (215.9832ms)
+✔ HTTP/2 reuse is measured; GOAWAY opens a fresh connection; cancellation destroys owned session (2.5645ms)
+✔ append-only evidence refuses overwrite and flushes before reporting (20.4865ms)
+✔ HTTP/2 rate-limit, truncated body, and invalid HTTP status fail without an uncaught callback error (1.0306ms)
+✔ missing/truncated evidence, mismatched identity and early termination never look complete (5.647ms)
+✔ PowerShell sanitizers work offline without leaking raw log text (4414.4556ms)
+✔ controlled keep-alive is explicit, longer than spacing, and does not change request limits (0.3144ms)
+✔ warm without actual reuse stays NOT_OBSERVED, with policy and gap evidence (0.3389ms)
+ℹ tests 45
+ℹ suites 0
+ℹ pass 45
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9326.1857
+{"event":"NODE_VERSION_VERIFIED","required":">=24.22.1 <25","version":"v24.22.1","execPath":"C:\\Program Files\\nodejs\\node.exe","platform":"win32","arch":"x64"}
+
+ RUN  v3.2.7 D:/Source/SuiBa/.worktrees/mobile-recovery-guidance/sui-ai-trading-bot
+
+ ✓ tests/http-errors.test.ts (22 tests | 4 skipped) 211ms
+ ✓ tests/node-version.test.ts (12 tests) 718ms
+ ✓ tests/perf-detailed-metrics.test.ts (12 tests) 1054ms
+   ✓ detects event-loop spikes above the configured threshold with memory  947ms
+ ✓ tests/chart-history.test.ts (12 tests) 997ms
+   ✓ worker thread reuses persisted cache and coalesces equal requests  751ms
+stderr | tests/operations.test.ts > PAPER operation monitor > detects stalled updates even if a market request is stuck
+{"event":"MARKET_DATA_STALLED","evaluatedAt":1793110970796,"reasonDetail":"CANDLE_STALE","candleAgeSeconds":360.001,"lastFetchSuccessAgeSeconds":null,"lastValidatedMarketAgeSeconds":360.001,"fetching":false,"fetchStartedAt":null,"fetchElapsedMs":null,"lastFetchDurationMs":null,"nextFetchAt":null,"latestClosedAt":1793110610795}
+
+ ✓ tests/backtest-engine.test.ts (16 tests) 1371ms
+stdout | tests/dashboard-feed.test.ts > summary is small, keeps safety and does not send charts/logs
+{"beforeBytes":604307,"summaryBytes":1941,"gzipSummaryBytes":1000,"reduction":0.9967880564017958}
+
+ ✓ tests/paper-recovery.test.ts (39 tests) 1528ms
+   ✓ scans all 30,000 records without sorting or skipping old history  1005ms
+ ✓ tests/operations.test.ts (27 tests) 805ms
+ ✓ tests/dashboard-feed.test.ts (10 tests) 753ms
+ ✓ tests/agent-narration.test.ts (156 tests) 1811ms
+ ✓ tests/paper-recovery-engine.test.ts (36 tests) 1712ms
+   ✓ actual DB lock during Sui evidence closes engine gate (manual=false)  407ms
+   ✓ actual DB lock during Sui evidence closes engine gate (manual=true)  354ms
+ ✓ tests/display-performance.test.ts (6 tests) 739ms
+   ✓ invalidates display tokens for external updates, rollback and reopened services  395ms
+   ✓ does not parse malformed future rows before their SQL timestamp enters the window  306ms
+ ✓ tests/circuit-breaker.test.ts (11 tests) 635ms
+   ✓ survives 48 simulated hours with repeated outages and bounded recent telemetry  595ms
+ ✓ tests/candle-reconstruction.test.ts (21 tests) 215ms
+ ✓ tests/market-scheduler.test.ts (20 tests) 381ms
+ ✓ tests/core.test.ts (36 tests) 411ms
+ ✓ tests/api-access.test.ts (15 tests | 3 skipped) 76ms
+ ✓ tests/sui-diagnostics.test.ts (11 tests | 1 skipped) 56ms
+ ✓ tests/strategy-segments.test.tsx (7 tests) 302ms
+ ✓ tests/validation-control.test.ts (15 tests) 192ms
+ ✓ tests/bot-vital.test.ts (44 tests) 372ms
+ ✓ tests/strategy-panel.test.tsx (7 tests) 564ms
+ ✓ tests/profit-guard-worker.test.ts (9 tests) 177ms
+ ✓ tests/operations-layers.test.tsx (3 tests) 199ms
+ ✓ tests/settings-ui.test.ts (13 tests) 182ms
+ ✓ tests/validation-ui.test.ts (12 tests) 229ms
+ ✓ tests/chart-presentation.test.ts (10 tests) 109ms
+ ✓ tests/architecture.test.ts (1 test) 169ms
+ ✓ tests/sqlite-lock.test.ts (28 tests) 4728ms
+   ✓ keeps LOCKED, permanent and unsupported errcode 779 fail-closed  320ms
+   ✓ fails closed promptly on a 10000ms writer lock without implicit retries  323ms
+ ✓ tests/deepbook-validation.test.ts (37 tests) 5408ms
+   ✓ aggregates a synthetic complete 24h fixture without truncating at 200 rows  3450ms
+   ✓ persists session, measurements, sticky emergency and existing SQLite history through reboot  363ms
+   ✓ keeps helper initialization idempotent without reading or editing production env  699ms
+   ✓ initializes a separate P0 profile without replacing the existing test credentials or env  666ms
+ ✓ tests/buy-celebration.test.tsx (18 tests) 198ms
+ ✓ tests/deepbook-provider.test.ts (34 tests) 157ms
+ ✓ tests/sui-observations.test.ts (13 tests) 121ms
+ ✓ tests/ema-gap-shrink.test.ts (14 tests) 59ms
+stdout | tests/chart-indicators.test.ts > computes 2136 consecutive bars without changing values or inputs
+{"chartSeriesBars":2136,"elapsedMs":44.799600000000055}
+
+ ✓ tests/chart-indicators.test.ts (4 tests) 100ms
+ ✓ tests/read-budget.test.ts (7 tests) 63ms
+ ✓ tests/price-ticker.test.tsx (23 tests) 131ms
+ ✓ tests/presentation.test.ts (4 tests) 68ms
+ ✓ tests/connectivity-ui.test.tsx (3 tests) 77ms
+ ✓ tests/recovery-guidance.test.tsx (8 tests) 126ms
+ ✓ tests/operation-overview.test.ts (6 tests) 73ms
+ ✓ tests/verify-token.test.ts (21 tests) 56ms
+ ✓ tests/market-diagnostics.test.ts (9 tests) 54ms
+ ✓ tests/header-avatar.test.tsx (19 tests) 51ms
+ ✓ tests/sui-health.test.ts (14 tests) 39ms
+ ✓ tests/chart-gaps-p1.test.ts (3 tests) 43ms
+ ✓ tests/panel-rehome.test.tsx (8 tests) 49ms
+ ✓ tests/profit-guard.test.ts (33 tests) 39ms
+ ✓ tests/operation-bar.test.tsx (10 tests) 32ms
+ ✓ tests/operation-controls.test.tsx (16 tests) 43ms
+ ✓ tests/runtime-build.test.ts (3 tests) 34ms
+ ✓ tests/api-recovery.test.ts (4 tests) 24ms
+ ✓ tests/circuit-order-gate.test.ts (1 test) 24ms
+ ✓ tests/error-shout.test.tsx (6 tests) 21ms
+ ✓ tests/mobile-nav.test.tsx (4 tests) 22ms
+ ✓ tests/dedup-pass.test.tsx (7 tests) 20ms
+ ✓ tests/strategy-view.test.ts (15 tests) 23ms
+ ✓ tests/login-screen.test.tsx (1 test) 20ms
+ ✓ tests/settings-editor.test.ts (8 tests) 18ms
+ ✓ tests/browser-session-login.test.ts (3 tests) 14ms
+ ✓ tests/sdk-deadline.test.ts (3 tests) 21ms
+ ✓ tests/browser-session.test.ts (4 tests) 8ms
+ ✓ tests/preflight-metrics.test.ts (3 tests) 12ms
+ ✓ tests/perf-detailed-window.test.ts (1 test) 11ms
+ ✓ tests/price-line.test.ts (3 tests) 17ms
+ ✓ tests/strategy-evidence.test.ts (7 tests) 12ms
+ ✓ tests/docker-preflight-config.test.ts (3 tests) 11ms
+ ✓ tests/pattern-lock.test.ts (4 tests) 6ms
+ ✓ tests/login-attempt.test.ts (3 tests) 6ms
+ ✓ tests/rsi-target-price.test.ts (3 tests) 5ms
+ ✓ tests/bot-state.test.ts (5 tests) 5ms
+ ✓ tests/strategy-settings-merge.test.tsx (7 tests) 10ms
+ ✓ tests/paper-only.test.ts (3 tests) 11384ms
+   ✓ refuses LIVE with geckoterminal before opening a database or starting a server  5021ms
+   ✓ refuses LIVE with deepbook before opening a database or starting a server  4479ms
+   ✓ refuses LIVE with auto before opening a database or starting a server  1882ms
+
+ Test Files  72 passed (72)
+      Tests  1008 passed | 8 skipped (1016)
+   Start at  23:16:48
+   Duration  12.35s (transform 7.61s, setup 2.14s, collect 30.22s, tests 39.41s, environment 21ms, prepare 14.30s)

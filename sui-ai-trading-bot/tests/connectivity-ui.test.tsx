@@ -49,3 +49,22 @@ it("shows resumed only for a confirmed transition with an open order gate", () =
   ).not.toContain("PAPER検証を再開しました");
   db.close();
 });
+it("distinguishes a running bot with orders paused from manual stop and failed state reads", () => {
+  const db = new BotDatabase(":memory:"),
+    m = new OperationMonitor(db);
+  db.set("runtime", { ...db.runtime(), running: true });
+  // No market evidence: the order gate is closed, but runtime is running.
+  const html = renderToStaticMarkup(
+    <ConnectivityPanel safety={m.safetySnapshot()} />,
+  );
+  expect(html).toContain("データ・安全条件を確認中");
+  expect(html).not.toContain("PAPER Botは停止中");
+  expect(html).not.toContain("手動で開始してください");
+  expect(html).toContain("データ・安全条件の確認を待っています");
+  const stale = renderToStaticMarkup(
+    <ConnectivityPanel safety={m.safetySnapshot()} stale />,
+  );
+  expect(stale).toContain("稼働・注文可否は未確認");
+  expect(stale).not.toContain("<dd>注文禁止</dd>");
+  db.close();
+});

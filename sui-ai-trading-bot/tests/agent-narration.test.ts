@@ -290,6 +290,32 @@ describe("worker decision telemetry (read-only, fail-closed)", () => {
 });
 
 describe("agent narration: initialisation", () => {
+  it.each(["DEGRADED", "RECOVERING"] as const)(
+    "distinguishes automatic recovery from manual start while %s",
+    (connectivity) => {
+      const { monitor } = fixture();
+      const d = monitor.snapshot(NOW);
+      d.safety.connectivity = connectivity;
+      d.safety.resumePending = true;
+      const automatic = advanceNarration(
+        emptyNarrationState(),
+        d,
+        "sleeping",
+        NOW,
+      );
+      expect(automatic.entries[0].text).toContain("自動復旧");
+      expect(automatic.entries[0].text).not.toContain("開始操作を待って");
+      d.safety.resumePending = false;
+      const manual = advanceNarration(
+        emptyNarrationState(),
+        d,
+        "sleeping",
+        NOW,
+      );
+      expect(manual.entries[0].text).toContain("手動開始");
+      expect(manual.entries[0].text).not.toContain("自動復旧");
+    },
+  );
   it("a stopped bot gets one status entry and the sleep pose", () => {
     const { monitor } = fixture();
     const d = monitor.snapshot(NOW);
@@ -1492,9 +1518,7 @@ describe("agent narration: watch declaration", () => {
     ]);
     const nearMiss = state.entries.filter((e) => e.kind === "nearMiss");
     expect(nearMiss).toHaveLength(1);
-    expect(nearMiss[0].text).toBe(
-      "RSI、あと2まで来てたのに…なんで離れるねん",
-    );
+    expect(nearMiss[0].text).toBe("RSI、あと2まで来てたのに…なんで離れるねん");
     expect(count(state, "宣言は取り下げ")).toBe(0);
     expect(state.watchScore.misses).toBe(1);
   });
@@ -2622,9 +2646,7 @@ describe("buy-run line narration", () => {
     expect(murmurs[0].text).toBe("ラインまで あと-1.4%。じわじわ来てる");
     const reached = ofKind(state, "priceLineReached");
     expect(reached).toHaveLength(1);
-    expect(reached[0].text).toBe(
-      "届いた！2.1 USDCタッチ。あとはRSIの反発待ち",
-    );
+    expect(reached[0].text).toBe("届いた！2.1 USDCタッチ。あとはRSIの反発待ち");
     expect(state.priceLine?.reached).toBe(true);
   });
 

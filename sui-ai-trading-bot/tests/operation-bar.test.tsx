@@ -37,13 +37,12 @@ describe("operation bar states", () => {
     const html = render({ running: true });
     expect(html).toContain("PAPER運用：運用中");
     expect(html).toContain("operation-bar tone-ok");
-    // Icon only: the name lives in aria-label/title — the same
-    // name the old strategy-tab panel used, so the app has
-    // exactly one stop.
+    // A visible label and the accessible name identify the same action.
     expect(html).toContain(
       '<button type="button" class="operation-icon-button stop" aria-label="PAPER運用停止" title="PAPER運用停止">',
     );
     expect(html).toContain('stroke="#ff7d9c"');
+    expect(html).toContain("<span>PAPER運用停止</span>");
     expect(html).not.toContain("PAPER運用開始");
     expect(html).not.toContain("解除の手順へ");
   });
@@ -158,13 +157,18 @@ describe("operation bar wiring (main.tsx)", () => {
     expect(css).toContain("nav.has-avatar {\n  padding-top: 70px;\n}");
   });
 
-  it("sizes the bar's icon button at 30px, the shared icon button at 38px", () => {
+  it("gives labelled operation buttons a touch target of at least 44px", () => {
     expect(css).toContain(
-      ".operation-bar .operation-icon-button {\n  width: 30px;\n  height: 30px;\n  min-height: 30px;\n  border-radius: 9px;\n}",
+      ".operation-bar .operation-icon-button {\n  width: auto;",
     );
     expect(css).toContain(
       "\n.operation-icon-button {\n  display: inline-flex;",
     );
-    expect(css).toContain("width: 38px;\n  height: 38px;\n  min-height: 38px;");
+    const block = css.slice(
+      css.indexOf(".operation-bar .operation-icon-button {"),
+      css.indexOf(".operation-bar .operation-icon-button svg"),
+    );
+    expect(block).toContain("min-height: 44px;");
+    expect(block).toContain("min-width: 44px;");
   });
 });

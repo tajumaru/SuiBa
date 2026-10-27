@@ -132,7 +132,7 @@ export function startRejectionReason(code: string): string {
     MARKET_FETCH_IN_PROGRESS:
       "市場データの取得が終わっていないため開始できませんでした。取得が終わるまで少し待ってから、もう一度開始してください",
     PAPER_RECOVERY_REQUIRED:
-      "通信の復旧確認が完了していないため開始できませんでした。「運用検証」の診断で接続状態を確認してください",
+      "通信の安全確認が未完了です。通信診断で復旧状況を確認し、確認完了までお待ちください。",
     API_BACKOFF:
       "APIの再試行待機中のため開始できませんでした。待機が終わってからもう一度開始してください（次に試せる時刻は「運用検証」で確認できます）",
     RESET_REQUIRED:

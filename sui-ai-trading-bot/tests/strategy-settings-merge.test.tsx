@@ -47,9 +47,9 @@ describe("strategy / settings tab merge (main.tsx wiring)", () => {
   });
 
   it("points the tab-independent notices at the strategy tab", () => {
-    expect(main).toContain("戦略の「停止状態の解除」から解除後");
+    expect(main).toContain('onOpenStrategy={() => setTab("Strategy")}');
     expect(main).not.toContain("設定の「停止状態の解除」");
-    expect(main).toContain("戦略で保存済みの条件を確認し");
+    expect(main).toContain("<RecoveryGuidance");
   });
 
   it("drops the settings entry from the mobile tab bar metadata", () => {
