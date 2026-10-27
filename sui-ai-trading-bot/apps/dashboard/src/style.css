@@ -2503,11 +2503,6 @@ th {
 .agent-feed-score-item.prog {
   color: #ffd166;
 }
-.agent-feed-score-note {
-  font-size: 11px;
-  font-weight: 400;
-  color: #71809a;
-}
 .agent-feed-list {
   margin-top: 14px;
   display: flex;
