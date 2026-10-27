@@ -2205,6 +2205,28 @@ th {
   .agent-avatar.shouting .agent-avatar-bubble {
     animation: agent-avatar-bubble-pop 0.18s ease;
   }
+  /* While the error lasts, the scream artwork itself keeps
+     trembling in small jitter steps (the entrance shake above is
+     one-shot on the whole avatar). The slight scale keeps the
+     jitter from opening gaps at the circle's edge. */
+  .agent-avatar.shouting .agent-avatar-scream {
+    animation: agent-avatar-scream-tremble 0.3s linear infinite;
+  }
+  @keyframes agent-avatar-scream-tremble {
+    0%,
+    100% {
+      transform: scale(1.05) translate(0, 0) rotate(0deg);
+    }
+    25% {
+      transform: scale(1.05) translate(0.7px, -0.5px) rotate(0.6deg);
+    }
+    50% {
+      transform: scale(1.05) translate(-0.6px, 0.4px) rotate(-0.5deg);
+    }
+    75% {
+      transform: scale(1.05) translate(0.5px, 0.6px) rotate(0.4deg);
+    }
+  }
   @keyframes agent-avatar-shout-shake {
     0%,
     100% {
