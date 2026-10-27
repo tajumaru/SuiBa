@@ -898,6 +898,16 @@ describe("agent narration: fail-closed", () => {
     expect(agentPose(state, d, vital, NOW + 360_001)).toBe("laptop");
   });
 
+  it("flashes the smug smile for a fresh watch hit, then lets it expire", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, null);
+    const state = emptyNarrationState();
+    state.lastHitAt = NOW;
+    const vital = botVital(d, false, NOW, NOW);
+    expect(agentPose(state, d, vital, NOW)).toBe("pointSmile");
+    expect(agentPose(state, d, vital, NOW + 360_001)).toBe("laptop");
+  });
+
   it("does not narrate or point for old/future evidence or unconfirmed running state", () => {
     const { db, monitor } = fixture();
     const d = runningSnapshot(
@@ -1415,13 +1425,19 @@ describe("agent narration: watch declaration", () => {
       }),
     ]);
     const all = texts(state);
-    const hit = all.findIndex((t) => t.includes("宣言どおりだね"));
+    const hit = all.findIndex((t) => t.includes("言うてたやろ"));
     const next = all.findIndex((t) => t.includes("次の注目はRSIに決めた"));
     expect(all[hit]).toContain("MACD、成立した。今-0.001");
     expect(hit).toBeGreaterThanOrEqual(0);
     expect(next).toBeGreaterThan(hit);
     expect(state.watch?.key).toBe("rsiRecovery");
     expect(state.watch?.called).toBe(false);
+    // The hit is its own entry kind, and it timestamps the pose link.
+    const hitEntry = state.entries.find((e) => e.kind === "watchHit");
+    expect(hitEntry?.text).toBe(
+      "MACD、成立した。今-0.001。ほらな、言うてたやろ",
+    );
+    expect(state.lastHitAt).toBe(NOW - 50_000);
   });
 
   it("a watch hit via the shrink route says the gap shrank, not that EMA20 crossed above", () => {
@@ -1441,7 +1457,7 @@ describe("agent narration: watch declaration", () => {
     ]);
     const all = texts(state);
     expect(all.some((t) => t.includes("差の縮小が続いての成立"))).toBe(true);
-    expect(all.some((t) => t.includes("の上、宣言どおりだね"))).toBe(false);
+    expect(all.some((t) => t.includes("の上。ほらな"))).toBe(false);
     expect(state.watch?.key).not.toBe("emaUp");
   });
 
@@ -1591,7 +1607,7 @@ describe("agent narration: watch declaration", () => {
       }),
     ]);
     const watchLines = texts(state).filter((t) =>
-      /注目|宣言|見てる|切り替える|決めた/.test(t),
+      /注目|宣言|見てる|切り替える|決めた|言うてたやろ/.test(t),
     );
     expect(watchLines.length).toBeGreaterThanOrEqual(3);
     for (const line of watchLines) {

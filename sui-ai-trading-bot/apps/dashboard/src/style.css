@@ -2602,6 +2602,16 @@ th {
   border-color: rgba(237, 201, 128, 0.55);
   color: #edc980;
 }
+/* A 的中 (a declared watch that clicked) wears the green of a met
+   condition — the near miss's counterpart — with its own tag. */
+.agent-feed-entry.watchHit {
+  border-left-color: #3ecf6f;
+  background: #0f2318;
+}
+.agent-feed-entry-tag.hit {
+  border-color: rgba(62, 207, 111, 0.55);
+  color: #3ecf6f;
+}
 /* A recorded buy fill keeps a gold frame and tag for good, so a
    buy stays recognisable in the history. The pulse below plays
    once, on the entry whose arrival opened a celebration. */

@@ -33,6 +33,9 @@ import { number as fmtNumber, percent as fmtPercent } from "./presentation.ts";
  * while watching is named, and only that line slips into Kansai
  * dialect, the character's disappointment leaking through. A watch
  * that never came close is withdrawn in the plain words, as before.
+ * The hit line is its counterpart: the facts stay as recorded, the
+ * close turns smug in the same dialect, and the pose flashes the
+ * pointing smile while the hit is fresh.
  *
  * Every declaration is also scored: a watch that clicks while it is
  * being watched is a 的中 (hit), one withdrawn for drifting away is
@@ -69,6 +72,7 @@ export type NarrationKind =
   | "recovery" // connectivity recovered / run resumed
   | "review" // a ふりかえり look-back over the watch score so far
   | "nearMiss" // a called watch withdrawn — it came close, then slipped away
+  | "watchHit" // a declared watch clicked — the smug counterpart of a near miss
   | "alert" // a 速報 breaking in on a sudden price / volume move
   | "status"; // feed-initialised status line
 
@@ -135,6 +139,11 @@ export interface NarrationState {
    * on the very cycle an upward alert fired, and never celebrates a
    * downward one. */
   lastAlert: { at: number; direction: SpikeAlertDirection } | null;
+  /** When a watch hit was last TOLD (the smug line), for pose
+   * linkage: the character flashes its pointing smile while the
+   * hit is fresh. Silent settlements (a hit inside a BUY) do not
+   * set this — the trade celebration covers those. */
+  lastHitAt: number | null;
   /** The declared watch target, or null when nothing is watched. */
   watch: WatchTarget | null;
   /** Cumulative session score of declared watches (see WatchScore). */
@@ -186,6 +195,7 @@ export function emptyNarrationState(): NarrationState {
     priceHistory: [],
     alertCooldown: 0,
     lastAlert: null,
+    lastHitAt: null,
     watch: null,
     watchScore: { declared: 0, hits: 0, misses: 0, unreviewed: 0 },
     sessionStartPrice: null,
@@ -630,14 +640,19 @@ function approachWatchText(key: EntryCondKey, dec: DecisionTelemetry): string {
   return `MACD、${fmtNumber(dec.histogram, 4)}まで戻った。宣言してたやつ、来てるよ`;
 }
 
+/**
+ * The hit line: the recorded facts stay exactly as measured, and
+ * the close turns smug — the Kansai catchphrase 「ほらな、言うてた
+ * やろ」, the counterpart of the near-miss line's dialect slip.
+ */
 function hitWatchText(key: EntryCondKey, dec: DecisionTelemetry): string {
   if (key === "emaUp")
     return dec.conditions.emaGapShrinking
-      ? `EMA、成立した。${fmtNumber(dec.ema20, 4)}はまだ${fmtNumber(dec.ema50, 4)}の下、差の縮小が続いての成立だね`
-      : `EMA、成立した。${fmtNumber(dec.ema20, 4)}が${fmtNumber(dec.ema50, 4)}の上、宣言どおりだね`;
+      ? `EMA、成立した。${fmtNumber(dec.ema20, 4)}はまだ${fmtNumber(dec.ema50, 4)}の下、差の縮小が続いての成立。ほらな、言うてたやろ`
+      : `EMA、成立した。${fmtNumber(dec.ema20, 4)}が${fmtNumber(dec.ema50, 4)}の上。ほらな、言うてたやろ`;
   if (key === "rsiRecovery")
-    return `RSI、上抜けた。${fmtNumber(dec.previousRsi, 1)}→${fmtNumber(dec.rsi, 1)}、宣言どおりだね`;
-  return `MACD、成立した。今${fmtNumber(dec.histogram, 4)}、宣言どおりだね`;
+    return `RSI、上抜けた。${fmtNumber(dec.previousRsi, 1)}→${fmtNumber(dec.rsi, 1)}。ほらな、言うてたやろ`;
+  return `MACD、成立した。今${fmtNumber(dec.histogram, 4)}。ほらな、言うてたやろ`;
 }
 
 function withdrawWatchText(key: EntryCondKey): string {
@@ -713,7 +728,7 @@ function processWatch(
     // next watch right away (told after the cycle's own line).
     const next = chooseWatchTarget(dec);
     return {
-      before: [draft(hitWatchText(current.key, dec))],
+      before: [draft(hitWatchText(current.key, dec), "watchHit")],
       after: next
         ? [
             draft(
@@ -1507,6 +1522,7 @@ export function advanceNarration(
   let priceHistory = prev.priceHistory;
   let alertCooldown = prev.alertCooldown;
   let lastAlert = prev.lastAlert;
+  let lastHitAt = prev.lastHitAt;
   const dec = d.decision;
   if (dec && (lastDecisionAt == null || dec.evaluatedAt > lastDecisionAt)) {
     if (sessionStartPrice == null) sessionStartPrice = dec.price;
@@ -1518,6 +1534,8 @@ export function advanceNarration(
       // frame the cycle's own narration (before / after).
       const outcome = processWatch(watch, dec);
       watch = outcome.watch;
+      if (outcome.before.some((draft) => draft.kind === "watchHit"))
+        lastHitAt = dec.evaluatedAt;
       drafts.push(...outcome.before);
       drafts.push({
         at: dec.evaluatedAt,
@@ -1626,6 +1644,7 @@ export function advanceNarration(
       priceHistory,
       alertCooldown,
       lastAlert,
+      lastHitAt,
       seen: [...seen],
       pendingCandidateIds: [...pending].slice(-50),
       lastDecisionAt,
@@ -1728,6 +1747,18 @@ export function agentPose(
     if (met >= 2) return "point";
     if (met >= 1 && state.priceRising) return "point";
   }
+  // A watch hit told on a recent cycle flashes the smug smile while
+  // it is fresh — but only when the decision itself claims no
+  // pointing pose: a hit that leaves two conditions met still
+  // points at what remains. (The hit line sits a few entries back
+  // by now, framed by the cycle's own narration, so the pose keys
+  // off the recorded hit time, like the alert linkage above.)
+  if (
+    state.lastHitAt != null &&
+    now >= state.lastHitAt &&
+    now - state.lastHitAt <= DECISION_FRESH_MS
+  )
+    return "pointSmile";
   return "laptop";
 }
 
