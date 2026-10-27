@@ -28,11 +28,323 @@ import { GrpcTypes } from "@mysten/sui/grpc";
 
 const dbs: BotDatabase[] = [];
 const realClients: ReadOnlySuiClient[] = [];
+
+// Investigation-only regressions: exercise the real SDK decoding and engine,
+// with synthetic HTTP responses and an isolated in-memory database.
+it.each([
+  "grpc-unavailable",
+  "missing-metadata",
+  "wrong-decimals",
+  "decode",
+  "http-403",
+])(
+  "investigation: %s health failure prevents market acquisition and latches SUI_READ_FAILED after transport recovers",
+  async (mode) => {
+    const t = fixture(),
+      events: SuiObservation[] = [];
+    let restored = false,
+      success = 0;
+    const client = new ReadOnlySuiClient(undefined, {
+      onObservation: (event) => events.push(event),
+      fetch: async () => {
+        if (!restored && mode === "http-403")
+          return new Response(null, { status: 403 });
+        if (!restored && mode === "grpc-unavailable")
+          return new Response("", {
+            headers: {
+              "content-type": "application/grpc-web-text",
+              "grpc-status": "14",
+            },
+          });
+        if (!restored && mode === "decode")
+          return new Response("invalid-frame", {
+            headers: { "content-type": "application/grpc-web-text" },
+          });
+        const payload = GrpcTypes.GetCoinInfoResponse.toBinary(
+          GrpcTypes.GetCoinInfoResponse.create({
+            ...(restored || mode !== "missing-metadata"
+              ? {
+                  metadata: {
+                    decimals: restored ? (success++ % 2 ? 6 : 9) : 33,
+                  },
+                }
+              : {}),
+          }),
+        );
+        const frame = (flag: number, bytes: Uint8Array) => {
+          const b = Buffer.alloc(5 + bytes.length);
+          b[0] = flag;
+          b.writeUInt32BE(bytes.length, 1);
+          b.set(bytes, 5);
+          return b;
+        };
+        return new Response(
+          Buffer.concat([
+            frame(0, payload),
+            frame(128, Buffer.from("grpc-status: 0\r\n")),
+          ]).toString("base64"),
+          { headers: { "content-type": "application/grpc-web-text" } },
+        );
+      },
+    });
+    realClients.push(client);
+    Object.defineProperty(t.sui, "status", { get: () => client.status });
+    t.sui.health.mockImplementation((force) => client.health(force));
+    await t.tick();
+    expect(t.market.frames).not.toHaveBeenCalled();
+    expect(t.db.runtime()).toMatchObject({
+      running: false,
+      error: "SUI_READ_FAILED",
+    });
+    expect(events.some((e) => e.layer === "METADATA" && !e.success)).toBe(true);
+    expect(
+      t.db
+        .history<{ code: string }>("operation_events")
+        .some((e) => e.code === "HEALTH_SUI_READ_FAILED"),
+    ).toBe(true);
+    restored = true;
+    await t.tick(60000);
+    expect(client.status.healthy).toBe(true);
+    expect(t.market.frames).toHaveBeenCalledTimes(1);
+    // Successful communication does not clear a hard stop/operator-review latch.
+    expect(t.db.runtime()).toMatchObject({
+      running: false,
+      error: "SUI_READ_FAILED",
+    });
+    expect(t.engine.monitor.ordersAllowed()).toBe(false);
+    expect(t.db.history("paper_orders")).toHaveLength(0);
+    expect(t.db.history("paper_trades")).toHaveLength(0);
+  },
+);
+
+it("investigation: an auxiliary balance DNS failure pauses a running engine before the next tick", async () => {
+  const t = fixture();
+  const client = new ReadOnlySuiClient(undefined, {
+    fetch: async () => {
+      throw new TypeError("fixture", {
+        cause: Object.assign(Error("fixture"), { code: "EAI_AGAIN" }),
+      });
+    },
+  });
+  realClients.push(client);
+  await expect(client.balance("0x" + "1".repeat(64), SUI)).rejects.toThrow(
+    "SUI_READ_FAILED",
+  );
+  expect(t.sui.health).not.toHaveBeenCalled();
+  expect(t.db.runtime()).toMatchObject({ running: false, error: null });
+  expect(t.engine.monitor.safety()).toMatchObject({
+    connectivity: "DEGRADED",
+    resumePending: true,
+  });
+  expect(t.engine.monitor.ordersAllowed()).toBe(false);
+  expect(t.db.history("paper_orders")).toHaveLength(0);
+});
+
+function investigationMetadataResponse(decimals: number) {
+  const payload = GrpcTypes.GetCoinInfoResponse.toBinary(
+    GrpcTypes.GetCoinInfoResponse.create({ metadata: { decimals } }),
+  );
+  const frame = (flag: number, bytes: Uint8Array) => {
+    const b = Buffer.alloc(5 + bytes.length);
+    b[0] = flag;
+    b.writeUInt32BE(bytes.length, 1);
+    b.set(bytes, 5);
+    return b;
+  };
+  return new Response(
+    Buffer.concat([
+      frame(0, payload),
+      frame(128, Buffer.from("grpc-status: 0\r\n")),
+    ]).toString("base64"),
+    { headers: { "content-type": "application/grpc-web-text" } },
+  );
+}
+
+it("investigation: first Sui 429 keeps its stop reason after a successful retry and later healthy ticks", async () => {
+  const t = fixture();
+  let calls = 0,
+    successes = 0;
+  const client = new ReadOnlySuiClient(undefined, {
+    fetch: async () => {
+      if (calls++ === 0)
+        return new Response(null, {
+          status: 429,
+          headers: { "Retry-After": "0" },
+        });
+      return investigationMetadataResponse(successes++ % 2 ? 6 : 9);
+    },
+  });
+  realClients.push(client);
+  Object.defineProperty(t.sui, "status", { get: () => client.status });
+  t.sui.health.mockImplementation((force) => client.health(force));
+  const ticking = t.tick();
+  await vi.advanceTimersByTimeAsync(1);
+  await ticking;
+  expect(calls).toBe(3);
+  expect(client.status.healthy).toBe(true);
+  expect(t.db.runtime()).toMatchObject({
+    running: false,
+    error: "UPSTREAM_HTTP_429",
+  });
+  expect(t.engine.monitor.ordersAllowed()).toBe(false);
+  await t.tick(60000);
+  expect(t.db.runtime()).toMatchObject({
+    running: false,
+    error: "UPSTREAM_HTTP_429",
+  });
+  expect(t.db.history("paper_orders")).toHaveLength(0);
+  expect(t.db.history("paper_trades")).toHaveLength(0);
+});
+
+it.each([2, 4])(
+  "investigation: %i consecutive partial Sui outages recover only before the episode deadline",
+  async (failedCycles) => {
+    const t = fixture();
+    let fail = true,
+      calls = 0;
+    const client = new ReadOnlySuiClient(undefined, {
+      fetch: async () => {
+        const sui = calls++ % 2 === 0;
+        if (fail && sui)
+          throw new TypeError("fixture", {
+            cause: Object.assign(Error("fixture"), { code: "EAI_AGAIN" }),
+          });
+        return investigationMetadataResponse(sui ? 9 : 6);
+      },
+    });
+    realClients.push(client);
+    Object.defineProperty(t.sui, "status", { get: () => client.status });
+    t.sui.health.mockImplementation((force) => client.health(force));
+    for (let i = 0; i < failedCycles; i++) {
+      await t.tick(i ? 30000 : 0);
+      expect(t.db.runtime()).toMatchObject({ running: false, error: null });
+      expect(t.engine.monitor.ordersAllowed()).toBe(false);
+    }
+    expect(t.market.frames).not.toHaveBeenCalled();
+    fail = false;
+    await t.tick(30000);
+    expect(client.status.healthy).toBe(true);
+    expect(t.engine.monitor.safety().connectivity).toBe("RECOVERING");
+    expect(t.db.runtime().running).toBe(false);
+    await t.tick(60000);
+    if (failedCycles === 2) {
+      expect(t.db.runtime()).toMatchObject({ running: true, error: null });
+      expect(t.engine.monitor.safety().connectivity).toBe("HEALTHY");
+    } else {
+      // At 180s the episode expires even though transport and metadata recover.
+      expect(t.db.runtime()).toMatchObject({
+        running: false,
+        error: "PAPER_RECOVERY_EXHAUSTED",
+      });
+      expect(t.engine.monitor.ordersAllowed()).toBe(false);
+    }
+    expect(t.db.history("paper_orders")).toHaveLength(0);
+    expect(t.db.history("paper_trades")).toHaveLength(0);
+  },
+);
+
+it("investigation: one health failure is counted by HEALTH and MARKET and the next reaches the consecutive-error stop", async () => {
+  const t = fixture();
+  t.sui.health.mockRejectedValue(Error("SUI_READ_FAILED"));
+  await t.tick();
+  expect(t.engine.monitor.state()).toMatchObject({
+    apiErrors: 2,
+    consecutiveErrors: 2,
+  });
+  expect(t.db.runtime().error).toBe("SUI_READ_FAILED");
+  await t.tick(60000);
+  expect(t.engine.monitor.state()).toMatchObject({
+    apiErrors: 4,
+    consecutiveErrors: 4,
+  });
+  expect(
+    t.db
+      .history<{ code: string }>("operation_events")
+      .some((e) => e.code === "CONSECUTIVE_API_ERRORS"),
+  ).toBe(true);
+  // The runtime preserves the first hard error, while safety holds the last stop.
+  expect(t.db.runtime().error).toBe("SUI_READ_FAILED");
+  expect(t.engine.monitor.safety().lastStopReason).toBe("SUI_READ_FAILED");
+  expect(t.db.history("paper_orders")).toHaveLength(0);
+});
+
+it("investigation: auxiliary failure during pending health invalidates both late metadata successes and requires fresh recovery cycles", async () => {
+  const t = fixture();
+  const client = new ReadOnlySuiClient(undefined, {
+    fetch: async () => {
+      throw Error("EXTERNAL_NETWORK_FORBIDDEN");
+    },
+  });
+  realClients.push(client);
+  const releases: (() => void)[] = [];
+  const metadata = vi.fn(
+    ({ coinType }: { coinType: string }) =>
+      new Promise<{ coinMetadata: { decimals: number } }>((resolve) => {
+        releases.push(() =>
+          resolve({ coinMetadata: { decimals: coinType === SUI ? 9 : 6 } }),
+        );
+      }),
+  );
+  // SDK boundary injection allows the exact read/health interleaving to be
+  // controlled, independent from the transport's per-API serialization.
+  (client as unknown as { client: unknown }).client = {
+    getCoinMetadata: metadata,
+    getBalance: async () => {
+      t.fault({
+        api: "Sui gRPC",
+        host: "fullnode.mainnet.sui.io",
+        url: "https://fullnode.mainnet.sui.io/[redacted]",
+        operation: "SUI_GRPC_READ",
+        code: "UPSTREAM_DNS_FAILED",
+        phase: "DNS",
+        timeoutType: null,
+        causeCode: "EAI_AGAIN",
+      });
+      throw Error("fixture");
+    },
+  };
+  Object.defineProperty(t.sui, "status", { get: () => client.status });
+  t.sui.health.mockImplementation((force) => client.health(force));
+  const ticking = t.tick();
+  expect(metadata).toHaveBeenCalledTimes(2);
+  await expect(client.balance("0x" + "1".repeat(64), SUI)).rejects.toThrow(
+    "SUI_READ_FAILED",
+  );
+  releases.forEach((release) => release());
+  await ticking;
+  expect(client.status.healthy).toBe(false);
+  expect(t.market.frames).not.toHaveBeenCalled();
+  expect(t.db.runtime()).toMatchObject({ running: false, error: null });
+  expect(t.engine.monitor.safety().connectivity).toBe("DEGRADED");
+  expect(t.engine.monitor.ordersAllowed()).toBe(false);
+  metadata.mockImplementation(({ coinType }) =>
+    Promise.resolve({ coinMetadata: { decimals: coinType === SUI ? 9 : 6 } }),
+  );
+  await t.tick(60000);
+  expect(metadata).toHaveBeenCalledTimes(4);
+  expect(t.engine.monitor.safety().connectivity).toBe("RECOVERING");
+  expect(t.db.runtime().running).toBe(false);
+  await t.tick(60000);
+  expect(metadata).toHaveBeenCalledTimes(6);
+  expect(t.engine.monitor.safety().connectivity).toBe("HEALTHY");
+  expect(t.db.runtime().running).toBe(true);
+  expect(t.db.history("paper_orders")).toHaveLength(0);
+  expect(t.db.history("paper_trades")).toHaveLength(0);
+});
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(Date.UTC(2026, 9, 23, 0, 1));
 });
-afterEach(() => {
+afterEach(async () => {
+  // New transport fixtures also exercise the shared breaker. Close it through
+  // its real successful probe so one synthetic outage cannot leak into another.
+  const probe = apiAccess.run(
+    "Sui gRPC",
+    "investigation-cleanup",
+    async () => undefined,
+  );
+  await vi.runAllTimersAsync();
+  await probe;
   for (const client of realClients.splice(0)) client.close();
   for (const db of dbs.splice(0)) db.close();
   apiAccess.restoreCooldowns(
