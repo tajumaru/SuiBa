@@ -97,6 +97,14 @@ describe("start rejection reasons (server 409 codes)", () => {
     expect(settingsPage).toContain("startRejectionReason(startFailure)");
     expect(settingsPage).toContain('role="alert"');
   });
+
+  it("a refused start stays off the global banner — the bar tells it alone", () => {
+    // The banner renders bannerError, and control() raises it for
+    // every command except start, whose refusal the operation bar
+    // already reports with the specific reason.
+    expect(main).toContain("<Reason code={bannerError} />");
+    expect(main).toContain('if (command !== "start") setBannerError(code);');
+  });
 });
 
 describe("paper operation controls clarity", () => {

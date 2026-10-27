@@ -241,6 +241,14 @@ function App() {
   const [token, setToken] = useState(""),
     [data, setData] = useState<State | null>(null),
     [error, setError] = useState(""),
+    // What the global error banner shows. It mirrors `error` except
+    // for a refused start: the operation bar already reports that
+    // where the button was pressed, with the specific next step, so
+    // the banner stays out of it instead of repeating a generic
+    // version of the same refusal at the top of the page. `error`
+    // itself still records the failure (the header character's
+    // shout reads it), only the banner is selective.
+    [bannerError, setBannerError] = useState(""),
     [channelError, setChannelError] = useState<string | null>(null),
     [tab, setTab] = useState("Live"),
     [timeframe, setTimeframe] = useState<300 | 900 | 3600>(300),
@@ -367,6 +375,7 @@ function App() {
           if (feedRef.current === feed && serialRef.current === serial) {
             setData(state);
             setError("");
+            setBannerError("");
           }
         },
       );
@@ -374,10 +383,13 @@ function App() {
         setData(result.state);
         setChannelError(result.channelError);
         setError("");
+        setBannerError("");
       }
     } catch (e) {
-      if (feedRef.current === feed && serialRef.current === serial)
+      if (feedRef.current === feed && serialRef.current === serial) {
         setError(errorCode(e));
+        setBannerError(errorCode(e));
+      }
     }
   }
   useEffect(() => {
@@ -397,8 +409,11 @@ function App() {
   // Resolves to null on success, or to the server's machine-readable
   // error code on failure, so the surface that issued the command
   // (for example the PAPER operation controls) can show the reason
-  // where the operator acted. The global error banner keeps showing
-  // as before.
+  // where the operator acted. A refused start is that surface's
+  // story alone — the operation bar tells it with the specific next
+  // step — so it does not also raise the global error banner; other
+  // commands (stop, emergency, release) keep the banner, having no
+  // local surface of their own.
   async function control(command: string): Promise<string | null> {
     try {
       serialRef.current++;
@@ -410,6 +425,7 @@ function App() {
     } catch (e) {
       const code = errorCode(e);
       setError(code);
+      if (command !== "start") setBannerError(code);
       return code;
     }
   }
@@ -493,9 +509,9 @@ function App() {
                 {channelError}
               </p>
             )}
-            {error && (
+            {bannerError && (
               <p role="alert" className="error">
-                <Reason code={error} />
+                <Reason code={bannerError} />
                 接続・管理トークンと運用状態を確認して再試行してください。
               </p>
             )}
