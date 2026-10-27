@@ -1,5 +1,7 @@
 # Sui取得失敗とBot停止：最新main重点調査
 
+追加検証：[実ソケット試験・競合／連続障害／復旧の追試](SUI_RPC_STOP_FOLLOWUP_20261027.md)。前回skipした8件と対象外2ファイルをlocalhost限定で実行し、最新main `e90840d`でも検証した。本書の前回検証結果は当時の履歴として保持する。
+
 調査基点：`1d550fbc56f1be9f38cc0fd10a574b3849735857`（2026-10-27取得のorigin/main）。専用ブランチ：`investigation/sui-rpc-stop-analysis`。Node.js **24.22.1**、固定lockのSDK **@mysten/sui 2.37.0**。本PRは文書・オフライン抽出スクリプト・テストのみ。本番コード、安全条件、timeout、retry、依存、設定を変更していない。既存Docker/Bot/DBへの操作・接続なし。テスト用の新規メモリDB／一時DBのみ使用。
 
 ## 結論と確度
