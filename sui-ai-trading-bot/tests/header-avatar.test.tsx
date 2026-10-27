@@ -148,9 +148,13 @@ describe("agent header avatar stylesheet", () => {
     // Desktop: the tab bar (rendered only while connected, like
     // the avatar) carries the clearance.
     expect(css).toContain("nav.has-avatar {\n  padding-top: 70px;\n}");
-    // Mobile: the tab bar is fixed, so the page top carries it.
-    expect(css).toContain("main.has-avatar {");
-    expect(css).toContain("padding-top: 70px;");
+    // Mobile: the dock takes its own space in the normal flow and
+    // cannot cover the recovery card or its buttons while scrolling.
+    expect(section).toContain(
+      ".agent-avatar-dock {\n    position: relative;\n    top: auto;\n    z-index: auto;",
+    );
+    expect(section).toContain("margin: 16px auto 0;");
+    expect(css).toContain("main.has-avatar {\n    padding-top: 16px;");
   });
 });
 

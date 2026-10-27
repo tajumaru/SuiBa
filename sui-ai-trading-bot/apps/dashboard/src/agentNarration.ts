@@ -628,7 +628,12 @@ function chooseWatchTarget(
 
 function makeWatch(key: EntryCondKey, dec: DecisionTelemetry): WatchTarget {
   const declaredDistance = watchDistance(key, dec);
-  return { key, declaredDistance, called: false, closestDistance: declaredDistance };
+  return {
+    key,
+    declaredDistance,
+    called: false,
+    closestDistance: declaredDistance,
+  };
 }
 
 /** A watch only lives while the bot is flat and still hunting. */
@@ -885,7 +890,14 @@ function processWatch(
         settled: null,
         nearMiss: null,
       }
-    : { before: [], after: [], watch: null, created: false, settled: null, nearMiss: null };
+    : {
+        before: [],
+        after: [],
+        watch: null,
+        created: false,
+        settled: null,
+        nearMiss: null,
+      };
 }
 
 export type ConditionChipTone = "met" | "close" | "far" | "back";
@@ -1339,6 +1351,17 @@ function initialEntry(
       kind: "stop",
       text: `安全停止中だよ。理由：${stopReasonText(d)}`,
     };
+  if (
+    vitalState !== "unknown" &&
+    ["DEGRADED", "RECOVERING"].includes(d.safety?.connectivity)
+  )
+    return {
+      at: now,
+      kind: "warning",
+      text: d.safety.resumePending
+        ? "注文を止めて、自動復旧を確認してるよ"
+        : "通信を確認中だよ。安全確認後も手動開始が必要だよ",
+    };
   if (vitalState === "sleeping")
     return d.stopReason
       ? {
@@ -1791,7 +1814,10 @@ export function advanceNarration(
       drafts.push({
         at: now,
         kind: "stop",
-        text: `止まったよ。理由：${stopReasonText(d)}`,
+        text:
+          d.status === "STOPPED" && d.safety?.resumePending
+            ? "通信のため注文を止めたよ。自動復旧を確認してるね"
+            : `止まったよ。理由：${stopReasonText(d)}`,
       });
   }
   // Sleep talk: while the bot sleeps (a plain stop — a safety stop

@@ -10,6 +10,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { applySafePreset } from "../apps/dashboard/src/settingsPresets.ts";
 import { verifyToken } from "../apps/dashboard/src/verifyToken.ts";
+import { initialPaperSafety } from "../packages/shared/src/paper-recovery.ts";
 
 it("keeps PAPER settings, history and stop gates through the real API and restart", async () => {
   const folder = mkdtempSync(join(tmpdir(), "suiba-settings-")),
@@ -223,6 +224,60 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
     });
     // Unhealthy connections must still prevent a start after a manual reset.
     expect((await api("control", { command: "start" })).status).toBe(409);
+
+    // Restore a persisted, incomplete proof to exercise the actual HTTP gates.
+    // Its healthy interval has elapsed, but diagnostic GETs are not clean cycles.
+    const proofAt = Date.now(),
+      writer = new BotDatabase(database);
+    try {
+      writer.set("runtime", {
+        ...writer.runtime(),
+        running: false,
+        emergency: false,
+        error: null,
+      });
+      writer.set("paper_safety", {
+        ...initialPaperSafety(),
+        connectivity: "RECOVERING",
+        resumePending: true,
+        healthyCycles: 1,
+        episodeAt: proofAt - 62000,
+        lastFailureAt: proofAt - 62000,
+        firstHealthyAt: proofAt - 61000,
+        lastHealthyCycleAt: proofAt - 61000,
+      });
+    } finally {
+      writer.close();
+    }
+    for (let i = 0; i < 3; i++) {
+      const diagnostics = await api("operations");
+      expect(diagnostics.status).toBe(200);
+      expect(diagnostics.value.safety).toMatchObject({
+        connectivity: "RECOVERING",
+        resumePending: true,
+        healthyCycles: 1,
+        ordersAllowed: false,
+        recoveredAt: null,
+      });
+      expect(await api("control", { command: "start" })).toEqual({
+        status: 409,
+        value: { error: "PAPER_RECOVERY_REQUIRED" },
+      });
+      expect((await api("state")).value.runtime.running).toBe(false);
+    }
+    expect((await api("control", { command: "stop" })).value.running).toBe(
+      false,
+    );
+    expect((await api("operations")).value.safety).toMatchObject({
+      connectivity: "RECOVERING",
+      resumePending: false,
+      healthyCycles: 0,
+      ordersAllowed: false,
+    });
+    expect(await api("control", { command: "start" })).toEqual({
+      status: 409,
+      value: { error: "PAPER_RECOVERY_REQUIRED" },
+    });
     expect(
       (await api("control", { command: "emergency" })).value,
     ).toMatchObject({ running: false, emergency: true });

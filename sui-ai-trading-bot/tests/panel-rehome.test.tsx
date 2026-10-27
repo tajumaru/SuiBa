@@ -40,8 +40,8 @@ it("marks communication failure as an alert with orders blocked", () => {
   const status = connectivityStatus(m.safetySnapshot());
   expect(status.allowed).toBe(false);
   expect(status.tone).toBe("alert");
-  expect(status.message).toContain("通信障害を検出しました");
-  expect(status.connectivityLabel).toBe("通信障害");
+  expect(status.message).toContain("通信異常を検出しました");
+  expect(status.connectivityLabel).toBe("通信異常");
   db.close();
 });
 
@@ -86,9 +86,9 @@ it("keeps a manual stop neutral and a stale snapshot unknown", () => {
   const stale = connectivityStatus(m.safetySnapshot(), true);
   expect(stale.tone).toBe("unknown");
   expect(stale.allowed).toBe(false);
-  expect(stale.connectivityLabel).toBe("状態不明");
-  expect(stale.botStateLabel).toBe("状態不明");
-  expect(stale.message).toContain("最新の状態を確認できません");
+  expect(stale.connectivityLabel).toBe("状態取得失敗");
+  expect(stale.botStateLabel).toBe("状態取得失敗");
+  expect(stale.message).toContain("Botの稼働・注文可否は未確認です");
   db.close();
 });
 
@@ -115,8 +115,8 @@ it("renders the strip with the live message, chips, tone and the full detail lis
   expect(strip).toContain('role="status"');
   expect(strip).toContain('aria-live="polite"');
   expect(strip).toContain("tone-alert");
-  expect(strip).toContain("通信障害を検出しました");
-  expect(strip).toContain("通信：通信障害");
+  expect(strip).toContain("通信異常を検出しました");
+  expect(strip).toContain("通信：通信異常");
   expect(strip).toContain("新規注文：注文禁止");
   expect(strip).toContain("<details");
   for (const label of DETAIL_LABELS) expect(strip).toContain(label);
@@ -156,7 +156,7 @@ it("places the market panel only on the operations tab and the strip only on the
   expect(main).not.toContain("MarketDataPanel");
   expect(main).not.toContain("<ConnectivityPanel");
   // The tab-independent emergency notice stays visible on every tab.
-  expect(main).toContain("緊急停止中です。原因と接続状態を確認し");
+  expect(main).toContain("<RecoveryGuidance");
   const operations = readFileSync(
     resolve("apps/dashboard/src/OperationsPanel.tsx"),
     "utf8",

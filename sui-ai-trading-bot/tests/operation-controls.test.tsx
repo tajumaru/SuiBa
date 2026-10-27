@@ -56,10 +56,10 @@ describe("start rejection reasons (server 409 codes)", () => {
       "市場データの取得が終わっていない",
     );
     expect(startRejectionReason("PAPER_RECOVERY_REQUIRED")).toContain(
-      "通信の復旧確認が完了していない",
+      "通信の安全確認が未完了",
     );
     expect(startRejectionReason("PAPER_RECOVERY_REQUIRED")).toContain(
-      "「運用検証」の診断で接続状態を確認",
+      "通信診断で復旧状況を確認",
     );
     expect(startRejectionReason("API_BACKOFF")).toContain("再試行待機中");
     expect(startRejectionReason("RESET_REQUIRED")).toContain(

@@ -7,8 +7,8 @@ type Safety = Snapshot["safety"];
 type Timing = Snapshot["timing"];
 const labels: Record<string, string> = {
   HEALTHY: "正常",
-  DEGRADED: "通信障害",
-  RECOVERING: "復旧確認中",
+  DEGRADED: "通信異常",
+  RECOVERING: "通信確認中",
   ABNORMAL_STOP: "異常停止",
   MANUAL_STOP: "手動停止・開始待ち",
   EMERGENCY_STOP: "緊急停止",
@@ -34,20 +34,22 @@ export function connectivityStatus(
 ): ConnectivityStatus {
   const allowed = !stale && safety.ordersAllowed;
   const message = stale
-    ? "最新の状態を確認できません。接続を確認してください。"
+    ? "状態取得失敗。Botの稼働・注文可否は未確認です。状態を再取得してください。"
     : safety.botState === "EMERGENCY_STOP"
       ? "緊急停止中です。通信が復旧しても自動再開しません。"
       : safety.botState === "ABNORMAL_STOP"
         ? "安全停止中です。停止理由を確認してください。自動再開しません。"
         : safety.connectivity === "DEGRADED"
-          ? "通信障害を検出しました。PAPER注文を一時停止し、復旧を確認しています。"
+          ? "通信異常を検出しました。PAPER注文は禁止されています。復旧状況は通信診断で確認してください。"
           : safety.connectivity === "RECOVERING"
             ? "通信は復旧しましたが、安全確認中のため注文は停止しています。"
             : safety.recoveredAt && allowed
               ? "安全確認が完了しました。PAPER検証を再開しました。"
               : allowed
                 ? "通信・運用状態は正常です。売買条件を満たした場合のみPAPER注文を行います。"
-                : "PAPER Botは停止中です。通信の正常化だけでは開始しません。";
+                : safety.botState === "MANUAL_STOP"
+                  ? "PAPER Botは停止中です。通信の正常化だけでは開始しません。"
+                  : "データ・安全条件を確認中です。新規PAPER注文は停止しています。";
   const tone: ConnectivityTone = stale
     ? "unknown"
     : safety.botState === "EMERGENCY_STOP" ||
@@ -63,8 +65,8 @@ export function connectivityStatus(
     message,
     tone,
     allowed,
-    connectivityLabel: stale ? "状態不明" : labels[safety.connectivity],
-    botStateLabel: stale ? "状態不明" : labels[safety.botState],
+    connectivityLabel: stale ? "状態取得失敗" : labels[safety.connectivity],
+    botStateLabel: stale ? "状態取得失敗" : labels[safety.botState],
   };
 }
 /** The detailed definition list shared by the full panel and the strip. */
@@ -83,11 +85,17 @@ export function ConnectivityDetails({
     <>
       <dl>
         <dt>現在の通信状態</dt>
-        <dd>{stale ? "状態不明" : labels[safety.connectivity]}</dd>
+        <dd>{stale ? "状態取得失敗" : labels[safety.connectivity]}</dd>
         <dt>PAPER Botの状態</dt>
-        <dd>{stale ? "状態不明" : labels[safety.botState]}</dd>
+        <dd>{stale ? "状態取得失敗" : labels[safety.botState]}</dd>
         <dt>新規注文</dt>
-        <dd>{allowed ? "注文可能（売買条件の確認後）" : "注文禁止"}</dd>
+        <dd>
+          {stale
+            ? "未確認（画面からの開始は不可）"
+            : allowed
+              ? "注文可能（売買条件の確認後）"
+              : "注文禁止"}
+        </dd>
         <dt>安全制御の状態</dt>
         <dd>
           {stale
@@ -145,12 +153,14 @@ export function ConnectivityDetails({
               : safety.botState === "ABNORMAL_STOP" ||
                   safety.botState === "EMERGENCY_STOP"
                 ? "停止原因の解消と、明示的な異常解除・開始操作が必要です。"
-                : !safety.resumePending
+                : safety.botState === "MANUAL_STOP"
                   ? "自動再開の予定はありません。安全確認後に手動で開始してください。"
-                  : "通信と市場データの連続した正常確認を待っています。確認中は注文しません。"}
+                  : safety.resumePending
+                    ? "通信と市場データの連続した正常確認を待っています。確認中は注文しません。"
+                    : "データ・安全条件の確認を待っています。確認中は新規注文しません。"}
         </dd>
       </dl>
-      {safety.resumePending && (
+      {!stale && safety.resumePending && (
         <p>
           復旧条件をすべて満たした場合にPAPERのみ再開します。停止操作を行うと自動再開を取り消します。
         </p>
@@ -218,7 +228,10 @@ export function ConnectivityStrip({
       </div>
       <ul className="connectivity-chips">
         <li>通信：{status.connectivityLabel}</li>
-        <li>新規注文：{status.allowed ? "注文可能" : "注文禁止"}</li>
+        <li>
+          新規注文：
+          {stale ? "未確認" : status.allowed ? "注文可能" : "注文禁止"}
+        </li>
         <li>Bot：{status.botStateLabel}</li>
       </ul>
       <details className="connectivity-details">

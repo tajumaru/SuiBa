@@ -25,8 +25,14 @@ export function errorShout(
   safety: SafetyLike | null,
   stale: boolean,
 ): ErrorShout | null {
-  // Latched stops are facts even in a stale snapshot: the bot
-  // stays stopped until a human releases it.
+  // A failed read cannot confirm the current state, even if an earlier
+  // snapshot recorded a latched stop (another operator may have acted).
+  if (stale)
+    return {
+      kind: "unknown",
+      label: "状態取得失敗",
+      message: "確認できないよ",
+    };
   if (safety?.botState === "EMERGENCY_STOP")
     return {
       kind: "emergency",
@@ -39,18 +45,10 @@ export function errorShout(
       label: "安全停止中",
       message: "止まっちゃった！",
     };
-  // A stale display cannot vouch for anything fresher, so it
-  // outranks the (also stale) connectivity reading below.
-  if (stale)
-    return {
-      kind: "unknown",
-      label: "状態不明",
-      message: "様子がわからない！",
-    };
   if (safety?.connectivity === "DEGRADED")
     return {
       kind: "connectivity",
-      label: "通信障害",
+      label: "通信異常",
       message: "つながらない…！",
     };
   return null;

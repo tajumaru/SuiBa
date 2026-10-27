@@ -260,6 +260,60 @@ it.each(["MANUAL_STOP", "MANUAL_RESET", "EMERGENCY_STOP", "PROCESS_SHUTDOWN"])(
   },
 );
 
+it("diagnostic reads cannot finish recovery or restore an automatic start cancelled during recovery", () => {
+  const { db, monitor } = setup(),
+    start = Date.now(),
+    f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  monitor.market(start, start);
+  monitor.beginCycle();
+  monitor.recoveryCycle({ market: true, sui: true }, start + 1000);
+  expect(monitor.safety()).toMatchObject({
+    connectivity: "RECOVERING",
+    healthyCycles: 1,
+    resumePending: true,
+  });
+
+  // Opening diagnostics after the minimum healthy interval is not a fresh
+  // market/Sui acquisition and must not manufacture the second clean cycle.
+  const before = monitor.safety();
+  for (const at of [start + 61000, start + 62000, start + 63000]) {
+    expect(monitor.snapshot(at).safety.ordersAllowed).toBe(false);
+    expect(monitor.safety()).toEqual(before);
+  }
+  expect(db.runtime().running).toBe(false);
+
+  monitor.transition("MANUAL_STOP", start + 64000);
+  expect(monitor.safety()).toMatchObject({
+    connectivity: "RECOVERING",
+    healthyCycles: 0,
+    resumePending: false,
+  });
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 65000),
+  ).toBe(false);
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 125000),
+  ).toBe(false);
+  expect(monitor.safety()).toMatchObject({
+    connectivity: "HEALTHY",
+    resumePending: false,
+    recoveredAt: null,
+  });
+  expect(monitor.snapshot(start + 125000).safety.botState).toBe("MANUAL_STOP");
+  expect(db.runtime().running).toBe(false);
+  expect(monitor.ordersAllowed()).toBe(false);
+  expect(
+    db
+      .history<{ code: string }>("operation_events")
+      .some((event) => event.code === "PAPER_NETWORK_RECOVERED"),
+  ).toBe(false);
+  expect(db.history("paper_orders")).toHaveLength(0);
+  expect(db.history("paper_trades")).toHaveLength(0);
+});
+
 it("restarts recovery progress after another failure and hard-stops a long episode", () => {
   const { db, monitor } = setup();
   const start = Date.now();

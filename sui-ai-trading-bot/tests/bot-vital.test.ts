@@ -50,7 +50,7 @@ describe("bot vital signs: stop state outranks connectivity", () => {
     expect(vital.state).toBe("sleeping");
     expect(vital.beatSeconds).toBeNull();
     expect(vital.ecg).toBe("flat");
-    expect(summary.tone).toBe("stopped");
+    expect(summary.tone).toBe("warning");
   });
 
   it("STOPPED + DEGRADED never shows a weak heartbeat", () => {
@@ -59,7 +59,7 @@ describe("bot vital signs: stop state outranks connectivity", () => {
     const { vital, summary } = pair(d);
     expect(vital.state).toBe("sleeping");
     expect(vital.beatSeconds).toBeNull();
-    expect(summary.tone).toBe("stopped");
+    expect(summary.tone).toBe("warning");
   });
 
   it("ABNORMAL_STOP + DEGRADED shows the safety stop, not a weak heartbeat", () => {
@@ -69,7 +69,7 @@ describe("bot vital signs: stop state outranks connectivity", () => {
     const { vital, summary } = pair(d);
     expect(vital.state).toBe("flatlined");
     expect(vital.beatSeconds).toBeNull();
-    expect(summary.title).toBe("安全停止");
+    expect(summary.title).toBe("停止中");
   });
 
   it("EMERGENCY_STOP + RECOVERING shows the safety stop", () => {
@@ -78,18 +78,18 @@ describe("bot vital signs: stop state outranks connectivity", () => {
     d.safety.connectivity = "RECOVERING";
     const { vital, summary } = pair(d);
     expect(vital.state).toBe("flatlined");
-    expect(summary.title).toBe("安全停止");
+    expect(summary.title).toBe("停止中");
   });
 
   it("RUNNING + RECOVERING / DEGRADED still shows the weak heartbeat", () => {
     const recovering = healthy();
     recovering.safety.connectivity = "RECOVERING";
     expect(pair(recovering).vital.state).toBe("weak");
-    expect(pair(recovering).summary.title).toBe("復旧確認中");
+    expect(pair(recovering).summary.title).toBe("通信確認中");
     const degraded = healthy();
     degraded.safety.connectivity = "DEGRADED";
     expect(pair(degraded).vital.state).toBe("weak");
-    expect(pair(degraded).summary.title).toBe("通信障害・一時待機");
+    expect(pair(degraded).summary.title).toBe("通信異常");
   });
 });
 
@@ -98,7 +98,7 @@ describe("bot vital signs: freshness", () => {
     const { vital, summary } = pair(healthy(), true);
     expect(vital.state).toBe("unknown");
     expect(vital.beatSeconds).toBeNull();
-    expect(summary.title).toBe("状態不明");
+    expect(summary.title).toBe("状態取得失敗");
   });
 
   it("RUNNING + ordersAllowed=false is unknown in both displays", () => {
@@ -106,7 +106,7 @@ describe("bot vital signs: freshness", () => {
     d.safety.ordersAllowed = false;
     const { vital, summary } = pair(d);
     expect(vital.state).toBe("unknown");
-    expect(summary.title).toBe("状態不明");
+    expect(summary.title).toBe("通信確認中");
   });
 
   it("downgrades to unknown when the worker heartbeat record is too old", () => {
@@ -116,7 +116,7 @@ describe("bot vital signs: freshness", () => {
     expect(vital.state).toBe("unknown");
     expect(vital.evidenceStale).toBe(true);
     expect(vital.fetching).toBe(false);
-    expect(summary.title).toBe("状態不明");
+    expect(summary.title).toBe("状態取得失敗");
     // Exactly at the bound the evidence is still fresh.
     d.lastHeartbeatAt = NOW - VITAL_HEARTBEAT_FRESH_MS;
     expect(botVital(d, false, NOW, NOW).state).toBe("alive");
@@ -128,7 +128,7 @@ describe("bot vital signs: freshness", () => {
     const { vital, summary } = pair(d, false, receivedAt);
     expect(vital.state).toBe("unknown");
     expect(vital.evidenceStale).toBe(true);
-    expect(summary.title).toBe("状態不明");
+    expect(summary.title).toBe("状態取得失敗");
     expect(botVital(d, false, NOW, NOW - 10_000).state).toBe("alive");
   });
 
@@ -340,16 +340,17 @@ describe("bot vital signs: summary consistency across combinations", () => {
       const { vital, summary } = pair(d, stale ?? false);
       expect(vital.state === "alive", name).toBe(summary.title === "正常稼働");
       if (vital.beatSeconds != null)
-        expect(
-          ["正常稼働", "復旧確認中", "通信障害・一時待機"],
-          name,
-        ).toContain(summary.title);
+        expect(["正常稼働", "通信確認中", "通信異常"], name).toContain(
+          summary.title,
+        );
       if (vital.state === "sleeping")
-        expect(summary.tone, name).toBe("stopped");
+        expect(summary.title, name).toBe("通信確認中");
       if (vital.state === "flatlined")
-        expect(summary.title, name).toBe("安全停止");
+        expect(summary.title, name).toBe("停止中");
       if (vital.state === "unknown")
-        expect(summary.title, name).toBe("状態不明");
+        expect(summary.title, name).toBe(
+          stale || vital.evidenceStale ? "状態取得失敗" : "通信確認中",
+        );
     }
   });
 
@@ -428,7 +429,7 @@ describe("final review regressions", () => {
     const d = healthy();
     d.safety.botState = "MANUAL_STOP";
     expect(pair(d).vital.state).toBe("unknown");
-    expect(pair(d).summary.title).toBe("状態不明");
+    expect(pair(d).summary.title).toBe("通信確認中");
   });
   it.each([NaN, Infinity, -1])(
     "does not display invalid elapsed values %s",
@@ -457,7 +458,7 @@ it("expired fetch blocks healthy summary and recovers on completion", () => {
   d.timing.fetching = true;
   d.timing.fetchElapsedMs = 45_001;
   expect(pair(d).vital.state).toBe("unknown");
-  expect(pair(d).summary.title).toBe("状態不明");
+  expect(pair(d).summary.title).toBe("状態取得失敗");
   d.timing.fetching = false;
   d.timing.fetchElapsedMs = null;
   expect(pair(d).vital.state).toBe("alive");

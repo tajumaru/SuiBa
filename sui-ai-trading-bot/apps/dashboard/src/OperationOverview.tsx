@@ -1,77 +1,44 @@
 import React, { useEffect, useState } from "react";
 import type { OperationMonitor } from "../../worker/src/operations.ts";
 type OperationsSnapshot = ReturnType<OperationMonitor["snapshot"]>;
-import { operationReason } from "./operationLabels.ts";
+import { recoveryStatus } from "./recoveryState.ts";
 import { BotVitalSigns } from "./BotVitalSigns.tsx";
 import { botVital } from "./botVital.ts";
 export function operationSummary(d: OperationsSnapshot, stale = false) {
-  const s = d.safety;
-  if (stale)
-    return {
-      title: "状態不明",
-      tone: "warning",
-      message: "最新のAPI応答を確認できません。表示は最終取得時点の記録です。",
-    };
-  if (
-    d.status === "ABNORMAL_STOP" ||
-    ["ABNORMAL_STOP", "EMERGENCY_STOP"].includes(s?.botState)
-  )
-    return {
-      title: "安全停止",
-      tone: "error",
-      message: operationReason(d.stopReason ?? s?.lastStopReason ?? "UNKNOWN"),
-    };
-  // The bot's own run state outranks connectivity: a stopped bot is
-  // reported as stopped even while the network is recovering or degraded.
-  // Connectivity is still shown in the detailed diagnostics.
-  if (d.status === "STOPPED")
-    return {
-      title: s?.botState === "MANUAL_STOP" ? "手動停止" : "停止中・理由未確定",
-      tone: "stopped",
-      message: d.stopReason
-        ? operationReason(d.stopReason)
-        : "Botは停止しています。停止理由の記録とPAPER開始条件を確認してください。",
-    };
-  if (
-    !["RUNNING", "DATA_DELAYED"].includes(d.status) ||
-    !["RUNNING", "HEALTHY", "RECOVERING", "DEGRADED"].includes(s?.botState)
-  )
-    return {
-      title: "状態不明",
-      tone: "warning",
-      message: "稼働状態を確認できません。詳細診断を確認してください。",
-    };
-  if (s?.connectivity === "RECOVERING")
-    return {
-      title: "復旧確認中",
-      tone: "warning",
-      message:
-        "通信の復旧後、安全条件を確認しています。注文は禁止されています。",
-    };
-  if (s?.connectivity === "DEGRADED" || d.status === "DATA_DELAYED")
-    return {
-      title: "通信障害・一時待機",
-      tone: "warning",
-      message:
-        "通信または市場データを確認してください。売買可能とは限りません。",
-    };
-  if (
-    d.status === "RUNNING" &&
-    s?.ordersAllowed &&
-    s?.connectivity === "HEALTHY" &&
-    d.timing?.transportRecent &&
-    ["FRESH", "UPDATING"].includes(d.timing.dataStatus)
-  )
-    return {
-      title: "正常稼働",
-      tone: "healthy",
-      message: "売買条件を満たした場合のみ、PAPERで仮想売買します。",
-    };
+  const v = recoveryStatus(
+    {
+      mode: d.mode,
+      runtime: {
+        running: ["RUNNING", "DATA_DELAYED"].includes(d.status),
+        emergency: d.safety?.botState === "EMERGENCY_STOP",
+        error:
+          d.status === "ABNORMAL_STOP"
+            ? (d.stopReason ?? d.safety?.lastStopReason ?? "UNKNOWN")
+            : null,
+      },
+      safety: {
+        ...d.safety,
+        ordersAllowed:
+          d.safety?.ordersAllowed &&
+          d.status === "RUNNING" &&
+          d.timing?.transportRecent &&
+          ["FRESH", "UPDATING"].includes(d.timing?.dataStatus),
+      },
+    },
+    stale,
+  );
   return {
-    title: "状態不明",
-    tone: "warning",
-    message:
-      "正常稼働と判断できる証拠が不足しています。詳細診断を確認してください。",
+    title: v.title,
+    tone: stale
+      ? "warning"
+      : v.title === "停止中"
+        ? v.tone === "alert"
+          ? "error"
+          : "stopped"
+        : v.tone === "ok"
+          ? "healthy"
+          : "warning",
+    message: v.title === "正常稼働" ? v.safety : v.reason,
   };
 }
 export function OperationSummary({
@@ -106,8 +73,10 @@ export function OperationSummary({
   }, [data]);
   const vital = botVital(data, stale, now, receivedAt);
   const v = operationSummary(
-    data,
-    stale || vital.evidenceStale || vital.state === "unknown",
+    vital.state === "unknown"
+      ? { ...data, safety: { ...data.safety, ordersAllowed: false } }
+      : data,
+    stale || vital.evidenceStale,
   );
   return (
     <section className={`operation-hero ${v.tone}`} aria-label="運用状態">

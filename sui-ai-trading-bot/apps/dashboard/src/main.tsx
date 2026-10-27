@@ -1,5 +1,8 @@
 import { ConnectivityStrip } from "./ConnectivityPanel.tsx";
 import { OperationBar } from "./OperationBar.tsx";
+import { RecoveryGuidance } from "./RecoveryGuidance.tsx";
+import { recoveryStatus } from "./recoveryState.ts";
+import { VITAL_RECEIPT_FRESH_MS } from "./botVital.ts";
 import { PriceTicker } from "./PriceTicker.tsx";
 import { LoginScreen } from "./LoginScreen.tsx";
 import { loginSession, SESSION } from "./browserSession.ts";
@@ -10,14 +13,7 @@ import type { BotEngine } from "../../worker/src/engine.ts";
 import { calculate, ema } from "../../../packages/indicators/src/index.ts";
 import type { Candle } from "../../../packages/shared/src/index.ts";
 import "./style.css";
-import {
-  dateTime,
-  number,
-  percent,
-  label,
-  nextStep,
-  errorCode,
-} from "./presentation.ts";
+import { dateTime, number, percent, label, errorCode } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
 import { StrategyTab, type StrategySegment } from "./StrategyTab.tsx";
 import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
@@ -241,13 +237,8 @@ function App() {
   const [token, setToken] = useState(""),
     [data, setData] = useState<State | null>(null),
     [error, setError] = useState(""),
-    // What the global error banner shows. It mirrors `error` except
-    // for a refused start: the operation bar already reports that
-    // where the button was pressed, with the specific next step, so
-    // the banner stays out of it instead of repeating a generic
-    // version of the same refusal at the top of the page. `error`
-    // itself still records the failure (the header character's
-    // shout reads it), only the banner is selective.
+    // Operation failures do not invalidate a successfully fetched state.
+    // Start refusals are explained locally by the operation bar.
     [bannerError, setBannerError] = useState(""),
     [channelError, setChannelError] = useState<string | null>(null),
     [tab, setTab] = useState("Live"),
@@ -257,6 +248,28 @@ function App() {
     // mounted (unsaved edits and friends), and clears them when
     // the tab closes, so the bar never starts past an open editor.
     [startBlocked, setStartBlocked] = useState<string[]>([]);
+  const [receivedAt, setReceivedAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [checking, setChecking] = useState(false);
+  const [openDiagnostics, setOpenDiagnostics] = useState(false);
+  useEffect(() => {
+    const update = () => setNow(Date.now());
+    const timer = window.setInterval(update, 1000);
+    window.addEventListener("pageshow", update);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("pageshow", update);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, []);
+  const stateStale =
+    !!error ||
+    (data !== null &&
+      (receivedAt === null ||
+        now < receivedAt ||
+        now - receivedAt > VITAL_RECEIPT_FRESH_MS));
+  const recovery = recoveryStatus(data, stateStale, checking);
   // A tab value that no longer exists falls back instead of
   // breaking: the settings tab merged into the strategy tab, so a
   // restored "Settings" opens the strategy tab on its 設定
@@ -283,7 +296,7 @@ function App() {
       setToken("");
       setData(null);
     } catch (e) {
-      setError(errorCode(e));
+      setBannerError(errorCode(e));
     }
   };
   // The header avatar's pose, reported by the narration feed — the
@@ -302,7 +315,7 @@ function App() {
   // safety snapshot the connectivity displays use (plus this
   // screen's own fetch failure as staleness), so the avatar,
   // the strip and the bar always agree about an error state.
-  const shout = errorShout(data?.safety ?? null, !!error);
+  const shout = errorShout(data?.safety ?? null, stateStale);
   const buyCelebrationTimerRef = useRef<number | null>(null);
   const handleBuyCelebration = useCallback(() => {
     setBuyCelebration(true);
@@ -327,9 +340,7 @@ function App() {
   const api = useCallback(
     async (path: string, body?: unknown) => {
       const r = await fetch("/api/" + path, {
-        signal: path.startsWith("dashboard/")
-          ? AbortSignal.timeout(8000)
-          : undefined,
+        signal: body ? undefined : AbortSignal.timeout(8000),
         headers: {
           ...(token !== SESSION ? { Authorization: "Bearer " + token } : {}),
           "X-SuiBa-Request": "1",
@@ -356,6 +367,28 @@ function App() {
   // operations tab (see useOperationsFeed). It polls only while
   // logged in.
   const operations = useOperationsFeed(api, token !== "");
+  useEffect(() => {
+    if (!openDiagnostics || activeTab !== "運用検証") return;
+    const details = document.getElementById(
+      "operation-diagnostics",
+    ) as HTMLDetailsElement | null;
+    if (!details) return;
+    details.open = true;
+    details.querySelector("summary")?.focus({ preventScroll: true });
+    details.scrollIntoView({ block: "start" });
+    setOpenDiagnostics(false);
+  }, [openDiagnostics, activeTab, operations.data, data]);
+  async function refreshStatus() {
+    if (checking) return;
+    setChecking(true);
+    await Promise.allSettled([refresh(), operations.refresh()]);
+    setChecking(false);
+  }
+  function diagnose() {
+    setTab("運用検証");
+    setOpenDiagnostics(true);
+    void refreshStatus();
+  }
   // Short indicator history for the strategy tab's mini charts,
   // accumulated at the App level so tab switches keep it.
   const indicatorHistory = useIndicatorHistory(
@@ -374,6 +407,8 @@ function App() {
         (state) => {
           if (feedRef.current === feed && serialRef.current === serial) {
             setData(state);
+            setReceivedAt(Date.now());
+            setNow(Date.now());
             setError("");
             setBannerError("");
           }
@@ -395,6 +430,8 @@ function App() {
   useEffect(() => {
     if (!token) return;
     feedRef.current = new DashboardClient();
+    setData(null);
+    setReceivedAt(null);
     void refresh();
     const id = setInterval(() => void refresh(), 10000);
     return () => {
@@ -424,7 +461,6 @@ function App() {
       return null;
     } catch (e) {
       const code = errorCode(e);
-      setError(code);
       if (command !== "start") setBannerError(code);
       return code;
     }
@@ -509,11 +545,23 @@ function App() {
                 {channelError}
               </p>
             )}
-            {bannerError && (
+            {bannerError && !error && (
               <p role="alert" className="error">
                 <Reason code={bannerError} />
-                接続・管理トークンと運用状態を確認して再試行してください。
+                操作を完了できませんでした。最新状態と通信診断を確認してください。
               </p>
+            )}
+            {!data && (
+              <RecoveryGuidance
+                status={recovery}
+                onDiagnose={diagnose}
+                onRefresh={() => void refreshStatus()}
+                checking={checking}
+                onStop={() => void control("stop")}
+              />
+            )}
+            {!data && activeTab === "運用検証" && (
+              <OperationsFeedView api={api} feed={operations} />
             )}
             {data && (
               <>
@@ -530,6 +578,15 @@ function App() {
                   control={control}
                   onOpenStrategy={() => setTab("Strategy")}
                   startBlocked={startBlocked}
+                  recovery={recovery}
+                  onDiagnose={diagnose}
+                />
+                <RecoveryGuidance
+                  status={recovery}
+                  onDiagnose={diagnose}
+                  onRefresh={() => void refreshStatus()}
+                  checking={checking}
+                  onStop={() => void control("stop")}
                 />
                 {/* The SUI price ticker rides directly under the
                     operation bar on every tab, under the same
@@ -550,27 +607,7 @@ function App() {
                     the reader across every tab. The tab-independent
                     emergency / stopped notices below stay as they are. */}
                 {activeTab === "Overview" && (
-                  <ConnectivityStrip safety={data.safety} stale={!!error} />
-                )}
-                {data.runtime.emergency && (
-                  <p className="error">
-                    緊急停止中です。原因と接続状態を確認し、戦略の「停止状態の解除」から解除後、PAPER運用を手動で開始してください。
-                  </p>
-                )}
-                {!data.runtime.running &&
-                  !data.runtime.error &&
-                  !data.runtime.emergency &&
-                  !data.safety?.resumePending && (
-                    <p>
-                      停止中です。戦略で保存済みの条件を確認し、「PAPER運用開始」を押してください。
-                    </p>
-                  )}
-                {data.runtime.error && (
-                  <p className="error">
-                    停止理由：
-                    <Reason code={data.runtime.error} />
-                    次の操作：{nextStep(data.runtime.error)}
-                  </p>
+                  <ConnectivityStrip safety={data.safety} stale={stateStale} />
                 )}
                 {/* The narration tab stays mounted (only hidden) so
                     the feed history accumulated from snapshot diffs

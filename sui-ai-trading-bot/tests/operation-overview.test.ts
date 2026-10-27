@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { OperationMonitor } from "../apps/worker/src/operations.ts";
 import {
   noTradeReasons,
   operationSummary,
+  OperationSummary,
 } from "../apps/dashboard/src/OperationOverview.tsx";
 describe("operation overview evidence", () => {
   function fixture() {
@@ -15,18 +18,18 @@ describe("operation overview evidence", () => {
   it("never labels stale or stopped PAPER healthy", () => {
     const d = fixture();
     expect(operationSummary(d).title).not.toBe("正常稼働");
-    expect(operationSummary(d, true).title).toBe("状態不明");
+    expect(operationSummary(d, true).title).toBe("状態取得失敗");
   });
   it("distinguishes safety stop and recovery", () => {
     const d = fixture();
     d.status = "ABNORMAL_STOP";
-    expect(operationSummary(d).title).toBe("安全停止");
+    expect(operationSummary(d).title).toBe("停止中");
     d.status = "RUNNING";
     d.safety.botState = "RUNNING";
     d.safety.connectivity = "RECOVERING";
-    expect(operationSummary(d).title).toBe("復旧確認中");
+    expect(operationSummary(d).title).toBe("通信確認中");
     d.safety.connectivity = "DEGRADED";
-    expect(operationSummary(d).title).toBe("通信障害・一時待機");
+    expect(operationSummary(d).title).toBe("通信異常");
   });
   it("requires fresh communication and order permission for healthy", () => {
     const d = fixture();
@@ -38,7 +41,18 @@ describe("operation overview evidence", () => {
     d.timing.transportRecent = true;
     expect(operationSummary(d).title).toBe("正常稼働");
     d.safety.ordersAllowed = false;
-    expect(operationSummary(d).title).toBe("状態不明");
+    expect(operationSummary(d).title).toBe("通信確認中");
+  });
+  it("does not turn a successful read with a closed order gate into a retrieval failure", () => {
+    const d = fixture();
+    d.status = "RUNNING";
+    d.safety.botState = "HEALTHY";
+    d.safety.ordersAllowed = false;
+    const html = renderToStaticMarkup(
+      React.createElement(OperationSummary, { data: d, stale: false }),
+    );
+    expect(html).toContain("注文に必要なデータ・安全条件を確認");
+    expect(html).not.toContain("最新のBot状態を取得できません");
   });
   it("keeps multiple reasons and period-specific skip evidence", () => {
     const d = fixture();
