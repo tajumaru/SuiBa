@@ -459,6 +459,18 @@ section svg {
   background: #123324;
   border-color: rgba(62, 207, 111, 0.55);
 }
+/* The sell-line pills: take-profit green, stop-loss rose — the
+   nearer line counts down, and reaching it swaps the text. */
+.price-ticker-line.tp {
+  color: #3ecf6f;
+  background: #123324;
+  border-color: rgba(62, 207, 111, 0.55);
+}
+.price-ticker-line.sl {
+  color: #ff8fa5;
+  background: #2b1420;
+  border-color: rgba(255, 125, 156, 0.55);
+}
 /* Very narrow screens (small phones, zoomed viewports): every
    ticker child except the sparkline is nowrap and flex: none,
    so their combined min-content can exceed the row and push
@@ -490,6 +502,9 @@ section svg {
     display: none;
   }
   .price-ticker-line-prefix {
+    display: none;
+  }
+  .price-ticker-line-suffix {
     display: none;
   }
   .price-ticker-line {
@@ -2648,6 +2663,15 @@ th {
 .agent-feed-entry.priceLineReached {
   border-left-color: #3ecf6f;
   background: #0f2318;
+}
+/* A 売りライン (sell lines) declaration: the position's exit
+   prices, in the app's sell-side rose. */
+.agent-feed-entry.sellLine {
+  border-left-color: #ff7d9c;
+}
+.agent-feed-entry-tag.sell {
+  border-color: rgba(255, 125, 156, 0.55);
+  color: #ff8fa5;
 }
 .agent-feed-entry-tag.reached {
   border-color: rgba(62, 207, 111, 0.55);

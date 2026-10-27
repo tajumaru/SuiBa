@@ -82,6 +82,7 @@ export type NarrationKind =
   | "watchHit" // a declared watch clicked — the smug counterpart of a near miss
   | "priceLine" // the buy-run line declared — RSI's target price, called out loud
   | "priceLineReached" // the price touched the declared buy-run line
+  | "sellLine" // the sell lines declared — take-profit / stop-loss prices of the open position
   | "sleepTalk" // a mutter from the sleeping character, built from recorded facts
   | "alert" // a 速報 breaking in on a sudden price / volume move
   | "status"; // feed-initialised status line
@@ -170,6 +171,10 @@ export interface NarrationState {
    * feed called out, whether the price has touched it yet, and
    * whether the one approaching murmur has already been told. */
   priceLine: { price: number; reached: boolean; murmured: boolean } | null;
+  /** The open position's sell lines, or null: the take-profit and
+   * stop-loss prices derived from the recorded entry price and the
+   * strategy's percentages, declared once per position. */
+  sellLines: { tp: number; sl: number } | null;
   /** Cumulative session score of declared watches (see WatchScore). */
   watchScore: WatchScore;
   /** Price of the first decision evidence this session received. */
@@ -222,6 +227,7 @@ export function emptyNarrationState(): NarrationState {
     lastHitAt: null,
     lastNearMiss: null,
     priceLine: null,
+    sellLines: null,
     sleepingSince: null,
     lastSleepTalkAt: null,
     lastSleepTalkText: null,
@@ -617,6 +623,29 @@ export const ALERT_COOLDOWN_CYCLES = 5;
  * closes to within this percent of the line (a negative distance:
  * the line sits below the price until it is touched). */
 export const PRICE_LINE_MURMUR_PCT = -1.5;
+
+/**
+ * The open position's sell lines from a decision, or null when no
+ * position is open (or the recorded percentages cannot form a sane
+ * pair of lines). Display-only derivation from recorded values:
+ * the take-profit and stop-loss prices the strategy itself uses.
+ */
+export function sellLinesOf(dec: {
+  entryPrice: number | null;
+  takeProfitPct: number;
+  stopLossPct: number;
+}): { tp: number; sl: number } | null {
+  if (dec.entryPrice == null || !(dec.entryPrice > 0)) return null;
+  const tp = dec.entryPrice * (1 + dec.takeProfitPct);
+  const sl = dec.entryPrice * (1 - dec.stopLossPct);
+  return Number.isFinite(tp) &&
+    Number.isFinite(sl) &&
+    tp > dec.entryPrice &&
+    sl > 0 &&
+    sl < dec.entryPrice
+    ? { tp, sl }
+    : null;
+}
 /** Price points kept for the alert look-back (only the newest
  * ALERT_PRICE_LOOKBACK + 1 are ever consulted). */
 const ALERT_HISTORY_KEEP = 12;
@@ -1480,6 +1509,9 @@ export function advanceNarration(
         watch: firstWatch,
         watchScore: firstScore,
         priceLine: firstPriceLine,
+        // A position already open when the feed starts has its sell
+        // lines adopted silently, like the buy-run line above.
+        sellLines: firstDec ? sellLinesOf(firstDec) : null,
         // The first recorded decision seeds the spike alerts' price
         // history — but only when it is fresh evidence; a stale
         // first snapshot warms the alerts up from zero instead.
@@ -1673,6 +1705,7 @@ export function advanceNarration(
   let lastHitAt = prev.lastHitAt;
   let lastNearMiss = prev.lastNearMiss;
   let priceLine = prev.priceLine;
+  let sellLines = prev.sellLines;
   let sleepingSince = prev.sleepingSince;
   let lastSleepTalkAt = prev.lastSleepTalkAt;
   let lastSleepTalkText = prev.lastSleepTalkText;
@@ -1786,6 +1819,26 @@ export function advanceNarration(
           text: `宣言するよ。${price(line)}まで下がったらRSIがラインに届く。反発したら買いに走る`,
         });
       }
+      // The sell lines: while a position is open, its take-profit
+      // and stop-loss prices are fixed by the recorded entry price
+      // and percentages. The feed declares the pair once per
+      // position; the ticker counts down to the nearer one. The
+      // position closing ends the story silently — the sell's own
+      // trade entries tell it — and changed percentages simply move
+      // the lines without another word.
+      const lines = sellLinesOf(dec);
+      if (lines && !sellLines) {
+        sellLines = lines;
+        drafts.push({
+          at: dec.evaluatedAt,
+          kind: "sellLine",
+          text: `売りラインを引くよ。利確は${price(lines.tp)}、損切りは${price(lines.sl)}。どっちかに届いたら売る`,
+        });
+      } else if (lines && sellLines) {
+        sellLines = lines;
+      } else if (!lines && sellLines) {
+        sellLines = null;
+      }
     }
     priceRising = prevDecisionPrice != null && dec.price > prevDecisionPrice;
     prevDecisionPrice = dec.price;
@@ -1879,6 +1932,7 @@ export function advanceNarration(
       lastHitAt,
       lastNearMiss,
       priceLine,
+      sellLines,
       sleepingSince,
       lastSleepTalkAt,
       lastSleepTalkText,

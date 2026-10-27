@@ -271,3 +271,43 @@ describe("price ticker wiring and style", () => {
     expect(spark.slice(0, spark.indexOf("}"))).toContain("flex: 0 1 80px;");
   });
 });
+
+describe("sell line pill", () => {
+  it("counts down to the nearer take-profit line with a signed pct", () => {
+    const html = renderToStaticMarkup(
+      <PriceTicker
+        price={2.02}
+        candlesByTimeframe={frames({})}
+        sellLines={{ tp: 2.06, sl: 1.96 }}
+      />,
+    );
+    expect(html).toContain('class="price-ticker-line tp"');
+    expect(html).toContain("利確");
+    expect(html).toContain("$2.06 あと+2.0%");
+    expect(html).toContain("利確ライン $2.06 まであと+2.0%");
+  });
+
+  it("counts down to the nearer stop-loss line", () => {
+    const html = renderToStaticMarkup(
+      <PriceTicker
+        price={1.97}
+        candlesByTimeframe={frames({})}
+        sellLines={{ tp: 2.06, sl: 1.96 }}
+      />,
+    );
+    expect(html).toContain('class="price-ticker-line sl"');
+    expect(html).toContain("$1.96 あと-0.5%");
+  });
+
+  it("shows the reached state at or beyond a line", () => {
+    const html = renderToStaticMarkup(
+      <PriceTicker
+        price={2.07}
+        candlesByTimeframe={frames({})}
+        sellLines={{ tp: 2.06, sl: 1.96 }}
+      />,
+    );
+    expect(html).toContain('class="price-ticker-line tp reached"');
+    expect(html).toContain("利確ライン到達");
+  });
+});

@@ -44,6 +44,7 @@ const schema: z.ZodType<NarrationState> = z.object({
           "watchHit",
           "priceLine",
           "priceLineReached",
+          "sellLine",
           "review",
           "alert",
           "sleepTalk",
@@ -79,6 +80,12 @@ const schema: z.ZodType<NarrationState> = z.object({
   priceLine: z
     .object({ price: number, reached: z.boolean(), murmured: z.boolean() })
     .nullable(),
+  // Stored states from before the sell lines existed parse with
+  // the default instead of being thrown away.
+  sellLines: z
+    .object({ tp: number, sl: number })
+    .nullable()
+    .default(null),
   watchScore: z.object({
     declared: number,
     hits: number,

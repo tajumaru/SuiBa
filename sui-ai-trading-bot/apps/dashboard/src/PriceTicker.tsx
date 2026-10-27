@@ -193,6 +193,7 @@ export function PriceTicker({
   candlesByTimeframe,
   glow = false,
   linePrice = null,
+  sellLines = null,
 }: {
   price: State["price"];
   candlesByTimeframe: Frames;
@@ -205,6 +206,11 @@ export function PriceTicker({
    * declared. Rendered as a countdown pill; at or under the line
    * it turns into the reached state. */
   linePrice?: number | null;
+  /** The open position's sell lines (take-profit / stop-loss
+   * prices), or null. Rendered as a countdown pill for whichever
+   * line is nearer; mutually exclusive with the buy-run line in
+   * practice (that one needs no position, these need one). */
+  sellLines?: { tp: number; sl: number } | null;
 }) {
   const change = tickerChange(candlesByTimeframe);
   const points = change ? sparklinePoints(change.closes) : null;
@@ -223,6 +229,40 @@ export function PriceTicker({
           text: formatTickerPrice(linePrice),
         }
       : null;
+  const sell =
+    sellLines &&
+    price != null &&
+    Number.isFinite(price) &&
+    price > 0 &&
+    Number.isFinite(sellLines.tp) &&
+    Number.isFinite(sellLines.sl) &&
+    sellLines.tp > 0 &&
+    sellLines.sl > 0
+      ? (() => {
+          const tpPct = (sellLines.tp / price - 1) * 100;
+          const slPct = (sellLines.sl / price - 1) * 100;
+          const tp = {
+            kind: "tp" as const,
+            label: "利確",
+            reached: price >= sellLines.tp,
+            pct: tpPct,
+            text: formatTickerPrice(sellLines.tp),
+          };
+          const sl = {
+            kind: "sl" as const,
+            label: "損切り",
+            reached: price <= sellLines.sl,
+            pct: slPct,
+            text: formatTickerPrice(sellLines.sl),
+          };
+          if (tp.reached) return tp;
+          if (sl.reached) return sl;
+          return Math.abs(tpPct) <= Math.abs(slPct) ? tp : sl;
+        })()
+      : null;
+  const sellPctText = sell
+    ? `${sell.pct >= 0 ? "+" : ""}${sell.pct.toFixed(1)}`
+    : null;
   const ariaLabel =
     (change
       ? `SUI/USDC 現在価格 ${priceText}、${change.label}で${formatChangePct(change.pct)}`
@@ -231,6 +271,11 @@ export function PriceTicker({
       ? line.reached
         ? `、買い走りライン ${line.text} に到達、反発待ち`
         : `、買い走りライン ${line.text} まであと${line.pct}%`
+      : "") +
+    (sell
+      ? sell.reached
+        ? `、${sell.label}ライン ${sell.text} に到達`
+        : `、${sell.label}ライン ${sell.text} まであと${sellPctText}%`
       : "");
   const sparkStroke =
     tone === "up" ? "#43dfb2" : tone === "down" ? "#ff6b81" : "#9fb2c8";
@@ -290,6 +335,21 @@ export function PriceTicker({
           <span className="price-ticker-line" aria-hidden="true">
             <span className="price-ticker-line-prefix">買い走り</span>
             ライン {line.text} あと{line.pct}%
+          </span>
+        ))}
+      {sell &&
+        (sell.reached ? (
+          <span
+            className={`price-ticker-line ${sell.kind} reached`}
+            aria-hidden="true"
+          >
+            {sell.label}ライン到達
+          </span>
+        ) : (
+          <span className={`price-ticker-line ${sell.kind}`} aria-hidden="true">
+            {sell.label}
+            <span className="price-ticker-line-suffix">ライン</span>{" "}
+            {sell.text} あと{sellPctText}%
           </span>
         ))}
     </div>

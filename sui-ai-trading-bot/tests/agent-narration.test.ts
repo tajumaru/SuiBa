@@ -18,6 +18,7 @@ import {
   cycleNarrationText,
   decisionTrail,
   emptyNarrationState,
+  sellLinesOf,
   entryConditionChips,
   MAX_NARRATION_ENTRIES,
   reviewNarrationTexts,
@@ -2750,5 +2751,59 @@ describe("buy-run line narration", () => {
       state.entries.filter((e) => e.text.includes("取り下げ")),
     ).toHaveLength(0);
     expect(state.priceLine).toBeNull();
+  });
+});
+
+describe("sell line narration", () => {
+  function feed(decisions: (TradingDecision | null)[]) {
+    const { db, monitor } = fixture();
+    let state = emptyNarrationState();
+    for (const dec of decisions) {
+      const d = runningSnapshot(db, monitor, dec);
+      state = advanceNarration(state, d, "alive", NOW);
+    }
+    return state;
+  }
+  const ofKind = (state: NarrationState, kind: string) =>
+    state.entries.filter((e) => e.kind === kind);
+  const holding = (overrides: Parameters<typeof decision>[0] = {}) =>
+    decision({
+      conditions: { hasPosition: true },
+      entryPrice: 2,
+      price: 2.02,
+      ...overrides,
+    });
+
+  it("declares the pair once when a position appears, and clears silently when it closes", () => {
+    const state = feed([
+      decision({ evaluatedAt: NOW - 55_000, price: 2.4 }),
+      holding({ evaluatedAt: NOW - 50_000 }),
+      holding({ evaluatedAt: NOW - 40_000, price: 2.03 }),
+      decision({ evaluatedAt: NOW - 30_000, price: 2.03 }),
+    ]);
+    const declared = ofKind(state, "sellLine");
+    expect(declared).toHaveLength(1);
+    expect(declared[0].text).toBe(
+      "売りラインを引くよ。利確は2.06 USDC、損切りは1.96 USDC。どっちかに届いたら売る",
+    );
+    expect(state.sellLines).toBeNull();
+  });
+
+  it("adopts the lines silently when the feed opens mid-position", () => {
+    const state = feed([holding({ evaluatedAt: NOW - 50_000 })]);
+    expect(ofKind(state, "sellLine")).toHaveLength(0);
+    expect(state.sellLines).toEqual({ tp: 2.06, sl: 1.96 });
+  });
+
+  it("sellLinesOf forms the pair from the recorded entry and percentages", () => {
+    expect(
+      sellLinesOf({ entryPrice: 2, takeProfitPct: 0.03, stopLossPct: 0.02 }),
+    ).toEqual({ tp: 2.06, sl: 1.96 });
+    expect(
+      sellLinesOf({ entryPrice: null, takeProfitPct: 0.03, stopLossPct: 0.02 }),
+    ).toBeNull();
+    expect(
+      sellLinesOf({ entryPrice: 2, takeProfitPct: 0, stopLossPct: 0.02 }),
+    ).toBeNull();
   });
 });
