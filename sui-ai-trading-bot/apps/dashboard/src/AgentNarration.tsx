@@ -267,7 +267,8 @@ const timeText = (at: number) =>
  * decision evidence via currentWatch and vanishes when stale.
  *
  * Under the watch strip, a quiet score strip keeps the session's
- * declaration record （宣言/的中/外れ/進行中） with its counting
+ * declaration record （宣言/進行中/的中/外れ — total, the live one,
+ * then the settled results) with its counting
  * definitions, and at a milestone the feed itself pauses for a
  * ふりかえり entry (purple border, tagged) built from that same
  * record — both come from agentNarration.ts, never from the
@@ -471,6 +472,10 @@ export function AgentNarrationFeed({
             <small>宣言</small>
             {score.declared}回
           </span>
+          <span className="agent-feed-score-item prog">
+            <small>進行中</small>
+            {score.inProgress}
+          </span>
           <span className="agent-feed-score-item hit">
             <small>的中</small>
             {score.hits}
@@ -478,10 +483,6 @@ export function AgentNarrationFeed({
           <span className="agent-feed-score-item miss">
             <small>外れ</small>
             {score.misses}
-          </span>
-          <span className="agent-feed-score-item prog">
-            <small>進行中</small>
-            {score.inProgress}
           </span>
           <span className="agent-feed-score-note">
             的中＝注目中に成立／外れ＝遠のいて取り下げ。切替先は別の宣言
