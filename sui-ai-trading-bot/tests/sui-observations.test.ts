@@ -59,6 +59,27 @@ function fixture(fetcher: typeof fetch) {
   clients.push(c);
   return { c, events };
 }
+it("investigation: SDK defaulting makes an absent balance indistinguishable from a real zero", async () => {
+  const payload = GrpcTypes.GetBalanceResponse.toBinary(
+    GrpcTypes.GetBalanceResponse.create({}),
+  );
+  const { c, events } = fixture(
+    async () =>
+      new Response(
+        Buffer.concat([
+          frame(0, payload),
+          frame(128, Buffer.from("grpc-status: 0\r\n")),
+        ]).toString("base64"),
+        { headers: { "content-type": "application/grpc-web-text" } },
+      ),
+  );
+  const value = await c.balance("0x" + "1".repeat(64), "0x2::sui::SUI");
+  expect(value.atomic).toBe("0");
+  expect(events.find((e) => e.layer === "READ")).toMatchObject({
+    success: true,
+  });
+  // This records current behavior, not permission to use that value for LIVE.
+});
 it("persists separate HTTP, gRPC status, metadata and complete health outcomes with linked IDs", async () => {
   let n = 0;
   const fetcher = vi.fn(async () => validResponse(n++ ? 6 : 9));
