@@ -268,7 +268,7 @@ describe("buy celebration: spotting a genuinely new buy", () => {
       resolve("apps/dashboard/src/AgentNarration.tsx"),
       "utf8",
     );
-    expect(component).toContain("if (!prev.initialized) return;");
+    expect(component).toContain("if (firstAdvance || !prev.initialized) return;");
     expect(component).toContain("findNewBuyEntry(prev.entries, next.entries)");
     expect(component).toContain("CELEBRATION_FRESH_MS");
     expect(component).toContain("onCelebrate?.()");
