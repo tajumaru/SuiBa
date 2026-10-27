@@ -481,10 +481,22 @@ section svg {
     flex-basis: 48px;
     min-width: 16px;
   }
-  /* With a line pill present, the decorative sparkline gives up
-     its room on narrow screens so the row never overflows. */
-  .price-ticker:has(.price-ticker-line) .price-ticker-spark {
+  /* With a line pill present, the sparkline and the change give
+     up their room on narrow screens, the pill shortens to
+     「ライン $… あと…%」 and may shrink with an ellipsis as a
+     last resort, so the row never overflows. */
+  .price-ticker:has(.price-ticker-line) .price-ticker-spark,
+  .price-ticker:has(.price-ticker-line) .price-ticker-change {
     display: none;
+  }
+  .price-ticker-line-prefix {
+    display: none;
+  }
+  .price-ticker-line {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 /* Buy celebration: while the celebration window is open the

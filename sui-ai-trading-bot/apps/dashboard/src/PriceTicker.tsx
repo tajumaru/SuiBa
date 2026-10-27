@@ -288,7 +288,8 @@ export function PriceTicker({
           </span>
         ) : (
           <span className="price-ticker-line" aria-hidden="true">
-            買い走りライン {line.text} あと{line.pct}%
+            <span className="price-ticker-line-prefix">買い走り</span>
+            ライン {line.text} あと{line.pct}%
           </span>
         ))}
     </div>

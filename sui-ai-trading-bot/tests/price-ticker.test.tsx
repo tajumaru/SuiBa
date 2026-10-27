@@ -229,7 +229,8 @@ describe("price ticker rendering", () => {
       />,
     );
     expect(down).toContain('class="price-ticker-line"');
-    expect(down).toContain("買い走りライン $0.874 あと-3.1%");
+    expect(down).toContain('price-ticker-line-prefix">買い走り');
+    expect(down).toContain("ライン $0.874 あと-3.1%");
     expect(down).toContain("買い走りライン $0.874 まであと-3.1%");
     const reached = renderToStaticMarkup(
       <PriceTicker
