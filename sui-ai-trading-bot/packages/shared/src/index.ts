@@ -32,6 +32,7 @@ export function safeFailure(error: unknown) {
     "THIN_ORDERBOOK",
     "INDEXER_DELAYED",
     "MARKET_PAIR_MISMATCH",
+    "MIN_ORDER_SIZE",
     "MARKET_SOURCE_CHANGED",
     "MARKET_UNAVAILABLE",
     "MARKET_DATA_STALLED",
@@ -50,15 +51,39 @@ export function safeFailure(error: unknown) {
     : "DATA_OR_EXECUTION_FAILURE";
 }
 export const SUI = "0x2::sui::SUI";
+export const WAL =
+  "0x356a26eb9e012a68958082340d4c4116e7f55615cf27affcff209cf0ae544f59::wal::WAL";
+export type TradingPair = "SUI_USDC" | "WAL_USDC";
+export const tradingPairs = {
+  SUI_USDC: {
+    candleLimit: 1000,
+    base: SUI,
+    symbol: "SUI",
+    poolId:
+      "0xe05dafb5133bcffb8d59f4e12465dc0e9faeaa05e3e342a08fe135800e3e4407",
+  },
+  WAL_USDC: {
+    candleLimit: 300,
+    base: WAL,
+    symbol: "WAL",
+    poolId:
+      "0x56a1c985c1f1123181d6b881714793689321ba24301b3585eec427436eb1c76d",
+  },
+} as const;
+export function tradingPair(value: unknown): TradingPair {
+  if (value !== "SUI_USDC" && value !== "WAL_USDC")
+    throw Error("INVALID_TRADING_PAIR");
+  return value;
+}
 export const USDC =
   "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC";
-export function coin(type: string): typeof SUI | typeof USDC {
+export function coin(type: string): typeof SUI | typeof WAL | typeof USDC {
   const normalized = normalizeStructTag(type);
-  for (const allowed of [SUI, USDC] as const)
+  for (const allowed of [SUI, WAL, USDC] as const)
     if (normalizeStructTag(allowed) === normalized) return allowed;
   throw new Error("COIN_NOT_ALLOWED");
 }
-export const decimals = (type: string) => (coin(type) === SUI ? 9 : 6);
+export const decimals = (type: string) => (coin(type) === USDC ? 6 : 9);
 export const atomic = (amount: string | number, type: string) =>
   new Decimal(amount)
     .mul(new Decimal(10).pow(decimals(type)))
@@ -70,7 +95,7 @@ export type Timeframe = 300 | 900 | 3600;
 export interface CandleProvenance {
   origin: "ORIGINAL" | "ONE_MINUTE_AGGREGATE" | "NO_INDEXED_TRADES";
   upstream: "DeepBook Indexer";
-  pair: "SUI_USDC";
+  pair: TradingPair;
   fetchedAt: number;
   timeframe: number;
   evidence: string[];
@@ -200,6 +225,8 @@ export interface DexRouter {
   validateQuote(quote: QuoteResult): Promise<boolean>;
 }
 export interface Portfolio {
+  /** Legacy `sui` field stores base quantity; baseCoin binds its asset. */
+  baseCoin?: typeof SUI | typeof WAL;
   usdc: number;
   sui: number;
   costBasis: number;

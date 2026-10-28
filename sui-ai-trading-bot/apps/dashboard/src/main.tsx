@@ -43,6 +43,7 @@ function IndicatorChart({
   kind,
   trades,
 }: {
+  pair?: State["pair"];
   candles: Candle[];
   kind: string;
   trades: State["trades"];
@@ -158,6 +159,7 @@ function IndicatorChart({
   );
 }
 function Chart(props: {
+  pair?: State["pair"];
   candles: Candle[];
   kind: string;
   trades: State["trades"];
@@ -247,6 +249,7 @@ function App() {
     // Operation failures do not invalidate a successfully fetched state.
     // Start refusals are explained locally by the operation bar.
     [bannerError, setBannerError] = useState(""),
+    [pairBusy, setPairBusy] = useState(false),
     [channelError, setChannelError] = useState<string | null>(null),
     [tab, setTab] = useState("Live"),
     [timeframe, setTimeframe] = useState<300 | 900 | 3600>(300),
@@ -344,6 +347,8 @@ function App() {
     serialRef = useRef(0),
     viewRef = useRef({ tab: activeTab, timeframe });
   viewRef.current = { tab: activeTab, timeframe };
+  const pairRef = useRef<State["pair"] | undefined>(undefined);
+  pairRef.current = data?.pair;
   const api = useCallback(
     async (path: string, body?: unknown) => {
       const r = await fetch("/api/" + path, {
@@ -351,6 +356,7 @@ function App() {
         headers: {
           ...(token !== SESSION ? { Authorization: "Bearer " + token } : {}),
           "X-SuiBa-Request": "1",
+          ...(pairRef.current ? { "X-SuiBa-Pair": pairRef.current } : {}),
           ...(body ? { "Content-Type": "application/json" } : {}),
         },
         method: body ? "POST" : "GET",
@@ -362,11 +368,18 @@ function App() {
           setData(null);
         }
         const body = await r.json().catch(() => ({}));
+        if (body.error === "PAIR_CHANGED") window.location.reload();
         throw new Error(
           typeof body.error === "string" ? body.error : `HTTP_${r.status}`,
         );
       }
-      return r.json();
+      const value = await r.json();
+      const responsePair = value.summary?.pair ?? value.pair;
+      if (pairRef.current && responsePair && responsePair !== pairRef.current) {
+        window.location.reload();
+        throw Error("PAIR_CHANGED");
+      }
+      return value;
     },
     [token],
   );
@@ -488,12 +501,48 @@ function App() {
             緊急停止
           </button>
           <small className="header-meta">
-            SUI / ネイティブUSDC · メインネットの市場データ
+            {data?.pair?.replace("_", " / ") ?? "取引ペア"} ·
+            メインネットの市場データ
           </small>
           {token && (
             <button className="logout-link" onClick={logout}>
               ログアウト
             </button>
+          )}
+        </div>
+        <div className="pair-selector-row">
+          {token && data && (
+            <label className="pair-selector">
+              取引ペア{" "}
+              <select
+                aria-label="取引ペア"
+                value={data.pair ?? "SUI_USDC"}
+                disabled={pairBusy || data.runtime.running}
+                onChange={async (event) => {
+                  setPairBusy(true);
+                  setBannerError("");
+                  try {
+                    await api("pairs", { pair: event.target.value });
+                    window.location.reload();
+                  } catch (error) {
+                    const code = error instanceof Error ? error.message : "";
+                    setBannerError(
+                      code === "PAIR_POSITION_OPEN"
+                        ? "未決済ポジションまたは未精算の原価が残っています。対象ペアで決済・会計確認を完了してから切り替えてください。"
+                        : code === "PAIR_PENDING_WORK" ||
+                            code === "PAIR_INVALID_LEDGER"
+                          ? "未処理注文または会計の確認が必要です。運用検証で対象ペアを確認してください。"
+                          : "ペアを切り替えられません。売買を停止し、市場データ取得の完了後に再試行してください。",
+                    );
+                    setPairBusy(false);
+                  }
+                }}
+              >
+                <option value="SUI_USDC">SUI/USDC</option>
+                <option value="WAL_USDC">WAL/USDC</option>
+              </select>
+              {pairBusy ? " 切替中…" : " 停止中のみ切替可能"}
+            </label>
           )}
         </div>
       </header>
@@ -587,6 +636,7 @@ function App() {
                     hides its change/sparkline until a frame can
                     ground them. */}
                 <PriceTicker
+                  pair={data.pair}
                   price={data.price}
                   candlesByTimeframe={data.candlesByTimeframe}
                   glow={buyCelebration}
@@ -632,7 +682,11 @@ function App() {
                           data.dailyPnl,
                           "USDC",
                         ],
-                        ["仮想SUI", data.portfolio.sui, "SUI"],
+                        [
+                          "仮想" + (data.pair === "WAL_USDC" ? "WAL" : "SUI"),
+                          data.portfolio.sui,
+                          data.pair === "WAL_USDC" ? "WAL" : "SUI",
+                        ],
                         ["仮想USDC", data.portfolio.usdc, "USDC"],
                         [
                           "本日の取引（日本時間09:00から）",
@@ -667,6 +721,7 @@ function App() {
                     <section>
                       <h3>価格・RSI・MACD（共通時間軸）</h3>
                       <Chart
+                        pair={data.pair}
                         timeframe={timeframe}
                         candles={data.candlesByTimeframe[timeframe]}
                         kind="Price"

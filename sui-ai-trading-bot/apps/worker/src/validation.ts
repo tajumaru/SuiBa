@@ -348,8 +348,9 @@ export class ValidationRecorder {
       now,
       session ? this.readEvents(session, now, version) : undefined,
     );
-    this.cached = { at: now, version, value };
-    return value;
+    const result = value;
+    this.cached = { at: now, version, value: result };
+    return result;
   }
 }
 const summaries = new WeakMap<Event[], ReturnType<typeof summarizeEvents>>();
@@ -503,8 +504,12 @@ export function aggregateValidation(
   inputEvents?: Event[],
 ) {
   const limits = validationLimits;
+  const pair = db.portfolio().baseCoin?.includes("::wal::WAL")
+    ? ("WAL_USDC" as const)
+    : ("SUI_USDC" as const);
   if (!session)
     return {
+      pair,
       status: "未開始" as string,
       session: null,
       generatedAt: now,
@@ -524,7 +529,16 @@ export function aggregateValidation(
     : all.filter((x) => x.at <= end);
   const samples = all.filter((e): e is Sample => e.kind === "sample");
   const derived = eventSummary(events);
-  const { cycles, api, fills, apis, actions, qualities, unresolved, latestQuality } = derived;
+  const {
+    cycles,
+    api,
+    fills,
+    apis,
+    actions,
+    qualities,
+    unresolved,
+    latestQuality,
+  } = derived;
   const operations = db.range<OperationEvent>(
     "operation_events",
     session.startedAt,
@@ -617,7 +631,9 @@ export function aggregateValidation(
       !f.running ||
       (!!f.safety && f.safety.connectivity !== "HEALTHY") ||
       f.mode !== "PAPER" ||
-      !f.source.startsWith("DeepBook:SUI_USDC:USDC:verified-v1") ||
+      !f.source.startsWith(
+        `DeepBook:${db.portfolio().baseCoin?.includes("::wal::WAL") ? "WAL_USDC" : "SUI_USDC"}:USDC:verified-v1`,
+      ) ||
       !f.market?.healthy ||
       f.market.source !== "DeepBook" ||
       !f.market.quality?.[300] ||
@@ -755,6 +771,7 @@ export function aggregateValidation(
   ];
   const complete = elapsedMs >= limits.durationMs;
   return {
+    pair,
     status: !complete
       ? "検証途中"
       : criteria.every((c) => c.ok)

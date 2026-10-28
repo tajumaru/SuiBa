@@ -16,12 +16,14 @@ import {
 } from "./chartPresentation.ts";
 import { number, dateTime, label } from "./presentation.ts";
 export function PriceChart({
+  pair = "SUI_USDC",
   candles,
   trades,
   timeframe = 300,
   synchronized = false,
   historyApi,
 }: {
+  pair?: ReturnType<BotEngine["snapshot"]>["pair"];
   candles: Candle[];
   trades: ReturnType<BotEngine["snapshot"]>["trades"];
   timeframe?: number;
@@ -36,10 +38,10 @@ export function PriceChart({
     if (!history) return candles;
     const merged = new Map(history.candles.map((c) => [c.timestamp, c]));
     for (const c of candles)
-      if (c.source.startsWith("DeepBook:SUI_USDC:USDC"))
+      if (c.source.startsWith(`DeepBook:${pair}:USDC`))
         merged.set(c.timestamp, c);
     return [...merged.values()];
-  }, [candles, history]);
+  }, [candles, history, pair]);
   const data = useMemo(() => chartData(input), [input]);
   const seriesKey = useMemo(
     () =>
@@ -169,7 +171,7 @@ export function PriceChart({
       if (
         !Array.isArray(raw.candles) ||
         raw.timeframe !== tf ||
-        raw.candles.some((c) => !c.source.startsWith("DeepBook:SUI_USDC:USDC"))
+        raw.candles.some((c) => !c.source.startsWith(`DeepBook:${pair}:USDC`))
       )
         throw Error("INVALID_CHART_HISTORY");
       setHistory(raw);
@@ -251,9 +253,15 @@ export function PriceChart({
           ? "再構築（確定1分足から集約）"
           : "再構築（無約定確認済み）";
   return (
-    <div className="price-chart" ref={host} aria-label="SUI/USDC価格表示">
+    <div
+      className="price-chart"
+      ref={host}
+      aria-label={`${pair.replace("_", "/")}価格表示`}
+    >
       <p>
-        <strong>SUI / USDC · {tf / 60}分足</strong>
+        <strong>
+          {pair.replace("_", " / ")} · {tf / 60}分足
+        </strong>
       </p>
       <div className="chart-controls" role="group" aria-label="表示期間の選択">
         {chartPeriods.map((n) => (

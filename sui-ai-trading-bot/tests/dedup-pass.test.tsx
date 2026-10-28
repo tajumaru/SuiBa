@@ -31,7 +31,7 @@ describe("dashboard dedup: SUI price lives only in the ticker", () => {
       "仮想総資産",
       "累計損益",
       "日次損益（日本時間09:00から）",
-      "仮想SUI",
+      "仮想",
       "仮想USDC",
       "本日の取引（日本時間09:00から）",
       "未実現損益",

@@ -308,8 +308,116 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
     expect(diagnostic.elapsedMs).toBeGreaterThanOrEqual(0);
     expect(diagnostic.url).toBe("https://127.0.0.1:1/[redacted]");
     expect(failure).not.toContain(token);
+    // Pair mutations pass the same authentication gates and preserve SUI history.
+    expect((await api("pairs")).value.selected).toBe("SUI_USDC");
+    expect((await api("pairs", { pair: "WAL_SUI" })).status).toBe(400);
+    const unauthorizedPair = await fetch(`http://127.0.0.1:${port}/api/pairs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pair: "WAL_USDC" }),
+    });
+    expect(unauthorizedPair.status).toBe(401);
+    async function selectPair(pair: string) {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const result = await api("pairs", { pair });
+        if (result.status === 200) return result;
+        expect(result.value.error).toBe("STOP_AND_WAIT_BEFORE_PAIR_SWITCH");
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      throw Error("PAIR_SWITCH_DID_NOT_DRAIN");
+    }
+    async function blockedSwitch(expected: string, expectedPair: string) {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const response = await api("pairs", { pair: "WAL_USDC" });
+        if (response.value.error === "STOP_AND_WAIT_BEFORE_PAIR_SWITCH") {
+          await new Promise((r) => setTimeout(r, 50));
+          continue;
+        }
+        expect(response).toEqual({
+          status: 409,
+          value: { error: expected, pair: expectedPair },
+        });
+        return;
+      }
+      throw Error("PAIR_GATE_DID_NOT_DRAIN");
+    }
+    const sourceWriter = new BotDatabase(database);
+    const flatSource = sourceWriter.portfolio();
+    const position = {
+      ...flatSource,
+      sui: 1,
+      quantityAtomic: "1000000000",
+      costBasis: 2,
+      costBasisUsdc: "2.000000",
+    };
+    sourceWriter.set("portfolio", position);
+    await blockedSwitch("PAIR_POSITION_OPEN", "SUI_USDC");
+    expect((await api("state")).value.portfolio).toEqual(position);
+    sourceWriter.set("portfolio", flatSource);
+    sourceWriter.append("paper_orders", "unfinished-switch", {
+      status: "PENDING",
+    });
+    await blockedSwitch("PAIR_PENDING_WORK", "SUI_USDC");
+    (sourceWriter as unknown as { db: DatabaseSync }).db
+      .prepare("UPDATE paper_orders SET json=? WHERE id=?")
+      .run(JSON.stringify({ status: "CANCELLED" }), "unfinished-switch");
+    sourceWriter.close();
+    const targetWriter = new BotDatabase(database + ".WAL_USDC.sqlite");
+    const flatTarget = targetWriter.portfolio();
+    targetWriter.set("portfolio", {
+      ...flatTarget,
+      sui: 0.1,
+      quantityAtomic: "100000000",
+      costBasis: 0.01,
+    });
+    await blockedSwitch("PAIR_POSITION_OPEN", "WAL_USDC");
+    expect((await api("pairs")).value.selected).toBe("SUI_USDC");
+    targetWriter.set("portfolio", flatTarget);
+    targetWriter.append("operation_candidates", "unprocessed-target", {
+      finalAction: "PENDING",
+    });
+    await blockedSwitch("PAIR_PENDING_WORK", "WAL_USDC");
+    expect(targetWriter.history("operation_candidates")[0].finalAction).toBe(
+      "PENDING",
+    );
+    (targetWriter as unknown as { db: DatabaseSync }).db
+      .prepare("UPDATE operation_candidates SET json=? WHERE id=?")
+      .run(JSON.stringify({ finalAction: "SAFE_STOP" }), "unprocessed-target");
+    targetWriter.close();
+    await selectPair("WAL_USDC");
+    let wal = (await api("state")).value;
+    expect(wal.pair).toBe("WAL_USDC");
+    expect(wal.runtime.running).toBe(false);
+    expect(wal.trades).toHaveLength(0);
+    expect(wal.portfolio.sui).toBe(0);
+    expect(wal.settings.maxOrder).toBe(5);
+    const staleClient = await fetch(`http://127.0.0.1:${port}/api/settings`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-SuiBa-Pair": "SUI_USDC",
+      },
+      body: JSON.stringify(safe),
+    });
+    expect(staleClient.status).toBe(409);
+    expect((await staleClient.json()).error).toBe("PAIR_CHANGED");
+
+    await api("settings", { ...wal.settings, maxOrder: 2 });
+    await stop();
+    await start();
+    wal = (await api("state")).value;
+    expect(wal.pair).toBe("WAL_USDC");
+    expect(wal.runtime.running).toBe(false);
+    expect(wal.settings.maxOrder).toBe(2);
+    await selectPair("SUI_USDC");
+    const restored = (await api("state")).value;
+    expect(restored.pair).toBe("SUI_USDC");
+    expect(restored.settings).toEqual(safe);
+    expect(restored.trades).toHaveLength(1);
+    expect(restored.trades[0].orderId).toBe("old-trade");
   } finally {
     await stop();
     rmSync(folder, { recursive: true, force: true });
   }
-}, 20000);
+}, 40000);

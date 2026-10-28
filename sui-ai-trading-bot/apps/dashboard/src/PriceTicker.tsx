@@ -189,12 +189,14 @@ export function sparklinePoints(
 }
 
 export function PriceTicker({
+  pair = "SUI_USDC",
   price,
   candlesByTimeframe,
   glow = false,
   linePrice = null,
   sellLines = null,
 }: {
+  pair?: State["pair"];
   price: State["price"];
   candlesByTimeframe: Frames;
   /** Buy celebration: while true the ticker carries the glow
@@ -265,8 +267,8 @@ export function PriceTicker({
     : null;
   const ariaLabel =
     (change
-      ? `SUI/USDC 現在価格 ${priceText}、${change.label}で${formatChangePct(change.pct)}`
-      : `SUI/USDC 現在価格 ${priceText}`) +
+      ? `${pair.replace("_", "/")} 現在価格 ${priceText}、${change.label}で${formatChangePct(change.pct)}`
+      : `${pair.replace("_", "/")} 現在価格 ${priceText}`) +
     (line
       ? line.reached
         ? `、買い走りライン ${line.text} に到達、反発待ち`
@@ -294,7 +296,7 @@ export function PriceTicker({
         </svg>
       </span>
       <span className="price-ticker-symbol" aria-hidden="true">
-        SUI/USDC
+        {pair.replace("_", "/")}
       </span>
       <span className="price-ticker-price" aria-hidden="true">
         {priceText}
@@ -348,8 +350,8 @@ export function PriceTicker({
         ) : (
           <span className={`price-ticker-line ${sell.kind}`} aria-hidden="true">
             {sell.label}
-            <span className="price-ticker-line-suffix">ライン</span>{" "}
-            {sell.text} あと{sellPctText}%
+            <span className="price-ticker-line-suffix">ライン</span> {sell.text}{" "}
+            あと{sellPctText}%
           </span>
         ))}
     </div>

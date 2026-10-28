@@ -50,7 +50,7 @@ import { number as fmtNumber, percent as fmtPercent } from "./presentation.ts";
  * character occasionally talks in its sleep: at most one mutter
  * per quarter hour, built only from the session's recorded facts
  * (a near miss, a told hit, a recorded buy), never the same one
- * twice in a row, with a fact-free dream of SUI itself as the
+ * twice in a row, with a fact-free dream of 基軸通貨 itself as the
  * fallback when the session left nothing to dream about.
  *
  * The feed also keeps a short history of the narrated cycles'
@@ -375,7 +375,7 @@ function trailDistance(key: EntryCondKey, t: DecisionTrail): number {
 }
 
 /**
- * The MACD histogram in words. Its raw value is meaningless at SUI
+ * The MACD histogram in words. Its raw value is meaningless at 基軸通貨
  * prices (0.0001 reads as precision without information), so the
  * narration names only the side of zero — and "ほぼゼロ" inside the
  * ATR-relative band the last-piece line already used. The exact
@@ -429,8 +429,7 @@ function singleRemainingText(
     Math.abs(dec.histogram) <= dec.atr * 0.05
   )
     return `あとMACDだけ。ほぼゼロ。次で揃うかも`;
-  if (dec.histogram < 0)
-    return `あとMACDだけ。まだマイナス側だね`;
+  if (dec.histogram < 0) return `あとMACDだけ。まだマイナス側だね`;
   return `あとMACDだけ。プラス圏だけど、下向きだね`;
 }
 
@@ -770,7 +769,7 @@ export const SLEEP_TALK_INTERVAL_MS = 15 * 60_000;
  * Sleep-talk candidates, in the order the sleeping character would
  * reach for them: the session's near miss first, then a told hit,
  * a recorded buy, a miss that was never a near miss — and always
- * the fact-free dream mutters about SUI itself as the fallback.
+ * the fact-free dream mutters about 基軸通貨 itself as the fallback.
  * Every factual line is built only from what the state recorded;
  * the caller picks the first candidate that is not a repeat of
  * the previous mutter.
@@ -1349,15 +1348,15 @@ export function spikeAlert(
     return {
       direction: "up",
       text: volumeSpike
-        ? `速報。SUI、短時間で${alertPct(ratio)}。出来高の変化も跳ねた`
-        : `速報。SUI、短時間で${alertPct(ratio)}。急に来た`,
+        ? `速報。基軸通貨、短時間で${alertPct(ratio)}。出来高の変化も跳ねた`
+        : `速報。基軸通貨、短時間で${alertPct(ratio)}。急に来た`,
     };
   if (priceDown)
     return {
       direction: "down",
       text: volumeSpike
-        ? `速報。SUI、${alertPct(ratio)}。急落だ。出来高の変化も跳ねたから、ちょっと様子見る`
-        : `速報。SUI、${alertPct(ratio)}。急落だ。ちょっと様子見る`,
+        ? `速報。基軸通貨、${alertPct(ratio)}。急落だ。出来高の変化も跳ねたから、ちょっと様子見る`
+        : `速報。基軸通貨、${alertPct(ratio)}。急落だ。ちょっと様子見る`,
     };
   const multiple = volumeMultiple(dec.volumeChange);
   return {
@@ -1651,7 +1650,7 @@ export function advanceNarration(
     seen.add(key);
     const qty =
       c.quantityAtomic != null && Number.isFinite(Number(c.quantityAtomic))
-        ? `${fmtNumber(Number(c.quantityAtomic) / 1e9, 9)} SUI`
+        ? `${fmtNumber(Number(c.quantityAtomic) / 1e9, 9)} 基軸通貨`
         : null;
     const quote =
       c.quotePriceUsdc != null

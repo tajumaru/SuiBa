@@ -55,10 +55,10 @@ export const fields: Field[] = [
   },
   {
     key: "maxHoldingRatio",
-    label: "SUIの最大保有比率",
+    label: "基軸通貨の最大保有比率",
     unit: "%",
     scale: 100,
-    help: "仮想総資産に占めるSUIの割合。最大20%。",
+    help: "仮想総資産に占める基軸通貨の割合。最大20%。",
   },
   {
     key: "intervalMs",

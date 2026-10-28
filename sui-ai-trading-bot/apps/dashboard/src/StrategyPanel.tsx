@@ -432,13 +432,15 @@ function ProfitGuardStatus({ data }: { data: State }) {
       {r.scope === "BUY_SCENARIO" && r.acquisitionUnitPrice != null && (
         <div className="strategy-pg-row">
           <span>費用込み想定取得単価</span>
-          <b>{number(r.acquisitionUnitPrice)} USDC / SUI</b>
+          <b>{number(r.acquisitionUnitPrice)} USDC / 基軸通貨</b>
         </div>
       )}
       <div className="strategy-pg-row">
         <span>モデル損益分岐価格</span>
         <b>
-          {r.breakEvenPrice ? `${number(r.breakEvenPrice)} USDC / SUI` : "不明"}
+          {r.breakEvenPrice
+            ? `${number(r.breakEvenPrice)} USDC / 基軸通貨`
+            : "不明"}
         </b>
       </div>
       {r.scope === "BUY_SCENARIO" && r.targetPrice != null && (

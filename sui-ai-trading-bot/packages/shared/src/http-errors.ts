@@ -107,17 +107,17 @@ export function requestIdentity(api: string, value: string, method: string) {
   let safeUrl = `${url.origin}/[redacted]`;
   let timeframe: string | null = null;
   if (url.hostname === "deepbook-indexer.mainnet.mystenlabs.com") {
-    if (url.pathname === "/ohclv/SUI_USDC") {
+    if (/^\/ohclv\/(SUI_USDC|WAL_USDC)$/.test(url.pathname)) {
       operation = "OHLCV_FETCH";
       const interval = url.searchParams.get("interval");
       timeframe = ["1m", "5m", "15m", "1h", "4h", "1d"].includes(interval ?? "")
         ? interval
         : null;
-    } else if (url.pathname === "/orderbook/SUI_USDC")
+    } else if (/^\/orderbook\/(SUI_USDC|WAL_USDC)$/.test(url.pathname))
       operation = "ORDERBOOK_FETCH";
     else if (url.pathname === "/status") operation = "MARKET_STATUS";
     else if (url.pathname === "/get_pools") operation = "PROVIDER_HEALTH";
-    else if (url.pathname === "/trades/SUI_USDC")
+    else if (/^\/trades\/(SUI_USDC|WAL_USDC)$/.test(url.pathname))
       operation = "TRADE_EVIDENCE_FETCH";
   }
   const publicGeckoPath =

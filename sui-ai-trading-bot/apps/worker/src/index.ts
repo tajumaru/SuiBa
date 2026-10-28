@@ -1,3 +1,4 @@
+import { WalPaperRouter } from "../../../packages/dex-router/src/pair-router.ts";
 import "../../../scripts/enforce-node-version.mjs";
 import { runtimeBuild } from "./runtime-build.ts";
 import {
@@ -35,7 +36,12 @@ import { BotDatabase } from "../../../packages/database/src/index.ts";
 import { GeckoMarketData } from "../../../packages/market-data/src/index.ts";
 import { CetusRouter } from "../../../packages/dex-router/src/index.ts";
 import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
-import { settingsSchema } from "../../../packages/shared/src/index.ts";
+import {
+  settingsSchema,
+  tradingPair,
+  tradingPairs,
+  type TradingPair,
+} from "../../../packages/shared/src/index.ts";
 import { BotEngine } from "./engine.ts";
 import { backtestMetadata, savedComparison } from "./backtest-service.ts";
 import { comparisonOptionsSchema } from "../../../packages/backtest-engine/src/index.ts";
@@ -54,7 +60,16 @@ const reconstruction = process.env.DEEPBOOK_RECONSTRUCT_CANDLES ?? "off";
 if (!["off", "verified"].includes(reconstruction))
   throw new Error("INVALID_DEEPBOOK_RECONSTRUCTION");
 const validationEnabled = assertValidationProfile(process.env);
-const db = new BotDatabase(process.env.DATABASE_PATH ?? "data/bot.sqlite");
+const rootDatabasePath = process.env.DATABASE_PATH ?? "data/bot.sqlite";
+const selectionDb = new BotDatabase(rootDatabasePath + ".pairs.sqlite");
+let pair = tradingPair(
+  process.env.TRADING_PAIR ?? selectionDb.get("selected_pair") ?? "SUI_USDC",
+);
+const pairPath = (value: TradingPair) =>
+  value === "SUI_USDC"
+    ? rootDatabasePath
+    : rootDatabasePath + ".WAL_USDC.sqlite";
+let db = new BotDatabase(pairPath(pair));
 db.set(
   "runtime_build",
   runtimeBuild(
@@ -62,27 +77,44 @@ db.set(
     readFileSync(new URL("../../../pnpm-lock.yaml", import.meta.url), "utf8"),
   ),
 );
-const sui = new ReadOnlySuiClient(process.env.SUI_GRPC_URL, {
+function createEngine(database: BotDatabase, selected: TradingPair) {
+  const client = new ReadOnlySuiClient(process.env.SUI_GRPC_URL, {
     onObservation: (event) =>
-      db.append("sui_observations", randomUUID(), event, event.at),
-  }),
-  engine = new BotEngine(
-    db,
-    new MarketSelection(
-      marketMode as "geckoterminal" | "deepbook" | "auto",
-      new GeckoMarketData(process.env.MARKET_POOL || undefined),
-      new DeepBookMarketData(
-        () => db.settings(),
-        undefined,
-        reconstruction === "verified",
-      ),
-    ),
-    new CetusRouter(),
-    sui,
+      database.append("sui_observations", randomUUID(), event, event.at),
+  });
+  const deep = new DeepBookMarketData(
+    () => database.settings(),
+    undefined,
+    reconstruction === "verified",
+    selected,
   );
+  const router = new CetusRouter();
+  try {
+    return {
+      sui: client,
+      engine: new BotEngine(
+        database,
+        new MarketSelection(
+          selected === "WAL_USDC"
+            ? "deepbook"
+            : (marketMode as "geckoterminal" | "deepbook" | "auto"),
+          new GeckoMarketData(process.env.MARKET_POOL || undefined),
+          deep,
+        ),
+        selected === "WAL_USDC" ? new WalPaperRouter(router, deep) : router,
+        client,
+        selected,
+      ),
+    };
+  } catch (error) {
+    client.close();
+    throw error;
+  }
+}
+let { sui, engine } = createEngine(db, pair);
 // Monitoring boot closes the previous uptime segment and never resumes trading.
 engine.monitor.boot();
-const validation = validationEnabled ? new ValidationRecorder(db) : undefined;
+let validation = validationEnabled ? new ValidationRecorder(db) : undefined;
 engine.validation = validation;
 validation?.boot();
 apiAccess.onAttempt = (event) => {
@@ -114,7 +146,9 @@ function validationHeartbeat(final = false) {
     (final || now - lastExportAt >= 60000)
   ) {
     exportValidationReport(
-      process.env.VALIDATION_REPORT_DIR,
+      pair === "SUI_USDC"
+        ? process.env.VALIDATION_REPORT_DIR
+        : resolve(process.env.VALIDATION_REPORT_DIR, pair),
       validation.report(now, true),
     );
     lastExportAt = now;
@@ -143,49 +177,61 @@ watchdog.unref();
 let stopping = false;
 let backtestBusy = false;
 let activeTick: Promise<void> | undefined;
-const chartHistory = new ChartHistoryClient(
-  (process.env.DATABASE_PATH ?? "data/bot.sqlite") + ".chart-history.sqlite",
-  () => {
-    const timing = engine.monitor.timing();
-    return (
-      !stopping &&
-      !apiAccess.blocked() &&
-      !apiAccess
-        .snapshot()
-        .some((a) => a.api === "DeepBook Indexer" && a.active) &&
-      !timing.fetching &&
-      (timing.nextFetchAt == null || timing.nextFetchAt - Date.now() > 12000)
-    );
-  },
-);
-const scheduler = new MarketScheduler(
-  async () => {
-    chartHistory.cancel();
-    activeTick = engine.tick();
-    await activeTick;
-  },
-  () => ({
-    intervalMs: db.settings().intervalMs,
-    deepbook:
-      marketMode === "deepbook" ||
-      (marketMode === "auto" &&
-        engine.marketStatus()?.source !== "GeckoTerminal"),
-    latestClosedAt: engine.monitor.state().lastMarketClosedAt,
-    healthy: engine.marketStatus()?.healthy ?? false,
-    blocked: apiAccess.blocked(),
-  }),
-  (plan) => engine.monitor.scheduled(plan?.at ?? null, plan?.reason ?? null),
-  () => {
-    console.error(
-      JSON.stringify({
-        event: "PAPER_WORKER_UNAVAILABLE",
-        databaseHealth: db.health(),
-      }),
-    );
-    process.exit(1);
-  },
-);
-const dashboard = new DashboardService(engine, db);
+const createChartHistory = () =>
+  new ChartHistoryClient(
+    pairPath(pair) + ".chart-history.sqlite",
+    () => {
+      const timing = engine.monitor.timing();
+      return (
+        !stopping &&
+        !apiAccess.blocked() &&
+        !apiAccess
+          .snapshot()
+          .some((a) => a.api === "DeepBook Indexer" && a.active) &&
+        !timing.fetching &&
+        (timing.nextFetchAt == null || timing.nextFetchAt - Date.now() > 12000)
+      );
+    },
+    pair,
+  );
+let chartHistory = createChartHistory();
+const createScheduler = () =>
+  new MarketScheduler(
+    async () => {
+      chartHistory.cancel();
+      activeTick = engine.tick();
+      try {
+        await activeTick;
+      } finally {
+        activeTick = undefined;
+      }
+    },
+    () => ({
+      intervalMs: db.settings().intervalMs,
+      deepbook:
+        pair === "WAL_USDC" ||
+        marketMode === "deepbook" ||
+        (marketMode === "auto" &&
+          engine.marketStatus()?.source !== "GeckoTerminal"),
+      latestClosedAt: engine.monitor.state().lastMarketClosedAt,
+      healthy: engine.marketStatus()?.healthy ?? false,
+      blocked: apiAccess.blocked(),
+    }),
+    (plan) => engine.monitor.scheduled(plan?.at ?? null, plan?.reason ?? null),
+    () => {
+      console.error(
+        JSON.stringify({
+          event: "PAPER_WORKER_UNAVAILABLE",
+          databaseHealth: db.health(),
+        }),
+      );
+      process.exit(1);
+    },
+  );
+let scheduler = createScheduler();
+let dashboard = new DashboardService(engine, db);
+let switching = false;
+let inFlightRequests = 0;
 const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Cache-Control", "no-store");
@@ -289,6 +335,22 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       send(200, { authenticated: true });
       return;
     }
+    if (req.headers["x-suiba-pair"] && req.headers["x-suiba-pair"] !== pair) {
+      send(409, { error: "PAIR_CHANGED" });
+      return;
+    }
+    if (switching) {
+      send(409, { error: "PAIR_SWITCH_IN_PROGRESS" });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/pairs") {
+      send(200, {
+        selected: pair,
+        pairs: Object.keys(tradingPairs),
+        mode: "PAPER",
+      });
+      return;
+    }
     if (req.method === "GET" && url.pathname === "/api/chart/history") {
       try {
         const query = historyQuery(url.searchParams);
@@ -358,7 +420,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         suiReads: { ...sui.readStatus },
         suiObservations: db.history("sui_observations", 50),
         ...(validation
-          ? { validation: timeAggregation(() => validation.report()) }
+          ? { validation: timeAggregation(() => validation!.report()) }
           : {}),
       });
       return;
@@ -368,7 +430,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       req.method === "GET" &&
       ["/api/validation", "/api/validation/report.md"].includes(url.pathname)
     ) {
-      const report = timeAggregation(() => validation.report(Date.now(), true));
+      const report = timeAggregation(() =>
+        validation!.report(Date.now(), true),
+      );
       if (url.pathname.endsWith(".md")) {
         res.writeHead(200, {
           "Content-Type": "text/markdown; charset=utf-8",
@@ -382,12 +446,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         send(400, { error: "READ_ONLY_ADDRESS_UNSET" });
         return;
       }
-      const { SUI, USDC } =
-        await import("../../../packages/shared/src/index.ts");
+      const { USDC } = await import("../../../packages/shared/src/index.ts");
       send(
         200,
         await Promise.all([
-          sui.balance(process.env.READ_ONLY_ADDRESS, SUI),
+          sui.balance(process.env.READ_ONLY_ADDRESS, tradingPairs[pair].base),
           sui.balance(process.env.READ_ONLY_ADDRESS, USDC),
         ]),
       );
@@ -411,6 +474,99 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
     }
     const body = text ? JSON.parse(text) : {};
+    if (url.pathname === "/api/pairs") {
+      const parsed = body.pair;
+      if (parsed !== "SUI_USDC" && parsed !== "WAL_USDC") {
+        send(400, { error: "INVALID_TRADING_PAIR" });
+        return;
+      }
+      if (parsed === pair) {
+        send(200, { selected: pair });
+        return;
+      }
+      if (
+        inFlightRequests > 1 ||
+        db.runtime().running ||
+        activeTick ||
+        backtestBusy ||
+        apiAccess
+          .snapshot()
+          .some((a) => a.active || (a.nextRetryAt ?? 0) > Date.now())
+      ) {
+        send(409, { error: "STOP_AND_WAIT_BEFORE_PAIR_SWITCH" });
+        return;
+      }
+      const sourceBlocker = db.pairSwitchBlocker();
+      if (sourceBlocker) {
+        send(409, { error: sourceBlocker, pair });
+        return;
+      }
+      switching = true;
+      try {
+        // Fully prepare the replacement before closing the old context.
+        const nextDb = new BotDatabase(pairPath(parsed));
+        // Inspect before boot(), which intentionally interrupts old pending candidates.
+        const targetBlocker = nextDb.pairSwitchBlocker();
+        if (targetBlocker) {
+          nextDb.close();
+          switching = false;
+          send(409, { error: targetBlocker, pair: parsed });
+          return;
+        }
+        let next;
+        try {
+          next = createEngine(nextDb, parsed);
+          next.engine.monitor.boot();
+        } catch (error) {
+          next?.sui.close();
+          nextDb.close();
+          engine.activateApiHooks();
+          throw error;
+        }
+        scheduler.stop();
+        chartHistory.close();
+        validationHeartbeat(true);
+        validation?.closed();
+        db.set("api_cooldowns", apiAccess.snapshot());
+        sui.close();
+        db.close();
+        pair = parsed;
+        db = nextDb;
+        engine = next.engine;
+        sui = next.sui;
+        db.set(
+          "runtime_build",
+          runtimeBuild(
+            process.env,
+            readFileSync(
+              new URL("../../../pnpm-lock.yaml", import.meta.url),
+              "utf8",
+            ),
+          ),
+        );
+        apiAccess.clearPairState();
+        apiAccess.restoreCooldowns(db.get("api_cooldowns") ?? []);
+        validation = validationEnabled ? new ValidationRecorder(db) : undefined;
+        engine.validation = validation;
+        validation?.boot();
+        selectionDb.set("selected_pair", pair);
+        chartHistory = createChartHistory();
+        dashboard = new DashboardService(engine, db);
+        scheduler = createScheduler();
+        scheduler.start();
+        switching = false;
+        send(200, { selected: pair, running: false });
+      } catch {
+        // A partially replaced context must never serve data or accept orders.
+        try {
+          db.set("runtime", { ...db.runtime(), running: false });
+        } catch {}
+        scheduler.stop();
+        send(503, { error: "PAIR_SWITCH_FAILED_RESTART_REQUIRED" });
+        setTimeout(() => process.exit(1), 100).unref();
+      }
+      return;
+    }
     if (validation && url.pathname === "/api/validation/start") {
       try {
         const report = validation.begin();
@@ -536,9 +692,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     send(400, { error: "REQUEST_FAILED" });
   }
 };
-const server = createServer((req, res) =>
-  withApiTiming(() => handleRequest(req, res)),
-);
+const server = createServer((req, res) => {
+  inFlightRequests++;
+  void withApiTiming(() => handleRequest(req, res)).finally(() => {
+    inFlightRequests--;
+  });
+});
 server.listen(
   Number(process.env.PORT ?? 3100),
   process.env.HOST ?? "127.0.0.1",
@@ -568,6 +727,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
         }
         sui.close();
         db.close();
+        selectionDb.close();
         process.exit(0);
       });
     });

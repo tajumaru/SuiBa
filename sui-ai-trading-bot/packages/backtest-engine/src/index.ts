@@ -4,6 +4,7 @@ import {
   atomic,
   units,
   SUI,
+  WAL,
   USDC,
   dayKey,
   defaults,
@@ -75,8 +76,8 @@ export function modelQuote(
   previousVolume: number,
   model: CostModel,
 ): QuoteResult {
-  const buy = request.from === USDC && request.to === SUI;
-  if (!buy && !(request.from === SUI && request.to === USDC))
+  const buy = request.from === USDC && [SUI, WAL].includes(request.to);
+  if (!buy && !([SUI, WAL].includes(request.from) && request.to === USDC))
     throw new Error("INVALID_QUOTE_DIRECTION");
   if (
     !Number.isFinite(request.referencePrice) ||
@@ -230,7 +231,13 @@ async function run(
     paper = new PaperTrading(),
     events: BacktestEvent[] = [],
     curve: CurvePoint[] = [];
-  let p = initialPortfolio(c[first].timestamp * 1000, o.initialUsdc),
+  const baseCoin = c[0]?.source.startsWith("DeepBook:WAL_USDC:USDC")
+    ? WAL
+    : SUI;
+  let p: Portfolio = {
+      ...initialPortfolio(c[first].timestamp * 1000, o.initialUsdc),
+      baseCoin,
+    },
     peak = o.initialUsdc;
   const filled = new Set<string>(),
     factory = deps.quoteFactory ?? modelQuote;
@@ -277,9 +284,9 @@ async function run(
         if (amount <= 0) throw new Error("NO_POSITION");
         const q = factory(
           {
-            from: side === "BUY" ? USDC : SUI,
-            to: side === "BUY" ? SUI : USDC,
-            amountIn: atomic(amount, side === "BUY" ? USDC : SUI),
+            from: side === "BUY" ? USDC : baseCoin,
+            to: side === "BUY" ? baseCoin : USDC,
+            amountIn: atomic(amount, side === "BUY" ? USDC : baseCoin),
             slippage: o.slippage,
             referencePrice: price,
           },
@@ -292,6 +299,7 @@ async function run(
           config = profitConfigOf(s);
         if (side === "SELL")
           event.profit = evaluateSell({
+            baseCoin,
             position: positionOf(p),
             quote: q,
             costs,
@@ -302,7 +310,7 @@ async function run(
         else {
           const reverse = factory(
             {
-              from: SUI,
+              from: baseCoin,
               to: USDC,
               amountIn: q.minAmountOut,
               slippage: o.slippage,
@@ -313,6 +321,7 @@ async function run(
             o,
           );
           event.profit = evaluateBuy({
+            baseCoin,
             buyQuote: q,
             sellQuote: reverse,
             buyCosts: costs,
@@ -404,7 +413,7 @@ export async function compareBacktests(
     timeframe = c[0]?.timeframe;
   if (!timeframe || c.length < 63)
     throw new Error("INSUFFICIENT_HISTORY_63_CANDLES");
-  if (![300,900,3600].includes(timeframe)) throw new Error("INVALID_CANDLE");
+  if (![300, 900, 3600].includes(timeframe)) throw new Error("INVALID_CANDLE");
   validateCandles(c, timeframe, (c.at(-1)!.timestamp + timeframe) * 1000, 63);
   if (c.some((x) => x.source !== c[0].source))
     throw new Error("MIXED_DATA_SOURCES");

@@ -1,0 +1,171 @@
+{
+  "mode": "READ_ONLY",
+  "node": "v24.22.1",
+  "evidence": [
+    {
+      "pair": "SUI_USDC",
+      "at": 1793221380464,
+      "completedAt": 1793221395057,
+      "ready": true,
+      "params": {
+        "minSize": "1000000000",
+        "lotSize": "100000000",
+        "tickSize": "100"
+      },
+      "book": {
+        "timestamp": 1793221394988,
+        "bid": 0.9478,
+        "ask": 0.94817,
+        "spread": 0.0003903015343069579,
+        "bids": [
+          [
+            0.9478,
+            1055
+          ],
+          [
+            0.94745,
+            4221
+          ],
+          [
+            0.94727,
+            2156.9
+          ],
+          [
+            0.94698,
+            2101.4
+          ],
+          [
+            0.94694,
+            2089.8
+          ]
+        ],
+        "asks": [
+          [
+            0.94817,
+            1055
+          ],
+          [
+            0.94819,
+            2154.9
+          ],
+          [
+            0.94848,
+            2124.9
+          ],
+          [
+            0.94852,
+            4221
+          ],
+          [
+            0.94877,
+            2169.5
+          ]
+        ]
+      },
+      "quality": {
+        "300": {
+          "upstream": "DeepBook Indexer",
+          "pair": "SUI_USDC",
+          "fetchedAt": 1793221382334,
+          "timeframe": 300,
+          "missing": 13,
+          "reconstructed": 13,
+          "unresolved": 0,
+          "unresolvedTimestamps": [],
+          "latestClosedAt": 1793221200000,
+          "origins": {
+            "ORIGINAL": 999,
+            "ONE_MINUTE_AGGREGATE": 0,
+            "NO_INDEXED_TRADES": 13
+          },
+          "originalCount": 999,
+          "gapTimestamps": [
+            1792925700,
+            1792940100,
+            1792952100,
+            1792959600,
+            1793019300,
+            1793069400,
+            1793069700,
+            1793076900,
+            1793125500,
+            1793127000,
+            1793165700,
+            1793166900,
+            1793169900
+          ],
+          "reconstructionMs": 12203
+        }
+      },
+      "diagnostics": {
+        "indexerLagMs": 1000,
+        "indexedThrough": 1793221393422,
+        "bidDepthUsdc": 11011.181097,
+        "askDepthUsdc": 11121.058568
+      },
+      "candles": {
+        "count": 1012,
+        "first": {
+          "timestamp": 1792917600,
+          "open": 0.91237,
+          "high": 0.91419,
+          "low": 0.91237,
+          "close": 0.91418,
+          "volume": 1281,
+          "timeframe": 300,
+          "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+          "provenance": {
+            "origin": "ORIGINAL",
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1793221382334,
+            "timeframe": 300,
+            "evidence": [
+              "/ohclv/SUI_USDC?interval=5m&limit=1000"
+            ]
+          }
+        },
+        "last": {
+          "timestamp": 1793220900,
+          "open": 0.94514,
+          "high": 0.94844,
+          "low": 0.94514,
+          "close": 0.94844,
+          "volume": 6195.6,
+          "timeframe": 300,
+          "source": "DeepBook:SUI_USDC:USDC:verified-v1",
+          "provenance": {
+            "origin": "ORIGINAL",
+            "upstream": "DeepBook Indexer",
+            "pair": "SUI_USDC",
+            "fetchedAt": 1793221382334,
+            "timeframe": 300,
+            "evidence": [
+              "/ohclv/SUI_USDC?interval=5m&limit=1000"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "pair": "WAL_USDC",
+      "at": 1793221395057,
+      "completedAt": 1793221395822,
+      "ready": false,
+      "error": "SPREAD_TOO_WIDE",
+      "params": {
+        "minSize": "1000000000",
+        "lotSize": "100000000",
+        "tickSize": "1"
+      },
+      "book": null,
+      "quality": {},
+      "diagnostics": {
+        "indexerLagMs": 1000,
+        "indexedThrough": 1793221394094,
+        "bidDepthUsdc": null,
+        "askDepthUsdc": null
+      }
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Sui Paper Lab — Sui AI Trading Bot v1.0
 
-SUI / Native USDC のMainnet市場データで、ルール戦略を検証する独立したPAPER専用Botです。**署名鍵の読込・署名・トランザクション構築・送信・実スワップは実装していません。** AI SDK・AI APIも使用しません。利益や24時間の安定運用は検証済みではありません。
+SUI / Native USDC または WAL / Native USDC のMainnet市場データで、ルール戦略を検証する独立したPAPER専用Botです。**署名鍵の読込・署名・トランザクション構築・送信・実スワップは実装していません。** AI SDK・AI APIも使用しません。利益や24時間の安定運用は検証済みではありません。
 
 [ProfitGuard](docs/PROFIT_GUARD.md)で、利確SELLの純利益とBUY前の想定往復コストを追加審査します。損切り・リスク削減は利益条件の対象外です。費用内訳と計算上の制約はリンク先を参照してください。
 
@@ -21,7 +21,7 @@ pnpm build
 pnpm dev
 ```
 
-[管理画面](http://127.0.0.1:3100)を開き、管理トークンを入力します。トークンはブラウザのメモリにのみ保持し、再読込時には再入力します。`.env` はGit・Dockerビルド対象外です。初期仮想残高は100 USDC / 0 SUI。Workerは停止状態で起動し、市場データを取得します。接続を確認してSettingsの「開始」を押すとPAPER売買を開始します。
+[管理画面](http://127.0.0.1:3100)を開き、管理トークンを入力します。トークンはブラウザのメモリにのみ保持し、再読込時には再入力します。`.env` はGit・Dockerビルド対象外です。初期仮想残高はペアごとに100 USDC / 基軸通貨0。Workerは停止状態で起動し、市場データを取得します。接続を確認してSettingsの「開始」を押すとPAPER売買を開始します。
 
 パターンによるログイン・登録は、保存データから管理トークンを推測されるリスクのため停止しています。更新後のログイン画面は、同じブラウザ・同じオリジンに残った旧パターン登録と暗号化トークンを削除します。以前の画面を開いているタブは閉じてください。削除に失敗した場合は画面の案内に従ってサイトの保存データを削除してください。すでに持ち出された暗号文や別ブラウザ・別オリジンの保存データは無効化できません。漏洩が疑われる場合はWorkerの`ADMIN_TOKEN`を変更して再起動してください。
 
@@ -46,14 +46,14 @@ Docker DesktopのLinuxコンテナでビルド・Compose起動・再起動後の
 - 同時処理は1件。注文IDはデータソース・時間足・確定足時刻・方向により固定。注文と約定と残高を `BEGIN IMMEDIATE` 内で保存し、一意制約で再処理を拒否します。APIから直接注文する機能はありません。
 - 5 / 15 / 60分足すべてを検証。未確定足を除外し、欠損・重複・時刻ずれ・非数・OHLC不整合・30%超の価格ジャンプ・古いデータは拒否。必要な履歴がない場合も停止します。欠損を都合よく補間しません。
 - 外部APIは試行ごと10秒タイムアウト。HTTP 429は即時PAPER停止し、Retry-Afterまたは指数バックオフ＋ジッターで最大2回再試行します。上限到達後は手動解除が必要で、復旧後もPAPERは自動再開しません。最終失敗、履歴データ障害、見積もり失敗、会計エラーは停止状態とrisk_eventsを保存します。生の外部エラーや認証情報はログに出しません。
-- Coin TypeはSDKの正規化後にSUI / Native USDCと完全一致で検証。名前の部分一致やブリッジUSDCの代用はしません。
+- Coin TypeはSDKの正規化後に選択ペア（SUIまたはWAL / Native USDC）と完全一致で検証。名前の部分一致やブリッジUSDCの代用はしません。
 - 最大注文5 USDC、UTC日次買付20 USDC、日次損失1%、スリッページ0.3%、保有比率20%。Settingsでは初期安全上限より厳しくできます。借入・空売り・レバレッジなし。日次損失到達後のBUYを止め、残高内のSELLは可能です。
 
 ## データと仮想約定の意味
 
 履歴ソースは[GeckoTerminal Public API](https://apiguide.geckoterminal.com/)のSuiプールOHLCVです。対象2トークンをメタデータで照合し、24時間取引高が最大のペアを選択します。`MARKET_POOL`で固定も可能です。1プールの履歴であり、Sui DEX市場全体の統合足ではありません。`currency=token` とSUI側の `token` を指定し、価格はNative USDC建てで取得します。出典は各足に保存します。Public APIはBetaで、利用上限・提供範囲・可用性は保証されません。
 
-見積もりは[Cetus公式Aggregator V3 SDK](https://github.com/CetusProtocol/aggregator)の `findRouters`（exact input）のみを使います。SUI→USDC / USDC→SUIに対応し、最適ルート選択はAggregatorに委ねます。Aftermath独自アダプターは未実装です。SDKには実行機能も含まれますが、このアプリから呼び出すのは見積もりだけです。
+見積もりは[Cetus公式Aggregator V3 SDK](https://github.com/CetusProtocol/aggregator)の `findRouters`（exact input）のみを使います。SUIまたはWALとUSDCの双方向に対応し、最適ルート選択はAggregatorに委ねます。Aftermath独自アダプターは未実装です。SDKには実行機能も含まれますが、このアプリから呼び出すのは見積もりだけです。
 
 通常の見積もりはサービス側の約定保証・統一された有効期限を持ちません。**ローカルで取得開始から15秒を上限**とし、期限内でもオンチェーン約定できる保証とは扱いません。`validateQuote` は期限・流動性・数量・price impactを確認します。price impactは最新確定足との価格差の絶対値とSDKの `deviationRatio` の絶対値の最大値で、純粋なAMM価格影響を分離測定したものではありません。価格乖離も保守的に拒否します。
 
@@ -120,3 +120,16 @@ DeepBookの実測、Provider設定、品質条件と検証結果は[DeepBook Pro
 隔離済み passive preflight（`docker/compose.preflight-30m.yaml`、PAPER・`running=false` の受動的観測）を、Windows 11で .bat のダブルクリックだけで30分／2時間／6時間／24時間実行し、Markdown・JSON・CSVレポートを自動生成するツールが [tools/windows-verification](tools/windows-verification/README.md) にあります。AIエージェント不要で、異常時は検証専用コンテナだけを安全停止します。
 
 DeepBookの取得周期・安全監視のP0修正と、既存検証を保持したままポート3102で再実行する手順は [DeepBook P0修正](docs/DEEPBOOK_P0_SCHEDULER.md) を参照してください。
+
+
+## SUI/USDC・WAL/USDCの選択
+
+画面上部の「取引ペア」で、停止中に1ペアを選択します。取得処理・長時間のAPI処理・バックテストの実行中やレート制限待機中は切り替えられません。切替元または切替先に未決済数量・残原価・未処理注文／候補がある場合も切替を拒否します。自動決済・取消・残高削除は行いません。切替後と再起動後は停止状態を維持し、PAPER開始は手動操作が必要です。他のブラウザタブで古いペアを操作した場合は再読込します。
+
+SUIの既存DBパスは変更しません。WALは`DATABASE_PATH + ".WAL_USDC.sqlite"`、選択状態は`DATABASE_PATH + ".pairs.sqlite"`、チャート履歴もペア別です。仮想資金・ポジション・注文・分析履歴・損益・リスク設定・運用検証は独立しています。既存の内部フィールド名`portfolio.sui`は選択ペアの基軸通貨数量を格納し、`baseCoin`で資産を識別します。
+
+WALはDeepBookのみを使用し、SUIのGeckoTerminal市場にはフォールバックしません。分析取得はSUIが直近1,000本、WALが直近300本（5分足では約25時間）です。両者とも最低61本、未解決欠損ゼロ、既存の鮮度・板厚・スプレッド・再構築上限を適用します。長い過去履歴は表示専用取得を利用します。
+
+`TRADING_PAIR=WAL_USDC`で起動ペアを指定できます。この環境変数を設定した場合は再起動時も環境変数が優先されます。UI選択を復元する運用では未設定にします。
+
+調査結果・公式情報・既知の制約・30分／2時間のPAPER検証手順は[WAL対応検証計画](docs/WAL_USDC_IMPLEMENTATION_JA.md)を参照してください。
