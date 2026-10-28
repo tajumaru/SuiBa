@@ -1,4 +1,3 @@
-import { ConnectivityStrip } from "./ConnectivityPanel.tsx";
 import { OperationBar } from "./OperationBar.tsx";
 import { recoveryStatus } from "./recoveryState.ts";
 import { VITAL_RECEIPT_FRESH_MS } from "./botVital.ts";
@@ -26,7 +25,6 @@ import {
 import { NAV_SHORT_LABELS, NavTabIcon } from "./navTabs.tsx";
 import { PriceChart } from "./PriceChart.tsx";
 import { BacktestComparison } from "./BacktestComparison.tsx";
-import { ProfitGuardSummary } from "./ProfitGuardPanel.tsx";
 import { useIndicatorHistory } from "./StrategyPanel.tsx";
 type State = ReturnType<BotEngine["snapshot"]>;
 const NAV_TABS = [
@@ -599,18 +597,6 @@ function App() {
                       : null
                   }
                 />
-                {/* The market-data diagnostics live on the operations
-                    tab, and the connectivity safety summary is a thin
-                    strip on the dashboard only, so neither panel follows
-                    the reader across every tab. The tab-independent
-                    emergency / stopped notices below stay as they are. */}
-                {activeTab === "Overview" && (
-                  <ConnectivityStrip
-                    safety={data.safety}
-                    stale={stateStale}
-                    onOpenDiagnostics={() => setTab("運用検証")}
-                  />
-                )}
                 {/* The narration tab stays mounted (only hidden) so
                     the feed history accumulated from snapshot diffs
                     survives tab switches. */}
@@ -663,7 +649,6 @@ function App() {
                         </section>
                       ))}
                     </div>
-                    <ProfitGuardSummary data={data} />
                     <label>
                       時間足
                       <select

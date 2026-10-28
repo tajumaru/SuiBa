@@ -149,11 +149,11 @@ it("summarizes recovery without repeating its technical requirements", () => {
   db.close();
 });
 
-it("places the market panel only on the operations tab and the strip only on the dashboard", () => {
+it("keeps diagnostics on the operations tab without a duplicate overview status card", () => {
   const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
-  // The dashboard is the only tab with the connectivity strip.
+  // The fixed header already provides the overview's current status.
   expect(main).toContain('activeTab === "Overview"');
-  expect(main).toContain("<ConnectivityStrip");
+  expect(main).not.toContain("<ConnectivityStrip");
   // Neither full panel follows the reader across tabs any more.
   expect(main).not.toContain("MarketDataPanel");
   expect(main).not.toContain("<ConnectivityPanel");

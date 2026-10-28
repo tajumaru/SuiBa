@@ -146,7 +146,7 @@ async function open(
     },
   };
 }
-test("overview keeps status brief and links to full diagnostics", async ({
+test("overview omits the duplicate status card and retains diagnostics navigation", async ({
   page,
 }) => {
   await open(page, "STOPPED");
@@ -157,11 +157,8 @@ test("overview keeps status brief and links to full diagnostics", async ({
     name: "通信とPAPER注文の状態",
     exact: true,
   });
-  await expect(status).toContainText("停止しています。");
-  await expect(status.locator("details, dl, .connectivity-chips")).toHaveCount(
-    0,
-  );
-  await status.getByRole("button", { name: "検証を見る", exact: true }).click();
+  await expect(status).toHaveCount(0);
+  await page.getByRole("button", { name: "運用検証", exact: true }).click();
   await expect(
     page.getByRole("region", { name: "運用状態", exact: true }),
   ).toBeVisible();

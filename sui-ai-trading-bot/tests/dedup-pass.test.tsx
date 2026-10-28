@@ -124,8 +124,8 @@ describe("dashboard dedup: profit guard detail lives on the strategy tab", () =>
     expect(html).toContain("判定データはまだありません");
   });
 
-  it("wires the overview to the summary, not the full panel", () => {
-    expect(main).toContain("<ProfitGuardSummary");
+  it("omits profit-guard cards from the overview", () => {
+    expect(main).not.toContain("<ProfitGuardSummary");
     expect(main).not.toContain("<ProfitGuardPanel");
   });
 });
