@@ -140,11 +140,75 @@ async function open(
   ).toBeVisible();
   return {
     writes,
+    state,
     fail: () => {
       fail = true;
     },
   };
 }
+test("history fits the phone width including reasons and expanded technical details", async ({
+  page,
+}, info) => {
+  const { state } = await open(page, "STOPPED");
+  state.orders.push({
+    timestamp: Date.now(),
+    side: "BUY",
+    status: "REJECTED",
+    reasons: ["PROFIT_GUARD_PROJECTED_NET_INSUFFICIENT"],
+    id: "long-order-id-".repeat(20),
+  });
+  state.trades.push({
+    orderId: "fill",
+    side: "BUY",
+    timestamp: Date.now(),
+    quantity: 123.456789,
+    price: 2.123456,
+    fee: 0.03,
+    pnl: null,
+    slippage: 0,
+    priceImpact: 0,
+    allocatedCostUsdc: "12345678901234567890.123456789",
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "取引履歴", exact: true }).click();
+  const orders = page.getByRole("table", { name: "注文履歴", exact: true });
+  await expect(orders).toContainText("拒否");
+  await expect(orders).toContainText(
+    "手数料を払うと、十分に儲からないので見送りました",
+  );
+  await orders.getByText("注文の技術情報", { exact: true }).click();
+  await expect(orders.locator("pre")).toBeVisible();
+  if (page.viewportSize()!.width <= 600) {
+    const dimensions = await page
+      .locator(".history-scroll")
+      .evaluateAll((elements) =>
+        elements.map((e) => ({
+          width: e.clientWidth,
+          content: e.scrollWidth,
+          left: e.getBoundingClientRect().left,
+          right: e.getBoundingClientRect().right,
+        })),
+      );
+    for (const box of dimensions) {
+      expect(box.content).toBeLessThanOrEqual(box.width + 1);
+      expect(box.left).toBeGreaterThanOrEqual(0);
+      expect(box.right).toBeLessThanOrEqual(page.viewportSize()!.width);
+    }
+    await expect(orders.locator("tbody td[data-label='理由']")).toHaveCSS(
+      "display",
+      "block",
+    );
+  } else {
+    await expect(orders).toHaveCSS("display", "table");
+  }
+  await orders.getByText("注文の技術情報", { exact: true }).click();
+  await orders.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: info.outputPath("history.png"),
+    fullPage: true,
+  });
+});
+
 for (const [status, tone, message] of [
   ["STOPPED", "stopped", "Botは停止しています"],
   ["RUNNING", "healthy", "売買条件を満たした場合のみPAPERで仮想売買します"],

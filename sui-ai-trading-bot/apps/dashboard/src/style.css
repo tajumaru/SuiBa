@@ -751,6 +751,58 @@ th {
 .scroll {
   overflow: auto;
 }
+/* History must remain readable without sideways scrolling on phones. */
+@media (max-width: 600px) {
+  .history-scroll {
+    overflow: visible;
+    min-width: 0;
+  }
+  .history-table,
+  .history-table tbody {
+    display: block;
+    white-space: normal;
+  }
+  .history-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .history-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid #263448;
+  }
+  .history-table td {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    overflow-wrap: anywhere;
+  }
+  .history-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 4px;
+    color: #8196a8;
+    font-size: 12px;
+  }
+  .history-table .history-wide {
+    grid-column: 1 / -1;
+  }
+  .history-table td p {
+    min-width: 0;
+    max-width: none;
+    margin: 0 0 8px;
+  }
+  .history-table td pre {
+    max-width: 100%;
+    white-space: pre-wrap;
+  }
+}
 .empty {
   height: 200px;
   display: grid;

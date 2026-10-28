@@ -179,8 +179,8 @@ function Chart(props: {
 function OrderHistory({ orders }: { orders: Record<string, unknown>[] }) {
   if (!orders.length) return <p>注文はまだありません。</p>;
   return (
-    <div className="scroll">
-      <table>
+    <div className="scroll history-scroll">
+      <table className="history-table" role="table" aria-label="注文履歴">
         <thead>
           <tr>
             <th>日時（日本時間）</th>
@@ -189,13 +189,19 @@ function OrderHistory({ orders }: { orders: Record<string, unknown>[] }) {
             <th>理由</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody role="rowgroup">
           {orders.map((o, i) => (
-            <tr key={i}>
-              <td>{dateTime(o.timestamp as number)}</td>
-              <td>{label(o.side)}</td>
-              <td>{label(o.status)}</td>
-              <td>
+            <tr key={i} role="row">
+              <td role="cell" data-label="日時" className="history-wide">
+                {dateTime(o.timestamp as number)}
+              </td>
+              <td role="cell" data-label="方向">
+                {label(o.side)}
+              </td>
+              <td role="cell" data-label="状態">
+                {label(o.status)}
+              </td>
+              <td role="cell" data-label="理由" className="history-wide">
                 {Array.isArray(o.reasons)
                   ? o.reasons.map((r, j) => (
                       <p key={j}>
@@ -719,8 +725,12 @@ function App() {
                   <>
                     <section>
                       <h3>仮想約定履歴</h3>
-                      <div className="scroll">
-                        <table>
+                      <div className="scroll history-scroll">
+                        <table
+                          className="history-table"
+                          role="table"
+                          aria-label="仮想約定履歴"
+                        >
                           <thead>
                             <tr>
                               {[
@@ -736,16 +746,36 @@ function App() {
                               ))}
                             </tr>
                           </thead>
-                          <tbody>
+                          <tbody role="rowgroup">
                             {data.trades.map((t) => (
-                              <tr key={t.orderId}>
-                                <td>{dateTime(t.timestamp)}</td>
-                                <td>{label(t.side)}</td>
-                                <td>{money(t.quantity)}</td>
-                                <td>{money(t.price)}</td>
-                                <td>{money(t.fee)}</td>
-                                <td>{money(t.pnl)}</td>
-                                <td>
+                              <tr key={t.orderId} role="row">
+                                <td
+                                  role="cell"
+                                  data-label="日時"
+                                  className="history-wide"
+                                >
+                                  {dateTime(t.timestamp)}
+                                </td>
+                                <td role="cell" data-label="方向">
+                                  {label(t.side)}
+                                </td>
+                                <td role="cell" data-label="数量">
+                                  {money(t.quantity)}
+                                </td>
+                                <td role="cell" data-label="価格">
+                                  {money(t.price)}
+                                </td>
+                                <td role="cell" data-label="手数料">
+                                  {money(t.fee)}
+                                </td>
+                                <td role="cell" data-label="実現損益">
+                                  {money(t.pnl)}
+                                </td>
+                                <td
+                                  role="cell"
+                                  data-label="取得原価 / 内訳"
+                                  className="history-wide"
+                                >
                                   {t.acquisition ? (
                                     <details>
                                       <summary>
