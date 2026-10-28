@@ -102,7 +102,7 @@ const DETAIL_LABELS = [
   "最終正常取得",
 ];
 
-it("renders the strip with the live message, chips, tone and the full detail list", () => {
+it("keeps the overview brief and reserves diagnostic details for the panel", () => {
   const { db, m } = fixture();
   db.set("runtime", { ...db.runtime(), running: true });
   db.set("paper_safety", {
@@ -115,11 +115,10 @@ it("renders the strip with the live message, chips, tone and the full detail lis
   expect(strip).toContain('role="status"');
   expect(strip).toContain('aria-live="polite"');
   expect(strip).toContain("tone-alert");
-  expect(strip).toContain("通信異常を検出しました");
-  expect(strip).toContain("通信：通信異常");
-  expect(strip).toContain("新規注文：注文禁止");
-  expect(strip).toContain("<details");
-  for (const label of DETAIL_LABELS) expect(strip).toContain(label);
+  expect(strip).toContain("通信が不安定なため、新しい注文を止めています");
+  expect(strip).not.toContain("connectivity-chips");
+  expect(strip).not.toContain("<details");
+  for (const label of DETAIL_LABELS) expect(strip).not.toContain(label);
   // The strip and the full panel render the same details and message:
   // one derivation, so the two surfaces cannot drift apart.
   const panel = renderToStaticMarkup(<ConnectivityPanel safety={safety} />);
@@ -128,7 +127,7 @@ it("renders the strip with the live message, chips, tone and the full detail lis
   db.close();
 });
 
-it("shows the resume-pending note in the strip details exactly like the panel", () => {
+it("summarizes recovery without repeating its technical requirements", () => {
   const { db, m } = fixture();
   db.set("paper_safety", {
     ...initialPaperSafety(),
@@ -138,9 +137,12 @@ it("shows the resume-pending note in the strip details exactly like the panel", 
   });
   const safety = m.safetySnapshot();
   const note = "復旧条件をすべて満たした場合にPAPERのみ再開します";
-  expect(renderToStaticMarkup(<ConnectivityStrip safety={safety} />)).toContain(
-    note,
+  const strip = renderToStaticMarkup(
+    <ConnectivityStrip safety={safety} onOpenDiagnostics={() => {}} />,
   );
+  expect(strip).toContain("通信の復旧を確認中です。注文は止めています");
+  expect(strip).toContain("検証を見る");
+  expect(strip).not.toContain(note);
   expect(renderToStaticMarkup(<ConnectivityPanel safety={safety} />)).toContain(
     note,
   );

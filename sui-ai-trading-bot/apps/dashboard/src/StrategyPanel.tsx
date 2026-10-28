@@ -508,16 +508,13 @@ export function StrategyPanel({
   return (
     <>
       <section>
-        <h3>ルールベース戦略 — どう判定するか</h3>
-        <p className="strategy-lead">
-          3つの条件がすべて揃い、出来高に異常がなければ「買い」。1つでも欠ければ見送ります。下の図は、最新の判断根拠そのものです。
-        </p>
+        <h3>売買ルール</h3>
         <div className="strategy-flow">
           <div className="strategy-conds">
             <div className="strategy-cond-row">
               <CardShell
                 name="EMA"
-                what="流れの向き"
+                what="価格の向き"
                 state={conditions.ema.state}
                 unknownText={unknownText}
               >

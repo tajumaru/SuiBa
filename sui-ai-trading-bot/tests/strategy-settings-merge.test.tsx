@@ -83,7 +83,7 @@ describe("merged strategy tab content", () => {
   );
 
   it("orders diagram, editor and stop-state release on one tab", () => {
-    const diagram = html.indexOf("ルールベース戦略 — どう判定するか");
+    const diagram = html.indexOf("売買ルール");
     const editor = html.indexOf("かんたん設定");
     const release = html.indexOf("停止状態の解除");
     expect(diagram).toBeGreaterThanOrEqual(0);

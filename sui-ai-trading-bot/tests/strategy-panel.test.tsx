@@ -88,7 +88,7 @@ const render = (
 describe("strategy panel: diagram-first layout", () => {
   it("renders condition cards, the verdict and grouped parameters from real records", () => {
     const html = render(data(waitDecision), telemetry());
-    expect(html).toContain("ルールベース戦略 — どう判定するか");
+    expect(html).toContain("売買ルール");
     expect(html.match(/data-state="met"/g)).toHaveLength(2);
     expect(html.match(/data-state="unmet"/g)).toHaveLength(1);
     expect(html).toContain("買い条件 3つ中 2つ成立");

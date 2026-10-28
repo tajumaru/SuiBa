@@ -146,6 +146,27 @@ async function open(
     },
   };
 }
+test("overview keeps status brief and links to full diagnostics", async ({
+  page,
+}) => {
+  await open(page, "STOPPED");
+  await page
+    .getByRole("button", { name: "ダッシュボード", exact: true })
+    .click();
+  const status = page.getByRole("region", {
+    name: "通信とPAPER注文の状態",
+    exact: true,
+  });
+  await expect(status).toContainText("停止しています。");
+  await expect(status.locator("details, dl, .connectivity-chips")).toHaveCount(
+    0,
+  );
+  await status.getByRole("button", { name: "検証を見る", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "運用状態", exact: true }),
+  ).toBeVisible();
+});
+
 test("history fits the phone width including reasons and expanded technical details", async ({
   page,
 }, info) => {

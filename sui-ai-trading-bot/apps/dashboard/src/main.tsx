@@ -605,7 +605,11 @@ function App() {
                     the reader across every tab. The tab-independent
                     emergency / stopped notices below stay as they are. */}
                 {activeTab === "Overview" && (
-                  <ConnectivityStrip safety={data.safety} stale={stateStale} />
+                  <ConnectivityStrip
+                    safety={data.safety}
+                    stale={stateStale}
+                    onOpenDiagnostics={() => setTab("運用検証")}
+                  />
                 )}
                 {/* The narration tab stays mounted (only hidden) so
                     the feed history accumulated from snapshot diffs
@@ -722,91 +726,10 @@ function App() {
                   />
                 )}
                 {activeTab === "Trading History" && (
-                  <>
-                    <section>
-                      <h3>仮想約定履歴</h3>
-                      <div className="scroll history-scroll">
-                        <table
-                          className="history-table"
-                          role="table"
-                          aria-label="仮想約定履歴"
-                        >
-                          <thead>
-                            <tr>
-                              {[
-                                "日時",
-                                "方向",
-                                "数量",
-                                "価格",
-                                "手数料",
-                                "実現損益",
-                                "取得原価 / 内訳",
-                              ].map((x) => (
-                                <th key={x}>{x}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody role="rowgroup">
-                            {data.trades.map((t) => (
-                              <tr key={t.orderId} role="row">
-                                <td
-                                  role="cell"
-                                  data-label="日時"
-                                  className="history-wide"
-                                >
-                                  {dateTime(t.timestamp)}
-                                </td>
-                                <td role="cell" data-label="方向">
-                                  {label(t.side)}
-                                </td>
-                                <td role="cell" data-label="数量">
-                                  {money(t.quantity)}
-                                </td>
-                                <td role="cell" data-label="価格">
-                                  {money(t.price)}
-                                </td>
-                                <td role="cell" data-label="手数料">
-                                  {money(t.fee)}
-                                </td>
-                                <td role="cell" data-label="実現損益">
-                                  {money(t.pnl)}
-                                </td>
-                                <td
-                                  role="cell"
-                                  data-label="取得原価 / 内訳"
-                                  className="history-wide"
-                                >
-                                  {t.acquisition ? (
-                                    <details>
-                                      <summary>
-                                        {precise(t.acquisition.totalCostUsdc)}
-                                      </summary>
-                                      <p>
-                                        追加手数料{" "}
-                                        {precise(t.costs?.additionalFeeUsdc)} /
-                                        ガス {precise(t.costs?.gasUsdc)} / DEX{" "}
-                                        {t.costs?.dexFeeUsdc == null
-                                          ? "内訳不明（見積もり内）"
-                                          : precise(t.costs.dexFeeUsdc)}
-                                      </p>
-                                    </details>
-                                  ) : t.allocatedCostUsdc ? (
-                                    precise(t.allocatedCostUsdc)
-                                  ) : (
-                                    "旧履歴：内訳不明"
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </section>
-                    <section>
-                      <h3>注文 / 拒否理由</h3>
-                      <OrderHistory orders={data.orders} />
-                    </section>
-                  </>
+                  <section>
+                    <h3>注文 / 拒否理由</h3>
+                    <OrderHistory orders={data.orders} />
+                  </section>
                 )}
                 {activeTab === "バックテスト比較" && (
                   <BacktestComparison token={token} settings={data.settings} />

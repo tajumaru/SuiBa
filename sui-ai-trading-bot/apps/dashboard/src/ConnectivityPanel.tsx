@@ -206,43 +206,47 @@ export function ConnectivityPanel({
  */
 export function ConnectivityStrip({
   safety,
-  timing,
   stale = false,
+  onOpenDiagnostics,
 }: {
   safety?: Safety;
   timing?: Timing;
   stale?: boolean;
+  onOpenDiagnostics?: () => void;
 }) {
   if (!safety) return null;
   const status = connectivityStatus(safety, stale);
+  const message = stale
+    ? "今の状態を確認できません。"
+    : safety.botState === "EMERGENCY_STOP"
+      ? "緊急停止しています。"
+      : safety.botState === "ABNORMAL_STOP"
+        ? "問題を検出したため停止しています。"
+        : safety.connectivity === "DEGRADED"
+          ? "通信が不安定なため、新しい注文を止めています。"
+          : safety.connectivity === "RECOVERING"
+            ? "通信の復旧を確認中です。注文は止めています。"
+            : safety.botState === "MANUAL_STOP"
+              ? "停止しています。"
+              : status.allowed
+                ? "正常に動いています。"
+                : "売買に必要な情報を確認中です。注文は止めています。";
   return (
     <section
       className={`card connectivity-strip tone-${status.tone}`}
       aria-label="通信とPAPER注文の状態"
     >
       <div className="connectivity-strip-head">
-        <h2>通信とPAPER注文</h2>
+        <h2>運用状態</h2>
         <p role="status" aria-live="polite" aria-atomic="true">
-          {status.message}
+          {message}
         </p>
       </div>
-      <ul className="connectivity-chips">
-        <li>通信：{status.connectivityLabel}</li>
-        <li>
-          新規注文：
-          {stale ? "未確認" : status.allowed ? "注文可能" : "注文禁止"}
-        </li>
-        <li>Bot：{status.botStateLabel}</li>
-      </ul>
-      <details className="connectivity-details">
-        <summary>詳細を表示</summary>
-        <ConnectivityDetails
-          safety={safety}
-          timing={timing}
-          stale={stale}
-          allowed={status.allowed}
-        />
-      </details>
+      {onOpenDiagnostics && (
+        <button type="button" onClick={onOpenDiagnostics}>
+          検証を見る
+        </button>
+      )}
     </section>
   );
 }
