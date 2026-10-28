@@ -1,6 +1,7 @@
 import React from "react";
 import type { BotEngine } from "../../worker/src/engine.ts";
 import { dateTime, number, percent } from "./presentation.ts";
+import { operationReason } from "./operationLabels.ts";
 
 type State = ReturnType<BotEngine["snapshot"]>;
 const money = (v: number | null | undefined) => number(v, 4);
@@ -19,15 +20,15 @@ const profitGuardReasonText: Record<string, string> = {
   INSUFFICIENT_POSITION: "売却数量が保有数量を超えています",
   INVALID_PROFIT_CONFIG: "利益保護の設定値が不正です",
   MINIMUM_NET_PROFIT_MET: "最低純利益額・利益率を満たしています",
-  MINIMUM_NET_PROFIT_NOT_MET: "手数料控除後の利益が最低条件に届きません",
-  PROTECTIVE_EXIT_PROFIT_BYPASS: "損切り・リスク削減のため利益条件は適用しません",
+  MINIMUM_NET_PROFIT_NOT_MET: operationReason("MINIMUM_NET_PROFIT_NOT_MET"),
+  PROTECTIVE_EXIT_PROFIT_BYPASS:
+    "損切り・リスク削減のため利益条件は適用しません",
   PROTECTIVE_EXIT_PROFIT_DATA_UNAVAILABLE:
     "リスク削減のための売却は利益条件の対象外です。見積もり・リスク制限の確認は別途必要です",
   PROFIT_DATA_UNKNOWN: "ガス代・見積もり・原価などが不明です",
   PROJECTED_NET_EXCEEDS_ROUND_TRIP_COST:
     "想定利確時の純利益が往復コストを上回ります",
-  PROJECTED_NET_INSUFFICIENT:
-    "想定利確時の純利益が往復コストまたは最低条件に届きません",
+  PROJECTED_NET_INSUFFICIENT: operationReason("PROJECTED_NET_INSUFFICIENT"),
 };
 
 /**

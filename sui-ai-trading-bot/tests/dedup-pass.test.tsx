@@ -111,7 +111,7 @@ describe("dashboard dedup: profit guard detail lives on the strategy tab", () =>
     });
     expect(html).toContain("利益保護：有効");
     expect(html).toContain(
-      "直近の判定：手数料控除後の利益が最低条件に届きません",
+      "直近の判定：手数料を払うと、十分に儲からないので見送りました",
     );
     // None of the full detail panel leaks into the overview.
     expect(html).not.toContain("モデル損益分岐価格");

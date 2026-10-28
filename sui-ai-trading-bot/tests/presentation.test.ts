@@ -13,6 +13,30 @@ import {
 import { Reason } from "../apps/dashboard/src/Reason.tsx";
 
 describe("日本語の表示", () => {
+  it.each([
+    "PROJECTED_NET_INSUFFICIENT",
+    "PROFIT_GUARD_PROJECTED_NET_INSUFFICIENT",
+    "MINIMUM_NET_PROFIT_NOT_MET",
+    "PROFIT_GUARD_MINIMUM_NET_PROFIT_NOT_MET",
+  ])(
+    "shows a plain profit rejection and retains its diagnostic code: %s",
+    (code) => {
+      const html = renderToStaticMarkup(React.createElement(Reason, { code }));
+      expect(html).toContain(
+        "手数料を払うと、十分に儲からないので見送りました",
+      );
+      expect(html).toContain(`コード：${code}`);
+      expect(html).not.toContain("安全条件またはデータの整合性");
+    },
+  );
+  it("keeps unavailable quotes and unknown profit failures distinct from low profit", () => {
+    expect(reason("PROFIT_GUARD_QUOTE_UNAVAILABLE")).toBe(
+      "価格見積もりを取得できません",
+    );
+    expect(reason("PROFIT_GUARD_DISABLED")).toContain("利益条件は無効");
+    expect(reason("PROFIT_GUARD_FUTURE_ERROR")).toContain("確認できません");
+    expect(reason("PROFIT_GUARD_FUTURE_ERROR")).not.toContain("儲からない");
+  });
   it("maps decisions without changing their internal values", () => {
     const actions = ["BUY", "SELL", "WAIT"];
     expect(actions.map(label)).toEqual(["買い", "売り", "見送り"]);

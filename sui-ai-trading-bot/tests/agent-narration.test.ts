@@ -666,7 +666,7 @@ describe("agent narration: trades and rejections from candidate audits", () => {
     expect(rejection.kind).toBe("rejection");
     expect(rejection.text).toContain("買いシグナルは出たけど、見送ったよ");
     expect(rejection.text).toContain(
-      "手数料込みの利益が基準に届かないため見送り",
+      "手数料を払うと、十分に儲からないので見送りました",
     );
   });
 });

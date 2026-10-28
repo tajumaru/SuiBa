@@ -60,7 +60,7 @@ async function open(
     },
     risk: { status: "NOT_EVALUATED", reasons: [] },
     finalAction: "WAIT",
-    reasons: ["PROJECTED_NET_INSUFFICIENT"],
+    reasons: ["PROFIT_GUARD_PROJECTED_NET_INSUFFICIENT"],
   };
   db.putCandidate(candidate);
   const state = engine.snapshot(),
@@ -105,8 +105,17 @@ async function open(
   }
   db.close();
   let fail = false;
+  let authenticated = false;
   const writes: string[] = [];
   await page.route("**/api/**", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/auth/session") {
+      if (route.request().method() === "POST") authenticated = true;
+      if (route.request().method() === "DELETE") authenticated = false;
+      return route.fulfill({
+        status: authenticated ? 200 : 401,
+        json: { authenticated },
+      });
+    }
     if (new URL(route.request().url()).pathname === "/api/dashboard/summary")
       return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
     if (route.request().method() !== "GET")
@@ -138,8 +147,8 @@ async function open(
 }
 for (const [status, tone, message] of [
   ["STOPPED", "stopped", "Botは停止しています"],
-  ["RUNNING", "healthy", "売買条件を満たした場合のみ、PAPERで仮想売買します"],
-  ["DATA_DELAYED", "warning", "通信または市場データを確認してください"],
+  ["RUNNING", "healthy", "売買条件を満たした場合のみPAPERで仮想売買します"],
+  ["DATA_DELAYED", "warning", "注文に必要なデータ・安全条件を確認しています"],
   ["ABNORMAL_STOP", "error", "照合で不整合を検出したため停止"],
 ] as const) {
   test(`displays ${status}, zero-trade reports, sanitized candidate reasons and atomic tolerances`, async ({
@@ -177,7 +186,7 @@ for (const [status, tone, message] of [
       "未評価（前段の条件未通過または処理中）",
     );
     await expect(page.locator(".operation-candidate")).toContainText(
-      "手数料を引くと、残る利益が基準に届かないため見送り",
+      "手数料を払うと、十分に儲からないので見送りました",
     );
     expect(
       await page.evaluate(
@@ -275,7 +284,7 @@ test("does not show stale information as healthy after a monitoring API error", 
     "運用検証データを取得できません",
   );
   await expect(page.locator(".operation-hero")).toContainText(
-    "最新のAPI応答を確認できません",
+    "最新のBot状態を取得できません",
   );
   await expect(page.locator(".operation-hero.healthy")).toHaveCount(0);
   expect(api.writes).toEqual([]);
@@ -354,7 +363,7 @@ test("times out delayed operations and ignores a late response after a newer suc
   await expect.poll(() => calls).toBe(1);
   await page.clock.runFor(8100);
   await expect(page.locator(".operation-hero")).toContainText(
-    "最新のAPI応答を確認できません",
+    "最新のBot状態を取得できません",
   );
   await page.clock.runFor(2000);
   await expect(page.locator(".operation-hero")).toHaveClass(/stopped/);
@@ -430,7 +439,7 @@ test("vital animation follows errors, recovery, stop and reduced motion", async 
   await page.clock.runFor(10_000);
   await expect(vital).toHaveClass("bot-vital unknown");
   await expect(page.locator(".operation-hero")).toContainText(
-    "最新のAPI応答を確認できません",
+    "最新のBot状態を取得できません",
   );
   fetchElapsedMs = 0;
   await page.clock.runFor(10_000);
@@ -455,7 +464,7 @@ test("vital expires immediately on page return and after API timeout", async ({
   await page.route("**/api/operations", () => {});
   await page.clock.runFor(18_100);
   await expect(page.locator(".operation-hero")).toContainText(
-    "最新のAPI応答を確認できません",
+    "最新のBot状態を取得できません",
   );
   await expect(vital).toHaveClass("bot-vital unknown");
 });

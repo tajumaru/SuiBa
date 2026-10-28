@@ -79,9 +79,10 @@ export function operationReason(code: string): string {
     NO_POSITION: "売却できる保有数量がありません",
     INVALID_PROFIT_CONFIG: "利益保護の設定が不正です",
     PROFIT_DATA_UNKNOWN: "利益計算に必要な情報が不足しています",
-    MINIMUM_NET_PROFIT_NOT_MET: "手数料込みの利益が基準に届かないため見送り",
+    MINIMUM_NET_PROFIT_NOT_MET:
+      "手数料を払うと、十分に儲からないので見送りました",
     PROJECTED_NET_INSUFFICIENT:
-      "手数料を引くと、残る利益が基準に届かないため見送り",
+      "手数料を払うと、十分に儲からないので見送りました",
     MINIMUM_NET_PROFIT_MET: "最低純利益の条件を満たしました",
     PROJECTED_NET_EXCEEDS_ROUND_TRIP_COST:
       "手数料を引いても、残る利益が基準を満たしました",
@@ -111,6 +112,11 @@ export function operationReason(code: string): string {
       "データ取得またはPAPER処理でエラーが発生しました",
   };
   if (labels[code]) return labels[code];
+  // Order records prefix the profit check's reason; use the same plain label.
+  if (code.startsWith("PROFIT_GUARD_")) {
+    const reason = code.slice("PROFIT_GUARD_".length);
+    if (labels[reason]) return labels[reason];
+  }
   if (code.startsWith("QUOTE_"))
     return "価格見積もりの取得・検証に失敗しました";
   if (code.startsWith("MARKET_")) return "市場データの取得・検証に失敗しました";
