@@ -326,6 +326,64 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
       }
       throw Error("PAIR_SWITCH_DID_NOT_DRAIN");
     }
+    async function blockedSwitch(expected: string, expectedPair: string) {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const response = await api("pairs", { pair: "WAL_USDC" });
+        if (response.value.error === "STOP_AND_WAIT_BEFORE_PAIR_SWITCH") {
+          await new Promise((r) => setTimeout(r, 50));
+          continue;
+        }
+        expect(response).toEqual({
+          status: 409,
+          value: { error: expected, pair: expectedPair },
+        });
+        return;
+      }
+      throw Error("PAIR_GATE_DID_NOT_DRAIN");
+    }
+    const sourceWriter = new BotDatabase(database);
+    const flatSource = sourceWriter.portfolio();
+    const position = {
+      ...flatSource,
+      sui: 1,
+      quantityAtomic: "1000000000",
+      costBasis: 2,
+      costBasisUsdc: "2.000000",
+    };
+    sourceWriter.set("portfolio", position);
+    await blockedSwitch("PAIR_POSITION_OPEN", "SUI_USDC");
+    expect((await api("state")).value.portfolio).toEqual(position);
+    sourceWriter.set("portfolio", flatSource);
+    sourceWriter.append("paper_orders", "unfinished-switch", {
+      status: "PENDING",
+    });
+    await blockedSwitch("PAIR_PENDING_WORK", "SUI_USDC");
+    (sourceWriter as unknown as { db: DatabaseSync }).db
+      .prepare("UPDATE paper_orders SET json=? WHERE id=?")
+      .run(JSON.stringify({ status: "CANCELLED" }), "unfinished-switch");
+    sourceWriter.close();
+    const targetWriter = new BotDatabase(database + ".WAL_USDC.sqlite");
+    const flatTarget = targetWriter.portfolio();
+    targetWriter.set("portfolio", {
+      ...flatTarget,
+      sui: 0.1,
+      quantityAtomic: "100000000",
+      costBasis: 0.01,
+    });
+    await blockedSwitch("PAIR_POSITION_OPEN", "WAL_USDC");
+    expect((await api("pairs")).value.selected).toBe("SUI_USDC");
+    targetWriter.set("portfolio", flatTarget);
+    targetWriter.append("operation_candidates", "unprocessed-target", {
+      finalAction: "PENDING",
+    });
+    await blockedSwitch("PAIR_PENDING_WORK", "WAL_USDC");
+    expect(targetWriter.history("operation_candidates")[0].finalAction).toBe(
+      "PENDING",
+    );
+    (targetWriter as unknown as { db: DatabaseSync }).db
+      .prepare("UPDATE operation_candidates SET json=? WHERE id=?")
+      .run(JSON.stringify({ finalAction: "SAFE_STOP" }), "unprocessed-target");
+    targetWriter.close();
     await selectPair("WAL_USDC");
     let wal = (await api("state")).value;
     expect(wal.pair).toBe("WAL_USDC");

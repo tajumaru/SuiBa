@@ -3,6 +3,14 @@ import type { Candle, Timeframe } from "../../shared/src/index.ts";
 export type Frames = Record<number, Candle[]>;
 export interface MarketStatus {
   diagnostics?: {
+    bookObservation?: {
+      timestamp: number;
+      fetchedAt: number;
+      bid: number;
+      ask: number;
+      spread: number;
+      maxSpread: number;
+    } | null;
     indexerLagMs: number | null;
     indexedThrough: number;
     bidDepthUsdc: number | null;

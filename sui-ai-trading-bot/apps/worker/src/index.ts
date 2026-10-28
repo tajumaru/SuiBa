@@ -496,10 +496,23 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         send(409, { error: "STOP_AND_WAIT_BEFORE_PAIR_SWITCH" });
         return;
       }
+      const sourceBlocker = db.pairSwitchBlocker();
+      if (sourceBlocker) {
+        send(409, { error: sourceBlocker, pair });
+        return;
+      }
       switching = true;
       try {
         // Fully prepare the replacement before closing the old context.
         const nextDb = new BotDatabase(pairPath(parsed));
+        // Inspect before boot(), which intentionally interrupts old pending candidates.
+        const targetBlocker = nextDb.pairSwitchBlocker();
+        if (targetBlocker) {
+          nextDb.close();
+          switching = false;
+          send(409, { error: targetBlocker, pair: parsed });
+          return;
+        }
         let next;
         try {
           next = createEngine(nextDb, parsed);

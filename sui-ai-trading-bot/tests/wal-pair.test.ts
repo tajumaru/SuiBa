@@ -1,3 +1,4 @@
+import type { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   atomic,
@@ -15,6 +16,8 @@ import {
 import {
   DeepBookMarketData,
   parseDeepBook,
+  validateBook,
+  bookObservation,
 } from "../packages/market-data/src/deepbook.ts";
 import { MarketSelection } from "../packages/market-data/src/selection.ts";
 import {
@@ -351,4 +354,142 @@ it("WAL timeout closes the execution gate without changing a SUI ledger", async 
   expect(suiDb.runtime().error).toBeNull();
   db.close();
   suiDb.close();
+});
+
+it.each([
+  { sui: 0.000000001 },
+  { quantityAtomic: "1" },
+  { costBasis: 0.000001 },
+  { costBasisUsdc: "0.000001" },
+])("blocks pair switching with residual holdings or basis %j", (change) => {
+  const db = new BotDatabase(":memory:");
+  const initial = db.portfolio();
+  db.set("portfolio", { ...initial, ...change });
+  expect(db.pairSwitchBlocker()).toBe("PAIR_POSITION_OPEN");
+  expect(db.portfolio()).toEqual({ ...initial, ...change });
+  db.close();
+});
+it("scans all pending orders and candidates without a history limit or auto-cancellation", () => {
+  const db = new BotDatabase(":memory:");
+  db.append("paper_orders", "pending", { status: "PENDING" }, 1);
+  db.transaction(() => {
+    for (let i = 0; i < 300; i++)
+      db.append("paper_orders", `done-${i}`, { status: "FILLED" }, i + 2);
+  });
+  expect(db.pairSwitchBlocker()).toBe("PAIR_PENDING_WORK");
+  (db as unknown as { db: DatabaseSync }).db
+    .prepare("UPDATE paper_orders SET json=? WHERE id=?")
+    .run(JSON.stringify({ status: "CANCELLED" }), "pending");
+  db.append(
+    "operation_candidates",
+    "pending-candidate",
+    { finalAction: "PENDING" },
+    1,
+  );
+  expect(db.pairSwitchBlocker()).toBe("PAIR_PENDING_WORK");
+  (db as unknown as { db: DatabaseSync }).db
+    .prepare("UPDATE operation_candidates SET json=? WHERE id=?")
+    .run(JSON.stringify({ finalAction: "SAFE_STOP" }), "pending-candidate");
+  expect(db.pairSwitchBlocker()).toBeNull();
+  db.close();
+});
+it("rejects invalid ledgers and unknown order states at pair switch", () => {
+  const db = new BotDatabase(":memory:");
+  const p = db.portfolio();
+  db.set("portfolio", { ...p, quantityAtomic: "NaN" });
+  expect(db.pairSwitchBlocker()).toBe("PAIR_INVALID_LEDGER");
+  db.set("portfolio", p);
+  db.append("paper_orders", "unknown", {});
+  expect(db.pairSwitchBlocker()).toBe("PAIR_PENDING_WORK");
+  db.close();
+});
+it("retains exact bid/ask and threshold from a rejected WAL book without allowing orders", async () => {
+  const { deep } = fixture();
+  await deep.prepare();
+  const raw = {
+    timestamp: String(now),
+    bids: [["0.034", "100000"]],
+    asks: [["0.0342", "100000"]],
+  };
+  const observation = bookObservation(raw, now + 10, 0.003)!;
+  expect(observation.bid).toBe(0.034);
+  expect(observation.ask).toBe(0.0342);
+  expect(observation.spread).toBeCloseTo(0.0002 / 0.0341, 12);
+  expect(observation.maxSpread).toBe(0.003);
+  expect(() => validateBook(raw, now + 10, 5, 0.003)).toThrow(
+    "SPREAD_TOO_WIDE",
+  );
+  const read = vi.fn(async (path: string): Promise<unknown> => {
+    if (path.startsWith("/orderbook")) return raw;
+    if (path.startsWith("/status"))
+      return {
+        status: "OK",
+        current_time_ms: now,
+        max_checkpoint_lag: 1,
+        max_time_lag_seconds: 1,
+      };
+    return [
+      {
+        pool_name: "WAL_USDC",
+        pool_id: tradingPairs.WAL_USDC.poolId,
+        base_asset_id: WAL,
+        quote_asset_id: USDC,
+        base_asset_decimals: 9,
+        quote_asset_decimals: 6,
+        min_size: 1e9,
+        lot_size: 1e8,
+        tick_size: 1,
+      },
+    ];
+  });
+  const rejecting = new DeepBookMarketData(
+    () => ({ maxOrder: 5, maxSlippage: 0.003 }),
+    read,
+    true,
+    "WAL_USDC",
+  );
+  const market = new MarketSelection(
+    "deepbook",
+    { candles: vi.fn() },
+    rejecting,
+  );
+  await expect(market.frames()).rejects.toThrow("SPREAD_TOO_WIDE");
+  expect(rejecting.diagnostics().bookObservation).toMatchObject({
+    bid: 0.034,
+    ask: 0.0342,
+    timestamp: now,
+    maxSpread: 0.003,
+  });
+  expect(market.status().healthy).toBe(false);
+  expect(() => market.assertReady(now)).toThrow("MARKET_UNAVAILABLE");
+  const db = new BotDatabase(":memory:");
+  const router = { getQuote: vi.fn(), validateQuote: vi.fn() };
+  const status = { healthy: true, checkedAt: now, failures: 0 };
+  const engine = new BotEngine(
+    db,
+    market,
+    router,
+    { health: async () => status, status },
+    "WAL_USDC",
+  );
+  db.set("runtime", { ...db.runtime(), running: true });
+  await engine.tick();
+  expect(db.runtime()).toMatchObject({
+    running: false,
+    error: "SPREAD_TOO_WIDE",
+  });
+  expect(router.getQuote).not.toHaveBeenCalled();
+  expect(db.history("paper_trades")).toHaveLength(0);
+  db.close();
+});
+it("spread ratio is scale invariant and is not a 9/6 decimal conversion", () => {
+  const raw = (scale: number) => ({
+    timestamp: String(now),
+    bids: [[String(0.034 * scale), "100000"]],
+    asks: [[String(0.0342 * scale), "100000"]],
+  });
+  expect(bookObservation(raw(1e3), now, 0.003)!.spread).toBeCloseTo(
+    bookObservation(raw(1), now, 0.003)!.spread,
+    12,
+  );
 });

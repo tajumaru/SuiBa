@@ -1,0 +1,95 @@
+{
+  "node": "v24.22.1",
+  "viewport": {
+    "width": 375,
+    "height": 900
+  },
+  "browser": "Chromium from the same Playwright installation and cache",
+  "sameDependencies": true,
+  "sameTestNamesAndResults": true,
+  "runs": [
+    {
+      "revision": "main",
+      "sha": "e12548aff07bd83a1de769364ebf0afbf97fc726",
+      "failed": 5,
+      "passed": 1,
+      "tests": [
+        {
+          "number": 1,
+          "name": "2016 bars share periods gestures and selection without repeated history transfer",
+          "status": "failed"
+        },
+        {
+          "number": 2,
+          "name": "modern feed keeps status prompt, caches charts and recovers failed channels",
+          "status": "failed"
+        },
+        {
+          "number": 3,
+          "name": "DeepBook validation explicit begin stays PAPER-only",
+          "status": "failed"
+        },
+        {
+          "number": 4,
+          "name": "DeepBook validation partial report stays PAPER-only",
+          "status": "failed"
+        },
+        {
+          "number": 5,
+          "name": "Japanese screens preserve actions, ratios and epochs across all viewports",
+          "status": "failed"
+        },
+        {
+          "number": 6,
+          "name": "authentication errors show Japanese and retain the code",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "revision": "pr25",
+      "sha": "180af54e1bd813ea1211a0b5d2b10671a3ea3514 + review working changes",
+      "failed": 5,
+      "passed": 1,
+      "tests": [
+        {
+          "number": 1,
+          "name": "2016 bars share periods gestures and selection without repeated history transfer",
+          "status": "failed"
+        },
+        {
+          "number": 2,
+          "name": "modern feed keeps status prompt, caches charts and recovers failed channels",
+          "status": "failed"
+        },
+        {
+          "number": 3,
+          "name": "DeepBook validation explicit begin stays PAPER-only",
+          "status": "failed"
+        },
+        {
+          "number": 4,
+          "name": "DeepBook validation partial report stays PAPER-only",
+          "status": "failed"
+        },
+        {
+          "number": 5,
+          "name": "Japanese screens preserve actions, ratios and epochs across all viewports",
+          "status": "failed"
+        },
+        {
+          "number": 6,
+          "name": "authentication errors show Japanese and retain the code",
+          "status": "passed"
+        }
+      ]
+    }
+  ],
+  "failureCauses": {
+    "chart-sync": "auth/session POST counted as a trading mutation",
+    "dashboard-feed": "auth/session returns 404; login never completes",
+    "deepbook-validation": "auth/session POST counted as a trading mutation",
+    "localization": "auth/session rejected as an unexpected fixture request"
+  },
+  "scope": "Six authentication-fixture tests, not the entire E2E suite"
+}

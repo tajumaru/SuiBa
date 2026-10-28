@@ -136,12 +136,41 @@ export function validateBook(
   }
   return { timestamp, bid, ask, spread, bids, asks };
 }
+/** Same-response evidence, including books rejected by the safety gate. No rescaling. */
+export function bookObservation(
+  raw: unknown,
+  fetchedAt: number,
+  maxSpread: number,
+) {
+  const parsed = z
+    .object({
+      timestamp: z.union([z.string(), z.number()]),
+      bids: z.array(level).min(1),
+      asks: z.array(level).min(1),
+    })
+    .safeParse(raw);
+  if (!parsed.success) return null;
+  const timestamp = Number(parsed.data.timestamp),
+    bid = Number(parsed.data.bids[0][0]),
+    ask = Number(parsed.data.asks[0][0]);
+  if (![timestamp, bid, ask].every(Number.isFinite) || bid <= 0 || ask <= 0)
+    return null;
+  return {
+    timestamp,
+    fetchedAt,
+    bid,
+    ask,
+    spread: (ask - bid) / ((ask + bid) / 2),
+    maxSpread,
+  };
+}
 type ReadJson = (path: string, ttl?: number) => Promise<unknown>;
 export class DeepBookMarketData {
   book: Book | null = null;
   bookParams: { minSize: string; lotSize: string; tickSize: string } | null =
     null;
   private bookRaw: unknown;
+  private bookFetchedAt = 0;
   private qualities: Record<number, CandleQuality> = {};
   private proofs = new Map<number, EmptyTradeProof>();
 
@@ -159,6 +188,11 @@ export class DeepBookMarketData {
             .reduce((n, x) => n + x[0] * x[1], 0)
         : null;
     return {
+      bookObservation: bookObservation(
+        this.bookRaw,
+        this.bookFetchedAt,
+        this.limits().maxSlippage,
+      ),
       indexerLagMs: this.indexerLagMs,
       indexedThrough: this.indexedThrough,
       bidDepthUsdc: depth(this.book?.bids),
@@ -266,7 +300,8 @@ export class DeepBookMarketData {
     this.bookRaw = await this.checkedRead(
       `/orderbook/${this.pair}?level=2&depth=10`,
     );
-    this.assertReady(Date.now());
+    this.bookFetchedAt = Date.now();
+    this.assertReady(this.bookFetchedAt);
   }
   async refreshForOrder() {
     await this.refresh();

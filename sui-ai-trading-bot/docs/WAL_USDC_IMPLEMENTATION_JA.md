@@ -43,7 +43,7 @@
 - チャートキャッシュ：各ペアDBパスに`.chart-history.sqlite`を付与
 - WALレポート出力：`VALIDATION_REPORT_DIR/WAL_USDC`。SUIの出力先は維持
 
-`GET /api/pairs`で選択状態、`POST /api/pairs`の`{"pair":"WAL_USDC"}`で切替。認証と同一オリジンの既存ガードを通過する。売買稼働中、市場取得中、別API要求中、バックテスト中、レート制限待機中は409。切替後は新エンジン・検証記録・チャートworker・表示キャッシュを作成し、手動開始を要求する。ポジションが残っていても別DBで保持し、切替による決済は行わない。切替処理自体が失敗した場合は停止してプロセスを終了し、部分的な文脈で継続しない。
+`GET /api/pairs`で選択状態、`POST /api/pairs`の`{"pair":"WAL_USDC"}`で切替。認証と同一オリジンの既存ガードを通過する。売買稼働中、市場取得中、別API要求中、バックテスト中、レート制限待機中は409。切替後は新エンジン・検証記録・チャートworker・表示キャッシュを作成し、手動開始を要求する。切替元・切替先に未決済数量・残原価・未処理注文／候補があれば409で拒否する。自動決済・取消・残高削除は行わない。切替先はboot前に検査するため、bootによるPENDING候補の中断処理で未完了状態を隠さない。旧版で残った別ペアを確認する場合は停止後にTRADING_PAIRで対象ペアを明示して起動し、決済・会計確認を行う。切替処理自体が失敗した場合は停止してプロセスを終了し、部分的な文脈で継続しない。
 
 UIは`X-SuiBa-Pair`を送り、別タブが古いペアのデータ要求・変更を送ると409 `PAIR_CHANGED`で再読込する。APIに直接接続する独自クライアントもこのヘッダーを指定すること。ヘッダーを省略する既存APIクライアントは現在選択中のペアを操作する互換動作を維持する。
 
@@ -153,3 +153,6 @@ node --import tsx scripts/probe-trading-pairs.ts
 - `tests/header-avatar.test.tsx`
 - `tests/settings-api.test.ts`
 - `tests/wal-pair.test.ts`
+
+
+PR #25の最終レビューと修正内容は[PR25_FINAL_REVIEW_JA.md](PR25_FINAL_REVIEW_JA.md)を参照。

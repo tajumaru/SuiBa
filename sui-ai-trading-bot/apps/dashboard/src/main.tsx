@@ -524,9 +524,15 @@ function App() {
                   try {
                     await api("pairs", { pair: event.target.value });
                     window.location.reload();
-                  } catch {
+                  } catch (error) {
+                    const code = error instanceof Error ? error.message : "";
                     setBannerError(
-                      "ペアを切り替えられません。売買を停止し、市場データ取得の完了後に再試行してください。",
+                      code === "PAIR_POSITION_OPEN"
+                        ? "未決済ポジションまたは未精算の原価が残っています。対象ペアで決済・会計確認を完了してから切り替えてください。"
+                        : code === "PAIR_PENDING_WORK" ||
+                            code === "PAIR_INVALID_LEDGER"
+                          ? "未処理注文または会計の確認が必要です。運用検証で対象ペアを確認してください。"
+                          : "ペアを切り替えられません。売買を停止し、市場データ取得の完了後に再試行してください。",
                     );
                     setPairBusy(false);
                   }

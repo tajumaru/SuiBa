@@ -5,6 +5,7 @@ import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   defaults,
+  Decimal,
   settingsSchema,
   type Settings,
   type Runtime,
@@ -484,6 +485,31 @@ export class BotDatabase {
       "SELECT COUNT(*) n FROM operation_events WHERE timestamp>=? AND timestamp<=? AND json_extract(json,'$.kind')='WAIT'",
     ).get(from, until) as { n: number };
     return { ...row, waits: row.waits + waits.n };
+  }
+  /** Full-ledger switch gate: never hide holdings or unfinished work in an inactive pair. */
+  pairSwitchBlocker():
+    "PAIR_POSITION_OPEN" | "PAIR_PENDING_WORK" | "PAIR_INVALID_LEDGER" | null {
+    const p = this.portfolio();
+    try {
+      const quantities = [
+        p.sui,
+        p.quantityAtomic ?? "0",
+        p.costBasis,
+        p.costBasisUsdc ?? "0",
+      ].map((v) => new Decimal(v));
+      if (quantities.some((v) => !v.isFinite() || v.isNegative()))
+        return "PAIR_INVALID_LEDGER";
+      if (quantities.some((v) => !v.isZero())) return "PAIR_POSITION_OPEN";
+    } catch {
+      return "PAIR_INVALID_LEDGER";
+    }
+    const pendingCandidate = this.prepare(
+      "SELECT 1 FROM operation_candidates WHERE COALESCE(json_extract(json,'$.finalAction'),'') NOT IN ('BUY','SELL','WAIT','SAFE_STOP') LIMIT 1",
+    ).get();
+    const pendingOrder = this.prepare(
+      "SELECT 1 FROM paper_orders WHERE COALESCE(json_extract(json,'$.status'),'') NOT IN ('FILLED','REJECTED','CANCELLED','EXPIRED') LIMIT 1",
+    ).get();
+    return pendingCandidate || pendingOrder ? "PAIR_PENDING_WORK" : null;
   }
   interruptPending(now: number) {
     const rows = this.prepare(

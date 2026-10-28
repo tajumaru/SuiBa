@@ -1,0 +1,140 @@
+{
+  "mode": "READ_ONLY",
+  "node": "v24.22.1",
+  "maxOrder": 5,
+  "maxSpread": 0.003,
+  "samples": [
+    {
+      "pair": "WAL_USDC",
+      "round": 0,
+      "beganAt": 1793222996144,
+      "completedAt": 1793222999312,
+      "ready": true,
+      "error": null,
+      "diagnostics": {
+        "bookObservation": {
+          "timestamp": 1793222999099,
+          "fetchedAt": 1793222999306,
+          "bid": 0.033881,
+          "ask": 0.03392,
+          "spread": 0.0011504255099481532,
+          "maxSpread": 0.003
+        },
+        "indexerLagMs": 1000,
+        "indexedThrough": 1793222996869,
+        "bidDepthUsdc": 6.025508,
+        "askDepthUsdc": 6.037762999999999
+      }
+    },
+    {
+      "pair": "SUI_USDC",
+      "round": 0,
+      "beganAt": 1793222999314,
+      "completedAt": 1793223001145,
+      "ready": true,
+      "error": null,
+      "diagnostics": {
+        "bookObservation": {
+          "timestamp": 1793223001076,
+          "fetchedAt": 1793223001145,
+          "bid": 0.94561,
+          "ask": 0.94598,
+          "spread": 0.00039120528232872083,
+          "maxSpread": 0.003
+        },
+        "indexerLagMs": 1000,
+        "indexedThrough": 1793222998629,
+        "bidDepthUsdc": 9149.162114,
+        "askDepthUsdc": 10943.559038
+      }
+    },
+    {
+      "pair": "WAL_USDC",
+      "round": 1,
+      "beganAt": 1793223001146,
+      "completedAt": 1793223003338,
+      "ready": true,
+      "error": null,
+      "diagnostics": {
+        "bookObservation": {
+          "timestamp": 1793223003187,
+          "fetchedAt": 1793223003337,
+          "bid": 0.033881,
+          "ask": 0.03392,
+          "spread": 0.0011504255099481532,
+          "maxSpread": 0.003
+        },
+        "indexerLagMs": 2000,
+        "indexedThrough": 1793223001371,
+        "bidDepthUsdc": 6.025508,
+        "askDepthUsdc": 6.037762999999999
+      }
+    },
+    {
+      "pair": "SUI_USDC",
+      "round": 1,
+      "beganAt": 1793223003338,
+      "completedAt": 1793223005045,
+      "ready": true,
+      "error": null,
+      "diagnostics": {
+        "bookObservation": {
+          "timestamp": 1793223004956,
+          "fetchedAt": 1793223005044,
+          "bid": 0.94561,
+          "ask": 0.94598,
+          "spread": 0.00039120528232872083,
+          "maxSpread": 0.003
+        },
+        "indexerLagMs": 1000,
+        "indexedThrough": 1793223002612,
+        "bidDepthUsdc": 9149.162114,
+        "askDepthUsdc": 10943.559038
+      }
+    },
+    {
+      "pair": "WAL_USDC",
+      "round": 2,
+      "beganAt": 1793223005045,
+      "completedAt": 1793223012100,
+      "ready": false,
+      "error": "SPREAD_TOO_WIDE",
+      "diagnostics": {
+        "bookObservation": {
+          "timestamp": 1793223011920,
+          "fetchedAt": 1793223012100,
+          "bid": 0.033861,
+          "ask": 0.034043,
+          "spread": 0.0053605089538169975,
+          "maxSpread": 0.003
+        },
+        "indexerLagMs": 1000,
+        "indexedThrough": 1793223004278,
+        "bidDepthUsdc": null,
+        "askDepthUsdc": null
+      }
+    },
+    {
+      "pair": "SUI_USDC",
+      "round": 2,
+      "beganAt": 1793223012101,
+      "completedAt": 1793223014489,
+      "ready": true,
+      "error": null,
+      "diagnostics": {
+        "bookObservation": {
+          "timestamp": 1793223014403,
+          "fetchedAt": 1793223014488,
+          "bid": 0.94445,
+          "ask": 0.94481,
+          "spread": 0.0003811015953336512,
+          "maxSpread": 0.003
+        },
+        "indexerLagMs": 2000,
+        "indexedThrough": 1793223012423,
+        "bidDepthUsdc": 23856.433889,
+        "askDepthUsdc": 23959.059298
+      }
+    }
+  ]
+}
