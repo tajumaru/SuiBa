@@ -406,13 +406,13 @@ export function OperationsView({
                     (
                       {
                         usdc: "USDC残高",
-                        sui: "SUI残高",
+                        sui: "基軸通貨残高",
                         costBasis: "取得原価（USDC）",
                         realized: "実現損益（USDC）",
                         unrealized: "未実現損益（USDC）",
                         fees: "累計手数料・ガス（USDC）",
                         equity: "総資産評価額（USDC）",
-                        price: "評価価格（USDC / SUI）",
+                        price: "評価価格（USDC / 基軸通貨）",
                       } as Record<string, string>
                     )[key]
                   }
@@ -453,8 +453,8 @@ export function OperationsView({
             {usdc(ledger.actualGasUsdc)}
           </p>
           <p>
-            許容誤差：SUI 0.000000001（9桁）、USDC
-            0.000001（6桁）。資産評価額はUSDC 1最小単位＋価格×SUI
+            許容誤差：基軸通貨 0.000000001（9桁）、USDC
+            0.000001（6桁）。資産評価額はUSDC 1最小単位＋価格×基軸通貨
             1最小単位です。
           </p>
           {ledger.reasons.map((reason) => (
@@ -481,15 +481,15 @@ export function OperationsView({
                           {(
                             {
                               usdc: "USDC残高",
-                              sui: "SUI残高",
-                              quantityAtomic: "SUI最小単位の数量",
+                              sui: "基軸通貨残高",
+                              quantityAtomic: "基軸通貨最小単位の数量",
                               costBasis: "取得原価",
                               costBasisUsdc: "取得原価の精密値",
                               realized: "実現損益",
                               unrealized: "未実現損益",
                               fees: "累計手数料（ガスを含む）",
                               tradeFee: "今回の手数料",
-                              quantity: "今回のSUI数量",
+                              quantity: "今回の基軸通貨数量",
                               equity: "総資産評価額",
                               pnlMovement: "損益の変化",
                               gasUsdc: "今回のガス代",
@@ -548,13 +548,13 @@ export function OperationsView({
                   [
                     "売買予定数量",
                     c.quantityAtomic
-                      ? `${number(Number(c.quantityAtomic) / 1e9, 9)} SUI`
+                      ? `${number(Number(c.quantityAtomic) / 1e9, 9)} 基軸通貨`
                       : "見積もり未取得",
                   ],
                   [
                     "見積もり価格（最低受取額から計算）",
                     c.quotePriceUsdc
-                      ? `${number(c.quotePriceUsdc)} USDC / SUI`
+                      ? `${number(c.quotePriceUsdc)} USDC / 基軸通貨`
                       : "不明",
                   ],
                   ["見積もり有効期限", date(c.quoteExpiresAt)],

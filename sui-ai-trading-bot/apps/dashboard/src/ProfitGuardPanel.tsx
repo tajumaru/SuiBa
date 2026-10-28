@@ -87,7 +87,7 @@ export function ProfitGuardPanel({ data }: { data: State }) {
           <small>見積もり対象数量</small>
           <p>
             {r?.quantityAtomic
-              ? `${number(Number(r.quantityAtomic) / 1e9, 9)} SUI`
+              ? `${number(Number(r.quantityAtomic) / 1e9, 9)} 基軸通貨`
               : "—"}
           </p>
         </div>
@@ -99,7 +99,7 @@ export function ProfitGuardPanel({ data }: { data: State }) {
           <small>モデル損益分岐価格</small>
           <p>
             {r?.breakEvenPrice
-              ? `${number(r.breakEvenPrice)} USDC / SUI`
+              ? `${number(r.breakEvenPrice)} USDC / 基軸通貨`
               : "不明"}
           </p>
         </div>
@@ -162,7 +162,8 @@ export function ProfitGuardPanel({ data }: { data: State }) {
           {r.scope === "BUY_SCENARIO" && (
             <p>
               購入予定：{precise(r.purchaseInputUsdc)} ／ 費用込み想定取得単価：
-              {number(r.acquisitionUnitPrice)} USDC / SUI ／ 購入追加手数料：
+              {number(r.acquisitionUnitPrice)} USDC / 基軸通貨 ／
+              購入追加手数料：
               {precise(r.buyCosts?.additionalFeeUsdc)} ／ 購入ガス：
               {precise(r.buyCosts?.gasUsdc)} ／ 想定往復コスト：
               {precise(r.roundTripCostUsdc)} ／ 想定利確価格：
@@ -189,8 +190,8 @@ export function ProfitGuardPanel({ data }: { data: State }) {
         <details>
           <summary>直近の買いの記録（PAPER仮想約定）</summary>
           <p>
-            数量：{number(Number(acquisition.quantityAtomic) / 1e9, 9)} SUI ／
-            支払USDC：
+            数量：{number(Number(acquisition.quantityAtomic) / 1e9, 9)} 基軸通貨
+            ／ 支払USDC：
             {precise(acquisition.inputUsdc)} ／ 総取得原価：
             {precise(acquisition.totalCostUsdc)}
           </p>

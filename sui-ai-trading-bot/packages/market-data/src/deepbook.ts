@@ -13,7 +13,8 @@ import { z } from "zod";
 import { apiFetch } from "../../shared/src/api.ts";
 import {
   coin,
-  SUI,
+  tradingPairs,
+  type TradingPair,
   USDC,
   type Candle,
   type Timeframe,
@@ -35,6 +36,7 @@ export function parseDeepBook(
   raw: unknown,
   tf: number,
   now: number,
+  pair: TradingPair = "SUI_USDC",
 ): MarketCandle[] {
   const rows = z.object({ candles: z.array(row) }).parse(raw).candles;
   const ms = (rows[0]?.[0] ?? 0) >= 1e12;
@@ -48,7 +50,7 @@ export function parseDeepBook(
       close,
       volume,
       timeframe: tf,
-      source: "DeepBook:SUI_USDC:USDC",
+      source: `DeepBook:${pair}:USDC`,
     }))
     .sort((a, b) => a.timestamp - b.timestamp);
   // Check malformed and future bars before excluding the current unfinished bar.
@@ -137,6 +139,8 @@ export function validateBook(
 type ReadJson = (path: string, ttl?: number) => Promise<unknown>;
 export class DeepBookMarketData {
   book: Book | null = null;
+  bookParams: { minSize: string; lotSize: string; tickSize: string } | null =
+    null;
   private bookRaw: unknown;
   private qualities: Record<number, CandleQuality> = {};
   private proofs = new Map<number, EmptyTradeProof>();
@@ -181,12 +185,17 @@ export class DeepBookMarketData {
         )
       ).json(),
     private reconstruct = false,
+    readonly pair: TradingPair = "SUI_USDC",
   ) {}
   async prepare(now = Date.now()) {
     const pools = z
       .array(
         z.object({
           pool_name: z.string(),
+          pool_id: z.string().optional(),
+          min_size: z.number().int().positive().optional(),
+          lot_size: z.number().int().positive().optional(),
+          tick_size: z.number().int().positive().optional(),
           base_asset_id: z.string(),
           quote_asset_id: z.string(),
           base_asset_decimals: z.number(),
@@ -194,15 +203,25 @@ export class DeepBookMarketData {
         }),
       )
       .parse(await this.checkedRead("/get_pools", 300000));
-    const p = pools.find((p) => p.pool_name === "SUI_USDC");
+    const p = pools.find((p) => p.pool_name === this.pair);
     if (
       !p ||
-      coin(p.base_asset_id) !== SUI ||
+      (p.pool_id !== undefined &&
+        p.pool_id !== tradingPairs[this.pair].poolId) ||
+      (this.pair === "WAL_USDC" &&
+        (!p.pool_id || !p.min_size || !p.lot_size || !p.tick_size)) ||
+      coin(p.base_asset_id) !== tradingPairs[this.pair].base ||
       coin(p.quote_asset_id) !== USDC ||
       p.base_asset_decimals !== 9 ||
       p.quote_asset_decimals !== 6
     )
       throw new Error("MARKET_PAIR_MISMATCH");
+    if (p.min_size && p.lot_size && p.tick_size)
+      this.bookParams = {
+        minSize: String(p.min_size),
+        lotSize: String(p.lot_size),
+        tickSize: String(p.tick_size),
+      };
     await this.refresh();
   }
   private async refreshStatus() {
@@ -245,7 +264,7 @@ export class DeepBookMarketData {
   private async refresh() {
     await this.refreshStatus();
     this.bookRaw = await this.checkedRead(
-      "/orderbook/SUI_USDC?level=2&depth=10",
+      `/orderbook/${this.pair}?level=2&depth=10`,
     );
     this.assertReady(Date.now());
   }
@@ -309,10 +328,15 @@ export class DeepBookMarketData {
     const interval = tf === 300 ? "5m" : tf === 900 ? "15m" : "1h",
       began = Date.now();
     const raw = await this.checkedRead(
-      "/ohclv/SUI_USDC?interval=" + interval + "&limit=1000",
+      `/ohclv/${this.pair}?interval=${interval}&limit=${tradingPairs[this.pair].candleLimit}`,
       20000,
     );
-    const c = parseDeepBook(raw, tf, Math.max(now, Date.now())) as Candle[];
+    const c = parseDeepBook(
+      raw,
+      tf,
+      Math.max(now, Date.now()),
+      this.pair,
+    ) as Candle[];
     const holes = tf === 300 ? gaps(c) : [];
     const missingCount =
       tf === 300
@@ -326,7 +350,7 @@ export class DeepBookMarketData {
             );
     let quality: CandleQuality = {
       upstream: "DeepBook Indexer",
-      pair: "SUI_USDC",
+      pair: this.pair,
       fetchedAt: Date.now(),
       timeframe: tf,
       originalCount: c.length,
@@ -353,13 +377,13 @@ export class DeepBookMarketData {
         const minutes: MarketCandle[] = [];
         let cursor = (c.at(-1)!.timestamp + 300) * 1000 - 1000;
         const needsMinutes = holes.some(
-          (t) => !validEmptyProof(this.proofs.get(t), t, Date.now()),
+          (t) => !validEmptyProof(this.proofs.get(t), t, Date.now(), this.pair),
         );
         for (let page = 0; needsMinutes && page < 8; page++) {
           if (Date.now() - began > 45000) throw new Error("CANDLE_GAP");
           const rows = parseDeepBook(
             await this.checkedRead(
-              "/ohclv/SUI_USDC?interval=1m&start_time=" +
+              `/ohclv/${this.pair}?interval=1m&start_time=` +
                 c[0].timestamp * 1000 +
                 "&end_time=" +
                 cursor +
@@ -368,6 +392,7 @@ export class DeepBookMarketData {
             ),
             60,
             Date.now(),
+            this.pair,
           );
           minutes.push(...rows);
           if (rows.length < 1000) break;
@@ -383,14 +408,15 @@ export class DeepBookMarketData {
           if (Date.now() - began > 45000) break;
           if (minutes.some((x) => x.timestamp >= t && x.timestamp < t + 300))
             continue;
-          if (validEmptyProof(this.proofs.get(t), t, Date.now())) continue;
+          if (validEmptyProof(this.proofs.get(t), t, Date.now(), this.pair))
+            continue;
           if (
             (t + 300) * 1000 > Date.now() - 120000 ||
             indexedThrough < (t + 300) * 1000
           )
             continue;
           const path =
-            "/trades/SUI_USDC?start_time=" +
+            `/trades/${this.pair}?start_time=` +
             t +
             "&end_time=" +
             (t + 300) +
@@ -406,7 +432,7 @@ export class DeepBookMarketData {
             throw new Error("INVALID_CANDLE");
           this.proofs.set(t, {
             source: "DeepBook Indexer",
-            pair: "SUI_USDC",
+            pair: this.pair,
             start: t,
             end: t + 300,
             fetchedAt: Date.now(),
@@ -425,6 +451,7 @@ export class DeepBookMarketData {
           this.proofs,
           Date.now(),
           quality.fetchedAt,
+          this.pair,
         );
         quality = {
           ...result.quality,
@@ -441,15 +468,17 @@ export class DeepBookMarketData {
     const original = c.map((x) => ({
       ...x,
       source: this.reconstruct
-        ? "DeepBook:SUI_USDC:USDC:verified-v1"
+        ? `DeepBook:${this.pair}:USDC:verified-v1`
         : x.source,
       provenance: {
         origin: "ORIGINAL" as const,
         upstream: "DeepBook Indexer" as const,
-        pair: "SUI_USDC" as const,
+        pair: this.pair,
         fetchedAt: quality.fetchedAt,
         timeframe: tf,
-        evidence: ["/ohclv/SUI_USDC?interval=" + interval + "&limit=1000"],
+        evidence: [
+          `/ohclv/${this.pair}?interval=${interval}&limit=${tradingPairs[this.pair].candleLimit}`,
+        ],
       },
     }));
     return validateCandles(original, tf, Date.now());

@@ -262,7 +262,7 @@ for (const [status, tone, message] of [
         fullPage: true,
       });
     await page.locator("#operation-diagnostics > summary").click();
-    await expect(page.getByText(/許容誤差：SUI 0.000000001/)).toBeVisible();
+    await expect(page.getByText(/許容誤差：基軸通貨 0.000000001/)).toBeVisible();
     await page.locator(".operation-candidate summary").click();
     await expect(page.locator(".operation-candidate")).toContainText(
       "未評価（前段の条件未通過または処理中）",

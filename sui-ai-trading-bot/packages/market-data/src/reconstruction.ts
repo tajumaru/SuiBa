@@ -1,8 +1,9 @@
+import { tradingPairs, type TradingPair } from "../../shared/src/index.ts";
 import type { Candle, CandleProvenance } from "../../shared/src/index.ts";
 export type MarketCandle = Omit<Candle, "timeframe"> & { timeframe: number };
 export interface CandleQuality {
   upstream: "DeepBook Indexer";
-  pair: "SUI_USDC";
+  pair: TradingPair;
   fetchedAt: number;
   timeframe: number;
   reconstructionMs?: number;
@@ -17,7 +18,7 @@ export interface CandleQuality {
 }
 export interface EmptyTradeProof {
   source: "DeepBook Indexer";
-  pair: "SUI_USDC";
+  pair: TradingPair;
   start: number;
   end: number;
   fetchedAt: number;
@@ -41,11 +42,12 @@ export function validEmptyProof(
   p: EmptyTradeProof | undefined,
   t: number,
   now: number,
+  pair: TradingPair = "SUI_USDC",
 ): p is EmptyTradeProof {
   return (
     !!p &&
     p.source === "DeepBook Indexer" &&
-    p.pair === "SUI_USDC" &&
+    p.pair === pair &&
     p.start === t &&
     p.end === t + 300 &&
     p.complete &&
@@ -55,19 +57,19 @@ export function validEmptyProof(
     now - p.fetchedAt <= 3600000 &&
     (t + 300) * 1000 <= now - 120000 &&
     p.path ===
-      "/trades/SUI_USDC?start_time=" +
+      `/trades/${pair}?start_time=` +
         t +
         "&end_time=" +
         (t + 300) +
         "&limit=1000"
   );
 }
-function validateMinute(x: MarketCandle, now: number) {
+function validateMinute(x: MarketCandle, now: number, pair: TradingPair) {
   if (
     x.timeframe !== 60 ||
     x.timestamp % 60 ||
     (x.timestamp + 60) * 1000 > now ||
-    !x.source.startsWith("DeepBook:SUI_USDC:USDC") ||
+    !x.source.startsWith(`DeepBook:${pair}:USDC`) ||
     ![x.timestamp, x.open, x.high, x.low, x.close, x.volume].every(
       Number.isFinite,
     ) ||
@@ -85,24 +87,25 @@ export function reconstructFiveMinutes(
   proofs: Map<number, EmptyTradeProof>,
   now: number,
   fetchedAt = now,
+  pair: TradingPair = "SUI_USDC",
 ) {
   if (
     raw.some(
       (x) =>
         x.timeframe !== 300 ||
         x.timestamp % 300 ||
-        !x.source.startsWith("DeepBook:SUI_USDC:USDC"),
+        !x.source.startsWith(`DeepBook:${pair}:USDC`),
     )
   )
     throw Error("INVALID_CANDLE");
   const missing = gaps(raw),
     byMinute = new Map<number, MarketCandle>();
   for (const x of minutes) {
-    validateMinute(x, now);
+    validateMinute(x, now, pair);
     if (byMinute.has(x.timestamp)) throw Error("INVALID_CANDLE");
     byMinute.set(x.timestamp, x);
   }
-  const source = "DeepBook:SUI_USDC:USDC:verified-v1",
+  const source = `DeepBook:${pair}:USDC:verified-v1`,
     result: Candle[] = [];
   const original = new Map(raw.map((x) => [x.timestamp, x]));
   if (raw.length)
@@ -115,10 +118,12 @@ export function reconstructFiveMinutes(
           provenance: x.provenance ?? {
             origin: "ORIGINAL",
             upstream: "DeepBook Indexer",
-            pair: "SUI_USDC",
+            pair,
             fetchedAt,
             timeframe: 300,
-            evidence: ["/ohclv/SUI_USDC?interval=5m&limit=1000"],
+            evidence: [
+              `/ohclv/${pair}?interval=5m&limit=${tradingPairs[pair].candleLimit}`,
+            ],
           },
         });
         continue;
@@ -143,7 +148,7 @@ export function reconstructFiveMinutes(
           provenance: {
             origin: "ONE_MINUTE_AGGREGATE",
             upstream: "DeepBook Indexer",
-            pair: "SUI_USDC",
+            pair,
             fetchedAt,
             timeframe: 300,
             evidence: present.map((x) => "1m:" + x.timestamp),
@@ -151,7 +156,7 @@ export function reconstructFiveMinutes(
         });
       } else if (
         !present.length &&
-        validEmptyProof(proofs.get(t), t, now) &&
+        validEmptyProof(proofs.get(t), t, now, pair) &&
         result.at(-1)?.timestamp === t - 300
       ) {
         const previous = result.at(-1)!,
@@ -168,7 +173,7 @@ export function reconstructFiveMinutes(
           provenance: {
             origin: "NO_INDEXED_TRADES",
             upstream: "DeepBook Indexer",
-            pair: "SUI_USDC",
+            pair,
             fetchedAt: proof.fetchedAt,
             timeframe: 300,
             evidence: [
@@ -191,7 +196,7 @@ export function reconstructFiveMinutes(
     candles: result,
     quality: {
       upstream: "DeepBook Indexer" as const,
-      pair: "SUI_USDC" as const,
+      pair,
       fetchedAt,
       timeframe: 300,
       missing: missing.length,

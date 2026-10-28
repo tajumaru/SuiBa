@@ -5,7 +5,7 @@ import {
   Decimal,
   coin,
   units,
-  SUI,
+  USDC,
   type DexRouter,
   type QuoteRequest,
   type QuoteResult,
@@ -50,7 +50,7 @@ export class CetusRouter implements DexRouter {
     const input = units(r.amountIn, from),
       output = units(q.amountOut.toString(), to);
     const expected =
-      from === SUI ? input * r.referencePrice : input / r.referencePrice;
+      from !== USDC ? input * r.referencePrice : input / r.referencePrice;
     const impact = Math.max(
       0,
       Math.abs(1 - output / expected),

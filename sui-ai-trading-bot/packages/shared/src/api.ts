@@ -168,6 +168,13 @@ export class ApiAccess {
         (s.nextRetryAt ?? 0) > Date.now(),
     );
   }
+  /** Called only after the scheduler and all market requests have drained. */
+  clearPairState() {
+    if ([...this.states.values()].some((s) => s.active))
+      throw Error("MARKET_FETCH_IN_PROGRESS");
+    this.states.clear();
+    this.caches.clear();
+  }
   reset() {
     if (
       [...this.states.values()].some(

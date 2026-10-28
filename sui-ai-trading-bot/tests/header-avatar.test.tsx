@@ -287,10 +287,11 @@ describe("slim two-row header (design A)", () => {
     expect(rowSub).toContain('className="logout-link"');
   });
 
-  it("keeps the copy unchanged: the old subtitle sits verbatim in the sub row", () => {
+  it("shows the selected pair in the header subtitle", () => {
     // The subtitle moved rows but its text is untouched, and it
     // still appears exactly once in the header.
-    expect(rowSub).toContain("SUI / ネイティブUSDC · メインネットの市場データ");
+    expect(rowSub).toContain('data?.pair?.replace("_", " / ")');
+    expect(rowSub).toContain("メインネットの市場データ");
     expect(header.match(/メインネットの市場データ/g)).toHaveLength(1);
     expect(rowMain).not.toContain("メインネットの市場データ");
   });

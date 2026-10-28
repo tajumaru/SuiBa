@@ -2,16 +2,20 @@ import { parentPort, workerData } from "node:worker_threads";
 import { ChartHistoryStore, type HistoryQuery } from "./chart-history.ts";
 let gateResolve: ((ok: boolean) => void) | undefined,
   controller: AbortController | undefined;
-const store = new ChartHistoryStore(workerData.path, {
-  fetch,
-  now: Date.now,
-  sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-  gate: () =>
-    new Promise((resolve) => {
-      gateResolve = resolve;
-      parentPort!.postMessage({ kind: "gate" });
-    }),
-});
+const store = new ChartHistoryStore(
+  workerData.path,
+  {
+    fetch,
+    now: Date.now,
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    gate: () =>
+      new Promise((resolve) => {
+        gateResolve = resolve;
+        parentPort!.postMessage({ kind: "gate" });
+      }),
+  },
+  workerData.pair,
+);
 parentPort!.on("message", async (message) => {
   if (message.kind === "gate") {
     gateResolve?.(message.allowed);

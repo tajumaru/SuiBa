@@ -1,5 +1,8 @@
 import {
   Decimal,
+  SUI,
+  USDC,
+  coin,
   units,
   dayKey,
   type Portfolio,
@@ -49,6 +52,12 @@ export class PaperTrading implements TradingExecutor {
     s: Settings,
     now: number,
   ) {
+    const base = p.baseCoin ?? SUI;
+    if (
+      coin(side === "BUY" ? q.to : q.from) !== base ||
+      coin(side === "BUY" ? q.from : q.to) !== USDC
+    )
+      throw Error("MARKET_PAIR_MISMATCH");
     if (now >= q.expiresAt || !q.liquid) throw new Error("UNFILLABLE_QUOTE");
     const input = units(q.amountIn, q.from),
       output = units(q.minAmountOut, q.to),

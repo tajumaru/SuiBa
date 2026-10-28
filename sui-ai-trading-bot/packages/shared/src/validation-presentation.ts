@@ -5,6 +5,7 @@ export function validationMarkdown(r: ValidationReport): string {
   const lines = [
     "# DeepBook 24時間PAPER検証",
     `状態: **${r.status}**`,
+    `取引ペア: ${r.pair.replace("_", "/")}`,
     `集計時刻: ${new Date(r.generatedAt).toISOString()}`,
   ];
   if (!r.session) return lines.join("\n\n") + "\n";

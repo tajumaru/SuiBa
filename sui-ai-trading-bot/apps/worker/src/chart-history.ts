@@ -4,7 +4,11 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseDeepBook } from "../../../packages/market-data/src/deepbook.ts";
 import { retryAfter } from "../../../packages/shared/src/api.ts";
-import type { Candle, Timeframe } from "../../../packages/shared/src/index.ts";
+import type {
+  Candle,
+  Timeframe,
+  TradingPair,
+} from "../../../packages/shared/src/index.ts";
 export interface HistoryQuery {
   timeframe: Timeframe;
   from: number;
@@ -60,6 +64,7 @@ export class ChartHistoryStore {
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
       gate: async () => true,
     },
+    readonly pair: TradingPair = "SUI_USDC",
   ) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
@@ -75,7 +80,7 @@ export class ChartHistoryStore {
     try {
       for (const c of candles)
         if (
-          c.source.startsWith("DeepBook:SUI_USDC:USDC") &&
+          c.source.startsWith(`DeepBook:${this.pair}:USDC`) &&
           [300, 900, 3600].includes(c.timeframe) &&
           c.timestamp > 0
         )
@@ -123,7 +128,7 @@ export class ChartHistoryStore {
           if (++pages > 5 || requests >= 6) throw Error("CHART_PAGE_LIMIT");
           signal?.throwIfAborted();
           const interval = { 300: "5m", 900: "15m", 3600: "1h" }[q.timeframe];
-          const path = `/ohclv/SUI_USDC?interval=${interval}&start_time=${range.a * 1000}&end_time=${until * 1000 - 1}&limit=1000`;
+          const path = `/ohclv/${this.pair}?interval=${interval}&start_time=${range.a * 1000}&end_time=${until * 1000 - 1}&limit=1000`;
           let data: ReturnType<typeof parseDeepBook> | undefined;
           for (let attempt = 0; attempt < 2; attempt++) {
             const wait = Math.max(0, this.lastRequest + 2500 - this.deps.now());
@@ -162,6 +167,7 @@ export class ChartHistoryStore {
                 await response.json(),
                 q.timeframe,
                 this.deps.now(),
+                this.pair,
               );
               break;
             } catch (e) {
@@ -192,7 +198,7 @@ export class ChartHistoryStore {
                 provenance: {
                   origin: "ORIGINAL",
                   upstream: "DeepBook Indexer",
-                  pair: "SUI_USDC",
+                  pair: this.pair,
                   fetchedAt: this.deps.now(),
                   timeframe: q.timeframe,
                   evidence: [path],
@@ -228,7 +234,7 @@ export class ChartHistoryStore {
     // These fixed historical repairs were generated with the unchanged verifier at their recorded evidence time.
     // Only fill still-absent display rows after successful coverage; never touch the market database.
     if (!error && q.timeframe === 300)
-      for (const c of verifiedDisplayRepairs)
+      for (const c of this.pair === "SUI_USDC" ? verifiedDisplayRepairs : [])
         if (c.timestamp >= q.from && c.timestamp < q.to)
           this.db
             .prepare(

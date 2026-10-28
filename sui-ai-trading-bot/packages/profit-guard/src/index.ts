@@ -2,6 +2,7 @@ import {
   Decimal,
   coin,
   SUI,
+  WAL,
   USDC,
   atomic,
   profitDefaults,
@@ -222,6 +223,7 @@ export function evaluateSell(r: {
   purpose: Purpose;
   config: ProfitConfig;
   now: number;
+  baseCoin?: typeof SUI | typeof WAL;
 }): ProfitReport {
   const out = report(r.config ?? profitDefaults, r.now, "SELL_QUOTE");
   out.purpose = r.purpose;
@@ -235,7 +237,7 @@ export function evaluateSell(r: {
   try {
     profitConfigSchema.parse(r.config);
     failure = "INVALID_QUOTE";
-    validQuote(r.quote, r.now, SUI, USDC);
+    validQuote(r.quote, r.now, r.baseCoin ?? SUI, USDC);
     const q = r.quote;
     failure = "UNKNOWN_COSTS";
     const c = knownCosts(r.costs);
@@ -318,14 +320,15 @@ export function evaluateBuy(r: {
   sellCosts: Costs;
   config: ProfitConfig;
   now: number;
+  baseCoin?: typeof SUI | typeof WAL;
   maxExitUsdc?: string;
   strategyTargetPrice?: string;
 }): ProfitReport {
   const out = report(r.config, r.now, "BUY_SCENARIO");
   try {
     profitConfigSchema.parse(r.config);
-    validQuote(r.buyQuote, r.now, USDC, SUI);
-    validQuote(r.sellQuote, r.now, SUI, USDC);
+    validQuote(r.buyQuote, r.now, USDC, r.baseCoin ?? SUI);
+    validQuote(r.sellQuote, r.now, r.baseCoin ?? SUI, USDC);
     const b = r.buyQuote,
       s = r.sellQuote;
     if (s.amountIn !== b.minAmountOut || s.referencePrice !== b.referencePrice)

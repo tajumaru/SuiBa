@@ -641,7 +641,7 @@ describe("agent narration: trades and rejections from candidate audits", () => {
     const trade = state.entries.at(-1)!;
     expect(trade.kind).toBe("trade");
     expect(trade.text).toContain("PAPERで買いを記録したよ");
-    expect(trade.text).toContain("0.5 SUI");
+    expect(trade.text).toContain("0.5 基軸通貨");
     expect(trade.text).toContain("2.4312 USDC");
     const vital = botVital(d2, false, NOW, NOW);
     expect(agentPose(state, d2, vital, NOW + 1000)).toBe("pointSmile");
@@ -2406,7 +2406,9 @@ describe("agent narration: spike alerts", () => {
     );
     const alerts = alertsOf(feed(seq([{}, {}, {}, { price: 2.376 }])));
     expect(alerts).toHaveLength(1);
-    expect(alerts[0].text).toBe("速報。SUI、-1.0%。急落だ。ちょっと様子見る");
+    expect(alerts[0].text).toBe(
+      "速報。基軸通貨、-1.0%。急落だ。ちょっと様子見る",
+    );
   });
 
   it("a volume-only spike alerts on its own, at the +200% boundary", () => {
@@ -2441,7 +2443,7 @@ describe("agent narration: spike alerts", () => {
     const alerts = alertsOf(state);
     expect(alerts).toHaveLength(1);
     expect(alerts[0].text).toBe(
-      "速報。SUI、短時間で+1.8%。出来高の変化も跳ねた",
+      "速報。基軸通貨、短時間で+1.8%。出来高の変化も跳ねた",
     );
     expect(state.lastAlert?.direction).toBe("up");
   });
@@ -2449,7 +2451,7 @@ describe("agent narration: spike alerts", () => {
   it("an upward price spike alone uses the short surge wording", () => {
     const alerts = alertsOf(feed(seq([{}, {}, {}, { price: 2.4432 }])));
     expect(alerts).toHaveLength(1);
-    expect(alerts[0].text).toBe("速報。SUI、短時間で+1.8%。急に来た");
+    expect(alerts[0].text).toBe("速報。基軸通貨、短時間で+1.8%。急に来た");
   });
 
   it("a downward spike with a volume spike still mentions both, once", () => {

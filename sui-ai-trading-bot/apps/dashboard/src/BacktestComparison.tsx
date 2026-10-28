@@ -449,7 +449,7 @@ export function BacktestComparison({
                   <tr>
                     <th>取引時点 / シグナル足（日本時間）</th>
                     <th>判断 / 状態</th>
-                    <th>数量 SUI / 価格</th>
+                    <th>数量 基軸通貨 / 価格</th>
                     <th>取得原価 USDC</th>
                     <th>純損益 実績 / 予想</th>
                     <th>DEX内包 / 追加 / ガス USDC</th>

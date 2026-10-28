@@ -4,7 +4,8 @@ import { randomUUID } from "node:crypto";
 import {
   atomic,
   profitConfigOf,
-  SUI,
+  tradingPairs,
+  type TradingPair,
   USDC,
   dayKey,
   safeFailure,
@@ -55,13 +56,22 @@ export class BotEngine {
     private market: MarketDataProvider,
     private router: DexRouter,
     readonly sui: Pick<ReadOnlySuiClient, "health" | "status">,
+    readonly pair: TradingPair = "SUI_USDC",
   ) {
+    const portfolio = db.portfolio();
+    const baseCoin = tradingPairs[pair].base;
+    if (portfolio.baseCoin && portfolio.baseCoin !== baseCoin)
+      throw Error("MARKET_PAIR_MISMATCH");
+    db.set("portfolio", { ...portfolio, baseCoin });
     this.monitor = new OperationMonitor(db);
+    this.activateApiHooks();
+  }
+  activateApiHooks() {
     apiAccess.onTransientFailure = (api, code, failure) =>
       this.monitor.transientFailure(api, code, failure);
     apiAccess.onRateLimit = () => {
       this.monitor.stop("UPSTREAM_HTTP_429");
-      db.set("api_cooldowns", apiAccess.snapshot());
+      this.db.set("api_cooldowns", apiAccess.snapshot());
     };
   }
   private async getQuote(request: QuoteRequest) {
@@ -118,6 +128,11 @@ export class BotEngine {
           validateCandles(frames[tf], tf, Date.now());
       measuredFrames = frames;
       const source = frames[300][0].source;
+      if (
+        source.startsWith("DeepBook:") &&
+        !source.startsWith(`DeepBook:${this.pair}:USDC`)
+      )
+        throw Error("MARKET_PAIR_MISMATCH");
       if (
         Object.values(frames).some((rows) =>
           rows.some((x) => x.source !== source),
@@ -216,9 +231,12 @@ export class BotEngine {
       if (p.sui > 0) {
         try {
           sellPreview = await this.getQuote({
-            from: SUI,
+            from: tradingPairs[this.pair].base,
             to: USDC,
-            amountIn: atomic(Math.min(p.sui, s.maxOrder / price), SUI),
+            amountIn: atomic(
+              Math.min(p.sui, s.maxOrder / price),
+              tradingPairs[this.pair].base,
+            ),
             slippage: s.maxSlippage,
             referencePrice: price,
           });
@@ -237,6 +255,7 @@ export class BotEngine {
             };
         this.db.recordProfit(
           evaluateSell({
+            baseCoin: tradingPairs[this.pair].base,
             position: positionOf(p),
             quote: sellPreview,
             costs,
@@ -282,7 +301,10 @@ export class BotEngine {
         timestamp: now,
         createdAt: now,
         side,
-        requestedInputAtomic: atomic(amount, side === "BUY" ? USDC : SUI),
+        requestedInputAtomic: atomic(
+          amount,
+          side === "BUY" ? USDC : tradingPairs[this.pair].base,
+        ),
         quantityAtomic: null,
         quotePriceUsdc: null,
         quoteExpiresAt: null,
@@ -316,9 +338,12 @@ export class BotEngine {
         side === "SELL" && sellPreview
           ? sellPreview
           : await this.getQuote({
-              from: side === "BUY" ? USDC : SUI,
-              to: side === "BUY" ? SUI : USDC,
-              amountIn: atomic(amount, side === "BUY" ? USDC : SUI),
+              from: side === "BUY" ? USDC : tradingPairs[this.pair].base,
+              to: side === "BUY" ? tradingPairs[this.pair].base : USDC,
+              amountIn: atomic(
+                amount,
+                side === "BUY" ? USDC : tradingPairs[this.pair].base,
+              ),
               slippage: s.maxSlippage,
               referencePrice: price,
             });
@@ -337,7 +362,7 @@ export class BotEngine {
       if (side === "BUY") {
         try {
           reverse = await this.getQuote({
-            from: SUI,
+            from: tradingPairs[this.pair].base,
             to: USDC,
             amountIn: q.minAmountOut,
             slippage: this.db.settings().maxSlippage,
@@ -359,6 +384,7 @@ export class BotEngine {
       const profitAt = (at: number) =>
         side === "SELL"
           ? evaluateSell({
+              baseCoin: tradingPairs[this.pair].base,
               position: positionOf(p),
               quote: q,
               costs,
@@ -367,6 +393,7 @@ export class BotEngine {
               now: at,
             })
           : evaluateBuy({
+              baseCoin: tradingPairs[this.pair].base,
               buyQuote: q,
               sellQuote: reverse,
               buyCosts: costs,
@@ -728,6 +755,7 @@ export class BotEngine {
         .reverse()
         .map((x) => x.equity);
     return {
+      pair: this.pair,
       marketData: this.market.status?.() ?? null,
       marketQuality: this.db.get("market_quality") ?? null,
       mode: "PAPER",

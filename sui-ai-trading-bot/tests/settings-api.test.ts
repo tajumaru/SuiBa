@@ -308,8 +308,58 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
     expect(diagnostic.elapsedMs).toBeGreaterThanOrEqual(0);
     expect(diagnostic.url).toBe("https://127.0.0.1:1/[redacted]");
     expect(failure).not.toContain(token);
+    // Pair mutations pass the same authentication gates and preserve SUI history.
+    expect((await api("pairs")).value.selected).toBe("SUI_USDC");
+    expect((await api("pairs", { pair: "WAL_SUI" })).status).toBe(400);
+    const unauthorizedPair = await fetch(`http://127.0.0.1:${port}/api/pairs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pair: "WAL_USDC" }),
+    });
+    expect(unauthorizedPair.status).toBe(401);
+    async function selectPair(pair: string) {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const result = await api("pairs", { pair });
+        if (result.status === 200) return result;
+        expect(result.value.error).toBe("STOP_AND_WAIT_BEFORE_PAIR_SWITCH");
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      throw Error("PAIR_SWITCH_DID_NOT_DRAIN");
+    }
+    await selectPair("WAL_USDC");
+    let wal = (await api("state")).value;
+    expect(wal.pair).toBe("WAL_USDC");
+    expect(wal.runtime.running).toBe(false);
+    expect(wal.trades).toHaveLength(0);
+    expect(wal.portfolio.sui).toBe(0);
+    expect(wal.settings.maxOrder).toBe(5);
+    const staleClient = await fetch(`http://127.0.0.1:${port}/api/settings`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-SuiBa-Pair": "SUI_USDC",
+      },
+      body: JSON.stringify(safe),
+    });
+    expect(staleClient.status).toBe(409);
+    expect((await staleClient.json()).error).toBe("PAIR_CHANGED");
+
+    await api("settings", { ...wal.settings, maxOrder: 2 });
+    await stop();
+    await start();
+    wal = (await api("state")).value;
+    expect(wal.pair).toBe("WAL_USDC");
+    expect(wal.runtime.running).toBe(false);
+    expect(wal.settings.maxOrder).toBe(2);
+    await selectPair("SUI_USDC");
+    const restored = (await api("state")).value;
+    expect(restored.pair).toBe("SUI_USDC");
+    expect(restored.settings).toEqual(safe);
+    expect(restored.trades).toHaveLength(1);
+    expect(restored.trades[0].orderId).toBe("old-trade");
   } finally {
     await stop();
     rmSync(folder, { recursive: true, force: true });
   }
-}, 20000);
+}, 40000);

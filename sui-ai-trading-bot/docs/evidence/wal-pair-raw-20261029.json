@@ -1,0 +1,87 @@
+{
+  "mode": "READ_ONLY_RAW_RESPONSE",
+  "receivedAt": 1793221514434,
+  "metadata": [
+    {
+      "pool_id": "0x56a1c985c1f1123181d6b881714793689321ba24301b3585eec427436eb1c76d",
+      "pool_name": "WAL_USDC",
+      "base_asset_id": "0x356a26eb9e012a68958082340d4c4116e7f55615cf27affcff209cf0ae544f59::wal::WAL",
+      "base_asset_decimals": 9,
+      "base_asset_symbol": "WAL",
+      "base_asset_name": "WAL Token",
+      "quote_asset_id": "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC",
+      "quote_asset_decimals": 6,
+      "quote_asset_symbol": "USDC",
+      "quote_asset_name": "Native USDC Token",
+      "min_size": 1000000000,
+      "lot_size": 100000000,
+      "tick_size": 1
+    }
+  ],
+  "book": {
+    "asks": [
+      [
+        "0.034336",
+        "1"
+      ],
+      [
+        "0.034354",
+        "174.9"
+      ],
+      [
+        "0.034447",
+        "434310"
+      ],
+      [
+        "0.034467",
+        "448081.5"
+      ],
+      [
+        "0.034588",
+        "169678"
+      ]
+    ],
+    "timestamp": "1793221513353",
+    "bids": [
+      [
+        "0.034284",
+        "174.9"
+      ],
+      [
+        "0.034283",
+        "1"
+      ],
+      [
+        "0.034167",
+        "442420"
+      ],
+      [
+        "0.034159",
+        "448081.5"
+      ],
+      [
+        "0.03406",
+        "176994"
+      ]
+    ]
+  },
+  "candles": {
+    "oldest": [
+      1793130600000,
+      0.034552,
+      0.034684,
+      0.034471,
+      0.034529,
+      1097.6
+    ],
+    "newest": [
+      1793221200000,
+      0.034174,
+      0.034358,
+      0.034114,
+      0.034331,
+      1832.1
+    ],
+    "count": 300
+  }
+}

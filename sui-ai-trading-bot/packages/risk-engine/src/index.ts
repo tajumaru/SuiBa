@@ -55,8 +55,8 @@ export function assessRisk(x: RiskInput): string[] {
     reasons.push("BOT_STOPPED");
   try {
     if (
-      coin(q.from) !== (x.side === "BUY" ? USDC : SUI) ||
-      coin(q.to) !== (x.side === "BUY" ? SUI : USDC)
+      coin(q.from) !== (x.side === "BUY" ? USDC : (p.baseCoin ?? SUI)) ||
+      coin(q.to) !== (x.side === "BUY" ? (p.baseCoin ?? SUI) : USDC)
     )
       reasons.push("COIN_DIRECTION");
   } catch {
