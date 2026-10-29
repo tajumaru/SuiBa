@@ -123,6 +123,11 @@ export class MarketSelection implements MarketDataProvider {
       throw new Error("MARKET_UNAVAILABLE");
     await this.selected.refreshForOrder?.();
     this.assertReady(Date.now());
+    const book = this.selected === this.deep ? this.deep.book : null;
+    this.value.bookAt = book?.timestamp ?? null;
+    this.value.bid = book?.bid ?? null;
+    this.value.ask = book?.ask ?? null;
+    this.value.spread = book?.spread ?? null;
   }
   assertReady(now: number) {
     if (!this.value.healthy || !this.selected)

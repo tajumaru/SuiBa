@@ -424,3 +424,25 @@ it("reads deeper liquidity without widening the execution price envelope", async
     ),
   ).toThrow("STALE_ORDERBOOK");
 });
+
+it("publishes the refreshed order book rather than the analysis-time prices", async () => {
+  const d = deep(),
+    p = new MarketSelection("deepbook", gecko(), d.provider);
+  await p.frames();
+  const read = d.read.getMockImplementation()!;
+  d.read.mockImplementation(async (path, ...args) =>
+    path.startsWith("/orderbook")
+      ? {
+          timestamp: String(Date.now()),
+          bids: [["1.9999", "100"]],
+          asks: [["2.0001", "100"]],
+        }
+      : read(path, ...args),
+  );
+  await p.refreshForOrder();
+  expect(p.status()).toMatchObject({
+    bid: 1.9999,
+    ask: 2.0001,
+    bookAt: d.provider.book!.timestamp,
+  });
+});

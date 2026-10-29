@@ -1,3 +1,4 @@
+import { quoteBookReason } from "../../../packages/market-data/src/quote-book.ts";
 import type { MarketDataProvider } from "../../../packages/market-data/src/provider.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
 import { randomUUID } from "node:crypto";
@@ -510,6 +511,13 @@ export class BotEngine {
         pending: 0,
       });
       if (!validQuote) reasons.push("QUOTE_INVALID");
+      const bookReason = quoteBookReason(
+        q,
+        this.marketStatus(),
+        executionSettings.maxSlippage,
+        Date.now(),
+      );
+      if (bookReason) reasons.push(bookReason);
       audit.risk = { status: reasons.length ? "REJECTED" : "ALLOWED", reasons };
       if (reasons.length) {
         this.monitor.finishCandidate({
