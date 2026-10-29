@@ -174,9 +174,6 @@ export function OperationGuidance({
               <li key={r}>{r}</li>
             ))}
           </ul>
-          <small>
-            現在の状態と選択期間の記録を区別しています。現在の停止だけで期間全体の原因は確定しません。
-          </small>
         </section>
       )}
       {checks.length > 0 && (

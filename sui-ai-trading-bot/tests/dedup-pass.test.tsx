@@ -25,14 +25,13 @@ const operationsPanel = readFileSync(
 );
 
 describe("dashboard dedup: SUI price lives only in the ticker", () => {
-  it("drops the SUI価格 card from the overview cards, keeping the other seven", () => {
+  it("drops the SUI価格 card from the overview cards and merges the holdings into one card", () => {
     expect(main).not.toContain("SUI価格");
     for (const label of [
       "仮想総資産",
       "累計損益",
       "日次損益（日本時間09:00から）",
-      "仮想",
-      "仮想USDC",
+      "保有",
       "本日の取引（日本時間09:00から）",
       "未実現損益",
     ])
@@ -73,22 +72,28 @@ describe("dashboard dedup: operation state lives in the operation bar", () => {
 });
 
 describe("dashboard dedup: period totals live in the operations reports", () => {
-  it("keeps trade count and net PnL out of the main KPI grid only", () => {
+  it("summarises the period in the KPI cards and keeps the full metric grid in the diagnostics report", () => {
     const kpiStart = operationsPanel.indexOf('aria-label="主要KPI"');
     const kpiEnd = operationsPanel.indexOf("<OperationGuidance");
     expect(kpiStart).toBeGreaterThan(-1);
     expect(kpiEnd).toBeGreaterThan(kpiStart);
     const kpi = operationsPanel.slice(kpiStart, kpiEnd);
-    expect(kpi).not.toContain("<h3>取引回数</h3>");
-    expect(kpi).not.toContain("<h3>純損益</h3>");
-    expect(kpi).toContain("<h3>稼働時間・稼働率</h3>");
+    // The always-visible layer is four summary cards: freshness,
+    // uptime, and the period's trade count / net PnL headlines.
     expect(kpi).toContain("<h3>データ正常性</h3>");
-    // The 24h / 7d reports below remain the home of the period totals.
-    const report = operationsPanel.slice(
-      operationsPanel.indexOf("24時間・7日間の検証レポート"),
-    );
+    expect(kpi).toContain("<h3>稼働（監視開始以降）</h3>");
+    expect(kpi).toContain("取引（{hours === 24 ?");
+    expect(kpi).toContain("純損益（{hours === 24 ?");
+    // The full 24h / 7d report lives inside the diagnostics
+    // details and remains the home of the remaining metrics.
+    const diag = operationsPanel.indexOf('id="operation-diagnostics"');
+    const reportAt = operationsPanel.indexOf("24時間・7日間の検証レポート");
+    expect(reportAt).toBeGreaterThan(diag);
+    const report = operationsPanel.slice(reportAt);
     expect(report).toContain("取引回数");
     expect(report).toContain("純損益（保有分の評価損益を含む）");
+    expect(report).toContain("勝率（売却単位）");
+    expect(report).toContain("最大ドローダウン");
   });
 });
 
