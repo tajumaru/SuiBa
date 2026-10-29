@@ -1,6 +1,6 @@
 # SuiBa — Walrus Sites公開・24時間クラウド稼働 設計調査
 
-調査日: 2026-10-30（JST）。対象: `tajumaru/SuiBa`、取得した最新 `origin/main` = `55309dc384e3455369edeeef71900bbfa9f438b0`。本書は設計案であり、実装・クラウド契約・サイト公開・LIVE有効化は行っていない。料金は調査時点の公開情報と明示した予算仮定を分けて記す。
+調査日: 2026-10-30（JST）。対象: `tajumaru/SuiBa`、取得した最新 `origin/main` = `d5a664d60c85266538d1f6655e40cafab11dbbbc`。本書は設計案であり、実装・クラウド契約・サイト公開・LIVE有効化は行っていない。料金は調査時点の公開情報と明示した予算仮定を分けて記す。
 
 ## 1. 結論と制約
 
@@ -257,6 +257,7 @@ namespaceを環境/ペア/戦略版ごとに分け、decision/cycle ID・source 
 ## 12. 今回の確認結果と未確認事項
 
 - 既存作業ツリーに変更を加えず、最新mainから調査専用worktree/branchを作成。変更対象は本Markdownのみ。
+- 調査中にmainへ画面整理の更新が入ったため、最終基準を `d5a664d60c85266538d1f6655e40cafab11dbbbc` へ更新。差分6ファイルは画面/関連テストで、API・認証・workerの構成変更はない。取り込み後にbuildとoffline suiteを再実行し、下記と同じ成功件数を確認。
 - ローカルNode実体 `v24.22.1`、pnpm `9.12.3`。`pnpm install --frozen-lockfile --offline` 成功。lockfileの変更なし。
 - `pnpm build` 成功（tsc含む）。Vite 7.3.7、219 modules。Zodの注釈と500kB超JS chunkの警告あり、build失敗ではない。静的成果物の生成まで確認し、Walrusアップロードは未実行。
 - `pnpm test:offline`: Node標準test 45件成功、Vitest 74ファイル成功、1,076件成功・8件skip。初回はsandboxの既定TEMPでreportのatomic renameにEPERMが1件発生（1,075件成功）。TEMP/TMPを専用worktree内 `.test-tmp` へ向けた再実行で全対象成功。コード・テスト・閾値の変更はしていない。skipとoffline除外分の成功を主張しない。
@@ -265,4 +266,4 @@ namespaceを環境/ペア/戦略版ごとに分け、decision/cycle ID・source 
 
 ## 13. 主要一次資料（2026-10-30参照）
 
-本文のリンクは調査根拠。コードは[main固定SHA](https://github.com/tajumaru/SuiBa/tree/55309dc384e3455369edeeef71900bbfa9f438b0/sui-ai-trading-bot)で追跡する。料金・公開仕様・package/version/registry許可は変わり得るため、実装PRと公開直前に再検証する。Oyster市場価格、PaaS数値、MemWal総費用など取得できなかった値は推測を確定価格として記載していない。
+本文のリンクは調査根拠。コードは[main固定SHA](https://github.com/tajumaru/SuiBa/tree/d5a664d60c85266538d1f6655e40cafab11dbbbc/sui-ai-trading-bot)で追跡する。料金・公開仕様・package/version/registry許可は変わり得るため、実装PRと公開直前に再検証する。Oyster市場価格、PaaS数値、MemWal総費用など取得できなかった値は推測を確定価格として記載していない。
