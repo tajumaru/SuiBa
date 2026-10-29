@@ -72,11 +72,12 @@ test("selects WAL while stopped, reloads isolated state, and shows WAL labels", 
     });
   });
   await page.goto("/");
-  const selector = page.getByRole("combobox", { name: "取引ペア" });
-  await expect(selector).toHaveValue("SUI_USDC");
-  await selector.selectOption("WAL_USDC");
-  await expect(selector).toHaveValue("WAL_USDC");
-  await expect(page.locator(".header-meta")).toContainText("WAL / USDC");
+  const pairSwitch = page.getByRole("group", { name: "取引ペア" });
+  const suiButton = pairSwitch.getByRole("button", { name: "SUI" });
+  const walButton = pairSwitch.getByRole("button", { name: "WAL" });
+  await expect(suiButton).toHaveAttribute("aria-pressed", "true");
+  await walButton.click();
+  await expect(walButton).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".price-ticker")).toContainText("WAL/USDC");
   await expect(page.locator(".price-ticker")).toContainText("$0.0338");
   await expect(page.locator(".price-ticker")).toContainText("板参考");
@@ -86,11 +87,11 @@ test("selects WAL while stopped, reloads isolated state, and shows WAL labels", 
     .click();
   await expect(page.getByText("仮想WAL", { exact: true })).toBeVisible();
   expect(writes).toEqual(["WAL_USDC"]);
-  const selectBox = await selector.boundingBox();
+  const switchBox = await pairSwitch.boundingBox();
   const avatarBox = await page.locator(".agent-avatar").boundingBox();
-  expect(selectBox).not.toBeNull();
+  expect(switchBox).not.toBeNull();
   expect(avatarBox).not.toBeNull();
-  expect(selectBox!.y + selectBox!.height).toBeLessThanOrEqual(avatarBox!.y);
+  expect(switchBox!.y + switchBox!.height).toBeLessThanOrEqual(avatarBox!.y);
   const width = await page.evaluate(() => ({
     viewport: innerWidth,
     scroll: document.documentElement.scrollWidth,

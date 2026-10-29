@@ -485,6 +485,28 @@ function App() {
       return code;
     }
   }
+  // Pair switching reloads the app: the pair scopes every request
+  // (see the X-SuiBa-Pair header in refresh), so a clean reload is
+  // the honest way to land on the other pair's state. A rejected
+  // switch keeps the specific reason in the banner.
+  async function switchPair(pair: string) {
+    setPairBusy(true);
+    setBannerError("");
+    try {
+      await api("pairs", { pair });
+      window.location.reload();
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      setBannerError(
+        code === "PAIR_POSITION_OPEN"
+          ? "未決済ポジションまたは未精算の原価が残っています。対象ペアで決済・会計確認を完了してから切り替えてください。"
+          : code === "PAIR_PENDING_WORK" || code === "PAIR_INVALID_LEDGER"
+            ? "未処理注文または会計の確認が必要です。運用検証で対象ペアを確認してください。"
+            : "ペアを切り替えられません。売買を停止し、市場データ取得の完了後に再試行してください。",
+      );
+      setPairBusy(false);
+    }
+  }
   return (
     <>
       <header>
@@ -500,49 +522,42 @@ function App() {
           >
             緊急停止
           </button>
-          <small className="header-meta">
-            {data?.pair?.replace("_", " / ") ?? "取引ペア"} ·
-            メインネットの市場データ
-          </small>
+          {token && data && (
+            <div
+              className={`pair-switch${pairBusy || data.runtime.running ? " is-disabled" : ""}`}
+              role="group"
+              aria-label="取引ペア"
+              aria-busy={pairBusy}
+            >
+              {(
+                [
+                  ["SUI_USDC", "SUI"],
+                  ["WAL_USDC", "WAL"],
+                ] as const
+              ).map(([value, label]) => {
+                const current = (data.pair ?? "SUI_USDC") === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    className={current ? "on" : ""}
+                    aria-pressed={current}
+                    disabled={pairBusy || data.runtime.running}
+                    onClick={() => {
+                      if (!current) void switchPair(value);
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <small className="header-meta">メインネットの市場データ</small>
           {token && (
             <button className="logout-link" onClick={logout}>
               ログアウト
             </button>
-          )}
-        </div>
-        <div className="pair-selector-row">
-          {token && data && (
-            <label className="pair-selector">
-              取引ペア{" "}
-              <select
-                aria-label="取引ペア"
-                value={data.pair ?? "SUI_USDC"}
-                disabled={pairBusy || data.runtime.running}
-                onChange={async (event) => {
-                  setPairBusy(true);
-                  setBannerError("");
-                  try {
-                    await api("pairs", { pair: event.target.value });
-                    window.location.reload();
-                  } catch (error) {
-                    const code = error instanceof Error ? error.message : "";
-                    setBannerError(
-                      code === "PAIR_POSITION_OPEN"
-                        ? "未決済ポジションまたは未精算の原価が残っています。対象ペアで決済・会計確認を完了してから切り替えてください。"
-                        : code === "PAIR_PENDING_WORK" ||
-                            code === "PAIR_INVALID_LEDGER"
-                          ? "未処理注文または会計の確認が必要です。運用検証で対象ペアを確認してください。"
-                          : "ペアを切り替えられません。売買を停止し、市場データ取得の完了後に再試行してください。",
-                    );
-                    setPairBusy(false);
-                  }
-                }}
-              >
-                <option value="SUI_USDC">SUI/USDC</option>
-                <option value="WAL_USDC">WAL/USDC</option>
-              </select>
-              {pairBusy ? " 切替中…" : " 停止中のみ切替可能"}
-            </label>
           )}
         </div>
       </header>

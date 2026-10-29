@@ -3324,25 +3324,41 @@ th {
   }
 }
 
-/* Keep pair selection readable at mobile widths without squeezing the stop button. */
-.pair-selector-row {
-  /* The existing avatar overlaps the bottom edge of the header. */
-  padding-bottom: 36px;
-  display: flex;
-  min-width: 0;
+/* Pair switch: a segmented pill inside the header sub row (the
+   native select it replaces took a full row of its own). Both pairs
+   stay visible and one tap switches; while the bot runs (or a switch
+   is in flight) the whole pill dims and its buttons disable — the
+   server remains the final gate and its refusal shows in the banner. */
+.pair-switch {
+  display: inline-flex;
+  background: #0a1220;
+  border: 1px solid #2b3f5f;
+  border-radius: 999px;
+  padding: 2px;
+  flex: none;
 }
-.pair-selector {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: 12px;
+.pair-switch button {
+  border: 0;
+  background: transparent;
   color: #8fa7b9;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 5px 13px;
+  min-height: 26px;
+  border-radius: 999px;
+  cursor: pointer;
 }
-.pair-selector select {
-  min-width: 140px;
-  min-height: 44px;
-  width: auto;
+.pair-switch button.on {
+  background: #1d3a4a;
+  color: #43dfb2;
+  box-shadow: inset 0 0 0 1px #2e5a6e;
+}
+.pair-switch.is-disabled {
+  opacity: 0.45;
+}
+.pair-switch button:disabled {
+  cursor: default;
 }
 
 .price-ticker-reference {

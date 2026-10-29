@@ -287,10 +287,16 @@ describe("slim two-row header (design A)", () => {
     expect(rowSub).toContain('className="logout-link"');
   });
 
-  it("shows the selected pair in the header subtitle", () => {
-    // The subtitle moved rows but its text is untouched, and it
-    // still appears exactly once in the header.
-    expect(rowSub).toContain('data?.pair?.replace("_", " / ")');
+  it("shows the pair as a segmented switch in the sub row, not in the subtitle", () => {
+    // The selected pair is carried by the segmented switch (the
+    // pressed button), so the subtitle no longer repeats it; the
+    // market line still appears exactly once in the header.
+    expect(rowSub).toContain('className={`pair-switch');
+    expect(rowSub).toContain('aria-label="取引ペア"');
+    expect(rowSub).toContain('"SUI_USDC", "SUI"');
+    expect(rowSub).toContain('"WAL_USDC", "WAL"');
+    expect(rowSub).not.toContain("pair-selector");
+    expect(header).not.toContain("<select");
     expect(rowSub).toContain("メインネットの市場データ");
     expect(header.match(/メインネットの市場データ/g)).toHaveLength(1);
     expect(rowMain).not.toContain("メインネットの市場データ");
