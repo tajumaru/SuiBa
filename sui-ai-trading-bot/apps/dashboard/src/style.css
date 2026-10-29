@@ -1053,6 +1053,12 @@ th {
     flex: none;
     white-space: nowrap;
   }
+  /* When the pair switch is present it owns the sub row's auto
+     margin (see .pair-switch); the logout then sits right after it
+     instead of splitting the free space with a second auto margin. */
+  .pair-switch + .logout-link {
+    margin-left: 0;
+  }
   /* Bottom tab bar: fixed to the screen bottom, tabs only. The
      active tab keeps the usual highlight and gains a top line, and
      the icon follows the button colour via currentColor. */
@@ -3342,6 +3348,11 @@ th {
   border-radius: 999px;
   padding: 2px;
   flex: none;
+  /* Right end of the sub row: the centred avatar dock floats over
+     the middle of this row, so an interactive control placed there
+     is covered (the WAL half vanished behind the avatar on device).
+     The middle of the row stays empty for the avatar. */
+  margin-left: auto;
 }
 .pair-switch button {
   border: 0;

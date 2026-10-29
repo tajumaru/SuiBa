@@ -528,6 +528,7 @@ function App() {
               role="group"
               aria-label="取引ペア"
               aria-busy={pairBusy}
+              title={data.runtime.running ? "停止中のみ切替可能" : "取引ペア"}
             >
               {(
                 [
@@ -553,7 +554,6 @@ function App() {
               })}
             </div>
           )}
-
           {token && (
             <button className="logout-link" onClick={logout}>
               ログアウト

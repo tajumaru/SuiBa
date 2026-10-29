@@ -91,7 +91,14 @@ test("selects WAL while stopped, reloads isolated state, and shows WAL labels", 
   const avatarBox = await page.locator(".agent-avatar").boundingBox();
   expect(switchBox).not.toBeNull();
   expect(avatarBox).not.toBeNull();
-  expect(switchBox!.y + switchBox!.height).toBeLessThanOrEqual(avatarBox!.y);
+  // The switch sits at the right end of the sub row so the centred
+  // avatar never covers it: the boxes must not intersect at all.
+  const overlaps =
+    switchBox!.x < avatarBox!.x + avatarBox!.width &&
+    avatarBox!.x < switchBox!.x + switchBox!.width &&
+    switchBox!.y < avatarBox!.y + avatarBox!.height &&
+    avatarBox!.y < switchBox!.y + switchBox!.height;
+  expect(overlaps).toBe(false);
   const width = await page.evaluate(() => ({
     viewport: innerWidth,
     scroll: document.documentElement.scrollWidth,
