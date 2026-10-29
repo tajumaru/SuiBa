@@ -134,26 +134,29 @@ export const formatSettingValue = (s: Settings, f: Field) =>
   typeof s[f.key] === "number"
     ? `${number(Number((Number(s[f.key]) * (f.scale ?? 1)).toPrecision(12)))} ${f.unit ?? ""}`
     : String(s[f.key]);
+const modeCopy: Record<Mode, { label: string; blurb: string }> = {
+  safe: { label: "安全重視", blurb: "小さな金額でPAPER検証" },
+  hard: { label: "ハードモード", blurb: "よく売買する・荒い" },
+  custom: { label: "カスタム", blurb: "自分で設定を調整" },
+};
 export function PresetSelector({
   value,
   onChange,
 }: {
   value: string;
-  onChange: (v: "safe" | "custom") => void;
+  onChange: (v: Mode) => void;
 }) {
   return (
     <div className="preset-cards" role="group" aria-label="運用スタイル">
-      {(["safe", "custom"] as const).map((v) => (
+      {(["safe", "hard", "custom"] as const).map((v) => (
         <button
           type="button"
           key={v}
           aria-pressed={value === v}
           onClick={() => onChange(v)}
         >
-          <strong>{v === "safe" ? "安全重視" : "カスタム"}</strong>
-          <small>
-            {v === "safe" ? "小さな金額でPAPER検証" : "自分で設定を調整"}
-          </small>
+          <strong>{modeCopy[v].label}</strong>
+          <small>{modeCopy[v].blurb}</small>
         </button>
       ))}
     </div>
@@ -299,7 +302,7 @@ export function SettingsChanges({
     <p>保存済み設定からの変更はありません。</p>
   );
 }
-const modeLabel = (mode: Mode) => (mode === "safe" ? "安全重視" : "カスタム");
+const modeLabel = (mode: Mode) => modeCopy[mode].label;
 /**
  * The settings editor state, shared by the settings form and the
  * PAPER operation controls: the start button must stay disabled
@@ -462,7 +465,9 @@ export function SettingsForm({ editor }: { editor: SettingsEditor }) {
             <p>適用予定：{modeLabel(selected)}</p>
             <SettingsChanges before={saved} after={draft} />
             <button type="button" onClick={() => void save()}>
-              {selected === "safe" ? "安全重視を適用" : "変更を保存"}
+              {selected === "custom"
+                ? "変更を保存"
+                : `${modeLabel(selected)}を適用`}
             </button>
             <button
               type="button"

@@ -5,7 +5,10 @@ import {
   settingsEditor,
   sameSettings,
 } from "../apps/dashboard/src/settingsEditor.ts";
-import { applySafePreset } from "../apps/dashboard/src/settingsPresets.ts";
+import {
+  applyHardPreset,
+  applySafePreset,
+} from "../apps/dashboard/src/settingsPresets.ts";
 
 describe("Settings 1.1 editor state", () => {
   it("does not change persisted custom settings on initial display or preset selection", () => {
@@ -134,5 +137,15 @@ describe("Settings 1.1 editor state", () => {
     });
     expect(editor.draft.maxOrder).toBe(2);
     expect(editor.status).toBe("editing");
+  });
+});
+
+describe("hard mode selection", () => {
+  it("selecting hard fills the draft from the hard preset", () => {
+    const saved = { ...defaults, oversold: 30, takeProfitPct: 0.04 };
+    const initial = createEditor(saved);
+    const selected = settingsEditor(initial, { type: "select", mode: "hard" });
+    expect(selected.selected).toBe("hard");
+    expect(selected.draft).toEqual(applyHardPreset(saved));
   });
 });

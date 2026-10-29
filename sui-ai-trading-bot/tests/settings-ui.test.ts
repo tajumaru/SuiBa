@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, expect, vi } from "vitest";
 import { defaults, settingsSchema } from "../packages/shared/src/index.ts";
 import {
+  applyHardPreset,
   applySafePreset,
   presetName,
   presetKeys,
@@ -183,3 +184,47 @@ it.each([defaults, { ...defaults, maxOrder: 3, gasUsdc: 0.08 }])(
     expect(control).not.toHaveBeenCalled();
   },
 );
+
+describe("ハードモード preset", () => {
+  it("identifies hard settings and applies only the hard bundle", () => {
+    expect(presetName(applyHardPreset(defaults))).toBe("hard");
+    const current = {
+      ...defaults,
+      dailyLossPct: 0.002,
+      maxHoldingRatio: 0.04,
+      emaGapShrinkCandles: 5,
+      oversold: 30,
+    };
+    const hard = applyHardPreset(current);
+    expect(hard).toMatchObject({
+      maxOrder: 5,
+      dailyBuyLimit: 20,
+      maxSlippage: 0.003,
+      profitGuardEnabled: true,
+      minNetProfitUsdc: 0.01,
+      minNetProfitPct: 0.005,
+      oversold: 45,
+      emaGapShrinkEnabled: true,
+      takeProfitPct: 0.015,
+      stopLossPct: 0.01,
+    });
+    // The rails outside the bundle stay exactly as they were.
+    expect(hard.dailyLossPct).toBe(0.002);
+    expect(hard.maxHoldingRatio).toBe(0.04);
+    expect(hard.emaGapShrinkCandles).toBe(5);
+    expect(settingsSchema.safeParse(hard).success).toBe(true);
+    expect(presetName({ ...hard, minNetProfitPct: 0.015 })).toBe("custom");
+  });
+
+  it("renders the hard mode card alongside safe and custom", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(PresetSelector, {
+        value: "hard",
+        onChange: vi.fn(),
+      }),
+    );
+    expect(html).toContain("ハードモード");
+    expect(html).toContain("安全重視");
+    expect(html).toContain("カスタム");
+  });
+});

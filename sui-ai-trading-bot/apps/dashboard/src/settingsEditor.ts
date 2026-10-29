@@ -1,6 +1,10 @@
 import type { Settings } from "../../../packages/shared/src/index.ts";
-import { applySafePreset, presetName } from "./settingsPresets.ts";
-export type Mode = "safe" | "custom";
+import {
+  applyHardPreset,
+  applySafePreset,
+  presetName,
+} from "./settingsPresets.ts";
+export type Mode = "safe" | "hard" | "custom";
 export const sameSettings = (a: Settings, b: Settings) =>
   (Object.keys(a) as (keyof Settings)[]).every((key) =>
     Object.is(a[key], b[key]),
@@ -43,7 +47,12 @@ function select(state: EditorState, mode: Mode): EditorState {
   return {
     ...state,
     selected: mode,
-    draft: mode === "safe" ? applySafePreset(state.saved) : { ...state.saved },
+    draft:
+      mode === "safe"
+        ? applySafePreset(state.saved)
+        : mode === "hard"
+          ? applyHardPreset(state.saved)
+          : { ...state.saved },
     review: false,
     switchTo: null,
     status: "editing",

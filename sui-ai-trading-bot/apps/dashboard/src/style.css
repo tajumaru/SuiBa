@@ -863,6 +863,12 @@ th {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
+/* Three style cards (safe / hard / custom) share one row even on
+   narrow screens; the settings grid keeps its two columns. */
+.preset-cards {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
 .preset-cards button {
   min-height: 84px;
   text-align: left;
