@@ -358,3 +358,69 @@ it("rechecks tightened notional limits against cached book", async () => {
   maxOrder = 200;
   expect(() => d.assertReady(Date.now())).toThrow("THIN_ORDERBOOK");
 });
+
+// Liquidity can be fragmented into many small levels close to the midpoint.
+it("reads deeper liquidity without widening the execution price envelope", async () => {
+  const d = deep();
+  const full = {
+    timestamp: String(Date.now()),
+    bids: Array.from({ length: 50 }, (_, i) => [
+      String(1 - (i + 1) * 0.00001),
+      "0.2",
+    ]),
+    asks: Array.from({ length: 50 }, (_, i) => [
+      String(1 + (i + 1) * 0.00001),
+      "0.2",
+    ]),
+  };
+  const read = d.read.getMockImplementation()!;
+  d.read.mockImplementation(async (path, ...args) => {
+    if (!path.startsWith("/orderbook")) return read(path, ...args);
+    const depth = Number(
+      new URL(path, "https://example.test").searchParams.get("depth"),
+    );
+    return {
+      ...full,
+      bids: full.bids.slice(0, depth / 2),
+      asks: full.asks.slice(0, depth / 2),
+    };
+  });
+  expect(() =>
+    validateBook(
+      { ...full, bids: full.bids.slice(0, 5), asks: full.asks.slice(0, 5) },
+      Date.now(),
+      5,
+      0.003,
+    ),
+  ).toThrow("THIN_ORDERBOOK");
+  await d.provider.prepare();
+  expect(d.provider.book?.bids).toHaveLength(50);
+  expect(d.provider.diagnostics().bidDepthUsdc).toBeGreaterThan(5);
+  expect(d.provider.diagnostics().askDepthUsdc).toBeGreaterThan(5);
+  expect(
+    d.read.mock.calls.filter(([path]) => path.startsWith("/orderbook")),
+  ).toHaveLength(1);
+  // Large orders outside the existing 0.3% limit must never count as usable depth.
+  const outside = {
+    ...full,
+    bids: [
+      ["0.9999", "0.2"],
+      ["0.99", "1000"],
+    ],
+    asks: [
+      ["1.0001", "0.2"],
+      ["1.01", "1000"],
+    ],
+  };
+  expect(() => validateBook(outside, Date.now(), 5, 0.003)).toThrow(
+    "THIN_ORDERBOOK",
+  );
+  expect(() =>
+    validateBook(
+      { ...full, timestamp: String(Date.now() - 10001) },
+      Date.now(),
+      5,
+      0.003,
+    ),
+  ).toThrow("STALE_ORDERBOOK");
+});

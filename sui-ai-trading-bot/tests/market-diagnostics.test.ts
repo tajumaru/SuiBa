@@ -11,7 +11,7 @@ const base = "https://deepbook-indexer.mainnet.mystenlabs.com";
 it.each([
   ["/ohclv/SUI_USDC?interval=5m", "OHLCV_FETCH", "5m"],
   ["/ohclv/SUI_USDC?interval=1m", "OHLCV_FETCH", "1m"],
-  ["/orderbook/SUI_USDC?level=2&depth=10", "ORDERBOOK_FETCH", undefined],
+  ["/orderbook/SUI_USDC?level=2&depth=100", "ORDERBOOK_FETCH", undefined],
   ["/status?max_time_lag_seconds=60", "MARKET_STATUS", undefined],
   ["/get_pools", "PROVIDER_HEALTH", undefined],
   [
