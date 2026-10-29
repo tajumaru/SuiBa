@@ -384,3 +384,64 @@ describe("display-only rejected-book reference", () => {
     }
   });
 });
+
+it("accepts the actual STALE_CANDLES failure code for display-only fallback", () => {
+  const now = 1793227455000;
+  const market = {
+    reason: "STALE_CANDLES",
+    diagnostics: {
+      bookObservation: {
+        bid: 0.033781,
+        ask: 0.033833,
+        timestamp: now - 1000,
+        fetchedAt: now,
+        spread: 0.00154,
+        maxSpread: 0.003,
+      },
+    },
+  } as NonNullable<State["marketData"]>;
+  expect(referenceTicker(market, now)?.reason).toBe("ローソク足の更新待ち");
+});
+it("labels a persisted WAL price as previous when acquisition fails and hides trading lines", () => {
+  const market = {
+    healthy: false,
+    reason: "UPSTREAM_TIMEOUT",
+    lastSuccessAt: 1000,
+  } as NonNullable<State["marketData"]>;
+  const html = renderToStaticMarkup(
+    <PriceTicker
+      pair="WAL_USDC"
+      price={0.032169}
+      marketData={market}
+      now={61000}
+      candlesByTimeframe={frames({ 3600: hourly(25, 1, 2) })}
+      linePrice={0.03}
+      sellLines={{ tp: 0.04, sl: 0.02 }}
+    />,
+  );
+  expect(html).toContain("前回確定価格");
+  expect(html).not.toContain("現在価格");
+  expect(html).not.toContain("price-ticker-line ");
+  expect(html).not.toContain("price-ticker-spark");
+});
+
+it("keeps healthy WAL trading lines and labels an expired acquisition even before a failure", () => {
+  const market = {
+    healthy: true,
+    reason: null,
+    lastSuccessAt: 1000,
+  } as NonNullable<State["marketData"]>;
+  const props = {
+    pair: "WAL_USDC" as const,
+    price: 0.032169,
+    marketData: market,
+    candlesByTimeframe: frames({}),
+    linePrice: 0.03,
+  };
+  expect(renderToStaticMarkup(<PriceTicker {...props} now={2000} />)).toContain(
+    "買い走りライン",
+  );
+  expect(
+    renderToStaticMarkup(<PriceTicker {...props} now={361001} />),
+  ).toContain("前回確定価格");
+});

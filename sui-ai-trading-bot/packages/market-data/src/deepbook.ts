@@ -181,7 +181,13 @@ export class DeepBookMarketData {
   private refreshAfterCandles = false;
   private indexerLagMs: number | null = null;
   diagnostics() {
-    const mid = this.book ? (this.book.bid + this.book.ask) / 2 : 0;
+    // Diagnostic values must belong to the same response as bookObservation.
+    // Ignore execution-only spread/depth gates, but retain structural/freshness checks.
+    let observed: Book | null = null;
+    try {
+      observed = validateBook(this.bookRaw, this.bookFetchedAt, 0, Infinity);
+    } catch {}
+    const mid = observed ? (observed.bid + observed.ask) / 2 : 0;
     const depth = (levels: number[][] | undefined) =>
       levels
         ? levels
@@ -198,8 +204,8 @@ export class DeepBookMarketData {
       ),
       indexerLagMs: this.indexerLagMs,
       indexedThrough: this.indexedThrough,
-      bidDepthUsdc: depth(this.book?.bids),
-      askDepthUsdc: depth(this.book?.asks),
+      bidDepthUsdc: depth(observed?.bids),
+      askDepthUsdc: depth(observed?.asks),
     };
   }
   quality() {
