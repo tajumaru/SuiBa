@@ -553,7 +553,7 @@ function App() {
               })}
             </div>
           )}
-          <small className="header-meta">メインネットの市場データ</small>
+
           {token && (
             <button className="logout-link" onClick={logout}>
               ログアウト
