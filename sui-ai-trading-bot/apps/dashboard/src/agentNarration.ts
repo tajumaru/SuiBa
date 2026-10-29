@@ -2029,7 +2029,8 @@ export function agentPose(
   )
     return "pointSmile";
   const dec = d.decision;
-  if (dec && freshDecision(dec, now)) {
+  const fresh = dec != null && freshDecision(dec, now);
+  if (fresh) {
     // Safety states have already returned above, so an upward spike
     // alert on this very cycle may celebrate — and only upward: a
     // plunge or a bare volume spike keeps the laptop pose.
@@ -2038,6 +2039,17 @@ export function agentPose(
       state.lastAlert.at === dec.evaluatedAt
     )
       return "point";
+  }
+  // A standing buy-run line turns the character blue — the roaring
+  // crowd artwork — for as long as the line stands. The line only
+  // stands while RSI is the last missing piece, which means the
+  // other two conditions are met by construction: the met-count
+  // pointing below would claim every fresh cycle and the blue
+  // would never show. So the line ranks above the persistent
+  // pointing (the blue artwork points too), and below only a
+  // recorded fill and an upward spike.
+  if (state.priceLine != null) return "buyLine";
+  if (fresh) {
     if (dec.action === "BUY") return "point";
     const met = metEntryConditions(dec);
     if (met >= 2) return "point";
@@ -2055,12 +2067,6 @@ export function agentPose(
     now - state.lastHitAt <= DECISION_FRESH_MS
   )
     return "pointSmile";
-  // A standing buy-run line turns the character blue — the roaring
-  // crowd artwork — for as long as the line stands. It ranks below
-  // the momentary reactions above, so a fresh hit or a pointing
-  // decision flashes first and the pose then settles back to blue
-  // while the line is still out.
-  if (state.priceLine != null) return "buyLine";
   return "laptop";
 }
 

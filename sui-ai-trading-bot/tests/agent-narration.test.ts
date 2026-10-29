@@ -812,15 +812,19 @@ describe("agent pose", () => {
       priceLine: { price: 0.9, reached: false, murmured: false },
     };
     expect(agentPose(withLine, d, vital, NOW)).toBe("buyLine");
-    // Two conditions met on a fresh decision still point first.
+    // The line stands only while RSI is the last missing piece, so
+    // the other two conditions are met by construction — the blue
+    // must still win over the met-count pointing, or it never shows.
     const d2 = runningSnapshot(
       db,
       monitor,
       decision({
-        conditions: { rsiRecovery: true, histogramImproving: true },
+        conditions: { emaUp: true, histogramImproving: true },
       }),
     );
-    expect(agentPose(withLine, d2, vital, NOW)).toBe("point");
+    expect(agentPose(withLine, d2, vital, NOW)).toBe("buyLine");
+    // Without the line, two met conditions point as before.
+    expect(agentPose(emptyNarrationState(), d2, vital, NOW)).toBe("point");
     // A stopped bot sleeps whatever lines its history holds.
     expect(agentPose(withLine, d, { ...vital, state: "sleeping" }, NOW)).toBe(
       "sleep",
