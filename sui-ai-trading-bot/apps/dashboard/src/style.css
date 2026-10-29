@@ -377,7 +377,12 @@ section svg {
    recorded span) and is absent when no frame can ground it. On
    narrow screens the text never wraps: the sparkline is the one
    flexible element and shrinks first. */
-.price-ticker {
+/* The bar carries the ticker's chrome so the pair switch can ride
+   at its left as a sibling of the role="img" ticker body (an
+   interactive control cannot live inside role="img"). With the
+   switch present it IS the pair display, so the coin and the
+   symbol text step aside. */
+.price-ticker-bar {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -387,6 +392,18 @@ section svg {
   padding: 8px 12px;
   margin-bottom: 14px;
   min-height: 42px;
+  box-sizing: border-box;
+}
+.price-ticker-bar.has-switch .price-ticker-coin,
+.price-ticker-bar.has-switch .price-ticker-symbol {
+  display: none;
+}
+.price-ticker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
   box-sizing: border-box;
 }
 .price-ticker-coin {
@@ -479,9 +496,12 @@ section svg {
    aria-label — and the gaps, price and sparkline give a
    little each. */
 @media (max-width: 480px) {
-  .price-ticker {
+  .price-ticker-bar {
     gap: 7px;
     padding: 8px 10px;
+  }
+  .price-ticker {
+    gap: 7px;
   }
   .price-ticker-price {
     font-size: 16px;
@@ -518,7 +538,7 @@ section svg {
    ticker carries the glow class and pulses gold once. Under
    reduced motion the class changes nothing at all. */
 @media (prefers-reduced-motion: no-preference) {
-  .price-ticker.glow {
+  .price-ticker-bar.glow {
     animation: price-ticker-glow 1.6s ease-out;
   }
   @keyframes price-ticker-glow {
@@ -1052,12 +1072,6 @@ th {
        (ログアウ／ト) and the meta line ellipsises instead. */
     flex: none;
     white-space: nowrap;
-  }
-  /* When the pair switch is present it owns the sub row's auto
-     margin (see .pair-switch); the logout then sits right after it
-     instead of splitting the free space with a second auto margin. */
-  .pair-switch + .logout-link {
-    margin-left: 0;
   }
   /* Bottom tab bar: fixed to the screen bottom, tabs only. The
      active tab keeps the usual highlight and gains a top line, and
@@ -3336,11 +3350,13 @@ th {
   }
 }
 
-/* Pair switch: a segmented pill inside the header sub row (the
-   native select it replaces took a full row of its own). Both pairs
-   stay visible and one tap switches; while the bot runs (or a switch
-   is in flight) the whole pill dims and its buttons disable — the
-   server remains the final gate and its refusal shows in the banner. */
+/* Pair switch: a segmented pill at the left of the price ticker
+   bar. The header sub row turned out to have no safe spot for it —
+   the centred avatar covers the middle and its shout bubble covers
+   the right end. Both pairs stay visible and one tap switches;
+   while the bot runs (or a switch is in flight) the whole pill
+   dims and its buttons disable — the server remains the final
+   gate and its refusal shows in the banner. */
 .pair-switch {
   display: inline-flex;
   background: #0a1220;
@@ -3348,11 +3364,6 @@ th {
   border-radius: 999px;
   padding: 2px;
   flex: none;
-  /* Right end of the sub row: the centred avatar dock floats over
-     the middle of this row, so an interactive control placed there
-     is covered (the WAL half vanished behind the avatar on device).
-     The middle of the row stays empty for the avatar. */
-  margin-left: auto;
 }
 .pair-switch button {
   border: 0;

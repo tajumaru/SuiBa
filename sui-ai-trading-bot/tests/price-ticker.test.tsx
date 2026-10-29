@@ -445,3 +445,43 @@ it("keeps healthy WAL trading lines and labels an expired acquisition even befor
     renderToStaticMarkup(<PriceTicker {...props} now={361001} />),
   ).toContain("前回確定価格");
 });
+
+describe("pair switch in the ticker bar", () => {
+  it("renders the segmented switch with the current pair pressed", () => {
+    const html = renderToStaticMarkup(
+      <PriceTicker
+        pair="WAL_USDC"
+        price={0.0327}
+        candlesByTimeframe={frames({})}
+        onPairSwitch={() => {}}
+      />,
+    );
+    expect(html).toContain('class="price-ticker-bar has-switch"');
+    expect(html).toContain('aria-label="取引ペア"');
+    expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*>WAL<\/button>/);
+    expect(html).toMatch(/<button[^>]*aria-pressed="false"[^>]*>SUI<\/button>/);
+  });
+
+  it("dims and disables the switch while the bot runs", () => {
+    const html = renderToStaticMarkup(
+      <PriceTicker
+        pair="SUI_USDC"
+        price={0.92}
+        candlesByTimeframe={frames({})}
+        pairDisabled
+        onPairSwitch={() => {}}
+      />,
+    );
+    expect(html).toContain('class="pair-switch is-disabled"');
+    expect(html).toContain('title="停止中のみ切替可能"');
+    expect(html).toContain("disabled");
+  });
+
+  it("renders no switch without a handler", () => {
+    const html = renderToStaticMarkup(
+      <PriceTicker price={0.92} candlesByTimeframe={frames({})} />,
+    );
+    expect(html).not.toContain("pair-switch");
+    expect(html).toContain('class="price-ticker-bar"');
+  });
+});

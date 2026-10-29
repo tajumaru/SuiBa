@@ -287,19 +287,13 @@ describe("slim two-row header (design A)", () => {
     expect(rowSub).toContain('className="logout-link"');
   });
 
-  it("shows the pair as a segmented switch in the sub row, not in the subtitle", () => {
-    // The selected pair is carried by the segmented switch (the
-    // pressed button), so the subtitle no longer repeats it; the
-    // redundant market subtitle is omitted from the header.
-    expect(rowSub).toContain('className={`pair-switch');
-    expect(rowSub).toContain('aria-label="取引ペア"');
-    expect(rowSub).toContain('"SUI_USDC", "SUI"');
-    expect(rowSub).toContain('"WAL_USDC", "WAL"');
-    expect(rowSub).not.toContain("pair-selector");
+  it("keeps the pair switch out of the header (it lives in the price ticker)", () => {
+    // The header sub row has no safe spot for the switch: the
+    // centred avatar covers its middle and the shout bubble its
+    // right end. The switch renders inside PriceTicker instead.
+    expect(header).not.toContain("pair-switch");
     expect(header).not.toContain("<select");
     expect(rowSub).not.toContain("メインネットの市場データ");
-    expect(header).not.toContain("メインネットの市場データ");
-    expect(rowMain).not.toContain("メインネットの市場データ");
   });
 
   it("styles the header as two slim rows with a compact badge and stop pill", () => {

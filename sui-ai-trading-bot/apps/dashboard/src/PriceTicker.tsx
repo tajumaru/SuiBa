@@ -245,10 +245,19 @@ export function PriceTicker({
   sellLines = null,
   marketData,
   now = Date.now(),
+  pairDisabled = false,
+  onPairSwitch,
 }: {
   marketData?: State["marketData"];
   now?: number;
   pair?: State["pair"];
+  /** Pair switch: when a handler is given, the bar leads with the
+   * SUI/WAL segmented switch (the header sub row had no room for
+   * it — the centred avatar and its shout bubble both live there).
+   * The switch sits OUTSIDE the role="img" ticker body so it stays
+   * interactive and reachable. */
+  pairDisabled?: boolean;
+  onPairSwitch?: (pair: State["pair"]) => void;
   price: State["price"];
   candlesByTimeframe: Frames;
   /** Buy celebration: while true the ticker carries the glow
@@ -359,11 +368,41 @@ export function PriceTicker({
     tone === "up" ? "#43dfb2" : tone === "down" ? "#ff6b81" : "#9fb2c8";
   return (
     <div
-      className={`price-ticker${glow ? " glow" : ""}`}
-      role="img"
-      aria-label={ariaLabel}
+      className={`price-ticker-bar${onPairSwitch ? " has-switch" : ""}${glow ? " glow" : ""}`}
     >
-      <span className="price-ticker-coin" aria-hidden="true">
+      {onPairSwitch && (
+        <div
+          className={`pair-switch${pairDisabled ? " is-disabled" : ""}`}
+          role="group"
+          aria-label="取引ペア"
+          title={pairDisabled ? "停止中のみ切替可能" : "取引ペア"}
+        >
+          {(
+            [
+              ["SUI_USDC", "SUI"],
+              ["WAL_USDC", "WAL"],
+            ] as const
+          ).map(([value, label]) => {
+            const current = pair === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                className={current ? "on" : ""}
+                aria-pressed={current}
+                disabled={pairDisabled}
+                onClick={() => {
+                  if (!current) onPairSwitch(value);
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <div className="price-ticker" role="img" aria-label={ariaLabel}>
+        <span className="price-ticker-coin" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="15" height="15" focusable="false">
           <path
             d="M12 3c3.2 4.1 6 7.9 6 11a6 6 0 1 1-12 0c0-3.1 2.8-6.9 6-11z"
@@ -442,6 +481,7 @@ export function PriceTicker({
             あと{sellPctText}%
           </span>
         ))}
+      </div>
     </div>
   );
 }

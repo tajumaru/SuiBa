@@ -522,38 +522,6 @@ function App() {
           >
             緊急停止
           </button>
-          {token && data && (
-            <div
-              className={`pair-switch${pairBusy || data.runtime.running ? " is-disabled" : ""}`}
-              role="group"
-              aria-label="取引ペア"
-              aria-busy={pairBusy}
-              title={data.runtime.running ? "停止中のみ切替可能" : "取引ペア"}
-            >
-              {(
-                [
-                  ["SUI_USDC", "SUI"],
-                  ["WAL_USDC", "WAL"],
-                ] as const
-              ).map(([value, label]) => {
-                const current = (data.pair ?? "SUI_USDC") === value;
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    className={current ? "on" : ""}
-                    aria-pressed={current}
-                    disabled={pairBusy || data.runtime.running}
-                    onClick={() => {
-                      if (!current) void switchPair(value);
-                    }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
           {token && (
             <button className="logout-link" onClick={logout}>
               ログアウト
@@ -652,6 +620,8 @@ function App() {
                     ground them. */}
                 <PriceTicker
                   pair={data.pair}
+                  pairDisabled={pairBusy || data.runtime.running}
+                  onPairSwitch={(pair) => void switchPair(pair)}
                   price={data.price}
                   marketData={data.marketData}
                   now={now}

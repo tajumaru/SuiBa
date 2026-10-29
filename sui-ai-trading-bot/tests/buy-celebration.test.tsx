@@ -399,7 +399,7 @@ describe("buy celebration: the price ticker glow", () => {
     const lit = renderToStaticMarkup(
       <PriceTicker price={0.9234} candlesByTimeframe={frames} glow />,
     );
-    expect(lit).toContain('class="price-ticker glow"');
+    expect(lit).toContain('class="price-ticker-bar glow"');
     const plain = renderToStaticMarkup(
       <PriceTicker price={0.9234} candlesByTimeframe={frames} />,
     );
@@ -448,7 +448,7 @@ describe("buy celebration: the stylesheet", () => {
     // The feed pulse and the ticker glow follow the same rule.
     for (const selector of [
       ".agent-feed-entry.just-bought",
-      ".price-ticker.glow",
+      ".price-ticker-bar.glow",
     ]) {
       const at = css.indexOf(selector);
       expect(at).toBeGreaterThan(-1);
