@@ -17,6 +17,7 @@ import { StrategyTab, type StrategySegment } from "./StrategyTab.tsx";
 import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
 import { errorShout } from "./errorShout.ts";
+import { presetName } from "./settingsPresets.ts";
 import {
   BUY_CELEBRATION_MS,
   sellLinesOf,
@@ -550,6 +551,7 @@ function App() {
           pose={agentPose}
           celebrating={buyCelebration}
           shout={shout}
+          hardMode={data != null && presetName(data.settings) === "hard"}
         />
       )}
       {restoringSession ? (
