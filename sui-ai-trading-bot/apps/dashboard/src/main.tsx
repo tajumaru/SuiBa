@@ -659,28 +659,16 @@ function App() {
                   )}
                 </div>
                 {activeTab === "Overview" && (
-                  <>
+                  <div className="overview-tab">
                     <div className="cards">
                       {[
                         ["仮想総資産", data.equity, "USDC"],
                         ["累計損益", data.pnl, "USDC"],
                         [
-                          "日次損益（日本時間09:00から）",
-                          data.dailyPnl,
-                          "USDC",
-                        ],
-                        [
-                          "仮想" + (data.pair === "WAL_USDC" ? "WAL" : "SUI"),
-                          data.portfolio.sui,
-                          data.pair === "WAL_USDC" ? "WAL" : "SUI",
-                        ],
-                        ["仮想USDC", data.portfolio.usdc, "USDC"],
-                        [
                           "本日の取引（日本時間09:00から）",
                           data.todayTrades,
                           "件",
                         ],
-                        ["未実現損益", data.unrealized, "USDC"],
                       ].map(([label, value, unit]) => (
                         <section key={String(label)}>
                           <small>{label}</small>
@@ -689,6 +677,16 @@ function App() {
                           </h2>
                         </section>
                       ))}
+                      <section>
+                        <small>保有</small>
+                        <h2>
+                          {money(data.portfolio.sui)}{" "}
+                          <em>{data.pair === "WAL_USDC" ? "WAL" : "SUI"}</em>
+                        </h2>
+                        <p className="overview-sub">
+                          {money(data.portfolio.usdc)} USDC
+                        </p>
+                      </section>
                     </div>
                     <label>
                       時間足
@@ -717,27 +715,45 @@ function App() {
                         historyApi={api}
                       />
                     </section>
-                    <div className="cards">
-                      {Object.entries(data.metrics).map(([k, v]) => (
-                        <section key={k}>
-                          <small
-                            title={
-                              k === "maxDrawdown"
-                                ? "資産の最高値からの最大下落率"
-                                : k === "profitFactor"
-                                  ? "利益合計を損失合計で割った値"
-                                  : "損益を記録した約定のうち利益が出た割合"
-                            }
-                          >
-                            {label(k)}
-                          </small>
-                          <h2>
-                            {k === "profitFactor" ? money(v) : percent(v)}
-                          </h2>
-                        </section>
-                      ))}
-                    </div>
-                  </>
+                    <details className="overview-details">
+                      <summary>詳細の数字</summary>
+                      <div className="cards">
+                        {[
+                          [
+                            "日次損益（日本時間09:00から）",
+                            data.dailyPnl,
+                            "USDC",
+                          ],
+                          ["未実現損益", data.unrealized, "USDC"],
+                        ].map(([label, value, unit]) => (
+                          <section key={String(label)}>
+                            <small>{label}</small>
+                            <h2>
+                              {money(value as number | null)} <em>{unit}</em>
+                            </h2>
+                          </section>
+                        ))}
+                        {Object.entries(data.metrics).map(([k, v]) => (
+                          <section key={k}>
+                            <small
+                              title={
+                                k === "maxDrawdown"
+                                  ? "資産の最高値からの最大下落率"
+                                  : k === "profitFactor"
+                                    ? "利益合計を損失合計で割った値"
+                                    : "損益を記録した約定のうち利益が出た割合"
+                              }
+                            >
+                              {label(k)}
+                            </small>
+                            <h2>
+                              {k === "profitFactor" ? money(v) : percent(v)}
+                            </h2>
+                          </section>
+                        ))}
+                      </div>
+                    </details>
+                  </div>
                 )}
                 {activeTab === "Strategy" && (
                   <StrategyTab

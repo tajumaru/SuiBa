@@ -1218,10 +1218,10 @@ th {
 .operation-reports {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
+  gap: 12px;
 }
 .operation-reports article {
-  padding: 16px;
+  padding: 12px;
   border: 1px solid #344e65;
   border-radius: 8px;
   min-width: 0;
@@ -1245,7 +1245,7 @@ th {
     margin-bottom: 12px;
   }
   .operation-validation section {
-    padding: 16px;
+    padding: 12px;
   }
 }
 
@@ -1265,13 +1265,13 @@ th {
 }
 .deepbook-validation h3 {
   margin: 0 0 12px;
-  font-size: 16px;
+  font-size: 14px;
 }
 .validation-overview,
 .validation-action,
 .validation-progress,
 .validation-metric {
-  padding: 20px;
+  padding: 12px;
   border: 1px solid #344e65;
   border-radius: 10px;
   background: #101c2a;
@@ -1519,29 +1519,77 @@ th {
   background: transparent;
   margin: 20px 0;
 }
-/* Operations: decision first, evidence on demand. */
+/* Overview: the app's standard scale — compact cards, 20px
+   values, the secondary numbers folded into a details. */
+.overview-tab section {
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.overview-tab .cards {
+  gap: 10px;
+}
+.overview-tab h2 {
+  font-size: 20px;
+  margin: 2px 0 0;
+}
+.overview-tab h3 {
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+.overview-tab .overview-sub {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: #c8d6e2;
+}
+.overview-details {
+  margin-bottom: 12px;
+}
+.overview-details .cards {
+  margin-top: 10px;
+}
+.overview-details section {
+  margin-bottom: 0;
+}
+/* Operations: decision first, evidence on demand. The whole tab
+   wears the app's standard scale (13px body, 15px headings,
+   20px KPI values, 12px card padding) instead of the old
+   oversized report styling. */
 .operation-validation {
   min-width: 0;
   overflow-wrap: anywhere;
+  font-size: 13px;
 }
 .operation-validation > section,
 .operation-diagnostics {
-  margin-block: 20px;
+  margin-block: 12px;
+}
+.operation-validation section {
+  padding: 12px;
+}
+.operation-validation h2 {
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+.operation-validation h3 {
+  font-size: 14px;
+}
+.operation-validation h4 {
+  font-size: 13px;
 }
 .operation-hero {
-  padding: 24px;
+  padding: 12px;
   border: 1px solid currentColor;
-  border-radius: 16px;
+  border-radius: 12px;
   background: #202725;
 }
 .operation-hero h2 {
-  font-size: clamp(26px, 4vw, 38px);
-  margin: 12px 0;
+  font-size: 15px;
+  margin: 8px 0;
 }
 .operation-hero p {
   max-width: 65ch;
   color: #e2e8e5;
-  font-size: 16px;
+  font-size: 13.5px;
 }
 .operation-mode {
   color: #c4d7ce;
@@ -1552,8 +1600,9 @@ th {
   gap: 8px;
 }
 .operation-period button {
-  min-height: 44px;
-  padding: 10px 20px;
+  min-height: 36px;
+  padding: 6px 14px;
+  font-size: 12.5px;
 }
 .operation-period button[aria-pressed="true"] {
   background: #164d3d;
@@ -1563,38 +1612,38 @@ th {
 .operation-kpis {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: 10px;
 }
 .operation-kpis article {
   min-width: 0;
   background: #242a2d;
-  padding: 20px;
+  padding: 12px;
   border: 1px solid #465450;
-  border-radius: 12px;
+  border-radius: 10px;
 }
 .operation-kpis h3 {
-  font-size: 15px;
-  margin: 0 0 16px;
+  font-size: 12px;
+  margin: 0 0 8px;
   color: #d0dcd6;
 }
 .operation-kpis strong {
   display: block;
-  font-size: clamp(23px, 2.6vw, 32px);
+  font-size: 20px;
   font-variant-numeric: tabular-nums;
 }
 .operation-kpis small {
   display: block;
-  margin-top: 12px;
+  margin-top: 6px;
   color: #c4d0ca;
-  font-size: 14px;
+  font-size: 11.5px;
 }
 .operation-next {
-  padding: 20px;
+  padding: 12px;
   border-left: 4px solid #57d9aa;
   background: #202b27;
 }
 .operation-next li {
-  margin-block: 10px;
+  margin-block: 6px;
 }
 .operation-validation a {
   color: #83e9bd;
@@ -1606,7 +1655,7 @@ th {
 }
 .operation-report-grid dt,
 .operation-report-grid dd {
-  padding: 12px;
+  padding: 8px 10px;
   margin: 0;
   background: #242a2d;
   white-space: normal;
@@ -1678,7 +1727,7 @@ th {
   border: 1px solid var(--control-state);
   border-top-width: 4px;
   border-radius: 12px;
-  padding: 24px;
+  padding: 12px;
   background: #18232c;
   color: #e6edf3;
 }
@@ -1695,32 +1744,32 @@ th {
   --control-state: #ff9c9c;
 }
 .validation-control .control-state {
-  font-size: clamp(22px, 4vw, 30px);
+  font-size: 15px;
   font-weight: 700;
   color: var(--control-state);
 }
 .validation-control p {
-  font-size: 16px;
+  font-size: 13px;
   line-height: 1.7;
 }
 .control-steps {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
-  padding-left: 28px;
+  gap: 12px;
+  padding-left: 20px;
 }
 .control-steps li {
   padding: 8px;
   min-width: 0;
 }
 .control-steps h3 {
-  font-size: 20px;
+  font-size: 14px;
 }
 .validation-control button {
-  min-height: 48px;
-  padding: 12px 20px;
+  min-height: 44px;
+  padding: 8px 16px;
   margin: 4px 8px 4px 0;
-  font-size: 16px;
+  font-size: 13.5px;
 }
 .validation-control .control-primary {
   background: #175dc0;
@@ -1749,20 +1798,20 @@ th {
 .control-secondary,
 .control-confirm {
   border-top: 1px solid #647180;
-  padding-top: 16px;
-  margin-top: 20px;
+  padding-top: 12px;
+  margin-top: 12px;
 }
 .control-confirm {
   border: 2px solid #8ac5ff;
   border-radius: 8px;
-  padding: 20px;
+  padding: 12px;
 }
 .validation-diagnostics {
-  margin-top: 24px;
+  margin-top: 12px;
   border-top: 1px solid #647180;
 }
 .deepbook-validation :is(p, small) {
-  font-size: 16px;
+  font-size: 13px;
   line-height: 1.7;
 }
 .operation-hero.stopped {
@@ -1806,8 +1855,8 @@ th {
   display: flex;
   align-items: center;
   gap: 18px;
-  margin-top: 18px;
-  padding: 14px 18px;
+  margin-top: 12px;
+  padding: 12px 14px;
   background: #141d24;
   border: 1px solid #344e65;
   border-radius: 12px;

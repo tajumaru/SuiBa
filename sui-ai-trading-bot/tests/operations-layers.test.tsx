@@ -56,7 +56,7 @@ function fixture() {
   return { db, data, state };
 }
 
-it("keeps the control, summary, KPIs and reports outside the diagnostics details, in layer order", () => {
+it("keeps the control, summary and KPIs outside the diagnostics details, in layer order", () => {
   const { db, data, state } = fixture();
   const html = renderToStaticMarkup(
     <OperationsView data={data} state={state} />,
@@ -66,28 +66,28 @@ it("keeps the control, summary, KPIs and reports outside the diagnostics details
   const control = html.indexOf("運用検証コントロール");
   const summary = html.indexOf('aria-label="運用状態"');
   const kpi = html.indexOf('aria-label="主要KPI"');
-  const report = html.indexOf("24時間・7日間の検証レポート");
-  for (const at of [control, summary, kpi, report]) {
+  for (const at of [control, summary, kpi]) {
     expect(at).toBeGreaterThan(-1);
     expect(at).toBeLessThan(diag);
   }
   expect(control).toBeLessThan(summary);
   expect(summary).toBeLessThan(kpi);
-  expect(kpi).toBeLessThan(report);
   db.close();
 });
 
-it("puts the market panel, DeepBook validation and then the existing diagnostics inside the details", () => {
+it("puts the full report, market panel, DeepBook validation and then the existing diagnostics inside the details", () => {
   const { db, data, state } = fixture();
   const html = renderToStaticMarkup(
     <OperationsView data={data} state={state} />,
   );
   const diag = html.indexOf('id="operation-diagnostics"');
+  const report = html.indexOf("24時間・7日間の検証レポート");
   const market = html.indexOf('aria-label="市場データ接続"');
   const deepbook = html.indexOf('aria-label="DeepBook 24時間検証"');
   const connectivity = html.indexOf("通信とPAPER注文");
   const timing = html.indexOf('aria-label="市場データ取得タイミング"');
-  expect(market).toBeGreaterThan(diag);
+  expect(report).toBeGreaterThan(diag);
+  expect(market).toBeGreaterThan(report);
   expect(deepbook).toBeGreaterThan(market);
   expect(connectivity).toBeGreaterThan(deepbook);
   expect(timing).toBeGreaterThan(deepbook);
