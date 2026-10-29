@@ -83,75 +83,85 @@ export class DashboardClient {
     s: Summary,
   ) {
     let channelError: string | null = null;
-    try {
-      if (
-        timeframe != null &&
-        this.versions.get(timeframe) !== s.frames[timeframe]
-      ) {
-        let base = this.versions.get(timeframe) ?? null;
-        let response = (await api(
-          `dashboard/candles?timeframe=${timeframe}${base ? `&version=${base}` : ""}`,
-        )) as ReturnType<DashboardService["candles"]>;
-        if (!response.reset && response.baseVersion !== base) {
-          response = (await api(
-            `dashboard/candles?timeframe=${timeframe}`,
-          )) as typeof response;
-          if (!response.reset) throw Error("DASHBOARD_DELTA_MISSING");
-          base = null;
-        }
+    // Charts and records are independent transfers. Keep the outer queue to
+    // serialize snapshots, while allowing both channels of one snapshot to load.
+    await Promise.allSettled([
+      (async () => {
         if (
-          response.schema !== 1 ||
-          response.timeframe !== timeframe ||
-          !Array.isArray(response.upserts) ||
-          !Array.isArray(response.removed)
-        )
-          throw Error("DASHBOARD_DELTA_INVALID");
-        const merged = new Map<number, Candle>(
-          (response.reset ? [] : this.state!.candlesByTimeframe[timeframe]).map(
-            (c) => [c.timestamp, c],
-          ),
-        );
-        for (const t of response.removed) merged.delete(t);
-        for (const c of response.upserts) {
-          if (c.timeframe !== timeframe) throw Error("DASHBOARD_DELTA_INVALID");
-          merged.set(c.timestamp, c);
-        }
-        const candles = [...merged.values()].sort(
-          (a, b) => a.timestamp - b.timestamp,
-        );
-        if (
-          candles.length > 1000 ||
-          (await browserDigest(canonicalFrame(candles))) !== response.version
+          timeframe != null &&
+          this.versions.get(timeframe) !== s.frames[timeframe]
         ) {
-          this.versions.delete(timeframe);
-          throw Error("DASHBOARD_DELTA_CHECKSUM");
+          let base = this.versions.get(timeframe) ?? null;
+          let response = (await api(
+            `dashboard/candles?timeframe=${timeframe}${base ? `&version=${base}` : ""}`,
+          )) as ReturnType<DashboardService["candles"]>;
+          if (!response.reset && response.baseVersion !== base) {
+            response = (await api(
+              `dashboard/candles?timeframe=${timeframe}`,
+            )) as typeof response;
+            if (!response.reset) throw Error("DASHBOARD_DELTA_MISSING");
+            base = null;
+          }
+          if (
+            response.schema !== 1 ||
+            response.timeframe !== timeframe ||
+            !Array.isArray(response.upserts) ||
+            !Array.isArray(response.removed)
+          )
+            throw Error("DASHBOARD_DELTA_INVALID");
+          const merged = new Map<number, Candle>(
+            (response.reset
+              ? []
+              : this.state!.candlesByTimeframe[timeframe]
+            ).map((c) => [c.timestamp, c]),
+          );
+          for (const t of response.removed) merged.delete(t);
+          for (const c of response.upserts) {
+            if (c.timeframe !== timeframe)
+              throw Error("DASHBOARD_DELTA_INVALID");
+            merged.set(c.timestamp, c);
+          }
+          const candles = [...merged.values()].sort(
+            (a, b) => a.timestamp - b.timestamp,
+          );
+          if (
+            candles.length > 1000 ||
+            (await browserDigest(canonicalFrame(candles))) !== response.version
+          ) {
+            this.versions.delete(timeframe);
+            throw Error("DASHBOARD_DELTA_CHECKSUM");
+          }
+          this.state = {
+            ...this.state!,
+            candlesByTimeframe: {
+              ...this.state!.candlesByTimeframe,
+              [timeframe]: candles,
+            },
+            ...(timeframe === 300 ? { candles } : {}),
+          };
+          this.versions.set(timeframe, response.version);
         }
-        this.state = {
-          ...this.state!,
-          candlesByTimeframe: {
-            ...this.state!.candlesByTimeframe,
-            [timeframe]: candles,
-          },
-          ...(timeframe === 300 ? { candles } : {}),
-        };
-        this.versions.set(timeframe, response.version);
+      })(),
+      (async () => {
+        if (records && this.recordsVersion !== s.recordsVersion) {
+          const r = (await api("dashboard/records")) as ReturnType<
+            DashboardService["records"]
+          >;
+          if (
+            r.schema !== 1 ||
+            (await browserDigest(JSON.stringify(r.records))) !== r.version
+          )
+            throw Error("DASHBOARD_RECORDS_CHECKSUM");
+          this.state = { ...this.state!, ...r.records };
+          this.recordsVersion = r.version;
+        }
+      })(),
+    ]).then((results) => {
+      if (results.some((r) => r.status === "rejected")) {
+        channelError =
+          "チャート・履歴の更新に失敗しました。表示済みのデータは古い可能性があります。次回更新で再取得します。";
       }
-      if (records && this.recordsVersion !== s.recordsVersion) {
-        const r = (await api("dashboard/records")) as ReturnType<
-          DashboardService["records"]
-        >;
-        if (
-          r.schema !== 1 ||
-          (await browserDigest(JSON.stringify(r.records))) !== r.version
-        )
-          throw Error("DASHBOARD_RECORDS_CHECKSUM");
-        this.state = { ...this.state!, ...r.records };
-        this.recordsVersion = r.version;
-      }
-    } catch {
-      channelError =
-        "チャート・履歴の更新に失敗しました。表示済みのデータは古い可能性があります。次回更新で再取得します。";
-    }
+    });
     return { state: this.state!, channelError };
   }
 }

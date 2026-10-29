@@ -237,3 +237,63 @@ it("late summary responses cannot overwrite a newer stop state", async () => {
   expect(late.state.runtime.error).toBe("MARKET_DATA_STALLED");
   db.close();
 });
+
+it("starts records before a slow chart completes and preserves both channel results", async () => {
+  const { db, service } = fixture(),
+    client = new DashboardClient(),
+    { api } = localApi(service);
+  let release!: () => void;
+  const hold = new Promise<void>((r) => {
+    release = r;
+  });
+  let recordsEntered!: () => void;
+  const entered = new Promise<void>((r) => {
+    recordsEntered = r;
+  });
+  const pending = client.poll(
+    async (path) => {
+      if (path.startsWith("dashboard/candles")) await hold;
+      if (path === "dashboard/records") recordsEntered();
+      return api(path);
+    },
+    300,
+    true,
+    () => {},
+  );
+  // Would time out under the old sequential chart-then-records implementation.
+  try {
+    await entered;
+  } finally {
+    release();
+  }
+  const result = await pending;
+  expect(result.channelError).toBeNull();
+  expect(result.state.candles.length).toBeGreaterThan(0);
+  expect(result.state.orders).toEqual(service.records().records.orders);
+  db.close();
+});
+it.each(["candles", "records"])(
+  "a failed %s channel does not prevent its sibling from updating",
+  async (failed) => {
+    const { db, service } = fixture(),
+      client = new DashboardClient(),
+      { api, calls } = localApi(service);
+    const result = await client.poll(
+      async (path) => {
+        if (path.startsWith(`dashboard/${failed}`))
+          throw Error("SIMULATED_CHANNEL_FAILURE");
+        return api(path);
+      },
+      300,
+      true,
+      () => {},
+    );
+    expect(result.channelError).not.toBeNull();
+    if (failed === "candles") expect(calls).toContain("dashboard/records");
+    else expect(result.state.candles.length).toBeGreaterThan(0);
+    const recovered = await client.poll(api, 300, true, () => {});
+    expect(recovered.channelError).toBeNull();
+    expect(recovered.state.candles.length).toBeGreaterThan(0);
+    db.close();
+  },
+);
