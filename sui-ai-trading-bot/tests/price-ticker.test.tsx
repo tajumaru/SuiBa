@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { BotEngine } from "../apps/worker/src/engine.ts";
 import {
   PriceTicker,
+  referenceTicker,
   changeTone,
   formatChangePct,
   formatTickerPrice,
@@ -177,7 +178,10 @@ describe("sparkline points", () => {
 describe("price ticker rendering", () => {
   it("shows price, signed change with its window, and the sparkline", () => {
     const html = renderToStaticMarkup(
-      <PriceTicker price={1.1} candlesByTimeframe={frames({ 3600: hourly(25, 1.0, 1.1) })} />,
+      <PriceTicker
+        price={1.1}
+        candlesByTimeframe={frames({ 3600: hourly(25, 1.0, 1.1) })}
+      />,
     );
     expect(html).toContain('class="price-ticker"');
     expect(html).toContain('fill="#4da2ff"');
@@ -195,7 +199,10 @@ describe("price ticker rendering", () => {
 
   it("colours a falling change and its sparkline red", () => {
     const html = renderToStaticMarkup(
-      <PriceTicker price={0.9} candlesByTimeframe={frames({ 3600: hourly(25, 1.0, 0.9) })} />,
+      <PriceTicker
+        price={0.9}
+        candlesByTimeframe={frames({ 3600: hourly(25, 1.0, 0.9) })}
+      />,
     );
     expect(html).toContain('class="price-ticker-change down"');
     expect(html).toContain("-10.00%");
@@ -309,5 +316,71 @@ describe("sell line pill", () => {
     );
     expect(html).toContain('class="price-ticker-line tp reached"');
     expect(html).toContain("利確ライン到達");
+  });
+});
+
+describe("display-only rejected-book reference", () => {
+  const now = 1793227455000;
+  const market = {
+    reason: "THIN_ORDERBOOK",
+    diagnostics: {
+      bookObservation: {
+        bid: 0.033781,
+        ask: 0.033833,
+        timestamp: now - 1000,
+        fetchedAt: now,
+        spread: 0.00154,
+        maxSpread: 0.003,
+      },
+    },
+  } as NonNullable<State["marketData"]>;
+  it("shows the WAL midpoint with stop reason without changing the trade price", () => {
+    const html = renderToStaticMarkup(
+      <PriceTicker
+        pair="WAL_USDC"
+        price={null}
+        marketData={market}
+        now={now}
+        candlesByTimeframe={frames({ 3600: hourly(25, 1, 2) })}
+        linePrice={1}
+        sellLines={{ tp: 2, sl: 1 }}
+      />,
+    );
+    expect(html).toContain("$0.0338");
+    expect(html).toContain("参考価格");
+    expect(html).toContain("板の流動性不足");
+    expect(html).not.toContain("price-ticker-spark");
+    expect(html).not.toContain("price-ticker-line ");
+    expect(market.reason).toBe("THIN_ORDERBOOK");
+  });
+  it("labels old observations, expires them, and rejects invalid or delayed observations", () => {
+    expect(referenceTicker(market, now + 20000)?.stale).toBe(true);
+    expect(referenceTicker(market, now + 300000)).toBeNull();
+    expect(
+      referenceTicker({ ...market, reason: "WRONG_PAIR" }, now),
+    ).toBeNull();
+    for (const patch of [
+      { ask: 0.01 },
+      { bid: NaN },
+      { timestamp: now + 1 },
+      { fetchedAt: now + 1 },
+      { timestamp: now - 10001 },
+    ]) {
+      expect(
+        referenceTicker(
+          {
+            ...market,
+            diagnostics: {
+              ...market.diagnostics!,
+              bookObservation: {
+                ...market.diagnostics!.bookObservation!,
+                ...patch,
+              },
+            },
+          },
+          now,
+        ),
+      ).toBeNull();
+    }
   });
 });

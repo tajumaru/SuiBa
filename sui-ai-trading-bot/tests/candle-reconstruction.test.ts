@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   reconstructFiveMinutes,
+  reconstructCandles,
   type EmptyTradeProof,
   type MarketCandle,
 } from "../packages/market-data/src/reconstruction.ts";
@@ -396,4 +397,143 @@ it("does not accept reconstruction whose final evidence read finishes after the 
   } finally {
     vi.useRealTimers();
   }
+});
+
+for (const tf of [900, 3600] as const) {
+  it(`reconstructs WAL ${tf}s only with complete interval evidence`, () => {
+    const start = Math.floor(first / tf) * tf;
+    const missing = start + tf;
+    const end = (start + 4 * tf) * 1000;
+    const raw = [0, 2].map((i) => ({
+      ...rows()[0],
+      timestamp: start + i * tf,
+      timeframe: tf,
+      source: "DeepBook:WAL_USDC:USDC",
+    }));
+    const minuteRows = Array.from({ length: tf / 60 }, (_, i) => ({
+      ...minutes()[0],
+      timestamp: missing + i * 60,
+      source: "DeepBook:WAL_USDC:USDC",
+    }));
+    const aggregate = reconstructCandles(
+      raw,
+      minuteRows,
+      new Map(),
+      end,
+      end,
+      "WAL_USDC",
+      tf,
+    );
+    expect(aggregate.quality).toMatchObject({
+      missing: 1,
+      reconstructed: 1,
+      unresolved: 0,
+      timeframe: tf,
+    });
+    expect(aggregate.candles[1].provenance?.origin).toBe(
+      "ONE_MINUTE_AGGREGATE",
+    );
+    expect(
+      reconstructCandles(
+        raw,
+        minuteRows.slice(1),
+        new Map(),
+        end,
+        end,
+        "WAL_USDC",
+        tf,
+      ).quality.unresolved,
+    ).toBe(1);
+    const p: EmptyTradeProof = {
+      source: "DeepBook Indexer",
+      pair: "WAL_USDC",
+      start: missing,
+      end: missing + tf,
+      fetchedAt: end,
+      indexedThrough: end,
+      complete: true,
+      tradeCount: 0,
+      path: `/trades/WAL_USDC?start_time=${missing}&end_time=${missing + tf}&limit=1000`,
+    };
+    expect(
+      reconstructCandles(
+        raw,
+        [],
+        new Map([[missing, p]]),
+        end,
+        end,
+        "WAL_USDC",
+        tf,
+      ).quality.unresolved,
+    ).toBe(0);
+    for (const bad of [
+      { ...p, pair: "SUI_USDC" as const },
+      { ...p, end: missing + 300 },
+      { ...p, complete: false },
+      { ...p, indexedThrough: missing * 1000 },
+      { ...p, tradeCount: 1 },
+      { ...p, fetchedAt: end - 3600001 },
+    ]) {
+      expect(
+        reconstructCandles(
+          raw,
+          [],
+          new Map([[missing, bad]]),
+          end,
+          end,
+          "WAL_USDC",
+          tf,
+        ).quality.unresolved,
+      ).toBe(1);
+    }
+  });
+}
+
+it("keeps WAL empty-trade proof caches separate for each timeframe", async () => {
+  const missing = Math.floor(Date.now() / 3600000) * 3600 - 86400;
+  const paths: string[] = [];
+  const read = async (path: string): Promise<unknown> => {
+    paths.push(path);
+    if (path.startsWith("/status"))
+      return {
+        status: "OK",
+        current_time_ms: Date.now(),
+        max_checkpoint_lag: 1,
+        max_time_lag_seconds: 1,
+        pipelines: [
+          {
+            pipeline: "order_fill",
+            indexed_timestamp_ms: Date.now(),
+            is_backfill: false,
+          },
+        ],
+      };
+    if (path.startsWith("/trades")) return [];
+    if (path.includes("interval=1m")) return { candles: [] };
+    const tf = path.includes("interval=15m") ? 900 : 3600;
+    return {
+      candles: Array.from({ length: 200 }, (_, i) => missing + (i - 100) * tf)
+        .filter((t) => t !== missing && (t + tf) * 1000 <= Date.now())
+        .map((t) => [t * 1000, 1, 1.1, 0.9, 1, 100])
+        .reverse(),
+    };
+  };
+  const provider = new DeepBookMarketData(
+    () => ({ maxOrder: 5, maxSlippage: 0.003 }),
+    read,
+    true,
+    "WAL_USDC",
+  );
+  for (const tf of [900, 3600, 900] as const) {
+    await provider.candles(tf);
+    expect(provider.quality()[tf].unresolved).toBe(0);
+  }
+  const tradePaths = paths.filter((p) => p.startsWith("/trades"));
+  expect(tradePaths).toHaveLength(2);
+  expect(tradePaths).toContain(
+    `/trades/WAL_USDC?start_time=${missing}&end_time=${missing + 900}&limit=1000`,
+  );
+  expect(tradePaths).toContain(
+    `/trades/WAL_USDC?start_time=${missing}&end_time=${missing + 3600}&limit=1000`,
+  );
 });

@@ -42,7 +42,29 @@ test("selects WAL while stopped, reloads isolated state, and shows WAL labels", 
     return route.fulfill({
       json:
         path === "/api/state"
-          ? engines[selected].snapshot()
+          ? {
+              ...engines[selected].snapshot(),
+              ...(selected === "WAL_USDC"
+                ? {
+                    price: null,
+                    marketData: {
+                      ...engines[selected].snapshot().marketData,
+                      reason: "THIN_ORDERBOOK",
+                      healthy: false,
+                      diagnostics: {
+                        bookObservation: {
+                          bid: 0.033781,
+                          ask: 0.033833,
+                          timestamp: Date.now() - 1000,
+                          fetchedAt: Date.now(),
+                          spread: 0.00154,
+                          maxSpread: 0.003,
+                        },
+                      },
+                    },
+                  }
+                : {}),
+            }
           : engines[selected].monitor.snapshot(),
     });
   });
@@ -53,6 +75,9 @@ test("selects WAL while stopped, reloads isolated state, and shows WAL labels", 
   await expect(selector).toHaveValue("WAL_USDC");
   await expect(page.locator(".header-meta")).toContainText("WAL / USDC");
   await expect(page.locator(".price-ticker")).toContainText("WAL/USDC");
+  await expect(page.locator(".price-ticker")).toContainText("$0.0338");
+  await expect(page.locator(".price-ticker")).toContainText("板参考");
+  await expect(page.locator(".price-ticker")).toContainText("板の流動性不足");
   await page
     .getByRole("button", { name: "ダッシュボード", exact: true })
     .click();
