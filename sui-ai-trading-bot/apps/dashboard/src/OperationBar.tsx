@@ -117,6 +117,7 @@ export function OperationBar({
             onClick={onOpenStrategy}
           >
             <OperationIcon kind="release" />
+            <span className="operation-action-label">解除手順</span>
           </button>
         ) : (
           <button
@@ -128,6 +129,7 @@ export function OperationBar({
             onClick={() => void start()}
           >
             <OperationIcon kind="start" />
+            <span className="operation-action-label">運用開始</span>
           </button>
         )}
       </div>

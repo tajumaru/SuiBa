@@ -368,6 +368,17 @@ section svg {
 .operation-icon-button.release {
   border-color: rgba(237, 201, 128, 0.55);
 }
+.operation-icon-button:has(.operation-action-label) {
+  width: auto;
+  height: auto;
+  min-height: 44px;
+  padding: 6px 10px;
+  gap: 6px;
+}
+.operation-action-label {
+  white-space: nowrap;
+  font-size: 12px;
+}
 /* Price ticker (every tab, directly under the operation bar):
    one slim line — droplet mark, pair, current price, change and
    a closes sparkline — styled like the operation bar so the two

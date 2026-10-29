@@ -668,6 +668,7 @@ export function StopReleaseSection({
           onClick={() => void control("reset")}
         >
           <OperationIcon kind="release" />
+          <span className="operation-action-label">停止を解除</span>
         </button>
       </div>
       <p>
@@ -676,12 +677,13 @@ export function StopReleaseSection({
           : `安全停止中です。停止理由：${reason(error ?? "")}`}
       </p>
       <ol>
-        <li>停止理由と「運用検証」の診断で、原因と接続状態を確認します。</li>
-        <li>問題がなければ、上のボタンで停止状態を解除します。</li>
+        <li>「検証」で停止した原因を確認します。</li>
+        <li>原因を解消したら「停止を解除」を押します。</li>
         <li>
-          解除後に「PAPER運用開始」を押すと再開します。解除だけでは自動で再開しません。
+          上の「運用開始」を押すと再開します。解除だけでは売買を始めません。
         </li>
       </ol>
+      <p>停止した原因が残っていると、再開しても再び停止します。</p>
     </section>
   );
 }
