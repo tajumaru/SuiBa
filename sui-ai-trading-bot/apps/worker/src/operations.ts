@@ -966,6 +966,8 @@ export class OperationMonitor {
     const r = this.db.runtime();
     return {
       ...this.safety(),
+      // Display evidence only; ordersAllowed retains the acquisition gate.
+      marketUpdating: this.fetchMono !== null,
       controlState: botControlState({
         ...r,
         ...this.safety(),

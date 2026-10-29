@@ -461,6 +461,13 @@ function App() {
     };
   }, [token]);
   useEffect(() => {
+    // Catch acquisition completion promptly. One follow-up per received
+    // snapshot avoids stacking requests when the local API itself is slow.
+    if (!token || stateStale || data?.safety?.marketUpdating !== true) return;
+    const timer = window.setTimeout(() => void refresh(), 1000);
+    return () => window.clearTimeout(timer);
+  }, [token, receivedAt, data?.safety?.marketUpdating, stateStale]);
+  useEffect(() => {
     if (token) void refresh();
   }, [tab, timeframe]);
   // Resolves to null on success, or to the server's machine-readable

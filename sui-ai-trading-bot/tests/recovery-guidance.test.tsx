@@ -108,6 +108,30 @@ describe("recovery guidance grounded in backend safety", () => {
     expect(recoveryStatus(state, true).title).toBe("状態取得失敗");
   });
 
+  it("distinguishes routine acquisition from communication recovery without granting orders", () => {
+    const state = fixture();
+    state.runtime.running = true;
+    state.safety = {
+      ...state.safety,
+      connectivity: "HEALTHY",
+      botState: "HEALTHY",
+      marketUpdating: true,
+      ordersAllowed: false,
+    };
+    expect(recoveryStatus(state)).toMatchObject({
+      title: "データ更新中",
+      canStart: false,
+    });
+    expect(state.safety.ordersAllowed).toBe(false);
+    expect(recoveryStatus(state, true).title).toBe("状態取得失敗");
+    state.safety.connectivity = "DEGRADED";
+    expect(recoveryStatus(state).title).toBe("通信異常");
+    state.safety.connectivity = "RECOVERING";
+    expect(recoveryStatus(state).title).toBe("通信確認中");
+    state.runtime.error = "THIN_ORDERBOOK";
+    expect(recoveryStatus(state).title).toBe("停止中");
+  });
+
   it("keeps the bar start pressable while recovering; the server stays the gate", () => {
     const state = fixture();
     state.safety.connectivity = "RECOVERING";

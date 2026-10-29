@@ -146,6 +146,33 @@ async function open(
     },
   };
 }
+test("routine data updates finish on the next one-second status poll then return to normal polling", async ({
+  page,
+}) => {
+  await page.clock.install();
+  const { state } = await open(page, "RUNNING");
+  state.safety.marketUpdating = true;
+  state.safety.ordersAllowed = false;
+  let calls = 0;
+  await page.route("**/api/state", (route) => {
+    calls++;
+    return route.fulfill({ json: state });
+  });
+  await page.reload();
+  await expect(page.locator(".operation-bar-state")).toContainText(
+    "データ更新中",
+  );
+  const before = calls;
+  state.safety.marketUpdating = false;
+  state.safety.ordersAllowed = true;
+  await page.clock.runFor(1500);
+  await expect(page.locator(".operation-bar-state")).toContainText("正常稼働");
+  expect(calls).toBeGreaterThan(before);
+  const after = calls;
+  await page.clock.runFor(5000);
+  expect(calls).toBe(after);
+});
+
 test("thin-book advice opens and focuses the trade amount setting without saving", async ({
   page,
 }) => {
