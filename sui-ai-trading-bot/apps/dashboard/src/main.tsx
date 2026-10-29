@@ -638,6 +638,8 @@ function App() {
                 <PriceTicker
                   pair={data.pair}
                   price={data.price}
+                  marketData={data.marketData}
+                  now={now}
                   candlesByTimeframe={data.candlesByTimeframe}
                   glow={buyCelebration}
                   linePrice={operations.data?.decision?.rsiLinePrice ?? null}

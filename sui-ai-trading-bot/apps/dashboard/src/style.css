@@ -3344,3 +3344,10 @@ th {
   min-height: 44px;
   width: auto;
 }
+
+.price-ticker-reference {
+  font-size: 0.75rem;
+  color: #e6c980;
+  overflow-wrap: anywhere;
+  flex-basis: 100%;
+}

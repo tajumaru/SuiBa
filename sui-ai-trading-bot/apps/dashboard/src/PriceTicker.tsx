@@ -188,6 +188,54 @@ export function sparklinePoints(
     .join(" ");
 }
 
+/** Display-only midpoint. Never feeds engine pricing, positions or order checks. */
+export function referenceTicker(
+  market: State["marketData"] | undefined,
+  now: number,
+) {
+  if (
+    !market ||
+    ![
+      "THIN_ORDERBOOK",
+      "WIDE_SPREAD",
+      "SPREAD_TOO_WIDE",
+      "CANDLE_GAP",
+      "STALE_CANDLE",
+    ].includes(market.reason ?? "")
+  )
+    return null;
+  const book = market.diagnostics?.bookObservation;
+  if (
+    !book ||
+    ![book.bid, book.ask, book.timestamp, book.fetchedAt].every(
+      Number.isFinite,
+    ) ||
+    book.bid <= 0 ||
+    book.ask <= book.bid ||
+    book.timestamp > now ||
+    book.fetchedAt > now ||
+    book.fetchedAt < book.timestamp ||
+    book.fetchedAt - book.timestamp > 10000
+  )
+    return null;
+  const age = now - book.timestamp;
+  if (age > 300000 || age < 0) return null;
+  return {
+    price: book.bid / 2 + book.ask / 2,
+    age: Math.floor(age / 1000),
+    stale: age > 10000,
+    reason: (
+      {
+        THIN_ORDERBOOK: "板の流動性不足",
+        WIDE_SPREAD: "スプレッド超過",
+        SPREAD_TOO_WIDE: "スプレッド超過",
+        CANDLE_GAP: "ローソク足の欠損",
+        STALE_CANDLE: "ローソク足の更新待ち",
+      } as Record<string, string>
+    )[market.reason!],
+  };
+}
+
 export function PriceTicker({
   pair = "SUI_USDC",
   price,
@@ -195,7 +243,11 @@ export function PriceTicker({
   glow = false,
   linePrice = null,
   sellLines = null,
+  marketData,
+  now = Date.now(),
 }: {
+  marketData?: State["marketData"];
+  now?: number;
   pair?: State["pair"];
   price: State["price"];
   candlesByTimeframe: Frames;
@@ -214,9 +266,10 @@ export function PriceTicker({
    * practice (that one needs no position, these need one). */
   sellLines?: { tp: number; sl: number } | null;
 }) {
-  const change = tickerChange(candlesByTimeframe);
+  const reference = price == null ? referenceTicker(marketData, now) : null;
+  const change = reference ? null : tickerChange(candlesByTimeframe);
   const points = change ? sparklinePoints(change.closes) : null;
-  const priceText = formatTickerPrice(price);
+  const priceText = formatTickerPrice(reference?.price ?? price);
   const tone = change ? changeTone(change.pct) : null;
   const line =
     linePrice != null &&
@@ -266,9 +319,11 @@ export function PriceTicker({
     ? `${sell.pct >= 0 ? "+" : ""}${sell.pct.toFixed(1)}`
     : null;
   const ariaLabel =
-    (change
-      ? `${pair.replace("_", "/")} 現在価格 ${priceText}、${change.label}で${formatChangePct(change.pct)}`
-      : `${pair.replace("_", "/")} 現在価格 ${priceText}`) +
+    (reference
+      ? `${pair.replace("_", "/")} 参考価格 ${priceText}、板の中間値、${reference.age}秒前、売買停止 ${reference.reason}`
+      : change
+        ? `${pair.replace("_", "/")} 現在価格 ${priceText}、${change.label}で${formatChangePct(change.pct)}`
+        : `${pair.replace("_", "/")} 現在価格 ${priceText}`) +
     (line
       ? line.reached
         ? `、買い走りライン ${line.text} に到達、反発待ち`
@@ -301,6 +356,12 @@ export function PriceTicker({
       <span className="price-ticker-price" aria-hidden="true">
         {priceText}
       </span>
+      {reference && (
+        <span className="price-ticker-reference">
+          板参考・{reference.age}秒前{reference.stale ? "・更新待ち" : ""}
+          （売買停止: {reference.reason}）
+        </span>
+      )}
       {change && (
         <span
           className={`price-ticker-change ${tone}`}

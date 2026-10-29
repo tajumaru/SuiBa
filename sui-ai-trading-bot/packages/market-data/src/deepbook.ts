@@ -3,7 +3,7 @@ import { withReadBudget } from "../../shared/src/read-budget-node.ts";
 import { abortable, currentReadBudget } from "../../shared/src/read-budget.ts";
 import {
   gaps,
-  reconstructFiveMinutes,
+  reconstructCandles,
   validEmptyProof,
   type EmptyTradeProof,
   type CandleQuality,
@@ -172,7 +172,10 @@ export class DeepBookMarketData {
   private bookRaw: unknown;
   private bookFetchedAt = 0;
   private qualities: Record<number, CandleQuality> = {};
-  private proofs = new Map<number, EmptyTradeProof>();
+  private proofsByTimeframe = new Map<
+    Timeframe,
+    Map<number, EmptyTradeProof>
+  >();
 
   private indexedThrough = 0;
   private refreshAfterCandles = false;
@@ -372,17 +375,11 @@ export class DeepBookMarketData {
       Math.max(now, Date.now()),
       this.pair,
     ) as Candle[];
-    const holes = tf === 300 ? gaps(c) : [];
-    const missingCount =
-      tf === 300
-        ? holes.length
-        : c
-            .slice(1)
-            .reduce(
-              (n, x, i) =>
-                n + Math.max(0, (x.timestamp - c[i].timestamp) / tf - 1),
-              0,
-            );
+    const holes = gaps(c, tf);
+    const missingCount = holes.length;
+    const proofs =
+      this.proofsByTimeframe.get(tf) ?? new Map<number, EmptyTradeProof>();
+    this.proofsByTimeframe.set(tf, proofs);
     let quality: CandleQuality = {
       upstream: "DeepBook Indexer",
       pair: this.pair,
@@ -403,23 +400,27 @@ export class DeepBookMarketData {
       },
     };
     this.qualities[tf] = quality;
-    if (this.reconstruct && tf === 300 && holes.length) {
+    if (
+      this.reconstruct &&
+      (tf === 300 || this.pair === "WAL_USDC") &&
+      holes.length
+    ) {
       this.refreshAfterCandles = true;
       const reconstructionStarted = Date.now();
       try {
         // Reuse still-valid empty proofs; never reuse unproven missing intervals.
         if (holes.length > 64) throw new Error("CANDLE_GAP");
         const minutes: MarketCandle[] = [];
-        let cursor = (c.at(-1)!.timestamp + 300) * 1000 - 1000;
+        let cursor = (holes.at(-1)! + tf) * 1000 - 1000;
         const needsMinutes = holes.some(
-          (t) => !validEmptyProof(this.proofs.get(t), t, Date.now(), this.pair),
+          (t) => !validEmptyProof(proofs.get(t), t, Date.now(), this.pair, tf),
         );
         for (let page = 0; needsMinutes && page < 8; page++) {
           if (Date.now() - began > 45000) throw new Error("CANDLE_GAP");
           const rows = parseDeepBook(
             await this.checkedRead(
               `/ohclv/${this.pair}?interval=1m&start_time=` +
-                c[0].timestamp * 1000 +
+                holes[0] * 1000 +
                 "&end_time=" +
                 cursor +
                 "&limit=1000",
@@ -434,59 +435,60 @@ export class DeepBookMarketData {
           const earliest = rows[0].timestamp * 1000;
           if (earliest >= cursor) throw new Error("INVALID_CANDLE");
           cursor = earliest - 1000;
-          if (cursor < c[0].timestamp * 1000) break;
+          if (cursor < holes[0] * 1000) break;
           if (page === 7) throw new Error("CANDLE_GAP");
         }
         await this.refreshStatus();
         const indexedThrough = this.indexedThrough;
         for (const t of holes) {
           if (Date.now() - began > 45000) break;
-          if (minutes.some((x) => x.timestamp >= t && x.timestamp < t + 300))
+          if (minutes.some((x) => x.timestamp >= t && x.timestamp < t + tf))
             continue;
-          if (validEmptyProof(this.proofs.get(t), t, Date.now(), this.pair))
+          if (validEmptyProof(proofs.get(t), t, Date.now(), this.pair, tf))
             continue;
           if (
-            (t + 300) * 1000 > Date.now() - 120000 ||
-            indexedThrough < (t + 300) * 1000
+            (t + tf) * 1000 > Date.now() - 120000 ||
+            indexedThrough < (t + tf) * 1000
           )
             continue;
           const path =
             `/trades/${this.pair}?start_time=` +
             t +
             "&end_time=" +
-            (t + 300) +
+            (t + tf) +
             "&limit=1000";
           const trades = z
             .array(z.object({ timestamp: z.number().int().positive() }))
             .parse(await this.checkedRead(path));
           if (
             trades.some(
-              (x) => x.timestamp < t * 1000 || x.timestamp > (t + 300) * 1000,
+              (x) => x.timestamp < t * 1000 || x.timestamp > (t + tf) * 1000,
             )
           )
             throw new Error("INVALID_CANDLE");
-          this.proofs.set(t, {
+          proofs.set(t, {
             source: "DeepBook Indexer",
             pair: this.pair,
             start: t,
-            end: t + 300,
+            end: t + tf,
             fetchedAt: Date.now(),
             indexedThrough,
             complete: trades.length < 1000,
-            tradeCount: trades.filter((x) => x.timestamp < (t + 300) * 1000)
+            tradeCount: trades.filter((x) => x.timestamp < (t + tf) * 1000)
               .length,
             path,
           });
         }
-        for (const [t, p] of this.proofs)
-          if (Date.now() - p.fetchedAt > 3600000) this.proofs.delete(t);
-        const result = reconstructFiveMinutes(
+        for (const [t, p] of proofs)
+          if (Date.now() - p.fetchedAt > 3600000) proofs.delete(t);
+        const result = reconstructCandles(
           c,
           minutes,
-          this.proofs,
+          proofs,
           Date.now(),
           quality.fetchedAt,
           this.pair,
+          tf,
         );
         quality = {
           ...result.quality,

@@ -1,5 +1,9 @@
 import { tradingPairs, type TradingPair } from "../../shared/src/index.ts";
-import type { Candle, CandleProvenance } from "../../shared/src/index.ts";
+import type {
+  Candle,
+  CandleProvenance,
+  Timeframe,
+} from "../../shared/src/index.ts";
 export type MarketCandle = Omit<Candle, "timeframe"> & { timeframe: number };
 export interface CandleQuality {
   upstream: "DeepBook Indexer";
@@ -27,13 +31,17 @@ export interface EmptyTradeProof {
   tradeCount: number;
   path: string;
 }
-export function gaps(c: Candle[]): number[] {
+export function gaps(c: Candle[], timeframe: Timeframe = 300): number[] {
   const result: number[] = [];
   for (let i = 1; i < c.length; i++) {
     if (c[i].timestamp <= c[i - 1].timestamp) throw Error("INVALID_CANDLE");
-    if (c[i].timestamp - c[i - 1].timestamp > 300 * 5000)
+    if (c[i].timestamp - c[i - 1].timestamp > timeframe * 5000)
       throw Error("CANDLE_GAP");
-    for (let t = c[i - 1].timestamp + 300; t < c[i].timestamp; t += 300)
+    for (
+      let t = c[i - 1].timestamp + timeframe;
+      t < c[i].timestamp;
+      t += timeframe
+    )
       result.push(t);
   }
   return result;
@@ -43,24 +51,25 @@ export function validEmptyProof(
   t: number,
   now: number,
   pair: TradingPair = "SUI_USDC",
+  timeframe: Timeframe = 300,
 ): p is EmptyTradeProof {
   return (
     !!p &&
     p.source === "DeepBook Indexer" &&
     p.pair === pair &&
     p.start === t &&
-    p.end === t + 300 &&
+    p.end === t + timeframe &&
     p.complete &&
     p.tradeCount === 0 &&
-    p.indexedThrough >= (t + 300) * 1000 &&
+    p.indexedThrough >= (t + timeframe) * 1000 &&
     p.fetchedAt <= now &&
     now - p.fetchedAt <= 3600000 &&
-    (t + 300) * 1000 <= now - 120000 &&
+    (t + timeframe) * 1000 <= now - 120000 &&
     p.path ===
       `/trades/${pair}?start_time=` +
         t +
         "&end_time=" +
-        (t + 300) +
+        (t + timeframe) +
         "&limit=1000"
   );
 }
@@ -81,24 +90,25 @@ function validateMinute(x: MarketCandle, now: number, pair: TradingPair) {
   )
     throw Error("INVALID_CANDLE");
 }
-export function reconstructFiveMinutes(
+export function reconstructCandles(
   raw: Candle[],
   minutes: MarketCandle[],
   proofs: Map<number, EmptyTradeProof>,
   now: number,
   fetchedAt = now,
   pair: TradingPair = "SUI_USDC",
+  timeframe: Timeframe = 300,
 ) {
   if (
     raw.some(
       (x) =>
-        x.timeframe !== 300 ||
-        x.timestamp % 300 ||
+        x.timeframe !== timeframe ||
+        x.timestamp % timeframe ||
         !x.source.startsWith(`DeepBook:${pair}:USDC`),
     )
   )
     throw Error("INVALID_CANDLE");
-  const missing = gaps(raw),
+  const missing = gaps(raw, timeframe),
     byMinute = new Map<number, MarketCandle>();
   for (const x of minutes) {
     validateMinute(x, now, pair);
@@ -109,7 +119,7 @@ export function reconstructFiveMinutes(
     result: Candle[] = [];
   const original = new Map(raw.map((x) => [x.timestamp, x]));
   if (raw.length)
-    for (let t = raw[0].timestamp; t <= raw.at(-1)!.timestamp; t += 300) {
+    for (let t = raw[0].timestamp; t <= raw.at(-1)!.timestamp; t += timeframe) {
       const x = original.get(t);
       if (x) {
         result.push({
@@ -120,50 +130,50 @@ export function reconstructFiveMinutes(
             upstream: "DeepBook Indexer",
             pair,
             fetchedAt,
-            timeframe: 300,
+            timeframe,
             evidence: [
-              `/ohclv/${pair}?interval=5m&limit=${tradingPairs[pair].candleLimit}`,
+              `/ohclv/${pair}?interval=${timeframe === 300 ? "5m" : timeframe === 900 ? "15m" : "1h"}&limit=${tradingPairs[pair].candleLimit}`,
             ],
           },
         });
         continue;
       }
-      const parts = Array.from({ length: 5 }, (_, i) =>
+      const parts = Array.from({ length: timeframe / 60 }, (_, i) =>
           byMinute.get(t + i * 60),
         ),
         present = parts.filter((x): x is MarketCandle => !!x);
       if (
-        present.length === 5 &&
+        present.length === timeframe / 60 &&
         present.every((x) => x.source === present[0].source)
       ) {
         result.push({
           timestamp: t,
-          timeframe: 300,
+          timeframe,
           source,
           open: present[0].open,
           high: Math.max(...present.map((x) => x.high)),
           low: Math.min(...present.map((x) => x.low)),
-          close: present[4].close,
+          close: present.at(-1)!.close,
           volume: present.reduce((n, x) => n + x.volume, 0),
           provenance: {
             origin: "ONE_MINUTE_AGGREGATE",
             upstream: "DeepBook Indexer",
             pair,
             fetchedAt,
-            timeframe: 300,
+            timeframe,
             evidence: present.map((x) => "1m:" + x.timestamp),
           },
         });
       } else if (
         !present.length &&
-        validEmptyProof(proofs.get(t), t, now, pair) &&
-        result.at(-1)?.timestamp === t - 300
+        validEmptyProof(proofs.get(t), t, now, pair, timeframe) &&
+        result.at(-1)?.timestamp === t - timeframe
       ) {
         const previous = result.at(-1)!,
           proof = proofs.get(t)!;
         result.push({
           timestamp: t,
-          timeframe: 300,
+          timeframe,
           source,
           open: previous.close,
           high: previous.close,
@@ -175,7 +185,7 @@ export function reconstructFiveMinutes(
             upstream: "DeepBook Indexer",
             pair,
             fetchedAt: proof.fetchedAt,
-            timeframe: 300,
+            timeframe,
             evidence: [
               proof.path,
               "order_fill.indexedThrough:" + proof.indexedThrough,
@@ -191,22 +201,34 @@ export function reconstructFiveMinutes(
     NO_INDEXED_TRADES: 0,
   };
   for (const x of result) origins[x.provenance!.origin]++;
-  const unresolved = gaps(result).length;
+  const unresolved = gaps(result, timeframe).length;
   return {
     candles: result,
     quality: {
       upstream: "DeepBook Indexer" as const,
       pair,
       fetchedAt,
-      timeframe: 300,
+      timeframe,
       missing: missing.length,
       reconstructed: origins.ONE_MINUTE_AGGREGATE + origins.NO_INDEXED_TRADES,
       unresolved,
-      unresolvedTimestamps: gaps(result),
+      unresolvedTimestamps: gaps(result, timeframe),
       latestClosedAt: result.length
-        ? (result.at(-1)!.timestamp + 300) * 1000
+        ? (result.at(-1)!.timestamp + timeframe) * 1000
         : null,
       origins,
     },
   };
+}
+
+/** Compatibility wrapper for existing SUI five-minute reconstruction callers. */
+export function reconstructFiveMinutes(
+  raw: Candle[],
+  minutes: MarketCandle[],
+  proofs: Map<number, EmptyTradeProof>,
+  now: number,
+  fetchedAt = now,
+  pair: TradingPair = "SUI_USDC",
+) {
+  return reconstructCandles(raw, minutes, proofs, now, fetchedAt, pair, 300);
 }
