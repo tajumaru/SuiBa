@@ -146,6 +146,26 @@ async function open(
     },
   };
 }
+test("thin-book advice opens and focuses the trade amount setting without saving", async ({
+  page,
+}) => {
+  const { state, writes } = await open(page, "STOPPED");
+  state.runtime.error = "THIN_ORDERBOOK";
+  await page.reload();
+  await page.getByRole("button", { name: "戦略", exact: true }).click();
+  await expect(
+    page.getByText("注文額を見直してください", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "取引額の設定を開く", exact: true })
+    .click();
+  const amount = page.locator("#setting-maxOrder");
+  await expect(amount).toBeVisible();
+  await expect(amount).toBeFocused();
+  await expect(amount).toHaveValue(String(state.settings.maxOrder));
+  expect(writes).toEqual([]);
+});
+
 test("overview omits the duplicate status card and retains diagnostics navigation", async ({
   page,
 }) => {
@@ -262,7 +282,9 @@ for (const [status, tone, message] of [
         fullPage: true,
       });
     await page.locator("#operation-diagnostics > summary").click();
-    await expect(page.getByText(/許容誤差：基軸通貨 0.000000001/)).toBeVisible();
+    await expect(
+      page.getByText(/許容誤差：基軸通貨 0.000000001/),
+    ).toBeVisible();
     await page.locator(".operation-candidate summary").click();
     await expect(page.locator(".operation-candidate")).toContainText(
       "未評価（前段の条件未通過または処理中）",

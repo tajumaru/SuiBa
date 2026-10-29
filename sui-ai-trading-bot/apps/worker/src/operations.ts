@@ -665,13 +665,33 @@ export class OperationMonitor {
       return await fn();
     } catch (error) {
       this.cycleFailed = true;
+      const reason = safeFailure(error);
+      // A successfully read book can fail a trading gate. That is not a
+      // transport failure and must not trip CONSECUTIVE_API_ERRORS.
+      const marketGuard =
+        kind === "MARKET" &&
+        [
+          "THIN_ORDERBOOK",
+          "SPREAD_TOO_WIDE",
+          "STALE_ORDERBOOK",
+          "INVALID_ORDERBOOK",
+          "MARKET_PAIR_MISMATCH",
+          "MARKET_SOURCE_CHANGED",
+          "INSUFFICIENT_CANDLES",
+          "INVALID_CANDLE",
+          "CANDLE_GAP",
+          "PRICE_OUTLIER",
+          "STALE_CANDLES",
+        ].includes(reason);
       const s = this.state();
-      this.update({
-        apiErrors: s.apiErrors + 1,
-        consecutiveErrors: s.consecutiveErrors + 1,
-      });
-      this.event("ERROR", `${kind}_${safeFailure(error)}`);
+      if (!marketGuard)
+        this.update({
+          apiErrors: s.apiErrors + 1,
+          consecutiveErrors: s.consecutiveErrors + 1,
+        });
+      this.event("ERROR", `${kind}_${reason}`);
       if (
+        !marketGuard &&
         !this.softFailureThisCycle &&
         this.state().consecutiveErrors === monitoringLimits.consecutiveApiErrors
       ) {
@@ -707,13 +727,13 @@ export class OperationMonitor {
     });
   }
   stop(reason: string, now = Date.now(), details?: MarketStallDetails) {
+    const r = this.db.runtime();
     this.saveSafety({
       resumePending: false,
       generation: this.safety().generation + 1,
-      lastStopReason: code(reason),
+      lastStopReason: r.error ?? code(reason),
       recoveredAt: null,
     });
-    const r = this.db.runtime();
     if (r.running || !r.error) {
       this.db.set("runtime", {
         ...r,
@@ -728,9 +748,12 @@ export class OperationMonitor {
     }
   }
   failCycle(reason: string, now = Date.now(), details?: MarketStallDetails) {
+    const runtime = this.db.runtime();
+    const alreadyStopped = !runtime.running && !!runtime.error;
     if (!this.cycleFailed) this.event("ERROR", reason, now, false, details);
     this.cycleFailed = true;
-    this.event("ANOMALY", reason, now, true, details);
+    // Keep failed polling evidence without presenting every poll as a new stop.
+    this.event("ANOMALY", reason, now, !alreadyStopped, details);
     this.stop(reason, now, details);
   }
   watchdog(now = Date.now()) {

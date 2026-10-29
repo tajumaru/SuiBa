@@ -18,6 +18,7 @@ import {
 import { number, errorCode, reason } from "./presentation.ts";
 import { startRejectionReason } from "./operationLabels.ts";
 import { OperationIcon } from "./operationIcons.tsx";
+import { stopSettingAdvice } from "./stopSettingAdvice.ts";
 type State = ReturnType<BotEngine["snapshot"]>;
 export type Field = {
   key: keyof Settings;
@@ -177,6 +178,7 @@ function Inputs({
         <label key={f.key}>
           {f.label} {f.unit && `(${f.unit})`}
           <input
+            id={`setting-${f.key}`}
             type="number"
             inputMode="decimal"
             step="any"
@@ -650,12 +652,15 @@ export function startBlockedReasons(
 export function StopReleaseSection({
   data,
   control,
+  onReviewSettings,
 }: {
   data: State;
   control: (c: string) => Promise<string | null>;
+  onReviewSettings?: (field: "maxOrder") => void;
 }) {
   const { emergency, error } = data.runtime;
   if (!emergency && !error) return null;
+  const advice = stopSettingAdvice(data);
   return (
     <section className="stop-release">
       <div className="stop-release-head">
@@ -676,6 +681,23 @@ export function StopReleaseSection({
           ? "緊急停止が押され、PAPER運用を止めています。"
           : `安全停止中です。停止理由：${reason(error ?? "")}`}
       </p>
+      {advice && (
+        <div className="stop-setting-advice">
+          <h4>{advice.title}</h4>
+          <p>{advice.message}</p>
+          {advice.observation && <p>{advice.observation}</p>}
+          <p>{advice.action}</p>
+          {advice.alternative && <p>{advice.alternative}</p>}
+          {advice.field && onReviewSettings && (
+            <button
+              type="button"
+              onClick={() => onReviewSettings(advice.field!)}
+            >
+              取引額の設定を開く
+            </button>
+          )}
+        </div>
+      )}
       <ol>
         <li>「検証」で停止した原因を確認します。</li>
         <li>原因を解消したら「停止を解除」を押します。</li>

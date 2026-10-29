@@ -275,6 +275,67 @@ describe("PAPER operation monitor", () => {
     expect(db.runtime().running).toBe(false);
     db.close();
   });
+  it.each(["THIN_ORDERBOOK", "SPREAD_TOO_WIDE", "CANDLE_GAP", "STALE_CANDLES"])(
+    "keeps %s as a market safety failure, not a repeated API outage",
+    async (reason) => {
+      const db = new BotDatabase(":memory:");
+      db.set("runtime", { ...db.runtime(), running: true });
+      const m = new OperationMonitor(db);
+      for (let i = 0; i < 4; i++) {
+        m.beginCycle();
+        await expect(
+          m.request("MARKET", async () => {
+            throw Error(reason);
+          }),
+        ).rejects.toThrow(reason);
+        m.failCycle(reason);
+      }
+      expect(db.runtime()).toMatchObject({ running: false, error: reason });
+      expect(m.snapshot()).toMatchObject({
+        apiErrors: 0,
+        consecutiveErrors: 0,
+      });
+      const events = db.history<{ code: string; fatal: boolean }>(
+        "operation_events",
+        100,
+      );
+      expect(events.filter((e) => e.fatal)).toHaveLength(1);
+      expect(events.some((e) => e.code === "CONSECUTIVE_API_ERRORS")).toBe(
+        false,
+      );
+      db.close();
+    },
+  );
+  it("retains the initiating stop reason while recording later failed monitoring", () => {
+    const db = new BotDatabase(":memory:");
+    db.set("runtime", { ...db.runtime(), running: true });
+    const m = new OperationMonitor(db);
+    m.beginCycle();
+    m.failCycle("THIN_ORDERBOOK");
+    m.beginCycle();
+    m.failCycle("STALE_CANDLES");
+    expect(db.runtime()).toMatchObject({
+      running: false,
+      error: "THIN_ORDERBOOK",
+    });
+    expect(m.safetySnapshot().lastStopReason).toBe("THIN_ORDERBOOK");
+    const events = db.history<{ code: string; fatal: boolean }>(
+      "operation_events",
+      100,
+    );
+    expect(events.some((e) => e.code === "STALE_CANDLES")).toBe(true);
+    expect(events.filter((e) => e.fatal).map((e) => e.code)).toEqual([
+      "THIN_ORDERBOOK",
+    ]);
+    // An explicit reset permits a genuinely new stop to be recorded.
+    db.set("runtime", { ...db.runtime(), error: null });
+    m.transition("MANUAL_RESET");
+    m.beginCycle();
+    m.failCycle("SPREAD_TOO_WIDE");
+    expect(m.safetySnapshot().lastStopReason).toBe("SPREAD_TOO_WIDE");
+    expect(db.runtime().running).toBe(false);
+    db.close();
+  });
   it("detects stalled updates even if a market request is stuck", () => {
     const db = new BotDatabase(":memory:");
     db.set("runtime", { ...db.runtime(), running: true });

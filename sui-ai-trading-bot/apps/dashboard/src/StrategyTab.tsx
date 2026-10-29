@@ -66,7 +66,18 @@ export function StrategyTab({
   }, [blockedKey]);
   return (
     <>
-      <StopReleaseSection data={data} control={control} />
+      <StopReleaseSection
+        data={data}
+        control={control}
+        onReviewSettings={(field) => {
+          onSegmentChange("settings");
+          requestAnimationFrame(() => {
+            const input = document.getElementById(`setting-${field}`);
+            input?.scrollIntoView({ block: "center" });
+            input?.focus({ preventScroll: true });
+          });
+        }}
+      />
       <div
         className="strategy-segments"
         role="tablist"
