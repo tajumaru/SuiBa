@@ -22,25 +22,27 @@ export function stopSettingAdvice(data: State, now = Date.now()) {
     const available = fresh ? Math.min(depths[0]!, depths[1]!) : null;
     return {
       title: "注文額を見直してください",
-      message: `取引できる量が不足したため停止しました。「1回の最大取引額」は現在${number(data.settings.maxOrder)} USDCです。`,
+      message: `注文額${number(data.settings.maxOrder)} USDCに対して、取引できる量が足りません。`,
       observation:
         available !== null
-          ? `直近の確認では、設定した価格の範囲内で取引できる量は約${number(available)} USDC分です（買い・売りの少ない側）。`
+          ? `直近の取引可能額：約${number(available)} USDC（買い・売りの少ない側）。`
           : null,
-      action:
-        "「戦略」→「設定」の「1回の最大取引額」を小さくして保存してください。金額を減らしても、最低注文量や手数料の条件を満たさない場合は取引できません。",
+      action: "「1回の最大取引額」を小さくして保存してください。",
+      constraints:
+        "金額を減らしても、最低注文量や手数料の条件を満たさない場合は取引できません。",
       alternative:
-        "小さくしても取引できない場合は、市場の状況が変わるまで待つか、停止中に別の取引ペアへ切り替えてください。",
+        "取引できなければ、別のペアに切り替えるか、しばらく待ってください。",
       field: "maxOrder" as const,
     };
   }
   if (data.runtime.error === "SPREAD_TOO_WIDE")
     return {
-      title: "今は価格の差が大きいため取引できません",
-      message: `現在の「価格ずれの上限」は${number(data.settings.maxSlippage * 100)}%です。売り値と買い値の差がこの上限を超えたため停止しました。`,
+      title: "価格の差が大きいため停止中",
+      message: `売り値と買い値の差が、上限${number(data.settings.maxSlippage * 100)}%を超えています。`,
       observation: null,
       action:
-        "この場合は注文額を減らしても解決しません。価格の差が小さくなるまで待つか、停止中に別の取引ペアへ切り替えてください。",
+        "注文額を減らしても解決しません。別のペアに切り替えるか、しばらく待ってください。",
+      constraints: null,
       alternative: null,
       field: null,
     };

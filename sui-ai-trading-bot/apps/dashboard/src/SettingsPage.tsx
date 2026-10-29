@@ -664,7 +664,7 @@ export function StopReleaseSection({
   return (
     <section className="stop-release">
       <div className="stop-release-head">
-        <h4>停止状態の解除</h4>
+        <h4>{advice?.title ?? "停止状態の解除"}</h4>
         <button
           type="button"
           className="operation-icon-button release"
@@ -676,18 +676,17 @@ export function StopReleaseSection({
           <span className="operation-action-label">停止を解除</span>
         </button>
       </div>
-      <p>
-        {emergency
-          ? "緊急停止が押され、PAPER運用を止めています。"
-          : `安全停止中です。停止理由：${reason(error ?? "")}`}
-      </p>
+      {!advice && (
+        <p>
+          {emergency
+            ? "緊急停止が押され、PAPER運用を止めています。"
+            : `安全停止中です。停止理由：${reason(error ?? "")}`}
+        </p>
+      )}
       {advice && (
         <div className="stop-setting-advice">
-          <h4>{advice.title}</h4>
           <p>{advice.message}</p>
-          {advice.observation && <p>{advice.observation}</p>}
           <p>{advice.action}</p>
-          {advice.alternative && <p>{advice.alternative}</p>}
           {advice.field && onReviewSettings && (
             <button
               type="button"
@@ -696,16 +695,30 @@ export function StopReleaseSection({
               取引額の設定を開く
             </button>
           )}
+          {(advice.observation || advice.constraints || advice.alternative) && (
+            <details>
+              <summary>詳しい条件</summary>
+              {advice.observation && <p>{advice.observation}</p>}
+              {advice.constraints && <p>{advice.constraints}</p>}
+              {advice.alternative && <p>{advice.alternative}</p>}
+            </details>
+          )}
         </div>
       )}
-      <ol>
-        <li>「検証」で停止した原因を確認します。</li>
-        <li>原因を解消したら「停止を解除」を押します。</li>
-        <li>
-          上の「運用開始」を押すと再開します。解除だけでは売買を始めません。
-        </li>
-      </ol>
-      <p>停止した原因が残っていると、再開しても再び停止します。</p>
+      {advice ? (
+        <p>原因を解消したら「停止を解除」→「運用開始」。</p>
+      ) : (
+        <>
+          <ol>
+            <li>「検証」で停止した原因を確認します。</li>
+            <li>原因を解消したら「停止を解除」を押します。</li>
+            <li>
+              上の「運用開始」を押すと再開します。解除だけでは売買を始めません。
+            </li>
+          </ol>
+          <p>停止した原因が残っていると、再開しても再び停止します。</p>
+        </>
+      )}
     </section>
   );
 }

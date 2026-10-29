@@ -30,7 +30,7 @@ describe("actionable stop-setting advice", () => {
     expect(advice.message).toContain("5 USDC");
     expect(advice.action).toContain("「1回の最大取引額」を小さくして保存");
     expect(advice.observation).toContain("約0.03 USDC");
-    expect(advice.action).toContain("最低注文量や手数料");
+    expect(advice.constraints).toContain("最低注文量や手数料");
   });
   it.each([now + 10_001, now - 2000])(
     "does not present old or future observations as available amounts (%s)",
@@ -66,7 +66,8 @@ describe("actionable stop-setting advice", () => {
       />,
     );
     expect(html).toContain("取引額の設定を開く");
-    expect(html).toContain("「戦略」→「設定」");
+    expect(html).toContain("詳しい条件");
+    expect(html).not.toContain("安全停止中です。停止理由：");
     expect(JSON.stringify(data)).toBe(original);
   });
 });
