@@ -499,6 +499,21 @@ section svg {
   background: #2b1420;
   border-color: rgba(255, 125, 156, 0.55);
 }
+/* The buy-run countdown wears the blue of the avatar's line
+   pose while the line stands; once the price touches it, the
+   reached green takes over, like the feed's reached entry. */
+.price-ticker-line.buy {
+  color: #bfe0ff;
+  background: #10325c;
+  border-color: rgba(98, 178, 255, 0.6);
+  box-shadow: 0 0 10px rgba(77, 162, 255, 0.35);
+}
+.price-ticker-line.buy.reached {
+  color: #a9ecc4;
+  background: #14401f;
+  border-color: rgba(62, 207, 111, 0.55);
+  box-shadow: none;
+}
 /* Very narrow screens (small phones, zoomed viewports): every
    ticker child except the sparkline is nowrap and flex: none,
    so their combined min-content can exceed the row and push
@@ -2256,6 +2271,50 @@ th {
 .agent-avatar.shouting {
   border-color: #f0564a;
 }
+/* Buy-run line (AgentHeaderAvatar): while a line stands, the
+   artwork swaps to the blue roaring-crowd pose and the circle
+   rings Sui blue. The glow's breathing and the drifting petals
+   live in the no-preference block below; under reduced motion
+   the blue ring, the artwork and the pill still change and rest.
+   The petals are rendered only when motion is allowed. */
+.agent-avatar.pose-buyLine {
+  border-color: #4da2ff;
+  box-shadow:
+    0 0 0 3px rgba(77, 162, 255, 0.28),
+    0 0 24px rgba(77, 162, 255, 0.45),
+    0 8px 24px rgba(0, 0, 0, 0.55);
+}
+.agent-avatar-petals {
+  position: absolute;
+  inset: -10px;
+  pointer-events: none;
+}
+.agent-avatar-petals span {
+  position: absolute;
+  width: 7px;
+  height: 10px;
+  border-radius: 80% 4px 80% 4px;
+  background: #57b6ff;
+  opacity: 0;
+}
+.agent-avatar-petals .p1 {
+  left: 4%;
+  top: 16%;
+}
+.agent-avatar-petals .p2 {
+  right: 5%;
+  top: 6%;
+  background: #2e8cff;
+}
+.agent-avatar-petals .p3 {
+  left: 16%;
+  top: -2%;
+  background: #8fd0ff;
+}
+.agent-avatar-petals .p4 {
+  right: 18%;
+  top: 28%;
+}
 .agent-avatar-bubble {
   position: absolute;
   left: calc(100% + 10px);
@@ -2282,6 +2341,10 @@ th {
 .agent-avatar-pill.shout {
   border-color: #f0564a;
   color: #ff9c9c;
+}
+.agent-avatar-pill.line {
+  border-color: rgba(98, 178, 255, 0.6);
+  color: #bfe0ff;
 }
 .agent-avatar-dot.shout {
   background: #f0564a;
@@ -2315,6 +2378,10 @@ th {
 .agent-avatar-dot.tone-stop {
   background: #8fa7b9;
 }
+.agent-avatar-dot.tone-line {
+  background: #4da2ff;
+  box-shadow: 0 0 6px rgba(77, 162, 255, 0.9);
+}
 @media (prefers-reduced-motion: no-preference) {
   .agent-avatar-bob {
     animation: agent-avatar-bob 3.2s ease-in-out infinite;
@@ -2331,6 +2398,54 @@ th {
   }
   .agent-avatar.celebrating {
     animation: agent-avatar-hop 0.55s ease;
+  }
+  /* The buy-run line's blue glow breathes while the line stands,
+     and petals drift down around the circle. */
+  .agent-avatar.pose-buyLine {
+    animation: agent-avatar-line-pulse 2.2s ease-in-out infinite;
+  }
+  @keyframes agent-avatar-line-pulse {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 3px rgba(77, 162, 255, 0.24),
+        0 0 18px rgba(77, 162, 255, 0.38),
+        0 8px 24px rgba(0, 0, 0, 0.55);
+    }
+    50% {
+      box-shadow:
+        0 0 0 4px rgba(77, 162, 255, 0.34),
+        0 0 30px rgba(77, 162, 255, 0.6),
+        0 8px 24px rgba(0, 0, 0, 0.55);
+    }
+  }
+  .agent-avatar-petals span {
+    animation: agent-avatar-petal-drift 3.6s linear infinite;
+  }
+  .agent-avatar-petals .p2 {
+    animation-delay: 1.2s;
+  }
+  .agent-avatar-petals .p3 {
+    animation-delay: 2.1s;
+  }
+  .agent-avatar-petals .p4 {
+    animation-delay: 2.8s;
+  }
+  @keyframes agent-avatar-petal-drift {
+    0% {
+      transform: translateY(4px) rotate(0deg);
+      opacity: 0;
+    }
+    15% {
+      opacity: 0.95;
+    }
+    80% {
+      opacity: 0.75;
+    }
+    100% {
+      transform: translateY(52px) rotate(300deg);
+      opacity: 0;
+    }
   }
   .agent-avatar.shouting {
     animation: agent-avatar-shout-shake 0.45s ease;
@@ -2740,14 +2855,15 @@ th {
   border-color: rgba(62, 207, 111, 0.55);
   color: #3ecf6f;
 }
-/* The buy-run line wears gold while it is a declaration to watch,
-   and the green of a met condition once the price touches it. */
+/* The buy-run line wears the same Sui blue as the avatar's
+   line pose while it stands, and the green of a met condition
+   once the price touches it (the reached entry below). */
 .agent-feed-entry.priceLine {
-  border-left-color: #edc980;
+  border-left-color: #4da2ff;
 }
 .agent-feed-entry-tag.line {
-  border-color: rgba(237, 201, 128, 0.55);
-  color: #edc980;
+  border-color: rgba(98, 178, 255, 0.55);
+  color: #8fd0ff;
 }
 .agent-feed-entry.priceLineReached {
   border-left-color: #3ecf6f;

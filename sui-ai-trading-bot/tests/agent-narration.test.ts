@@ -801,6 +801,31 @@ describe("agent pose", () => {
       agentPose(emptyNarrationState(), d, { ...vital, state: "unknown" }, NOW),
     ).toBe("normal");
   });
+
+  it("a standing buy-run line turns the pose blue, below the momentary reactions", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    const vital = botVital(d, false, NOW, NOW);
+    expect(vital.state).toBe("alive");
+    const withLine = {
+      ...emptyNarrationState(),
+      priceLine: { price: 0.9, reached: false, murmured: false },
+    };
+    expect(agentPose(withLine, d, vital, NOW)).toBe("buyLine");
+    // Two conditions met on a fresh decision still point first.
+    const d2 = runningSnapshot(
+      db,
+      monitor,
+      decision({
+        conditions: { rsiRecovery: true, histogramImproving: true },
+      }),
+    );
+    expect(agentPose(withLine, d2, vital, NOW)).toBe("point");
+    // A stopped bot sleeps whatever lines its history holds.
+    expect(agentPose(withLine, d, { ...vital, state: "sleeping" }, NOW)).toBe(
+      "sleep",
+    );
+  });
 });
 
 describe("agent narration: fail-closed", () => {

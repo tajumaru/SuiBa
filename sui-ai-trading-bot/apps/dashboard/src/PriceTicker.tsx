@@ -457,11 +457,11 @@ export function PriceTicker({
       )}
       {line &&
         (line.reached ? (
-          <span className="price-ticker-line reached" aria-hidden="true">
+          <span className="price-ticker-line buy reached" aria-hidden="true">
             ライン到達・反発待ち
           </span>
         ) : (
-          <span className="price-ticker-line" aria-hidden="true">
+          <span className="price-ticker-line buy" aria-hidden="true">
             <span className="price-ticker-line-prefix">買い走り</span>
             ライン {line.text} あと{line.pct}%
           </span>

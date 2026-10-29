@@ -67,7 +67,13 @@ import { number as fmtNumber, percent as fmtPercent } from "./presentation.ts";
  * accumulated entries. `agentPose` derives the character's pose from
  * the same state, so pose and text can never disagree.
  */
-export type AgentPose = "normal" | "point" | "pointSmile" | "sleep" | "laptop";
+export type AgentPose =
+  | "normal"
+  | "point"
+  | "pointSmile"
+  | "sleep"
+  | "laptop"
+  | "buyLine";
 
 export type NarrationKind =
   | "cycle" // a strategy analysis cycle (WAIT / signal / position watch)
@@ -2049,6 +2055,12 @@ export function agentPose(
     now - state.lastHitAt <= DECISION_FRESH_MS
   )
     return "pointSmile";
+  // A standing buy-run line turns the character blue — the roaring
+  // crowd artwork — for as long as the line stands. It ranks below
+  // the momentary reactions above, so a fresh hit or a pointing
+  // decision flashes first and the pose then settles back to blue
+  // while the line is still out.
+  if (state.priceLine != null) return "buyLine";
   return "laptop";
 }
 

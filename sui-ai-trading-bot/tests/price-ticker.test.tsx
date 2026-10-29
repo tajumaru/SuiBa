@@ -235,7 +235,7 @@ describe("price ticker rendering", () => {
         linePrice={0.874}
       />,
     );
-    expect(down).toContain('class="price-ticker-line"');
+    expect(down).toContain('class="price-ticker-line buy"');
     expect(down).toContain('price-ticker-line-prefix">買い走り');
     expect(down).toContain("ライン $0.874 あと-3.1%");
     expect(down).toContain("買い走りライン $0.874 まであと-3.1%");
@@ -246,7 +246,7 @@ describe("price ticker rendering", () => {
         linePrice={0.874}
       />,
     );
-    expect(reached).toContain('class="price-ticker-line reached"');
+    expect(reached).toContain('class="price-ticker-line buy reached"');
     expect(reached).toContain("ライン到達・反発待ち");
     const none = renderToStaticMarkup(
       <PriceTicker price={0.9018} candlesByTimeframe={frames({})} />,

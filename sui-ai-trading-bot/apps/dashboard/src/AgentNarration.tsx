@@ -23,6 +23,7 @@ import imgSleep from "./assets/agent-white-sleep.jpg";
 import imgLaptop from "./assets/agent-white-laptop.jpg";
 import imgLaptopTyping from "./assets/agent-white-laptop-typing.jpg";
 import imgScream from "./assets/agent-white-scream.jpg";
+import imgBlueLine from "./assets/agent-blue-line.jpg";
 import { persistNarration, restoreNarration } from "./narrationStorage.ts";
 
 /**
@@ -61,6 +62,7 @@ const POSE_IMAGE: Record<AgentPose, string> = {
   pointSmile: imgPointSmile,
   sleep: imgSleep,
   laptop: imgLaptop,
+  buyLine: imgBlueLine,
 };
 const POSE_LABEL: Record<AgentPose, string> = {
   normal: "様子を見ています",
@@ -68,6 +70,7 @@ const POSE_LABEL: Record<AgentPose, string> = {
   pointSmile: "売買を記録しました",
   sleep: "止まっています",
   laptop: "様子を見ています",
+  buyLine: "ラインに接近中",
 };
 
 /**
@@ -97,12 +100,13 @@ export function AgentAvatarArtwork({ pose }: { pose: AgentPose }) {
  * pointing poses (a condition just clicked, or the hunt closing in)
  * burn gold, and the sleeping / unconfirmed poses stay grey.
  */
-const AVATAR_DOT_TONE: Record<AgentPose, "run" | "near" | "stop"> = {
+const AVATAR_DOT_TONE: Record<AgentPose, "run" | "near" | "stop" | "line"> = {
   normal: "stop",
   point: "near",
   pointSmile: "near",
   sleep: "stop",
   laptop: "run",
+  buyLine: "line",
 };
 
 /**
@@ -208,9 +212,17 @@ export function AgentHeaderAvatar({
             ))}
           </span>
         )}
+        {shownPose === "buyLine" && !reducedMotion && (
+          <span className="agent-avatar-petals" aria-hidden="true">
+            <span className="p1" />
+            <span className="p2" />
+            <span className="p3" />
+            <span className="p4" />
+          </span>
+        )}
       </div>
       <p
-        className={`agent-avatar-pill${celebrating && !shouting ? " celebrate" : ""}${shouting ? " shout" : ""}`}
+        className={`agent-avatar-pill${celebrating && !shouting ? " celebrate" : ""}${shouting ? " shout" : ""}${shownPose === "buyLine" && !shouting && !celebrating ? " line" : ""}`}
         role="status"
       >
         <span

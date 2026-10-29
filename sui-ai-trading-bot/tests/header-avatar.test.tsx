@@ -10,17 +10,26 @@ import {
 import type { AgentPose } from "../apps/dashboard/src/agentNarration.ts";
 import type { OperationsSnapshot } from "../apps/dashboard/src/operationsTypes.ts";
 
-const POSES: AgentPose[] = ["normal", "point", "pointSmile", "sleep", "laptop"];
+const POSES: AgentPose[] = [
+  "normal",
+  "point",
+  "pointSmile",
+  "sleep",
+  "laptop",
+  "buyLine",
+];
 
 // The pill shows the feed stage's old status labels verbatim, and
 // the dot follows the pose: green while watching at the laptop,
-// gold while pointing, grey while stopped or unconfirmed.
+// gold while pointing, grey while stopped or unconfirmed, blue
+// while a buy-run line stands.
 const EXPECTED: Record<AgentPose, { label: string; dot: string }> = {
   normal: { label: "様子を見ています", dot: "tone-stop" },
   point: { label: "条件が近づいています", dot: "tone-near" },
   pointSmile: { label: "売買を記録しました", dot: "tone-near" },
   sleep: { label: "止まっています", dot: "tone-stop" },
   laptop: { label: "様子を見ています", dot: "tone-run" },
+  buyLine: { label: "ラインに接近中", dot: "tone-line" },
 };
 
 describe("agent header avatar", () => {
@@ -31,7 +40,7 @@ describe("agent header avatar", () => {
       expect(html).toContain(`class="agent-avatar pose-${pose}"`);
       expect(html).toContain(`data-pose="${pose}"`);
       // The pill is the status surface (the artwork is decorative).
-      expect(html).toContain('class="agent-avatar-pill"');
+      expect(html).toContain('class="agent-avatar-pill');
       expect(html).toContain('role="status"');
       expect(html).toContain(EXPECTED[pose].label);
       expect(html).toContain(`class="agent-avatar-dot ${EXPECTED[pose].dot}"`);
@@ -48,6 +57,16 @@ describe("agent header avatar", () => {
     // does not move into the avatar.
     expect(html).not.toContain("agent-feed-fx");
     expect(html).not.toContain("noseb");
+  });
+
+  it("wears the blue crowd artwork with petals and a blue pill while a line stands", () => {
+    const html = renderToStaticMarkup(<AgentHeaderAvatar pose="buyLine" />);
+    expect(html).toContain("agent-blue-line");
+    expect(html).toContain('class="agent-avatar-petals"');
+    expect(html).toContain('class="agent-avatar-pill line"');
+    const calm = renderToStaticMarkup(<AgentHeaderAvatar pose="normal" />);
+    expect(calm).not.toContain("agent-avatar-petals");
+    expect(calm).not.toContain('class="agent-avatar-pill line"');
   });
 
   it("stacks a second frame only for the laptop pose", () => {
