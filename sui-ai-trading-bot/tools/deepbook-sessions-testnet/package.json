@@ -1,0 +1,17 @@
+{
+  "name": "suiba-deepbook-sessions-testnet-poc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.22.1 <25"
+  },
+  "scripts": {
+    "test": "node --test sessions.node.mjs",
+    "plan": "node cli.mjs"
+  },
+  "dependencies": {
+    "@mysten/deepbook-v3": "2.8.0",
+    "@mysten/sui": "2.37.0"
+  }
+}
