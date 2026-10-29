@@ -27,6 +27,7 @@ test("selects WAL while stopped, reloads isolated state, and shows WAL labels", 
     WAL_USDC: engine(1, "WAL_USDC"),
   };
   let selected: TradingPair = "SUI_USDC";
+  let cachedFailure = false;
   const writes: string[] = [];
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -46,10 +47,12 @@ test("selects WAL while stopped, reloads isolated state, and shows WAL labels", 
               ...engines[selected].snapshot(),
               ...(selected === "WAL_USDC"
                 ? {
-                    price: null,
+                    price: cachedFailure ? 0.032169 : null,
                     marketData: {
                       ...engines[selected].snapshot().marketData,
-                      reason: "THIN_ORDERBOOK",
+                      reason: cachedFailure
+                        ? "UPSTREAM_TIMEOUT"
+                        : "THIN_ORDERBOOK",
                       healthy: false,
                       diagnostics: {
                         bookObservation: {
@@ -93,6 +96,12 @@ test("selects WAL while stopped, reloads isolated state, and shows WAL labels", 
     scroll: document.documentElement.scrollWidth,
   }));
   expect(width.scroll).toBeLessThanOrEqual(width.viewport);
+  cachedFailure = true;
+  await page.reload();
+  await expect(page.locator(".price-ticker")).toContainText("前回確定価格");
+  await expect(page.locator(".price-ticker")).toContainText("更新待ち");
+  await expect(page.locator(".price-ticker")).toContainText("$0.0322");
+  await expect(page.locator(".price-ticker-spark")).toHaveCount(0);
   await page.screenshot({
     path: info.outputPath("wal-pair.png"),
     fullPage: true,

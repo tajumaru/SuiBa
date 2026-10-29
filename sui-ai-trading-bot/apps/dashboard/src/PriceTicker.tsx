@@ -200,7 +200,7 @@ export function referenceTicker(
       "WIDE_SPREAD",
       "SPREAD_TOO_WIDE",
       "CANDLE_GAP",
-      "STALE_CANDLE",
+      "STALE_CANDLES",
     ].includes(market.reason ?? "")
   )
     return null;
@@ -230,7 +230,7 @@ export function referenceTicker(
         WIDE_SPREAD: "スプレッド超過",
         SPREAD_TOO_WIDE: "スプレッド超過",
         CANDLE_GAP: "ローソク足の欠損",
-        STALE_CANDLE: "ローソク足の更新待ち",
+        STALE_CANDLES: "ローソク足の更新待ち",
       } as Record<string, string>
     )[market.reason!],
   };
@@ -267,11 +267,28 @@ export function PriceTicker({
   sellLines?: { tp: number; sl: number } | null;
 }) {
   const reference = price == null ? referenceTicker(marketData, now) : null;
-  const change = reference ? null : tickerChange(candlesByTimeframe);
+  const previousPrice =
+    price != null &&
+    marketData != null &&
+    (!marketData.healthy ||
+      marketData.lastSuccessAt == null ||
+      !Number.isFinite(marketData.lastSuccessAt) ||
+      now < marketData.lastSuccessAt ||
+      now - marketData.lastSuccessAt > 360000);
+  const priceAge =
+    marketData?.lastSuccessAt != null &&
+    Number.isFinite(marketData.lastSuccessAt) &&
+    now >= marketData.lastSuccessAt
+      ? Math.floor((now - marketData.lastSuccessAt) / 1000)
+      : null;
+  const change =
+    reference || previousPrice ? null : tickerChange(candlesByTimeframe);
   const points = change ? sparklinePoints(change.closes) : null;
   const priceText = formatTickerPrice(reference?.price ?? price);
   const tone = change ? changeTone(change.pct) : null;
   const line =
+    !previousPrice &&
+    !reference &&
     linePrice != null &&
     Number.isFinite(linePrice) &&
     linePrice > 0 &&
@@ -285,6 +302,8 @@ export function PriceTicker({
         }
       : null;
   const sell =
+    !previousPrice &&
+    !reference &&
     sellLines &&
     price != null &&
     Number.isFinite(price) &&
@@ -321,9 +340,11 @@ export function PriceTicker({
   const ariaLabel =
     (reference
       ? `${pair.replace("_", "/")} 参考価格 ${priceText}、板の中間値、${reference.age}秒前、売買停止 ${reference.reason}`
-      : change
-        ? `${pair.replace("_", "/")} 現在価格 ${priceText}、${change.label}で${formatChangePct(change.pct)}`
-        : `${pair.replace("_", "/")} 現在価格 ${priceText}`) +
+      : previousPrice
+        ? `${pair.replace("_", "/")} 前回確定価格 ${priceText}、更新待ち`
+        : change
+          ? `${pair.replace("_", "/")} 現在価格 ${priceText}、${change.label}で${formatChangePct(change.pct)}`
+          : `${pair.replace("_", "/")} 現在価格 ${priceText}`) +
     (line
       ? line.reached
         ? `、買い走りライン ${line.text} に到達、反発待ち`
@@ -356,6 +377,12 @@ export function PriceTicker({
       <span className="price-ticker-price" aria-hidden="true">
         {priceText}
       </span>
+      {previousPrice && (
+        <span className="price-ticker-reference">
+          前回確定価格・更新待ち
+          {priceAge !== null ? `（${priceAge}秒前取得）` : ""}
+        </span>
+      )}
       {reference && (
         <span className="price-ticker-reference">
           板参考・{reference.age}秒前{reference.stale ? "・更新待ち" : ""}

@@ -493,3 +493,28 @@ it("spread ratio is scale invariant and is not a 9/6 decimal conversion", () => 
     12,
   );
 });
+
+it("diagnoses the rejected WAL response, never the preceding healthy depth", async () => {
+  const { deep, read } = fixture();
+  await deep.prepare();
+  const original = read.getMockImplementation()!;
+  let response: unknown = {
+    timestamp: String(now),
+    bids: [["1.999", "0.1"]],
+    asks: [["2.001", "0.2"]],
+  };
+  read.mockImplementation(async (path) =>
+    path.startsWith("/orderbook") ? response : original(path),
+  );
+  await expect(deep.refreshForOrder()).rejects.toThrow("THIN_ORDERBOOK");
+  expect(deep.diagnostics().bidDepthUsdc).toBeCloseTo(0.1999);
+  expect(deep.diagnostics().askDepthUsdc).toBeCloseTo(0.4002);
+  response = {
+    timestamp: String(now),
+    bids: [["bad", "1"]],
+    asks: [["2.001", "1"]],
+  };
+  await expect(deep.refreshForOrder()).rejects.toThrow();
+  expect(deep.diagnostics().bidDepthUsdc).toBeNull();
+  expect(deep.diagnostics().askDepthUsdc).toBeNull();
+});
