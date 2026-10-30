@@ -143,6 +143,60 @@ header .danger {
   white-space: nowrap;
   flex: none;
 }
+/* Terminal theme for the header (design A from the prototype,
+   matching the login gate): grid backdrop, monospace voice, a
+   blinking cursor after the title, the PAPER badge as a
+   bracketed tag, squared controls — and the avatar frame
+   squared to match. The two slim rows, their sizes and the
+   dock geometry are unchanged. */
+header {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(120, 255, 205, 0.05) 0 1px,
+      transparent 1px 30px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(120, 255, 205, 0.05) 0 1px,
+      transparent 1px 30px
+    ),
+    #04070b;
+  border-bottom: 1px solid #1f5c46;
+  box-shadow: 0 10px 24px -18px rgba(67, 223, 178, 0.5);
+}
+header strong {
+  letter-spacing: 0.06em;
+}
+header strong::after {
+  content: "_";
+  color: #43dfb2;
+}
+@media (prefers-reduced-motion: no-preference) {
+  header strong::after {
+    animation: login-cursor-blink 1.1s steps(1) infinite;
+  }
+}
+.badge {
+  border-radius: 3px;
+  background: #0c2317;
+  border-color: #1f5c46;
+  color: #43dfb2;
+}
+.badge::before {
+  content: "[ ";
+}
+.badge::after {
+  content: " ]";
+}
+header .danger {
+  border-radius: 3px;
+}
+.agent-avatar,
+.agent-avatar-bob {
+  border-radius: 14px;
+}
 button {
   cursor: pointer;
   color: #c9dbe8;
