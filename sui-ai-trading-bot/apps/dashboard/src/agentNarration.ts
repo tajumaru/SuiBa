@@ -91,6 +91,8 @@ export type NarrationKind =
   | "sellLine" // the sell lines declared — take-profit / stop-loss prices of the open position
   | "sleepTalk" // a mutter from the sleeping character, built from recorded facts
   | "alert" // a 速報 breaking in on a sudden price / volume move
+  | "chatUser" // a comment the user typed to the character
+  | "chatReply" // the character's record-grounded reply (agentChat.ts)
   | "status"; // feed-initialised status line
 
 export interface NarrationEntry {

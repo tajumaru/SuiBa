@@ -48,6 +48,8 @@ const schema: z.ZodType<NarrationState> = z.object({
           "review",
           "alert",
           "sleepTalk",
+          "chatUser",
+          "chatReply",
           "status",
         ]),
         text: z.string(),

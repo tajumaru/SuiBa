@@ -12,6 +12,7 @@ import {
   currentWatchScore,
   findNewBuyEntry,
   isBuyTradeEntry,
+  MAX_NARRATION_ENTRIES,
   type AgentPose,
   type NarrationEntry,
   type NarrationState,
@@ -30,6 +31,11 @@ import imgHardGuitar2 from "./assets/agent-hard-guitar-2.jpg";
 import imgHardPoint from "./assets/agent-hard-point.jpg";
 import imgHardPointSmile from "./assets/agent-hard-point-smile.jpg";
 import { persistNarration, restoreNarration } from "./narrationStorage.ts";
+import {
+  agentReply,
+  CHAT_CHIPS,
+  type AgentChatContext,
+} from "./agentChat.ts";
 
 /**
  * The display's reduced-motion preference, read synchronously on
@@ -390,6 +396,12 @@ export function AgentFeedEntryRow({
       {entry.kind === "sellLine" && (
         <span className="agent-feed-entry-tag sell">売りライン</span>
       )}
+      {entry.kind === "chatUser" && (
+        <span className="agent-feed-entry-tag user">あなた</span>
+      )}
+      {entry.kind === "chatReply" && (
+        <span className="agent-feed-entry-tag reply">返信</span>
+      )}
       {buy && <span className="agent-feed-entry-tag buy">買えた！</span>}
       <p>{entry.text}</p>
     </div>
@@ -491,9 +503,57 @@ export function AgentNarrationFeed({
   }, [data, stale, onCelebrate]);
   const vital = botVital(data, stale, now, receivedAt);
   const pose = agentPose(narration, data, vital, now);
+  // While a chat reply is fresh, the character turns to the user
+  // with the smile pose (from the base poses only — pointing, the
+  // blue line and the rest keep their meaning).
+  const [chatReplyAt, setChatReplyAt] = useState<number | null>(null);
+  const reportedPose: AgentPose =
+    chatReplyAt != null &&
+    now - chatReplyAt < 3000 &&
+    (pose === "laptop" || pose === "normal")
+      ? "pointSmile"
+      : pose;
   useEffect(() => {
-    onPoseChange?.(pose);
-  }, [pose, onPoseChange]);
+    onPoseChange?.(reportedPose);
+  }, [reportedPose, onPoseChange]);
+  const [chatInput, setChatInput] = useState("");
+  const submitChat = (raw: string) => {
+    const text = raw.trim().slice(0, 120);
+    if (!text) return;
+    const ctx: AgentChatContext = {
+      dec: chips ? data.decision : null,
+      score,
+      linePrice: narration.priceLine?.price ?? null,
+      running: vital.state === "alive" || vital.state === "weak",
+      sleeping: vital.state === "sleeping",
+    };
+    const at = Date.now();
+    const prev = narrationRef.current;
+    const userEntry: NarrationEntry = {
+      id: `narration:${prev.nextEntryId}`,
+      at,
+      kind: "chatUser",
+      text,
+    };
+    const replyEntry: NarrationEntry = {
+      id: `narration:${prev.nextEntryId + 1}`,
+      at,
+      kind: "chatReply",
+      text: agentReply(text, ctx),
+    };
+    const next: NarrationState = {
+      ...prev,
+      entries: [...prev.entries, userEntry, replyEntry].slice(
+        -MAX_NARRATION_ENTRIES,
+      ),
+      nextEntryId: prev.nextEntryId + 2,
+    };
+    narrationRef.current = next;
+    persistNarration(next);
+    setNarration(next);
+    setChatReplyAt(at);
+    setChatInput("");
+  };
   // Buy-condition chips come from the same fresh decision evidence
   // as the narration; a stale display shows no chips at all.
   const chips = stale
@@ -557,6 +617,40 @@ export function AgentNarrationFeed({
           </span>
         </div>
       )}
+      <div className="agent-chat">
+        <div
+          className="agent-chat-chips"
+          role="group"
+          aria-label="キャラへの質問候補"
+        >
+          {CHAT_CHIPS.map((chip) => (
+            <button
+              key={chip}
+              type="button"
+              onClick={() => submitChat(chip)}
+            >
+              {chip}
+            </button>
+          ))}
+        </div>
+        <form
+          className="agent-chat-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitChat(chatInput);
+          }}
+        >
+          <input
+            type="text"
+            value={chatInput}
+            maxLength={120}
+            onChange={(e) => setChatInput(e.target.value)}
+            placeholder="キャラへのコメント"
+            aria-label="キャラへのコメント"
+          />
+          <button type="submit">送信</button>
+        </form>
+      </div>
       <div className="agent-feed-list">
         {narration.entries.length === 0 ? (
           <p className="agent-feed-empty">
