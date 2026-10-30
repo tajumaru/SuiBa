@@ -12,6 +12,7 @@ import {
   currentWatchScore,
   findNewBuyEntry,
   isBuyTradeEntry,
+  MAX_NARRATION_ENTRIES,
   type AgentPose,
   type NarrationEntry,
   type NarrationState,
@@ -30,6 +31,13 @@ import imgHardGuitar2 from "./assets/agent-hard-guitar-2.jpg";
 import imgHardPoint from "./assets/agent-hard-point.jpg";
 import imgHardPointSmile from "./assets/agent-hard-point-smile.jpg";
 import { persistNarration, restoreNarration } from "./narrationStorage.ts";
+import {
+  agentReply,
+  CHAT_CHIPS,
+  followUpChips,
+  type AgentChatContext,
+  type ChatTopic,
+} from "./agentChat.ts";
 
 /**
  * The display's reduced-motion preference, read synchronously on
@@ -390,6 +398,12 @@ export function AgentFeedEntryRow({
       {entry.kind === "sellLine" && (
         <span className="agent-feed-entry-tag sell">売りライン</span>
       )}
+      {entry.kind === "chatUser" && (
+        <span className="agent-feed-entry-tag user">あなた</span>
+      )}
+      {entry.kind === "chatReply" && (
+        <span className="agent-feed-entry-tag reply">返信</span>
+      )}
       {buy && <span className="agent-feed-entry-tag buy">買えた！</span>}
       <p>{entry.text}</p>
     </div>
@@ -491,9 +505,100 @@ export function AgentNarrationFeed({
   }, [data, stale, onCelebrate]);
   const vital = botVital(data, stale, now, receivedAt);
   const pose = agentPose(narration, data, vital, now);
+  // While a chat reply is fresh, the character turns to the user
+  // with the smile pose (from the base poses only — pointing, the
+  // blue line and the rest keep their meaning).
+  const [chatReplyAt, setChatReplyAt] = useState<number | null>(null);
+  const reportedPose: AgentPose =
+    chatReplyAt != null &&
+    now - chatReplyAt < 3000 &&
+    (pose === "laptop" || pose === "normal")
+      ? "pointSmile"
+      : pose;
   useEffect(() => {
-    onPoseChange?.(pose);
-  }, [pose, onPoseChange]);
+    onPoseChange?.(reportedPose);
+  }, [reportedPose, onPoseChange]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatTopic, setChatTopic] = useState<ChatTopic | null>(null);
+  const [chatThinking, setChatThinking] = useState(false);
+  const chatTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (chatTimer.current != null) window.clearTimeout(chatTimer.current);
+    },
+    [],
+  );
+  const submitChat = (raw: string) => {
+    const text = raw.trim().slice(0, 120);
+    if (!text || chatThinking) return;
+    const state = narrationRef.current;
+    const history = state.priceHistory;
+    const ctx: AgentChatContext = {
+      dec: chips ? data.decision : null,
+      score,
+      linePrice: state.priceLine?.price ?? null,
+      running: vital.state === "alive" || vital.state === "weak",
+      stoppedKind:
+        vital.state === "sleeping"
+          ? "sleeping"
+          : vital.state === "flatlined"
+            ? "safety"
+            : vital.state === "weak"
+              ? "weak"
+              : null,
+      tradeCount: state.entries.filter((e) => e.kind === "trade").length,
+      recentMovePct:
+        history.length >= 2 && history[0] > 0
+          ? (history[history.length - 1] / history[0] - 1) * 100
+          : null,
+    };
+    const reply = agentReply(text, ctx);
+    const at = Date.now();
+    const withUser: NarrationState = {
+      ...state,
+      entries: [
+        ...state.entries,
+        {
+          id: `narration:${state.nextEntryId}`,
+          at,
+          kind: "chatUser",
+          text,
+        } satisfies NarrationEntry,
+      ].slice(-MAX_NARRATION_ENTRIES),
+      nextEntryId: state.nextEntryId + 1,
+    };
+    narrationRef.current = withUser;
+    persistNarration(withUser);
+    setNarration(withUser);
+    setChatInput("");
+    setChatThinking(true);
+    // A short thinking beat before the reply lands, so the
+    // exchange reads as a conversation rather than a lookup.
+    chatTimer.current = window.setTimeout(() => {
+      chatTimer.current = null;
+      const prev = narrationRef.current;
+      const landedAt = Date.now();
+      const next: NarrationState = {
+        ...prev,
+        entries: [
+          ...prev.entries,
+          {
+            id: `narration:${prev.nextEntryId}`,
+            at: landedAt,
+            kind: "chatReply",
+            text: reply.text,
+          } satisfies NarrationEntry,
+        ].slice(-MAX_NARRATION_ENTRIES),
+        nextEntryId: prev.nextEntryId + 1,
+      };
+      narrationRef.current = next;
+      persistNarration(next);
+      setNarration(next);
+      setChatTopic(reply.topic);
+      setChatReplyAt(landedAt);
+      setChatThinking(false);
+    }, 650);
+  };
   // Buy-condition chips come from the same fresh decision evidence
   // as the narration; a stale display shows no chips at all.
   const chips = stale
@@ -557,7 +662,62 @@ export function AgentNarrationFeed({
           </span>
         </div>
       )}
+      <div className="agent-chat">
+        <div
+          className="agent-chat-chips"
+          role="group"
+          aria-label="キャラへの質問候補"
+        >
+          {(chatTopic == null ? [...CHAT_CHIPS] : followUpChips(chatTopic)).map(
+            (chip) => (
+              <button
+                key={chip}
+                type="button"
+                disabled={chatThinking}
+                onClick={() => submitChat(chip)}
+              >
+                {chip}
+              </button>
+            ),
+          )}
+          {chatTopic != null && (
+            <button
+              type="button"
+              disabled={chatThinking}
+              onClick={() => setChatTopic(null)}
+            >
+              ほかの質問
+            </button>
+          )}
+        </div>
+        <form
+          className="agent-chat-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitChat(chatInput);
+          }}
+        >
+          <input
+            type="text"
+            value={chatInput}
+            maxLength={120}
+            disabled={chatThinking}
+            onChange={(e) => setChatInput(e.target.value)}
+            placeholder="キャラへのコメント"
+            aria-label="キャラへのコメント"
+          />
+          <button type="submit" disabled={chatThinking}>
+            送信
+          </button>
+        </form>
+      </div>
       <div className="agent-feed-list">
+        {chatThinking && (
+          <article className="agent-feed-entry chatReply thinking">
+            <span className="agent-feed-entry-tag reply">返信</span>
+            <p>考え中…</p>
+          </article>
+        )}
         {narration.entries.length === 0 ? (
           <p className="agent-feed-empty">
             実況を準備中です。Botの記録が届くと、ここに実況が流れます。

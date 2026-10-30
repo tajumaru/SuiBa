@@ -259,7 +259,7 @@ describe("narration feed after the stage removal", () => {
       resolve("apps/dashboard/src/AgentNarration.tsx"),
       "utf8",
     );
-    expect(component).toContain("onPoseChange?.(pose)");
+    expect(component).toContain("onPoseChange?.(reportedPose)");
   });
 });
 

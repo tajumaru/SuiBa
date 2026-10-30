@@ -3653,3 +3653,79 @@ th {
   color: #9fe8cf;
   border-radius: 8px;
 }
+
+/* Character chat on the narration tab: a slim in-flow box (never
+   fixed), so it scrolls away with the page and cannot cover the feed. */
+.agent-chat {
+  margin: 0 0 10px;
+}
+.agent-chat-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  padding-bottom: 6px;
+  scrollbar-width: none;
+}
+.agent-chat-chips::-webkit-scrollbar {
+  display: none;
+}
+.agent-chat-chips button {
+  flex: none;
+  background: #12283a;
+  color: #cfe6f5;
+  border: 1px solid #2b4a5f;
+  border-radius: 999px;
+  padding: 6px 11px;
+  font-size: 12.5px;
+  min-height: 32px;
+}
+.agent-chat-form {
+  display: flex;
+  gap: 8px;
+}
+.agent-chat-form input {
+  flex: 1;
+  min-width: 0;
+  background: #0b1520;
+  border: 1px solid #2b4a5f;
+  border-radius: 10px;
+  color: #e8f1f8;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+.agent-chat-form button {
+  flex: none;
+  min-height: 36px;
+}
+.agent-feed-entry-tag.user {
+  background: #2b4a5f;
+  color: #cfe6f5;
+}
+.agent-feed-entry-tag.reply {
+  background: #123329;
+  color: #9fe8cf;
+}
+.agent-feed-entry.chatUser {
+  background: #0d1a29;
+}
+.agent-feed-entry.chatReply {
+  border-left: 3px solid #43dfb2;
+}
+.agent-feed-entry.thinking p {
+  color: #9db4c4;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .agent-feed-entry.thinking p {
+    animation: agent-chat-thinking 1s ease-in-out infinite;
+  }
+  @keyframes agent-chat-thinking {
+    0%,
+    100% {
+      opacity: 0.45;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+}
