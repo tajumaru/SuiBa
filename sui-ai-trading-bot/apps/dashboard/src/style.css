@@ -4209,3 +4209,68 @@ button:hover {
   font-weight: 700;
   letter-spacing: 0.04em;
 }
+
+/* Terminal parts for the remaining pages (strategy / history /
+   operations): tables become tabular readouts with dashed
+   rules, form fields become console inputs, preset cards and
+   validation blocks square off with a glowing selected state,
+   and the validation progress bar fills as mint blocks. */
+table {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+th {
+  color: #43dfb2;
+  letter-spacing: 0.04em;
+}
+td,
+th {
+  border-bottom: 1px dashed rgba(67, 223, 178, 0.18);
+}
+input,
+textarea,
+select {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: #020a06;
+  border-color: #1f5c46;
+  border-radius: 4px;
+}
+.preset-cards button {
+  border-radius: 4px;
+}
+.preset-cards button[aria-pressed="true"] {
+  background: #0c2317;
+  border-color: #43dfb2;
+  box-shadow:
+    0 0 0 1px #43dfb2,
+    0 0 18px -6px rgba(67, 223, 178, 0.5);
+}
+.validation-overview,
+.validation-action,
+.validation-progress,
+.validation-metric {
+  background: #020a06;
+  border-color: #1f5c46;
+  border-radius: 4px;
+}
+.operation-validation progress {
+  appearance: none;
+  height: 10px;
+}
+.operation-validation progress::-webkit-progress-bar {
+  background: #0a1a12;
+  border: 1px solid #1f5c46;
+}
+.operation-validation progress::-webkit-progress-value {
+  background: repeating-linear-gradient(
+    90deg,
+    #43dfb2 0 6px,
+    transparent 6px 8px
+  );
+}
+.operation-validation progress::-moz-progress-bar {
+  background: #43dfb2;
+}
+summary {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
