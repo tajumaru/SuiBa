@@ -321,7 +321,14 @@ describe.skipIf(process.platform !== "linux")("Linux PAPER release", () => {
   }, 30000);
 
   it("detects release changes, private files, external links and incompatible contracts before service stop", () => {
-    const t = fixture();
+    // Artifact preflight needs no database or service; avoid unrelated fsync work.
+    const base = folder(),
+      input = join(base, "source");
+    source(input);
+    const t = { layout: { releases: join(base, "releases") } };
+    mkdirSync(t.layout.releases);
+    for (const sha of [oldSha, newSha])
+      packageLinuxRelease(input, join(t.layout.releases, sha), sha);
     writeFileSync(
       join(t.layout.releases, newSha, "apps/worker/src/index.ts"),
       "tampered",
