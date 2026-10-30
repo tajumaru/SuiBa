@@ -361,6 +361,8 @@ export async function decryptPaperBackup(
       mode: 0o600,
     });
     sync(gate);
+    // Persist the stop latch before any plaintext DB can survive a power loss.
+    syncDirectory(target);
     for (const [i, entry] of index.manifest.databases.entries()) {
       const partial = join(target, `db-${i}.part`);
       await unseal(
