@@ -11,17 +11,18 @@ import {
   openSync,
   readSync,
   closeSync,
+  fsyncSync,
+  constants,
 } from "node:fs";
-import { basename, join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { acquireInstanceLock } from "./deployment-safety.ts";
-
-const suffixes = [
-  "",
-  ".pairs.sqlite",
-  ".WAL_USDC.sqlite",
-  ".chart-history.sqlite",
-  ".WAL_USDC.sqlite.chart-history.sqlite",
-];
+import {
+  assertPaperDatabaseSet,
+  assertInitializedPaperState,
+  existingPaperDatabases,
+  paperDatabaseSuffixes as suffixes,
+  requireRegularDatabase as regular,
+} from "./paper-database-inventory.ts";
 type Entry = {
   name: string;
   sha256: string;
@@ -52,11 +53,6 @@ function fileDigest(path: string) {
   }
 }
 
-function regular(path: string) {
-  const stat = lstatSync(path);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1)
-    throw Error("UNSAFE_BACKUP_FILE");
-}
 function inspect(path: string, trading = false) {
   regular(path);
   const db = new DatabaseSync(path, { readOnly: true });
@@ -111,29 +107,26 @@ export async function createPaperBackup(
     // File presence is deliberate: it prevents an operator restarting the
     // worker into a tradable state while this backup is being reviewed.
     lstatSync(lock.root + ".maintenance");
-    const sources: { path: string; trading: boolean }[] = [];
-    for (const suffix of suffixes) {
-      const path = lock.root + suffix;
-      try {
-        regular(path);
-        sources.push({
-          path,
-          trading: suffix === "" || suffix === ".WAL_USDC.sqlite",
-        });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      }
-    }
-    if (
-      !sources.some((s) => s.trading) ||
-      !sources.some((s) => s.path.endsWith(".pairs.sqlite"))
-    )
-      throw Error("BACKUP_DATABASE_SET_INCOMPLETE");
+    const inventory = existingPaperDatabases(
+      dirname(lock.root),
+      basename(lock.root),
+    );
+    assertInitializedPaperState(
+      dirname(lock.root),
+      basename(lock.root),
+      inventory,
+    );
+    const sources = [...inventory].map((name) => ({
+      path: join(dirname(lock.root), name),
+      trading:
+        name === basename(lock.root) ||
+        name === basename(lock.root) + ".WAL_USDC.sqlite",
+    }));
     // A new sibling DB must be explicitly added to the inventory, never silently
     // omitted. Other services/auth/report files need their own inventory first.
     const prefix = basename(lock.root) + ".";
     const names = new Set(sources.map((s) => basename(s.path)));
-    for (const name of readdirSync(resolve(lock.root, ".."))) {
+    for (const name of readdirSync(dirname(lock.root))) {
       if (
         name.startsWith(prefix) &&
         name.endsWith(".sqlite") &&
@@ -176,11 +169,18 @@ export async function createPaperBackup(
       });
     }
     // Written last. Missing/invalid manifest means an incomplete backup.
-    writeFileSync(
-      join(destination, "manifest.json"),
-      JSON.stringify(manifest, null, 2) + "\n",
-      { flag: "wx", mode: 0o600 },
-    );
+    for (const entry of manifest.databases)
+      syncFile(join(destination, entry.name));
+    const manifestPath = join(destination, "manifest.json");
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n", {
+      flag: "wx",
+      mode: 0o600,
+    });
+    syncFile(manifestPath);
+    if (process.platform !== "win32") {
+      syncFile(destination, true);
+      syncFile(dirname(resolve(destination)), true);
+    }
     return manifest;
   } finally {
     lock.close();
@@ -249,7 +249,22 @@ export function verifyPaperBackup(directory: string): Manifest {
     )
   )
     throw Error("BACKUP_DATABASE_SET_INCOMPLETE");
+  for (const name of readdirSync(directory)) {
+    if (expected.has(name) && !seen.has(name))
+      throw Error("BACKUP_UNLISTED_DATABASE");
+  }
+  assertPaperDatabaseSet(directory, manifest.rootName, seen);
+  assertInitializedPaperState(directory, manifest.rootName, seen);
   return manifest;
+}
+
+function syncFile(path: string, directory = false) {
+  const fd = openSync(path, directory ? "r" : "r+");
+  try {
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /** Restore rehearsal into a NEW directory, never in-place against production. */
@@ -266,10 +281,20 @@ export function restorePaperBackup(directory: string, destination: string) {
     { flag: "wx", mode: 0o600 },
   );
   for (const entry of manifest.databases) {
-    copyFileSync(join(directory, entry.name), join(target, entry.name), 1);
+    copyFileSync(
+      join(directory, entry.name),
+      join(target, entry.name),
+      constants.COPYFILE_EXCL,
+    );
     chmodSync(join(target, entry.name), 0o600);
     if (fileDigest(join(target, entry.name)) !== entry.sha256)
       throw Error("RESTORE_HASH_MISMATCH");
+    syncFile(join(target, entry.name));
+  }
+  syncFile(join(target, manifest.rootName + ".maintenance"));
+  if (process.platform !== "win32") {
+    syncFile(target, true);
+    syncFile(dirname(target), true);
   }
   // No lifecycle receipt/permission to auto-start is restored.
   return manifest;

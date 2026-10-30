@@ -7,6 +7,10 @@ import {
   recordLifecycle,
 } from "./deployment-safety.ts";
 import {
+  existingPaperDatabases,
+  assertInitializedPaperState,
+} from "./paper-database-inventory.ts";
+import {
   withApiTiming,
   currentApiTiming,
   timeAggregation,
@@ -36,7 +40,7 @@ import { randomUUID } from "node:crypto";
 import { BrowserSessions, sessionMutationAllowed } from "./browser-session.ts";
 import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
-import { resolve, extname } from "node:path";
+import { resolve, extname, dirname, basename } from "node:path";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
 import { GeckoMarketData } from "../../../packages/market-data/src/index.ts";
 import { CetusRouter } from "../../../packages/dex-router/src/index.ts";
@@ -70,6 +74,26 @@ const instanceLock = acquireInstanceLock(
 );
 // This connection intentionally stays open until exit, never before thread exit.
 const rootDatabasePath = instanceLock.root;
+if (![undefined, "0", "1"].includes(process.env.REQUIRE_EXISTING_DATABASE))
+  throw Error("INVALID_REQUIRE_EXISTING_DATABASE");
+if (process.env.REQUIRE_EXISTING_DATABASE === "1") {
+  const names = existingPaperDatabases(
+    dirname(rootDatabasePath),
+    basename(rootDatabasePath),
+  );
+  if (process.env.TRADING_PAIR) {
+    const requested = tradingPair(process.env.TRADING_PAIR);
+    const expected =
+      basename(rootDatabasePath) +
+      (requested === "WAL_USDC" ? ".WAL_USDC.sqlite" : "");
+    if (!names.has(expected)) throw Error("EXISTING_DATABASE_REQUIRED");
+  }
+  assertInitializedPaperState(
+    dirname(rootDatabasePath),
+    basename(rootDatabasePath),
+    names,
+  );
+}
 const deploymentGate = new DeploymentGate(rootDatabasePath);
 const bootId = randomUUID();
 recordLifecycle(rootDatabasePath, bootId, "running");

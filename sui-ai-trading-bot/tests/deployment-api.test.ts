@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { acquireInstanceLock } from "../apps/worker/src/deployment-safety.ts";
 import { createPaperBackup } from "../apps/worker/src/paper-backup.ts";
+import { BotDatabase } from "../packages/database/src/index.ts";
 
 it("actual loopback deployment maintenance rejects changes and duplicate workers; Linux shutdown proves a stopped backup", async () => {
   const folder = mkdtempSync(join(tmpdir(), "suiba-deployment-api-")),
@@ -19,6 +20,8 @@ it("actual loopback deployment maintenance rejects changes and duplicate workers
   const token = randomBytes(32).toString("hex"),
     base = `http://127.0.0.1:${port}`;
   const children: ChildProcess[] = [];
+  for (const path of [root, root + ".pairs.sqlite"])
+    new BotDatabase(path).close();
   const start = (workerPort: number) => {
     const child = spawn(
       process.execPath,
@@ -32,6 +35,7 @@ it("actual loopback deployment maintenance rejects changes and duplicate workers
           PORT: String(workerPort),
           HOST: "127.0.0.1",
           DATABASE_PATH: root,
+          REQUIRE_EXISTING_DATABASE: "1",
           SUI_GRPC_URL: "https://127.0.0.1:1",
           MARKET_DATA_PROVIDER: "deepbook",
           DOTENV_CONFIG_QUIET: "true",

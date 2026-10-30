@@ -144,3 +144,42 @@ it("rejects modified bytes, injected WAL and path traversal manifests before res
   );
   expect(existsSync(target)).toBe(false);
 });
+
+it("refuses a missing selected pair, invalid selection and orphan SQLite sidecars", async () => {
+  const t = fixture();
+  rmSync(t.root + ".WAL_USDC.sqlite");
+  await expect(createPaperBackup(t.root, t.backup)).rejects.toThrow(
+    "BACKUP_SELECTED_DATABASE_MISSING",
+  );
+  expect(existsSync(t.backup)).toBe(false);
+  const selection = new BotDatabase(t.root + ".pairs.sqlite");
+  selection.set("selected_pair", "UNKNOWN_PAIR");
+  selection.close();
+  await expect(createPaperBackup(t.root, t.backup)).rejects.toThrow(
+    "BACKUP_INVALID_SELECTED_PAIR",
+  );
+  writeFileSync(t.root + ".WAL_USDC.sqlite.chart-history.sqlite-wal", "orphan");
+  await expect(createPaperBackup(t.root, t.backup)).rejects.toThrow(
+    "BACKUP_ORPHAN_SIDECAR",
+  );
+});
+
+it("rejects manifest omissions even when the remaining DB hashes are valid", async () => {
+  const t = fixture();
+  await createPaperBackup(t.root, t.backup);
+  const manifestPath = join(t.backup, "manifest.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  manifest.databases = manifest.databases.filter(
+    (entry: { name: string }) => entry.name !== "bot.sqlite.WAL_USDC.sqlite",
+  );
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  const target = join(t.folder, "omitted-restore");
+  expect(() => restorePaperBackup(t.backup, target)).toThrow(
+    "BACKUP_UNLISTED_DATABASE",
+  );
+  rmSync(join(t.backup, "bot.sqlite.WAL_USDC.sqlite"));
+  expect(() => restorePaperBackup(t.backup, target)).toThrow(
+    "BACKUP_SELECTED_DATABASE_MISSING",
+  );
+  expect(existsSync(target)).toBe(false);
+});

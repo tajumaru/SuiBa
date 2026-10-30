@@ -12,6 +12,8 @@ PR #28の[移行・リリース設計](WALRUS_SITES_CLOUD_ARCHITECTURE_20261030_
 - 保守CLIはworkerと同じinstance lockを使う。clean終了証跡、maintenance file、全取引DBのrunning=false、SQLite integrity/foreign key検査を必須とする。未知の同root SQLite DBは黙って除外せず拒否する。
 - SQLite backup APIでWAL内容を含む自己完結snapshotを作り、保存先は新規ディレクトリ限定。manifestは最後に書き、各DBのSHA-256、schema hash、user_version、boot IDを記録する。大きなDBのhashは固定サイズbufferで計算する。
 - verifyはpath traversal、symlink/hardlink、重複/未知DB、hash/schema不一致、注入されたWAL/SHM/journalを拒否する。restore-rehearsalは新ディレクトリだけに復元し、先にmaintenance fileを置く。元DBや既存ディレクトリを上書きせず、sessionや再開許可のreceiptを復元しない。
+- 選択DBのselected_pairと実DB一覧を照合し、選択ペアの欠落・不正な選択・親取引DBのないchart-history・DB本体のないWAL/SHM/journal・manifestに列挙されない既存snapshotを拒否する。runtime/portfolio/settingsレコードの欠落も拒否する。snapshot/manifest/復元ファイルをfsyncし、Linuxでは新規ディレクトリと親もfsyncしてから完了する。
+- VPS等の既存データを維持する起動には `REQUIRE_EXISTING_DATABASE=1` を指定できる。選択DB・選択中およびTRADING_PAIRで指定したDB・初期化済みのruntime/portfolio/settingsを、BotDatabaseによる自動作成より前に読み取り検査する。欠落/空DBで起動しない。既定0（未指定も同じ）は従来の初回DB作成を維持する。これは起動時の検査であり、新旧JSONの意味互換性・会計照合の代替ではない。
 
 設計時のホストflockに代えて、Windows/Linux共通の専用SQLite排他lockをアプリ入口に実装した。取引DBの通常writer lockとは別で、取引DBの複数schedulerによる順次書込みを許してしまう問題を防ぐ。将来の配備helperには別途「配備transaction全体」の排他が必要である。
 
