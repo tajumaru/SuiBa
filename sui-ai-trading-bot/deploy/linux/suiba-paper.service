@@ -1,0 +1,36 @@
+[Unit]
+Description=SuiBa PAPER worker (manual trading start)
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=exec
+User=suiba
+Group=suiba
+WorkingDirectory=/var/lib/suiba-release/current
+EnvironmentFile=/etc/suiba/paper.env
+ExecStart=/opt/suiba/tools/start-paper.sh
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=35s
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/suiba
+InaccessiblePaths=/etc/suiba/backup.key /var/backups/suiba
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=suiba-paper
+
+[Install]
+WantedBy=multi-user.target

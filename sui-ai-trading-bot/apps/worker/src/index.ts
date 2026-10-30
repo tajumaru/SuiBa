@@ -381,9 +381,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/deployment") {
+      const build = db.get<{ declaredSha: string | null; lockSha256: string }>(
+        "runtime_build",
+      );
       send(200, {
         mode: "PAPER",
         maintenance: stopping || deploymentGate.blocked(),
+        running: db.runtime().running,
+        revision: build?.declaredSha ?? null,
+        lockSha256: build?.lockSha256 ?? null,
+        databaseHealthy: db.health().healthy,
+        ledgerOk: engine.monitor.ledger().ok,
       });
       return;
     }

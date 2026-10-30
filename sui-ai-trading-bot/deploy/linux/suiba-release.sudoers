@@ -1,0 +1,5 @@
+# Validate with: visudo -cf /etc/sudoers.d/suiba-release
+# Dedicated service user: only this root-owned unit, fixed actions/arguments.
+suiba ALL=(root) NOPASSWD: /usr/bin/systemctl stop suiba-paper.service
+suiba ALL=(root) NOPASSWD: /usr/bin/systemctl start suiba-paper.service
+suiba ALL=(root) NOPASSWD: /usr/bin/systemctl show suiba-paper.service --property=ActiveState --value

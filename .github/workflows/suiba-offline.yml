@@ -29,3 +29,12 @@ jobs:
       - run: pnpm test:offline
       - name: Verify PAPER deployment safety over loopback
         run: node node_modules/vitest/vitest.mjs run tests/deployment-api.test.ts
+      - name: Verify Linux packaged-worker cutover and rollback
+        if: runner.os == 'Linux'
+        run: node node_modules/vitest/vitest.mjs run tests/linux-release-process.test.ts
+      - name: Check Linux unit and restricted sudo syntax in a disposable container
+        if: runner.os == 'Linux'
+        run: |
+          docker build -f docker/Dockerfile.linux-release-test -t suiba-linux-release-test .
+          docker run --rm --network none suiba-linux-release-test
+          docker run --rm --network none --user root suiba-linux-release-test node deploy/linux/check-container-launcher.mjs

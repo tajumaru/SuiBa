@@ -1,0 +1,2 @@
+sui-ai-trading-bot/deploy/linux/* text eol=lf
+sui-ai-trading-bot/docker/Dockerfile.linux-release-test text eol=lf
