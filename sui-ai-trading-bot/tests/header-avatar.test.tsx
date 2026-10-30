@@ -72,12 +72,22 @@ describe("agent header avatar", () => {
     expect(laptop).toContain("agent-hard-guitar-2.jpg");
     expect(laptop).toContain('class="agent-avatar-typing"');
     expect(laptop).toContain("ハードモード中");
-    // Momentary poses are not costumes: pointing stays pointing.
+    // The pointing poses wear hard portraits too (running time is
+    // mostly spent pointing), but their pill keeps the state label.
     const point = renderToStaticMarkup(
       <AgentHeaderAvatar pose="point" hardMode />,
     );
-    expect(point).toContain("agent-white-point");
+    expect(point).toContain("agent-hard-point.jpg");
     expect(point).not.toContain("ハードモード中");
+    const smile = renderToStaticMarkup(
+      <AgentHeaderAvatar pose="pointSmile" hardMode />,
+    );
+    expect(smile).toContain("agent-hard-point-smile.jpg");
+    // Sleep keeps its own artwork even in hard mode.
+    const sleep = renderToStaticMarkup(
+      <AgentHeaderAvatar pose="sleep" hardMode />,
+    );
+    expect(sleep).toContain("agent-white-sleep");
     // And without hard mode the base poses stay the white character.
     const calm = renderToStaticMarkup(<AgentHeaderAvatar pose="laptop" />);
     expect(calm).toContain("agent-white-laptop");
