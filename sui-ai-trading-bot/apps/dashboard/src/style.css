@@ -4123,3 +4123,23 @@ button:hover {
   border-color: #1f5c46;
   background: #020a06;
 }
+
+/* Stuck dock (scrolled): the avatar shrinks and the status
+   pill folds away so the character stops covering the
+   operation bar's state text and the price ticker while it
+   follows the scroll. The shout bubble rides along and stays
+   visible — it is the one overlay that must never be hidden. */
+.agent-avatar-dock.stuck .agent-avatar {
+  width: 46px;
+  height: 46px;
+}
+.agent-avatar-dock.stuck .agent-avatar-pill {
+  display: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .agent-avatar {
+    transition:
+      width 0.25s ease,
+      height 0.25s ease;
+  }
+}

@@ -228,6 +228,23 @@ export function AgentHeaderAvatar({
   hardMode?: boolean;
 }) {
   const reducedMotion = usePrefersReducedMotion();
+  // While the page is scrolled, the sticky dock rides over the
+  // operation bar and the ticker: shrink the avatar and fold
+  // the status pill away so the character never covers the
+  // state text or the price (the shout bubble stays). Hysteresis
+  // keeps the boundary from flickering.
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    const onScroll = () => {
+      setStuck((prev) => {
+        const y = window.scrollY;
+        return prev ? y > 80 : y > 140;
+      });
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
   const shouting = shout !== null;
   const shownPose: AgentPose = shouting
     ? "normal"
@@ -239,7 +256,7 @@ export function AgentHeaderAvatar({
   const hardShown =
     artworkHard && (shownPose === "normal" || shownPose === "laptop");
   return (
-    <div className="agent-avatar-dock">
+    <div className={`agent-avatar-dock${stuck ? " stuck" : ""}`}>
       <div
         key={shout ? shout.kind : "calm"}
         className={`agent-avatar pose-${shownPose}${animated ? " celebrating" : ""}${shouting ? " shouting" : ""}`}
