@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   agentReply,
   CHAT_CHIPS,
+  chatMood,
   followUpChips,
+  orderedChips,
   proactivePrompt,
   type AgentChatContext,
 } from "../apps/dashboard/src/agentChat.ts";
@@ -58,6 +60,7 @@ function ctx(overrides: Partial<AgentChatContext> = {}): AgentChatContext {
     tradeCount: 0,
     recentMovePct: null,
     lastTopic: null,
+    exchangeCount: 0,
     ...overrides,
   };
 }
@@ -272,5 +275,58 @@ describe("agent chat replies", () => {
     );
     expect(proactivePrompt({ kind: "trade", side: "SELL" })).toBeNull();
     expect(proactivePrompt({ kind: "cycle" })).toBeNull();
+  });
+
+  it("derives the mood from the recorded score only", () => {
+    expect(
+      chatMood({ declared: 5, hits: 4, misses: 1, inProgress: 0 }),
+    ).toBe("confident");
+    expect(
+      chatMood({ declared: 5, hits: 1, misses: 4, inProgress: 0 }),
+    ).toBe("humble");
+    expect(
+      chatMood({ declared: 6, hits: 3, misses: 2, inProgress: 1 }),
+    ).toBe("neutral");
+    expect(chatMood(null)).toBe("neutral");
+    // The mood colours the score closer and the encouragement.
+    expect(
+      agentReply(
+        "調子は？",
+        ctx({ score: { declared: 5, hits: 4, misses: 1, inProgress: 0 } }),
+      ).text,
+    ).toContain("この調子でいくよ");
+    expect(
+      agentReply(
+        "がんばれ",
+        ctx({ score: { declared: 5, hits: 1, misses: 4, inProgress: 0 } }),
+      ).text,
+    ).toContain("次は決める");
+  });
+
+  it("rotates fact-identical phrasings across exchanges", () => {
+    const first = agentReply("なんで買わないの？", ctx({ exchangeCount: 0 }));
+    const second = agentReply("なんで買わないの？", ctx({ exchangeCount: 1 }));
+    expect(first.text).not.toBe(second.text);
+    for (const reply of [first, second]) {
+      expect(reply.text).toContain("EMAとRSIは揃ってる");
+      expect(reply.text).toContain("MACD");
+    }
+    const cheers = [0, 1, 2].map(
+      (n) => agentReply("がんばれ", ctx({ exchangeCount: n })).text,
+    );
+    expect(new Set(cheers).size).toBe(3);
+  });
+
+  it("learns the chip order from what was actually asked", () => {
+    expect(orderedChips([])).toEqual([...CHAT_CHIPS]);
+    const learned = orderedChips([
+      "調子は？",
+      "調子は？",
+      "調子は？",
+      "なんで買わないの？",
+    ]);
+    expect(learned[0]).toBe("調子は？");
+    expect(learned[1]).toBe("なんで買わないの？");
+    expect(learned).toHaveLength(CHAT_CHIPS.length);
   });
 });

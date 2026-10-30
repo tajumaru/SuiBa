@@ -33,8 +33,8 @@ import imgHardPointSmile from "./assets/agent-hard-point-smile.jpg";
 import { persistNarration, restoreNarration } from "./narrationStorage.ts";
 import {
   agentReply,
-  CHAT_CHIPS,
   followUpChips,
+  orderedChips,
   proactivePrompt,
   type AgentChatContext,
   type ChatTopic,
@@ -606,6 +606,8 @@ export function AgentNarrationFeed({
           ? (history[history.length - 1] / history[0] - 1) * 100
           : null,
       lastTopic: (lastReply?.topic as ChatTopic | undefined) ?? null,
+      exchangeCount: state.entries.filter((e) => e.kind === "chatReply")
+        .length,
     };
     const reply = agentReply(text, ctx);
     const at = Date.now();
@@ -724,7 +726,14 @@ export function AgentNarrationFeed({
           role="group"
           aria-label="キャラへの質問候補"
         >
-          {(chatTopic == null ? [...CHAT_CHIPS] : followUpChips(chatTopic)).map(
+          {(chatTopic == null
+            ? orderedChips(
+                narration.entries
+                  .filter((e) => e.kind === "chatUser")
+                  .map((e) => e.text),
+              )
+            : followUpChips(chatTopic)
+          ).map(
             (chip) => (
               <button
                 key={chip}

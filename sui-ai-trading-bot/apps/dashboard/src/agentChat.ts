@@ -47,6 +47,41 @@ export interface AgentChatContext {
    * before the first exchange. Continuations ("それで？") and
    * repeated questions resolve against it. */
   lastTopic: ChatTopic | null;
+  /** How many replies the character has already given in this
+   * conversation: the rotation seed for phrasing variety, so the
+   * same question does not always get the same wording. */
+  exchangeCount: number;
+}
+
+export type ChatMood = "confident" | "humble" | "neutral";
+
+/** The character's mood, from the recorded score only: a hit
+ * streak reads confident, a miss streak reads humble. Standard
+ * Japanese either way — Kansai stays with the emotion-leak lines. */
+export function chatMood(score: WatchScoreDisplay | null): ChatMood {
+  if (!score) return "neutral";
+  if (score.hits - score.misses >= 2) return "confident";
+  if (score.misses - score.hits >= 2) return "humble";
+  return "neutral";
+}
+
+/** Rotate through fact-identical phrasings by exchange count. */
+function vary(ctx: AgentChatContext, variants: string[]): string {
+  return variants[Math.abs(ctx.exchangeCount) % variants.length];
+}
+
+/**
+ * The base question chips, reordered by how often each was
+ * actually asked in the recorded conversation (the feed's own
+ * history is the record; ties keep the default order).
+ */
+export function orderedChips(askedTexts: string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const text of askedTexts)
+    counts.set(text, (counts.get(text) ?? 0) + 1);
+  return [...CHAT_CHIPS].sort(
+    (a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0),
+  );
 }
 
 export type ChatTopic =
@@ -145,7 +180,10 @@ function whyNotBuying(ctx: AgentChatContext): string {
   if (p.missing.length === 0)
     return "条件は全部揃ってる。あとは利益保護の判定待ち — 手数料を引いて残る利益が基準に届けば買うよ。";
   const metText = p.met.length > 0 ? `${p.met.join("と")}は揃ってる。` : "";
-  return `${metText}あと${p.missing.join("と")}が足りないから、まだ買わないよ。`;
+  return vary(ctx, [
+    `${metText}あと${p.missing.join("と")}が足りないから、まだ買わないよ。`,
+    `${metText}買うには${p.missing.join("と")}がまだ。揃うまで待つよ。`,
+  ]);
 }
 
 function whatsMissing(ctx: AgentChatContext): string {
@@ -162,7 +200,7 @@ function whatsMissing(ctx: AgentChatContext): string {
   const parts = [...p.missing];
   if (!p.rsi && dec.rsi > dec.oversold)
     parts.push(`RSIはあと${Math.ceil(dec.rsi - dec.oversold)}`);
-  return `足りないのは${parts.join("と")}。揃ったら買いに走るよ。`;
+  return `足りないのは${parts.join("と")}。${vary(ctx, ["揃ったら買いに走るよ。", "揃えば走るよ。"])}`;
 }
 
 function howIsItGoing(ctx: AgentChatContext): string {
@@ -171,7 +209,15 @@ function howIsItGoing(ctx: AgentChatContext): string {
     return "様子が掴めてないから、成績は言えないや。少し待ってから聞いてみて。";
   if (s.declared === 0)
     return "まだ宣言は出してないよ。条件が近づいてきたら宣言するから、待ってて。";
-  return `宣言${s.declared}回で、的中${s.hits}・外れ${s.misses}、進行中が${s.inProgress}つ。${s.hits >= s.misses ? "悪くないでしょ。" : "次は当てるよ。"}`;
+  const closer =
+    chatMood(s) === "confident"
+      ? "この調子でいくよ。"
+      : chatMood(s) === "humble"
+        ? "次は当てる。"
+        : s.hits >= s.misses
+          ? "悪くないでしょ。"
+          : "次は当てるよ。";
+  return `宣言${s.declared}回で、的中${s.hits}・外れ${s.misses}、進行中が${s.inProgress}つ。${closer}`;
 }
 
 function lineDistance(ctx: AgentChatContext): string {
@@ -338,14 +384,25 @@ export function agentReply(text: string, ctx: AgentChatContext): AgentReply {
   if (/がんば|頑張|応援/.test(t))
     return say(
       "encouragement",
-      "まかせて。条件が揃ったらちゃんと買いに走るから、見てて。",
+      chatMood(ctx.score) === "confident"
+        ? "まかせて、調子もいいし。揃ったら走るよ。"
+        : chatMood(ctx.score) === "humble"
+          ? "うん、次は決める。見てて。"
+          : vary(ctx, [
+              "まかせて。条件が揃ったらちゃんと買いに走るから、見てて。",
+              "ありがとう。揃ったら走るから、見てて。",
+              "うん、がんばる。様子は任せて。",
+            ]),
     );
   if (/こんにちは|おはよう|こんばんは|やあ|ハロー/.test(t))
     return say(
       "greeting",
       ctx.stoppedKind === "sleeping"
         ? "ん…おはよう。今は止まって寝てるところ。"
-        : "やあ、見てくれてありがとう。今の様子なら答えられるよ。",
+        : vary(ctx, [
+            "やあ、見てくれてありがとう。今の様子なら答えられるよ。",
+            "こんにちは。様子のことなら聞いて。",
+          ]),
     );
   if (/ありがとう|ありがと/.test(t))
     return say("greeting", "どういたしまして。また聞いて。");
