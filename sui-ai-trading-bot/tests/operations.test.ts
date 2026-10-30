@@ -336,6 +336,36 @@ describe("PAPER operation monitor", () => {
     expect(db.runtime().running).toBe(false);
     db.close();
   });
+  it.each([false, true])(
+    "exposes updating only while acquiring and preserves the order gate (fails=%s)",
+    async (fails) => {
+      const db = new BotDatabase(":memory:");
+      db.set("runtime", { ...db.runtime(), running: true });
+      const monitor = new OperationMonitor(db);
+      monitor.market(Date.now());
+      let release!: () => void;
+      const pending = monitor.acquisition(async () => {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        if (fails) throw Error("THIN_ORDERBOOK");
+        return true;
+      });
+      expect(monitor.safetySnapshot()).toMatchObject({
+        marketUpdating: true,
+        ordersAllowed: false,
+      });
+      release();
+      if (fails) await expect(pending).rejects.toThrow("THIN_ORDERBOOK");
+      else await pending;
+      expect(monitor.safetySnapshot().marketUpdating).toBe(false);
+      if (fails) {
+        monitor.failCycle("THIN_ORDERBOOK");
+        expect(monitor.ordersAllowed()).toBe(false);
+      } else expect(monitor.ordersAllowed()).toBe(true);
+      db.close();
+    },
+  );
   it("detects stalled updates even if a market request is stuck", () => {
     const db = new BotDatabase(":memory:");
     db.set("runtime", { ...db.runtime(), running: true });

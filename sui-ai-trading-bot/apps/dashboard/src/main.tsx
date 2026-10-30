@@ -17,6 +17,7 @@ import { StrategyTab, type StrategySegment } from "./StrategyTab.tsx";
 import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
 import { errorShout } from "./errorShout.ts";
+import { presetName } from "./settingsPresets.ts";
 import {
   BUY_CELEBRATION_MS,
   sellLinesOf,
@@ -461,6 +462,13 @@ function App() {
     };
   }, [token]);
   useEffect(() => {
+    // Catch acquisition completion promptly. One follow-up per received
+    // snapshot avoids stacking requests when the local API itself is slow.
+    if (!token || stateStale || data?.safety?.marketUpdating !== true) return;
+    const timer = window.setTimeout(() => void refresh(), 1000);
+    return () => window.clearTimeout(timer);
+  }, [token, receivedAt, data?.safety?.marketUpdating, stateStale]);
+  useEffect(() => {
     if (token) void refresh();
   }, [tab, timeframe]);
   // Resolves to null on success, or to the server's machine-readable
@@ -543,6 +551,7 @@ function App() {
           pose={agentPose}
           celebrating={buyCelebration}
           shout={shout}
+          hardMode={data != null && presetName(data.settings) === "hard"}
         />
       )}
       {restoringSession ? (

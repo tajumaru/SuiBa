@@ -307,7 +307,9 @@ export class DeepBookMarketData {
   private async refresh() {
     await this.refreshStatus();
     this.bookRaw = await this.checkedRead(
-      `/orderbook/${this.pair}?level=2&depth=10`,
+      // Indexer depth is shared across bids and asks: 100 requests 50 per side.
+      // A shallow response can omit usable liquidity inside the same price limit.
+      `/orderbook/${this.pair}?level=2&depth=100`,
     );
     this.bookFetchedAt = Date.now();
     this.assertReady(this.bookFetchedAt);

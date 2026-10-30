@@ -24,6 +24,9 @@ import imgLaptop from "./assets/agent-white-laptop.jpg";
 import imgLaptopTyping from "./assets/agent-white-laptop-typing.jpg";
 import imgScream from "./assets/agent-white-scream.jpg";
 import imgBlueLine from "./assets/agent-blue-line.jpg";
+import imgHard from "./assets/agent-hard.jpg";
+import imgHardGuitar from "./assets/agent-hard-guitar.jpg";
+import imgHardGuitar2 from "./assets/agent-hard-guitar-2.jpg";
 import { persistNarration, restoreNarration } from "./narrationStorage.ts";
 
 /**
@@ -82,8 +85,34 @@ const POSE_LABEL: Record<AgentPose, string> = {
  * Under prefers-reduced-motion the second frame rests invisible,
  * so the laptop pose is the still base frame, like every other
  * pose's single image.
+ *
+ * While the saved settings are the hard-mode preset, the two base
+ * poses wear the hard artwork instead: the normal pose becomes the
+ * sunglasses-and-mohawk portrait, and the laptop pose becomes the
+ * Sui-blue guitar pair (playing / strumming arm raised), flipped
+ * by the same typing loop. The momentary poses (pointing, smile,
+ * blue line, sleep) are untouched — hard mode is the base look,
+ * not a reaction.
  */
-export function AgentAvatarArtwork({ pose }: { pose: AgentPose }) {
+export function AgentAvatarArtwork({
+  pose,
+  hardMode = false,
+}: {
+  pose: AgentPose;
+  hardMode?: boolean;
+}) {
+  if (hardMode && pose === "normal") return <img src={imgHard} alt="" />;
+  if (hardMode && pose === "laptop")
+    return (
+      <>
+        <img src={imgHardGuitar} alt="" />
+        <img
+          className="agent-avatar-typing"
+          src={imgHardGuitar2}
+          alt=""
+        />
+      </>
+    );
   return (
     <>
       <img src={POSE_IMAGE[pose]} alt="" />
@@ -170,10 +199,15 @@ export function AgentHeaderAvatar({
   pose,
   celebrating = false,
   shout = null,
+  hardMode = false,
 }: {
   pose: AgentPose;
   celebrating?: boolean;
   shout?: ErrorShout | null;
+  /** The saved settings are the hard-mode preset: the base poses
+   * (normal / laptop) wear the hard artwork and the pill says so.
+   * Shouts and celebrations outrank it, like every base look. */
+  hardMode?: boolean;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const shouting = shout !== null;
@@ -183,6 +217,11 @@ export function AgentHeaderAvatar({
       ? "pointSmile"
       : pose;
   const animated = celebrating && !reducedMotion && !shouting;
+  const hardShown =
+    hardMode &&
+    !shouting &&
+    !celebrating &&
+    (shownPose === "normal" || shownPose === "laptop");
   return (
     <div className="agent-avatar-dock">
       <div
@@ -195,7 +234,7 @@ export function AgentHeaderAvatar({
           {shouting ? (
             <img className="agent-avatar-scream" src={imgScream} alt="" />
           ) : (
-            <AgentAvatarArtwork pose={shownPose} />
+            <AgentAvatarArtwork pose={shownPose} hardMode={hardShown} />
           )}
         </div>
         <span className="agent-avatar-zzz">Zzz</span>
@@ -237,7 +276,9 @@ export function AgentHeaderAvatar({
           ? shout.label
           : celebrating
             ? "買えた！"
-            : POSE_LABEL[shownPose]}
+            : hardShown
+              ? "ハードモード中"
+              : POSE_LABEL[shownPose]}
       </p>
     </div>
   );

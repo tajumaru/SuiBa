@@ -42,6 +42,7 @@ export function operationReason(code: string): string {
     INVALID_NUMBERS: "数量または価格の計算値が不正です",
     NO_LIQUIDITY: "取引に必要な流動性がありません",
     CONCURRENT_ORDER: "処理中の注文があるため見送りました",
+    QUOTE_MARKET_MOVED: "今の市場価格より不利なため見送りました",
     INVALID_QUOTE: "価格見積もりの内容が不正です",
 
     UPSTREAM_HTTP_429: "APIの利用制限に達したため安全停止しています",

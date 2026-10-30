@@ -59,6 +59,31 @@ describe("agent header avatar", () => {
     expect(html).not.toContain("noseb");
   });
 
+  it("wears the hard artwork on the base poses while hard mode is on", () => {
+    const normal = renderToStaticMarkup(
+      <AgentHeaderAvatar pose="normal" hardMode />,
+    );
+    expect(normal).toContain("agent-hard.jpg");
+    expect(normal).toContain("ハードモード中");
+    const laptop = renderToStaticMarkup(
+      <AgentHeaderAvatar pose="laptop" hardMode />,
+    );
+    expect(laptop).toContain("agent-hard-guitar.jpg");
+    expect(laptop).toContain("agent-hard-guitar-2.jpg");
+    expect(laptop).toContain('class="agent-avatar-typing"');
+    expect(laptop).toContain("ハードモード中");
+    // Momentary poses are not costumes: pointing stays pointing.
+    const point = renderToStaticMarkup(
+      <AgentHeaderAvatar pose="point" hardMode />,
+    );
+    expect(point).toContain("agent-white-point");
+    expect(point).not.toContain("ハードモード中");
+    // And without hard mode the base poses stay the white character.
+    const calm = renderToStaticMarkup(<AgentHeaderAvatar pose="laptop" />);
+    expect(calm).toContain("agent-white-laptop");
+    expect(calm).not.toContain("agent-hard");
+  });
+
   it("wears the blue crowd artwork with petals and a blue pill while a line stands", () => {
     const html = renderToStaticMarkup(<AgentHeaderAvatar pose="buyLine" />);
     expect(html).toContain("agent-blue-line");

@@ -8,7 +8,13 @@ type RecoverySnapshot = {
   safety: State["safety"];
 };
 export interface RecoveryStatus {
-  title: "正常稼働" | "停止中" | "通信確認中" | "通信異常" | "状態取得失敗";
+  title:
+    | "正常稼働"
+    | "停止中"
+    | "通信確認中"
+    | "通信異常"
+    | "状態取得失敗"
+    | "データ更新中";
   tone: "ok" | "caution" | "alert" | "unknown";
   reason: string;
   safety: string;
@@ -87,6 +93,16 @@ export function recoveryStatus(
       reason: "開始に必要な安全状態を確認できません。",
       safety: "この画面からは開始できません。",
       next: "通信診断を開き、最新の安全状態を確認してください。",
+      canStart: false,
+      automatic: false,
+    };
+  if (runtime.running && s.marketUpdating === true)
+    return {
+      title: "データ更新中",
+      tone: "caution",
+      reason: "最新の市場データを取得しています。",
+      safety: "更新中は新しい注文を保留しています。",
+      next: "更新が終わると自動で表示が戻ります。",
       canStart: false,
       automatic: false,
     };

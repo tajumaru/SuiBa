@@ -2436,7 +2436,7 @@ describe("agent narration: spike alerts", () => {
     const alerts = alertsOf(feed(seq([{}, {}, {}, { price: 2.376 }])));
     expect(alerts).toHaveLength(1);
     expect(alerts[0].text).toBe(
-      "速報。基軸通貨、-1.0%。急落だ。ちょっと様子見る",
+      "急落注意。価格が1.0%下がったよ",
     );
   });
 
@@ -2449,7 +2449,7 @@ describe("agent narration: spike alerts", () => {
     const alerts = alertsOf(state);
     expect(alerts).toHaveLength(1);
     expect(alerts[0].text).toBe(
-      "速報。出来高の変化が+250%に跳ねた。何かあったかも",
+      "売買が急増しているよ（+250%）。値動きに注意",
     );
     expect(state.lastAlert?.direction).toBe("volume");
   });
@@ -2457,13 +2457,13 @@ describe("agent narration: spike alerts", () => {
   it("a huge volume spike alerts as a multiple, not an astronomical percent", () => {
     const huge = spikeAlert(warmed, telemetry({ volumeChange: 49 }));
     expect(huge?.direction).toBe("volume");
-    expect(huge?.text).toBe("速報。出来高が約50倍に跳ねた。何かあったかも");
+    expect(huge?.text).toBe("売買が約50倍に急増しているよ。値動きに注意");
     // The switch matches the reject line: nine is the boundary.
     expect(spikeAlert(warmed, telemetry({ volumeChange: 9 }))?.text).toBe(
-      "速報。出来高が約10倍に跳ねた。何かあったかも",
+      "売買が約10倍に急増しているよ。値動きに注意",
     );
     expect(spikeAlert(warmed, telemetry({ volumeChange: 8.9 }))?.text).toBe(
-      "速報。出来高の変化が+890%に跳ねた。何かあったかも",
+      "売買が急増しているよ（+890%）。値動きに注意",
     );
   });
 
@@ -2472,7 +2472,7 @@ describe("agent narration: spike alerts", () => {
     const alerts = alertsOf(state);
     expect(alerts).toHaveLength(1);
     expect(alerts[0].text).toBe(
-      "速報。基軸通貨、短時間で+1.8%。出来高の変化も跳ねた",
+      "急上昇。価格が+1.8%。売買も急増しているよ",
     );
     expect(state.lastAlert?.direction).toBe("up");
   });
@@ -2480,7 +2480,7 @@ describe("agent narration: spike alerts", () => {
   it("an upward price spike alone uses the short surge wording", () => {
     const alerts = alertsOf(feed(seq([{}, {}, {}, { price: 2.4432 }])));
     expect(alerts).toHaveLength(1);
-    expect(alerts[0].text).toBe("速報。基軸通貨、短時間で+1.8%。急に来た");
+    expect(alerts[0].text).toBe("急上昇。価格が+1.8%になったよ");
   });
 
   it("a downward spike with a volume spike still mentions both, once", () => {
@@ -2488,9 +2488,9 @@ describe("agent narration: spike alerts", () => {
       feed(seq([{}, {}, {}, { price: 2.3448, volumeChange: 3 }])),
     );
     expect(alerts).toHaveLength(1);
-    expect(alerts[0].text).toContain("-2.3%");
-    expect(alerts[0].text).toContain("出来高の変化も跳ねた");
-    expect(alerts[0].text).toContain("急落だ");
+    expect(alerts[0].text).toContain("2.3%下がったよ");
+    expect(alerts[0].text).toContain("売買も急増しているよ");
+    expect(alerts[0].text).toContain("急落注意");
   });
 
   it("cools down for five narrated cycles, then can fire again", () => {
@@ -2549,7 +2549,7 @@ describe("agent narration: spike alerts", () => {
     );
     const alerts = alertsOf(state);
     expect(alerts).toHaveLength(1);
-    expect(alerts[0].text).toContain("急落だ");
+    expect(alerts[0].text).toContain("急落注意");
     expect(state.entries.some((e) => e.text.includes("保有中だよ"))).toBe(true);
   });
 
@@ -2640,7 +2640,8 @@ describe("agent narration: spike alerts", () => {
       expect(text).not.toMatch(/です|ます|ました|確認できました|総括/);
       expect(text).not.toMatch(/\d\.\d{2,}%/);
       expect(text).toMatch(/\d/);
-      expect(text.startsWith("速報。")).toBe(true);
+      expect(text).toMatch(/^(急落注意。|急上昇。|売買が)/);
+      expect(text).not.toMatch(/ちょっと様子見る|何かあったかも|これから|予測/);
     }
   });
 });

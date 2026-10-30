@@ -1354,25 +1354,25 @@ export function spikeAlert(
     return {
       direction: "up",
       text: volumeSpike
-        ? `速報。基軸通貨、短時間で${alertPct(ratio)}。出来高の変化も跳ねた`
-        : `速報。基軸通貨、短時間で${alertPct(ratio)}。急に来た`,
+        ? `急上昇。価格が${alertPct(ratio)}。売買も急増しているよ`
+        : `急上昇。価格が${alertPct(ratio)}になったよ`,
     };
   if (priceDown)
     return {
       direction: "down",
       text: volumeSpike
-        ? `速報。基軸通貨、${alertPct(ratio)}。急落だ。出来高の変化も跳ねたから、ちょっと様子見る`
-        : `速報。基軸通貨、${alertPct(ratio)}。急落だ。ちょっと様子見る`,
+        ? `急落注意。価格が${alertPct(ratio).slice(1)}下がったよ。売買も急増しているよ`
+        : `急落注意。価格が${alertPct(ratio).slice(1)}下がったよ`,
     };
   const multiple = volumeMultiple(dec.volumeChange);
   return {
     direction: "volume",
     text:
       multiple != null
-        ? `速報。出来高が約${multiple}倍に跳ねた。何かあったかも`
+        ? `売買が約${multiple}倍に急増しているよ。値動きに注意`
         : Number.isFinite(dec.volumeChange)
-          ? `速報。出来高の変化が${signedPct(dec.volumeChange)}に跳ねた。何かあったかも`
-          : `速報。出来高の変化が跳ねた。何かあったかも`,
+          ? `売買が急増しているよ（${signedPct(dec.volumeChange)}）。値動きに注意`
+          : `売買が急増しているよ。値動きに注意`,
   };
 }
 
