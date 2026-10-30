@@ -4063,3 +4063,63 @@ h2 {
   border-radius: 4px;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
+
+/* Terminal finish (from the real-device screenshot): pull the
+   remaining blue-grey parts into the green-black palette, give
+   the feed the terminal frame its section rule never reached
+   (it is a div, not a section), square the avatar frame — its
+   base rules live far below the header block, so the earlier
+   override lost — and turn the avatar status pill into a
+   bracketed tag. Pose/state colours keep winning through
+   their more specific rules. */
+button {
+  background: #0a1a12;
+  border-color: #1f5c46;
+}
+button:hover {
+  background: #123324;
+}
+.agent-avatar,
+.agent-avatar-bob {
+  border-radius: 14px;
+}
+.agent-avatar {
+  border-color: #2e7a5f;
+}
+.agent-avatar-pill {
+  border-radius: 4px;
+  border-color: #1f5c46;
+  background: rgba(2, 10, 6, 0.92);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.agent-avatar-pill::before {
+  content: "[";
+}
+.agent-avatar-pill::after {
+  content: "]";
+}
+.agent-feed {
+  background: #04070b;
+  border-color: #1f5c46;
+  border-radius: 6px;
+}
+.agent-feed-score {
+  background: #020a06;
+  border-color: #1f5c46;
+  border-radius: 4px;
+}
+.agent-feed-watch {
+  border-radius: 4px;
+}
+.agent-feed-chips-title::before {
+  content: "> ";
+  color: #43dfb2;
+}
+.agent-chat-chips button {
+  background: #0a1a12;
+  border-color: #1f5c46;
+}
+.agent-chat-form input {
+  border-color: #1f5c46;
+  background: #020a06;
+}
