@@ -9,13 +9,18 @@ import {
   restorePaperBackup,
   verifyPaperBackup,
 } from "../apps/worker/src/paper-backup.ts";
+import {
+  encryptPaperBackup,
+  decryptPaperBackup,
+} from "../apps/worker/src/encrypted-paper-backup.ts";
 
 // No default action and no worker/service control. Paths are positional arguments,
 // not shell programs. MODE is checked even for offline maintenance operations.
 try {
   if (process.env.MODE && process.env.MODE !== "PAPER")
     throw Error("ONLY_PAPER_SUPPORTED");
-  const [command, source, target, ...extra] = process.argv.slice(2);
+  const [command, source, target, keyFile, ...extra] = process.argv.slice(2);
+  const encrypted = command === "encrypt" || command === "decrypt";
   if (
     !source ||
     extra.length ||
@@ -25,15 +30,34 @@ try {
       "backup",
       "verify",
       "restore-rehearsal",
+      "encrypt",
+      "decrypt",
     ].includes(command) ||
-    (command === "backup" || command === "restore-rehearsal"
+    (encrypted ? !target || !keyFile : keyFile !== undefined) ||
+    (command === "backup" || command === "restore-rehearsal" || encrypted
       ? !target
       : target !== undefined)
   )
     throw Error(
-      "USAGE: paper-maintenance.ts maintenance-on|maintenance-off <database>; backup <database> <new-directory>; verify <backup>; restore-rehearsal <backup> <new-directory>",
+      "USAGE: paper-maintenance.ts maintenance-on|maintenance-off <database>; backup <database> <new-directory>; verify <backup>; restore-rehearsal <backup> <new-directory>; encrypt|decrypt <source-directory> <new-directory> <key-file>",
     );
-  if (command === "maintenance-on") {
+  if (encrypted) {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    process.on("SIGINT", abort);
+    process.on("SIGTERM", abort);
+    try {
+      await (command === "encrypt" ? encryptPaperBackup : decryptPaperBackup)(
+        source,
+        target!,
+        keyFile!,
+        { signal: controller.signal },
+      );
+    } finally {
+      process.removeListener("SIGINT", abort);
+      process.removeListener("SIGTERM", abort);
+    }
+  } else if (command === "maintenance-on") {
     try {
       writeFileSync(
         instanceRoot(source) + ".maintenance",
