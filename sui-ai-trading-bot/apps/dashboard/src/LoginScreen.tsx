@@ -111,7 +111,14 @@ export function LoginScreen({
   }
   return (
     <main className={`login login-gate${phase === "error" ? " shake" : ""}`}>
+      <div className="login-brand" aria-hidden="true">
+        SUIBA<span className="login-brand-cursor">_</span>
+      </div>
       <div className="login-stage" aria-hidden="true">
+        <span className="login-corner c1" />
+        <span className="login-corner c2" />
+        <span className="login-corner c3" />
+        <span className="login-corner c4" />
         <div className="login-stage-art">
           <AgentAvatarArtwork pose={pose} />
         </div>

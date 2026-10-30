@@ -686,6 +686,119 @@ textarea {
 .login-gate {
   padding-top: 36px;
 }
+/* Terminal theme for the gate (design B, chosen from the
+   prototype): a fixed grid + scanline backdrop, corner brackets
+   on the keeper, a blinking brand cursor, monospace voice and a
+   glowing connect button. The minimal form itself is unchanged. */
+.login-gate {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  isolation: isolate;
+}
+.login-gate::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(120, 255, 205, 0.05) 0 1px,
+      transparent 1px 44px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(120, 255, 205, 0.05) 0 1px,
+      transparent 1px 44px
+    ),
+    #04070b;
+}
+.login-gate::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.22) 0 2px,
+    transparent 2px 4px
+  );
+}
+.login-brand {
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;
+  color: #43dfb2;
+  margin-bottom: 30px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .login-brand-cursor {
+    animation: login-cursor-blink 1.1s steps(1) infinite;
+  }
+  @keyframes login-cursor-blink {
+    50% {
+      opacity: 0;
+    }
+  }
+}
+.login-corner {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #43dfb2;
+  z-index: 2;
+}
+.login-corner.c1 {
+  top: -9px;
+  left: -9px;
+  border-right: none;
+  border-bottom: none;
+}
+.login-corner.c2 {
+  top: -9px;
+  right: -9px;
+  border-left: none;
+  border-bottom: none;
+}
+.login-corner.c3 {
+  bottom: -9px;
+  left: -9px;
+  border-right: none;
+  border-top: none;
+}
+.login-corner.c4 {
+  bottom: -9px;
+  right: -9px;
+  border-left: none;
+  border-top: none;
+}
+.login-gate .login-stage-art {
+  border-radius: 10px;
+  border-color: #1f5c46;
+}
+.login-gate .login-cap {
+  color: #a9f5d9;
+}
+.login-gate .login-cap::before {
+  content: "> ";
+  color: #43dfb2;
+}
+.login-gate input,
+.login-gate button {
+  font-family: inherit;
+}
+.login-gate form input {
+  border-radius: 4px;
+  border-color: #1f5c46;
+  background: rgba(2, 10, 6, 0.9);
+  caret-color: #43dfb2;
+}
+.login-gate form > button {
+  border-radius: 4px;
+  box-shadow: 0 0 18px rgba(67, 223, 178, 0.35);
+}
 .login-stage {
   position: relative;
   width: 124px;
