@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   emptyNarrationState,
+  MAX_CHAT_ENTRIES,
   MAX_NARRATION_ENTRIES,
   type NarrationState,
 } from "./agentNarration.ts";
@@ -59,7 +60,7 @@ const schema: z.ZodType<NarrationState> = z.object({
         promptChip: z.string().optional(),
       }),
     )
-    .max(MAX_NARRATION_ENTRIES),
+    .max(MAX_NARRATION_ENTRIES + MAX_CHAT_ENTRIES),
   nextEntryId: number.int().nonnegative(),
   priceRising: z.boolean(),
   priceHistory: z.array(number),

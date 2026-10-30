@@ -12,7 +12,7 @@ import {
   currentWatchScore,
   findNewBuyEntry,
   isBuyTradeEntry,
-  MAX_NARRATION_ENTRIES,
+  trimNarrationEntries,
   type AgentPose,
   type NarrationEntry,
   type NarrationState,
@@ -36,6 +36,7 @@ import {
   followUpChips,
   orderedChips,
   proactivePrompt,
+  proactivePromptDue,
   type AgentChatContext,
   type ChatTopic,
 } from "./agentChat.ts";
@@ -431,9 +432,12 @@ export function AgentNarrationFeed({
   stale,
   onPoseChange,
   onCelebrate,
+  pairLabel = "SUI",
 }: {
   data: OperationsSnapshot;
   stale: boolean;
+  /** The base symbol of the pair on screen, for chat replies. */
+  pairLabel?: string;
   /** Reports the derived pose to the app shell (the header avatar),
    * so the avatar and the feed always agree on the pose. */
   onPoseChange?: (pose: AgentPose) => void;
@@ -535,9 +539,20 @@ export function AgentNarrationFeed({
     if (milestone) {
       const prompt = proactivePrompt(milestone)!;
       const cur = narrationRef.current;
+      const lastPrompt = [...cur.entries]
+        .reverse()
+        .find((e) => e.kind === "chatPrompt");
+      if (
+        !proactivePromptDue(
+          lastPrompt?.at ?? null,
+          Date.now(),
+          isBuyTradeEntry(milestone),
+        )
+      )
+        return;
       const withPrompt: NarrationState = {
         ...cur,
-        entries: [
+        entries: trimNarrationEntries([
           ...cur.entries,
           {
             id: `narration:${cur.nextEntryId}`,
@@ -546,7 +561,7 @@ export function AgentNarrationFeed({
             text: prompt.text,
             promptChip: prompt.chip,
           } satisfies NarrationEntry,
-        ].slice(-MAX_NARRATION_ENTRIES),
+        ]),
         nextEntryId: cur.nextEntryId + 1,
       };
       narrationRef.current = withPrompt;
@@ -573,6 +588,9 @@ export function AgentNarrationFeed({
   const [chatTopic, setChatTopic] = useState<ChatTopic | null>(null);
   const [chatThinking, setChatThinking] = useState(false);
   const chatTimer = useRef<number | null>(null);
+  // Japanese IME: the Enter that confirms a conversion must not
+  // submit the comment.
+  const composingRef = useRef(false);
   useEffect(
     () => () => {
       if (chatTimer.current != null) window.clearTimeout(chatTimer.current);
@@ -608,12 +626,13 @@ export function AgentNarrationFeed({
       lastTopic: (lastReply?.topic as ChatTopic | undefined) ?? null,
       exchangeCount: state.entries.filter((e) => e.kind === "chatReply")
         .length,
+      pairLabel,
     };
     const reply = agentReply(text, ctx);
     const at = Date.now();
     const withUser: NarrationState = {
       ...state,
-      entries: [
+      entries: trimNarrationEntries([
         ...state.entries,
         {
           id: `narration:${state.nextEntryId}`,
@@ -621,7 +640,7 @@ export function AgentNarrationFeed({
           kind: "chatUser",
           text,
         } satisfies NarrationEntry,
-      ].slice(-MAX_NARRATION_ENTRIES),
+      ]),
       nextEntryId: state.nextEntryId + 1,
     };
     narrationRef.current = withUser;
@@ -637,7 +656,7 @@ export function AgentNarrationFeed({
       const landedAt = Date.now();
       const next: NarrationState = {
         ...prev,
-        entries: [
+        entries: trimNarrationEntries([
           ...prev.entries,
           {
             id: `narration:${prev.nextEntryId}`,
@@ -646,7 +665,7 @@ export function AgentNarrationFeed({
             text: reply.text,
             topic: reply.topic,
           } satisfies NarrationEntry,
-        ].slice(-MAX_NARRATION_ENTRIES),
+        ]),
         nextEntryId: prev.nextEntryId + 1,
       };
       narrationRef.current = next;
@@ -759,6 +778,7 @@ export function AgentNarrationFeed({
           className="agent-chat-form"
           onSubmit={(e) => {
             e.preventDefault();
+            if (composingRef.current) return;
             submitChat(chatInput);
           }}
         >
@@ -768,6 +788,12 @@ export function AgentNarrationFeed({
             maxLength={120}
             disabled={chatThinking}
             onChange={(e) => setChatInput(e.target.value)}
+            onCompositionStart={() => {
+              composingRef.current = true;
+            }}
+            onCompositionEnd={() => {
+              composingRef.current = false;
+            }}
             placeholder="キャラへのコメント"
             aria-label="キャラへのコメント"
           />

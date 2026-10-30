@@ -658,6 +658,7 @@ function App() {
                       stale={!!operations.error}
                       onPoseChange={setAgentPose}
                       onCelebrate={handleBuyCelebration}
+                      pairLabel={data?.pair === "WAL_USDC" ? "WAL" : "SUI"}
                     />
                   ) : (
                     <p role="status">

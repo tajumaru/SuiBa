@@ -51,6 +51,9 @@ export interface AgentChatContext {
    * conversation: the rotation seed for phrasing variety, so the
    * same question does not always get the same wording. */
   exchangeCount: number;
+  /** The base symbol of the pair on screen ("SUI" / "WAL"), so
+   * replies can name which market they are talking about. */
+  pairLabel: string;
 }
 
 export type ChatMood = "confident" | "humble" | "neutral";
@@ -242,7 +245,7 @@ function sellSide(ctx: AgentChatContext): string {
 
 function pnl(ctx: AgentChatContext): string {
   if (ctx.tradeCount === 0)
-    return "まだ約定が1件もないから、損益はゼロのまま。正確な数字は概要タブの累計損益がいちばん確かだよ。";
+    return `${ctx.pairLabel}ではまだ約定が1件もないから、損益はゼロのまま。正確な数字は概要タブの累計損益がいちばん確かだよ。`;
   return `この実況に残ってる範囲だと約定は${ctx.tradeCount}件あるよ。正確な損益は概要タブの累計損益で確認して。`;
 }
 
@@ -268,7 +271,7 @@ function priceMove(ctx: AgentChatContext): string {
   const pct = ctx.recentMovePct;
   const dir = pct > 0.05 ? "上がり気味" : pct < -0.05 ? "下がり気味" : "ほぼ横ばい";
   const now = dec ? `いま${fmtPrice(dec.price)}。` : "";
-  return `ここしばらくの記録では${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%で、${dir}。${now}`;
+  return `${ctx.pairLabel}は、ここしばらくの記録では${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%で、${dir}。${now}`;
 }
 
 function nextHighlight(ctx: AgentChatContext): string {
@@ -363,8 +366,12 @@ export function agentReply(text: string, ctx: AgentChatContext): AgentReply {
   if (/^(なんで|なぜ)[？?]?$/.test(t) && ctx.lastTopic != null)
     return say("whyNotBuying", whyNotBuying(ctx));
   let topic: ChatTopic | null = null;
-  if (/買わない|買って|なぜ買|なんで買/.test(t)) topic = "whyNotBuying";
+  if (/買わない|買って|なぜ買|なんで買|どうして買|買う気/.test(t))
+    topic = "whyNotBuying";
+  else if (/いつ買/.test(t)) topic = "missing";
   else if (/足りない|あと何|近づ|あとどれ/.test(t)) topic = "missing";
+  else if (/様子/.test(t)) topic = "score";
+  else if (/何してる|何を見てる/.test(t)) topic = "next";
   else if (/調子|成績|的中/.test(t)) topic = "score";
   else if (/売りライン|利確|損切り/.test(t)) topic = "sell";
   else if (/ラインまで|ラインは|指値/.test(t)) topic = "line";
@@ -381,6 +388,15 @@ export function agentReply(text: string, ctx: AgentChatContext): AgentReply {
       return say(topic, `さっきも言ったけど、${body}`);
     return say(topic, body);
   }
+  if (/元気/.test(t))
+    return say(
+      "greeting",
+      chatMood(ctx.score) === "confident"
+        ? "元気だよ、調子もいいし。"
+        : chatMood(ctx.score) === "humble"
+          ? "ぼちぼち。当てにいくよ。"
+          : "元気だよ。様子は見てる。",
+    );
   if (/がんば|頑張|応援/.test(t))
     return say(
       "encouragement",
@@ -455,4 +471,19 @@ export function proactivePrompt(
     default:
       return null;
   }
+}
+
+/** Prompts are spaced: at most one per cooldown window, however
+ * busy the milestones get — except a buy fill, which always
+ * speaks up. */
+export const PROMPT_COOLDOWN_MS = 10 * 60_000;
+
+export function proactivePromptDue(
+  lastPromptAt: number | null,
+  now: number,
+  milestoneIsBuy: boolean,
+): boolean {
+  if (milestoneIsBuy) return true;
+  if (lastPromptAt == null) return true;
+  return now - lastPromptAt >= PROMPT_COOLDOWN_MS;
 }

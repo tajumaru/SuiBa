@@ -6,8 +6,15 @@ import {
   followUpChips,
   orderedChips,
   proactivePrompt,
+  proactivePromptDue,
   type AgentChatContext,
 } from "../apps/dashboard/src/agentChat.ts";
+import {
+  MAX_CHAT_ENTRIES,
+  MAX_NARRATION_ENTRIES,
+  trimNarrationEntries,
+  type NarrationEntry,
+} from "../apps/dashboard/src/agentNarration.ts";
 import type { DecisionTelemetry } from "../apps/worker/src/operations.ts";
 
 function dec(overrides: Partial<DecisionTelemetry> = {}): DecisionTelemetry {
@@ -61,6 +68,7 @@ function ctx(overrides: Partial<AgentChatContext> = {}): AgentChatContext {
     recentMovePct: null,
     lastTopic: null,
     exchangeCount: 0,
+    pairLabel: "SUI",
     ...overrides,
   };
 }
@@ -315,6 +323,59 @@ describe("agent chat replies", () => {
       (n) => agentReply("がんばれ", ctx({ exchangeCount: n })).text,
     );
     expect(new Set(cheers).size).toBe(3);
+  });
+
+  it("names the pair on screen in the PnL and price-move replies", () => {
+    expect(agentReply("損益は？", ctx({ pairLabel: "WAL" })).text).toContain(
+      "WALではまだ約定が1件もない",
+    );
+    expect(
+      agentReply("価格はどう動いた？", ctx({ recentMovePct: 0.5 })).text,
+    ).toContain("SUIは、ここしばらく");
+  });
+
+  it("catches common paraphrases instead of deflecting", () => {
+    expect(agentReply("いつ買うの？", ctx()).topic).toBe("missing");
+    expect(agentReply("様子は？", ctx()).topic).toBe("score");
+    expect(agentReply("何してる？", ctx()).topic).toBe("next");
+    expect(agentReply("どうして買ってくれないの", ctx()).topic).toBe(
+      "whyNotBuying",
+    );
+    const fine = agentReply("元気？", ctx());
+    expect(fine.topic).toBe("greeting");
+    expect(fine.text).toContain("元気だよ");
+  });
+
+  it("spaces the proactive prompts, except for a buy fill", () => {
+    const now = 1_000_000;
+    expect(proactivePromptDue(null, now, false)).toBe(true);
+    expect(proactivePromptDue(now - 60_000, now, false)).toBe(false);
+    expect(proactivePromptDue(now - 11 * 60_000, now, false)).toBe(true);
+    expect(proactivePromptDue(now - 60_000, now, true)).toBe(true);
+  });
+
+  it("keeps chat and narration in separate allowances when trimming", () => {
+    const entry = (i: number, kind: NarrationEntry["kind"]): NarrationEntry => ({
+      id: `n${i}`,
+      at: i,
+      kind,
+      text: "x",
+    });
+    const many: NarrationEntry[] = [];
+    for (let i = 0; i < 40; i++) many.push(entry(i, "cycle"));
+    for (let i = 40; i < 60; i++)
+      many.push(entry(i, i % 2 === 0 ? "chatUser" : "chatReply"));
+    const trimmed = trimNarrationEntries(many);
+    expect(trimmed.filter((e) => e.kind === "cycle")).toHaveLength(
+      MAX_NARRATION_ENTRIES,
+    );
+    expect(
+      trimmed.filter((e) => e.kind === "chatUser" || e.kind === "chatReply"),
+    ).toHaveLength(MAX_CHAT_ENTRIES);
+    // Order is preserved and the newest of each kind survive.
+    expect(trimmed[trimmed.length - 1].id).toBe("n59");
+    expect(trimmed.some((e) => e.id === "n10")).toBe(true);
+    expect(trimmed.some((e) => e.id === "n9")).toBe(false);
   });
 
   it("learns the chip order from what was actually asked", () => {

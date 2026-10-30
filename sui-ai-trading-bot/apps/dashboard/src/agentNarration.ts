@@ -217,6 +217,36 @@ export interface NarrationState {
 }
 
 export const MAX_NARRATION_ENTRIES = 30;
+/** Chat entries (the user's comments, the replies, the
+ * character's prompts) keep their own allowance on top of the
+ * narration cap, so a long conversation cannot push the
+ * narration history out — and the narration cannot starve the
+ * conversation either. */
+export const MAX_CHAT_ENTRIES = 12;
+
+const CHAT_KINDS: ReadonlySet<NarrationKind> = new Set([
+  "chatUser",
+  "chatReply",
+  "chatPrompt",
+]);
+
+/** Trim to the newest MAX_NARRATION_ENTRIES narration entries
+ * plus the newest MAX_CHAT_ENTRIES chat entries, order kept. */
+export function trimNarrationEntries(
+  entries: NarrationEntry[],
+): NarrationEntry[] {
+  let chatSeen = 0;
+  let plainSeen = 0;
+  const keep = new Set<number>();
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (CHAT_KINDS.has(entries[i].kind)) {
+      if (chatSeen++ < MAX_CHAT_ENTRIES) keep.add(i);
+    } else if (plainSeen++ < MAX_NARRATION_ENTRIES) {
+      keep.add(i);
+    }
+  }
+  return entries.filter((_, i) => keep.has(i));
+}
 const MAX_SEEN_KEYS = 200;
 export const DECISION_FRESH_MS = 360_000;
 
@@ -2001,7 +2031,7 @@ function finish(state: NarrationState, drafts: EntryDraft[]): NarrationState {
       entries.length === state.entries.length &&
       entries.every((entry, i) => entry === state.entries[i])
         ? state.entries
-        : entries.slice(-MAX_NARRATION_ENTRIES),
+        : trimNarrationEntries(entries),
     seen: state.seen.slice(-MAX_SEEN_KEYS),
   };
 }
