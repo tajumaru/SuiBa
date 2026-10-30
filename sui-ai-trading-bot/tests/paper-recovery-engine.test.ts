@@ -429,7 +429,7 @@ function bars(tf: Timeframe): Candle[] {
     volume: 10000,
   }));
 }
-function fixture(database?: BotDatabase) {
+function fixture(database?: BotDatabase, deploymentBlocked?: () => boolean) {
   const db = database ?? new BotDatabase(":memory:");
   dbs.push(db);
   db.set("runtime", { ...db.runtime(), running: true });
@@ -527,7 +527,14 @@ function fixture(database?: BotDatabase) {
     }),
     validateQuote: vi.fn(async (_q: QuoteResult) => true),
   };
-  const engine = new BotEngine(db, market, router, sui);
+  const engine = new BotEngine(
+    db,
+    market,
+    router,
+    sui,
+    "SUI_USDC",
+    deploymentBlocked,
+  );
   vi.spyOn(RuleBasedStrategy.prototype, "analyze").mockResolvedValue({
     action: "WAIT",
     confidence: 1,
@@ -691,6 +698,68 @@ it("a new failure during recovery resets the complete proof", async () => {
   });
   expect(t.db.runtime().running).toBe(false);
 });
+it("deployment maintenance and gate read failures stop a running engine before acquisition", async () => {
+  for (const gate of [
+    () => true,
+    () => {
+      throw Error("unreadable");
+    },
+  ]) {
+    const t = fixture(undefined, gate);
+    await t.tick();
+    expect(t.db.runtime().running).toBe(false);
+    expect(t.market.frames).not.toHaveBeenCalled();
+    expect(t.db.history("paper_trades")).toHaveLength(0);
+  }
+});
+
+it("deployment maintenance arriving during async quote validation prevents a fill", async () => {
+  let maintenance = false;
+  const t = fixture(undefined, () => maintenance);
+  vi.mocked(RuleBasedStrategy.prototype.analyze).mockResolvedValue({
+    action: "BUY",
+    confidence: 1,
+    reason: "fixture",
+    timestamp: "fixture",
+    stopLossPct: 0.02,
+    takeProfitPct: 0.3,
+  });
+  let validations = 0;
+  t.router.validateQuote.mockImplementation(async () => {
+    if (++validations === 3) maintenance = true;
+    return true;
+  });
+  await t.tick();
+  expect(validations).toBe(3);
+  expect(t.db.runtime().running).toBe(false);
+  expect(t.db.history("paper_trades")).toHaveLength(0);
+});
+
+it("maintenance detected at the final fill boundary closes the pending candidate", async () => {
+  let maintenance = false;
+  const t = fixture(undefined, () => maintenance);
+  vi.mocked(RuleBasedStrategy.prototype.analyze).mockResolvedValue({
+    action: "BUY",
+    confidence: 1,
+    reason: "fixture",
+    timestamp: "fixture",
+    stopLossPct: 0.02,
+    takeProfitPct: 0.3,
+  });
+  let checks = 0;
+  vi.spyOn(t.market, "assertReady").mockImplementation(() => {
+    if (++checks === 1) maintenance = true;
+  });
+  await t.tick();
+  expect(checks).toBe(1);
+  expect(t.db.runtime().running).toBe(false);
+  expect(t.db.history("paper_trades")).toHaveLength(0);
+  expect(t.db.history("operation_candidates")[0]).toMatchObject({
+    finalAction: "WAIT",
+    reasons: ["DEPLOYMENT_MAINTENANCE"],
+  });
+});
+
 it("late communication failure immediately before execution prevents an otherwise eligible fill", async () => {
   const t = fixture();
   vi.mocked(RuleBasedStrategy.prototype.analyze).mockResolvedValue({

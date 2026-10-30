@@ -25,8 +25,9 @@ export class ChartHistoryClient {
     this.pending?.reject(Error("CHART_CANCELLED"));
     if (this.pending) clearTimeout(this.pending.timer);
     this.pending = null;
-    void this.worker?.terminate();
+    const terminated = this.worker?.terminate();
     this.worker = null;
+    return terminated;
   }
   get(query: HistoryQuery, seed: Candle[]) {
     const key = JSON.stringify(query);

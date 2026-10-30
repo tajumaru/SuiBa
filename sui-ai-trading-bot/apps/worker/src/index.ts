@@ -2,6 +2,15 @@ import { WalPaperRouter } from "../../../packages/dex-router/src/pair-router.ts"
 import "../../../scripts/enforce-node-version.mjs";
 import { runtimeBuild } from "./runtime-build.ts";
 import {
+  acquireInstanceLock,
+  DeploymentGate,
+  recordLifecycle,
+} from "./deployment-safety.ts";
+import {
+  existingPaperDatabases,
+  assertInitializedPaperState,
+} from "./paper-database-inventory.ts";
+import {
   withApiTiming,
   currentApiTiming,
   timeAggregation,
@@ -31,7 +40,7 @@ import { randomUUID } from "node:crypto";
 import { BrowserSessions, sessionMutationAllowed } from "./browser-session.ts";
 import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
-import { resolve, extname } from "node:path";
+import { resolve, extname, dirname, basename } from "node:path";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
 import { GeckoMarketData } from "../../../packages/market-data/src/index.ts";
 import { CetusRouter } from "../../../packages/dex-router/src/index.ts";
@@ -60,7 +69,34 @@ const reconstruction = process.env.DEEPBOOK_RECONSTRUCT_CANDLES ?? "off";
 if (!["off", "verified"].includes(reconstruction))
   throw new Error("INVALID_DEEPBOOK_RECONSTRUCTION");
 const validationEnabled = assertValidationProfile(process.env);
-const rootDatabasePath = process.env.DATABASE_PATH ?? "data/bot.sqlite";
+const instanceLock = acquireInstanceLock(
+  process.env.DATABASE_PATH ?? "data/bot.sqlite",
+);
+// This connection intentionally stays open until exit, never before thread exit.
+const rootDatabasePath = instanceLock.root;
+if (![undefined, "0", "1"].includes(process.env.REQUIRE_EXISTING_DATABASE))
+  throw Error("INVALID_REQUIRE_EXISTING_DATABASE");
+if (process.env.REQUIRE_EXISTING_DATABASE === "1") {
+  const names = existingPaperDatabases(
+    dirname(rootDatabasePath),
+    basename(rootDatabasePath),
+  );
+  if (process.env.TRADING_PAIR) {
+    const requested = tradingPair(process.env.TRADING_PAIR);
+    const expected =
+      basename(rootDatabasePath) +
+      (requested === "WAL_USDC" ? ".WAL_USDC.sqlite" : "");
+    if (!names.has(expected)) throw Error("EXISTING_DATABASE_REQUIRED");
+  }
+  assertInitializedPaperState(
+    dirname(rootDatabasePath),
+    basename(rootDatabasePath),
+    names,
+  );
+}
+const deploymentGate = new DeploymentGate(rootDatabasePath);
+const bootId = randomUUID();
+recordLifecycle(rootDatabasePath, bootId, "running");
 const selectionDb = new BotDatabase(rootDatabasePath + ".pairs.sqlite");
 let pair = tradingPair(
   process.env.TRADING_PAIR ?? selectionDb.get("selected_pair") ?? "SUI_USDC",
@@ -104,6 +140,7 @@ function createEngine(database: BotDatabase, selected: TradingPair) {
         selected === "WAL_USDC" ? new WalPaperRouter(router, deep) : router,
         client,
         selected,
+        () => stopping || deploymentGate.blocked(),
       ),
     };
   } catch (error) {
@@ -343,6 +380,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       send(409, { error: "PAIR_SWITCH_IN_PROGRESS" });
       return;
     }
+    if (req.method === "GET" && url.pathname === "/api/deployment") {
+      send(200, {
+        mode: "PAPER",
+        maintenance: stopping || deploymentGate.blocked(),
+      });
+      return;
+    }
     if (req.method === "GET" && url.pathname === "/api/pairs") {
       send(200, {
         selected: pair,
@@ -474,6 +518,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
     }
     const body = text ? JSON.parse(text) : {};
+    if (stopping || deploymentGate.blocked()) {
+      const safeStop =
+        url.pathname === "/api/control" &&
+        (body.command === "stop" || body.command === "emergency");
+      if (!safeStop) {
+        send(409, { error: "DEPLOYMENT_MAINTENANCE" });
+        return;
+      }
+    }
     if (url.pathname === "/api/pairs") {
       const parsed = body.pair;
       if (parsed !== "SUI_USDC" && parsed !== "WAL_USDC") {
@@ -524,7 +577,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           throw error;
         }
         scheduler.stop();
-        chartHistory.close();
+        await chartHistory.close();
+        if (stopping || deploymentGate.blocked()) {
+          next.sui.close();
+          nextDb.close();
+          engine.activateApiHooks();
+          switching = false;
+          send(409, { error: "DEPLOYMENT_MAINTENANCE" });
+          return;
+        }
         validationHeartbeat(true);
         validation?.closed();
         db.set("api_cooldowns", apiAccess.snapshot());
@@ -711,25 +772,32 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
     if (stopping) return;
     stopping = true;
     scheduler.stop();
-    chartHistory.close();
+    const chartClosed = chartHistory.close();
     apiAccess.cancel();
     deepBookTransport.close();
     clearInterval(watchdog);
     db.set("runtime", { ...db.runtime(), running: false });
     engine.monitor.transition("PROCESS_SHUTDOWN");
     server.close(() => {
-      void Promise.resolve(activeTick).finally(() => {
-        try {
-          validationHeartbeat(true);
-          validation?.closed();
-        } catch {
-          console.error("VALIDATION_EXPORT_FAILED");
-        }
-        sui.close();
-        db.close();
-        selectionDb.close();
-        process.exit(0);
-      });
+      void Promise.all([activeTick, chartClosed])
+        .then(() => {
+          try {
+            validationHeartbeat(true);
+            validation?.closed();
+            sui.close();
+            db.close();
+            selectionDb.close();
+            recordLifecycle(rootDatabasePath, bootId, "clean");
+            process.exit(0);
+          } catch {
+            console.error("PAPER_SHUTDOWN_INCOMPLETE");
+            process.exit(1);
+          }
+        })
+        .catch(() => {
+          console.error("PAPER_SHUTDOWN_INCOMPLETE");
+          process.exit(1);
+        });
     });
-    setTimeout(() => process.exit(0), 25000).unref();
+    setTimeout(() => process.exit(1), 25000).unref();
   });
