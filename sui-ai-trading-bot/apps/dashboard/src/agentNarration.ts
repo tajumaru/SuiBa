@@ -93,6 +93,7 @@ export type NarrationKind =
   | "alert" // a 速報 breaking in on a sudden price / volume move
   | "chatUser" // a comment the user typed to the character
   | "chatReply" // the character's record-grounded reply (agentChat.ts)
+  | "chatPrompt" // the character speaking up at a milestone, with a suggested question
   | "status"; // feed-initialised status line
 
 export interface NarrationEntry {
@@ -104,6 +105,13 @@ export interface NarrationEntry {
    * audit's finalAction). Lets the display tell a buy fill from a
    * sell fill without re-reading the wording. */
   side?: "BUY" | "SELL";
+  /** Chat topic, recorded only on chatReply entries (agentChat's
+   * ChatTopic as a plain string, to keep the modules decoupled):
+   * the conversation memory the next reply reads. */
+  topic?: string;
+  /** The suggested question on a chatPrompt entry, rendered as a
+   * tappable chip inside the entry. */
+  promptChip?: string;
 }
 
 /**

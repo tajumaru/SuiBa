@@ -3,6 +3,7 @@ import {
   agentReply,
   CHAT_CHIPS,
   followUpChips,
+  proactivePrompt,
   type AgentChatContext,
 } from "../apps/dashboard/src/agentChat.ts";
 import type { DecisionTelemetry } from "../apps/worker/src/operations.ts";
@@ -56,6 +57,7 @@ function ctx(overrides: Partial<AgentChatContext> = {}): AgentChatContext {
     stoppedKind: null,
     tradeCount: 0,
     recentMovePct: null,
+    lastTopic: null,
     ...overrides,
   };
 }
@@ -223,5 +225,52 @@ describe("agent chat replies", () => {
     expect(followUpChips("pnl")).toContain("売りラインは？");
     expect(followUpChips("fallback")).toEqual([...CHAT_CHIPS]);
     expect(followUpChips("greeting")).toEqual([...CHAT_CHIPS]);
+  });
+
+  it("routes the sell-line chip to the sell answer, not the buy line", () => {
+    const reply = agentReply("売りラインは？", ctx());
+    expect(reply.topic).toBe("sell");
+  });
+
+  it("continues the thread on a bare それで？", () => {
+    const reply = agentReply("それで？", ctx({ lastTopic: "whyNotBuying" }));
+    expect(reply.topic).toBe("missing");
+    expect(reply.text).toContain("続きを言うと");
+    expect(reply.text).toContain("足りないのは");
+    // No thread yet: an honest deflection.
+    expect(agentReply("それで？", ctx()).topic).toBe("fallback");
+  });
+
+  it("answers a bare なんで？ against the previous topic", () => {
+    const reply = agentReply("なんで？", ctx({ lastTopic: "missing" }));
+    expect(reply.topic).toBe("whyNotBuying");
+    expect(reply.text).toContain("足りないから");
+  });
+
+  it("acknowledges a repeated question while re-answering from fresh records", () => {
+    const reply = agentReply("調子は？", ctx({ lastTopic: "score" }));
+    expect(reply.topic).toBe("score");
+    expect(reply.text).toContain("さっきも言ったけど");
+    expect(reply.text).toContain("宣言6回");
+    // Social topics never get the repeat prefix.
+    expect(agentReply("がんばれ", ctx({ lastTopic: "encouragement" })).text).not.toContain(
+      "さっきも言ったけど",
+    );
+  });
+
+  it("speaks up at milestones with the natural follow-up chip", () => {
+    expect(proactivePrompt({ kind: "priceLine" })?.chip).toBe(
+      "ラインまでどれくらい？",
+    );
+    expect(proactivePrompt({ kind: "watchHit" })?.chip).toBe("調子は？");
+    expect(proactivePrompt({ kind: "nearMiss" })?.chip).toBe(
+      "あと何が足りない？",
+    );
+    expect(proactivePrompt({ kind: "alert" })?.chip).toBe("価格はどう動いた？");
+    expect(proactivePrompt({ kind: "trade", side: "BUY" })?.chip).toBe(
+      "売りラインは？",
+    );
+    expect(proactivePrompt({ kind: "trade", side: "SELL" })).toBeNull();
+    expect(proactivePrompt({ kind: "cycle" })).toBeNull();
   });
 });

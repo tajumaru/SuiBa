@@ -50,10 +50,13 @@ const schema: z.ZodType<NarrationState> = z.object({
           "sleepTalk",
           "chatUser",
           "chatReply",
+          "chatPrompt",
           "status",
         ]),
         text: z.string(),
         side: z.enum(["BUY", "SELL"]).optional(),
+        topic: z.string().optional(),
+        promptChip: z.string().optional(),
       }),
     )
     .max(MAX_NARRATION_ENTRIES),

@@ -3712,6 +3712,20 @@ th {
 .agent-feed-entry.chatReply {
   border-left: 3px solid #43dfb2;
 }
+.agent-feed-entry.chatPrompt {
+  border-left: 3px solid #43dfb2;
+  background: #0c1a26;
+}
+.agent-feed-prompt-chip {
+  margin-top: 6px;
+  background: #12283a;
+  color: #cfe6f5;
+  border: 1px solid #2b4a5f;
+  border-radius: 999px;
+  padding: 5px 11px;
+  font-size: 12.5px;
+  min-height: 30px;
+}
 .agent-feed-entry.thinking p {
   color: #9db4c4;
 }

@@ -35,6 +35,7 @@ import {
   agentReply,
   CHAT_CHIPS,
   followUpChips,
+  proactivePrompt,
   type AgentChatContext,
   type ChatTopic,
 } from "./agentChat.ts";
@@ -362,9 +363,12 @@ const timeText = (at: number) =>
 export function AgentFeedEntryRow({
   entry,
   justBought = false,
+  onPromptChip,
 }: {
   entry: NarrationEntry;
   justBought?: boolean;
+  /** Tapping the suggested question on a chatPrompt entry asks it. */
+  onPromptChip?: (chip: string) => void;
 }) {
   const buy = isBuyTradeEntry(entry);
   return (
@@ -404,8 +408,20 @@ export function AgentFeedEntryRow({
       {entry.kind === "chatReply" && (
         <span className="agent-feed-entry-tag reply">返信</span>
       )}
+      {entry.kind === "chatPrompt" && (
+        <span className="agent-feed-entry-tag reply">キャラ</span>
+      )}
       {buy && <span className="agent-feed-entry-tag buy">買えた！</span>}
       <p>{entry.text}</p>
+      {entry.kind === "chatPrompt" && entry.promptChip && onPromptChip && (
+        <button
+          type="button"
+          className="agent-feed-prompt-chip"
+          onClick={() => onPromptChip(entry.promptChip!)}
+        >
+          {entry.promptChip}
+        </button>
+      )}
     </div>
   );
 }
@@ -493,15 +509,50 @@ export function AgentNarrationFeed({
     hasAdvancedRef.current = true;
     if (firstAdvance || !prev.initialized) return;
     const hit = findNewBuyEntry(prev.entries, next.entries);
-    if (!hit || Math.abs(Date.now() - hit.at) > CELEBRATION_FRESH_MS) return;
-    setCelebration({ entryId: hit.id, startedAt: Date.now() });
-    onCelebrate?.();
-    if (celebrationTimerRef.current != null)
-      window.clearTimeout(celebrationTimerRef.current);
-    celebrationTimerRef.current = window.setTimeout(
-      () => setCelebration(null),
-      BUY_CELEBRATION_MS,
-    );
+    if (hit && Math.abs(Date.now() - hit.at) <= CELEBRATION_FRESH_MS) {
+      setCelebration({ entryId: hit.id, startedAt: Date.now() });
+      onCelebrate?.();
+      if (celebrationTimerRef.current != null)
+        window.clearTimeout(celebrationTimerRef.current);
+      celebrationTimerRef.current = window.setTimeout(
+        () => setCelebration(null),
+        BUY_CELEBRATION_MS,
+      );
+    }
+    // The character speaks up at a fresh milestone (a line
+    // declared, a watch hit, a near miss, a sudden move): one
+    // prompt per advance at most, appended after the advance's
+    // own entries, offering the natural follow-up question.
+    const prevIds = new Set(prev.entries.map((e) => e.id));
+    const milestone = [...next.entries]
+      .reverse()
+      .find(
+        (e) =>
+          !prevIds.has(e.id) &&
+          Math.abs(Date.now() - e.at) <= CELEBRATION_FRESH_MS &&
+          proactivePrompt(e) != null,
+      );
+    if (milestone) {
+      const prompt = proactivePrompt(milestone)!;
+      const cur = narrationRef.current;
+      const withPrompt: NarrationState = {
+        ...cur,
+        entries: [
+          ...cur.entries,
+          {
+            id: `narration:${cur.nextEntryId}`,
+            at: Date.now(),
+            kind: "chatPrompt",
+            text: prompt.text,
+            promptChip: prompt.chip,
+          } satisfies NarrationEntry,
+        ].slice(-MAX_NARRATION_ENTRIES),
+        nextEntryId: cur.nextEntryId + 1,
+      };
+      narrationRef.current = withPrompt;
+      persistNarration(withPrompt);
+      setNarration(withPrompt);
+    }
   }, [data, stale, onCelebrate]);
   const vital = botVital(data, stale, now, receivedAt);
   const pose = agentPose(narration, data, vital, now);
@@ -533,6 +584,9 @@ export function AgentNarrationFeed({
     if (!text || chatThinking) return;
     const state = narrationRef.current;
     const history = state.priceHistory;
+    const lastReply = [...state.entries]
+      .reverse()
+      .find((e) => e.kind === "chatReply");
     const ctx: AgentChatContext = {
       dec: chips ? data.decision : null,
       score,
@@ -551,6 +605,7 @@ export function AgentNarrationFeed({
         history.length >= 2 && history[0] > 0
           ? (history[history.length - 1] / history[0] - 1) * 100
           : null,
+      lastTopic: (lastReply?.topic as ChatTopic | undefined) ?? null,
     };
     const reply = agentReply(text, ctx);
     const at = Date.now();
@@ -587,6 +642,7 @@ export function AgentNarrationFeed({
             at: landedAt,
             kind: "chatReply",
             text: reply.text,
+            topic: reply.topic,
           } satisfies NarrationEntry,
         ].slice(-MAX_NARRATION_ENTRIES),
         nextEntryId: prev.nextEntryId + 1,
@@ -732,6 +788,7 @@ export function AgentNarrationFeed({
                 key={entry.id}
                 entry={entry}
                 justBought={celebration?.entryId === entry.id}
+                onPromptChip={submitChat}
               />
             ))
         )}
