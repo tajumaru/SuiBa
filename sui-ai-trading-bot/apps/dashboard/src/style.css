@@ -3999,3 +3999,67 @@ th {
   background: #0c2317;
   box-shadow: inset 0 0 0 1px #1f5c46;
 }
+
+/* Full terminal skin (the modest cut of the prototype): panels
+   become near-black with mint-dark frames and squared corners,
+   headings and stat readouts go monospace tabular, the feed
+   reads as log lines with bracketed tags, and the chat input
+   gains a command prompt. Content, order, sizes and tone
+   colours are unchanged; class-level tone rules (caution /
+   alert backgrounds) still win over the element-level panel
+   rule below. */
+section {
+  background: #04070b;
+  border-color: #1f5c46;
+  border-radius: 6px;
+}
+button {
+  border-radius: 4px;
+}
+h2,
+h3 {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+h2 {
+  font-variant-numeric: tabular-nums;
+}
+.agent-feed {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.agent-feed-entry {
+  background: #020a06;
+  border-radius: 4px;
+}
+.agent-feed-entry.alert {
+  background: #170c04;
+}
+.agent-feed-entry-tag {
+  border-radius: 3px;
+}
+.agent-feed-entry-tag::before {
+  content: "[";
+}
+.agent-feed-entry-tag::after {
+  content: "]";
+}
+.agent-feed-chip,
+.agent-feed-score-item,
+.agent-feed-watch {
+  border-radius: 4px;
+}
+.agent-chat-chips button {
+  border-radius: 4px;
+}
+.agent-chat-form {
+  align-items: center;
+}
+.agent-chat-form::before {
+  content: ">";
+  color: #43dfb2;
+  font-weight: 700;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.agent-chat-form input {
+  border-radius: 4px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
