@@ -4190,3 +4190,22 @@ button:hover {
       border-color 0.6s ease;
   }
 }
+
+/* Errors as terminal output: the shared .error block goes
+   monospace on a dark red panel with a squared frame and an
+   [ERR] tag, so a failure reads like a console line instead
+   of a rounded toast. The wording itself — plain Japanese
+   plus the code — is untouched. */
+.error {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: #1c0a10;
+  border: 1px solid #7a3040;
+  border-radius: 4px;
+  color: #ffb3c0;
+}
+.error::before {
+  content: "[ERR] ";
+  color: #ff8fa5;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
