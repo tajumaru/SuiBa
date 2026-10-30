@@ -18,6 +18,7 @@ import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
 import { errorShout } from "./errorShout.ts";
 import { presetName } from "./settingsPresets.ts";
+import { firstFilledBuy } from "./firstFill.ts";
 import {
   BUY_CELEBRATION_MS,
   sellLinesOf,
@@ -179,6 +180,7 @@ function Chart(props: {
 }
 function OrderHistory({ orders }: { orders: Record<string, unknown>[] }) {
   if (!orders.length) return <p>注文はまだありません。</p>;
+  const first = firstFilledBuy(orders);
   return (
     <div className="scroll history-scroll">
       <table className="history-table" role="table" aria-label="注文履歴">
@@ -192,12 +194,35 @@ function OrderHistory({ orders }: { orders: Record<string, unknown>[] }) {
         </thead>
         <tbody role="rowgroup">
           {orders.map((o, i) => (
-            <tr key={i} role="row">
+            <tr
+              key={i}
+              role="row"
+              className={first?.index === i ? "first-fill" : undefined}
+            >
               <td role="cell" data-label="日時" className="history-wide">
                 {dateTime(o.timestamp as number)}
+                {first?.index === i &&
+                  (first.amountIn !== null ||
+                    first.referencePrice !== null) && (
+                    <span className="first-fill-meta">
+                      {[
+                        first.amountIn !== null
+                          ? `${number(first.amountIn)} USDC`
+                          : null,
+                        first.referencePrice !== null
+                          ? `見積もり価格 ${number(first.referencePrice, 4)}`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join("・")}
+                    </span>
+                  )}
               </td>
               <td role="cell" data-label="方向">
                 {label(o.side)}
+                {first?.index === i && (
+                  <span className="first-fill-tag">初約定</span>
+                )}
               </td>
               <td role="cell" data-label="状態">
                 {label(o.status)}
