@@ -4143,3 +4143,50 @@ button:hover {
       height 0.25s ease;
   }
 }
+
+/* Line mode: while the buy-run line stands, the whole page
+   washes Sui blue — the blue avatar pose grown into an ambient
+   theme (toggled from the reported pose in main.tsx). Frames,
+   glows and the page backdrop shift blue; alert tones and the
+   feed's tag colours keep their meaning. The wash fades in
+   and out with the line. */
+:root.line-mode {
+  background: #030a1a;
+}
+.line-mode body {
+  background: #030a1a;
+}
+.line-mode header {
+  border-bottom-color: #2e5a8f;
+  box-shadow: 0 10px 34px -12px rgba(77, 162, 255, 0.5);
+}
+.line-mode section,
+.line-mode .agent-feed {
+  background: #04101f;
+  border-color: #2e5a8f;
+}
+.line-mode .operation-bar,
+.line-mode .price-ticker-bar {
+  border-color: #2e5a8f;
+}
+.line-mode nav {
+  border-top-color: #2e5a8f;
+}
+.line-mode nav .active {
+  color: #8fc6ff;
+  box-shadow:
+    inset 0 2px 0 #4da2ff,
+    0 -6px 18px -8px rgba(77, 162, 255, 0.65);
+}
+@media (prefers-reduced-motion: no-preference) {
+  body,
+  section,
+  .agent-feed,
+  .operation-bar,
+  .price-ticker-bar,
+  header {
+    transition:
+      background-color 0.6s ease,
+      border-color 0.6s ease;
+  }
+}

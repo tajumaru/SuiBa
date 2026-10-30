@@ -315,6 +315,17 @@ function App() {
   // the feed can never show different poses. Before the feed first
   // reports (no snapshot yet), the unconfirmed "normal" pose shows.
   const [agentPose, setAgentPose] = useState<AgentPose>("normal");
+  // Line mode: while the buy-run line stands (the feed reports
+  // the buyLine pose), the whole page washes Sui blue — the
+  // avatar's blue pose grown into an ambient theme. The class
+  // lives on <html> so the header, bars and bottom nav all join.
+  useEffect(() => {
+    document.documentElement.classList.toggle(
+      "line-mode",
+      agentPose === "buyLine",
+    );
+    return () => document.documentElement.classList.remove("line-mode");
+  }, [agentPose]);
   // The buy celebration window, opened by the narration feed when
   // a brand-new recorded buy fill joins it this session. While it
   // runs, the header avatar borrows the smile and the price ticker
