@@ -447,8 +447,11 @@ export function AgentNarrationFeed({
   onCelebrate?: () => void;
 }) {
   const [narration, setNarration] = useState<NarrationState>(() =>
-    restoreNarration(),
+    restoreNarration(undefined, pairLabel),
   );
+  // Narration storage is scoped per pair (see narrationStorage).
+  const persist = (state: NarrationState) =>
+    persistNarration(state, undefined, pairLabel);
   const [now, setNow] = useState(() => Date.now());
   const [receivedAt, setReceivedAt] = useState(() => Date.now());
   const receivedRef = useRef(receivedAt);
@@ -502,7 +505,7 @@ export function AgentNarrationFeed({
       Date.now(),
     );
     narrationRef.current = next;
-    persistNarration(next);
+    persist(next);
     setNarration(next);
     // A buy celebration opens only here: on an advance after the
     // feed initialised (the initialising advance lays down the
@@ -565,7 +568,7 @@ export function AgentNarrationFeed({
         nextEntryId: cur.nextEntryId + 1,
       };
       narrationRef.current = withPrompt;
-      persistNarration(withPrompt);
+      persist(withPrompt);
       setNarration(withPrompt);
     }
   }, [data, stale, onCelebrate]);
@@ -597,38 +600,18 @@ export function AgentNarrationFeed({
     },
     [],
   );
+  // The data-derived half of the chat context, refreshed after
+  // every render: the reply is composed when it LANDS, from the
+  // freshest snapshot, not from the moment the user hit send.
+  const chatCtxRef = useRef<Pick<
+    AgentChatContext,
+    "dec" | "score" | "running" | "stoppedKind" | "pairLabel"
+  > | null>(null);
+  const [chatReplyText, setChatReplyText] = useState("");
   const submitChat = (raw: string) => {
     const text = raw.trim().slice(0, 120);
     if (!text || chatThinking) return;
     const state = narrationRef.current;
-    const history = state.priceHistory;
-    const lastReply = [...state.entries]
-      .reverse()
-      .find((e) => e.kind === "chatReply");
-    const ctx: AgentChatContext = {
-      dec: chips ? data.decision : null,
-      score,
-      linePrice: state.priceLine?.price ?? null,
-      running: vital.state === "alive" || vital.state === "weak",
-      stoppedKind:
-        vital.state === "sleeping"
-          ? "sleeping"
-          : vital.state === "flatlined"
-            ? "safety"
-            : vital.state === "weak"
-              ? "weak"
-              : null,
-      tradeCount: state.entries.filter((e) => e.kind === "trade").length,
-      recentMovePct:
-        history.length >= 2 && history[0] > 0
-          ? (history[history.length - 1] / history[0] - 1) * 100
-          : null,
-      lastTopic: (lastReply?.topic as ChatTopic | undefined) ?? null,
-      exchangeCount: state.entries.filter((e) => e.kind === "chatReply")
-        .length,
-      pairLabel,
-    };
-    const reply = agentReply(text, ctx);
     const at = Date.now();
     const withUser: NarrationState = {
       ...state,
@@ -644,15 +627,39 @@ export function AgentNarrationFeed({
       nextEntryId: state.nextEntryId + 1,
     };
     narrationRef.current = withUser;
-    persistNarration(withUser);
+    persist(withUser);
     setNarration(withUser);
     setChatInput("");
     setChatThinking(true);
     // A short thinking beat before the reply lands, so the
-    // exchange reads as a conversation rather than a lookup.
+    // exchange reads as a conversation rather than a lookup. The
+    // reply itself is composed inside the timer, from the
+    // freshest records available at that moment.
     chatTimer.current = window.setTimeout(() => {
       chatTimer.current = null;
       const prev = narrationRef.current;
+      const history = prev.priceHistory;
+      const lastReply = [...prev.entries]
+        .reverse()
+        .find((e) => e.kind === "chatReply");
+      const base = chatCtxRef.current;
+      const ctx: AgentChatContext = {
+        dec: base?.dec ?? null,
+        score: base?.score ?? null,
+        running: base?.running ?? false,
+        stoppedKind: base?.stoppedKind ?? null,
+        pairLabel: base?.pairLabel ?? pairLabel,
+        linePrice: prev.priceLine?.price ?? null,
+        tradeCount: prev.entries.filter((e) => e.kind === "trade").length,
+        recentMovePct:
+          history.length >= 2 && history[0] > 0
+            ? (history[history.length - 1] / history[0] - 1) * 100
+            : null,
+        lastTopic: (lastReply?.topic as ChatTopic | undefined) ?? null,
+        exchangeCount: prev.entries.filter((e) => e.kind === "chatReply")
+          .length,
+      };
+      const reply = agentReply(text, ctx);
       const landedAt = Date.now();
       const next: NarrationState = {
         ...prev,
@@ -669,10 +676,11 @@ export function AgentNarrationFeed({
         nextEntryId: prev.nextEntryId + 1,
       };
       narrationRef.current = next;
-      persistNarration(next);
+      persist(next);
       setNarration(next);
       setChatTopic(reply.topic);
       setChatReplyAt(landedAt);
+      setChatReplyText(reply.text);
       setChatThinking(false);
     }, 650);
   };
@@ -687,6 +695,22 @@ export function AgentNarrationFeed({
     : currentWatch(narration, data.decision, vital.state, now);
   // The declaration score, under the same freshness rule.
   const score = stale ? null : currentWatchScore(narration, data.decision, now);
+  useEffect(() => {
+    chatCtxRef.current = {
+      dec: chips ? data.decision : null,
+      score,
+      running: vital.state === "alive" || vital.state === "weak",
+      stoppedKind:
+        vital.state === "sleeping"
+          ? "sleeping"
+          : vital.state === "flatlined"
+            ? "safety"
+            : vital.state === "weak"
+              ? "weak"
+              : null,
+      pairLabel,
+    };
+  });
 
   return (
     <section className="agent-feed" aria-label="エージェント実況">
@@ -740,6 +764,9 @@ export function AgentNarrationFeed({
         </div>
       )}
       <div className="agent-chat">
+        <p className="sr-only" role="status">
+          {chatReplyText}
+        </p>
         <div
           className="agent-chat-chips"
           role="group"
@@ -804,7 +831,7 @@ export function AgentNarrationFeed({
       </div>
       <div className="agent-feed-list">
         {chatThinking && (
-          <article className="agent-feed-entry chatReply thinking">
+          <article className="agent-feed-entry chatReply thinking" role="status">
             <span className="agent-feed-entry-tag reply">返信</span>
             <p>考え中…</p>
           </article>
