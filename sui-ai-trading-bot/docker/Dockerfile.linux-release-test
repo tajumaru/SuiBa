@@ -1,0 +1,28 @@
+FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205
+RUN apt-get update && apt-get install -y --no-install-recommends systemd sudo && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@9.12.3 --activate
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY apps ./apps
+COPY packages ./packages
+COPY scripts ./scripts
+COPY tests ./tests
+COPY deploy ./deploy
+COPY tsconfig.json vitest.config.ts ./
+RUN pnpm install --frozen-lockfile
+RUN mkdir -p /opt/suiba/releases /opt/suiba/tools/apps/worker/src /opt/suiba/tools/scripts && \
+    ln -s /usr/local /opt/suiba/runtime && \
+    install -m 0644 apps/worker/src/linux-release-artifact.ts /opt/suiba/tools/apps/worker/src/linux-release-artifact.ts && \
+    install -m 0644 scripts/verify-node-version.mjs /opt/suiba/tools/scripts/verify-node-version.mjs && \
+    node --import tsx scripts/linux-paper-release.ts package 0000000000000000000000000000000000000000 /opt/suiba/releases/0000000000000000000000000000000000000000
+RUN mkdir -p /opt/suiba/tools /var/lib/suiba /var/lib/suiba-release /var/backups/suiba /etc/suiba && \
+    useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin suiba && \
+    install -m 0755 deploy/linux/start-paper.sh /opt/suiba/tools/start-paper.sh && \
+    install -m 0755 deploy/linux/release-paper.sh /opt/suiba/tools/release-paper.sh && \
+    ln -s /opt/suiba/releases/0000000000000000000000000000000000000000 /opt/suiba/manager && \
+    chmod 0644 deploy/linux/suiba-paper.service deploy/linux/suiba-release.sudoers deploy/linux/paper.env.example && \
+    chown node:node /app /app/node_modules && \
+    visudo -cf /app/deploy/linux/suiba-release.sudoers
+RUN node --import tsx deploy/linux/check-container-launcher.mjs --seed
+USER node
+CMD ["sh", "-c", "sh -n deploy/linux/start-paper.sh && sh -n deploy/linux/release-paper.sh && systemd-analyze verify deploy/linux/suiba-paper.service && node node_modules/vitest/vitest.mjs run tests/linux-paper-release.test.ts tests/linux-release-process.test.ts --maxWorkers=2"]

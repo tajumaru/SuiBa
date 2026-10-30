@@ -11,5 +11,5 @@
     "noEmit": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["apps", "packages", "tests", "scripts/paper-maintenance.ts"]
+  "include": ["apps", "packages", "tests", "scripts/paper-maintenance.ts", "scripts/linux-paper-release.ts"]
 }
