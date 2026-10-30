@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { randomBytes } from "node:crypto";
+import { randomBytes, createCipheriv, createDecipheriv } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { recordLifecycle } from "../apps/worker/src/deployment-safety.ts";
@@ -241,6 +241,62 @@ it("exposes encrypt/decrypt through the PAPER-only CLI without revealing key mat
   const result = invoke("LIVE", ["encrypt", source, next("live-refused"), key]);
   expect(result.status).toBe(1);
   expect(result.stderr.trim()).toBe("ONLY_PAPER_SUPPORTED");
+}, 30000);
+
+it("rejects authenticated path traversal metadata before creating the output directory", async () => {
+  const changed = next("malformed-index");
+  cpSync(archive, changed, { recursive: true });
+  const keyBytes = readFileSync(key);
+  try {
+    const bytes = readFileSync(join(changed, "manifest.enc"));
+    const decoder = createDecipheriv(
+      "aes-256-gcm",
+      keyBytes,
+      bytes.subarray(8, 20),
+      { authTagLength: 16 },
+    );
+    decoder.setAAD(
+      Buffer.concat([
+        bytes.subarray(0, 20),
+        Buffer.from("SuiBa/PAPER/manifest/v1"),
+      ]),
+    );
+    decoder.setAuthTag(bytes.subarray(bytes.length - 16));
+    const index = JSON.parse(
+      Buffer.concat([
+        decoder.update(bytes.subarray(20, -16)),
+        decoder.final(),
+      ]).toString("utf8"),
+    );
+    index.manifest.databases[0].name = "../escaped.sqlite";
+    const header = Buffer.concat([Buffer.from("SBPAPER1"), randomBytes(12)]);
+    const encoder = createCipheriv(
+      "aes-256-gcm",
+      keyBytes,
+      header.subarray(8),
+      { authTagLength: 16 },
+    );
+    encoder.setAAD(
+      Buffer.concat([header, Buffer.from("SuiBa/PAPER/manifest/v1")]),
+    );
+    writeFileSync(
+      join(changed, "manifest.enc"),
+      Buffer.concat([
+        header,
+        encoder.update(Buffer.from(JSON.stringify(index))),
+        encoder.final(),
+        encoder.getAuthTag(),
+      ]),
+    );
+    const output = next("unsafe-output");
+    await expect(decryptPaperBackup(changed, output, key)).rejects.toThrow(
+      "INVALID_ENCRYPTED_BACKUP_INDEX",
+    );
+    expect(existsSync(output)).toBe(false);
+    expect(existsSync(join(folder, "escaped.sqlite"))).toBe(false);
+  } finally {
+    keyBytes.fill(0);
+  }
 }, 30000);
 
 it.skipIf(process.platform === "win32")(
