@@ -27,3 +27,5 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm build
       - run: pnpm test:offline
+      - name: Verify PAPER deployment safety over loopback
+        run: node node_modules/vitest/vitest.mjs run tests/deployment-api.test.ts

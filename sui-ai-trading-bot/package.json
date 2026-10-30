@@ -7,6 +7,7 @@
   },
   "packageManager": "pnpm@9.12.3",
   "scripts": {
+    "maintenance": "node --import tsx scripts/paper-maintenance.ts",
     "dev": "node scripts/run-project.mjs dev",
     "dashboard": "node scripts/run-project.mjs dashboard",
     "build": "node scripts/run-project.mjs build",

@@ -58,6 +58,7 @@ export class BotEngine {
     private router: DexRouter,
     readonly sui: Pick<ReadOnlySuiClient, "health" | "status">,
     readonly pair: TradingPair = "SUI_USDC",
+    private readonly deploymentBlocked: () => boolean = () => false,
   ) {
     const portfolio = db.portfolio();
     const baseCoin = tradingPairs[pair].base;
@@ -82,8 +83,20 @@ export class BotEngine {
     this.monitor.quote(quote);
     return quote;
   }
+  private deploymentStopped() {
+    let blocked = true;
+    try {
+      blocked = this.deploymentBlocked();
+    } catch {}
+    if (blocked) {
+      this.db.set("runtime", { ...this.db.runtime(), running: false });
+      return true;
+    }
+    return false;
+  }
   async tick() {
     this.db.assertHealthy();
+    if (this.deploymentStopped()) return;
     if (this.busy) return;
     this.busy = true;
     let audit: CandidateAudit | null = null;
@@ -274,6 +287,7 @@ export class BotEngine {
         return;
       }
       if (
+        this.deploymentStopped() ||
         !this.monitor.ordersAllowed(cycleToken) ||
         !runtime.running ||
         runtime.emergency ||
@@ -533,6 +547,7 @@ export class BotEngine {
       const executionNow = Date.now();
       const finalRuntime = this.db.runtime();
       if (
+        this.deploymentStopped() ||
         !this.monitor.ordersAllowed(cycleToken) ||
         !finalRuntime.running ||
         finalRuntime.emergency ||
@@ -589,6 +604,17 @@ export class BotEngine {
           risk: { status: "REJECTED", reasons: finalReasons },
         });
         this.reject(id, finalReasons, decision, executionNow, last.timestamp);
+        return;
+      }
+      if (this.deploymentStopped()) {
+        const reasons = ["DEPLOYMENT_MAINTENANCE"];
+        this.monitor.finishCandidate({
+          ...audit,
+          finalAction: "WAIT",
+          reasons,
+          risk: { status: "REJECTED", reasons },
+        });
+        this.reject(id, reasons, decision, executionNow, last.timestamp);
         return;
       }
       const fill = this.paper.fill(
