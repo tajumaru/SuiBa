@@ -1,5 +1,7 @@
 # SuiBa — Walrus Sites公開・24時間クラウド稼働 設計調査
 
+> **改訂案内:** PR #28の最新main取り込み・国内VPS比較・承認付きリリース設計・今回の検証結果は14〜20章を参照。1〜13章は初回調査時点の記録と代替案を保持する。今回の推奨は国内VPS4GBで、実装・公開・LIVE有効化の承認ではない。
+
 調査日: 2026-10-30（JST）。対象: `tajumaru/SuiBa`、取得した最新 `origin/main` = `d5a664d60c85266538d1f6655e40cafab11dbbbc`。本書は設計案であり、実装・クラウド契約・サイト公開・LIVE有効化は行っていない。料金は調査時点の公開情報と明示した予算仮定を分けて記す。
 
 ## 1. 結論と制約
@@ -267,3 +269,211 @@ namespaceを環境/ペア/戦略版ごとに分け、decision/cycle ID・source 
 ## 13. 主要一次資料（2026-10-30参照）
 
 本文のリンクは調査根拠。コードは[main固定SHA](https://github.com/tajumaru/SuiBa/tree/d5a664d60c85266538d1f6655e40cafab11dbbbc/sui-ai-trading-bot)で追跡する。料金・公開仕様・package/version/registry許可は変わり得るため、実装PRと公開直前に再検証する。Oyster市場価格、PaaS数値、MemWal総費用など取得できなかった値は推測を確定価格として記載していない。
+
+## 14. PR #28改訂：iPhone起点の承認付きVPSリリース
+
+改訂確認日: **2026-10-30 JST**。最新main `c7af0ab07b8d16ad9671fe88d3645f706cf86d6c` を既存ブランチ `docs/walrus-cloud-architecture-20261030` に通常merge（競合なし）。旧mainからの28ファイルの更新は相場価格/板検証、運用状態、UI/バックテスト再生と関連テストを含む。PRのmain比較差分は引き続き本設計書1ファイルのみ。1〜13章の検証記録・代替案は初回調査履歴として保持し、今回の推奨候補・リリース要件・検証結果は14〜20章を優先する。ソース・workflow・設定の変更、契約、配備、LIVE取引、mainへの直接commit/mergeは本PRに含めない。
+
+### 14.1 推奨アーキテクチャと責任境界
+
+**国内Linux VPS 4GB + systemd単一worker + 永続SQLite + TLS/管理認証gateway + 専用Walrus Sites portal** を推奨する。第一候補はさくらのVPS、費用重視の比較候補はXServer VPS。ConoHa VPSは今回の優先候補から外す。4章の海外VPS・TEE案は比較資料として残すが、今回の調達推奨ではない。2GBはfixtureの試験用に限り、portal/バックテスト/backup同時負荷とOOMを測定してから判断する。Docker Composeも同じ安全手順で利用可能だが、初期構成はsystemdとし、ホストでビルドしない。
+
+```mermaid
+flowchart TB
+  IP[iPhone] --> CD[クラウド上のCodex作業環境]
+  CD --> BR[専用branch / test / build / Draft PR]
+  BR --> RV[GitHub 人間レビュー / 必須CI / main merge]
+  RV --> CI[Actions main SHA検証 / 不変成果物生成]
+  CI --> AP[production-paper Environment 人間承認]
+  AP --> DP[制限付きSSH / ホスト配備ロック]
+  DP --> ST[停止 / DB backup / release切替 / 停止状態で検証]
+  IP -->|HTTPS| GW[管理ドメイン TLS / 認証 / 操作ロック]
+  GW -->|静的画面| PO[専用portal / Walrus Sites]
+  GW -->|認証済みAPI adapter| BO[loopback worker PAPER / systemd単一instance]
+  BO --> DB[(永続DB 全ペア / 履歴 / 設定)]
+  DB --> BK[暗号化 off-host backup]
+```
+
+Windowsの作業ディレクトリ・Docker daemon・ローカルrunner・PC上のSSH agentに依存しない。将来のCodex作業環境はGitHub repository接続、Node 24系の検証版、pnpm固定、ネットワーク制約下のfixtureを持つクラウド環境とする。iPhoneからの開始・差分閲覧・レビュー・承認が実際に可能かは段階0で確認する。Codexにproduction secretや承認者権限を渡さず、レビューと配備承認はユーザーが行う。今回の操作環境がWindowsであることと、この将来構成の達成は区別する。
+
+Nodeは **>=24.22.1 <25**、pnpm 9.12.3とlockfileを固定。Linux x86_64の対応OS上でHTTP/2/TLS、worker threads、node:sqlite、tsxを含む実行依存を試験する。Windowsのnode_modulesは転送せずLinux CIで準備する。Docker案は既存のNode 24.22.1/digest固定・非rootを維持。両VPSともroot権限のLinuxを提供するため導入可能な設計だが、各社がSuiBa/Nodeの特定patch動作を保証しているわけではない。DeepBook/Sui gRPC/CetusのHTTPS疎通と鮮度・429・停止gateを現地で検証する。AI判断は現行RuleBasedStrategyを維持し、GPU/外部LLMを必須にしない。PAPER専用エンジンと非PAPER起動拒否を維持し、取引用秘密鍵・署名/送信資格情報を配備しない。
+
+### 14.2 GitHub Actionsの承認と成果物
+
+リリースの流れは **Codex専用branch → test/build → Draft PR → 人間レビュー＋必須CI → main merge → main SHAのrelease build → Environment手動承認 → VPS停止配備 → health/PAPER確認 → 異常時rollback** とする。PRをReadyにする操作、PRのmerge、Environment承認、Botの手動startはそれぞれ別の意思決定であり、配備承認は取引開始の許可ではない。
+
+| 段階/job | 入力と権限 | 成功条件 |
+|---|---|---|
+| PR CI | contents:read、production secretなし、GitHub-hosted Ubuntu/Windows | 現行typecheck/build/offline suiteを維持。loopbackを含むpnpm test、認証/E2E fixtureは別job。未信頼PRをpull_request_targetで実行しない |
+| main release build | mainへのpushの固定github.sha、contents:read | protected mainの当該SHAで再検証。Linux成果物またはimage digestとmanifestを作成。PR artifact/cacheを無検証で流用しない |
+| publish | image利用時のみpackages:write、署名/OIDC採用時だけ必要jobにid-token:write | code SHA・lock hash・Node/pnpm・API版・DB互換範囲・asset hash・CI run ID・artifact digestをmanifestに記録 |
+| production-paper deploy | Environment承認後だけSSH credentialを取得。通常contents:read、deployment記録APIが必要な場合だけdeployments:write | 承認したSHA/digestを固定し、承認後に別成果物へ差し替えない。main到達性・CI成功・未配備の古いrunでないことを再検証 |
+| verify / rollback | ホスト内限定helperと読み取り診断。汎用管理BearerをCIへ渡さない | running=false、mode=PAPER、DB/会計/安全状態、revision、認証拒否を確認。失敗は停止維持 |
+
+branch protection/rulesetは必須CI、通常PR、人間レビュー、workflow/配備helper/認証/DB変更の重点レビューを要求し、Codexが自分で承認・merge・保護回避しない運用にする。既存CIのactionタグを固定SHAへ変更するのは後続実装PRで行う。外部actionは出自を監査して完全SHA固定、依存lockfileを維持し、任意branch名・PR本文をshellへ直接展開しない。[GitHub secure use](https://docs.github.com/en/actions/reference/security/secure-use)
+
+Environment名は `production-paper`、許可branchはmainのみ、required reviewerをユーザーに設定、管理者bypassを無効化する。main pushで候補runが生じ、ユーザーがiPhoneでSHA・CI・schema/backup計画を確認して承認する。再配備/rollbackの手動workflowはmain上の定義だけを使い、完全SHAを検証し任意refを拒否する。別SHAへの再試行は新たな承認を要する。自己承認禁止を有効にすると、同一ユーザーが手動起動したrunを自分で承認できない。単独運用ではmain push起動runのactorと承認者の関係を実測し、必要なら別の人間承認者を用意する。承認待ちを解消するために保護を黙って外さない。
+
+**プラン制約:** Free/Pro/Teamのrequired reviewersは公開repo限定。private repoでEnvironmentが作れることと、承認保護が使えることは別。実装前にrepository visibility・契約・実際の設定画面で確認する。承認保護が利用できなければ、対応プランまたは別の強制可能な承認経路を選び再レビューするまでproduction配備を有効化しない。workflow_dispatchだけを同等の承認gateとしない。[Environment公式仕様](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)
+
+concurrencyはVPS/本番環境全体で共通group、`cancel-in-progress:false`。Actionsの待機順は保証とみなさず、ホスト側でもrelease世代とSHAを照合し古いrunを拒否する。配備中のキャンセル/runner切断に備え、ホスト側transaction記録・排他ロックと停止ラッチを保持する。次回runは未完了transactionの回復確認を先に行う。
+
+### 14.3 デプロイ方式とsecretの比較
+
+| 方式 | 利点 | 制約・判断 |
+|---|---|---|
+| **制限付きSSH push（初期推奨）** | 両社Linuxで利用可。OpenSSHと監査可能な小さいhelperで構成 | 専用deploy user、鍵認証のみ、host keyを別経路確認してknown_hosts固定。StrictHostKeyChecking=noは禁止。固定helperのforced-command、PTY/forwarding無効、任意shell/sudo/docker groupなし |
+| SSH over private overlay | 公開22番の露出を減らせる | runnerの一時参加・短命credential・ACL・障害時consoleを設計。認証局/overlay費用と外部依存を増やす |
+| VPS pull + 署名済みrelease manifest | inbound SSH不要。承認済みdigestだけ取得可能 | 別agent、署名検証、replay防止、read-only registry credential管理が必要。mainを定期git pullして再起動する方式は承認を強制できないため不可 |
+| 本番VPSをself-hosted runner化 | 接続は簡単 | PR任意コードからDB/secret/docker socketへ到達する危険が大きく不採用 |
+| OIDC→短命SSH証明書/secret broker | 長期鍵を削減できる | 両社VPSにGitHub OIDCを直接渡す標準配備機能があるとは確認できない。別brokerのrepo/ref/environment/audience拘束と運用検証後の拡張 |
+
+SSH公開の接続元を固定できないGitHub-hosted runnerでは、全runner IPの恒久許可を最小権限と呼ばない。固定egress/overlayまたは制限付き公開SSHを比較し、公開方式ならパスワード/rootログイン禁止・FW・接続制限・鍵ローテーション・監視を実施する。host key変更時は自動追認せず失敗させる。
+
+VPSのroot所有helperは受け取るSHA/digest/操作を厳密検証し、固定配置先のみ操作する。uploadは非特権staging、archiveの絶対path/.. /symlink脱出を拒否し、任意スクリプトをroot実行しない。systemd制御等は引数を固定した必要操作だけを許す。workerは専用非root userで動かす。配備権限はアプリ改変権限を持つため、DB/秘密を絶対に読めないと過大評価しない。
+
+SSH秘密鍵はEnvironment Secret、公開host fingerprintは改ざんを防ぐ管理値。ADMIN_TOKEN/OIDC client secret/backup復号鍵はVPSの権限制限ファイルかsecret storeに置き、Codex・build・PR CIへ渡さない。Walrus公開walletは別Environment/job、少額・公開専用、Botの鍵と共有しない。shell tracing、env dump、DB・認証レスポンスのCI artifact化を禁止し、漏洩時は失効/ローテーションする。backup保存先credentialは削除権を最小化し、暗号鍵と保存先を分ける。
+
+## 15. 安全な停止・バックアップ・切替・ロールバック
+
+### 15.1 ホスト配置と二重取引防止
+
+候補配置は `/opt/suiba/releases/<sha>`（不変、DBなし）、`/opt/suiba/current`（release参照）、`/var/lib/suiba`（全DB/report）、`/etc/suiba`（秘密/設定）、別領域のbackup。Docker案も同じ永続pathをbind mountしimageにDBを含めない。`compose down -v`、DB初期化、履歴削除、切替時の設定resetを配備手順へ含めない。
+
+ホスト排他には、配備全体のflockと、**workerが生存中ずっと保持する別のinstance flock**を設計する。systemd/Composeを一方に統一し旧serviceや手起動プロセスもinventoryで検出する。SQLite writer lockだけでは複数schedulerの順次書込みによる二重PAPER処理を防げない。新旧を同時に本番DBへ接続するblue/green・rolling方式は禁止。別ホストへ移す際は旧ホストを停止・再起動不能にして所有権を明示移譲し、flockだけでhost間排他ができるとはみなさない。
+
+### 15.2 デプロイ手順（後続実装のrunbook）
+
+1. **PRECHECK**: 承認済みSHA/digest、現在revision、互換manifest、空き容量、backup保存先/復元可能性、PAPER固定を検査。旧版と新版の成果物を事前取得する。DB欠落を「新規DBとして起動」で隠さない。
+2. **MAINTENANCE**: gatewayの変更APIを閉じ、start/reset/設定/ペア切替を拒否する。読み取りはmaintenance表示とする。ホスト側の永続maintenanceラッチも使い、ブラウザやrunnerの切断で解除しない。安全停止操作は利用可能にする。
+3. **QUIESCE**: 正規のstopで取引意図を取り消しrunning=falseを確認。systemd stopまたはcompose stopでSIGTERMを送り、scheduler停止とactiveTick完了、全worker/thread/子プロセス終了を確認する。現行SIGTERMには25秒強制終了があるので外側猶予は30秒以上。exit code 0だけでは正常drainを証明できないため、終端記録・pending/会計・DB状態も確認する。timeout/強制kill/不明ならuncleanとし、自動切替/再開を止める。
+4. **BACKUP**: 全writerを停止した状態で15.3の整合backupを取り、検証とoff-host保存まで成功してから進む。backup失敗なら旧版も停止維持して通知する。停止時間を無停止と称さない。
+5. **SCHEMA/CUTOVER**: コピーDBで新版起動/移行と旧版rollback可否を事前試験する。DB migrationは別の明示工程で一度だけ、transaction/履歴/前後versionを記録する。互換性不明の起動時CREATE/ALTERもmigrationとして扱う。release参照を同一FSのatomic rename等で切替する（DBは切替先に入れない）。
+6. **BOOT STOPPED**: 単一instanceロックを取得して新workerのみ起動。boot stoppedを維持。maintenanceはまだ保持する。DBが読めない/場所が違う/台帳不一致なら成功扱いしない。
+7. **VERIFY**: 内部healthz、期待revision、PAPER、running=false、緊急/停止理由の維持、全DB/ペア履歴/残高/Profit Guard/設定、未完了処理、鮮度/接続/会計を確認。公開TLS、未認証API拒否、認証後read-only、旧UIとのAPI互換もsmokeする。healthz単独の200では完了しない。
+8. **COMPLETE**: SHA/digest・backup ID・schema・確認結果を秘密なしで記録。人間の取引再開判断前にのみmaintenanceを解除し、停止状態のまま完了する。失敗は15.4へ進む。SSH切断は停止ラッチを維持し、次回承認runまたはconsoleで回復する。
+
+**自動再開の範囲:** ホスト/プロセス障害やデプロイ後は監視プロセスだけ再起動し取引は手動start。現在の一時ネットワーク障害向けPAPER回復がある場合は、既存の有効な再開意図・世代・連続健全確認・期限・会計・緊急停止gateを満たす同一プロセス内に限り維持する。配備/手動停止/bootをその回復の対象に追加しない。自動reset、LIVE切替、再起動で停止理由を消すことは禁止。将来デプロイ後自動startを望む場合は別設計・別承認とし本計画では実装しない。
+
+### 15.3 DBバックアップと復元
+
+正本はSQLite。基底SUI DB、WAL DB、pairs選択DB、chart-history DB、report/validation、将来の認証専用DBを列挙したmanifestを維持する。DB名/pathは実際の設定から特定し固定文字列だけで対象を決めない。ユーザー設定・残高・履歴・停止理由・Profit Guardをまとめて照合する。認証DBをbackupしても復元時は既存session/run許可を無効化する。
+
+- **配備直前/復元前:** 全writer/選択変更を停止し、DB接続終了後にデータディレクトリ一式を同一時点のbundleへcopy。残存WAL/SHMを勝手に消さず、DBと一式で保存する。正常closeできなかった場合は保全copyを先に取り、隔離copy上でrecovery/integrityを検証してから判断する。
+- **定期backup:** 1時間ごとを目標。単一DBはSQLite backup APIまたはVACUUM INTOを検証して使えるが、複数DB間の同時点を保証しない。初期運用は短い全writer停止窓で一式取得する。オンライン化は全DBの共通checkpoint/世代照合を別PRで設計する。[SQLite公式backup](https://sqlite.org/backup.html)
+- bundleへSHA、schema/アプリ内JSON版、DB一覧/サイズ/hash、選択ペア、残高・約定件数・最終ID、guard基準、取得時刻/停止状態を記録。秘密はmanifestに出さない。copyのintegrity_check（必要時foreign_key_check）と復号/復元試験を行い、hash一致だけで会計一致と判断しない。
+- 暗号化してoff-hostへ保存。暫定保持は時間別24世代、日別7世代、週別4世代、配備前は対応release保持中に維持。容量・秘密情報保持・課金を確認して確定する。RPO/RTO各1時間は目標、停止窓/転送/復元を含め実測し、backup失敗/古さを通知する。
+- **復元:** 承認→maintenance/全writer停止→現在の不良状態も別bundleへ保全→対象backup復号/hash検証→隔離ディレクトリでintegrity・会計・対応releaseを照合→DB一式を同一世代へ交換→権限確認→単一workerをstopped起動→全ペア/guard/履歴照合→人間の手動再開。単一DBだけを別時点へ戻さない。新規取引のある現DBへ古いWALを混ぜない。復元失敗時は停止を維持する。
+
+### 15.4 ロールバック判断
+
+| 状態 | 操作 |
+|---|---|
+| 成果物取得/事前検査で失敗、旧版未停止 | 新版未適用、旧版を維持。配備失敗を記録 |
+| 停止後、新版起動前、DB未変更 | instance停止を確認し旧releaseへ参照を戻す。DBは保全してstopped起動、再検証 |
+| 新版がDBを開いたが、旧版が現DBのschema/JSONを読書き可能と実証済み | 新版を停止し現DBの追加backup、旧releaseへ戻す。**DBは現データを維持**。停止状態で検証 |
+| 破壊的migration/互換不明/DB fault | 自動rollback禁止、停止維持。修正版へのforward fixか承認付きDB復元を選ぶ |
+| backup以降にPAPER約定/設定変更あり | backup復元で失われる差分を監査・別保存し、ユーザー承認なしに台帳を巻き戻さない。履歴を無断merge/replayしない |
+
+現行DBはCREATE TABLE IF NOT EXISTSとJSON状態があり、schema versionだけでは意味互換性を証明できない。後続で読取り/書込み可能なschema・JSON版、migration履歴、前版互換試験をrelease manifestへ追加する。旧binaryの接続そのものがDBを変更し得るため、本番を試しに開いて互換性を判断しない。ロールバック成功後も手動startを要する。Walrus旧assets再公開はBot/DB復元とは別で、旧画面と新APIの互換期間を確認する。
+
+## 16. iPhone Safari・管理認証・Walrus接続の統合
+
+推奨URLは `https://manage.<所有ドメイン>/`、APIは同じhostの `/api`、OIDC callbackは `/auth/callback`。DNS A/必要なAAAAはTLS gatewayへ向け、80はACME/HTTPS redirectのみ、443を公開。3100/portal内部port/DBは非公開。`wal.app`へのCNAMEだけで独自ドメイン運用ができる前提にしない。[Walrus独自ドメイン公式](https://docs.wal.app/docs/sites/custom-domains/bringing-your-own-domain)
+
+| 境界 | 設計要件 |
+|---|---|
+| browser→gateway | OIDC/MFA・利用者allowlist・サーバーsession。host-only Secure/HttpOnly Cookie、SameSiteを選んで試験。通常管理CookieはStrict、外部IdP callbackのstate照合は専用短命Lax Cookie等で分離し、Strict Cookieだけに依存してcallbackを壊さない |
+| gateway→portal | 静的ルートのみ。自サイトobject IDに固定し、Host/転送headerを正規化。/api,/authをSPA fallbackより優先。未知APIはHTMLではなく拒否 |
+| gateway→worker | loopback/専用private network、API/method allowlistとpair検査。利用者のBearer/Cookie/転送headerを除去。認証・操作許可を検証した後だけ内部Bearerを付加 |
+| CSRF/CORS | 推奨は同一origin、外部CORSなし。変更APIはOrigin完全一致＋CSRF token/専用header＋認可。GET副作用なし。OPTIONSは認証資格を発行しない。CORSを無認証公開の代替にしない |
+| TLS/cache | TLS更新監視、混在content禁止、導入確認後HSTS。認証/APIはno-store、CDN共有cache禁止。CSP connect-src self等、frame-ancestors、nosniff。静的assetだけhash cacheし、認証callbackをportalにcacheしない |
+| public wal.app | 公開静的画面と管理URLへのリンクに限定。管理APIは直接接続しない。第三者Cookieに依存する別domain構成は初期対象外。将来採用なら3章のOAuth公開clientと厳密CORSを別途実装 |
+
+### 自動ロックとの整合（公開前の必須実装）
+
+既存の [自動ロック・パターン再認証設計](AUTOLOCK_PATTERN_REAUTH_DESIGN_20261027_JA.md) B〜G章を維持する。**現行mainは個別失効/サーバー側自動ロックを未実装**で、既存CookieをHTTPS化するだけでは完了しない。gatewayのOIDC sessionと、アプリの短命タブ別操作許可を分離し、強い認証を終えてもロック中の変更APIは許可しない。内部Bearerによるworker認証は操作ロックを迂回できるため、gateway/adapterを含むすべての公開経路に同じ認可を強制する。公開旧token入力・worker session交換APIは管理browserから到達不可にし、OIDC login/session確認へ置換する。
+
+既存設計の親session、サーバー失効、タブ別許可、単回チケット固定期限による最大15秒の残存許可、復帰時再認証、失敗回数制限を後続PRで実装する。UIで非表示にするだけのlockや、pollingで操作許可が延長される実装は禁止。Safari背景化・強制終了・通信断で「即時のserver検知」を保証できない限界も表示する。gatewayログアウト/期限切れ/worker再起動/DB復元時は操作許可も失効し、OIDC Cookieだけで勝手に再解除しない。安全停止をロック時に許可する場合も専用の認可経路とし、start/resetと混同しない。sessionロック自体はBotの停止/再開とは独立である。
+
+### Codex自動テストを妨げない認証
+
+認証を無効化するproductionフラグは作らない。CIでは外部IdPの代わりに隔離OIDC stub、HTTPS gateway fixture、一時DBと短命テストsessionを用いる。自動ロック設計の自動化run許可は人間sessionと別の主体で、期限・run ID・環境・対象pair・許可APIを拘束する。既定はread-only、変更試験はfixture専用。通常APIと同じ入力/認可/安全gateを通し、productionに汎用automation bypassを作らない。テスト資格情報をWalrus静的bundleやCIログに含めない。実SafariのMFA・Cookie・背景復帰は自動fixtureと別の手動受入を行う。
+
+UI/worker/portalの更新は独立に失敗するので、API版の互換範囲をmanifestへ記録する。先に後方互換APIを停止状態で配備、次にWalrus同一siteを更新、最後にSafari smoke。非互換時はmaintenanceのまま両側を整合させ、古いタブの変更操作は409等で拒否する。Walrusサイト公開の失敗を理由にDBを戻さない。
+
+## 17. 国内VPS比較（2026-10-30確認・税込）
+
+通常Linux VPSを比較し、レンタルサーバー/Windows Server/さくらのクラウド/XServer VPS クラウドと混同しない。割引や長期前払いの月換算と1ヶ月払いを分ける。追加SSD変更、ドメイン、IdP、off-host backup、監視、GitHub実行枠、Walrus費用は以下に含めない。
+
+| 項目 | さくらのVPS | XServer VPS |
+|---|---|---|
+| 2GB | 3 vCPU / SSD100GB。月払い: 石狩1,738円・大阪1,848円・東京1,958円。12ヶ月払い: 19,118 / 20,328 / 21,538円（同順） | 3 vCPU / NVMe50GB。1ヶ月1,980円、12ヶ月は月換算1,540円（総額18,480円）、36ヶ月は月換算1,265円（総額45,540円） |
+| 4GB | 4 vCPU / SSD200GB。月払い: 石狩3,520円・大阪3,740円・東京3,960円。12ヶ月払い: 38,720 / 41,140 / 43,560円（同順） | 4 vCPU / NVMe150GB。1ヶ月2,640円、12ヶ月は月換算2,200円（総額26,400円）、36ヶ月は月換算2,035円（総額73,260円） |
+| 初期費用 | 0円（標準構成） | 0円 |
+| お試し/最低期間 | クレジットカード選択で2週間、最低利用3ヶ月 | 有料通常VPSは最短1ヶ月。別サービスの無料VPSは2/4GBだが日毎手動更新、確認したページでは受付停止中。未更新で削除、更新Bot禁止なので常駐主系に不適 |
+| OS/Node/Docker | root Linuxで自主管理。Node24.22.1〜24系検証版、Dockerを導入可能な設計 | 同左。Dockerアプリの提供あり。ただしtemplateのNode版を盲信せず固定版で検証 |
+| backup/snapshot | VPSの今回確認資料で標準snapshot/自動DB backupを保証できない。自前の整合backup/off-host復元を必須とする。クラウド専有storageのsnapshot仕様をVPSへ転記しない | image保存50GB標準、追加500GBは月1,650円。保存前にVPS shutdownが必要。通常VPSに日次自動backupなし。150GB disk全体のimageが50GB枠へ入ると仮定しない |
+| network | Internet100Mbps共有、ローカル1Gbps共有、転送量無制限、IPv4/IPv6。東京/大阪/石狩 | Internet10Gbps共有、1契約最大100Mbps、転送量無制限、IPv4 1個。上限値でlatencyや専有帯域を保証しない |
+| 障害対応 | DC/ネットワーク24h365日有人監視、console/再起動、生存監視。2GBはSLA非対応、4GBは対応（適用条件要確認） | console/再起動/packet filter/SSH公開鍵、メール/電話/チャット。通常プランにビジネスのSLA/自動backupを適用しない |
+| Actions配備 | 制限付きSSH＋systemd停止切替、または検証済みCompose。provider consoleはSSH障害時の復旧用 | 同じ手順が可能。VPS側管理APIの強い権限をCIへ持たせる必要はない |
+
+出典: [さくら料金・仕様](https://vps.sakura.ad.jp/specification/)、[さくらFAQ（試用/最低期間）](https://vps.sakura.ad.jp/faq/)、[XServer料金・仕様](https://vps.xserver.ne.jp/price.php)、[最短期間の公式VPS資料](https://www.xserver.ne.jp/img/download/wp9-xservervps-service.pdf?date=20260602)、[無料VPS条件](https://vps.xserver.ne.jp/free.php)、[image保存手順](https://vps.xserver.ne.jp/support/manual/man_server_image.php)。数値は上記確認日の表。総額は表示月換算×契約月数で計算、実申込時の請求・提供可否を再確認する。
+
+**同社の別商品:** [公式申込比較](https://secure.xserver.ne.jp/xinfo/?action_register_index=on&service=xvps)はXServer VPS クラウド4GB/50GB・1ヶ月2,480円、日次backup最大7日分を案内する。通常VPSの4GB/150GB・2,640円/自動backupなしとは別商品。2GBクラウドの比較値は作らない。料金ページ・検索cache・申込入口で受付状況やcampaign表示が異なることがあるので、契約直前に対象商品/通常価格/受付を確認し、期間限定の「実質価格」を定常費へ採用しない。
+
+推奨判断は、まずさくら4GB（料金最小は石狩、DeepBook/Sui疎通・レイテンシ測定で地域確定）、費用優先ならXServer通常VPS4GBを比較する。どちらもアプリ障害・SQLite保全・復元は利用者の責任。2GBから無条件に本番開始しない。初回は月払い/短期で負荷と復元を検証し、長期前払いは運用確認後に判断する。契約は今回実行しない。
+
+## 18. 段階的な実装計画とPAPER受け入れ
+
+| 段階 | 後続PRの内容 | 次段階の条件 |
+|---|---|---|
+| 0 設計/承認経路 | 本PRレビュー、予算/商品選択、GitHubプラン・reviewer条件、iPhoneからクラウド作業/承認動線を確認 | ユーザーのmain merge最終承認。本PRではCodex自身はmergeしない |
+| 1 安全なhost実行 | 単一instanceロック、maintenanceラッチ、正常drain証跡、永続path、backup/復元、schema互換manifest | 一時Linux fixtureで二重起動/kill/復元/前版互換に合格 |
+| 2 認証統合 | 自動ロック設計の実装、gateway/adapter、OIDC/CSRF/失効、automation run許可 | 全公開経路の認可テストとSafari実機。production公開はまだしない |
+| 3 CI release | main固定SHA、Linux build、artifact/hash、Environment保護、SSH helper/host key | stagingで承認拒否・古いrun・切断・rollback試験に合格 |
+| 4 Walrus統合 | 専用portal、独自domain/TLS、UI/API互換配備、公開wallet分離 | 同一origin routing、cache/秘密非露出、旧タブ拒否/旧assets復帰に合格 |
+| 5 移行と運用 | 別途承認後に契約/fixture PAPER、旧host停止、既存DB一式移行、24h実測 | 全履歴/guard一致、SUI/WALそれぞれ既存validator条件、RPO/RTO、通知確認。手動start |
+
+既存P01〜P13を削除せず、以下を追加する。全てMODE=PAPER、fixture資格情報、取引用keyなし。LIVE拒否試験も署名/送信は行わない。今回の文書PRで実機受入を完了したと扱わない。
+
+| ID | 追加試験 | 合格条件 |
+|---|---|---|
+| R01 | Codex branch→Draft→review/CI→merge→Environment待機をstagingで再現 | 承認前のSSH接続/secret取得0、許可外ref/失敗CI/fork/未承認SHAの配備0 |
+| R02 | 同時run、二重service、手起動、古いrun | host配備/instance lockで単一worker、二重PAPER約定0。新しい版を古いrunが上書きしない |
+| R03 | activeTick中停止、SIGTERM上限、kill、runner切断を各境界へ注入 | 終端不明は停止ラッチ、勝手なstart/resetなし。boot stopped、再実行は未完了transactionを検出 |
+| R04 | 全DB bundle backup、disk full、保存先障害、復号鍵不足 | backup失敗時cutoverしない。復元後全ペアの件数/残高/約定ID/guard一致、RPO/RTO実測 |
+| R05 | 新旧schema/JSON、起動時migration、旧版read/write | 互換の実証ありだけcode rollback可能。未知/破壊的変更は停止、無断DB巻戻し0 |
+| R06 | health200だがMODE/DB/revision/会計/鮮度異常 | リリース失敗、running=false維持。health200だけで再開しない |
+| R07 | 未認証/偽Origin/CSRF/旧token/期限切れ/lock中の全API | start/reset/settings/pairs/backtest/validationを含む操作を拒否。内部Bearer経路の認可漏れ0 |
+| R08 | Safari背景化、kill、通信断、タブ複数、IdP callback/失効 | 既存lock設計の期限・再認証を維持。pollで延長なし。session復元が操作解除を意味しない |
+| R09 | CI隔離OIDC/HTTPS/run許可と人間sessionの試験 | 自動test成功、期限/環境/scope逸脱拒否。production認証bypassなし |
+| R10 | Walrus更新失敗、portal停止、API版不一致/旧タブ | 変更操作はfail closed、DB保全、適合assetsへ復帰可能。認証/APIのcache混入0 |
+| R11 | deploy完了後に全ブラウザを閉じWindows電源off | VPS監視が継続、取引は手動許可の状態だけ継続。障害後bootで停止。LIVE経路0 |
+
+## 19. 未解決リスク・実装前確認・セルフレビュー
+
+| 論点 | セルフレビュー結果と実装前の必須確認 |
+|---|---|
+| 管理認証 | 重大な公開阻害点は現行の失効/自動ロック未実装とBearer adapterの認可迂回。16章の統一認可・旧経路閉鎖を公開前gateとし、現行のまま公開可とは判定しない |
+| DB保全 | 全DBの世代統一・停止backup・復元比較が必要。schema/JSON互換manifestは未実装。DB欠落時の新規作成を防ぐprecheck、復号鍵復旧、off-host保持/費用を確定する |
+| 停止と重複 | 既存SIGTERMの25秒終了はdrain成功証明ではない。ホストロック/正常終了証跡/maintenanceラッチは未実装。二重host移行時の旧系fencingも確認する |
+| Walrus接続 | 専用portalによる同一originを採用。公開wal.appと別APIの第三者Cookie案は初期不採用。portal内部動作・route衝突・TLS・IdP callbackはfixtureとSafari実機が必要 |
+| 承認と権限 | GitHubプラン/visibility、required reviewer有効性、単独ユーザーの起動者/承認者制約は未確定。実際の設定と拒否試験前にdeploy secretを有効化しない |
+| SSH/supply chain | host key初期登録、固定egress/overlay採否、helper権限、artifact出自検証、鍵失効の管理者手順を決める |
+| VPS性能/費用 | 国内各地域のDeepBook/Sui遅延、HTTP/2安定性、4GB同時負荷/容量、受付/正式見積りは未検証。バックアップ転送費を含む総予算を確定する |
+| iPhone完結 | クラウドCodex環境・repo接続とiPhoneの承認UI、緊急console/MFA回復を実機で確認。Windowsなし運用は設計目標であり今回の実証結果ではない |
+
+**設計書のみのmain merge判定は条件付き可。** 本文の安全要件を実装前の必須gateとして合意し、最新headの必須CI成功とユーザーの最終承認後にmerge可能。配備可能・公開可能・自動取引開始可能という判定ではない。設計上、無認証API公開・二重worker・無断DB巻戻し・配備後の無条件startを許可する箇所は設けていない。今回mainへのmergeは行わない。
+
+## 20. 今回改訂の検証記録
+
+今回の最新main取り込み後の結果を記す。12章の初回件数と区別する。
+
+- 基準main: `c7af0ab07b8d16ad9671fe88d3645f706cf86d6c`。既存PR branchに取り込み、競合なし。最終fetchでも同じmain、PR remote headは作業前の `ccb7484f0d13cd9cc130a6e0e1776695e386f9fe` を確認。
+- Node.js **v24.22.1**（Windows x64）、pnpm **9.12.3**。既存worktreeの依存を使用し、依存/lockfile変更なし。
+- `pnpm build` 成功（tsc含む）、Vite 7.3.7 / 224 modules。既存Zod注釈と500kB超chunk警告あり。
+- `pnpm test` 最終成功: Node標準 **45/45**、Vitest **78ファイル / 1,126件成功**。初回sandbox内はloopback接続EACCES等で失敗。通信可能な権限での再実行は、初回テスト/buildとの並行負荷下でSQLite関連6件が5秒timeout。全プロセス終了後に同じコマンドを単独再実行し成功。テスト・閾値の変更なし。TEMP/TMPはworktree内 `.test-tmp` を使用。
+- `pnpm test:offline` 成功: Node標準 **45/45**、Vitest **76ファイル / 1,096件成功・8件skip**。除外/skipは成功件数に含めない。
+- `git diff --check` 成功。最新mainとの追跡差分は本Markdownのみ。既存未追跡ファイル/検証一時ファイルはcommit対象外。
+- Linux CIの最新head結果はGitHub上の必須checkで別途確認する。Linux VPS、Docker image、Safari実機、クラウドCodex、公開gateway/portal、24h運用、backup復元演習、Environment/SSH配備は今回は実施していない。ローカル成功を実運用の受入完了とみなさない。
