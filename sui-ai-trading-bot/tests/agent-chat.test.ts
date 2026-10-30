@@ -2,9 +2,19 @@ import { describe, expect, it } from "vitest";
 import {
   agentReply,
   CHAT_CHIPS,
+  chatMood,
   followUpChips,
+  orderedChips,
+  proactivePrompt,
+  proactivePromptDue,
   type AgentChatContext,
 } from "../apps/dashboard/src/agentChat.ts";
+import {
+  MAX_CHAT_ENTRIES,
+  MAX_NARRATION_ENTRIES,
+  trimNarrationEntries,
+  type NarrationEntry,
+} from "../apps/dashboard/src/agentNarration.ts";
 import type { DecisionTelemetry } from "../apps/worker/src/operations.ts";
 
 function dec(overrides: Partial<DecisionTelemetry> = {}): DecisionTelemetry {
@@ -56,6 +66,9 @@ function ctx(overrides: Partial<AgentChatContext> = {}): AgentChatContext {
     stoppedKind: null,
     tradeCount: 0,
     recentMovePct: null,
+    lastTopic: null,
+    exchangeCount: 0,
+    pairLabel: "SUI",
     ...overrides,
   };
 }
@@ -223,5 +236,158 @@ describe("agent chat replies", () => {
     expect(followUpChips("pnl")).toContain("売りラインは？");
     expect(followUpChips("fallback")).toEqual([...CHAT_CHIPS]);
     expect(followUpChips("greeting")).toEqual([...CHAT_CHIPS]);
+  });
+
+  it("routes the sell-line chip to the sell answer, not the buy line", () => {
+    const reply = agentReply("売りラインは？", ctx());
+    expect(reply.topic).toBe("sell");
+  });
+
+  it("continues the thread on a bare それで？", () => {
+    const reply = agentReply("それで？", ctx({ lastTopic: "whyNotBuying" }));
+    expect(reply.topic).toBe("missing");
+    expect(reply.text).toContain("続きを言うと");
+    expect(reply.text).toContain("足りないのは");
+    // No thread yet: an honest deflection.
+    expect(agentReply("それで？", ctx()).topic).toBe("fallback");
+  });
+
+  it("answers a bare なんで？ against the previous topic", () => {
+    const reply = agentReply("なんで？", ctx({ lastTopic: "missing" }));
+    expect(reply.topic).toBe("whyNotBuying");
+    expect(reply.text).toContain("足りないから");
+  });
+
+  it("acknowledges a repeated question while re-answering from fresh records", () => {
+    const reply = agentReply("調子は？", ctx({ lastTopic: "score" }));
+    expect(reply.topic).toBe("score");
+    expect(reply.text).toContain("さっきも言ったけど");
+    expect(reply.text).toContain("宣言6回");
+    // Social topics never get the repeat prefix.
+    expect(agentReply("がんばれ", ctx({ lastTopic: "encouragement" })).text).not.toContain(
+      "さっきも言ったけど",
+    );
+  });
+
+  it("speaks up at milestones with the natural follow-up chip", () => {
+    expect(proactivePrompt({ kind: "priceLine" })?.chip).toBe(
+      "ラインまでどれくらい？",
+    );
+    expect(proactivePrompt({ kind: "watchHit" })?.chip).toBe("調子は？");
+    expect(proactivePrompt({ kind: "nearMiss" })?.chip).toBe(
+      "あと何が足りない？",
+    );
+    expect(proactivePrompt({ kind: "alert" })?.chip).toBe("価格はどう動いた？");
+    expect(proactivePrompt({ kind: "trade", side: "BUY" })?.chip).toBe(
+      "売りラインは？",
+    );
+    expect(proactivePrompt({ kind: "trade", side: "SELL" })).toBeNull();
+    expect(proactivePrompt({ kind: "cycle" })).toBeNull();
+  });
+
+  it("derives the mood from the recorded score only", () => {
+    expect(
+      chatMood({ declared: 5, hits: 4, misses: 1, inProgress: 0 }),
+    ).toBe("confident");
+    expect(
+      chatMood({ declared: 5, hits: 1, misses: 4, inProgress: 0 }),
+    ).toBe("humble");
+    expect(
+      chatMood({ declared: 6, hits: 3, misses: 2, inProgress: 1 }),
+    ).toBe("neutral");
+    expect(chatMood(null)).toBe("neutral");
+    // The mood colours the score closer and the encouragement.
+    expect(
+      agentReply(
+        "調子は？",
+        ctx({ score: { declared: 5, hits: 4, misses: 1, inProgress: 0 } }),
+      ).text,
+    ).toContain("この調子でいくよ");
+    expect(
+      agentReply(
+        "がんばれ",
+        ctx({ score: { declared: 5, hits: 1, misses: 4, inProgress: 0 } }),
+      ).text,
+    ).toContain("次は決める");
+  });
+
+  it("rotates fact-identical phrasings across exchanges", () => {
+    const first = agentReply("なんで買わないの？", ctx({ exchangeCount: 0 }));
+    const second = agentReply("なんで買わないの？", ctx({ exchangeCount: 1 }));
+    expect(first.text).not.toBe(second.text);
+    for (const reply of [first, second]) {
+      expect(reply.text).toContain("EMAとRSIは揃ってる");
+      expect(reply.text).toContain("MACD");
+    }
+    const cheers = [0, 1, 2].map(
+      (n) => agentReply("がんばれ", ctx({ exchangeCount: n })).text,
+    );
+    expect(new Set(cheers).size).toBe(3);
+  });
+
+  it("names the pair on screen in the PnL and price-move replies", () => {
+    expect(agentReply("損益は？", ctx({ pairLabel: "WAL" })).text).toContain(
+      "WALではまだ約定が1件もない",
+    );
+    expect(
+      agentReply("価格はどう動いた？", ctx({ recentMovePct: 0.5 })).text,
+    ).toContain("SUIは、ここしばらく");
+  });
+
+  it("catches common paraphrases instead of deflecting", () => {
+    expect(agentReply("いつ買うの？", ctx()).topic).toBe("missing");
+    expect(agentReply("様子は？", ctx()).topic).toBe("score");
+    expect(agentReply("何してる？", ctx()).topic).toBe("next");
+    expect(agentReply("どうして買ってくれないの", ctx()).topic).toBe(
+      "whyNotBuying",
+    );
+    const fine = agentReply("元気？", ctx());
+    expect(fine.topic).toBe("greeting");
+    expect(fine.text).toContain("元気だよ");
+  });
+
+  it("spaces the proactive prompts, except for a buy fill", () => {
+    const now = 1_000_000;
+    expect(proactivePromptDue(null, now, false)).toBe(true);
+    expect(proactivePromptDue(now - 60_000, now, false)).toBe(false);
+    expect(proactivePromptDue(now - 11 * 60_000, now, false)).toBe(true);
+    expect(proactivePromptDue(now - 60_000, now, true)).toBe(true);
+  });
+
+  it("keeps chat and narration in separate allowances when trimming", () => {
+    const entry = (i: number, kind: NarrationEntry["kind"]): NarrationEntry => ({
+      id: `n${i}`,
+      at: i,
+      kind,
+      text: "x",
+    });
+    const many: NarrationEntry[] = [];
+    for (let i = 0; i < 40; i++) many.push(entry(i, "cycle"));
+    for (let i = 40; i < 60; i++)
+      many.push(entry(i, i % 2 === 0 ? "chatUser" : "chatReply"));
+    const trimmed = trimNarrationEntries(many);
+    expect(trimmed.filter((e) => e.kind === "cycle")).toHaveLength(
+      MAX_NARRATION_ENTRIES,
+    );
+    expect(
+      trimmed.filter((e) => e.kind === "chatUser" || e.kind === "chatReply"),
+    ).toHaveLength(MAX_CHAT_ENTRIES);
+    // Order is preserved and the newest of each kind survive.
+    expect(trimmed[trimmed.length - 1].id).toBe("n59");
+    expect(trimmed.some((e) => e.id === "n10")).toBe(true);
+    expect(trimmed.some((e) => e.id === "n9")).toBe(false);
+  });
+
+  it("learns the chip order from what was actually asked", () => {
+    expect(orderedChips([])).toEqual([...CHAT_CHIPS]);
+    const learned = orderedChips([
+      "調子は？",
+      "調子は？",
+      "調子は？",
+      "なんで買わないの？",
+    ]);
+    expect(learned[0]).toBe("調子は？");
+    expect(learned[1]).toBe("なんで買わないの？");
+    expect(learned).toHaveLength(CHAT_CHIPS.length);
   });
 });

@@ -1,5 +1,9 @@
 import type { DecisionTelemetry } from "../../worker/src/operations.ts";
-import { sellLinesOf, type WatchScoreDisplay } from "./agentNarration.ts";
+import {
+  sellLinesOf,
+  type NarrationEntry,
+  type WatchScoreDisplay,
+} from "./agentNarration.ts";
 
 /**
  * Record-grounded replies for the narration character. The user
@@ -38,6 +42,49 @@ export interface AgentChatContext {
   /** The move across the feed's recent price window, in percent,
    * or null when too little is recorded to measure. */
   recentMovePct: number | null;
+  /** The topic of the character's previous reply in this
+   * conversation (read back from the stored reply entry), or null
+   * before the first exchange. Continuations ("それで？") and
+   * repeated questions resolve against it. */
+  lastTopic: ChatTopic | null;
+  /** How many replies the character has already given in this
+   * conversation: the rotation seed for phrasing variety, so the
+   * same question does not always get the same wording. */
+  exchangeCount: number;
+  /** The base symbol of the pair on screen ("SUI" / "WAL"), so
+   * replies can name which market they are talking about. */
+  pairLabel: string;
+}
+
+export type ChatMood = "confident" | "humble" | "neutral";
+
+/** The character's mood, from the recorded score only: a hit
+ * streak reads confident, a miss streak reads humble. Standard
+ * Japanese either way — Kansai stays with the emotion-leak lines. */
+export function chatMood(score: WatchScoreDisplay | null): ChatMood {
+  if (!score) return "neutral";
+  if (score.hits - score.misses >= 2) return "confident";
+  if (score.misses - score.hits >= 2) return "humble";
+  return "neutral";
+}
+
+/** Rotate through fact-identical phrasings by exchange count. */
+function vary(ctx: AgentChatContext, variants: string[]): string {
+  return variants[Math.abs(ctx.exchangeCount) % variants.length];
+}
+
+/**
+ * The base question chips, reordered by how often each was
+ * actually asked in the recorded conversation (the feed's own
+ * history is the record; ties keep the default order).
+ */
+export function orderedChips(askedTexts: string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const text of askedTexts)
+    counts.set(text, (counts.get(text) ?? 0) + 1);
+  return [...CHAT_CHIPS].sort(
+    (a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0),
+  );
 }
 
 export type ChatTopic =
@@ -136,7 +183,10 @@ function whyNotBuying(ctx: AgentChatContext): string {
   if (p.missing.length === 0)
     return "条件は全部揃ってる。あとは利益保護の判定待ち — 手数料を引いて残る利益が基準に届けば買うよ。";
   const metText = p.met.length > 0 ? `${p.met.join("と")}は揃ってる。` : "";
-  return `${metText}あと${p.missing.join("と")}が足りないから、まだ買わないよ。`;
+  return vary(ctx, [
+    `${metText}あと${p.missing.join("と")}が足りないから、まだ買わないよ。`,
+    `${metText}買うには${p.missing.join("と")}がまだ。揃うまで待つよ。`,
+  ]);
 }
 
 function whatsMissing(ctx: AgentChatContext): string {
@@ -153,7 +203,7 @@ function whatsMissing(ctx: AgentChatContext): string {
   const parts = [...p.missing];
   if (!p.rsi && dec.rsi > dec.oversold)
     parts.push(`RSIはあと${Math.ceil(dec.rsi - dec.oversold)}`);
-  return `足りないのは${parts.join("と")}。揃ったら買いに走るよ。`;
+  return `足りないのは${parts.join("と")}。${vary(ctx, ["揃ったら買いに走るよ。", "揃えば走るよ。"])}`;
 }
 
 function howIsItGoing(ctx: AgentChatContext): string {
@@ -162,7 +212,15 @@ function howIsItGoing(ctx: AgentChatContext): string {
     return "様子が掴めてないから、成績は言えないや。少し待ってから聞いてみて。";
   if (s.declared === 0)
     return "まだ宣言は出してないよ。条件が近づいてきたら宣言するから、待ってて。";
-  return `宣言${s.declared}回で、的中${s.hits}・外れ${s.misses}、進行中が${s.inProgress}つ。${s.hits >= s.misses ? "悪くないでしょ。" : "次は当てるよ。"}`;
+  const closer =
+    chatMood(s) === "confident"
+      ? "この調子でいくよ。"
+      : chatMood(s) === "humble"
+        ? "次は当てる。"
+        : s.hits >= s.misses
+          ? "悪くないでしょ。"
+          : "次は当てるよ。";
+  return `宣言${s.declared}回で、的中${s.hits}・外れ${s.misses}、進行中が${s.inProgress}つ。${closer}`;
 }
 
 function lineDistance(ctx: AgentChatContext): string {
@@ -187,7 +245,7 @@ function sellSide(ctx: AgentChatContext): string {
 
 function pnl(ctx: AgentChatContext): string {
   if (ctx.tradeCount === 0)
-    return "まだ約定が1件もないから、損益はゼロのまま。正確な数字は概要タブの累計損益がいちばん確かだよ。";
+    return `${ctx.pairLabel}ではまだ約定が1件もないから、損益はゼロのまま。正確な数字は概要タブの累計損益がいちばん確かだよ。`;
   return `この実況に残ってる範囲だと約定は${ctx.tradeCount}件あるよ。正確な損益は概要タブの累計損益で確認して。`;
 }
 
@@ -213,7 +271,7 @@ function priceMove(ctx: AgentChatContext): string {
   const pct = ctx.recentMovePct;
   const dir = pct > 0.05 ? "上がり気味" : pct < -0.05 ? "下がり気味" : "ほぼ横ばい";
   const now = dec ? `いま${fmtPrice(dec.price)}。` : "";
-  return `ここしばらくの記録では${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%で、${dir}。${now}`;
+  return `${ctx.pairLabel}は、ここしばらくの記録では${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%で、${dir}。${now}`;
 }
 
 function nextHighlight(ctx: AgentChatContext): string {
@@ -242,6 +300,47 @@ const FALLBACKS = [
   "うーん、それは分からない。様子・成績・ライン・損益のことなら、今の記録から答えられるよ。",
 ];
 
+/** The factual answer for a topic, or null for the social topics
+ * (greeting / encouragement / fallback), which have no deeper
+ * thread to continue. */
+function topicAnswer(topic: ChatTopic, ctx: AgentChatContext): string | null {
+  switch (topic) {
+    case "whyNotBuying":
+      return whyNotBuying(ctx);
+    case "missing":
+      return whatsMissing(ctx);
+    case "score":
+      return howIsItGoing(ctx);
+    case "line":
+      return lineDistance(ctx);
+    case "sell":
+      return sellSide(ctx);
+    case "pnl":
+      return pnl(ctx);
+    case "stopped":
+      return stopped(ctx);
+    case "priceMove":
+      return priceMove(ctx);
+    case "next":
+      return nextHighlight(ctx);
+    default:
+      return null;
+  }
+}
+
+/** Where "それで？" naturally goes from each topic. */
+const NEXT_IN_THREAD: Partial<Record<ChatTopic, ChatTopic>> = {
+  whyNotBuying: "missing",
+  missing: "next",
+  line: "missing",
+  score: "next",
+  pnl: "score",
+  priceMove: "missing",
+  sell: "pnl",
+  stopped: "score",
+  next: "missing",
+};
+
 /** The character's reply to one user message, from records only. */
 export function agentReply(text: string, ctx: AgentChatContext): AgentReply {
   const t = text.replace(/\s+/g, "");
@@ -249,30 +348,77 @@ export function agentReply(text: string, ctx: AgentChatContext): AgentReply {
     text: body,
     topic,
   });
-  if (/買わない|買って|なぜ買|なんで買/.test(t))
+  // Conversation memory first: a bare continuation or a bare
+  // "why" only means something against the previous topic.
+  if (/^(それで|それから|んで|でさ|続き)/.test(t)) {
+    const nextTopic =
+      ctx.lastTopic != null
+        ? (NEXT_IN_THREAD[ctx.lastTopic] ?? ctx.lastTopic)
+        : null;
+    const body = nextTopic != null ? topicAnswer(nextTopic, ctx) : null;
+    if (nextTopic != null && body != null)
+      return say(nextTopic, `うん、続きを言うと — ${body}`);
+    return say(
+      "fallback",
+      "何の続きか分からないや。まず「調子は？」みたいに聞いてみて。",
+    );
+  }
+  if (/^(なんで|なぜ)[？?]?$/.test(t) && ctx.lastTopic != null)
     return say("whyNotBuying", whyNotBuying(ctx));
-  if (/足りない|あと何|近づ|あとどれ/.test(t))
-    return say("missing", whatsMissing(ctx));
-  if (/調子|成績|的中/.test(t)) return say("score", howIsItGoing(ctx));
-  if (/ラインまで|ラインは|指値/.test(t))
-    return say("line", lineDistance(ctx));
-  if (/売り|利確|損切り/.test(t)) return say("sell", sellSide(ctx));
-  if (/損益|儲か|利益は|プラス|マイナス/.test(t)) return say("pnl", pnl(ctx));
-  if (/止ま|停止/.test(t)) return say("stopped", stopped(ctx));
-  if (/価格|動いた|値動き|上がっ|下がっ/.test(t))
-    return say("priceMove", priceMove(ctx));
-  if (/見どころ|次は|次に/.test(t)) return say("next", nextHighlight(ctx));
+  let topic: ChatTopic | null = null;
+  if (/買わない|買って|なぜ買|なんで買|どうして買|買う気/.test(t))
+    topic = "whyNotBuying";
+  else if (/いつ買/.test(t)) topic = "missing";
+  else if (/足りない|あと何|近づ|あとどれ/.test(t)) topic = "missing";
+  else if (/様子/.test(t)) topic = "score";
+  else if (/何してる|何を見てる/.test(t)) topic = "next";
+  else if (/調子|成績|的中/.test(t)) topic = "score";
+  else if (/売りライン|利確|損切り/.test(t)) topic = "sell";
+  else if (/ラインまで|ラインは|指値/.test(t)) topic = "line";
+  else if (/売り/.test(t)) topic = "sell";
+  else if (/損益|儲か|利益は|プラス|マイナス/.test(t)) topic = "pnl";
+  else if (/止ま|停止/.test(t)) topic = "stopped";
+  else if (/価格|動いた|値動き|上がっ|下がっ/.test(t)) topic = "priceMove";
+  else if (/見どころ|次は|次に/.test(t)) topic = "next";
+  if (topic != null) {
+    const body = topicAnswer(topic, ctx)!;
+    // The same question twice in a row gets a fresh answer from
+    // the current records, acknowledged as a repeat.
+    if (topic === ctx.lastTopic)
+      return say(topic, `さっきも言ったけど、${body}`);
+    return say(topic, body);
+  }
+  if (/元気/.test(t))
+    return say(
+      "greeting",
+      chatMood(ctx.score) === "confident"
+        ? "元気だよ、調子もいいし。"
+        : chatMood(ctx.score) === "humble"
+          ? "ぼちぼち。当てにいくよ。"
+          : "元気だよ。様子は見てる。",
+    );
   if (/がんば|頑張|応援/.test(t))
     return say(
       "encouragement",
-      "まかせて。条件が揃ったらちゃんと買いに走るから、見てて。",
+      chatMood(ctx.score) === "confident"
+        ? "まかせて、調子もいいし。揃ったら走るよ。"
+        : chatMood(ctx.score) === "humble"
+          ? "うん、次は決める。見てて。"
+          : vary(ctx, [
+              "まかせて。条件が揃ったらちゃんと買いに走るから、見てて。",
+              "ありがとう。揃ったら走るから、見てて。",
+              "うん、がんばる。様子は任せて。",
+            ]),
     );
   if (/こんにちは|おはよう|こんばんは|やあ|ハロー/.test(t))
     return say(
       "greeting",
       ctx.stoppedKind === "sleeping"
         ? "ん…おはよう。今は止まって寝てるところ。"
-        : "やあ、見てくれてありがとう。今の様子なら答えられるよ。",
+        : vary(ctx, [
+            "やあ、見てくれてありがとう。今の様子なら答えられるよ。",
+            "こんにちは。様子のことなら聞いて。",
+          ]),
     );
   if (/ありがとう|ありがと/.test(t))
     return say("greeting", "どういたしまして。また聞いて。");
@@ -284,4 +430,60 @@ export function agentReply(text: string, ctx: AgentChatContext): AgentReply {
   let hash = 0;
   for (const ch of t) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
   return say("fallback", FALLBACKS[hash % FALLBACKS.length]);
+}
+
+export interface ProactivePrompt {
+  text: string;
+  chip: string;
+}
+
+/**
+ * The character speaking up at a narration milestone: a line was
+ * declared, a watch hit, a near miss landed, a buy filled, or a
+ * sudden move broke in. Returns the prompt and the question chip
+ * it offers, or null for entries that are not milestones.
+ */
+export function proactivePrompt(
+  entry: Pick<NarrationEntry, "kind" | "side">,
+): ProactivePrompt | null {
+  switch (entry.kind) {
+    case "priceLine":
+      return {
+        text: "ライン立ったよ。届くまでどれくらいか、聞く？",
+        chip: "ラインまでどれくらい？",
+      };
+    case "watchHit":
+      return { text: "宣言、当たったよ！成績、聞く？", chip: "調子は？" };
+    case "nearMiss":
+      return {
+        text: "あと少しのところで外れた…。何が足りなかったか、聞く？",
+        chip: "あと何が足りない？",
+      };
+    case "alert":
+      return {
+        text: "急に動いたよ。価格の動き、聞く？",
+        chip: "価格はどう動いた？",
+      };
+    case "trade":
+      return entry.side === "BUY"
+        ? { text: "買えたよ！売りラインも引いた。見る？", chip: "売りラインは？" }
+        : null;
+    default:
+      return null;
+  }
+}
+
+/** Prompts are spaced: at most one per cooldown window, however
+ * busy the milestones get — except a buy fill, which always
+ * speaks up. */
+export const PROMPT_COOLDOWN_MS = 10 * 60_000;
+
+export function proactivePromptDue(
+  lastPromptAt: number | null,
+  now: number,
+  milestoneIsBuy: boolean,
+): boolean {
+  if (milestoneIsBuy) return true;
+  if (lastPromptAt == null) return true;
+  return now - lastPromptAt >= PROMPT_COOLDOWN_MS;
 }

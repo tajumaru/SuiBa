@@ -392,6 +392,25 @@ describe("agent narration: persistence across revisits", () => {
     );
   });
 
+  it("scopes the stored narration per pair, SUI keeping the legacy key", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, decision({}));
+    const state = advanceNarration(emptyNarrationState(), d, "alive", NOW);
+    const saved = storage();
+    persistNarration(state, saved, "WAL");
+    // The other pair sees none of it…
+    expect(restoreNarration(saved, "SUI")).toEqual(emptyNarrationState());
+    expect(restoreNarration(saved)).toEqual(emptyNarrationState());
+    // …while WAL restores its own.
+    expect(restoreNarration(saved, "WAL")).toEqual(state);
+    // SUI persists under the original key, so older histories
+    // carry over untouched.
+    const sui = storage();
+    persistNarration(state, sui);
+    expect(restoreNarration(sui)).toEqual(state);
+    expect(restoreNarration(sui, "WAL")).toEqual(emptyNarrationState());
+  });
+
   it("continues when browser storage is denied or full", () => {
     const denied = {
       getItem: () => {

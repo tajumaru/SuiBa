@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   emptyNarrationState,
+  MAX_CHAT_ENTRIES,
   MAX_NARRATION_ENTRIES,
   type NarrationState,
 } from "./agentNarration.ts";
@@ -50,13 +51,16 @@ const schema: z.ZodType<NarrationState> = z.object({
           "sleepTalk",
           "chatUser",
           "chatReply",
+          "chatPrompt",
           "status",
         ]),
         text: z.string(),
         side: z.enum(["BUY", "SELL"]).optional(),
+        topic: z.string().optional(),
+        promptChip: z.string().optional(),
       }),
     )
-    .max(MAX_NARRATION_ENTRIES),
+    .max(MAX_NARRATION_ENTRIES + MAX_CHAT_ENTRIES),
   nextEntryId: number.int().nonnegative(),
   priceRising: z.boolean(),
   priceHistory: z.array(number),
@@ -109,9 +113,20 @@ const schema: z.ZodType<NarrationState> = z.object({
 });
 
 // Resolve storage inside the try: browsers may deny even the localStorage getter.
-export function restoreNarration(storage?: StorageAccess): NarrationState {
+/** Narration is stored per pair: SUI keeps the original key (so
+ * existing histories carry over untouched), other pairs get
+ * their own key and start fresh — a pair switch must never mix
+ * one market's feed, scoreboard or chat memory into another's. */
+function keyFor(scope: string): string {
+  return scope === "SUI" ? KEY : `${KEY}:${scope}`;
+}
+
+export function restoreNarration(
+  storage?: StorageAccess,
+  scope = "SUI",
+): NarrationState {
   try {
-    const raw = (storage ?? window.localStorage).getItem(KEY);
+    const raw = (storage ?? window.localStorage).getItem(keyFor(scope));
     if (!raw || raw.length > 500_000) return emptyNarrationState();
     const result = schema.safeParse(JSON.parse(raw));
     return result.success ? result.data : emptyNarrationState();
@@ -123,9 +138,13 @@ export function restoreNarration(storage?: StorageAccess): NarrationState {
 export function persistNarration(
   state: NarrationState,
   storage?: StorageAccess,
+  scope = "SUI",
 ): void {
   try {
-    (storage ?? window.localStorage).setItem(KEY, JSON.stringify(state));
+    (storage ?? window.localStorage).setItem(
+      keyFor(scope),
+      JSON.stringify(state),
+    );
   } catch {
     // Storage restrictions or a full quota must not interrupt live narration.
   }

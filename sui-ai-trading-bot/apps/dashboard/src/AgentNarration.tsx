@@ -12,7 +12,7 @@ import {
   currentWatchScore,
   findNewBuyEntry,
   isBuyTradeEntry,
-  MAX_NARRATION_ENTRIES,
+  trimNarrationEntries,
   type AgentPose,
   type NarrationEntry,
   type NarrationState,
@@ -33,8 +33,10 @@ import imgHardPointSmile from "./assets/agent-hard-point-smile.jpg";
 import { persistNarration, restoreNarration } from "./narrationStorage.ts";
 import {
   agentReply,
-  CHAT_CHIPS,
   followUpChips,
+  orderedChips,
+  proactivePrompt,
+  proactivePromptDue,
   type AgentChatContext,
   type ChatTopic,
 } from "./agentChat.ts";
@@ -362,9 +364,12 @@ const timeText = (at: number) =>
 export function AgentFeedEntryRow({
   entry,
   justBought = false,
+  onPromptChip,
 }: {
   entry: NarrationEntry;
   justBought?: boolean;
+  /** Tapping the suggested question on a chatPrompt entry asks it. */
+  onPromptChip?: (chip: string) => void;
 }) {
   const buy = isBuyTradeEntry(entry);
   return (
@@ -404,8 +409,20 @@ export function AgentFeedEntryRow({
       {entry.kind === "chatReply" && (
         <span className="agent-feed-entry-tag reply">返信</span>
       )}
+      {entry.kind === "chatPrompt" && (
+        <span className="agent-feed-entry-tag reply">キャラ</span>
+      )}
       {buy && <span className="agent-feed-entry-tag buy">買えた！</span>}
       <p>{entry.text}</p>
+      {entry.kind === "chatPrompt" && entry.promptChip && onPromptChip && (
+        <button
+          type="button"
+          className="agent-feed-prompt-chip"
+          onClick={() => onPromptChip(entry.promptChip!)}
+        >
+          {entry.promptChip}
+        </button>
+      )}
     </div>
   );
 }
@@ -415,9 +432,12 @@ export function AgentNarrationFeed({
   stale,
   onPoseChange,
   onCelebrate,
+  pairLabel = "SUI",
 }: {
   data: OperationsSnapshot;
   stale: boolean;
+  /** The base symbol of the pair on screen, for chat replies. */
+  pairLabel?: string;
   /** Reports the derived pose to the app shell (the header avatar),
    * so the avatar and the feed always agree on the pose. */
   onPoseChange?: (pose: AgentPose) => void;
@@ -427,8 +447,11 @@ export function AgentNarrationFeed({
   onCelebrate?: () => void;
 }) {
   const [narration, setNarration] = useState<NarrationState>(() =>
-    restoreNarration(),
+    restoreNarration(undefined, pairLabel),
   );
+  // Narration storage is scoped per pair (see narrationStorage).
+  const persist = (state: NarrationState) =>
+    persistNarration(state, undefined, pairLabel);
   const [now, setNow] = useState(() => Date.now());
   const [receivedAt, setReceivedAt] = useState(() => Date.now());
   const receivedRef = useRef(receivedAt);
@@ -482,7 +505,7 @@ export function AgentNarrationFeed({
       Date.now(),
     );
     narrationRef.current = next;
-    persistNarration(next);
+    persist(next);
     setNarration(next);
     // A buy celebration opens only here: on an advance after the
     // feed initialised (the initialising advance lays down the
@@ -493,15 +516,61 @@ export function AgentNarrationFeed({
     hasAdvancedRef.current = true;
     if (firstAdvance || !prev.initialized) return;
     const hit = findNewBuyEntry(prev.entries, next.entries);
-    if (!hit || Math.abs(Date.now() - hit.at) > CELEBRATION_FRESH_MS) return;
-    setCelebration({ entryId: hit.id, startedAt: Date.now() });
-    onCelebrate?.();
-    if (celebrationTimerRef.current != null)
-      window.clearTimeout(celebrationTimerRef.current);
-    celebrationTimerRef.current = window.setTimeout(
-      () => setCelebration(null),
-      BUY_CELEBRATION_MS,
-    );
+    if (hit && Math.abs(Date.now() - hit.at) <= CELEBRATION_FRESH_MS) {
+      setCelebration({ entryId: hit.id, startedAt: Date.now() });
+      onCelebrate?.();
+      if (celebrationTimerRef.current != null)
+        window.clearTimeout(celebrationTimerRef.current);
+      celebrationTimerRef.current = window.setTimeout(
+        () => setCelebration(null),
+        BUY_CELEBRATION_MS,
+      );
+    }
+    // The character speaks up at a fresh milestone (a line
+    // declared, a watch hit, a near miss, a sudden move): one
+    // prompt per advance at most, appended after the advance's
+    // own entries, offering the natural follow-up question.
+    const prevIds = new Set(prev.entries.map((e) => e.id));
+    const milestone = [...next.entries]
+      .reverse()
+      .find(
+        (e) =>
+          !prevIds.has(e.id) &&
+          Math.abs(Date.now() - e.at) <= CELEBRATION_FRESH_MS &&
+          proactivePrompt(e) != null,
+      );
+    if (milestone) {
+      const prompt = proactivePrompt(milestone)!;
+      const cur = narrationRef.current;
+      const lastPrompt = [...cur.entries]
+        .reverse()
+        .find((e) => e.kind === "chatPrompt");
+      if (
+        !proactivePromptDue(
+          lastPrompt?.at ?? null,
+          Date.now(),
+          isBuyTradeEntry(milestone),
+        )
+      )
+        return;
+      const withPrompt: NarrationState = {
+        ...cur,
+        entries: trimNarrationEntries([
+          ...cur.entries,
+          {
+            id: `narration:${cur.nextEntryId}`,
+            at: Date.now(),
+            kind: "chatPrompt",
+            text: prompt.text,
+            promptChip: prompt.chip,
+          } satisfies NarrationEntry,
+        ]),
+        nextEntryId: cur.nextEntryId + 1,
+      };
+      narrationRef.current = withPrompt;
+      persist(withPrompt);
+      setNarration(withPrompt);
+    }
   }, [data, stale, onCelebrate]);
   const vital = botVital(data, stale, now, receivedAt);
   const pose = agentPose(narration, data, vital, now);
@@ -522,41 +591,31 @@ export function AgentNarrationFeed({
   const [chatTopic, setChatTopic] = useState<ChatTopic | null>(null);
   const [chatThinking, setChatThinking] = useState(false);
   const chatTimer = useRef<number | null>(null);
+  // Japanese IME: the Enter that confirms a conversion must not
+  // submit the comment.
+  const composingRef = useRef(false);
   useEffect(
     () => () => {
       if (chatTimer.current != null) window.clearTimeout(chatTimer.current);
     },
     [],
   );
+  // The data-derived half of the chat context, refreshed after
+  // every render: the reply is composed when it LANDS, from the
+  // freshest snapshot, not from the moment the user hit send.
+  const chatCtxRef = useRef<Pick<
+    AgentChatContext,
+    "dec" | "score" | "running" | "stoppedKind" | "pairLabel"
+  > | null>(null);
+  const [chatReplyText, setChatReplyText] = useState("");
   const submitChat = (raw: string) => {
     const text = raw.trim().slice(0, 120);
     if (!text || chatThinking) return;
     const state = narrationRef.current;
-    const history = state.priceHistory;
-    const ctx: AgentChatContext = {
-      dec: chips ? data.decision : null,
-      score,
-      linePrice: state.priceLine?.price ?? null,
-      running: vital.state === "alive" || vital.state === "weak",
-      stoppedKind:
-        vital.state === "sleeping"
-          ? "sleeping"
-          : vital.state === "flatlined"
-            ? "safety"
-            : vital.state === "weak"
-              ? "weak"
-              : null,
-      tradeCount: state.entries.filter((e) => e.kind === "trade").length,
-      recentMovePct:
-        history.length >= 2 && history[0] > 0
-          ? (history[history.length - 1] / history[0] - 1) * 100
-          : null,
-    };
-    const reply = agentReply(text, ctx);
     const at = Date.now();
     const withUser: NarrationState = {
       ...state,
-      entries: [
+      entries: trimNarrationEntries([
         ...state.entries,
         {
           id: `narration:${state.nextEntryId}`,
@@ -564,38 +623,64 @@ export function AgentNarrationFeed({
           kind: "chatUser",
           text,
         } satisfies NarrationEntry,
-      ].slice(-MAX_NARRATION_ENTRIES),
+      ]),
       nextEntryId: state.nextEntryId + 1,
     };
     narrationRef.current = withUser;
-    persistNarration(withUser);
+    persist(withUser);
     setNarration(withUser);
     setChatInput("");
     setChatThinking(true);
     // A short thinking beat before the reply lands, so the
-    // exchange reads as a conversation rather than a lookup.
+    // exchange reads as a conversation rather than a lookup. The
+    // reply itself is composed inside the timer, from the
+    // freshest records available at that moment.
     chatTimer.current = window.setTimeout(() => {
       chatTimer.current = null;
       const prev = narrationRef.current;
+      const history = prev.priceHistory;
+      const lastReply = [...prev.entries]
+        .reverse()
+        .find((e) => e.kind === "chatReply");
+      const base = chatCtxRef.current;
+      const ctx: AgentChatContext = {
+        dec: base?.dec ?? null,
+        score: base?.score ?? null,
+        running: base?.running ?? false,
+        stoppedKind: base?.stoppedKind ?? null,
+        pairLabel: base?.pairLabel ?? pairLabel,
+        linePrice: prev.priceLine?.price ?? null,
+        tradeCount: prev.entries.filter((e) => e.kind === "trade").length,
+        recentMovePct:
+          history.length >= 2 && history[0] > 0
+            ? (history[history.length - 1] / history[0] - 1) * 100
+            : null,
+        lastTopic: (lastReply?.topic as ChatTopic | undefined) ?? null,
+        exchangeCount: prev.entries.filter((e) => e.kind === "chatReply")
+          .length,
+      };
+      const reply = agentReply(text, ctx);
       const landedAt = Date.now();
       const next: NarrationState = {
         ...prev,
-        entries: [
+        entries: trimNarrationEntries([
           ...prev.entries,
           {
             id: `narration:${prev.nextEntryId}`,
             at: landedAt,
             kind: "chatReply",
             text: reply.text,
+            topic: reply.topic,
           } satisfies NarrationEntry,
-        ].slice(-MAX_NARRATION_ENTRIES),
+        ]),
         nextEntryId: prev.nextEntryId + 1,
       };
       narrationRef.current = next;
-      persistNarration(next);
+      persist(next);
       setNarration(next);
       setChatTopic(reply.topic);
       setChatReplyAt(landedAt);
+      setChatReplyText(reply.text);
       setChatThinking(false);
     }, 650);
   };
@@ -610,6 +695,22 @@ export function AgentNarrationFeed({
     : currentWatch(narration, data.decision, vital.state, now);
   // The declaration score, under the same freshness rule.
   const score = stale ? null : currentWatchScore(narration, data.decision, now);
+  useEffect(() => {
+    chatCtxRef.current = {
+      dec: chips ? data.decision : null,
+      score,
+      running: vital.state === "alive" || vital.state === "weak",
+      stoppedKind:
+        vital.state === "sleeping"
+          ? "sleeping"
+          : vital.state === "flatlined"
+            ? "safety"
+            : vital.state === "weak"
+              ? "weak"
+              : null,
+      pairLabel,
+    };
+  });
 
   return (
     <section className="agent-feed" aria-label="エージェント実況">
@@ -663,12 +764,22 @@ export function AgentNarrationFeed({
         </div>
       )}
       <div className="agent-chat">
+        <p className="sr-only" role="status">
+          {chatReplyText}
+        </p>
         <div
           className="agent-chat-chips"
           role="group"
           aria-label="キャラへの質問候補"
         >
-          {(chatTopic == null ? [...CHAT_CHIPS] : followUpChips(chatTopic)).map(
+          {(chatTopic == null
+            ? orderedChips(
+                narration.entries
+                  .filter((e) => e.kind === "chatUser")
+                  .map((e) => e.text),
+              )
+            : followUpChips(chatTopic)
+          ).map(
             (chip) => (
               <button
                 key={chip}
@@ -694,6 +805,7 @@ export function AgentNarrationFeed({
           className="agent-chat-form"
           onSubmit={(e) => {
             e.preventDefault();
+            if (composingRef.current) return;
             submitChat(chatInput);
           }}
         >
@@ -703,6 +815,12 @@ export function AgentNarrationFeed({
             maxLength={120}
             disabled={chatThinking}
             onChange={(e) => setChatInput(e.target.value)}
+            onCompositionStart={() => {
+              composingRef.current = true;
+            }}
+            onCompositionEnd={() => {
+              composingRef.current = false;
+            }}
             placeholder="キャラへのコメント"
             aria-label="キャラへのコメント"
           />
@@ -713,7 +831,7 @@ export function AgentNarrationFeed({
       </div>
       <div className="agent-feed-list">
         {chatThinking && (
-          <article className="agent-feed-entry chatReply thinking">
+          <article className="agent-feed-entry chatReply thinking" role="status">
             <span className="agent-feed-entry-tag reply">返信</span>
             <p>考え中…</p>
           </article>
@@ -732,6 +850,7 @@ export function AgentNarrationFeed({
                 key={entry.id}
                 entry={entry}
                 justBought={celebration?.entryId === entry.id}
+                onPromptChip={submitChat}
               />
             ))
         )}
