@@ -34,7 +34,9 @@ import { persistNarration, restoreNarration } from "./narrationStorage.ts";
 import {
   agentReply,
   CHAT_CHIPS,
+  followUpChips,
   type AgentChatContext,
+  type ChatTopic,
 } from "./agentChat.ts";
 
 /**
@@ -517,42 +519,85 @@ export function AgentNarrationFeed({
     onPoseChange?.(reportedPose);
   }, [reportedPose, onPoseChange]);
   const [chatInput, setChatInput] = useState("");
+  const [chatTopic, setChatTopic] = useState<ChatTopic | null>(null);
+  const [chatThinking, setChatThinking] = useState(false);
+  const chatTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (chatTimer.current != null) window.clearTimeout(chatTimer.current);
+    },
+    [],
+  );
   const submitChat = (raw: string) => {
     const text = raw.trim().slice(0, 120);
-    if (!text) return;
+    if (!text || chatThinking) return;
+    const state = narrationRef.current;
+    const history = state.priceHistory;
     const ctx: AgentChatContext = {
       dec: chips ? data.decision : null,
       score,
-      linePrice: narration.priceLine?.price ?? null,
+      linePrice: state.priceLine?.price ?? null,
       running: vital.state === "alive" || vital.state === "weak",
-      sleeping: vital.state === "sleeping",
+      stoppedKind:
+        vital.state === "sleeping"
+          ? "sleeping"
+          : vital.state === "flatlined"
+            ? "safety"
+            : vital.state === "weak"
+              ? "weak"
+              : null,
+      tradeCount: state.entries.filter((e) => e.kind === "trade").length,
+      recentMovePct:
+        history.length >= 2 && history[0] > 0
+          ? (history[history.length - 1] / history[0] - 1) * 100
+          : null,
     };
+    const reply = agentReply(text, ctx);
     const at = Date.now();
-    const prev = narrationRef.current;
-    const userEntry: NarrationEntry = {
-      id: `narration:${prev.nextEntryId}`,
-      at,
-      kind: "chatUser",
-      text,
+    const withUser: NarrationState = {
+      ...state,
+      entries: [
+        ...state.entries,
+        {
+          id: `narration:${state.nextEntryId}`,
+          at,
+          kind: "chatUser",
+          text,
+        } satisfies NarrationEntry,
+      ].slice(-MAX_NARRATION_ENTRIES),
+      nextEntryId: state.nextEntryId + 1,
     };
-    const replyEntry: NarrationEntry = {
-      id: `narration:${prev.nextEntryId + 1}`,
-      at,
-      kind: "chatReply",
-      text: agentReply(text, ctx),
-    };
-    const next: NarrationState = {
-      ...prev,
-      entries: [...prev.entries, userEntry, replyEntry].slice(
-        -MAX_NARRATION_ENTRIES,
-      ),
-      nextEntryId: prev.nextEntryId + 2,
-    };
-    narrationRef.current = next;
-    persistNarration(next);
-    setNarration(next);
-    setChatReplyAt(at);
+    narrationRef.current = withUser;
+    persistNarration(withUser);
+    setNarration(withUser);
     setChatInput("");
+    setChatThinking(true);
+    // A short thinking beat before the reply lands, so the
+    // exchange reads as a conversation rather than a lookup.
+    chatTimer.current = window.setTimeout(() => {
+      chatTimer.current = null;
+      const prev = narrationRef.current;
+      const landedAt = Date.now();
+      const next: NarrationState = {
+        ...prev,
+        entries: [
+          ...prev.entries,
+          {
+            id: `narration:${prev.nextEntryId}`,
+            at: landedAt,
+            kind: "chatReply",
+            text: reply.text,
+          } satisfies NarrationEntry,
+        ].slice(-MAX_NARRATION_ENTRIES),
+        nextEntryId: prev.nextEntryId + 1,
+      };
+      narrationRef.current = next;
+      persistNarration(next);
+      setNarration(next);
+      setChatTopic(reply.topic);
+      setChatReplyAt(landedAt);
+      setChatThinking(false);
+    }, 650);
   };
   // Buy-condition chips come from the same fresh decision evidence
   // as the narration; a stale display shows no chips at all.
@@ -623,15 +668,27 @@ export function AgentNarrationFeed({
           role="group"
           aria-label="キャラへの質問候補"
         >
-          {CHAT_CHIPS.map((chip) => (
+          {(chatTopic == null ? [...CHAT_CHIPS] : followUpChips(chatTopic)).map(
+            (chip) => (
+              <button
+                key={chip}
+                type="button"
+                disabled={chatThinking}
+                onClick={() => submitChat(chip)}
+              >
+                {chip}
+              </button>
+            ),
+          )}
+          {chatTopic != null && (
             <button
-              key={chip}
               type="button"
-              onClick={() => submitChat(chip)}
+              disabled={chatThinking}
+              onClick={() => setChatTopic(null)}
             >
-              {chip}
+              ほかの質問
             </button>
-          ))}
+          )}
         </div>
         <form
           className="agent-chat-form"
@@ -644,14 +701,23 @@ export function AgentNarrationFeed({
             type="text"
             value={chatInput}
             maxLength={120}
+            disabled={chatThinking}
             onChange={(e) => setChatInput(e.target.value)}
             placeholder="キャラへのコメント"
             aria-label="キャラへのコメント"
           />
-          <button type="submit">送信</button>
+          <button type="submit" disabled={chatThinking}>
+            送信
+          </button>
         </form>
       </div>
       <div className="agent-feed-list">
+        {chatThinking && (
+          <article className="agent-feed-entry chatReply thinking">
+            <span className="agent-feed-entry-tag reply">返信</span>
+            <p>考え中…</p>
+          </article>
+        )}
         {narration.entries.length === 0 ? (
           <p className="agent-feed-empty">
             実況を準備中です。Botの記録が届くと、ここに実況が流れます。

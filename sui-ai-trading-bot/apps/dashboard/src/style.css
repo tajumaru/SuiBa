@@ -3712,3 +3712,20 @@ th {
 .agent-feed-entry.chatReply {
   border-left: 3px solid #43dfb2;
 }
+.agent-feed-entry.thinking p {
+  color: #9db4c4;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .agent-feed-entry.thinking p {
+    animation: agent-chat-thinking 1s ease-in-out infinite;
+  }
+  @keyframes agent-chat-thinking {
+    0%,
+    100% {
+      opacity: 0.45;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+}
