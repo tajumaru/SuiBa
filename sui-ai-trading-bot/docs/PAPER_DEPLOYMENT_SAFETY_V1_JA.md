@@ -55,6 +55,8 @@ pnpm maintenance maintenance-off /var/lib/suiba/bot.sqlite
 
 ## 限界と後続PR
 
+ローカルsnapshotを外部保存する前の暗号化・認証付き復号は[暗号化バックアップ手順](PAPER_BACKUP_ENCRYPTION_V1_JA.md)を利用できる。以下のoff-host保存に関する残作業には、転送・保持・保存先/鍵の運用を含む。
+
 - 専用lockを取らない旧binaryや手作業SQL、別root、共有FS/別hostを排他する機能ではない。初回導入・DB移行時は旧系を停止し再起動不能にする。NFS/ネットワーク共有上で使わない。
 - このPRはDBスキーマを変更せずschema fingerprintを記録するが、新旧アプリのJSON意味互換性や逆migrationは保証しない。自動rollbackと本番in-place restoreは実装しない。
 - メンテナンス観測までの既に完了した約定を取り消さない。SIGTERMはactiveTick完了を待つ。backupはinstance不在＋clean証跡＋停止DBが揃うまで拒否される。
