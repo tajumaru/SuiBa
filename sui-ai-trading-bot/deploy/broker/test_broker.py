@@ -1,4 +1,6 @@
 import copy
+import io
+import tarfile
 import hashlib
 import importlib.util
 import json
@@ -63,7 +65,7 @@ class FakeDocker:
         if args[0] == 'ps':
             return CID
         if args[:2] == ['image', 'inspect'] and '--format' in args:
-            return json.dumps({'Id': IMAGE, 'Os': 'linux', 'Architecture': 'amd64', 'Config': {'User': 'node', 'Labels': {'org.opencontainers.image.revision': SHA}}})
+            return json.dumps({'Id': IMAGE, 'Os': 'linux', 'Architecture': 'amd64', 'Config': {'User': 'node', 'Env': ['MODE=PAPER'], 'Labels': {'org.opencontainers.image.revision': SHA}}})
         if args[0] == 'inspect':
             if args[2] == '{{.State.Running}}':
                 return 'false'
@@ -77,6 +79,9 @@ class FakeDocker:
 
 class BrokerTests(unittest.TestCase):
     def setUp(self):
+        # Transaction tests isolate archive parsing; real tar tests below cover it.
+        self.identity_patch = patch.object(b, 'archive_identity', return_value=(IMAGE, {}))
+        self.identity_patch.start()
         self.temp = tempfile.TemporaryDirectory(prefix='suiba-broker-', dir='/var/lib')
         self.root = Path(self.temp.name)
         self.policy, self.state, self.incoming, self.backups = [self.root/x for x in ['policy', 'state', 'incoming', 'backups']]
@@ -101,6 +106,7 @@ class BrokerTests(unittest.TestCase):
         self.req = {'operation': 'deploy', 'sha': SHA}
 
     def tearDown(self):
+        self.identity_patch.stop()
         self.temp.cleanup()
 
     def save_approval(self):
@@ -347,6 +353,67 @@ class BrokerTests(unittest.TestCase):
         self.assertIn(b'SUIBA_BROKER_REJECTED', result.stderr)
         result = subprocess.run(['/usr/sbin/runuser', '-u', 'suiba-deploy', '--', '/usr/bin/test', '-w', str(self.policy)], capture_output=True)
         self.assertNotEqual(result.returncode, 0)
+
+
+class ArchiveIdentityTests(unittest.TestCase):
+    def fixture(self, root, oci=True, corrupt=None):
+        config = {'os': 'linux', 'architecture': 'amd64', 'config': {'User': 'node', 'Env': ['MODE=PAPER'], 'Labels': {'org.opencontainers.image.revision': SHA}}, 'rootfs': {'type': 'layers', 'diff_ids': []}}
+        raw = json.dumps(config).encode()
+        cid = 'sha256:'+hashlib.sha256(raw).hexdigest()
+        name = 'blobs/sha256/'+cid[7:] if oci else cid[7:]+'.json'
+        objects = {name: raw, 'manifest.json': json.dumps([{'Config': name, 'Layers': [], 'RepoTags': ['suiba:'+SHA]}]).encode()}
+        descriptors = {}
+        if oci:
+            manifest = {'schemaVersion': 2, 'mediaType': 'application/vnd.oci.image.manifest.v1+json', 'config': {'mediaType': 'application/vnd.oci.image.config.v1+json', 'digest': cid, 'size': len(raw)}, 'layers': []}
+            if corrupt == 'config_reference':
+                manifest['config']['digest'] = IMAGE
+            mr = json.dumps(manifest).encode()
+            mid = 'sha256:'+hashlib.sha256(mr).hexdigest()
+            descriptor = {'mediaType': manifest['mediaType'], 'digest': mid, 'size': len(mr)}
+            objects['blobs/sha256/'+mid[7:]] = mr
+            objects['index.json'] = json.dumps({'schemaVersion': 2, 'manifests': [descriptor]}).encode()
+            objects['oci-layout'] = b'{"imageLayoutVersion":"1.0.0"}'
+            descriptors[mid] = descriptor
+        if corrupt == 'blob':
+            objects[name] += b' '
+        if corrupt == 'duplicate_image':
+            objects['manifest.json'] = json.dumps([{'Config': name, 'Layers': []}]*2).encode()
+        path = Path(root)/'test.tar.gz'
+        with tarfile.open(path, 'w:gz') as t:
+            for n, data in objects.items():
+                m = tarfile.TarInfo(n); m.size = len(data)
+                t.addfile(m, io.BytesIO(data))
+        return path, cid, descriptors
+
+    def test_classic_and_containerd_identity(self):
+        for oci in (False, True):
+            with tempfile.TemporaryDirectory() as root:
+                path, cid, manifests = self.fixture(root, oci)
+                self.assertEqual(b.archive_identity(path, cid, SHA), (cid, manifests))
+                identity = {'Id': cid, 'Os': 'linux', 'Architecture': 'amd64', 'Config': {'User': 'node', 'Env': ['MODE=PAPER'], 'Labels': {'org.opencontainers.image.revision': SHA}}}
+                self.assertEqual(b.loaded_identity(identity, cid, manifests, SHA), cid)
+                for mid, desc in manifests.items():
+                    self.assertEqual(b.archive_identity(path, mid, SHA), (cid, manifests))
+                    identity.update(Id=mid, Descriptor=desc)
+                    self.assertEqual(b.loaded_identity(identity, cid, manifests, SHA), mid)
+
+    def test_tampered_archive_manifest_and_config_rejected(self):
+        for corrupt in ('blob', 'config_reference', 'duplicate_image'):
+            with self.subTest(corrupt=corrupt), tempfile.TemporaryDirectory() as root:
+                path, cid, _ = self.fixture(root, corrupt=corrupt)
+                with self.assertRaises(Exception):
+                    b.archive_identity(path, cid, SHA)
+
+    def test_wrong_approval_revision_and_docker_response_rejected(self):
+        with tempfile.TemporaryDirectory() as root:
+            path, cid, manifests = self.fixture(root)
+            for approved, sha in ((IMAGE, SHA), (cid, 'f'*40)):
+                with self.assertRaises(Exception):
+                    b.archive_identity(path, approved, sha)
+            mid = next(iter(manifests))
+            for identity in ({'Id': IMAGE}, {'Id': mid, 'Descriptor': {}}, {'Id': cid, 'Os': 'linux', 'Architecture': 'amd64', 'Config': {'User': 'root'}}):
+                with self.assertRaises(Exception):
+                    b.loaded_identity(identity, cid, manifests, SHA)
 
 
 if __name__ == '__main__':
