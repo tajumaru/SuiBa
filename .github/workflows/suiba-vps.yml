@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: "Type DEPLOY-PAPER to deploy main (execution stays maintenance-blocked)"
+        description: "VERIFY-NO-WORKER for isolated checks; DEPLOY-PAPER to deploy main"
         required: true
         type: string
 permissions:
@@ -17,7 +17,13 @@ concurrency:
   group: suiba-vps-${{ github.event_name == 'workflow_dispatch' && 'deployment' || github.ref }}
   cancel-in-progress: false
 jobs:
+  verify-without-worker:
+    if: github.event_name == 'workflow_dispatch' && inputs.confirmation == 'VERIFY-NO-WORKER'
+    uses: ./.github/workflows/suiba-no-worker.yml
+    permissions:
+      contents: read
   validate:
+    if: github.event_name != 'workflow_dispatch' || inputs.confirmation != 'VERIFY-NO-WORKER'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
