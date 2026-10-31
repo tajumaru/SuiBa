@@ -4300,3 +4300,45 @@ summary {
 .history-table tr.first-fill td {
   background: rgba(237, 201, 128, 0.07);
 }
+
+/* Folded chat box: one quiet line until the user wants to ask.
+   The opener mirrors the form's prompt styling; the close is a
+   small text button under the form. */
+.agent-chat-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: #020a06;
+  border: 1px solid #1f5c46;
+  border-radius: 4px;
+  color: #8fa9bd;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  text-align: left;
+  min-height: 38px;
+}
+.agent-chat-open::before {
+  content: ">";
+  color: #43dfb2;
+  font-weight: 700;
+}
+.agent-chat-close {
+  margin-top: 6px;
+  padding: 4px 8px;
+  background: none;
+  border: none;
+  color: #8fa9bd;
+  font-size: 12px;
+  min-height: 28px;
+}
+/* Stuck dock, second pass: centred, the mini avatar still rode
+   over the price in the middle of the ticker. Right-aligned,
+   it covers only the sparkline's tail — the pair switch, the
+   price and the line pill all stay readable. */
+.agent-avatar-dock.stuck {
+  margin-left: auto;
+  margin-right: 10px;
+  align-items: flex-end;
+}

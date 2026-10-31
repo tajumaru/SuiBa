@@ -201,8 +201,15 @@ function whatsMissing(ctx: AgentChatContext): string {
   if (p.missing.length === 0)
     return "条件は全部揃ってるよ。足りないのは利益保護のゴーサインだけ。";
   const parts = [...p.missing];
-  if (!p.rsi && dec.rsi > dec.oversold)
-    parts.push(`RSIはあと${Math.ceil(dec.rsi - dec.oversold)}`);
+  if (!p.rsi && dec.rsi > dec.oversold) {
+    // The distance rides inside the piece name as a noun
+    // phrase — "RSI（あと28）". A clause ("RSIはあと…") in the
+    // list produced the broken "RSIとRSIはあと…" on device.
+    const distance = `RSI（あと${Math.ceil(dec.rsi - dec.oversold)}）`;
+    const at = parts.indexOf("RSI");
+    if (at >= 0) parts[at] = distance;
+    else parts.push(distance);
+  }
   return `足りないのは${parts.join("と")}。${vary(ctx, ["揃ったら買いに走るよ。", "揃えば走るよ。"])}`;
 }
 

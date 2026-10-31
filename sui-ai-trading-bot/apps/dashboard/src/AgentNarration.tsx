@@ -605,6 +605,10 @@ export function AgentNarrationFeed({
     onPoseChange?.(reportedPose);
   }, [reportedPose, onPoseChange]);
   const [chatInput, setChatInput] = useState("");
+  // The chat box starts folded to a single "キャラに聞く" line so
+  // the feed leads; it expands on tap (or when a milestone
+  // prompt chip submits through it).
+  const [chatOpen, setChatOpen] = useState(false);
   const [chatTopic, setChatTopic] = useState<ChatTopic | null>(null);
   const [chatThinking, setChatThinking] = useState(false);
   const chatTimer = useRef<number | null>(null);
@@ -628,6 +632,7 @@ export function AgentNarrationFeed({
   const submitChat = (raw: string) => {
     const text = raw.trim().slice(0, 120);
     if (!text || chatThinking) return;
+    setChatOpen(true);
     const state = narrationRef.current;
     const at = Date.now();
     const withUser: NarrationState = {
@@ -784,6 +789,17 @@ export function AgentNarrationFeed({
         <p className="sr-only" role="status">
           {chatReplyText}
         </p>
+        {!chatOpen ? (
+          <button
+            type="button"
+            className="agent-chat-open"
+            aria-expanded={false}
+            onClick={() => setChatOpen(true)}
+          >
+            キャラに聞く
+          </button>
+        ) : (
+          <>
         <div
           className="agent-chat-chips"
           role="group"
@@ -845,6 +861,16 @@ export function AgentNarrationFeed({
             送信
           </button>
         </form>
+        <button
+          type="button"
+          className="agent-chat-close"
+          aria-expanded={true}
+          onClick={() => setChatOpen(false)}
+        >
+          畳む
+        </button>
+          </>
+        )}
       </div>
       <div className="agent-feed-list">
         {chatThinking && (

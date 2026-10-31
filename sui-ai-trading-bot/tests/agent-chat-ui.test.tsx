@@ -15,16 +15,19 @@ const stopped = {
 } as unknown as OperationsSnapshot;
 
 describe("agent chat UI (static rendering)", () => {
-  it("renders the chat box with the base chips and the comment form", () => {
+  it("renders the chat box folded to its one-line opener", () => {
     const html = renderToStaticMarkup(
       <AgentNarrationFeed data={stopped} stale={false} />,
     );
-    expect(html).toContain("キャラへの質問候補");
-    expect(html).toContain("なんで買わないの？");
-    expect(html).toContain("がんばれ");
-    expect(html).toContain('aria-label="キャラへのコメント"');
-    expect(html).toContain("送信");
-    // The live region for replies starts empty.
+    // Folded: only the opener shows — the feed leads. The chips
+    // and the form render after the user taps it open (their
+    // behaviour is covered by the agentReply unit tests; the
+    // SSR stack cannot click).
+    expect(html).toContain("agent-chat-open");
+    expect(html).toContain("キャラに聞く");
+    expect(html).not.toContain("キャラへの質問候補");
+    expect(html).not.toContain('aria-label="キャラへのコメント"');
+    // The live region for replies starts empty and stays mounted.
     expect(html).toContain('role="status"');
   });
 

@@ -238,6 +238,31 @@ describe("agent chat replies", () => {
     expect(followUpChips("greeting")).toEqual([...CHAT_CHIPS]);
   });
 
+  it("names the RSI distance once when RSI is the only missing piece", () => {
+    const reply = agentReply(
+      "あと何が足りない？",
+      ctx({
+        dec: dec({
+          rsi: 72.5,
+          oversold: 45,
+          conditions: {
+            emaUp: true,
+            emaGapShrinking: false,
+            rsiRecovery: false,
+            histogramImproving: true,
+            hasPosition: false,
+            stopLoss: false,
+            takeProfit: false,
+          },
+        }),
+      }),
+    );
+    expect(reply.topic).toBe("missing");
+    expect(reply.text).toContain("足りないのはRSI（あと28）");
+    expect(reply.text).not.toContain("RSIとRSI");
+    expect(reply.text).not.toContain("RSIはあと");
+  });
+
   it("routes the sell-line chip to the sell answer, not the buy line", () => {
     const reply = agentReply("売りラインは？", ctx());
     expect(reply.topic).toBe("sell");
