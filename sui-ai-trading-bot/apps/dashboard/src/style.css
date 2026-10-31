@@ -4388,6 +4388,7 @@ summary {
 }
 .settings-diff .diff-plus {
   color: #43dfb2;
+}
 /* Stuck dock, third pass: right-aligning at the top still left
    the mini avatar riding over the feed's text column while
    scrolling. The stuck avatar now leaves the reading area
