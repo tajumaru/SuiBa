@@ -4429,3 +4429,50 @@ summary {
   flex: none;
   margin-left: auto;
 }
+
+/* Chat composer as a bottom bar (the messaging-app pattern the
+   owner asked for): the folded "キャラに聞く" line — and its
+   expanded sheet — pin to the screen bottom above the mobile
+   tab bar, inside the narration tab only (the feed wrapper is
+   display:none on other tabs, which hides the fixed bar too).
+   The feed gains bottom room so its last entry can scroll
+   clear of the bar, and the corner avatar chip lifts above
+   the bar while it is on screen (html.chat-bar, set by the
+   feed while its tab is active). */
+.agent-chat {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 42;
+  margin: 0;
+  padding: 8px 5% calc(8px + env(safe-area-inset-bottom, 0px));
+  background: rgba(2, 10, 6, 0.95);
+  border-top: 1px solid #1f5c46;
+  backdrop-filter: blur(6px);
+}
+.agent-feed {
+  margin-bottom: 72px;
+}
+@media (max-width: 600px) {
+  .agent-chat {
+    bottom: calc(58px + env(safe-area-inset-bottom, 0px));
+  }
+  .agent-feed {
+    margin-bottom: 128px;
+  }
+  html.chat-bar .agent-avatar-dock.stuck {
+    bottom: calc(122px + env(safe-area-inset-bottom, 0px));
+  }
+  html.chat-bar-open .agent-avatar-dock.stuck {
+    bottom: calc(228px + env(safe-area-inset-bottom, 0px));
+  }
+}
+@media (min-width: 601px) {
+  html.chat-bar .agent-avatar-dock.stuck {
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+  html.chat-bar-open .agent-avatar-dock.stuck {
+    bottom: calc(170px + env(safe-area-inset-bottom, 0px));
+  }
+}

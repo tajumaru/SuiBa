@@ -695,6 +695,7 @@ function App() {
                       onPoseChange={setAgentPose}
                       onCelebrate={handleBuyCelebration}
                       pairLabel={data?.pair === "WAL_USDC" ? "WAL" : "SUI"}
+                      active={activeTab === "Live"}
                     />
                   ) : (
                     <p role="status">

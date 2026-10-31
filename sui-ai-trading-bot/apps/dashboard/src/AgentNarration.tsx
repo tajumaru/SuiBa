@@ -450,9 +450,14 @@ export function AgentNarrationFeed({
   onPoseChange,
   onCelebrate,
   pairLabel = "SUI",
+  active = true,
 }: {
   data: OperationsSnapshot;
   stale: boolean;
+  /** Whether the narration tab is the one on screen. The feed
+   * stays mounted (hidden) on other tabs; the fixed chat bar's
+   * page-level effects must only apply while it is visible. */
+  active?: boolean;
   /** The base symbol of the pair on screen, for chat replies. */
   pairLabel?: string;
   /** Reports the derived pose to the app shell (the header avatar),
@@ -609,6 +614,18 @@ export function AgentNarrationFeed({
   // the feed leads; it expands on tap (or when a milestone
   // prompt chip submits through it).
   const [chatOpen, setChatOpen] = useState(false);
+  // The chat bar is fixed to the screen bottom (see style.css);
+  // while this tab is on screen it raises the corner avatar chip
+  // above itself via page-level classes (the line-mode pattern).
+  useEffect(() => {
+    if (!active) return;
+    const root = document.documentElement;
+    root.classList.add("chat-bar");
+    root.classList.toggle("chat-bar-open", chatOpen);
+    return () => {
+      root.classList.remove("chat-bar", "chat-bar-open");
+    };
+  }, [active, chatOpen]);
   const [chatTopic, setChatTopic] = useState<ChatTopic | null>(null);
   const [chatThinking, setChatThinking] = useState(false);
   const chatTimer = useRef<number | null>(null);
