@@ -1,0 +1,33 @@
+name: SuiBa SSH connection check only
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "After separate approval, type CHECK-SSH-ONLY (never deploys)"
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: suiba-ssh-preflight
+  cancel-in-progress: false
+jobs:
+  ssh-check:
+    # Repository variable, NOT an Environment variable: evaluated before job startup.
+    # Missing/false disables all SSH. Do not enable until separately approved.
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'CHECK-SSH-ONLY' && vars.SUIBA_SSH_CHECK_ENABLED == 'true'
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check SSH authentication with fixed read-only commands
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-preflight.sh

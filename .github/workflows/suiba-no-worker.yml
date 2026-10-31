@@ -35,6 +35,10 @@ jobs:
         run: |
           bash -n docker/deploy-vps.sh
           shellcheck docker/deploy-vps.sh
+          bash -n docker/ssh-preflight.sh
+          shellcheck docker/ssh-preflight.sh
+      - name: SSH preflight mock tests (no real SSH or keys)
+        run: node --test docker/ssh-preflight.node.mjs
       - name: Render and verify the production Compose model
         run: |
           sudo mkdir -p /opt/suiba/shared
