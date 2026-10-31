@@ -112,6 +112,24 @@ class BrokerTests(unittest.TestCase):
     def save_approval(self):
         (self.policy/'approvals'/f'{SHA}.json').write_text(json.dumps(self.approval))
 
+    def test_containerd_lookup_uses_only_proven_manifest_and_creates_stopped(self):
+        mid = 'sha256:'+'e'*64
+        descriptor = {'mediaType': 'application/vnd.oci.image.manifest.v1+json', 'digest': mid, 'size': 123}
+        original = self.docker.call
+        def call(args, **kwargs):
+            if args[:2] == ['image', 'inspect'] and '--format' in args:
+                if args[-1] == IMAGE:
+                    raise b.Rejected('DOCKER_OPERATION_FAILED')
+                self.assertEqual(args[-1], mid)
+                identity = json.loads(original(args, **kwargs))
+                identity.update(Id=mid, Descriptor=descriptor)
+                return json.dumps(identity)
+            return original(args, **kwargs)
+        self.docker.call = call
+        with patch.object(b, 'archive_identity', return_value=(IMAGE, {mid: descriptor})):
+            self.assertEqual(self.broker.execute(self.req, 1001)['status'], 'prepared_stopped')
+        self.assertEqual(json.loads(self.broker.model.read_text())['services']['bot']['image'], mid)
+
     def test_expiry_during_load_does_not_consume_or_mutate(self):
         clock = [time.time()]
         original = self.docker.call
