@@ -205,6 +205,9 @@ try {
   );
   docker("cp", "tests", `${cid}:/app/tests`);
   docker("cp", "docs", `${cid}:/app/docs`);
+  for (const file of ["compose.vps.yaml", "deploy-vps.sh"]) {
+    docker("cp", `docker/${file}`, `${cid}:/app/docker/${file}`);
+  }
   docker(
     "cp",
     "docker/deepbook-24h.mjs",

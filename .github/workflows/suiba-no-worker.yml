@@ -1,0 +1,46 @@
+name: SuiBa verification without Worker
+on:
+  workflow_call:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: sui-ai-trading-bot
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Record the exact checked-out commit
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          printf 'Verified HEAD: %s\n' "${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.22.1"
+      - run: node scripts/verify-node-version.mjs
+      - run: corepack enable && corepack prepare pnpm@9.12.3 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+      - name: Audited unit tests with subprocess and network guards
+        run: node node_modules/vitest/vitest.mjs run --config vitest.no-worker.config.ts
+      - name: Offline data helpers and mocked deployment failures (no Worker)
+        run: node --import tsx --test docker/vps-data.node.mjs docker/vps-deploy.node.mjs
+      - name: Shell syntax and ShellCheck
+        run: |
+          bash -n docker/deploy-vps.sh
+          shellcheck docker/deploy-vps.sh
+      - name: Render and verify the production Compose model
+        run: |
+          sudo mkdir -p /opt/suiba/shared
+          sudo touch /opt/suiba/shared/runtime.env /opt/suiba/shared/admin-token
+          node docker/verify-vps-config.mjs
+      - name: Build image without running its default command
+        run: docker build --build-arg SUIBA_BUILD_SHA=${{ github.sha }} -f docker/Dockerfile -t suiba-no-worker:${{ github.sha }} .
+      - name: Isolated HTTP/SQLite/process fixtures, never Worker
+        run: node docker/verify-vps-offline.mjs suiba-no-worker:${{ github.sha }}

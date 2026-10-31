@@ -1,0 +1,56 @@
+name: suiba-vps
+services:
+  bot:
+    image: ${SUIBA_IMAGE:?immutable release image required}
+    pull_policy: never
+    env_file: /opt/suiba/shared/runtime.env
+    environment:
+      MODE: PAPER
+      HOST: 0.0.0.0
+      PORT: "3100"
+      DATABASE_PATH: /app/data/bot.sqlite
+      REQUIRE_EXISTING_DATABASE: "1"
+      ADMIN_TOKEN: ""
+      ADMIN_TOKEN_FILE: /run/secrets/admin-token
+      NODE_OPTIONS: --max-old-space-size=640
+      VALIDATION_REPORT_DIR: /app/reports
+      DOTENV_CONFIG_QUIET: "true"
+    secrets: [admin-token]
+    ports: ["127.0.0.1:3100:3100"]
+    volumes:
+      - vps-data:/app/data
+      - vps-reports:/app/reports
+    init: true
+    restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 40s
+    mem_limit: 1024m
+    mem_reservation: 512m
+    memswap_limit: 1024m
+    cpus: 1.0
+    pids_limit: 128
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,uid=1000,gid=1000"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, node, docker/healthcheck.mjs]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+secrets:
+  admin-token:
+    file: /opt/suiba/shared/admin-token
+volumes:
+  vps-data:
+    external: true
+    name: suiba-vps-data
+  vps-reports:
+    external: true
+    name: suiba-vps-reports

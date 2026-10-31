@@ -1,0 +1,106 @@
+name: SuiBa VPS image and manual deployment
+on:
+  pull_request:
+    paths: ["sui-ai-trading-bot/**", ".github/workflows/suiba-vps.yml"]
+  push:
+    branches: [main]
+    paths: ["sui-ai-trading-bot/**", ".github/workflows/suiba-vps.yml"]
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "VERIFY-NO-WORKER for isolated checks; DEPLOY-PAPER to deploy main"
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: suiba-vps-${{ github.event_name == 'workflow_dispatch' && 'deployment' || github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify-without-worker:
+    if: github.event_name == 'workflow_dispatch' && inputs.confirmation == 'VERIFY-NO-WORKER'
+    uses: ./.github/workflows/suiba-no-worker.yml
+    permissions:
+      contents: read
+  validate:
+    if: github.event_name != 'workflow_dispatch' || inputs.confirmation != 'VERIFY-NO-WORKER'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.22.1"
+      - run: corepack enable && corepack prepare pnpm@9.12.3 --activate
+      - run: pnpm install --frozen-lockfile && pnpm typecheck && pnpm build && pnpm test:offline
+        working-directory: sui-ai-trading-bot
+      - name: Validate deployment shell
+        run: |
+          bash -n sui-ai-trading-bot/docker/deploy-vps.sh
+          shellcheck sui-ai-trading-bot/docker/deploy-vps.sh
+      - name: Offline data and deployment failure regression (no Worker)
+        working-directory: sui-ai-trading-bot
+        run: node --import tsx --test docker/vps-data.node.mjs docker/vps-deploy.node.mjs
+      - name: Validate rendered Compose without starting a container
+        working-directory: sui-ai-trading-bot
+        run: |
+          # Some Compose versions still stat env_file with --no-env-resolution.
+          # Empty runner-local fixtures only; no production configuration or token.
+          sudo mkdir -p /opt/suiba/shared
+          sudo touch /opt/suiba/shared/runtime.env /opt/suiba/shared/admin-token
+          node docker/verify-vps-config.mjs
+      - name: Build on runner, never on VPS
+        run: docker build --build-arg SUIBA_BUILD_SHA=${{ github.sha }} -f sui-ai-trading-bot/docker/Dockerfile -t suiba:${{ github.sha }} sui-ai-trading-bot
+      - name: Isolated Compose, UID1000, WAL restore, SIGTERM timeout and OOM (no Worker)
+        working-directory: sui-ai-trading-bot
+        run: node docker/verify-vps-offline.mjs suiba:${{ github.sha }}
+      - name: Package immutable release
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY-PAPER'
+        run: |
+          mkdir release
+          docker save suiba:${{ github.sha }} | gzip > release/image.tar.gz
+          cp sui-ai-trading-bot/docker/compose.vps.yaml sui-ai-trading-bot/docker/deploy-vps.sh release/
+          cd release
+          sha256sum image.tar.gz > image.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY-PAPER'
+        with:
+          name: vps-release
+          path: release/
+          retention-days: 3
+  deploy:
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY-PAPER'
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vps-release
+          path: release
+      - name: Transfer and deploy with pinned SSH host identity
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          RELEASE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          [[ $VPS_HOST =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ $VPS_USER =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ $VPS_PORT =~ ^[0-9]{1,5}$ ]]
+          key="$RUNNER_TEMP/vps-key"
+          hosts="$RUNNER_TEMP/vps-known-hosts"
+          trap 'rm -f "$key" "$hosts"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$hosts"
+          opts=(-i "$key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$hosts" -o ConnectTimeout=15)
+          target="$VPS_USER@$VPS_HOST"
+          ssh "${opts[@]}" -p "$VPS_PORT" "$target" "umask 077; mkdir -p /opt/suiba/releases/$RELEASE_SHA"
+          scp "${opts[@]}" -P "$VPS_PORT" release/* "$target:/opt/suiba/releases/$RELEASE_SHA/"
+          ssh "${opts[@]}" -p "$VPS_PORT" "$target" "bash /opt/suiba/releases/$RELEASE_SHA/deploy-vps.sh $RELEASE_SHA"
