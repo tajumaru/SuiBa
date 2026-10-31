@@ -18,6 +18,7 @@ import stat
 import subprocess
 import sys
 import time
+import tarfile
 import uuid
 
 SHA = re.compile(r"[a-f0-9]{40}\Z")
@@ -37,6 +38,84 @@ TOKEN = '/opt/suiba/shared/admin-token'
 
 class Rejected(Exception):
     pass
+
+
+def archive_identity(path, approved, sha):
+    """Hash archive objects without extracting or executing candidate content."""
+    objects, small, total = {}, {}, 0
+    with tarfile.open(path, 'r:*') as archive:
+        for index, member in enumerate(archive):
+            require(index < 4096, 'ARCHIVE_ENTRY_LIMIT')
+            name = member.name
+            require(name not in objects and not name.startswith('/') and
+                    '..' not in name.split('/') and '\\' not in name, 'ARCHIVE_PATH')
+            if member.isdir():
+                continue
+            require(member.isfile(), 'ARCHIVE_LINK_OR_SPECIAL')
+            total += member.size
+            require(total <= 4*1024**3, 'ARCHIVE_EXPANDED_LIMIT')
+            h, data = hashlib.sha256(), bytearray()
+            with archive.extractfile(member) as source:
+                for block in iter(lambda: source.read(1024**2), b''):
+                    h.update(block)
+                    if member.size <= 1024**2:
+                        data.extend(block)
+            objects[name] = (h.hexdigest(), member.size)
+            if member.size <= 1024**2:
+                small[name] = bytes(data)
+            if name.startswith('blobs/sha256/'):
+                require(name == 'blobs/sha256/'+h.hexdigest(), 'BLOB_DIGEST')
+    saved = decode(small['manifest.json'])
+    require(isinstance(saved, list) and len(saved) == 1, 'ARCHIVE_SINGLE_IMAGE')
+    saved = saved[0]
+    config_path = saved['Config']
+    config_raw = small[config_path]
+    config_id = 'sha256:'+objects[config_path][0]
+    config = decode(config_raw)
+    require(config['os'] == 'linux' and config['architecture'] == 'amd64' and
+            config['config']['User'] in ('node', '1000', '1000:1000') and
+            config['config'].get('Labels', {}).get('org.opencontainers.image.revision') == sha and
+            [v for v in config['config']['Env'] if v.startswith('MODE=')] == ['MODE=PAPER'], 'ARCHIVE_CONFIG')
+    manifests = {}
+    if 'oci-layout' in small:
+        require(decode(small['oci-layout']) == {'imageLayoutVersion': '1.0.0'}, 'OCI_LAYOUT')
+        index = decode(small['index.json'])
+        require(index['schemaVersion'] == 2, 'OCI_INDEX_SCHEMA')
+        descriptors = index['manifests']
+        require(len(descriptors) == 1, 'OCI_SINGLE_MANIFEST')
+        descriptor = descriptors[0]
+        require(descriptor['mediaType'] == 'application/vnd.oci.image.manifest.v1+json', 'OCI_MEDIA_TYPE')
+        digest = descriptor['digest']
+        require(DIGEST.fullmatch(digest), 'MANIFEST_DIGEST')
+        name = 'blobs/sha256/'+digest[7:]
+        require(objects[name] == (digest[7:], descriptor['size']), 'MANIFEST_DESCRIPTOR')
+        manifest = decode(small[name])
+        require(manifest['schemaVersion'] == 2 and manifest['mediaType'] == descriptor['mediaType'], 'MANIFEST_SCHEMA')
+        require(manifest['config']['mediaType'] == 'application/vnd.oci.image.config.v1+json' and
+                manifest['config']['digest'] == config_id and manifest['config']['size'] == len(config_raw), 'MANIFEST_CONFIG')
+        layers = manifest['layers']
+        require(len(layers) == len(saved['Layers']) == len(config['rootfs']['diff_ids']), 'MANIFEST_LAYERS')
+        for layer, layer_path in zip(layers, saved['Layers']):
+            require(layer['mediaType'] in ('application/vnd.oci.image.layer.v1.tar', 'application/vnd.oci.image.layer.v1.tar+gzip', 'application/vnd.oci.image.layer.v1.tar+zstd') and
+                    DIGEST.fullmatch(layer['digest']) and layer_path == 'blobs/sha256/'+layer['digest'][7:] and
+                    objects[layer_path] == (layer['digest'][7:], layer['size']), 'LAYER_DESCRIPTOR')
+        manifests[digest] = descriptor
+    else:
+        require(config_path == config_id[7:]+'.json', 'CLASSIC_CONFIG_NAME')
+        require(['sha256:'+objects[n][0] for n in saved['Layers']] == config['rootfs']['diff_ids'], 'CLASSIC_LAYERS')
+    require(approved == config_id or approved in manifests, 'APPROVED_IMAGE_NOT_IN_ARCHIVE')
+    return config_id, manifests
+
+
+def loaded_identity(identity, config_id, manifests, sha):
+    runtime = identity['Id']
+    if runtime != config_id:
+        require(runtime in manifests and identity.get('Descriptor') == manifests[runtime], 'DOCKER_MANIFEST_IDENTITY')
+    require(identity['Os'] == 'linux' and identity['Architecture'] == 'amd64' and
+            identity['Config']['User'] in ('node', '1000', '1000:1000') and
+            identity['Config'].get('Labels', {}).get('org.opencontainers.image.revision') == sha and
+            [v for v in identity['Config']['Env'] if v.startswith('MODE=')] == ['MODE=PAPER'], 'IMAGE_IDENTITY')
+    return runtime
 
 
 def require(condition, code):
@@ -354,6 +433,7 @@ class Broker:
         archive = transaction/'image.tar.gz'
         self.archive = archive
         self.snapshot(sha, uid, approval['archive_sha256'], archive)
+        config_id, manifests = archive_identity(archive, approval['image_id'], sha)
         # Freeze and validate the root-owned model. Never read uploaded Compose/scripts.
         image = approval['image_id']
         model = decode(self.docker.call(['compose', '-p', PROJECT, '-f', str(self.policy/'compose.yaml'), 'config', '--format', 'json'], image=image))
@@ -368,8 +448,17 @@ class Broker:
         self.docker.call(['volume', 'inspect', DATA, REPORTS])  # Never auto-create a ledger.
         self.docker.call(['image', 'inspect', policy['helper_image']])
         self.docker.call(['load', '-i', str(archive)])
-        identity = decode(self.docker.call(['image', 'inspect', '--format', '{{json .}}', image]))
-        require(identity['Id'] == image and identity['Os'] == 'linux' and identity['Architecture'] == 'amd64' and identity['Config']['User'] in ('node', '1000', '1000:1000') and identity['Config'].get('Labels', {}).get('org.opencontainers.image.revision') == sha, 'IMAGE_IDENTITY')
+        identity = None
+        for reference in dict.fromkeys([image, *manifests]):
+            try:
+                identity = decode(self.docker.call(['image', 'inspect', '--format', '{{json .}}', reference]))
+                break
+            except Rejected as error:
+                require(str(error) == 'DOCKER_OPERATION_FAILED', 'DOCKER_INSPECT_FAILED')
+        require(identity is not None, 'DOCKER_IMAGE_MISSING')
+        runtime = loaded_identity(identity, config_id, manifests, sha)
+        model['services']['bot']['image'] = runtime
+        atomic(self.model, model)
         # Consume approval before mutation. Failure/retry requires a NEW admin sequence.
         record = {'sequence': approval['sequence'], 'sha': sha, 'image_id': image, 'operation': operation, 'status': 'in_progress', 'transaction': transaction.name}
         scratch = 'suiba-vps-broker-'+transaction.name
