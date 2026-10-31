@@ -189,24 +189,30 @@ class Broker:
     def compose(self, args):
         return self.docker.call(['compose', '-p', PROJECT, '-f', str(self.model), *args])
 
-    def stopped(self):
+    def stopped(self, emergency=False):
         ids = self.docker.call(['ps', '-aq', '--filter', 'label=com.docker.compose.project='+PROJECT,
                                '--filter', 'label=com.docker.compose.service=bot']).split()
-        require(len(ids) <= 1 and all(re.fullmatch('[a-f0-9]{12,64}', cid) for cid in ids), 'CONTAINER_IDENTITY')
+        require((emergency or len(ids) <= 1) and all(re.fullmatch('[a-f0-9]{12,64}', cid) for cid in ids), 'CONTAINER_IDENTITY')
         return ids
 
     def emergency_stop(self):
         # Best effort, without candidate Compose or environment. Never start/reset.
+        confirmed = True
         try:
-            for cid in self.stopped():
-                with contextlib.suppress(Exception):
-                    self.docker.call(['update', '--restart=no', cid])
+            for cid in self.stopped(emergency=True):
                 try:
-                    self.docker.call(['stop', '--timeout', '40', cid], timeout=60)
+                    self.docker.call(['update', '--restart=no', cid])
                 except Exception:
-                    self.docker.call(['kill', cid])
-                require(self.docker.call(['inspect', '--format', '{{.State.Running}}', cid]) == 'false', 'STOP_UNCONFIRMED')
-            return True
+                    confirmed = False
+                try:
+                    try:
+                        self.docker.call(['stop', '--timeout', '40', cid], timeout=60)
+                    except Exception:
+                        self.docker.call(['kill', cid])
+                    require(self.docker.call(['inspect', '--format', '{{.State.Running}}', cid]) == 'false', 'STOP_UNCONFIRMED')
+                except Exception:
+                    confirmed = False
+            return confirmed
         except Exception:
             return False
 

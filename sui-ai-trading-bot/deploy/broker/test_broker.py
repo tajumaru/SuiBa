@@ -105,6 +105,31 @@ class BrokerTests(unittest.TestCase):
     def save_approval(self):
         (self.policy/'approvals'/f'{SHA}.json').write_text(json.dumps(self.approval))
 
+    def test_emergency_stop_all_duplicates_despite_first_failure(self):
+        calls = []
+        second = 'e'*64
+        def call(args, **kwargs):
+            calls.append(args)
+            if args[0] == 'ps':
+                return CID+' '+second
+            if args[0] == 'update' and args[-1] == CID:
+                raise b.Rejected('UPDATE_FAILED')
+            if args[0] in ('stop', 'kill') and args[-1] == CID:
+                raise b.Rejected('STOP_FAILED')
+            return 'false'
+        self.docker.call = call
+        self.assertFalse(self.broker.emergency_stop())
+        self.assertTrue(any(a[0] == 'stop' and a[-1] == second for a in calls))
+
+    def test_restart_disable_failure_is_not_confirmed_safe(self):
+        original = self.docker.call
+        def call(args, **kwargs):
+            if args[0] == 'update':
+                raise b.Rejected('UPDATE_FAILED')
+            return original(args, **kwargs)
+        self.docker.call = call
+        self.assertFalse(self.broker.emergency_stop())
+
     def test_unknown_or_interrupted_state_requires_administrator(self):
         for status in ('in_progress', 'failed_state_unknown'):
             b.atomic(self.state/'ledger.json', {'sequence': 0, 'status': status})
