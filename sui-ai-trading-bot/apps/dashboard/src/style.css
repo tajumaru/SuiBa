@@ -4342,3 +4342,50 @@ summary {
   margin-right: 10px;
   align-items: flex-end;
 }
+
+/* Strategy page terminal pass (approved direction): bracket
+   segment tabs, ledger-flavoured parameter cells, and the
+   save-review changes as a - old / + new diff. Content and
+   behaviour are unchanged. */
+.strategy-segments [role="tab"] {
+  border-radius: 3px;
+  border-color: #1f5c46;
+  background: #020a06;
+  color: #8fa9bd;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.strategy-segments [role="tab"].active {
+  background: #0c2317;
+  border-color: #1f5c46;
+  color: #43dfb2;
+}
+.strategy-segments [role="tab"].active::before {
+  content: "[";
+}
+.strategy-segments [role="tab"].active::after {
+  content: "]";
+}
+.settings-grid label {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed rgba(67, 223, 178, 0.15);
+}
+.settings-grid input {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.settings-diff {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.settings-diff li {
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+}
+.settings-diff .diff-minus {
+  color: #ff8fa5;
+}
+.settings-diff .diff-plus {
+  color: #43dfb2;
+}

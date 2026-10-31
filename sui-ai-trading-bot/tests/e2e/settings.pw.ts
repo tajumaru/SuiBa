@@ -138,9 +138,12 @@ test("recommends safe settings without guessing first use, and reviews without s
     .getByRole("button", { name: "変更内容を確認", exact: true })
     .click();
   await expect(review(page)).toContainText("適用予定：安全重視");
-  await expect(review(page)).toContainText("5 USDC → 2 USDC");
-  await expect(review(page)).toContainText("20 USDC → 10 USDC");
-  await expect(review(page)).toContainText("1 % → 1.5 %");
+  await expect(review(page)).toContainText("- 5 USDC");
+  await expect(review(page)).toContainText("+ 2 USDC");
+  await expect(review(page)).toContainText("- 20 USDC");
+  await expect(review(page)).toContainText("+ 10 USDC");
+  await expect(review(page)).toContainText("- 1 %");
+  await expect(review(page)).toContainText("+ 1.5 %");
   await review(page)
     .getByRole("button", { name: "編集に戻る", exact: true })
     .click();

@@ -292,9 +292,11 @@ export function SettingsChanges({
                 : String(s[key]);
         return (
           <li key={key}>
-            <span>{field?.label ?? boolLabel}</span>
-            <span>
-              {display(before)} → <strong>{display(after)}</strong>
+            <span className="diff-minus">
+              - {field?.label ?? boolLabel} {display(before)}
+            </span>
+            <span className="diff-plus">
+              + {field?.label ?? boolLabel} <strong>{display(after)}</strong>
             </span>
           </li>
         );
