@@ -4,10 +4,23 @@ on:
     paths: ["sui-ai-trading-bot/**", ".github/workflows/suiba-offline.yml"]
   pull_request:
     paths: ["sui-ai-trading-bot/**", ".github/workflows/suiba-offline.yml"]
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "After separate approval, type RUN-WORKER-CI (starts PAPER test Workers)"
+        required: true
+        type: string
 permissions:
   contents: read
 jobs:
+  without-worker:
+    if: github.event_name != 'workflow_dispatch'
+    uses: ./.github/workflows/suiba-no-worker.yml
+    permissions:
+      contents: read
   offline:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'RUN-WORKER-CI' && vars.SUIBA_WORKER_CI_ENABLED == 'true'
+    environment: worker-ci
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
