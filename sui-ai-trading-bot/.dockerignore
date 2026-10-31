@@ -16,3 +16,4 @@ docker/.env.deepbook-p0
 # Project-local interpreter archives and binaries
 .runtime/
 .test-tmp/
+**/__pycache__

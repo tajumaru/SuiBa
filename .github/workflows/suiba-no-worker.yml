@@ -39,6 +39,10 @@ jobs:
           shellcheck docker/ssh-preflight.sh
       - name: SSH preflight mock tests (no real SSH or keys)
         run: node --test docker/ssh-preflight.node.mjs
+      - name: Broker security and limited sudo (disposable Ubuntu, no Worker)
+        run: |
+          docker build -f docker/Dockerfile.broker-test -t suiba-broker-tests .
+          docker run --rm --network none --memory 512m --memory-swap 512m --pids-limit 128 suiba-broker-tests
       - name: Render and verify the production Compose model
         run: |
           sudo mkdir -p /opt/suiba/shared
@@ -48,3 +52,5 @@ jobs:
         run: docker build --build-arg SUIBA_BUILD_SHA=${{ github.sha }} -f docker/Dockerfile -t suiba-no-worker:${{ github.sha }} .
       - name: Isolated HTTP/SQLite/process fixtures, never Worker
         run: node docker/verify-vps-offline.mjs suiba-no-worker:${{ github.sha }}
+      - name: Real broker transaction with dummy HTTP and cold restore (no Worker)
+        run: sudo /usr/bin/python3 -I deploy/broker/verify_docker.py suiba-no-worker:${{ github.sha }}

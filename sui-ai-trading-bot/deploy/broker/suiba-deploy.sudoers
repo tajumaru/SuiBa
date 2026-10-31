@@ -1,0 +1,4 @@
+# Root owns this file, wrapper, Python module and ALL their parent directories.
+# Empty argument string means no command-line arguments, NOT arbitrary arguments.
+Defaults:suiba-deploy env_reset,!setenv
+suiba-deploy ALL=(root) NOPASSWD: NOSETENV: /usr/local/sbin/suiba-deploy ""

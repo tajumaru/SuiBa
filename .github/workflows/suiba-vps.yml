@@ -59,7 +59,7 @@ jobs:
         run: |
           mkdir release
           docker save suiba:${{ github.sha }} | gzip > release/image.tar.gz
-          cp sui-ai-trading-bot/docker/compose.vps.yaml sui-ai-trading-bot/docker/deploy-vps.sh release/
+          docker image inspect --format '{{.Id}}' suiba:${{ github.sha }} > release/image-id.txt
           cd release
           sha256sum image.tar.gz > image.tar.gz.sha256
       - uses: actions/upload-artifact@v4
@@ -70,7 +70,7 @@ jobs:
           retention-days: 3
   deploy:
     needs: validate
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY-PAPER'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY-PAPER' && vars.SUIBA_BROKER_ENABLED == 'true'
     environment: sakura-vps
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -93,14 +93,20 @@ jobs:
           umask 077
           [[ $VPS_HOST =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
           [[ $VPS_USER =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ $VPS_USER == 'suiba-deploy' ]]
           [[ $VPS_PORT =~ ^[0-9]{1,5}$ ]]
+          (( 10#$VPS_PORT >= 1 && 10#$VPS_PORT <= 65535 ))
           key="$RUNNER_TEMP/vps-key"
           hosts="$RUNNER_TEMP/vps-known-hosts"
           trap 'rm -f "$key" "$hosts"' EXIT
           printf '%s\n' "$SSH_KEY" > "$key"
           printf '%s\n' "$KNOWN_HOSTS" > "$hosts"
-          opts=(-i "$key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$hosts" -o ConnectTimeout=15)
+          opts=(-F /dev/null -i "$key" -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$hosts" -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o ClearAllForwardings=yes -o ConnectTimeout=15)
           target="$VPS_USER@$VPS_HOST"
-          ssh "${opts[@]}" -p "$VPS_PORT" "$target" "umask 077; mkdir -p /opt/suiba/releases/$RELEASE_SHA"
-          scp "${opts[@]}" -P "$VPS_PORT" release/* "$target:/opt/suiba/releases/$RELEASE_SHA/"
-          ssh "${opts[@]}" -p "$VPS_PORT" "$target" "bash /opt/suiba/releases/$RELEASE_SHA/deploy-vps.sh $RELEASE_SHA"
+          # Unprivileged upload only. No candidate script, Compose or env is executed.
+          ssh "${opts[@]}" -p "$VPS_PORT" "$target" "umask 077; mkdir -p /var/lib/suiba-incoming/$RELEASE_SHA"
+          scp "${opts[@]}" -P "$VPS_PORT" release/image.tar.gz "$target:/var/lib/suiba-incoming/$RELEASE_SHA/image.tar.gz"
+          # Independent root-owned approval must already bind this SHA/archive/image.
+          # Broker has no CLI arguments and only creates a STOPPED container.
+          printf '{"operation":"deploy","sha":"%s"}\n' "$RELEASE_SHA" |
+            ssh "${opts[@]}" -T -p "$VPS_PORT" "$target" 'sudo -n -- /usr/local/sbin/suiba-deploy'

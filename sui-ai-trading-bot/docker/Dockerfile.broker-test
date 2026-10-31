@@ -1,0 +1,10 @@
+FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
+RUN apt-get update && apt-get install --no-install-recommends -y python3 sudo shellcheck && rm -rf /var/lib/apt/lists/*
+RUN useradd --uid 1001 --create-home suiba-deploy
+COPY deploy/broker/broker.py /usr/local/libexec/suiba-deploy-broker.py
+COPY deploy/broker/suiba-deploy /usr/local/sbin/suiba-deploy
+COPY deploy/broker/suiba-deploy.sudoers /etc/sudoers.d/suiba-deploy
+RUN chown root:root /usr/local/libexec/suiba-deploy-broker.py /usr/local/sbin/suiba-deploy /etc/sudoers.d/suiba-deploy && chmod 755 /usr/local/libexec/suiba-deploy-broker.py /usr/local/sbin/suiba-deploy && chmod 440 /etc/sudoers.d/suiba-deploy && visudo -cf /etc/sudoers.d/suiba-deploy && shellcheck /usr/local/sbin/suiba-deploy
+COPY deploy/broker /tests
+WORKDIR /tests
+CMD ["python3", "-I", "test_broker.py"]
