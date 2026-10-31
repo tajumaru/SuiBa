@@ -42,14 +42,14 @@ maintenance解除、LIVE取引は禁止を継続する。以下の将来構成�
 
 対象: `docker/deploy-vps.sh`、`docker/compose.vps.yaml`、`.github/workflows/suiba-vps.yml`。
 
-| 現行処理                                              | 必要な権限                             | 接続確認用suiba-deployでの可否                            |
-| ----------------------------------------------------- | -------------------------------------- | --------------------------------------------------------- |
+| 現行処理                                              | 必要な権限                             | 接続確認用suiba-deployでの可否                          |
+| ----------------------------------------------------- | -------------------------------------- | ------------------------------------------------------- |
 | releasesへのmkdir/scp、候補コード読取                 | 候補ディレクトリ書込                   | releasesだけ許可される。ただしscpはPR #33では実行しない |
-| shared/deploy.lock                                    | sharedへの書込・flock                  | root管理700のままなので不可                               |
-| image load/inspect、volume inspect                    | Docker daemonアクセス                  | dockerグループ/socket ACLなしでは不可                     |
-| maintenance helper、停止、再起動禁止、kill、up/health | Docker daemon、対象コンテナ/volume操作 | 不可。単なるSSH確認と全く異なる能力                       |
-| backupsのtar/partial/hash/fsync                       | backups書込、DB用volumeへのアクセス    | root管理700、socketなしなので不可                         |
-| current link更新                                      | /opt/suiba親への書込                   | root管理755なので不可                                     |
+| shared/deploy.lock                                    | sharedへの書込・flock                  | root管理700のままなので不可                             |
+| image load/inspect、volume inspect                    | Docker daemonアクセス                  | dockerグループ/socket ACLなしでは不可                   |
+| maintenance helper、停止、再起動禁止、kill、up/health | Docker daemon、対象コンテナ/volume操作 | 不可。単なるSSH確認と全く異なる能力                     |
+| backupsのtar/partial/hash/fsync                       | backups書込、DB用volumeへのアクセス    | root管理700、socketなしなので不可                       |
+| current link更新                                      | /opt/suiba親への書込                   | root管理755なので不可                                   |
 
 したがってPR #33の権限を維持したまま、現行workflowでDEPLOY-PAPERを実行しても配備は完了しない。
 これを解決するためのdockerグループ追加、socket ACL、sudo docker許可を自動追加しない。
