@@ -32,6 +32,9 @@ jobs:
         run: |
           bash -n sui-ai-trading-bot/docker/deploy-vps.sh
           shellcheck sui-ai-trading-bot/docker/deploy-vps.sh
+      - name: Offline data and deployment failure regression (no Worker)
+        working-directory: sui-ai-trading-bot
+        run: node --import tsx --test docker/vps-data.node.mjs docker/vps-deploy.node.mjs
       - name: Validate rendered Compose without starting a container
         working-directory: sui-ai-trading-bot
         run: |
@@ -42,6 +45,9 @@ jobs:
           node docker/verify-vps-config.mjs
       - name: Build on runner, never on VPS
         run: docker build --build-arg SUIBA_BUILD_SHA=${{ github.sha }} -f sui-ai-trading-bot/docker/Dockerfile -t suiba:${{ github.sha }} sui-ai-trading-bot
+      - name: Isolated Compose, UID1000, WAL restore, SIGTERM timeout and OOM (no Worker)
+        working-directory: sui-ai-trading-bot
+        run: node docker/verify-vps-offline.mjs suiba:${{ github.sha }}
       - name: Package immutable release
         if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY-PAPER'
         run: |

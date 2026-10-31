@@ -27,16 +27,19 @@ it("bounds VPS resource use and preserves authenticated PAPER state", () => {
 it("gates trading, serializes deployment and backs up only after graceful exit", () => {
   expect(deploy).toContain("flock -n 9");
   expect(deploy).toContain("sha256sum --check");
-  expect(deploy.indexOf("bot.sqlite.maintenance")).toBeLessThan(
+  expect(deploy.indexOf("trap fail_stopped ERR HUP INT TERM")).toBeLessThan(
+    deploy.indexOf("docker/vps-data.mjs maintenance"),
+  );
+  expect(deploy.indexOf("docker/vps-data.mjs maintenance")).toBeLessThan(
     deploy.indexOf("dc stop"),
   );
   expect(deploy.indexOf(".State.ExitCode")).toBeLessThan(
-    deploy.indexOf("--entrypoint tar"),
+    deploy.indexOf("docker/vps-data.mjs backup"),
   );
-  expect(deploy.indexOf("--entrypoint tar")).toBeLessThan(
+  expect(deploy.indexOf("docker/vps-data.mjs backup")).toBeLessThan(
     deploy.indexOf("dc up"),
   );
   expect(deploy).not.toMatch(
-    /down.*-v|volume rm|system prune|\/api\/control|docker build/,
+    /down.*-v|volume rm suiba-vps-data|system prune|\/api\/control|docker build/,
   );
 });

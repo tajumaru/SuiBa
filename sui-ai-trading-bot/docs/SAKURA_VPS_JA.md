@@ -46,13 +46,26 @@ VPSがx86_64であることを `uname -m` で確認すること（ARMは別途�
    元環境と移行先を同時に稼働させない。
 7. 空の新規運用では別途承認された初期DB作成が必要。このComposeは
    `REQUIRE_EXISTING_DATABASE=1` を固定し、未初期化DBを起動で自動作成しない。
-   初期化方法・初期残高は運用開始時に確認する。既存台帳の欠落を新規残高で隠さない。
+   初期残高は既存BotDatabaseのデフォルト（各ペア100 USDC相当のPAPER残高）を使う。
+   運用開始の承認後、次のオフライン操作でのみ作成する。Workerは起動しない。
+   空でないボリューム（maintenanceのみ存在する場合を除く）は必ず拒否する。
+   初期化に失敗した部分データを自動で上書き/削除しない。既存台帳の欠落を新規残高で隠さない。
+
+   ```bash
+   docker run --rm --network none --read-only --user 1000:1000 \
+     --memory 256m --memory-swap 256m --pids-limit 64 \
+     --tmpfs /tmp:rw,noexec,nosuid,size=64m,uid=1000,gid=1000 \
+     -v suiba-vps-data:/app/data suiba:<承認済みSHA> \
+     node --import tsx docker/vps-data.mjs initialize NEW-PAPER-LEDGER
+   ```
 
 ## GitHub Actions
 
 `SuiBa offline validation` の既存Windows/Linux検証は維持する。
 追加workflowはPR/push時に型・build・offlineテスト・shellcheck・Compose構文・
-Dockerイメージbuildのみ実行し、コンテナを起動しない。
+Dockerイメージbuildと、外部通信を遮断した使い捨て環境でのコンテナ検証を行う。
+追加の実起動検証はHTTPサーバー・SQLite・メモリ割当のテスト用プロセスのみで、
+Worker/engineを起動しない。実Workerを使う既存自動検証とは区別する。
 `node docker/verify-vps-config.mjs` は実際に展開したComposeのメモリ上限・
 PAPER制限・認証・外部ボリューム等も検査する。既存の `docker/verify-compose.mjs`
 による起動/停止/永続化の実結合検証は維持するが、この準備段階では実行しない。
@@ -68,8 +81,16 @@ mainへのマージ後、明示的な運用承認を得たときだけRun workfl
 `DEPLOY-PAPER` と入力する。pushやPRではSSHジョブは動かない。
 管理トークンはVPSにのみ置き、Actionsへ渡さない。
 
-デプロイはホストflockで直列化し、maintenanceファイルを永続化してUI開始を禁止する。
-SIGTERMで40秒待ち、既存コンテナの終了コード0を確認してから全データをバックアップする。
+デプロイはホストflockで直列化し、UID1000でmaintenanceファイルをfsyncしてUI開始を禁止する。
+maintenance作成前に失敗ハンドラーを登録する。作成に失敗しても既存コンテナの再起動を
+禁止し、40秒停止を要求し、失敗時はkillを試みる。Docker自体が利用不能な場合は
+停止を保証できないためCRITICALを出して中止し、直ちに運用者が状態確認する。
+SIGTERMで40秒待ち、既存コンテナが停止・OOMなし・終了コード0であることを確認する。
+40秒でSIGKILLされた137、Worker内部25秒タイムアウトの1、OOMはすべて中止する。
+バックアップ中は既存instance lockを保持し、clean lifecycle・停止済みruntime・
+全SQLiteのintegrity/foreign keyを検査し、使い捨てディスクボリュームにWAL/SHMを含めて
+コピーして復元整合性を確認する。tarは全データを含み、成功後のみ.partialから確定し、
+SHA256とfsyncを行う。コピー用ディスクにはデータ量相当の追加空き容量が必要。
 失敗時は自動rollbackやBot再開始をしない。health成功後のみcurrentシンボリックリンクを更新する。
 初回も再デプロイもmaintenanceは残るため、取引ループは開始しない。
 コンテナのhealthyはプロセス正常を表し、取引実行中を意味しない。
