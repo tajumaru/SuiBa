@@ -34,7 +34,12 @@ jobs:
           shellcheck sui-ai-trading-bot/docker/deploy-vps.sh
       - name: Validate rendered Compose without starting a container
         working-directory: sui-ai-trading-bot
-        run: node docker/verify-vps-config.mjs
+        run: |
+          # Some Compose versions still stat env_file with --no-env-resolution.
+          # Empty runner-local fixtures only; no production configuration or token.
+          sudo mkdir -p /opt/suiba/shared
+          sudo touch /opt/suiba/shared/runtime.env /opt/suiba/shared/admin-token
+          node docker/verify-vps-config.mjs
       - name: Build on runner, never on VPS
         run: docker build --build-arg SUIBA_BUILD_SHA=${{ github.sha }} -f sui-ai-trading-bot/docker/Dockerfile -t suiba:${{ github.sha }} sui-ai-trading-bot
       - name: Package immutable release
