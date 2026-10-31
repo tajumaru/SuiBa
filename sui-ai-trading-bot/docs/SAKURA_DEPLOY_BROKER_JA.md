@@ -169,6 +169,21 @@ Repository variable `SUIBA_BROKER_ENABLED=true` を要求する。今回は設�
 7. `prepared_stopped` を確認し、root側ledger/receiptを管理者が確認する。Workerは作成済み・未起動。
    `SUIBA_BROKER_ENABLED` をfalseへ戻す。起動やmaintenance解除は行わない。
 
+手順5で管理者が行うコマンド例（将来の承認後のみ）。SHAの文字列は独立照合した完全SHAへ置き換える。
+既存の同名承認がある場合は上書きせず、原因を確認する。JSONの値や管理トークンをログへ表示しない。
+
+```bash
+RELEASE_SHA='ここを独立照合した小文字40桁SHAに置換'
+[[ $RELEASE_SHA =~ ^[a-f0-9]{40}$ ]]
+sudo test ! -e "/etc/suiba-deploy/approvals/$RELEASE_SHA.json"
+sudo install -o root -g root -m 600 deploy/broker/approval.json.example "/etc/suiba-deploy/approvals/$RELEASE_SHA.json"
+sudoedit "/etc/suiba-deploy/approvals/$RELEASE_SHA.json"
+date -u -d '+1 hour' +%s
+```
+
+各行で失敗したら先へ進まない。最後の数値はexpiresの記入例であり、承認ファイルに自動反映しない。
+編集時は全項目を実成果物と照合する。ci_run欄の数値だけで成功を証明したことにはならない。
+
 例の要求形式（現在は実行禁止）:
 
 ```json
@@ -191,6 +206,15 @@ DBを自動巻き戻し/削除せず、maintenanceも残す。
 本番DB復元が必要な場合は別途承認し、現状退避・全ペア比較・独立した復元演習を行う。
 このbrokerにrestore/init/delete/unlock/startのoperationは存在しない。
 
+旧archiveを既定incomingへ転送し、管理者のrollback承認後にsuiba-deployが送る要求は次の形式。
+通常ActionsのDEPLOY-PAPERはdeploy専用なので、rollbackの承認やoperationを自動変更しない。
+
+```json
+{ "operation": "rollback", "sha": "<独立承認済み旧mainの40桁SHA>" }
+```
+
+同じ固定wrapperへstdinで渡し、成功後もprepared_stoppedを確認する。
+
 ## 検証と残るリスク
 
 - unit: 引数/JSON/パス/image/Compose、symlink/hardlink/FIFO、snapshot差替え、期限/sequence、失敗停止を偽Dockerで検証。
@@ -202,6 +226,7 @@ DBを自動巻き戻し/削除せず、maintenanceも残す。
 - helper/Compose policyの更新も管理者の別レビューが必要。入力拒否でVPSが全くDoSされない保証はなく、SSH/UIDのresource制限も必要。
 - SIGKILL/電源断/daemon障害ではcleanupと停止を保証できない。receipt欠落も含めてコンソール復旧が必要。
 - 実Worker起動・health・停止/OOM復旧、2GBの長時間安定性、実データ量のbackup/restore、off-host暗号化保管は後続受入。
+- helperの各Docker操作は180秒上限。大容量DBで不足する場合は停止のまま中止するため、実データ量で時間と空き容量を事前評価する。
 - 実デプロイ/Worker開始/maintenance解除/LIVE有効化の許可を、このPRから推定しない。
 
 仕様: [Docker socket](https://docs.docker.com/engine/security/protect-access/)、

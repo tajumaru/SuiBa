@@ -234,6 +234,9 @@ class BrokerTests(unittest.TestCase):
         self.assertEqual(self.docker.calls, [])
 
     def test_rendered_compose_privilege_and_mount_injection_rejected(self):
+        defaults = model()
+        defaults['services']['bot'].update(command=None, entrypoint=None)
+        b.validate_model(defaults, IMAGE)
         for key, value in [('privileged', True), ('command', ['sh']), ('entrypoint', ['sh']), ('build', '.')]:
             candidate = model()
             candidate['services']['bot'][key] = value

@@ -151,8 +151,10 @@ def validate_model(model, image):
     allowed = {'image', 'pull_policy', 'environment', 'ports', 'volumes', 'init', 'restart',
                'stop_signal', 'stop_grace_period', 'mem_limit', 'mem_reservation', 'memswap_limit',
                'cpus', 'pids_limit', 'read_only', 'tmpfs', 'cap_drop', 'security_opt', 'healthcheck',
-               'logging', 'secrets', 'networks'}
+               'logging', 'secrets', 'networks', 'command', 'entrypoint'}
     require(set(bot) <= allowed, 'COMPOSE_UNKNOWN_SERVICE_FIELD')
+    # Compose versions can materialize these omitted defaults as JSON null.
+    require(bot.get('command') is None and bot.get('entrypoint') is None, 'COMPOSE_EXECUTABLE_OVERRIDE')
     require(bot['image'] == image and bot.get('pull_policy') == 'never', 'COMPOSE_IMAGE')
     env = bot.get('environment', {})
     for key, expected in {'MODE': 'PAPER', 'HOST': '0.0.0.0', 'PORT': '3100',
@@ -347,6 +349,8 @@ class Broker:
                 os.fsync(stream.fileno())
             require(partial.stat().st_size > 0, 'BACKUP_EMPTY')
             os.rename(partial, backup)
+            with directory(self.backups) as parent:
+                os.fsync(parent)
             h = hashlib.sha256()
             with open(backup, 'rb') as stream:
                 for block in iter(lambda: stream.read(1024**2), b''):
