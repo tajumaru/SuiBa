@@ -13,6 +13,7 @@ from pathlib import Path
 import pwd
 import re
 import signal
+import selectors
 import stat
 import subprocess
 import sys
@@ -129,19 +130,56 @@ class Docker:
         env = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': str(self.state),
                'DOCKER_CONFIG': '/etc/suiba-deploy/docker',
                'DOCKER_HOST': 'unix:///var/run/docker.sock', 'SUIBA_IMAGE': image}
-        # Bounded on-disk diagnostics, never returned to a caller/log.
-        # docker output is small for these fixed commands; archive output streams.
-        import tempfile
-        with tempfile.TemporaryFile(dir=self.state) as capture:
-            result = subprocess.run(['/usr/bin/docker', *args], env=env, cwd='/',
-                                    stdin=subprocess.DEVNULL, stdout=output or capture,
-                                    stderr=subprocess.DEVNULL, timeout=timeout, check=False)
-            require(result.returncode == 0, 'DOCKER_OPERATION_FAILED')
-            if output:
-                return ''
-            require(capture.tell() <= 1024**2, 'DOCKER_OUTPUT_TOO_LARGE')
-            capture.seek(0)
-            return capture.read().decode().strip()
+        raw = bounded_process(['/usr/bin/docker', *args], env, output, timeout)
+        return '' if output else raw.decode().strip()
+
+
+def bounded_process(argv, env, output=None, timeout=180):
+    """Drain both pipes concurrently; kill/reap the process group on any failure.
+
+    Backup stdout is intentionally larger, but still capped at 8GiB. Disk quota
+    and free-space planning remain mandatory; this is not a storage reservation.
+    """
+    limits = {'stdout': 8*1024**3 if output else 1024**2, 'stderr': 1024**2}
+    counts = dict.fromkeys(limits, 0)
+    captured = bytearray()
+    deadline = time.monotonic()+timeout
+    child = subprocess.Popen(argv, env=env, cwd='/', stdin=subprocess.DEVNULL,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             start_new_session=True)
+    try:
+        with selectors.DefaultSelector() as selector:
+            for name in limits:
+                pipe = getattr(child, name)
+                os.set_blocking(pipe.fileno(), False)
+                selector.register(pipe, selectors.EVENT_READ, name)
+            while selector.get_map():
+                remaining = deadline-time.monotonic()
+                require(remaining > 0, 'DOCKER_TIMEOUT')
+                for key, _ in selector.select(min(remaining, 0.2)):
+                    block = os.read(key.fd, 65536)
+                    if not block:
+                        selector.unregister(key.fileobj)
+                        continue
+                    name = key.data
+                    counts[name] += len(block)
+                    require(counts[name] <= limits[name], 'DOCKER_OUTPUT_TOO_LARGE')
+                    if name == 'stdout':
+                        if output:
+                            output.write(block)
+                        else:
+                            captured.extend(block)
+            remaining = deadline-time.monotonic()
+            require(remaining > 0, 'DOCKER_TIMEOUT')
+            require(child.wait(timeout=remaining) == 0, 'DOCKER_OPERATION_FAILED')
+        return bytes(captured)
+    finally:
+        # Also terminate descendants holding inherited pipe descriptors.
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(child.pid, signal.SIGKILL)
+        child.wait()
+        child.stdout.close()
+        child.stderr.close()
 
 
 def validate_model(model, image):
@@ -336,6 +374,7 @@ class Broker:
         record = {'sequence': approval['sequence'], 'sha': sha, 'image_id': image, 'operation': operation, 'status': 'in_progress', 'transaction': transaction.name}
         scratch = 'suiba-vps-broker-'+transaction.name
         scratch_created = False
+        require(approval['expires'] > time.time(), 'APPROVAL_EXPIRED_BEFORE_MUTATION')
         try:
             atomic(ledger, record)
             self.helper(policy['helper_image'], 'maintenance')

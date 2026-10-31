@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('broker', Path(__file__).with_name('broker.py'))
 b = importlib.util.module_from_spec(spec)
@@ -104,6 +105,30 @@ class BrokerTests(unittest.TestCase):
 
     def save_approval(self):
         (self.policy/'approvals'/f'{SHA}.json').write_text(json.dumps(self.approval))
+
+    def test_expiry_during_load_does_not_consume_or_mutate(self):
+        clock = [time.time()]
+        original = self.docker.call
+        def call(args, **kwargs):
+            if args[0] == 'load':
+                clock[0] = self.approval['expires']
+            return original(args, **kwargs)
+        self.docker.call = call
+        with patch.object(b.time, 'time', side_effect=lambda: clock[0]):
+            with self.assertRaisesRegex(b.Rejected, 'APPROVAL_EXPIRED_BEFORE_MUTATION'):
+                self.broker.execute(self.req, 1001)
+        self.assertFalse((self.state/'ledger.json').exists())
+        self.assertFalse(any(a[0] in ('run', 'stop', 'update') or 'create' in a for a in self.docker.calls))
+
+    def test_fake_docker_output_limits_and_timeout(self):
+        for script in ["import os;\nwhile True: os.write(1,b'x'*65536)",
+                       "import os;\nwhile True: os.write(2,b'x'*65536)",
+                       "import os;\nwhile True: os.write(1,b'x'*65536);os.write(2,b'x'*65536)"]:
+            with self.subTest(script=script), self.assertRaisesRegex(b.Rejected, 'DOCKER_OUTPUT_TOO_LARGE'):
+                b.bounded_process(['/usr/bin/python3', '-c', script], {}, timeout=5)
+        with self.assertRaisesRegex(b.Rejected, 'DOCKER_TIMEOUT'):
+            b.bounded_process(['/usr/bin/python3', '-c', 'import time;time.sleep(20)'], {}, timeout=0.2)
+        self.assertEqual(b.bounded_process(['/usr/bin/python3', '-c', "print('ok')"], {}), b'ok\n')
 
     def test_emergency_stop_all_duplicates_despite_first_failure(self):
         calls = []

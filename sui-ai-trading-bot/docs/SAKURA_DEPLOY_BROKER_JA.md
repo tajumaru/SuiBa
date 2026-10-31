@@ -232,3 +232,5 @@ DBを自動巻き戻し/削除せず、maintenanceも残す。
 仕様: [Docker socket](https://docs.docker.com/engine/security/protect-access/)、
 [Rootless](https://docs.docker.com/engine/security/rootless/)。既存設計はPR #34、
 既存運用は [SAKURA_VPS_JA.md](SAKURA_VPS_JA.md) と [LINUX_PAPER_RELEASE_V1_JA.md](LINUX_PAPER_RELEASE_V1_JA.md) を参照。
+
+承認期限は受付時とsequence消費直前に再確認する。Docker出力は実行中に両pipeを並行排出し、stdout/stderr各1MiB（backup stdoutのみ8GiB）で拒否する。超過・timeout・例外時はCLIプロセスグループを終了・回収する。daemon側helperは既存の名前指定cleanupを併用する。quota・空き容量・backup保持管理は別途必須であり、この上限は容量予約ではない。
