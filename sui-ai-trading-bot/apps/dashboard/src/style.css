@@ -4477,3 +4477,103 @@ summary {
     bottom: calc(170px + env(safe-area-inset-bottom, 0px));
   }
 }
+
+/* Boot sequence (the plain approved prototype): a full-screen
+   terminal over the shell right after login — the login grid,
+   lines fading in one by one, a blinking block cursor on the
+   last line, tap to skip. It never blocks longer than its cap
+   (see BootScreen.tsx) and fades out. */
+.boot-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(120, 255, 205, 0.05) 0 1px,
+      transparent 1px 56px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(120, 255, 205, 0.05) 0 1px,
+      transparent 1px 56px
+    ),
+    #04070b;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  padding: 12vh 8% 24px;
+  cursor: pointer;
+  transition: opacity 0.28s ease;
+}
+.boot-screen.leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+.boot-logo {
+  font-size: 24px;
+  letter-spacing: 0.14em;
+  color: #e8f1f8;
+  margin: 0 0 4px;
+}
+.boot-logo span {
+  color: #43dfb2;
+}
+.boot-ver {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: #5f7d94;
+  margin: 0 0 30px;
+}
+.boot-line {
+  font-size: 13.5px;
+  line-height: 2.05;
+  color: #a9c3d4;
+  margin: 0;
+  opacity: 0;
+  white-space: nowrap;
+}
+.boot-line.on {
+  opacity: 1;
+}
+.boot-dots {
+  color: #41586c;
+}
+.boot-value.ok {
+  color: #43dfb2;
+}
+.boot-value.tag {
+  color: #edc980;
+}
+.boot-value.alert {
+  color: #ff8fa5;
+}
+.boot-value.dim {
+  color: #5f7d94;
+}
+.boot-cursor {
+  display: inline-block;
+  width: 9px;
+  height: 16px;
+  margin-left: 4px;
+  vertical-align: -3px;
+  background: #43dfb2;
+  animation: boot-cursor-blink 0.85s steps(1) infinite;
+}
+@keyframes boot-cursor-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.boot-skip {
+  margin-top: 34px;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: #5f7d94;
+}
+@media (prefers-reduced-motion: reduce) {
+  .boot-cursor {
+    animation: none;
+  }
+  .boot-screen {
+    transition: none;
+  }
+}

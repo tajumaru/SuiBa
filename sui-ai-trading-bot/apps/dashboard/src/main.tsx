@@ -16,6 +16,7 @@ import { Reason } from "./Reason.tsx";
 import { StrategyTab, type StrategySegment } from "./StrategyTab.tsx";
 import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
+import { BootScreen } from "./BootScreen.tsx";
 import { errorShout } from "./errorShout.ts";
 import { presetName } from "./settingsPresets.ts";
 import { firstFilledBuy } from "./firstFill.ts";
@@ -260,8 +261,10 @@ function App() {
           r.ok &&
           (await r.json()).authenticated === true &&
           !controller.signal.aborted
-        )
+        ) {
           setToken(SESSION);
+          setBooting(true);
+        }
       })
       .catch(() => {})
       .finally(() => {
@@ -270,6 +273,9 @@ function App() {
     return () => controller.abort();
   }, []);
   const [token, setToken] = useState(""),
+    // The boot sequence overlays the shell once per login
+    // session (form login and session restore alike).
+    [booting, setBooting] = useState(false),
     [data, setData] = useState<State | null>(null),
     [error, setError] = useState(""),
     // Operation failures do not invalidate a successfully fetched state.
@@ -595,7 +601,10 @@ function App() {
       ) : !token ? (
         <LoginScreen
           verify={loginSession}
-          onAuthenticated={() => setToken(SESSION)}
+          onAuthenticated={() => {
+            setToken(SESSION);
+            setBooting(true);
+          }}
         />
       ) : (
         <>
@@ -831,6 +840,24 @@ function App() {
             )}
           </main>
         </>
+      )}
+      {token && booting && (
+        <BootScreen
+          pairLabel={data?.pair === "WAL_USDC" ? "WAL / USDC" : "SUI / USDC"}
+          api={operations.data ? "ok" : operations.error ? "error" : "pending"}
+          bot={
+            !data
+              ? "unknown"
+              : data.runtime.emergency
+                ? "emergency"
+                : data.runtime.error
+                  ? "error"
+                  : data.runtime.running
+                    ? "running"
+                    : "stopped"
+          }
+          onDone={() => setBooting(false)}
+        />
       )}
     </>
   );
