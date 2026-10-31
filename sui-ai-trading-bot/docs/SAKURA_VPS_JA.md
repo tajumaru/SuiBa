@@ -117,3 +117,11 @@ UIから手動開始する。このPRでは解除も開始もしない。
 
 参考: [Compose services](https://docs.docker.com/reference/compose-file/services/)、
 [GitHub Environments](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)。
+
+## Worker起動禁止中の検証
+
+専用workflow `suiba-no-worker.yml` と `vitest.no-worker.config.ts` を使用する。
+既存VPS workflowを対象ブランチに対し、手動入力 `VERIFY-NO-WORKER` で実行すると
+検証専用経路だけが動く。従来validateとSSH deployはskipされ、VPS接続は発生しない。
+既存フルCIの定義・テストは維持する。起動禁止中は `[skip ci]` 付きでpushした後、
+検証専用経路だけをdispatchする。詳細・制約は `PR32_FINAL_REVIEW_JA.md` を参照。
