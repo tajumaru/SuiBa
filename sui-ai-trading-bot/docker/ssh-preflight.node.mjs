@@ -17,12 +17,16 @@ import { spawnSync } from "node:child_process";
 for (const scenario of [
   "success",
   "bad-host",
+  "admin-user",
   "bad-port-zero",
   "bad-port-range",
   "key-failure",
   "pin-missing",
   "connection-failure",
   "unexpected-output",
+  "wrong-user",
+  "bad-metrics",
+  "zero-disk",
 ]) {
   test(
     `SSH preflight: ${scenario}`,
@@ -49,7 +53,11 @@ exit 0
           `#!/usr/bin/env node
 const fs=require('node:fs');fs.writeFileSync(process.env.CALLS,JSON.stringify(process.argv.slice(2)));
 if(process.env.SCENARIO==='connection-failure'){console.error('fixture-sensitive-error');process.exit(255)}
-console.log(process.env.SCENARIO==='unexpected-output'?'unexpected-sensitive-output':'SSH_PREFLIGHT_OK');
+const reply=['SSH_PREFLIGHT_OK','suiba-deploy','29.9.2','v2.40.1','5:29.9.2-1~ubuntu.26.04~resolute','2048000','1024000','80000000'];
+if(process.env.SCENARIO==='wrong-user')reply[1]='ubuntu';
+if(process.env.SCENARIO==='bad-metrics')reply[6]='fixture-sensitive-error';
+if(process.env.SCENARIO==='zero-disk')reply[7]='0';
+console.log(process.env.SCENARIO==='unexpected-output'?'unexpected-sensitive-output':reply.join('\\n'));
 `,
           { mode: 0o755 },
         );
@@ -71,7 +79,7 @@ console.log(process.env.SCENARIO==='unexpected-output'?'unexpected-sensitive-out
             SCENARIO: scenario,
             CALLS: log,
             VPS_HOST: scenario === "bad-host" ? "host;bad" : "fixture.invalid",
-            VPS_USER: "suiba-deploy",
+            VPS_USER: scenario === "admin-user" ? "ubuntu" : "suiba-deploy",
             VPS_PORT:
               scenario === "bad-port-zero"
                 ? "0"
@@ -96,15 +104,37 @@ console.log(process.env.SCENARIO==='unexpected-output'?'unexpected-sensitive-out
           const command = args.at(-1);
           assert.match(command, /docker --version/);
           assert.match(command, /docker compose version/);
+          assert.match(command, /id -un/);
+          assert.match(command, /MemAvailable/);
+          assert.match(command, /df -Pk/);
+          assert.match(command, /dpkg-query/);
+          const syntax = spawnSync("sh", ["-n"], {
+            input: command,
+            encoding: "utf8",
+          });
+          assert.equal(syntax.status, 0, syntax.stderr);
           assert.doesNotMatch(
             command,
             /sudo|docker run|compose up|deploy-vps|mkdir|rm |cat |printenv|\benv\b/,
           );
           assert.ok(args.includes("-T") && args.includes("-n"));
+          assert.match(
+            result.stdout,
+            /MemoryTotalKiB=2048000 MemoryAvailableKiB=1024000 DiskAvailableKiB=80000000/,
+          );
+          assert.match(result.stdout, /DockerCLI=29.9.2 Compose=v2.40.1/);
         } else {
           assert.notEqual(result.status, 0);
           assert.match(result.stderr, /SSH_CHECK_FAILED/);
-          if (!["connection-failure", "unexpected-output"].includes(scenario))
+          if (
+            ![
+              "connection-failure",
+              "unexpected-output",
+              "wrong-user",
+              "bad-metrics",
+              "zero-disk",
+            ].includes(scenario)
+          )
             assert.equal(existsSync(log), false);
         }
         for (const value of [
