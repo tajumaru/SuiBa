@@ -1,4 +1,5 @@
 import { WalPaperRouter } from "../../../packages/dex-router/src/pair-router.ts";
+import { PaperCheckSession } from "./paper-check-session.ts";
 import "../../../scripts/enforce-node-version.mjs";
 import { runtimeBuild } from "./runtime-build.ts";
 import {
@@ -95,12 +96,14 @@ if (process.env.REQUIRE_EXISTING_DATABASE === "1") {
   );
 }
 const deploymentGate = new DeploymentGate(rootDatabasePath);
+const paperCheck = new PaperCheckSession(process.env.PAPER_CHECK_MODE);
 const bootId = randomUUID();
 recordLifecycle(rootDatabasePath, bootId, "running");
 const selectionDb = new BotDatabase(rootDatabasePath + ".pairs.sqlite");
 let pair = tradingPair(
   process.env.TRADING_PAIR ?? selectionDb.get("selected_pair") ?? "SUI_USDC",
 );
+if (!paperCheck.pairAllowed(pair)) throw Error("PAPER_CHECK_PAIR_FORBIDDEN");
 const pairPath = (value: TradingPair) =>
   value === "SUI_USDC"
     ? rootDatabasePath
@@ -140,7 +143,8 @@ function createEngine(database: BotDatabase, selected: TradingPair) {
         selected === "WAL_USDC" ? new WalPaperRouter(router, deep) : router,
         client,
         selected,
-        () => stopping || deploymentGate.blocked(),
+        () => stopping || deploymentGate.blocked() || paperCheck.expired(),
+        () => paperCheck.ordersAllowed(selected),
       ),
     };
   } catch (error) {
@@ -392,6 +396,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         lockSha256: build?.lockSha256 ?? null,
         databaseHealthy: db.health().healthy,
         ledgerOk: engine.monitor.ledger().ok,
+        paperCheck: paperCheck.status(),
+        startReady:
+          engine.monitor.safety().connectivity === "HEALTHY" &&
+          !apiAccess.blocked() &&
+          !db.runtime().emergency &&
+          !db.runtime().error &&
+          sui.status.healthy &&
+          Date.now() - sui.status.checkedAt <= 180000 &&
+          engine.monitor.ledger().ok,
       });
       return;
     }
@@ -535,8 +548,30 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return;
       }
     }
+    if (url.pathname === "/api/paper-check/arm") {
+      if (
+        req.method !== "POST" ||
+        db.runtime().running ||
+        pair !== "SUI_USDC"
+      ) {
+        send(409, { error: "PAPER_CHECK_ARM_REJECTED" });
+        return;
+      }
+      try {
+        paperCheck.arm(pair);
+      } catch {
+        send(409, { error: "PAPER_CHECK_ARM_REJECTED" });
+        return;
+      }
+      send(200, paperCheck.status());
+      return;
+    }
     if (url.pathname === "/api/pairs") {
       const parsed = body.pair;
+      if (!paperCheck.pairAllowed(String(parsed))) {
+        send(409, { error: "PAPER_CHECK_PAIR_FORBIDDEN" });
+        return;
+      }
       if (parsed !== "SUI_USDC" && parsed !== "WAL_USDC") {
         send(400, { error: "INVALID_TRADING_PAIR" });
         return;
@@ -714,6 +749,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           error: null,
         });
       } else if (command === "start") {
+        if (!paperCheck.ordersAllowed(pair)) {
+          send(409, { error: "PAPER_CHECK_LEASE_REQUIRED" });
+          return;
+        }
         const timing = engine.monitor.timing();
         if (timing.fetchElapsedMs != null && timing.fetchElapsedMs > 45000) {
           send(409, { error: "MARKET_FETCH_IN_PROGRESS" });

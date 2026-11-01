@@ -1,0 +1,2 @@
+Defaults:suiba-deploy env_reset,!setenv
+suiba-deploy ALL=(root) NOPASSWD: NOSETENV: /usr/local/sbin/suiba-paper-check ""

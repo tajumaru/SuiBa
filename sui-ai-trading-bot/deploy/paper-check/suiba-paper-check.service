@@ -1,0 +1,20 @@
+[Unit]
+Description=SuiBa fixed SUI PAPER validation (maximum 30 minutes)
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/python3 -I /usr/local/libexec/suiba-paper-check.py run
+ExecStopPost=/usr/bin/python3 -I /usr/local/libexec/suiba-paper-check.py stop
+RuntimeMaxSec=31min
+TimeoutStopSec=240s
+Restart=no
+UMask=0077
+KillMode=control-group
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+MemoryMax=512M
+StandardOutput=null
+StandardError=journal

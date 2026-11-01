@@ -1,0 +1,9 @@
+[Unit]
+Description=Stop SuiBa regardless of SSH/controller state
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /usr/local/libexec/suiba-paper-check.py stop
+TimeoutStartSec=240s
+Restart=no
+UMask=0077
