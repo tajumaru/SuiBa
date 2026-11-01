@@ -354,6 +354,8 @@ function App() {
   const [agentPose, setAgentPose] = useState<AgentPose>("normal");
   // The character's user-chosen name (device-local; "" = キャラ).
   const [agentName, setAgentName] = useState<string>(() => loadAgentName());
+  // Voice recognition is live in the chat (the avatar listens).
+  const [voiceListening, setVoiceListening] = useState(false);
   const changeAgentName = (raw: string) => {
     const next = sanitizeAgentName(raw);
     saveAgentName(next);
@@ -609,6 +611,7 @@ function App() {
           hardMode={data != null && presetName(data.settings) === "hard"}
           agentName={agentName}
           onRename={changeAgentName}
+          listening={voiceListening}
         />
       )}
       {restoringSession ? (
@@ -721,6 +724,7 @@ function App() {
                       pairLabel={data?.pair === "WAL_USDC" ? "WAL" : "SUI"}
                       active={activeTab === "Live"}
                       agentName={agentName}
+                      onListeningChange={setVoiceListening}
                     />
                   ) : (
                     <p role="status">

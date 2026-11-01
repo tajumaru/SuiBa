@@ -4,6 +4,11 @@ import { botVital } from "./botVital.ts";
 import type { ErrorShout } from "./errorShout.ts";
 import { agentDisplayName } from "./agentName.ts";
 import {
+  startListening,
+  voiceRecognitionCtor,
+  type VoiceSession,
+} from "./voiceInput.ts";
+import {
   advanceNarration,
   agentPose,
   BUY_CELEBRATION_MS,
@@ -25,6 +30,7 @@ import imgSleep from "./assets/agent-white-sleep.jpg";
 import imgLaptop from "./assets/agent-white-laptop.jpg";
 import imgLaptopTyping from "./assets/agent-white-laptop-typing.jpg";
 import imgScream from "./assets/agent-white-scream.jpg";
+import imgListen from "./assets/agent-white-listen.jpg";
 import imgBlueLine from "./assets/agent-blue-line.jpg";
 import imgHard from "./assets/agent-hard.jpg";
 import imgHardGuitar from "./assets/agent-hard-guitar.jpg";
@@ -220,10 +226,15 @@ export function AgentHeaderAvatar({
   hardMode = false,
   agentName = "",
   onRename,
+  listening = false,
 }: {
   pose: AgentPose;
   celebrating?: boolean;
   shout?: ErrorShout | null;
+  /** Voice recognition is live in the chat: the DJ artwork
+   * (Sui-blue headphones, one cup lifted) replaces the pose.
+   * Shouts and the buy celebration outrank it. */
+  listening?: boolean;
   /** The character's user-chosen name ("" shows as キャラ). */
   agentName?: string;
   /** When set, tapping the avatar opens the rename editor and
@@ -276,6 +287,8 @@ export function AgentHeaderAvatar({
         <div className="agent-avatar-bob">
           {shouting ? (
             <img className="agent-avatar-scream" src={imgScream} alt="" />
+          ) : listening && !celebrating ? (
+            <img className="agent-avatar-listen" src={imgListen} alt="" />
           ) : (
             <AgentAvatarArtwork pose={shownPose} hardMode={artworkHard} />
           )}
@@ -319,9 +332,11 @@ export function AgentHeaderAvatar({
           ? shout.label
           : celebrating
             ? "買えた！"
-            : hardShown
-              ? "ハードモード中"
-              : POSE_LABEL[shownPose]}
+            : listening
+              ? "聞いてる…"
+              : hardShown
+                ? "ハードモード中"
+                : POSE_LABEL[shownPose]}
       </p>
       {onRename && (
         <button
@@ -518,6 +533,7 @@ export function AgentNarrationFeed({
   pairLabel = "SUI",
   active = true,
   agentName = "",
+  onListeningChange,
 }: {
   data: OperationsSnapshot;
   stale: boolean;
@@ -536,6 +552,9 @@ export function AgentNarrationFeed({
    * this session (never for the loaded history, never for a sell),
    * so the app shell can run the buy celebration. */
   onCelebrate?: () => void;
+  /** Reports voice-recognition activity so the shell can switch
+   * the header avatar to its listening artwork. */
+  onListeningChange?: (listening: boolean) => void;
 }) {
   const displayName = agentDisplayName(agentName);
   const [narration, setNarration] = useState<NarrationState>(() =>
@@ -793,6 +812,82 @@ export function AgentNarrationFeed({
       setChatThinking(false);
     }, 650);
   };
+  // Voice input: one recognition session at a time, feeding the
+  // same submitChat path as typing. The mic renders only where
+  // the platform offers recognition at all.
+  const voiceSupported = voiceRecognitionCtor() !== null;
+  const [voiceListening, setVoiceListening] = useState(false);
+  const voiceRef = useRef<VoiceSession | null>(null);
+  useEffect(() => {
+    onListeningChange?.(voiceListening);
+  }, [voiceListening, onListeningChange]);
+  useEffect(
+    () => () => {
+      voiceRef.current?.stop();
+      voiceRef.current = null;
+    },
+    [],
+  );
+  const stopListening = () => {
+    voiceRef.current?.stop();
+    voiceRef.current = null;
+    setVoiceListening(false);
+  };
+  /** Append a character line directly (no thinking beat): used
+   * when recognition itself failed and there is no question to
+   * answer, only something to say about it. */
+  const sayChatLine = (text: string) => {
+    const prev = narrationRef.current;
+    const next: NarrationState = {
+      ...prev,
+      entries: trimNarrationEntries([
+        ...prev.entries,
+        {
+          id: `narration:${prev.nextEntryId}`,
+          at: Date.now(),
+          kind: "chatReply",
+          text,
+        } satisfies NarrationEntry,
+      ]),
+      nextEntryId: prev.nextEntryId + 1,
+    };
+    narrationRef.current = next;
+    persist(next);
+    setNarration(next);
+    setChatReplyText(text);
+  };
+  const toggleVoice = () => {
+    if (voiceListening) {
+      stopListening();
+      return;
+    }
+    if (chatThinking) return;
+    const session = startListening({
+      onInterim: (text) => setChatInput(text.slice(0, 120)),
+      onFinal: (text) => {
+        setChatInput(text.slice(0, 120));
+        stopListening();
+        submitChat(text);
+      },
+      onError: (kind) => {
+        stopListening();
+        sayChatLine(
+          kind === "denied"
+            ? "マイクが使えなかった…許可を確認してみて"
+            : "聞き取れなかった…もう一回お願いできる？",
+        );
+      },
+      onEnd: () => {
+        voiceRef.current = null;
+        setVoiceListening(false);
+      },
+    });
+    if (session) {
+      voiceRef.current = session;
+      setChatOpen(true);
+      setVoiceListening(true);
+    }
+  };
   // Buy-condition chips come from the same fresh decision evidence
   // as the narration; a stale display shows no chips at all.
   const chips = stale
@@ -941,9 +1036,25 @@ export function AgentNarrationFeed({
             onCompositionEnd={() => {
               composingRef.current = false;
             }}
-            placeholder={`${displayName}へのコメント`}
+            placeholder={
+              voiceListening
+                ? "聞いてる…話してね"
+                : `${displayName}へのコメント`
+            }
             aria-label={`${displayName}へのコメント`}
           />
+          {voiceSupported && (
+            <button
+              type="button"
+              className={`agent-chat-mic${voiceListening ? " listening" : ""}`}
+              aria-label={voiceListening ? "聞き取りをやめる" : "音声で聞く"}
+              aria-pressed={voiceListening}
+              disabled={chatThinking}
+              onClick={toggleVoice}
+            >
+              🎤
+            </button>
+          )}
           <button type="submit" disabled={chatThinking}>
             送信
           </button>
