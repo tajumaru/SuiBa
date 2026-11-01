@@ -78,7 +78,7 @@ for outcome in ('disconnected-client', 'crashed-controller'):
     try:
         docker('volume', 'create', name+'-data')
         (base/('a'*32)).mkdir(mode=0o700)
-        (base/'run.json').write_text(json.dumps({'status':'in_progress','id':'a'*32,'admitted':True,'controller':{'pid':99999999}}))
+        (base/'run.json').write_text(json.dumps({'status':'in_progress','id':'a'*32,'admitted':True,'controller':{'pid':99999999,'start':'0','boot':str(uuid.UUID(int=0))}}))
         docker('run', '--rm', '--network', 'none', '-v', name+'-data:/app/data', image,
                'node', '--import', 'tsx', 'docker/vps-data.mjs', 'initialize', 'NEW-PAPER-LEDGER')
         docker('run', '-d', '--name', name, '--restart', 'no', '--network', 'none', '--init',

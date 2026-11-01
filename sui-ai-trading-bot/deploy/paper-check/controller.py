@@ -70,6 +70,10 @@ class Controller:
         record = self.b.decode(self.b.read_trusted(self.record))
         value = record['id']
         require(isinstance(value, str) and len(value) == 32 and all(c in '0123456789abcdef' for c in value))
+        identity = record['controller']
+        require(set(identity) == {'pid', 'start', 'boot'} and type(identity['pid']) is int and identity['pid'] > 1 and
+                isinstance(identity['start'], str) and identity['start'].isdecimal() and
+                isinstance(identity['boot'], str) and str(uuid.UUID(identity['boot'])) == identity['boot'])
         require(expected is None or value == expected)
         return record
 

@@ -35,7 +35,7 @@ class FakeBroker:
 def initialize(ctl):
     FakeBroker.STATE = ctl.state
     record = {'id': 'a'*32, 'status': 'in_progress', 'admitted': True,
-              'cutoff': int(time.time()*1000)+1800000, 'controller': {'pid': 99999999}}
+              'cutoff': int(time.time()*1000)+1800000, 'controller': {'pid': 99999999, 'start': '0', 'boot': str(uuid.UUID(int=0))}}
     (ctl.state/record['id']).mkdir(exist_ok=True)
     ctl.record = ctl.state/'run.json'
     ctl.record.write_text(json.dumps(record))
@@ -222,8 +222,9 @@ class StopTests(unittest.TestCase):
             ctl.b, ctl.state = FakeBroker, Path(root)
             ctl.record = Path(root)/'run.json'
             self.assertTrue(ctl.stop())
-            initialize(ctl)
-            ctl.record.write_text(json.dumps({'id': 'a'*32, 'status': 'completed'}))
+            record = initialize(ctl)
+            record['status'] = 'completed'
+            ctl.record.write_text(json.dumps(record))
             self.assertTrue(ctl.stop())
 
 
