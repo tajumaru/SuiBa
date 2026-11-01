@@ -62,3 +62,5 @@ jobs:
         run: sudo /usr/bin/python3 -I deploy/broker/verify_docker.py suiba-no-worker:${{ github.sha }}
       - name: Independent systemd cutoff with Docker dummy (no Worker)
         run: sudo /usr/bin/python3 -I deploy/paper-check/verify_timer.py suiba-no-worker:${{ github.sha }}
+      - name: Production controller crash and recovery with Docker dummy (no Worker)
+        run: sudo /usr/bin/python3 -I deploy/paper-check/verify_run.py suiba-no-worker:${{ github.sha }}

@@ -4,6 +4,7 @@ export class PaperCheckSession {
   private deadline: number | null = null;
   private wallDeadline: number | null = null;
   private last: number;
+  private lastWall: number;
   private closed = false;
   constructor(
     mode?: string,
@@ -14,14 +15,23 @@ export class PaperCheckSession {
       throw Error("INVALID_PAPER_CHECK_MODE");
     this.enabled = mode === "sui-30m";
     this.last = clock();
+    this.lastWall = wall();
   }
   expired() {
     const now = this.clock();
-    if (now < this.last || !Number.isFinite(now)) this.closed = true;
+    const wall = this.wall();
+    if (
+      now < this.last ||
+      wall < this.lastWall ||
+      !Number.isFinite(now) ||
+      !Number.isFinite(wall)
+    )
+      this.closed = true;
     this.last = now;
+    this.lastWall = wall;
     if (
       this.deadline !== null &&
-      (now >= this.deadline || this.wall() >= this.wallDeadline!)
+      (now >= this.deadline || wall >= this.wallDeadline!)
     )
       this.closed = true;
     return this.enabled && this.closed;
@@ -35,16 +45,22 @@ export class PaperCheckSession {
       (this.pairAllowed(pair) && this.deadline !== null && !this.expired())
     );
   }
-  arm(pair: string) {
+  arm(pair: string, expiresAt: number, issuedAt: number) {
+    const wall = this.wall();
     if (
       !this.enabled ||
       !this.pairAllowed(pair) ||
       this.deadline !== null ||
-      this.expired()
+      this.expired() ||
+      !Number.isSafeInteger(expiresAt) ||
+      !Number.isSafeInteger(issuedAt) ||
+      Math.abs(wall - issuedAt) > 2000 ||
+      expiresAt <= wall ||
+      expiresAt > issuedAt + 30 * 60 * 1000
     )
       throw Error("PAPER_CHECK_ARM_REJECTED");
-    this.deadline = this.clock() + 30 * 60 * 1000;
-    this.wallDeadline = this.wall() + 30 * 60 * 1000;
+    this.deadline = this.clock() + Math.min(expiresAt - wall, 30 * 60 * 1000);
+    this.wallDeadline = expiresAt;
   }
   status() {
     return {

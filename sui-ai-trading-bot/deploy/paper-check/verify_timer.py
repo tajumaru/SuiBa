@@ -55,6 +55,7 @@ if len(sys.argv) == 5 and sys.argv[1] == 'stop-fixture':
             docker('run', '--rm', '--network', 'none', '-v', name+'-data:/app/data', image,
                    'node', '--import', 'tsx', 'docker/vps-data.mjs', 'verify')
     ctl.helper = lambda: (Helper(), image)
+    ctl.verify_sui = lambda: None  # Full run fixture below checks the real SQL.
     sys.exit(0 if ctl.stop() else 1)
 
 

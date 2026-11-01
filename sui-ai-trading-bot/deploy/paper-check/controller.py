@@ -23,6 +23,7 @@ BROKER = Path('/usr/local/libexec/suiba-deploy-broker.py')
 CONTAINER = 'suiba-vps-bot-1'
 TIMER = 'suiba-paper-check-cutoff.timer'
 SERVICE = 'suiba-paper-check.service'
+POLICY = Path('/etc/suiba-paper-check/policy.json')
 
 
 def require(value):
@@ -78,16 +79,69 @@ class Controller:
 
     def maintenance(self, enabled):
         if enabled:
+            self.retire_release_helper()
             helper, image = self.helper()
             helper.helper(image, 'maintenance')
         else:
             # Exactly one fixed offline latch. No generic shell or path argument.
             helper, image = self.helper()
-            self.docker.call(['run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL',
+            name = 'suiba-paper-unlatch-'+uuid.uuid4().hex
+            # Persist BEFORE Docker mutation. Create is separate from start:
+            # a delayed create cannot execute code after cleanup.
+            self.b.atomic(self.state/'release-helper.json', {'name': name, 'retired': False})
+            try:
+                self.docker.call(['create', '--name', name, '--network', 'none', '--read-only', '--cap-drop', 'ALL',
                 '--security-opt', 'no-new-privileges', '--user', '1000:1000',
                 '--memory', '128m', '--memory-swap', '128m', '--pids-limit', '32',
                 '-v', self.b.DATA+':/app/data', '--entrypoint', '/usr/local/bin/node', image,
-                '-e', 'const f=require("fs"),p="/app/data/bot.sqlite.maintenance";const s=f.lstatSync(p);if(!s.isFile()||s.nlink!==1)throw Error("UNSAFE_LATCH");f.unlinkSync(p);const d=f.openSync("/app/data","r");f.fsyncSync(d);f.closeSync(d)'])
+                '-e', 'const f=require("fs"),p="/app/data/bot.sqlite.maintenance";const s=f.lstatSync(p);if(!s.isFile()||s.nlink!==1)throw Error("UNSAFE_LATCH");f.unlinkSync(p);const d=f.openSync("/app/data","r");f.fsyncSync(d);f.closeSync(d)'], timeout=20)
+                self.docker.call(['start', '-a', name], timeout=20)
+                state = self.b.decode(self.docker.call(['inspect', name], timeout=10))[0]['State']
+                require(not state['Running'] and state['ExitCode'] == 0 and not state['OOMKilled'])
+            finally:
+                self.retire_release_helper()
+
+    def retire_release_helper(self):
+        path = self.state/'release-helper.json'
+        if not path.exists():
+            return
+        record = self.b.decode(self.b.read_trusted(path))
+        name = record['name']
+        require(isinstance(name, str) and name.startswith('suiba-paper-unlatch-') and
+                len(name) == len('suiba-paper-unlatch-')+32 and
+                all(c in '0123456789abcdef' for c in name[-32:]))
+        if record.get('retired') is True:
+            return
+        # A successful deletion, not just CLI termination, is required.
+        self.docker.call(['rm', '-f', name], timeout=10)
+        require(not self.docker.call(['ps', '-aq', '--no-trunc', '--filter', 'name=^/'+name+'$'], timeout=10))
+        self.b.atomic(path, {'name': name, 'retired': True})
+
+    def verify_sui(self):
+        helper, image = self.helper()
+        # Fixed read-only SQL; existing verify still checks all DBs/clean receipt.
+        self.docker.call(['run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL',
+            '--security-opt', 'no-new-privileges', '--user', '1000:1000', '--memory', '128m',
+            '--memory-swap', '128m', '--pids-limit', '32', '-v', self.b.DATA+':/app/data',
+            '--entrypoint', '/usr/local/bin/node', image, '-e',
+            'const {DatabaseSync}=require("node:sqlite");const d=new DatabaseSync("/app/data/bot.sqlite.pairs.sqlite",{readOnly:true});try{const r=d.prepare("SELECT json FROM bot_runtime_state WHERE key=?").get("selected_pair");if(!r||JSON.parse(r.json)!=="SUI_USDC")throw Error("SUI_SELECTION_REQUIRED")}finally{d.close()}'], timeout=20)
+
+    def wait_ready(self, cutoff):
+        deadline = time.monotonic()+60
+        while True:
+            require(time.monotonic() < deadline and time.time()*1000 < cutoff)
+            i = self.inspect()
+            require(i['State']['Running'] and not i['State']['OOMKilled'] and i['RestartCount'] == 0)
+            health = i['State'].get('Health', {}).get('Status')
+            require(health in ('starting', 'healthy'))
+            if health == 'healthy':
+                try:
+                    d = self.api('GET', '/api/deployment')
+                    if d.get('startReady') is True:
+                        return d
+                except urllib.error.URLError as error:
+                    require(not isinstance(error, urllib.error.HTTPError) and isinstance(error.reason, ConnectionRefusedError))
+            time.sleep(1)
 
     def backup(self):
         helper, image = self.helper()
@@ -147,6 +201,7 @@ class Controller:
             self.maintenance(True)
             helper, image = self.helper()
             helper.helper(image, 'verify')
+            self.verify_sui()
         except Exception:
             errors.append('DB_OR_MAINTENANCE_UNCONFIRMED')
         self.b.atomic(self.state/'stop.json', {'status': 'failed_state_unknown' if errors else 'clean_stopped',
@@ -165,7 +220,7 @@ class Controller:
             require(stat.S_ISREG(s.st_mode) and s.st_uid == 0 and s.st_nlink == 1 and not s.st_mode & 0o077)
             fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB)
             self.b.Broker(state=self.b.STATE).check_paper_session()
-            config = self.b.decode(self.b.read_trusted(Path('/etc/suiba-paper-check/policy.json')))
+            config = self.b.decode(self.b.read_trusted(POLICY))
             require(config == {'enabled': True, 'mode': 'sui-30m'})
             if self.record.exists():
                 old = self.b.decode(self.b.read_trusted(self.record))
@@ -189,42 +244,32 @@ class Controller:
             frozen = self.b.decode(self.b.read_trusted(self.b.STATE/ledger['transaction']/'compose.json'))
             require(i['Config']['Image'] == frozen['services']['bot']['image'])
             backup = self.backup()
+            now = int(time.time()*1000)
             record = {'status': 'in_progress', 'id': uuid.uuid4().hex, 'backup': backup,
-                      'started': int(time.time()), 'cutoff': int(time.time())+1800}
-            self.b.atomic(self.record, record)
+                      'started': now, 'cutoff': now+1800000}
             # Durable refusal survives controller SIGKILL and lock release.
             self.b.atomic(self.b.STATE/'paper-check.json', {'status': 'in_progress'})
+            self.b.atomic(self.record, record)
             self.system('start', TIMER)
             self.system('is-active', '--quiet', TIMER)
             try:
                 self.maintenance(False)
                 self.docker.call(['start', CONTAINER], timeout=20)
                 # Readiness GETs only. Never retry a start/arm/order/reset action.
-                deadline = time.monotonic()+60
-                while True:
-                    try:
-                        d = self.api('GET', '/api/deployment')
-                        if d.get('startReady') is True:
-                            break
-                        require(time.monotonic() < deadline)
-                        time.sleep(1)
-                    except urllib.error.URLError as error:
-                        # Expected readiness only: no retry for HTTP/API errors,
-                        # timeouts or a failed start/arm request.
-                        require(not isinstance(error, urllib.error.HTTPError) and isinstance(error.reason, ConnectionRefusedError))
-                        require(time.monotonic() < deadline)
-                        time.sleep(1)
+                d = self.wait_ready(record['cutoff'])
                 require(d['mode'] == 'PAPER' and not d['running'] and not d['maintenance'] and
                         d['databaseHealthy'] and d['ledgerOk'] and d['paperCheck']['enabled'] and not d['paperCheck']['armed'])
                 require(self.api('GET', '/api/pairs')['selected'] == 'SUI_USDC')
                 market = self.api('GET', '/api/dashboard/summary')['summary']['marketData']
                 require(market['source'] == 'GeckoTerminal' and 0 <= time.time()*1000-market['lastSuccessAt'] <= 90000)
                 # Existing start guards check connectivity/accounting/market state.
-                self.api('POST', '/api/paper-check/arm', {})
+                armed = self.api('POST', '/api/paper-check/arm',
+                                 {'expiresAt': record['cutoff'], 'issuedAt': int(time.time()*1000)})
+                require(armed['expires'] == record['cutoff'] and armed['armed'] and not armed['expired'])
                 started = self.api('POST', '/api/control', {'command': 'start'})
                 require(started['running'] is True)
                 end = time.monotonic()+1800
-                while time.monotonic() < end and time.time() < record['cutoff']-5:
+                while time.monotonic() < end and time.time()*1000 < record['cutoff']-5000:
                     self.system('is-active', '--quiet', TIMER)
                     d = self.api('GET', '/api/deployment')
                     require(d['mode'] == 'PAPER' and d['running'] and d['databaseHealthy'] and d['ledgerOk'])
@@ -297,6 +342,10 @@ def main():
                 controller.system('start', '--no-block', 'suiba-paper-check-cutoff.service')
                 print('PAPER_CHECK_ABORT_REQUESTED')
         elif sys.argv[1] == 'stop':
+            # Cutoff must also cancel a controller delayed in startup. Otherwise
+            # it could start the Worker again after the independent stop.
+            with contextlib.suppress(Exception):
+                controller.system('kill', '--kill-whom=main', '--signal=SIGTERM', SERVICE)
             require(controller.stop())
         else:
             controller.run()

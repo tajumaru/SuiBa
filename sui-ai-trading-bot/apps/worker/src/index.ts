@@ -558,7 +558,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return;
       }
       try {
-        paperCheck.arm(pair);
+        paperCheck.arm(pair, body.expiresAt, body.issuedAt);
       } catch {
         send(409, { error: "PAPER_CHECK_ARM_REJECTED" });
         return;
