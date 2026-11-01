@@ -190,6 +190,8 @@ class StopTests(unittest.TestCase):
             self.assertTrue(ctl.stop(source='post-stop'))
             self.assertEqual(ctl.current()['status'], 'completed')
             self.assertEqual(json.loads((ctl.state/'stop.json').read_text())['status'], 'clean_stopped')
+            ctl.fault(ctl.current(), 'LATE_STOP_FAILURE')
+            self.assertFalse(ctl.stop())
 
     @unittest.skipIf(os.name == 'nt', 'actual flock is tested in Linux CI')
     def test_stop_lock_failure_preserves_receipt_and_blocks_reentry(self):

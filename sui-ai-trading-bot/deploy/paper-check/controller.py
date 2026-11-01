@@ -293,12 +293,12 @@ class Controller:
     def stop(self, own=False, expected=None, source='external'):
         if not self.record.exists(): return True
         record = self.current(expected)
-        if record['status'] == 'completed': return True
+        if record['status'] == 'completed': return not self.faults(record)
         expected = record['id']
         try:
             with self.locked('stop', wait=60):
                 record = self.current(expected)  # stale callers may not signal/write a newer run
-                if record['status'] == 'completed': return True
+                if record['status'] == 'completed': return not self.faults(record)
                 self.accept_stop(record, source)
                 if not own:
                     try:
