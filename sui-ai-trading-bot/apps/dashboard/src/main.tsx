@@ -17,6 +17,7 @@ import { StrategyTab, type StrategySegment } from "./StrategyTab.tsx";
 import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
 import { BootScreen } from "./BootScreen.tsx";
+import { ActivityGrass } from "./ActivityGrass.tsx";
 import { errorShout } from "./errorShout.ts";
 import { presetName } from "./settingsPresets.ts";
 import { firstFilledBuy } from "./firstFill.ts";
@@ -744,6 +745,7 @@ function App() {
                         </p>
                       </section>
                     </div>
+                    <ActivityGrass orders={data.orders} />
                     <label>
                       時間足
                       <select

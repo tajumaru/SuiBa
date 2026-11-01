@@ -4577,3 +4577,79 @@ summary {
     transition: none;
   }
 }
+
+/* Activity grass (GitHub-style heatmap on the Overview tab):
+   18 weeks of days, fills brighter than attempts, in the
+   terminal mint scale. Today is ringed in gold. */
+.activity-grass-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.activity-grass-months {
+  position: relative;
+  height: 14px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 9.5px;
+  color: #71809a;
+}
+.activity-grass-months span {
+  position: absolute;
+  top: 0;
+}
+.activity-grass {
+  display: flex;
+  gap: 3px;
+  width: max-content;
+}
+.activity-grass-weekdays {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 15px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 9.5px;
+  color: #71809a;
+}
+.activity-grass-weekdays span {
+  height: 11px;
+  line-height: 11px;
+}
+.activity-grass-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.activity-grass-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  background: #0b1a12;
+  flex: none;
+}
+.activity-grass-cell.level-1 {
+  background: #0e3a26;
+}
+.activity-grass-cell.level-2 {
+  background: #17724a;
+}
+.activity-grass-cell.level-3 {
+  background: #25a56b;
+}
+.activity-grass-cell.level-4 {
+  background: #43dfb2;
+}
+.activity-grass-cell.today {
+  outline: 1px solid #edc980;
+  outline-offset: 0;
+}
+.activity-grass-cell.future {
+  background: transparent;
+}
+.activity-grass-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: #71809a;
+}
