@@ -38,7 +38,9 @@ if len(sys.argv) == 5 and sys.argv[1] == 'stop-fixture':
         read_trusted = staticmethod(lambda path: path.read_bytes())
         @staticmethod
         def atomic(path, value):
-            path.write_text(json.dumps(value))
+            temporary = path.with_suffix('.tmp')
+            temporary.write_text(json.dumps(value))
+            temporary.replace(path)
     class Docker:
         def call(self, args, **kwargs):
             return docker(*args)
@@ -82,9 +84,13 @@ for outcome in ('disconnected-client', 'crashed-controller'):
         exited = subprocess.run(['/usr/bin/python3', '-c', code])
         assert exited.returncode == (9 if outcome=='crashed-controller' else 0)
         deadline = time.monotonic()+30
-        while not (base/'stop.json').exists() and time.monotonic()<deadline:
+        receipt = {}
+        while time.monotonic()<deadline:
+            if (base/'stop.json').exists():
+                receipt = json.loads((base/'stop.json').read_text())
+                if receipt.get('status') != 'stopping_state_unknown':
+                    break
             time.sleep(0.2)
-        receipt = json.loads((base/'stop.json').read_text())
         assert receipt['status'] == 'clean_stopped', receipt
         state = json.loads(docker('inspect', name))[0]
         assert not state['State']['Running'] and state['State']['ExitCode'] == 0 and not state['State']['OOMKilled']
