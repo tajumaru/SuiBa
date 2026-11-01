@@ -34,6 +34,12 @@ if len(sys.argv) == 5 and sys.argv[1] == 'stop-fixture':
     c.CONTAINER = name
     ctl = object.__new__(c.Controller)
     class Broker:
+        @staticmethod
+        @contextlib.contextmanager
+        def directory(path):
+            fd = os.open(path, os.O_RDONLY|os.O_DIRECTORY)
+            try: yield fd
+            finally: os.close(fd)
         decode = staticmethod(json.loads)
         read_trusted = staticmethod(lambda path: path.read_bytes())
         @staticmethod
@@ -70,7 +76,8 @@ for outcome in ('disconnected-client', 'crashed-controller'):
     timer = unit.with_suffix('.timer')
     try:
         docker('volume', 'create', name+'-data')
-        (base/'run.json').write_text('{"status":"in_progress"}')
+        (base/('a'*32)).mkdir(mode=0o700)
+        (base/'run.json').write_text(json.dumps({'status':'in_progress','id':'a'*32,'admitted':True,'controller':{'pid':99999999}}))
         docker('run', '--rm', '--network', 'none', '-v', name+'-data:/app/data', image,
                'node', '--import', 'tsx', 'docker/vps-data.mjs', 'initialize', 'NEW-PAPER-LEDGER')
         docker('run', '-d', '--name', name, '--restart', 'no', '--network', 'none', '--init',

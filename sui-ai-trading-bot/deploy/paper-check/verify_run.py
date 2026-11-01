@@ -33,6 +33,7 @@ def fixture(base, name, image, scenario):
     b.STATE, b.POLICY, b.BACKUPS, b.DATA = base/'broker', base/'policy', base/'backups', name+'-data'
     c.CONTAINER, c.SERVICE, c.TIMER = name, name+'.service', name+'-cutoff.timer'
     c.POLICY = base/'controller-policy.json'
+    c.CUTOFF = name+'-cutoff.service'
     ctl = c.Controller(b, base/'state')
     original_inspect = ctl.inspect
     def inspect():
@@ -54,6 +55,12 @@ def fixture(base, name, image, scenario):
             return {'armed': True, 'expired': False, 'expires': value['expiresAt']}
         if value == {'command': 'start'}:
             (base/'started').touch()
+            if scenario in ('normal', 'normal-cutoff'):
+                if scenario == 'normal-cutoff': ctl.system('start', '--no-block', c.CUTOFF)
+                original_time = time.time
+                target = ctl.current()['cutoff']/1000-4
+                c.time.time = lambda: target
+            if scenario in ('signal-failure', 'signal-survive'): (base/'ready').touch()
             return {'running': True}
         return {'running': False}
     ctl.api = api
@@ -72,6 +79,10 @@ def fixture(base, name, image, scenario):
     b.atomic = atomic
     original_call = ctl.docker.call
     def call(args, **kwargs):
+        if scenario == 'worker-abort' and args == ['start', name]:
+            original_call(args, **kwargs)
+            (base/'ready').touch()
+            time.sleep(120)
         if scenario == 'helper' and args[0] == 'create':
             args = list(args)
             args[-1] = 'setTimeout(()=>{'+args[-1]+'},20000)'
@@ -81,10 +92,13 @@ def fixture(base, name, image, scenario):
             time.sleep(120)  # Lost response; helper is still scheduled to unlink.
         return original_call(args, **kwargs)
     ctl.docker.call = call
+    if scenario == 'signal-survive':
+        import signal
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
     return c, ctl
 
 
-if len(sys.argv) == 7 and sys.argv[1] in ('run', 'stop'):
+if len(sys.argv) == 7 and sys.argv[1] in ('run', 'stop', 'post-stop'):
     operation, root, name, image, scenario = sys.argv[1:6]
     # Seventh argument is an explicit disposable-fixture sentinel.
     assert sys.argv[6] == 'DUMMY-ONLY'
@@ -93,8 +107,11 @@ if len(sys.argv) == 7 and sys.argv[1] in ('run', 'stop'):
     c, ctl = fixture(base, name, image, scenario if operation == 'run' else 'stop')
     if operation == 'run': ctl.run()
     else:
-        with contextlib.suppress(Exception): ctl.system('kill', '--kill-whom=main', '--signal=SIGKILL', c.SERVICE)
-        sys.exit(0 if ctl.stop() else 1)
+        if scenario == 'signal-failure':
+            def fail_signal(record): raise TimeoutError('fixture signal failure')
+            ctl.terminate = fail_signal
+        record = ctl.current() if ctl.record.exists() else None
+        sys.exit(0 if ctl.stop(expected=record['id'] if record else None, source='post-stop' if operation == 'post-stop' else 'cutoff') else 1)
     sys.exit(0)
 
 
@@ -104,7 +121,7 @@ identity = json.loads(docker('image', 'inspect', image))[0]
 digest = identity['Id']
 sha = identity['Config']['Labels']['org.opencontainers.image.revision']
 script = Path(__file__).resolve()
-for scenario in ('crash', 'timer', 'helper', 'persistence'):
+for scenario in ('normal', 'crash', 'timer', 'helper', 'persistence', 'worker-abort', 'signal-failure', 'signal-survive', 'normal-cutoff'):
     name = 'suiba-full-run-'+uuid.uuid4().hex
     base = Path(tempfile.mkdtemp(prefix=name, dir='/var/lib'))
     unit = Path('/run/systemd/system')/(name+'.service')
@@ -136,23 +153,31 @@ for scenario in ('crash', 'timer', 'helper', 'persistence'):
         command = '/usr/bin/python3 -I '+str(code/'paper-check/verify_run.py')+' {op} '+str(base)+' '+name+' '+digest+' '+scenario+' DUMMY-ONLY'
         production = Path(__file__).with_name('suiba-paper-check.service').read_text()
         production = production.replace('/usr/bin/python3 -I /usr/local/libexec/suiba-paper-check.py run', command.format(op='run'))
-        production = production.replace('/usr/bin/python3 -I /usr/local/libexec/suiba-paper-check.py stop', command.format(op='stop'))
-        if scenario == 'timer': production = '\n'.join(x for x in production.splitlines() if not x.startswith('ExecStopPost='))+'\n'
+        production = production.replace('/usr/bin/python3 -I /usr/local/libexec/suiba-paper-check.py post-stop', command.format(op='post-stop'))
+        # Keep production ExecStopPost also in the independent timer case.
         unit.write_text(production)
         cutoff.write_text('[Service]\nType=oneshot\nExecStart='+command.format(op='stop')+'\nTimeoutStartSec=120s\n')
-        timer.write_text('[Timer]\nOnActiveSec=8s\nAccuracySec=100ms\nUnit='+name+'-cutoff.service\n')
+        timer.write_text('[Timer]\nOnActiveSec=12s\nAccuracySec=100ms\nUnit='+name+'-cutoff.service\n')
         subprocess.run(['systemctl', 'daemon-reload'], check=True)
         subprocess.run(['systemctl', 'start', name+'.service'], check=True)
         deadline = time.monotonic()+90
-        while not (base/'ready').exists() and time.monotonic()<deadline: time.sleep(.1)
-        assert (base/'ready').exists(), 'RUN_DID_NOT_REACH_INJECTION'
-        if scenario != 'timer': subprocess.run(['systemctl', 'kill', '--kill-whom=main', '--signal=SIGKILL', name+'.service'], check=True)
+        if scenario not in ('normal', 'normal-cutoff'):
+            while not (base/'ready').exists() and time.monotonic()<deadline: time.sleep(.1)
+            if not (base/'ready').exists():
+                subprocess.run(['journalctl', '-u', name+'.service', '--no-pager', '-n', '40'])
+                raise AssertionError('RUN_DID_NOT_REACH_INJECTION')
+        if scenario in ('crash', 'persistence'):
+            subprocess.run(['systemctl', 'kill', '--kill-whom=main', '--signal=SIGKILL', name+'.service'], check=True)
+        elif scenario in ('helper', 'worker-abort', 'signal-failure', 'signal-survive'):
+            subprocess.run(['systemctl', 'start', '--no-block', name+'-cutoff.service'], check=True)
         receipt = {}
         while time.monotonic()<deadline:
             path = base/'state/stop.json'
             if path.exists():
                 receipt = json.loads(path.read_text())
-                if receipt['status'] in ('clean_stopped', 'failed_state_unknown'): break
+                if receipt['status'] in ('clean_stopped', 'failed_state_unknown'):
+                    states = [subprocess.check_output(['systemctl', 'show', unit, '-p', 'ActiveState', '--value']).decode().strip() for unit in (name+'.service', name+'-cutoff.service')]
+                    if all(state in ('inactive','failed') for state in states): break
             if scenario == 'persistence' and subprocess.run(['systemctl', 'is-active', '--quiet', name+'.service']).returncode: break
             time.sleep(.2)
         if scenario == 'persistence':
@@ -160,7 +185,11 @@ for scenario in ('crash', 'timer', 'helper', 'persistence'):
             assert json.loads((base/'broker/paper-check.json').read_text()) == {'status': 'in_progress'}
             assert not (base/'started').exists()
         else:
-            assert receipt.get('status') == 'clean_stopped', receipt
+            expected = ('clean_stopped',) if scenario in ('normal', 'crash', 'timer') else ('failed_state_unknown',) if scenario in ('helper', 'worker-abort', 'signal-failure', 'signal-survive') else ('clean_stopped','failed_state_unknown')
+            assert receipt.get('status') in expected, receipt
+            record = json.loads((base/'state/run.json').read_text())
+            assert receipt['id'] == record['id']
+            assert record['status'] == 'completed' if scenario == 'normal' else record['status'] != 'completed'
             if scenario == 'helper':
                 helper = json.loads((base/'state/release-helper.json').read_text())
                 assert helper['retired'] and not docker('ps', '-aq', '--filter', 'name='+helper['name'])
@@ -175,8 +204,17 @@ for scenario in ('crash', 'timer', 'helper', 'persistence'):
         except Exception: pass
         else: raise AssertionError('WAL_SELECTION_ACCEPTED')
         if scenario != 'persistence':
-            assert not ctl.stop()
+            record = ctl.current()
+            if record['status'] == 'completed':
+                record['status'] = 'failed_requires_review'; ctl.b.atomic(ctl.record, record)
+            assert not ctl.stop(expected=record['id'])
             assert json.loads((base/'state/stop.json').read_text())['status'] == 'failed_state_unknown'
+        if scenario != 'persistence':
+            ctl.run_id = ctl.current()['id']
+            for operation in ('unlatch', 'worker-start', 'arm', 'paper-start'):
+                try: ctl.guard(operation, lambda: (_ for _ in ()).throw(AssertionError('POST_STOP_ACTION')))
+                except RuntimeError: pass
+                else: raise AssertionError('STOP_REQUEST_BYPASSED')
         print('PASS: production run/stop '+scenario+'; no Worker; SUI SQL rejects WAL')
     finally:
         subprocess.run(['systemctl', 'stop', name+'-cutoff.timer', name+'.service', name+'-cutoff.service'], check=False)

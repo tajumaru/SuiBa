@@ -23,6 +23,7 @@ BROKER = Path('/usr/local/libexec/suiba-deploy-broker.py')
 CONTAINER = 'suiba-vps-bot-1'
 TIMER = 'suiba-paper-check-cutoff.timer'
 SERVICE = 'suiba-paper-check.service'
+CUTOFF = 'suiba-paper-check-cutoff.service'
 POLICY = Path('/etc/suiba-paper-check/policy.json')
 
 
@@ -39,6 +40,112 @@ class Controller:
             pass
         self.docker = broker.Docker(self.state)
         self.record = self.state/'run.json'
+
+    @contextlib.contextmanager
+    def locked(self, name, wait=0):
+        import stat
+        fd = os.open(self.state/(name+'.lock'), os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW, 0o600)
+        try:
+            st = os.fstat(fd)
+            require(stat.S_ISREG(st.st_mode) and st.st_nlink == 1 and
+                    st.st_uid == getattr(os, 'geteuid', lambda: 0)() and not st.st_mode & 0o077)
+            deadline = time.monotonic()+wait
+            while True:
+                try:
+                    if os.name == 'nt':
+                        import msvcrt
+                        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                    else:
+                        import fcntl
+                        fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB)
+                    break
+                except (BlockingIOError, OSError):
+                    require(time.monotonic() < deadline)
+                    time.sleep(.05)
+            yield
+        finally:
+            os.close(fd)
+
+    def current(self, expected=None):
+        record = self.b.decode(self.b.read_trusted(self.record))
+        value = record['id']
+        require(isinstance(value, str) and len(value) == 32 and all(c in '0123456789abcdef' for c in value))
+        require(expected is None or value == expected)
+        return record
+
+    def folder(self, record):
+        path = self.state/record['id']
+        with self.b.directory(path): pass
+        return path
+
+    def fault(self, record, code):
+        self.b.atomic(self.folder(record)/('fault-'+uuid.uuid4().hex+'.json'), {'id': record['id'], 'error': code})
+
+    def faults(self, record):
+        return any(self.folder(record).glob('fault-*.json'))
+
+    def intent(self, record, source):
+        path = self.folder(record)/'stop-request.json'
+        try:
+            fd = os.open(path, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW, 0o600)
+        except FileExistsError:
+            require(self.b.decode(self.b.read_trusted(path))['id'] == record['id'])
+            return
+        with os.fdopen(fd, 'wb') as out:
+            out.write(json.dumps({'id': record['id'], 'source': source}).encode())
+            out.flush()
+            os.fsync(out.fileno())
+        if os.name != 'nt':
+            with self.b.directory(path.parent) as parent: os.fsync(parent)
+
+    def guard(self, operation, action):
+        # Admission journal and action share the same mutex as stop acceptance.
+        # If interrupted, pending is retained: a killed CLI is not a cancellation.
+        record = self.current(self.run_id)
+        with self.locked('mutation', wait=2):
+            record = self.current(self.run_id)
+            require(record['status'] == 'in_progress' and not self.faults(record))
+            require(not (self.state/'abort-inhibit.json').exists())
+            require(not (self.folder(record)/'stop-request.json').exists())
+            require(time.time()*1000 < record['cutoff'])
+            self.b.atomic(self.folder(record)/'mutation.json', {'id': self.run_id, 'pending': operation})
+            result = action()
+            self.b.atomic(self.folder(record)/'mutation.json', {'id': self.run_id, 'pending': None})
+            return result
+
+    @staticmethod
+    def identity(pid):
+        value = Path('/proc/'+str(pid)+'/stat').read_text().split(') ', 1)[1].split()
+        return {'pid': pid, 'start': value[19], 'boot': Path('/proc/sys/kernel/random/boot_id').read_text().strip()}, value[0]
+
+    def exited(self, record):
+        try:
+            identity, state = self.identity(record['controller']['pid'])
+            return identity != record['controller'] or state == 'Z'
+        except FileNotFoundError:
+            return True
+
+    def terminate(self, record):
+        if self.exited(record): return True
+        # pidfd binds the signal to this process, even if a PID is recycled.
+        fd = os.pidfd_open(record['controller']['pid'])
+        try:
+            require(not self.exited(record))
+            signal.pidfd_send_signal(fd, signal.SIGTERM)
+            deadline = time.monotonic()+10
+            while not self.exited(record) and time.monotonic() < deadline: time.sleep(.1)
+            require(self.exited(record))
+            return True
+        finally:
+            os.close(fd)
+
+    def quiescent(self):
+        # Starting a new run must not repoint state while an old cutoff/job lives.
+        for unit in (TIMER, CUTOFF):
+            raw = subprocess.check_output(['/usr/bin/systemctl', 'show', unit, '-p', 'ActiveState', '-p', 'Job'],
+                                          timeout=5, env={'PATH': '/usr/bin:/bin'}, stderr=subprocess.DEVNULL).decode()
+            values = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
+            require(values.get('ActiveState') in ('inactive', 'failed') and values.get('Job') in ('', '0'))
 
     def system(self, *args):
         subprocess.run(['/usr/bin/systemctl', *args], check=True, timeout=20,
@@ -88,7 +195,7 @@ class Controller:
             name = 'suiba-paper-unlatch-'+uuid.uuid4().hex
             # Persist BEFORE Docker mutation. Create is separate from start:
             # a delayed create cannot execute code after cleanup.
-            self.b.atomic(self.state/'release-helper.json', {'name': name, 'retired': False})
+            self.b.atomic(self.state/'release-helper.json', {'id': self.current()['id'], 'name': name, 'retired': False})
             try:
                 self.docker.call(['create', '--name', name, '--network', 'none', '--read-only', '--cap-drop', 'ALL',
                 '--security-opt', 'no-new-privileges', '--user', '1000:1000',
@@ -112,10 +219,11 @@ class Controller:
                 all(c in '0123456789abcdef' for c in name[-32:]))
         if record.get('retired') is True:
             return
+        require(record['id'] == self.current()['id'])
         # A successful deletion, not just CLI termination, is required.
         self.docker.call(['rm', '-f', name], timeout=10)
         require(not self.docker.call(['ps', '-aq', '--no-trunc', '--filter', 'name=^/'+name+'$'], timeout=10))
-        self.b.atomic(path, {'name': name, 'retired': True})
+        self.b.atomic(path, {'id': record['id'], 'name': name, 'retired': True})
 
     def verify_sui(self):
         helper, image = self.helper()
@@ -167,46 +275,96 @@ class Controller:
             with contextlib.suppress(Exception):
                 self.docker.call(['volume', 'rm', scratch])
 
-    def stop(self):
-        # A rejected preflight must not stop an unrelated ordinary PAPER boot.
-        if not self.record.exists():
-            return True
-        active = self.b.decode(self.b.read_trusted(self.record))
-        if active.get('status') not in ('in_progress', 'failed_requires_review'):
-            return True
-        # If the stop process itself is killed, do not leave a success receipt.
-        with contextlib.suppress(Exception):
-            self.b.atomic(self.state/'stop.json', {'status': 'stopping_state_unknown', 'at': int(time.time())})
+    def stop(self, own=False, expected=None, source='external'):
+        if not self.record.exists(): return True
+        record = self.current(expected)
+        if record['status'] == 'completed': return True
+        expected = record['id']
+        try:
+            with self.locked('stop', wait=60):
+                record = self.current(expected)  # stale callers may not signal/write a newer run
+                if record['status'] == 'completed': return True
+                try:
+                    with self.locked('mutation'):
+                        self.intent(record, source)
+                except Exception:
+                    # Emergency intent blocks subsequent admissions. The current
+                    # operation is already journaled and cannot yield clean success.
+                    self.intent(record, source)
+                    self.fault(record, 'MUTATION_IN_FLIGHT')
+                if not own:
+                    try:
+                        require(self.terminate(record))
+                    except Exception:
+                        self.fault(record, 'CONTROLLER_EXIT_UNCONFIRMED')
+                else:
+                    require(record['controller']['pid'] == os.getpid())
+                try:
+                    with self.locked('mutation', wait=2):
+                        record = self.current(expected)
+                        return self.cleanup(record, own, source)
+                except Exception:
+                    self.fault(record, 'CLEANUP_LOCK_OR_STATE_UNKNOWN')
+                    self.receipt(record, 'failed_state_unknown', ['CLEANUP_LOCK_OR_STATE_UNKNOWN'])
+                    return False
+        except Exception:
+            # Do not overwrite another run or race the stop-lock holder's receipt.
+            if self.current()['id'] == expected:
+                self.intent(record, source)
+                self.fault(record, 'STOP_LOCK_OR_STATE_UNKNOWN')
+            return False
+
+    def receipt(self, record, status, errors):
+        self.current(record['id'])
+        value = {'id': record['id'], 'status': status, 'errors': errors, 'at': int(time.time())}
+        self.b.atomic(self.folder(record)/'stop.json', value)
+        self.b.atomic(self.state/'stop.json', value)
+
+    def cleanup(self, record, own, source):
+        self.receipt(record, 'stopping_state_unknown', [])
         errors = []
-        with contextlib.suppress(Exception):
-            self.api('POST', '/api/control', {'command': 'stop'})
-        try:
-            self.docker.call(['update', '--restart=no', CONTAINER], timeout=10)
-        except Exception:
-            errors.append('RESTART_UNCONFIRMED')
-        try:
-            self.docker.call(['stop', '--timeout', '40', CONTAINER], timeout=50)
-        except Exception:
-            errors.append('NORMAL_STOP_FAILED')
-            try:
-                self.docker.call(['kill', CONTAINER], timeout=10)
+        if record.get('admitted'):
+            with contextlib.suppress(Exception): self.api('POST', '/api/control', {'command': 'stop'})
+            try: self.docker.call(['update', '--restart=no', CONTAINER], timeout=10)
+            except Exception: errors.append('RESTART_UNCONFIRMED')
+            try: self.docker.call(['stop', '--timeout', '40', CONTAINER], timeout=50)
             except Exception:
-                errors.append('STOP_UNKNOWN')
-        try:
-            state = self.inspect()['State']
-            require(not state['Running'] and state['ExitCode'] == 0 and not state['OOMKilled'])
-        except Exception:
-            errors.append('UNCLEAN_OR_UNKNOWN')
-        try:
-            self.maintenance(True)
-            helper, image = self.helper()
-            helper.helper(image, 'verify')
-            self.verify_sui()
-        except Exception:
-            errors.append('DB_OR_MAINTENANCE_UNCONFIRMED')
-        self.b.atomic(self.state/'stop.json', {'status': 'failed_state_unknown' if errors else 'clean_stopped',
-                                             'errors': errors, 'at': int(time.time())})
-        return not errors
+                errors.append('NORMAL_STOP_FAILED')
+                try: self.docker.call(['kill', CONTAINER], timeout=10)
+                except Exception: errors.append('STOP_UNKNOWN')
+            try:
+                state = self.inspect()['State']
+                require(not state['Running'] and state['ExitCode'] == 0 and not state['OOMKilled'])
+            except Exception: errors.append('UNCLEAN_OR_UNKNOWN')
+            try:
+                self.maintenance(True)
+                helper, image = self.helper()
+                helper.helper(image, 'verify')
+                self.verify_sui()
+            except Exception: errors.append('DB_OR_MAINTENANCE_UNCONFIRMED')
+        else:
+            errors.append('PREFLIGHT_INCOMPLETE')
+        pending_path = self.folder(record)/'mutation.json'
+        if pending_path.exists() and self.b.decode(self.b.read_trusted(pending_path))['pending'] is not None:
+            errors.append('OPERATION_COMPLETION_UNCONFIRMED')
+        if self.faults(record): errors.append('LATCHED_FAILURE')
+        if not own and not self.exited(record): errors.append('CONTROLLER_ALIVE')
+        for error in errors: self.fault(record, error)
+        self.receipt(record, 'failed_state_unknown' if errors else
+                     'worker_stopped_pending_controller_exit' if own else 'clean_stopped', errors)
+        if not own:
+            # Only normal completion + post-stop may release the deployment gate.
+            completed = not errors and record['status'] == 'finishing' and source == 'post-stop'
+            if completed:
+                try: self.quiescent()
+                except Exception:
+                    completed = False
+                    self.fault(record, 'OLD_CUTOFF_UNCONFIRMED')
+                    self.receipt(record, 'failed_state_unknown', ['OLD_CUTOFF_UNCONFIRMED'])
+            record['status'] = 'completed' if completed else 'failed_requires_review'
+            self.b.atomic(self.record, record)
+            if completed: self.b.atomic(self.b.STATE/'paper-check.json', {'status': 'completed'})
+        return not errors and not self.faults(record)
 
     def run(self):
         import fcntl
@@ -225,6 +383,23 @@ class Controller:
             if self.record.exists():
                 old = self.b.decode(self.b.read_trusted(self.record))
                 require(old['status'] == 'completed')
+            with self.locked('stop'), self.locked('mutation'):
+                require(not (self.state/'abort-inhibit.json').exists())
+                self.quiescent()
+                if self.record.exists():
+                    old = self.current()
+                    require(old['status'] == 'completed')
+                    require(self.exited(old))
+                    previous = self.b.decode(self.b.read_trusted(self.folder(old)/'stop.json'))
+                    require(previous['id'] == old['id'] and previous['status'] == 'clean_stopped' and not self.faults(old))
+                now = int(time.time()*1000)
+                self.run_id = uuid.uuid4().hex
+                (self.state/self.run_id).mkdir(mode=0o700)
+                identity, _ = self.identity(os.getpid())
+                record = {'status': 'in_progress', 'id': self.run_id, 'controller': identity, 'admitted': False,
+                          'started': now, 'cutoff': now+1800000}
+                self.b.atomic(self.b.STATE/'paper-check.json', {'status': 'in_progress'})
+                self.b.atomic(self.record, record)
             space = os.statvfs(self.b.BACKUPS)
             require(space.f_bavail*space.f_frsize >= 20*1024**3 and space.f_favail >= 100000)
             ledger = self.b.decode(self.b.read_trusted(self.b.STATE/'ledger.json'))
@@ -243,18 +418,21 @@ class Controller:
             require(len(ledger['transaction']) == 32 and all(c in '0123456789abcdef' for c in ledger['transaction']))
             frozen = self.b.decode(self.b.read_trusted(self.b.STATE/ledger['transaction']/'compose.json'))
             require(i['Config']['Image'] == frozen['services']['bot']['image'])
-            backup = self.backup()
-            now = int(time.time()*1000)
-            record = {'status': 'in_progress', 'id': uuid.uuid4().hex, 'backup': backup,
-                      'started': now, 'cutoff': now+1800000}
-            # Durable refusal survives controller SIGKILL and lock release.
-            self.b.atomic(self.b.STATE/'paper-check.json', {'status': 'in_progress'})
-            self.b.atomic(self.record, record)
-            self.system('start', TIMER)
+            with self.locked('mutation'):
+                require(not (self.folder(record)/'stop-request.json').exists())
+                record['admitted'] = True
+                self.b.atomic(self.record, record)
+            self.guard('timer', lambda: self.system('start', TIMER))
             self.system('is-active', '--quiet', TIMER)
+            backup = self.guard('backup', self.backup)
+            with self.locked('mutation'):
+                require(self.current(self.run_id)['status'] == 'in_progress' and
+                        not (self.folder(record)/'stop-request.json').exists())
+                record['backup'] = backup
+                self.b.atomic(self.record, record)
             try:
-                self.maintenance(False)
-                self.docker.call(['start', CONTAINER], timeout=20)
+                self.guard('unlatch', lambda: self.maintenance(False))
+                self.guard('worker-start', lambda: self.docker.call(['start', CONTAINER], timeout=20))
                 # Readiness GETs only. Never retry a start/arm/order/reset action.
                 d = self.wait_ready(record['cutoff'])
                 require(d['mode'] == 'PAPER' and not d['running'] and not d['maintenance'] and
@@ -263,10 +441,10 @@ class Controller:
                 market = self.api('GET', '/api/dashboard/summary')['summary']['marketData']
                 require(market['source'] == 'GeckoTerminal' and 0 <= time.time()*1000-market['lastSuccessAt'] <= 90000)
                 # Existing start guards check connectivity/accounting/market state.
-                armed = self.api('POST', '/api/paper-check/arm',
-                                 {'expiresAt': record['cutoff'], 'issuedAt': int(time.time()*1000)})
+                armed = self.guard('arm', lambda: self.api('POST', '/api/paper-check/arm',
+                                 {'expiresAt': record['cutoff'], 'issuedAt': int(time.time()*1000)}))
                 require(armed['expires'] == record['cutoff'] and armed['armed'] and not armed['expired'])
-                started = self.api('POST', '/api/control', {'command': 'start'})
+                started = self.guard('paper-start', lambda: self.api('POST', '/api/control', {'command': 'start'}))
                 require(started['running'] is True)
                 end = time.monotonic()+1800
                 while time.monotonic() < end and time.time()*1000 < record['cutoff']-5000:
@@ -292,15 +470,18 @@ class Controller:
                                                              'memory_percent': memory_percent, 'host_available_kib': available_kib,
                                                              'market_last_success': market['lastSuccessAt']})
                     time.sleep(5)
-                require(self.stop())
-                record['status'] = 'completed'
-                self.b.atomic(self.record, record)
+                require(self.stop(own=True, expected=self.run_id, source='normal'))
                 self.system('stop', TIMER)
-                self.b.atomic(self.b.STATE/'paper-check.json', {'status': 'completed'})
+                with self.locked('stop'), self.locked('mutation'):
+                    record = self.current(self.run_id)
+                    require(record['status'] == 'in_progress' and not self.faults(record))
+                    require(self.b.decode(self.b.read_trusted(self.folder(record)/'stop-request.json'))['source'] == 'normal')
+                    record['status'] = 'finishing'
+                    self.b.atomic(self.record, record)
+                # ExecStopPost confirms this process actually exited, then alone
+                # publishes clean_stopped/completed and releases deployment gate.
             except BaseException:
-                self.stop()
-                record['status'] = 'failed_requires_review'
-                self.b.atomic(self.record, record)
+                self.stop(own=True, expected=self.run_id, source='failure')
                 raise
         finally:
             os.close(fd)
@@ -309,7 +490,7 @@ class Controller:
 def main():
     os.umask(0o077)
     try:
-        require(os.geteuid() == 0 and len(sys.argv) == 2 and sys.argv[1] in ('request', 'run', 'stop'))
+        require(os.geteuid() == 0 and len(sys.argv) == 2 and sys.argv[1] in ('request', 'run', 'stop', 'post-stop'))
         # All ancestors and module must be root-owned/non-writable by SSH user.
         import stat
         current = BROKER.parent
@@ -334,19 +515,26 @@ def main():
             signal.alarm(0)
             require(request in ({'operation': 'start'}, {'operation': 'status'}, {'operation': 'abort'}))
             if request['operation'] == 'status':
-                print(json.dumps(b.decode(b.read_trusted(controller.record))))
+                record = controller.current()
+                receipt = controller.folder(record)/'stop.json'
+                print(json.dumps({'run': record, 'requires_review': controller.faults(record),
+                                  'stop': b.decode(b.read_trusted(receipt)) if receipt.exists() else None}))
             elif request['operation'] == 'start':
+                require(not (controller.state/'abort-inhibit.json').exists())
                 controller.system('start', '--no-block', SERVICE)
                 print('PAPER_CHECK_REQUEST_ACCEPTED')
             else:
-                controller.system('start', '--no-block', 'suiba-paper-check-cutoff.service')
+                with controller.locked('stop'):
+                    # Also fences abort before run.json has been published.
+                    controller.b.atomic(controller.state/'abort-inhibit.json', {'status': 'manual_reconciliation_required'})
+                    if controller.record.exists():
+                        controller.intent(controller.current(), 'abort')
+                controller.system('start', '--no-block', CUTOFF)
                 print('PAPER_CHECK_ABORT_REQUESTED')
-        elif sys.argv[1] == 'stop':
-            # Cutoff must also cancel a controller delayed in startup. Otherwise
-            # it could start the Worker again after the independent stop.
-            with contextlib.suppress(Exception):
-                controller.system('kill', '--kill-whom=main', '--signal=SIGTERM', SERVICE)
-            require(controller.stop())
+        elif sys.argv[1] in ('stop', 'post-stop'):
+            record = controller.current() if controller.record.exists() else None
+            require(controller.stop(expected=record['id'] if record else None,
+                                    source='post-stop' if sys.argv[1] == 'post-stop' else 'cutoff'))
         else:
             controller.run()
         return 0

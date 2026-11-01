@@ -1,4 +1,8 @@
 import importlib.util
+import contextlib
+import os
+import time
+import uuid
 import json
 from pathlib import Path
 import tempfile
@@ -11,21 +15,53 @@ spec.loader.exec_module(c)
 
 
 class FakeBroker:
+    @staticmethod
+    @contextlib.contextmanager
+    def directory(path):
+        if os.name == 'nt': yield None
+        else:
+            fd = os.open(path, os.O_RDONLY|os.O_DIRECTORY)
+            try: yield fd
+            finally: os.close(fd)
     decode = staticmethod(json.loads)
     read_trusted = staticmethod(lambda path: path.read_bytes())
     @staticmethod
     def atomic(path, value):
-        path.write_text(json.dumps(value))
+        temp = path.with_name(path.name+'.'+uuid.uuid4().hex)
+        temp.write_text(json.dumps(value))
+        temp.replace(path)
+
+
+def initialize(ctl):
+    record = {'id': 'a'*32, 'status': 'in_progress', 'admitted': True,
+              'cutoff': int(time.time()*1000)+1800000, 'controller': {'pid': 99999999}}
+    (ctl.state/record['id']).mkdir(exist_ok=True)
+    ctl.record = ctl.state/'run.json'
+    ctl.record.write_text(json.dumps(record))
+    ctl.run_id = record['id']
+    ctl.terminate = lambda record: True
+    ctl.exited = lambda record: True
+    return record
 
 
 class StopTests(unittest.TestCase):
+    def setUp(self):
+        if os.name == 'nt':
+            flags = patch.object(os, 'O_NOFOLLOW', 0, create=True)
+            flags.start(); self.addCleanup(flags.stop)
+            @contextlib.contextmanager
+            def local_lock(*args, **kwargs): yield
+            self.local_lock = patch.object(c.Controller, 'locked', local_lock)
+            self.local_lock.start()
+            self.addCleanup(self.local_lock.stop)
+
     def test_normal_api_failure_docker_hang_oom_and_db_failure(self):
         for failure in (None, 'api', 'stop', 'daemon', 'oom', 'db'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
                 ctl = object.__new__(c.Controller)
                 ctl.b, ctl.state = FakeBroker, Path(root)
                 ctl.record = Path(root)/'run.json'
-                ctl.record.write_text('{"status":"in_progress"}')
+                initialize(ctl)
                 calls = []
                 class Docker:
                     def call(self, args, **kwargs):
@@ -74,6 +110,7 @@ class StopTests(unittest.TestCase):
             with tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
                 ctl = object.__new__(c.Controller)
                 ctl.b, ctl.state = FakeBroker, Path(root)
+                initialize(ctl)
                 FakeBroker.DATA = 'fixture-data'
                 events = []
                 class Docker:
@@ -106,13 +143,46 @@ class StopTests(unittest.TestCase):
                 self.assertIn('create', events)
                 self.assertIn('rm', events)
 
+    def test_termination_failure_and_survival_are_latched(self):
+        for failure in ('signal', 'alive'):
+            with tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
+                ctl = object.__new__(c.Controller)
+                ctl.b, ctl.state = FakeBroker, Path(root)
+                record = initialize(ctl)
+                ctl.exited = lambda r: failure != 'alive'
+                def terminate(record): raise TimeoutError()
+                ctl.terminate = terminate
+                ctl.docker = type('Docker', (), {'call': lambda *args, **kwargs: ''})()
+                ctl.api = lambda *a: None
+                ctl.inspect = lambda: {'State': {'Running': False, 'ExitCode': 0, 'OOMKilled': False}}
+                ctl.maintenance = lambda value: None
+                ctl.helper = lambda: (type('Helper', (), {'helper': lambda *a: None})(), 'fixture')
+                ctl.verify_sui = lambda: None
+                self.assertFalse(ctl.stop())
+                self.assertEqual(json.loads((ctl.state/'stop.json').read_text())['status'], 'failed_state_unknown')
+                # Later successful cleanup must not erase the signal failure.
+                ctl.terminate = lambda r: True
+                ctl.exited = lambda r: True
+                self.assertFalse(ctl.stop())
+                for operation in ('unlatch', 'worker-start', 'arm', 'paper-start'):
+                    with self.assertRaises(RuntimeError): ctl.guard(operation, lambda: self.fail('mutation admitted after stop'))
+
+    def test_stale_stop_cannot_write_new_run(self):
+        with tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
+            ctl = object.__new__(c.Controller)
+            ctl.b, ctl.state = FakeBroker, Path(root)
+            initialize(ctl)
+            with self.assertRaises(RuntimeError): ctl.stop(expected='b'*32)
+            self.assertFalse((ctl.state/'stop.json').exists())
+
     def test_rejected_preflight_does_not_touch_ordinary_paper(self):
         with tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
             ctl = object.__new__(c.Controller)
             ctl.b, ctl.state = FakeBroker, Path(root)
             ctl.record = Path(root)/'run.json'
             self.assertTrue(ctl.stop())
-            ctl.record.write_text('{"status":"completed"}')
+            initialize(ctl)
+            ctl.record.write_text(json.dumps({'id': 'a'*32, 'status': 'completed'}))
             self.assertTrue(ctl.stop())
 
 

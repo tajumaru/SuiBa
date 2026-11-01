@@ -6,7 +6,7 @@ Requires=docker.service
 [Service]
 Type=exec
 ExecStart=/usr/bin/python3 -I /usr/local/libexec/suiba-paper-check.py run
-ExecStopPost=/usr/bin/python3 -I /usr/local/libexec/suiba-paper-check.py stop
+ExecStopPost=/usr/bin/python3 -I /usr/local/libexec/suiba-paper-check.py post-stop
 RuntimeMaxSec=31min
 TimeoutStopSec=240s
 Restart=no
