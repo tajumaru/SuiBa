@@ -78,6 +78,18 @@ class FakeDocker:
 
 
 class BrokerTests(unittest.TestCase):
+    def test_paper_session_blocks_deploy_after_controller_lock_is_gone(self):
+        with tempfile.TemporaryDirectory(prefix='paper-session-', dir='/var/lib') as root:
+            broker = b.Broker(state=root)
+            marker = Path(root)/'paper-check.json'
+            broker.check_paper_session()  # Ordinary PAPER, feature never used.
+            for value in ({'status': 'in_progress'}, {'status': 'failed_state_unknown'}, {}, {'status': 'completed', 'extra': True}):
+                b.atomic(marker, value)
+                with self.assertRaises(b.Rejected):
+                    broker.check_paper_session()
+            b.atomic(marker, {'status': 'completed'})
+            broker.check_paper_session()
+
     def setUp(self):
         # Transaction tests isolate archive parsing; real tar tests below cover it.
         self.identity_patch = patch.object(b, 'archive_identity', return_value=(IMAGE, {}))

@@ -164,6 +164,7 @@ class Controller:
             s = os.fstat(fd)
             require(stat.S_ISREG(s.st_mode) and s.st_uid == 0 and s.st_nlink == 1 and not s.st_mode & 0o077)
             fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB)
+            self.b.Broker(state=self.b.STATE).check_paper_session()
             config = self.b.decode(self.b.read_trusted(Path('/etc/suiba-paper-check/policy.json')))
             require(config == {'enabled': True, 'mode': 'sui-30m'})
             if self.record.exists():
@@ -191,6 +192,8 @@ class Controller:
             record = {'status': 'in_progress', 'id': uuid.uuid4().hex, 'backup': backup,
                       'started': int(time.time()), 'cutoff': int(time.time())+1800}
             self.b.atomic(self.record, record)
+            # Durable refusal survives controller SIGKILL and lock release.
+            self.b.atomic(self.b.STATE/'paper-check.json', {'status': 'in_progress'})
             self.system('start', TIMER)
             self.system('is-active', '--quiet', TIMER)
             try:
@@ -248,6 +251,7 @@ class Controller:
                 record['status'] = 'completed'
                 self.b.atomic(self.record, record)
                 self.system('stop', TIMER)
+                self.b.atomic(self.b.STATE/'paper-check.json', {'status': 'completed'})
             except BaseException:
                 self.stop()
                 record['status'] = 'failed_requires_review'
