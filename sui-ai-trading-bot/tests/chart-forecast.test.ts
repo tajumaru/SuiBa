@@ -115,4 +115,17 @@ describe("PriceChart forecast overlay", () => {
     expect(html).not.toContain("chart-forecast");
     expect(html).not.toContain("予測（模式）");
   });
+
+  it("shows the score line only with a forecast and score text", () => {
+    const withScore = renderToStaticMarkup(
+      React.createElement(PriceChart, {
+        candles: rising,
+        trades: [],
+        forecastScoreText: "予測の成績：コーン収まり 82%（判定 46 件）",
+      }),
+    );
+    expect(withScore).toContain("chart-forecast-score");
+    expect(withScore).toContain("コーン収まり 82%");
+    expect(render(rising)).not.toContain("chart-forecast-score");
+  });
 });

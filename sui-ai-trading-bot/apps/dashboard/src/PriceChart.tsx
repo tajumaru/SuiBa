@@ -23,6 +23,7 @@ export function PriceChart({
   timeframe = 300,
   synchronized = false,
   historyApi,
+  forecastScoreText,
 }: {
   pair?: ReturnType<BotEngine["snapshot"]>["pair"];
   candles: Candle[];
@@ -30,6 +31,7 @@ export function PriceChart({
   timeframe?: number;
   synchronized?: boolean;
   historyApi?: SettingsApi;
+  forecastScoreText?: string | null;
 }) {
   const [gapTime, setGapTime] = useState<number | null>(null);
   const [history, setHistory] = useState<HistoryResult | null>(null),
@@ -304,6 +306,9 @@ export function PriceChart({
           {number(fc.bandPct * 100, 1)}
           %。トレンドと値幅（ATR）から伸ばしたもので、実際の価格ではありません。
         </p>
+      )}
+      {fc && tf === 300 && forecastScoreText && (
+        <p className="chart-forecast-score">{forecastScoreText}</p>
       )}
       <div className="chart-controls" role="group" aria-label="表示期間の選択">
         {chartPeriods.map((n) => (

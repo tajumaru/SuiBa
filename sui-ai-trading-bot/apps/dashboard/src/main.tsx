@@ -5,7 +5,7 @@ import { PriceTicker } from "./PriceTicker.tsx";
 import { LoginScreen } from "./LoginScreen.tsx";
 import { loginSession, SESSION } from "./browserSession.ts";
 import { DashboardClient } from "./dashboardClient.ts";
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import type { BotEngine } from "../../worker/src/engine.ts";
 import { calculate, ema } from "../../../packages/indicators/src/index.ts";
@@ -18,6 +18,16 @@ import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
 import { BootScreen } from "./BootScreen.tsx";
 import { ActivityGrass } from "./ActivityGrass.tsx";
+import { chartForecast } from "./chartForecast.ts";
+import {
+  appendForecastRecord,
+  forecastRecordFrom,
+  forecastScoreText,
+  loadForecastLog,
+  saveForecastLog,
+  scoreForecasts,
+  type ForecastRecord,
+} from "./forecastLog.ts";
 import {
   loadAgentName,
   sanitizeAgentName,
@@ -175,6 +185,7 @@ function Chart(props: {
   timeframe?: number;
   synchronized?: boolean;
   historyApi?: import("./settingsPresets.ts").SettingsApi;
+  forecastScoreText?: string | null;
 }) {
   return props.kind === "Price" ? (
     <PriceChart
@@ -358,6 +369,43 @@ function App() {
   const [voiceListening, setVoiceListening] = useState(false);
   // A spoken reply is playing (the avatar is mid-speech).
   const [agentSpeaking, setAgentSpeaking] = useState(false);
+  // Forecast score log (device-local, per pair): every new
+  // 5-minute forecast origin seen while the app is open is
+  // snapshotted, then scored against the real candles later.
+  const [forecastLog, setForecastLog] = useState<ForecastRecord[]>([]);
+  const forecastScopeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!data) return;
+    const pair = data.pair;
+    if (forecastScopeRef.current !== pair) {
+      forecastScopeRef.current = pair;
+      setForecastLog(loadForecastLog(pair));
+      return;
+    }
+    const candles300 = data.candlesByTimeframe[300],
+      last = candles300.at(-1);
+    if (!last) return;
+    const fc = chartForecast(candles300);
+    if (!fc) return;
+    setForecastLog((prev) => {
+      const next = appendForecastRecord(
+        prev,
+        forecastRecordFrom(fc, last.close),
+      );
+      if (next !== prev) saveForecastLog(next, pair);
+      return next;
+    });
+  }, [data]);
+  const forecastScoreLine = useMemo(
+    () =>
+      data
+        ? forecastScoreText(
+            scoreForecasts(forecastLog, data.candlesByTimeframe[300]),
+            forecastLog.length,
+          )
+        : null,
+    [forecastLog, data],
+  );
   const changeAgentName = (raw: string) => {
     const next = sanitizeAgentName(raw);
     saveAgentName(next);
@@ -812,6 +860,7 @@ function App() {
                         trades={data.trades}
                         synchronized
                         historyApi={api}
+                        forecastScoreText={forecastScoreLine}
                       />
                     </section>
                     <details className="overview-details">

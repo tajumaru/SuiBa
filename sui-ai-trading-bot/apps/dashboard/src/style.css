@@ -4808,3 +4808,12 @@ summary {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* Forecast score line (D): the cone's running report card,
+   under the forecast note on the 5-minute chart. */
+.chart-forecast-score {
+  color: #43dfb2;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  margin: 2px 0 6px;
+}
