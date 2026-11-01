@@ -116,6 +116,14 @@ class Controller:
             self.b.atomic(self.folder(record)/'mutation.json', {'id': self.run_id, 'pending': None})
             return result
 
+    def accept_stop(self, record, source):
+        try:
+            with self.locked('mutation'):
+                self.intent(record, source)
+        except Exception:
+            self.intent(record, source)
+            self.fault(record, 'MUTATION_IN_FLIGHT')
+
     @staticmethod
     def identity(pid):
         value = Path('/proc/'+str(pid)+'/stat').read_text().split(') ', 1)[1].split()
@@ -287,14 +295,7 @@ class Controller:
             with self.locked('stop', wait=60):
                 record = self.current(expected)  # stale callers may not signal/write a newer run
                 if record['status'] == 'completed': return True
-                try:
-                    with self.locked('mutation'):
-                        self.intent(record, source)
-                except Exception:
-                    # Emergency intent blocks subsequent admissions. The current
-                    # operation is already journaled and cannot yield clean success.
-                    self.intent(record, source)
-                    self.fault(record, 'MUTATION_IN_FLIGHT')
+                self.accept_stop(record, source)
                 if not own:
                     try:
                         require(self.terminate(record))
@@ -308,7 +309,10 @@ class Controller:
                         return self.cleanup(record, own, source)
                 except Exception:
                     self.fault(record, 'CLEANUP_LOCK_OR_STATE_UNKNOWN')
-                    self.receipt(record, 'failed_state_unknown', ['CLEANUP_LOCK_OR_STATE_UNKNOWN'])
+                    # Still attempt the fixed API/Docker stop, but never touch
+                    # DB/latch or report success while a mutation may be alive.
+                    errors = self.stop_worker() if record.get('admitted') else []
+                    self.receipt(record, 'failed_state_unknown', ['CLEANUP_LOCK_OR_STATE_UNKNOWN', *errors])
                     return False
         except Exception:
             # Do not overwrite another run or race the stop-lock holder's receipt.
@@ -327,14 +331,7 @@ class Controller:
         self.receipt(record, 'stopping_state_unknown', [])
         errors = []
         if record.get('admitted'):
-            with contextlib.suppress(Exception): self.api('POST', '/api/control', {'command': 'stop'})
-            try: self.docker.call(['update', '--restart=no', CONTAINER], timeout=10)
-            except Exception: errors.append('RESTART_UNCONFIRMED')
-            try: self.docker.call(['stop', '--timeout', '40', CONTAINER], timeout=50)
-            except Exception:
-                errors.append('NORMAL_STOP_FAILED')
-                try: self.docker.call(['kill', CONTAINER], timeout=10)
-                except Exception: errors.append('STOP_UNKNOWN')
+            errors.extend(self.stop_worker())
             try:
                 state = self.inspect()['State']
                 require(not state['Running'] and state['ExitCode'] == 0 and not state['OOMKilled'])
@@ -368,6 +365,18 @@ class Controller:
             self.b.atomic(self.record, record)
             if completed: self.b.atomic(self.b.STATE/'paper-check.json', {'status': 'completed'})
         return not errors and not self.faults(record)
+
+    def stop_worker(self):
+        errors = []
+        with contextlib.suppress(Exception): self.api('POST', '/api/control', {'command': 'stop'})
+        try: self.docker.call(['update', '--restart=no', CONTAINER], timeout=10)
+        except Exception: errors.append('RESTART_UNCONFIRMED')
+        try: self.docker.call(['stop', '--timeout', '40', CONTAINER], timeout=50)
+        except Exception:
+            errors.append('NORMAL_STOP_FAILED')
+            try: self.docker.call(['kill', CONTAINER], timeout=10)
+            except Exception: errors.append('STOP_UNKNOWN')
+        return errors
 
     def run(self):
         import fcntl
@@ -531,7 +540,7 @@ def main():
                     # Also fences abort before run.json has been published.
                     controller.b.atomic(controller.state/'abort-inhibit.json', {'status': 'manual_reconciliation_required'})
                     if controller.record.exists():
-                        controller.intent(controller.current(), 'abort')
+                        controller.accept_stop(controller.current(), 'abort')
                 controller.system('start', '--no-block', CUTOFF)
                 print('PAPER_CHECK_ABORT_REQUESTED')
         elif sys.argv[1] in ('stop', 'post-stop'):

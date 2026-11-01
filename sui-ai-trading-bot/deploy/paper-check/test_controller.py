@@ -168,6 +168,46 @@ class StopTests(unittest.TestCase):
                 for operation in ('unlatch', 'worker-start', 'arm', 'paper-start'):
                     with self.assertRaises(RuntimeError): ctl.guard(operation, lambda: self.fail('mutation admitted after stop'))
 
+    def test_self_stop_is_pending_until_post_stop_confirms_exit(self):
+        with tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
+            ctl = object.__new__(c.Controller)
+            ctl.b, ctl.state = FakeBroker, Path(root)
+            record = initialize(ctl)
+            record['controller']['pid'] = os.getpid()
+            ctl.b.atomic(ctl.record, record)
+            ctl.exited = lambda r: False
+            ctl.docker = type('Docker', (), {'call': lambda *a, **k: ''})()
+            ctl.api = lambda *a: None
+            ctl.inspect = lambda: {'State': {'Running': False, 'ExitCode': 0, 'OOMKilled': False}}
+            ctl.maintenance = lambda value: None
+            ctl.helper = lambda: (type('Helper', (), {'helper': lambda *a: None})(), 'fixture')
+            ctl.verify_sui = lambda: None
+            self.assertTrue(ctl.stop(own=True, source='normal'))
+            self.assertEqual(json.loads((ctl.state/'stop.json').read_text())['status'], 'worker_stopped_pending_controller_exit')
+            record['status'] = 'finishing'; ctl.b.atomic(ctl.record, record)
+            ctl.exited = lambda r: True
+            ctl.quiescent = lambda: None
+            self.assertTrue(ctl.stop(source='post-stop'))
+            self.assertEqual(ctl.current()['status'], 'completed')
+            self.assertEqual(json.loads((ctl.state/'stop.json').read_text())['status'], 'clean_stopped')
+
+    @unittest.skipIf(os.name == 'nt', 'actual flock is tested in Linux CI')
+    def test_stop_lock_failure_preserves_receipt_and_blocks_reentry(self):
+        with tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
+            ctl = object.__new__(c.Controller)
+            ctl.b, ctl.state = FakeBroker, Path(root)
+            record = initialize(ctl)
+            ctl.b.atomic(ctl.state/'stop.json', {'id': record['id'], 'status':'stopping_state_unknown'})
+            original = ctl.locked
+            @contextlib.contextmanager
+            def no_wait(name, **kwargs):
+                with original(name, wait=0): yield
+            with original('stop'), patch.object(ctl, 'locked', no_wait):
+                self.assertFalse(ctl.stop())
+            self.assertEqual(json.loads((ctl.state/'stop.json').read_text())['status'], 'stopping_state_unknown')
+            self.assertTrue(ctl.faults(record))
+            with self.assertRaises(RuntimeError): ctl.guard('worker-start', lambda: self.fail('unexpected action'))
+
     def test_stale_stop_cannot_write_new_run(self):
         with tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
             ctl = object.__new__(c.Controller)
