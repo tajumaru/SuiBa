@@ -24,8 +24,10 @@ function candles(
     source: "GeckoTerminal",
   }));
 }
-const rising = candles(Array.from({ length: 60 }, (_, i) => 2 + i * 0.004));
-const falling = candles(Array.from({ length: 60 }, (_, i) => 3 - i * 0.004));
+// A strong staircase: the RSI brake fades drift at extremes by
+// design, so a direction word needs a genuinely strong trend.
+const rising = candles(Array.from({ length: 60 }, (_, i) => 2 + i * 0.012));
+const falling = candles(Array.from({ length: 60 }, (_, i) => 3 - i * 0.012));
 const flat = candles(
   Array.from({ length: 60 }, (_, i) => 2 + (i % 2 ? 0.002 : -0.002)),
   0.02,
