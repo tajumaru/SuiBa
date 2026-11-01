@@ -89,6 +89,8 @@ class BrokerTests(unittest.TestCase):
                     broker.check_paper_session()
             b.atomic(marker, {'status': 'completed'})
             broker.check_paper_session()
+            b.atomic(Path(root)/'paper-check-failed.json', {'status':'manual_reconciliation_required'})
+            with self.assertRaises(b.Rejected): broker.check_paper_session()
 
     def setUp(self):
         # Transaction tests isolate archive parsing; real tar tests below cover it.

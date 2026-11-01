@@ -33,6 +33,7 @@ class FakeBroker:
 
 
 def initialize(ctl):
+    FakeBroker.STATE = ctl.state
     record = {'id': 'a'*32, 'status': 'in_progress', 'admitted': True,
               'cutoff': int(time.time()*1000)+1800000, 'controller': {'pid': 99999999}}
     (ctl.state/record['id']).mkdir(exist_ok=True)

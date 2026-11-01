@@ -405,6 +405,7 @@ class Broker:
             os.close(lockfd)
 
     def check_paper_session(self):
+        require(not os.path.lexists(self.state/'paper-check-failed.json'), 'PAPER_CHECK_RECONCILIATION_REQUIRED')
         marker = self.state/'paper-check.json'
         if os.path.lexists(marker):
             require(decode(read_trusted(marker)) == {'status': 'completed'}, 'PAPER_CHECK_RECONCILIATION_REQUIRED')

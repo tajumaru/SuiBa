@@ -34,6 +34,7 @@ if len(sys.argv) == 5 and sys.argv[1] == 'stop-fixture':
     c.CONTAINER = name
     ctl = object.__new__(c.Controller)
     class Broker:
+        STATE = base
         @staticmethod
         @contextlib.contextmanager
         def directory(path):

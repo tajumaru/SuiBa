@@ -64,6 +64,15 @@ def fixture(base, name, image, scenario):
             return {'running': True}
         return {'running': False}
     ctl.api = api
+    original_cleanup = ctl.cleanup
+    def cleanup(record, own, source):
+        sentinel = base/'cleanup-active'
+        with open(sentinel, 'x') as out: out.write(record['id'])
+        try:
+            with open(base/'cleanup-history', 'a') as out: out.write(record['id']+' '+str(os.getpid())+'\n')
+            return original_cleanup(record, own, source)
+        finally: sentinel.unlink()
+    ctl.cleanup = cleanup
     original_atomic = b.atomic
     def atomic(path, value):
         if scenario == 'persistence' and path == ctl.record:
@@ -193,6 +202,10 @@ for scenario in ('normal', 'crash', 'timer', 'helper', 'persistence', 'worker-ab
             if scenario == 'helper':
                 helper = json.loads((base/'state/release-helper.json').read_text())
                 assert helper['retired'] and not docker('ps', '-aq', '--filter', 'name='+helper['name'])
+        history = base/'cleanup-history'
+        if history.exists():
+            assert len({line.split()[0] for line in history.read_text().splitlines()}) == 1
+            assert not (base/'cleanup-active').exists()
         state = json.loads(docker('inspect', name))[0]['State']
         assert not state['Running'] and not state['OOMKilled']
         # Verify the real fixed selected_pair query accepts SUI and rejects WAL.
@@ -215,6 +228,18 @@ for scenario in ('normal', 'crash', 'timer', 'helper', 'persistence', 'worker-ab
                 try: ctl.guard(operation, lambda: (_ for _ in ()).throw(AssertionError('POST_STOP_ACTION')))
                 except RuntimeError: pass
                 else: raise AssertionError('STOP_REQUEST_BYPASSED')
+        if scenario not in ('normal', 'persistence'):
+            before = ctl.current()['id']
+            subprocess.run(['systemctl', 'start', name+'.service'], check=False)
+            until = time.monotonic()+15
+            while time.monotonic()<until:
+                state = subprocess.check_output(['systemctl', 'show', name+'.service', '-p', 'ActiveState', '--value']).decode().strip()
+                if state in ('failed','inactive'): break
+                time.sleep(.1)
+            assert ctl.current()['id'] == before, 'FAILED_SESSION_RESTARTED'
+            try: ctl.b.Broker(state=ctl.b.STATE).check_paper_session()
+            except Exception: pass
+            else: raise AssertionError('FAILED_SESSION_DEPLOY_ALLOWED')
         print('PASS: production run/stop '+scenario+'; no Worker; SUI SQL rejects WAL')
     finally:
         subprocess.run(['systemctl', 'stop', name+'-cutoff.timer', name+'.service', name+'-cutoff.service'], check=False)

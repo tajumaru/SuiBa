@@ -79,10 +79,13 @@ class Controller:
         return path
 
     def fault(self, record, code):
+        # Separate sticky admission fence: even a fault arriving after the last
+        # completion check must never be erased by publishing "completed".
+        self.b.atomic(self.b.STATE/'paper-check-failed.json', {'id': record['id'], 'status': 'manual_reconciliation_required'})
         self.b.atomic(self.folder(record)/('fault-'+uuid.uuid4().hex+'.json'), {'id': record['id'], 'error': code})
 
     def faults(self, record):
-        return any(self.folder(record).glob('fault-*.json'))
+        return os.path.lexists(self.b.STATE/'paper-check-failed.json') or any(self.folder(record).glob('fault-*.json'))
 
     def intent(self, record, source):
         path = self.folder(record)/'stop-request.json'
