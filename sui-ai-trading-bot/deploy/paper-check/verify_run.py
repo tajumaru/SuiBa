@@ -112,6 +112,14 @@ for scenario in ('crash', 'timer', 'helper', 'persistence'):
     timer = unit.with_name(name+'-cutoff.timer')
     try:
         for folder in ('broker', 'policy', 'backups', 'state'): (base/folder).mkdir(mode=0o700)
+        # Keep ProtectHome=yes from the production unit: executable test code
+        # belongs outside the runner's /home directory, just like installation.
+        code = base/'code'
+        (code/'paper-check').mkdir(parents=True, mode=0o700)
+        (code/'broker').mkdir(mode=0o700)
+        for filename in ('controller.py', 'verify_run.py'):
+            shutil.copyfile(script.with_name(filename), code/'paper-check'/filename)
+        shutil.copyfile(script.parent.parent/'broker/broker.py', code/'broker/broker.py')
         transaction = base/'broker'/('a'*32); transaction.mkdir(mode=0o700)
         (transaction/'compose.json').write_text(json.dumps({'services': {'bot': {'image': digest}}}))
         (base/'broker/ledger.json').write_text(json.dumps({'status': 'prepared_stopped', 'sha': sha, 'transaction': 'a'*32}))
@@ -125,7 +133,7 @@ for scenario in ('crash', 'timer', 'helper', 'persistence'):
                '-e', 'MARKET_DATA_PROVIDER=geckoterminal', '-e', 'PAPER_CHECK_MODE=sui-30m',
                '--entrypoint', '/usr/local/bin/node', digest,
                '-e', 'setInterval(()=>{},1000);process.on("SIGTERM",()=>process.exit(0))')
-        command = '/usr/bin/python3 -I '+str(script)+' {op} '+str(base)+' '+name+' '+digest+' '+scenario+' DUMMY-ONLY'
+        command = '/usr/bin/python3 -I '+str(code/'paper-check/verify_run.py')+' {op} '+str(base)+' '+name+' '+digest+' '+scenario+' DUMMY-ONLY'
         production = Path(__file__).with_name('suiba-paper-check.service').read_text()
         production = production.replace('/usr/bin/python3 -I /usr/local/libexec/suiba-paper-check.py run', command.format(op='run'))
         production = production.replace('/usr/bin/python3 -I /usr/local/libexec/suiba-paper-check.py stop', command.format(op='stop'))
