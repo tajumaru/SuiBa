@@ -419,7 +419,13 @@ export class ApiAccess {
             s.exhausted =
               attempt >= apiLimits.maxRetries ||
               (after !== null && after > apiLimits.maxWaitMs);
-            this.onRateLimit(api);
+            // The rate-limit hook (which latches the bot's safety
+            // stop) fires only once the retries are truly spent:
+            // a single transient 429 that a backoff retry then
+            // answers must not stop the bot on its own. Failure
+            // records below still fire per attempt, so the
+            // diagnostics keep every 429.
+            if (s.exhausted) this.onRateLimit(api);
             recordFailure();
             if (s.exhausted) throw new Error("API_RETRIES_EXHAUSTED");
             await this.wait(s.nextRetryAt);

@@ -121,41 +121,58 @@ it("invalidates cached market data as soon as any 429 occurs", async () => {
   await a.run("GeckoTerminal", "cached", fn, 20000);
   expect(fn).toHaveBeenCalledTimes(2);
 });
-it.each(["stop", "emergency"])(
-  "processes %s immediately in backoff and never resumes after recovery",
-  async (command) => {
-    vi.useFakeTimers();
-    const db = new BotDatabase(":memory:");
-    const monitor = new OperationMonitor(db);
-    const a = new ApiAccess();
-    a.onRateLimit = () => monitor.stop("UPSTREAM_HTTP_429");
-    db.set("runtime", { ...db.runtime(), running: true });
-    let calls = 0;
-    const pending = a.run("Cetus", "q", async () => {
-      if (!calls++) throw new RateLimited("5");
-      return 2;
-    });
-    await flush();
-    expect(db.runtime()).toMatchObject({
-      running: false,
-      error: "UPSTREAM_HTTP_429",
-    });
-    db.set("runtime", {
-      ...db.runtime(),
-      running: false,
-      emergency: command === "emergency",
-    });
-    expect(a.snapshot()[2].backoff).toBe(true);
-    await vi.runAllTimersAsync();
-    expect(await pending).toBe(2);
-    expect(db.runtime()).toMatchObject({
-      running: false,
-      emergency: command === "emergency",
-      error: "UPSTREAM_HTTP_429",
-    });
-    db.close();
-  },
-);
+it("does not stop on a transient 429 that a backoff retry answers", async () => {
+  vi.useFakeTimers();
+  const db = new BotDatabase(":memory:");
+  const monitor = new OperationMonitor(db);
+  const a = new ApiAccess();
+  let stops = 0;
+  a.onRateLimit = () => {
+    stops++;
+    monitor.stop("UPSTREAM_HTTP_429");
+  };
+  db.set("runtime", { ...db.runtime(), running: true });
+  let calls = 0;
+  const pending = a.run("Cetus", "q", async () => {
+    if (!calls++) throw new RateLimited("5");
+    return 2;
+  });
+  await flush();
+  // One 429, retries still in flight: the bot keeps running.
+  expect(stops).toBe(0);
+  expect(db.runtime()).toMatchObject({ running: true, error: null });
+  expect(a.snapshot()[2].backoff).toBe(true);
+  await vi.runAllTimersAsync();
+  expect(await pending).toBe(2);
+  expect(stops).toBe(0);
+  expect(db.runtime()).toMatchObject({ running: true, error: null });
+  db.close();
+});
+it("stops exactly once when 429 retries are exhausted", async () => {
+  vi.useFakeTimers();
+  const db = new BotDatabase(":memory:");
+  const monitor = new OperationMonitor(db);
+  const a = new ApiAccess();
+  let stops = 0;
+  a.onRateLimit = () => {
+    stops++;
+    monitor.stop("UPSTREAM_HTTP_429");
+  };
+  db.set("runtime", { ...db.runtime(), running: true });
+  const pending = expect(
+    a.run("Cetus", "q", async () => {
+      throw new RateLimited();
+    }),
+  ).rejects.toThrow("API_RETRIES_EXHAUSTED");
+  await vi.runAllTimersAsync();
+  await pending;
+  expect(stops).toBe(1);
+  expect(db.runtime()).toMatchObject({
+    running: false,
+    error: "UPSTREAM_HTTP_429",
+  });
+  db.close();
+});
 it("cancels a retry wait immediately during shutdown", async () => {
   vi.useFakeTimers();
   const a = new ApiAccess();

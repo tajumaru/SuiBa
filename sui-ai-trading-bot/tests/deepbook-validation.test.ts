@@ -561,7 +561,7 @@ it("rolls back PAPER order and trade when atomic validation evidence cannot be s
   db.close();
 });
 
-for (const error of [Error("UPSTREAM_TIMEOUT"), new RateLimited("0")])
+for (const error of [Error("UPSTREAM_TIMEOUT"), new RateLimited("120")])
   it(
     "runs immediate safety callback before persistence for " + error.message,
     async () => {

@@ -160,7 +160,7 @@ function investigationMetadataResponse(decimals: number) {
   );
 }
 
-it("investigation: first Sui 429 keeps its stop reason after a successful retry and later healthy ticks", async () => {
+it("investigation: first Sui 429 answered by a successful retry no longer stops the engine", async () => {
   const t = fixture();
   let calls = 0,
     successes = 0;
@@ -182,18 +182,12 @@ it("investigation: first Sui 429 keeps its stop reason after a successful retry 
   await ticking;
   expect(calls).toBe(3);
   expect(client.status.healthy).toBe(true);
-  expect(t.db.runtime()).toMatchObject({
-    running: false,
-    error: "UPSTREAM_HTTP_429",
-  });
-  expect(t.engine.monitor.ordersAllowed()).toBe(false);
+  // The 429 was transient: the retry answered it, so no safety
+  // stop latches and the engine keeps running.
+  expect(t.db.runtime()).toMatchObject({ running: true, error: null });
+  expect(t.engine.monitor.ordersAllowed()).toBe(true);
   await t.tick(60000);
-  expect(t.db.runtime()).toMatchObject({
-    running: false,
-    error: "UPSTREAM_HTTP_429",
-  });
-  expect(t.db.history("paper_orders")).toHaveLength(0);
-  expect(t.db.history("paper_trades")).toHaveLength(0);
+  expect(t.db.runtime()).toMatchObject({ running: true, error: null });
 });
 
 it.each([2, 4])(
