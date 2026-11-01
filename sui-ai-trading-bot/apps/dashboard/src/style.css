@@ -4773,3 +4773,9 @@ summary {
     animation: none;
   }
 }
+
+/* Spoken-replies toggle, sitting with the question chips. */
+.agent-chat-chips .agent-voice-toggle.on {
+  border-color: #43dfb2;
+  color: #43dfb2;
+}

@@ -9,6 +9,13 @@ import {
   type VoiceSession,
 } from "./voiceInput.ts";
 import {
+  createAgentSpeaker,
+  isSpeechSupported,
+  loadAgentVoice,
+  saveAgentVoice,
+  type AgentSpeaker,
+} from "./voiceSpeech.ts";
+import {
   advanceNarration,
   agentPose,
   BUY_CELEBRATION_MS,
@@ -227,6 +234,7 @@ export function AgentHeaderAvatar({
   agentName = "",
   onRename,
   listening = false,
+  speaking = false,
 }: {
   pose: AgentPose;
   celebrating?: boolean;
@@ -235,6 +243,10 @@ export function AgentHeaderAvatar({
    * (Sui-blue headphones, one cup lifted) replaces the pose.
    * Shouts and the buy celebration outrank it. */
   listening?: boolean;
+  /** A spoken reply is playing: the pointing smile shows with
+   * a 喋ってる… pill. Listening, shouts and celebrations
+   * outrank it. */
+  speaking?: boolean;
   /** The character's user-chosen name ("" shows as キャラ). */
   agentName?: string;
   /** When set, tapping the avatar opens the rename editor and
@@ -289,6 +301,8 @@ export function AgentHeaderAvatar({
             <img className="agent-avatar-scream" src={imgScream} alt="" />
           ) : listening && !celebrating ? (
             <img className="agent-avatar-listen" src={imgListen} alt="" />
+          ) : speaking && !celebrating ? (
+            <AgentAvatarArtwork pose="pointSmile" hardMode={artworkHard} />
           ) : (
             <AgentAvatarArtwork pose={shownPose} hardMode={artworkHard} />
           )}
@@ -334,9 +348,11 @@ export function AgentHeaderAvatar({
             ? "買えた！"
             : listening
               ? "聞いてる…"
-              : hardShown
-                ? "ハードモード中"
-                : POSE_LABEL[shownPose]}
+              : speaking
+                ? "喋ってる…"
+                : hardShown
+                  ? "ハードモード中"
+                  : POSE_LABEL[shownPose]}
       </p>
       {onRename && (
         <button
@@ -534,6 +550,7 @@ export function AgentNarrationFeed({
   active = true,
   agentName = "",
   onListeningChange,
+  onSpeakingChange,
 }: {
   data: OperationsSnapshot;
   stale: boolean;
@@ -555,6 +572,9 @@ export function AgentNarrationFeed({
   /** Reports voice-recognition activity so the shell can switch
    * the header avatar to its listening artwork. */
   onListeningChange?: (listening: boolean) => void;
+  /** Reports speech-synthesis activity so the shell can show
+   * the avatar mid-speech. */
+  onSpeakingChange?: (speaking: boolean) => void;
 }) {
   const displayName = agentDisplayName(agentName);
   const [narration, setNarration] = useState<NarrationState>(() =>
@@ -809,6 +829,7 @@ export function AgentNarrationFeed({
       setChatTopic(reply.topic);
       setChatReplyAt(landedAt);
       setChatReplyText(reply.text);
+      speakReply(reply.text);
       setChatThinking(false);
     }, 650);
   };
@@ -855,6 +876,7 @@ export function AgentNarrationFeed({
     persist(next);
     setNarration(next);
     setChatReplyText(text);
+    speakReply(text);
   };
   const toggleVoice = () => {
     if (voiceListening) {
@@ -886,6 +908,42 @@ export function AgentNarrationFeed({
       voiceRef.current = session;
       setChatOpen(true);
       setVoiceListening(true);
+    }
+  };
+  // The character's voice (spoken replies): opt-in and
+  // device-local. Only chat replies are spoken.
+  const speechSupported = isSpeechSupported();
+  const [voiceOn, setVoiceOn] = useState<boolean>(() => loadAgentVoice());
+  const voiceOnRef = useRef(voiceOn);
+  voiceOnRef.current = voiceOn;
+  const speakerRef = useRef<AgentSpeaker | null>(null);
+  const speaker = (): AgentSpeaker => {
+    if (!speakerRef.current) {
+      speakerRef.current = createAgentSpeaker({
+        onSpeakingChange: (speaking) => onSpeakingChange?.(speaking),
+      });
+    }
+    return speakerRef.current;
+  };
+  useEffect(
+    () => () => {
+      speakerRef.current?.cancel();
+    },
+    [],
+  );
+  const speakReply = (text: string) => {
+    if (voiceOnRef.current) speaker().speak(text);
+  };
+  const toggleVoiceOut = () => {
+    const next = !voiceOn;
+    setVoiceOn(next);
+    saveAgentVoice(next);
+    if (next) {
+      // This tap is the gesture that unlocks audio; the short
+      // confirmation both proves it and performs the unlock.
+      speaker().speak("声、オンになったよ");
+    } else {
+      speaker().cancel();
     }
   };
   // Buy-condition chips come from the same fresh decision evidence
@@ -1013,6 +1071,16 @@ export function AgentNarrationFeed({
               onClick={() => setChatTopic(null)}
             >
               ほかの質問
+            </button>
+          )}
+          {speechSupported && (
+            <button
+              type="button"
+              className={`agent-voice-toggle${voiceOn ? " on" : ""}`}
+              aria-pressed={voiceOn}
+              onClick={toggleVoiceOut}
+            >
+              {voiceOn ? "🔊 声あり" : "🔇 声なし"}
             </button>
           )}
         </div>

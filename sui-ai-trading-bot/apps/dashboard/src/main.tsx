@@ -356,6 +356,8 @@ function App() {
   const [agentName, setAgentName] = useState<string>(() => loadAgentName());
   // Voice recognition is live in the chat (the avatar listens).
   const [voiceListening, setVoiceListening] = useState(false);
+  // A spoken reply is playing (the avatar is mid-speech).
+  const [agentSpeaking, setAgentSpeaking] = useState(false);
   const changeAgentName = (raw: string) => {
     const next = sanitizeAgentName(raw);
     saveAgentName(next);
@@ -612,6 +614,7 @@ function App() {
           agentName={agentName}
           onRename={changeAgentName}
           listening={voiceListening}
+          speaking={agentSpeaking}
         />
       )}
       {restoringSession ? (
@@ -725,6 +728,7 @@ function App() {
                       active={activeTab === "Live"}
                       agentName={agentName}
                       onListeningChange={setVoiceListening}
+                      onSpeakingChange={setAgentSpeaking}
                     />
                   ) : (
                     <p role="status">
