@@ -53,11 +53,14 @@ export const initialPaperSafety = (): PaperSafetyState => ({
 export function recoverableReadFailure(
   f: ApiFailure | undefined,
 ): f is ApiFailure {
-  if (!f || !["DeepBook Indexer", "Sui gRPC"].includes(f.api)) return false;
+  if (!f || !["DeepBook Indexer", "Sui gRPC", "GeckoTerminal"].includes(f.api))
+    return false;
   if (
     f.api === "DeepBook Indexer" &&
     f.host !== "deepbook-indexer.mainnet.mystenlabs.com"
   )
+    return false;
+  if (f.api === "GeckoTerminal" && f.host !== "api.geckoterminal.com")
     return false;
   if (f.elapsedMs < 0 || !Number.isFinite(f.occurredAt)) return false;
   if (f.code === "UPSTREAM_DNS_FAILED")

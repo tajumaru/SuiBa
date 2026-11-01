@@ -170,6 +170,69 @@ it("blocks orders on the first evidenced BODY failure without latching a hard er
   expect(monitor.ordersAllowed()).toBe(false);
   expect(monitor.transientCycleFailure(f.code)).toBe(true);
 });
+it("treats evidenced GeckoTerminal transport failures as recoverable, host-checked", () => {
+  const gecko = failure({
+    api: "GeckoTerminal",
+    host: "api.geckoterminal.com",
+    url: "https://api.geckoterminal.com/[redacted]",
+  });
+  expect(recoverableReadFailure(gecko)).toBe(true);
+  expect(recoverableReadFailure({ ...gecko, host: "example.com" })).toBe(
+    false,
+  );
+  const { db, monitor } = setup();
+  monitor.transientFailure(gecko.api, gecko.code, gecko);
+  expect(db.runtime()).toMatchObject({ running: false, error: null });
+  expect(monitor.safety()).toMatchObject({
+    connectivity: "DEGRADED",
+    resumePending: true,
+  });
+});
+it("pauses on a market-data stall and resumes after fresh data passes the proofs", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  monitor.market(start, start);
+  monitor.watchdog(start + 361000);
+  expect(db.runtime()).toMatchObject({ running: false, error: null });
+  expect(monitor.safety()).toMatchObject({
+    connectivity: "DEGRADED",
+    resumePending: true,
+  });
+  expect(monitor.ordersAllowed()).toBe(false);
+  monitor.market(start + 361000, start + 361000);
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 362000),
+  ).toBe(false);
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 361000 + 61000),
+  ).toBe(true);
+  expect(monitor.safety().connectivity).toBe("HEALTHY");
+  expect(db.runtime().running).toBe(true);
+});
+it("escalates a stall that persists past the episode deadline to a hard stop", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  monitor.market(start, start);
+  monitor.watchdog(start + 361000);
+  expect(monitor.safety().resumePending).toBe(true);
+  monitor.watchdog(start + 361000 + 181000);
+  expect(db.runtime().error).toBe("PAPER_RECOVERY_EXHAUSTED");
+  expect(monitor.safety().resumePending).toBe(false);
+});
+it("never softens an existing hard stop into a stall pause", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  monitor.market(start, start);
+  monitor.stop("CONSECUTIVE_API_ERRORS", start);
+  monitor.watchdog(start + 361000);
+  expect(db.runtime().error).toBe("CONSECUTIVE_API_ERRORS");
+  expect(monitor.safety()).toMatchObject({
+    connectivity: "HEALTHY",
+    resumePending: false,
+  });
+});
 it("does not infer recoverability from a code or an unrelated API", () => {
   expect(recoverableReadFailure(undefined)).toBe(false);
   expect(recoverableReadFailure(failure({ api: "Cetus" }))).toBe(false);

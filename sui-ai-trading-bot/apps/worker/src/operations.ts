@@ -244,7 +244,7 @@ export class OperationMonitor {
     }
     const stalled = this.stallDetails(now);
     if (stalled) {
-      this.failCycle("MARKET_DATA_STALLED", now, stalled);
+      this.stallFailure(stalled, now);
       return false;
     }
     const finalSafety = this.safety(),
@@ -541,8 +541,7 @@ export class OperationMonitor {
     const deadline = setTimeout(() => {
       const details = this.stallDetails(Date.now());
       controller.abort(new Error("MARKET_DATA_STALLED"));
-      if ((this.db.runtime().running || this.safety().resumePending) && details)
-        this.failCycle("MARKET_DATA_STALLED", Date.now(), details);
+      if (details) this.stallFailure(details, Date.now());
     }, monitoringLimits.fetchDeadlineMs + 1);
     deadline.unref?.();
     try {
@@ -561,7 +560,7 @@ export class OperationMonitor {
         this.monotonicNow() - this.fetchMono > monitoringLimits.fetchDeadlineMs
       ) {
         const details = this.stallDetails(Date.now());
-        this.failCycle("MARKET_DATA_STALLED", Date.now(), details ?? undefined);
+        if (details) this.stallFailure(details, Date.now());
         throw new Error("MARKET_DATA_STALLED");
       }
       return value;
@@ -756,14 +755,60 @@ export class OperationMonitor {
     this.event("ANOMALY", reason, now, !alreadyStopped, details);
     this.stop(reason, now, details);
   }
+  /**
+   * A market-data stall used to latch an immediate safety stop.
+   * It now enters the same recovery episode as a transient read
+   * failure: trading pauses (DEGRADED, resume pending) and the
+   * monitor resumes only after the usual healthy proofs; a stall
+   * that persists escalates via checkRecoveryDeadline to
+   * PAPER_RECOVERY_EXHAUSTED. An existing hard stop or emergency
+   * is never softened into a pause, and a manually stopped bot
+   * is left alone.
+   */
+  stallFailure(details: MarketStallDetails, now = Date.now()) {
+    const r = this.db.runtime(),
+      s = this.safety();
+    if (!this.cycleFailed)
+      this.event("ERROR", "MARKET_DATA_STALLED", now, false, details);
+    this.cycleFailed = true;
+    if (r.emergency || r.error || (!r.running && !s.resumePending)) {
+      this.event("ANOMALY", "MARKET_DATA_STALLED", now, false, details);
+      return;
+    }
+    const entering = s.connectivity === "HEALTHY",
+      recentlyCounted =
+        s.episodeAt != null &&
+        s.lastFailureAt != null &&
+        now - s.lastFailureAt < 30000;
+    if (recentlyCounted) {
+      this.checkRecoveryDeadline(now);
+      return;
+    }
+    this.event("ANOMALY", "MARKET_DATA_STALLED", now, entering, details);
+    console.warn(JSON.stringify({ event: "MARKET_DATA_STALLED", ...details }));
+    this.saveSafety({
+      connectivity: "DEGRADED",
+      generation: entering ? s.generation + 1 : s.generation,
+      resumePending: true,
+      episodeAt: s.episodeAt ?? now,
+      lastFailureAt: now,
+      failures: s.failures + 1,
+      healthyCycles: 0,
+      firstHealthyAt: null,
+      lastHealthyCycleAt: null,
+      recoveredAt: null,
+    });
+    this.db.set("runtime", { ...r, running: false });
+    if (r.running) this.transition("PAPER_NETWORK_PAUSED", now);
+    this.checkRecoveryDeadline(now);
+  }
   watchdog(now = Date.now()) {
     this.db.assertHealthy();
     const s = this.state(),
       r = this.db.runtime();
     const details = this.stallDetails(now);
     this.checkRecoveryDeadline(now);
-    if ((r.running || this.safety().resumePending) && details)
-      this.failCycle("MARKET_DATA_STALLED", now, details);
+    if (details) this.stallFailure(details, now);
     if (
       (this.db.runtime().running || this.safety().resumePending) &&
       !this.ledger().ok

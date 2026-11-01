@@ -176,20 +176,28 @@ export class BotEngine {
         const status = this.marketStatus();
         this.market.assertReady?.(Date.now());
         const qualities = status?.quality;
+        // DeepBook keeps its strict proof (fresh quality, book
+        // and indexer lag). The GeckoTerminal route has no such
+        // evidence; its proof is that this cycle's frames were
+        // fetched and validated inside acquisition, plus the
+        // monitor's own stall gate inside the recovery check,
+        // which refuses resumption while market data is stale.
         const complete =
-          status?.source === "DeepBook" &&
+          status != null &&
           status.healthy &&
           !status.fallback &&
-          [300, 900, 3600].every(
-            (tf) =>
-              qualities?.[tf] &&
-              qualities[tf].unresolved === 0 &&
-              qualities[tf].fetchedAt >= began,
-          ) &&
-          status.bookAt != null &&
-          Date.now() - status.bookAt <= 10000 &&
-          status.diagnostics?.indexerLagMs != null &&
-          status.diagnostics.indexerLagMs <= 60000;
+          (status.source === "GeckoTerminal" ||
+            (status.source === "DeepBook" &&
+              [300, 900, 3600].every(
+                (tf) =>
+                  qualities?.[tf] &&
+                  qualities[tf].unresolved === 0 &&
+                  qualities[tf].fetchedAt >= began,
+              ) &&
+              status.bookAt != null &&
+              Date.now() - status.bookAt <= 10000 &&
+              status.diagnostics?.indexerLagMs != null &&
+              status.diagnostics.indexerLagMs <= 60000));
         recoveryTransition = this.monitor.recoveryCycle({
           market: complete,
           sui: this.sui.status.healthy && this.sui.status.checkedAt >= began,

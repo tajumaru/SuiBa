@@ -372,9 +372,12 @@ describe("PAPER operation monitor", () => {
     const m = new OperationMonitor(db, now);
     m.market(now, now);
     m.watchdog(now + 360001);
-    expect(db.runtime()).toMatchObject({
-      running: false,
-      error: "MARKET_DATA_STALLED",
+    // A stall now pauses into the recovery episode instead of
+    // latching a hard stop on first sight.
+    expect(db.runtime()).toMatchObject({ running: false, error: null });
+    expect(m.safety()).toMatchObject({
+      connectivity: "DEGRADED",
+      resumePending: true,
     });
     db.close();
   });

@@ -161,7 +161,7 @@ it.each([{ healthy: false }, { blocked: true }, { deepbook: false }])(
     ).not.toBe("BOUNDARY_RECHECK");
   },
 );
-it("retains the 67s fetch/361s candle stop, even during acquisition", async () => {
+it("pauses (DEGRADED, resume pending) on the 67s fetch/361s candle stall, even during acquisition", async () => {
   vi.setSystemTime(boundary + 61000);
   const { db, monitor } = fixture();
   monitor.market(boundary - 300000, Date.now() - 67000);
@@ -171,13 +171,14 @@ it("retains the 67s fetch/361s candle stop, even during acquisition", async () =
     () => new Promise<void>((r) => (release = r)),
   );
   monitor.watchdog();
-  expect(db.runtime()).toMatchObject({
-    running: false,
-    error: "MARKET_DATA_STALLED",
+  expect(db.runtime()).toMatchObject({ running: false, error: null });
+  expect(monitor.safety()).toMatchObject({
+    connectivity: "DEGRADED",
+    resumePending: true,
   });
   const stop = db
     .history<any>("operation_events")
-    .find((x) => x.kind === "STOP" && x.code === "MARKET_DATA_STALLED");
+    .find((x) => x.code === "MARKET_DATA_STALLED" && x.details);
   expect(stop.details).toMatchObject({
     candleAgeSeconds: 361,
     lastValidatedMarketAgeSeconds: 67,
@@ -225,7 +226,7 @@ it("handles a normal 25s reflection delay without crossing the freshness deadlin
   expect(monitor.state().lastMarketClosedAt).toBe(boundary);
   db.close();
 });
-it("does not exempt an in-flight request forever; deadline uses monotonic time", async () => {
+it("does not exempt an in-flight request forever; deadline pauses via monotonic time", async () => {
   const { db, monitor } = fixture();
   monitor.market(Date.now());
   let release!: () => void;
@@ -234,13 +235,14 @@ it("does not exempt an in-flight request forever; deadline uses monotonic time",
   );
   void pending.catch(() => {});
   await vi.advanceTimersByTimeAsync(45001);
-  expect(db.runtime()).toMatchObject({
-    running: false,
-    error: "MARKET_DATA_STALLED",
+  expect(db.runtime()).toMatchObject({ running: false, error: null });
+  expect(monitor.safety()).toMatchObject({
+    connectivity: "DEGRADED",
+    resumePending: true,
   });
   const stop = db
     .history<any>("operation_events")
-    .find((x) => x.code === "MARKET_DATA_STALLED" && x.kind === "STOP");
+    .find((x) => x.code === "MARKET_DATA_STALLED" && x.details);
   expect(stop.details).toMatchObject({
     reasonDetail: "FETCH_DEADLINE_EXCEEDED",
     fetching: true,
@@ -262,7 +264,7 @@ it("rejects concurrent acquisitions", async () => {
   await pending;
   db.close();
 });
-it("really unchanged candles stop at 360s even though responses succeed", async () => {
+it("really unchanged candles pause at 360s even though responses succeed", async () => {
   vi.setSystemTime(boundary + 59000);
   const { db, monitor } = fixture();
   monitor.market(boundary - 300000);
@@ -271,7 +273,11 @@ it("really unchanged candles stop at 360s even though responses succeed", async 
   await vi.advanceTimersByTimeAsync(2000);
   await monitor.acquisition(async () => 42);
   monitor.watchdog();
-  expect(db.runtime().error).toBe("MARKET_DATA_STALLED");
+  expect(db.runtime().error).toBeNull();
+  expect(monitor.safety()).toMatchObject({
+    connectivity: "DEGRADED",
+    resumePending: true,
+  });
   expect(monitor.timing().lastFetchSuccessAt).toBe(Date.now());
   expect(monitor.timing().dataStatus).toBe("STALE");
   db.close();

@@ -1036,3 +1036,109 @@ it.each([false, true])(
     }
   },
 );
+
+it("recovers in GeckoTerminal mode: an evidenced Gecko failure pauses, then healthy Gecko cycles resume", async () => {
+  const db = new BotDatabase(":memory:");
+  dbs.push(db);
+  db.set("runtime", { ...db.runtime(), running: true });
+  const geckoBars = (tf: Timeframe): Candle[] => {
+    const end = Math.floor(Date.now() / (tf * 1000)) * tf - tf;
+    return Array.from({ length: 70 }, (_, i) => ({
+      timestamp: end - (69 - i) * tf,
+      timeframe: tf,
+      source: "GeckoTerminal",
+      open: 2,
+      high: 2.1,
+      low: 1.9,
+      close: 2,
+      volume: 10000,
+    }));
+  };
+  const health = { healthy: true, checkedAt: Date.now(), failures: 0 };
+  const sui = {
+    status: health,
+    health: vi.fn(async (_force = false) => {
+      health.healthy = true;
+      health.checkedAt = Date.now();
+      return health;
+    }),
+  };
+  const market = {
+    status: (): MarketStatus => ({
+      configured: "geckoterminal",
+      source: "GeckoTerminal",
+      fallback: false,
+      healthy: true,
+      lastSuccessAt: Date.now(),
+      latencyMs: 1,
+      reason: null,
+      bookAt: null,
+      bid: null,
+      ask: null,
+      spread: null,
+    }),
+    refreshForOrder: vi.fn(async () => {}),
+    candles: async (tf: Timeframe) => geckoBars(tf),
+    frames: vi.fn(async () =>
+      Object.fromEntries(
+        ([300, 900, 3600] as const).map((tf) => [tf, geckoBars(tf)]),
+      ),
+    ),
+  };
+  const router = {
+    getQuote: vi.fn(async (r: QuoteRequest): Promise<QuoteResult> => {
+      const buy = r.from === USDC,
+        output = buy ? units(r.amountIn, USDC) / 2 : units(r.amountIn, SUI) * 2;
+      return {
+        ...r,
+        amountOut: atomic(output, buy ? SUI : USDC),
+        minAmountOut: atomic(output * 0.997, buy ? SUI : USDC),
+        id: "mock",
+        liquid: true,
+        priceImpact: 0,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 15000,
+        route: ["mock"],
+        source: "mock",
+        dexFeeUsdc: null,
+      };
+    }),
+    validateQuote: vi.fn(async (_q: QuoteResult) => true),
+  };
+  const engine = new BotEngine(db, market, router, sui, "SUI_USDC");
+  vi.spyOn(RuleBasedStrategy.prototype, "analyze").mockResolvedValue({
+    action: "WAIT",
+    confidence: 1,
+    reason: "mock",
+    timestamp: "mock",
+    stopLossPct: 0.02,
+    takeProfitPct: 0.3,
+  });
+  const tick = async (advance = 0) => {
+    vi.setSystemTime(Date.now() + advance);
+    await engine.tick();
+  };
+  const f: ApiFailure = {
+    api: "GeckoTerminal",
+    host: "api.geckoterminal.com",
+    url: "https://api.geckoterminal.com/[redacted]",
+    method: "GET",
+    operation: "OHLCV_5M",
+    code: "UPSTREAM_BODY_TIMEOUT",
+    phase: "BODY",
+    timeoutType: "BODY",
+    causeCode: null,
+    status: null,
+    elapsedMs: 8000,
+    occurredAt: Date.now(),
+  };
+  apiAccess.onTransientFailure(f.api, f.code, f);
+  expect(engine.monitor.safety().connectivity).toBe("DEGRADED");
+  expect(db.runtime()).toMatchObject({ running: false, error: null });
+  await tick(60000);
+  expect(engine.monitor.safety().connectivity).toBe("RECOVERING");
+  expect(db.runtime().running).toBe(false);
+  await tick(60000);
+  expect(engine.monitor.safety().connectivity).toBe("HEALTHY");
+  expect(db.runtime().running).toBe(true);
+});
