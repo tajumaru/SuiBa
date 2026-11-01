@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   activityMonthLabels,
+  activityStreaks,
   buildActivityWeeks,
 } from "../apps/dashboard/src/ActivityGrass.tsx";
 
@@ -8,6 +9,37 @@ import {
 const at = (y: number, m: number, d: number, h = 12) =>
   new Date(y, m - 1, d, h).getTime();
 const order = (ts: number, status = "FILLED") => ({ timestamp: ts, status });
+
+describe("activity streaks", () => {
+  const now = at(2026, 11, 5, 15); // a Thursday
+  const streaksOf = (days: number[]) =>
+    activityStreaks(
+      buildActivityWeeks(
+        days.map((d) => order(at(2026, 11, d))),
+        now,
+      ),
+    );
+
+  it("counts consecutive recorded days ending today", () => {
+    expect(streaksOf([3, 4, 5])).toEqual({ current: 3, longest: 3 });
+  });
+
+  it("keeps the streak alive while today is still blank", () => {
+    expect(streaksOf([3, 4])).toEqual({ current: 2, longest: 2 });
+  });
+
+  it("breaks the current streak on a blank yesterday", () => {
+    expect(streaksOf([2, 3, 5])).toEqual({ current: 1, longest: 2 });
+  });
+
+  it("tracks the longest run across a break", () => {
+    expect(streaksOf([1, 2, 3, 5])).toEqual({ current: 1, longest: 3 });
+  });
+
+  it("is zero with no records", () => {
+    expect(streaksOf([])).toEqual({ current: 0, longest: 0 });
+  });
+});
 
 describe("activity grass", () => {
   const now = at(2026, 11, 1, 15); // a Sunday

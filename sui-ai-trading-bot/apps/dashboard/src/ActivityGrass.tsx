@@ -80,6 +80,39 @@ export function buildActivityWeeks(
   return grid;
 }
 
+export interface ActivityStreaks {
+  /** Consecutive recorded days ending today — or ending
+   * yesterday while today is still blank (the day is not over,
+   * so the streak is still alive). */
+  current: number;
+  /** Longest run inside the visible window. */
+  longest: number;
+}
+
+/** Streaks of "grass grew" days (any order record that day). */
+export function activityStreaks(
+  weeks: readonly ActivityDay[][],
+): ActivityStreaks {
+  const days = weeks.flat().filter((d) => !d.isFuture);
+  let longest = 0,
+    run = 0;
+  for (const d of days) {
+    run = d.orders > 0 ? run + 1 : 0;
+    if (run > longest) longest = run;
+  }
+  let current = 0;
+  for (let i = days.length - 1; i >= 0; i--) {
+    const d = days[i];
+    if (d.orders > 0) {
+      current++;
+      continue;
+    }
+    if (d.isToday) continue;
+    break;
+  }
+  return { current, longest };
+}
+
 /** Month labels for the columns whose month changes. */
 export function activityMonthLabels(
   weeks: readonly ActivityDay[][],
@@ -105,9 +138,17 @@ export function ActivityGrass({
 }) {
   const weeks = buildActivityWeeks(orders, Date.now());
   const monthLabels = activityMonthLabels(weeks);
+  const streaks = activityStreaks(weeks);
   return (
     <section className="activity-grass-section">
-      <h3>活動（直近18週）</h3>
+      <div className="activity-grass-head">
+        <h3>活動（直近18週）</h3>
+        {streaks.longest > 0 && (
+          <p className="activity-grass-streak">
+            連続 {streaks.current}日 ・ 最長 {streaks.longest}日
+          </p>
+        )}
+      </div>
       <div className="activity-grass-scroll">
         <div className="activity-grass-months" aria-hidden="true">
           {monthLabels.map((m) => (

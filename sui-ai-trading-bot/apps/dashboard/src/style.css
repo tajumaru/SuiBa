@@ -4793,3 +4793,18 @@ summary {
   color: #8fb8dd;
   font-size: 12px;
 }
+
+/* Grass streak line */
+.activity-grass-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.activity-grass-streak {
+  margin: 0;
+  color: #43dfb2;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
