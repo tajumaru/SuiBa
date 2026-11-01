@@ -4787,3 +4787,9 @@ summary {
   line-height: 1.65;
   white-space: pre-wrap;
 }
+
+/* Forecast note (model outlook on the price chart) */
+.chart-forecast-note {
+  color: #8fb8dd;
+  font-size: 12px;
+}

@@ -1,5 +1,6 @@
 import { chartGapQuality } from "../../../packages/shared/src/chart-gap-quality.ts";
 import { candleGeometry } from "./candleGeometry.ts";
+import { chartForecast, FORECAST_BARS } from "./chartForecast.ts";
 import { IndicatorPanel } from "./IndicatorPanel.tsx";
 import { chartSeries, lineSegments } from "./chartIndicators.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
@@ -86,6 +87,13 @@ export function PriceChart({
   const latest = data.candles.at(-1),
     latestEnd = latest ? latest.timestamp + latest.timeframe : 0,
     tf = latest?.timeframe ?? timeframe;
+  // Model outlook (next FORECAST_BARS candles) — only in the
+  // latest view; panning into the past hides it. Display only:
+  // it never feeds the bot or the indicators.
+  const fc = useMemo(
+    () => (anchor == null ? chartForecast(data.candles) : null),
+    [data, anchor],
+  );
   const first = data.candles[0]?.timestamp ?? 0,
     available = latestEnd - first,
     end = anchor ?? latestEnd;
@@ -129,16 +137,41 @@ export function PriceChart({
     [visible, tf],
   );
   const selectedGap = gapQuality.entries.find((g) => g.timestamp === gapTime);
-  const x = (t: number) => left + ((t - start) / (finish - start)) * plot;
+  const xFinish = fc ? latestEnd + FORECAST_BARS * tf : finish;
+  const x = (t: number) => left + ((t - start) / (xFinish - start)) * plot;
   const values = [
     ...c.flatMap((b) => [b.low, b.high]),
     ...visible.ema20,
     ...visible.ema50,
+    ...(fc ? fc.points.flatMap((p) => [p.lower, p.upper]) : []),
   ].filter((v): v is number => v != null);
   const min = Math.min(...values),
     max = Math.max(...values),
     y = (v: number) => 215 - ((v - min) / (max - min || 1)) * 180;
-  const dx = Math.max(0.8, Math.min(24, (plot / (finish - start)) * tf * 0.6));
+  const dx = Math.max(0.8, Math.min(24, (plot / (xFinish - start)) * tf * 0.6));
+  const fcAnchor =
+    fc && latest
+      ? `${x(latest.timestamp + tf / 2)},${y(latest.close)}`
+      : null;
+  const fcMid = fc
+    ? [
+        fcAnchor!,
+        ...fc.points.map(
+          (p) => `${x(p.timestamp + tf / 2)},${y(p.mid)}`,
+        ),
+      ].join(" ")
+    : null;
+  const fcCone = fc
+    ? [
+        fcAnchor!,
+        ...fc.points.map(
+          (p) => `${x(p.timestamp + tf / 2)},${y(p.upper)}`,
+        ),
+        ...[...fc.points]
+          .reverse()
+          .map((p) => `${x(p.timestamp + tf / 2)},${y(p.lower)}`),
+      ].join(" ")
+    : null;
   const geometry = useMemo(
     () => candleGeometry(c, x, y, dx),
     [visible, w, min, max, tf],
@@ -150,7 +183,7 @@ export function PriceChart({
       t =
         start +
         ((((clientX - rect.left) / rect.width) * w - left) / plot) *
-          (finish - start);
+          (xFinish - start);
     const nearest = c.reduce((a, b) =>
       Math.abs(b.timestamp + tf / 2 - t) < Math.abs(a.timestamp + tf / 2 - t)
         ? b
@@ -263,6 +296,15 @@ export function PriceChart({
           {pair.replace("_", " / ")} · {tf / 60}分足
         </strong>
       </p>
+      {fc && (
+        <p className="chart-forecast-note">
+          予測（模式）：この先{FORECAST_BARS}本（
+          {number((FORECAST_BARS * tf) / 3600, 1)}
+          時間）の見通しは{fc.directionWord}、振れ幅 ±
+          {number(fc.bandPct * 100, 1)}
+          %。トレンドと値幅（ATR）から伸ばしたもので、実際の価格ではありません。
+        </p>
+      )}
       <div className="chart-controls" role="group" aria-label="表示期間の選択">
         {chartPeriods.map((n) => (
           <button
@@ -292,7 +334,7 @@ export function PriceChart({
       {c.length ? (
         <>
           <p aria-label="実際の表示期間">
-            表示期間：{chartTime(start)} ～ {chartTime(finish)}（日本時間）
+            表示期間：{chartTime(start)} ～ {chartTime(xFinish)}（日本時間）
           </p>
           <p>
             表示範囲：{number((finish - start) / 3600, 2)}時間 ／ {c.length}
@@ -474,6 +516,36 @@ export function PriceChart({
                 </text>
               );
             })}
+            {fc && fcCone && fcMid && (
+              <g className="chart-forecast" aria-label="予測（模式）">
+                <line
+                  x1={x(latestEnd)}
+                  x2={x(latestEnd)}
+                  y1="30"
+                  y2="215"
+                  stroke="#64b5ff"
+                  strokeDasharray="2 4"
+                  opacity="0.6"
+                />
+                <polygon points={fcCone} fill="rgba(100,181,255,0.10)" />
+                <polyline
+                  points={fcMid}
+                  fill="none"
+                  stroke="#64b5ff"
+                  strokeWidth="1.6"
+                  strokeDasharray="5 4"
+                />
+                <text
+                  x={x(fc.points.at(-1)!.timestamp + tf / 2)}
+                  y={y(fc.points.at(-1)!.mid) - 8}
+                  textAnchor="end"
+                  fill="#64b5ff"
+                  fontSize="11"
+                >
+                  予測
+                </text>
+              </g>
+            )}
             {chosen && (
               <line
                 x1={x(chosen.timestamp + tf / 2)}
@@ -517,7 +589,7 @@ export function PriceChart({
                 sets={[visibleSeries("rsi")]}
                 width={w}
                 start={start}
-                end={finish}
+                end={xFinish}
                 selected={chosen?.timestamp ?? null}
               />
               <IndicatorPanel
@@ -532,7 +604,7 @@ export function PriceChart({
                 ]}
                 width={w}
                 start={start}
-                end={finish}
+                end={xFinish}
                 selected={chosen?.timestamp ?? null}
               />
             </>
