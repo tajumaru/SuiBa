@@ -45,7 +45,7 @@ class Controller:
                        stderr=subprocess.DEVNULL, env={'PATH': '/usr/bin:/bin'}, cwd='/')
 
     def inspect(self):
-        values = self.b.decode(self.docker.call(['inspect', CONTAINER]))
+        values = self.b.decode(self.docker.call(['inspect', CONTAINER], timeout=10))
         require(len(values) == 1)
         return values[0]
 
@@ -120,6 +120,9 @@ class Controller:
         active = self.b.decode(self.b.read_trusted(self.record))
         if active.get('status') not in ('in_progress', 'failed_requires_review'):
             return True
+        # If the stop process itself is killed, do not leave a success receipt.
+        with contextlib.suppress(Exception):
+            self.b.atomic(self.state/'stop.json', {'status': 'stopping_state_unknown', 'at': int(time.time())})
         errors = []
         with contextlib.suppress(Exception):
             self.api('POST', '/api/control', {'command': 'stop'})
