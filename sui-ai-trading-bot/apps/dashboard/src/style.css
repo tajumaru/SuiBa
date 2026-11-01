@@ -4653,3 +4653,96 @@ summary {
   font-size: 11px;
   color: #71809a;
 }
+
+/* Character rename: tapping the header avatar opens a small
+   editor (the dock is pointer-events:none, so the interactive
+   pieces opt back in). The pencil badge is the affordance. */
+.agent-avatar-tap {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 76px;
+  height: 76px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.agent-avatar-tap:focus-visible {
+  outline: 2px solid #43dfb2;
+  outline-offset: 2px;
+}
+.agent-avatar-dock.stuck .agent-avatar-tap {
+  width: 46px;
+  height: 46px;
+}
+.agent-avatar-edit-badge {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: #0a1a12;
+  border: 1px solid #1f5c46;
+  color: #43dfb2;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+.agent-rename {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 240px;
+  z-index: 60;
+  background: #071018;
+  border: 1px solid #1f5c46;
+  border-radius: 6px;
+  padding: 10px;
+  pointer-events: auto;
+  text-align: left;
+}
+.agent-avatar-dock.stuck .agent-rename {
+  top: auto;
+  bottom: calc(100% + 8px);
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.agent-rename label {
+  display: block;
+  font-size: 12px;
+  color: #9fb0c8;
+}
+.agent-rename input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  background: #020a06;
+  border: 1px solid #1f5c46;
+  border-radius: 4px;
+  color: #d7e3f2;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 14px;
+  padding: 7px 8px;
+}
+.agent-rename-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.agent-rename-actions button {
+  flex: 1;
+  background: #0a1a12;
+  border: 1px solid #1f5c46;
+  border-radius: 4px;
+  color: #d7e3f2;
+  font-size: 12px;
+  padding: 6px 0;
+  cursor: pointer;
+}

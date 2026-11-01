@@ -18,6 +18,11 @@ import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
 import { BootScreen } from "./BootScreen.tsx";
 import { ActivityGrass } from "./ActivityGrass.tsx";
+import {
+  loadAgentName,
+  sanitizeAgentName,
+  saveAgentName,
+} from "./agentName.ts";
 import { errorShout } from "./errorShout.ts";
 import { presetName } from "./settingsPresets.ts";
 import { firstFilledBuy } from "./firstFill.ts";
@@ -347,6 +352,13 @@ function App() {
   // the feed can never show different poses. Before the feed first
   // reports (no snapshot yet), the unconfirmed "normal" pose shows.
   const [agentPose, setAgentPose] = useState<AgentPose>("normal");
+  // The character's user-chosen name (device-local; "" = キャラ).
+  const [agentName, setAgentName] = useState<string>(() => loadAgentName());
+  const changeAgentName = (raw: string) => {
+    const next = sanitizeAgentName(raw);
+    saveAgentName(next);
+    setAgentName(next);
+  };
   // Line mode: while the buy-run line stands (the feed reports
   // the buyLine pose), the whole page washes Sui blue — the
   // avatar's blue pose grown into an ambient theme. The class
@@ -595,6 +607,8 @@ function App() {
           celebrating={buyCelebration}
           shout={shout}
           hardMode={data != null && presetName(data.settings) === "hard"}
+          agentName={agentName}
+          onRename={changeAgentName}
         />
       )}
       {restoringSession ? (
@@ -706,6 +720,7 @@ function App() {
                       onCelebrate={handleBuyCelebration}
                       pairLabel={data?.pair === "WAL_USDC" ? "WAL" : "SUI"}
                       active={activeTab === "Live"}
+                      agentName={agentName}
                     />
                   ) : (
                     <p role="status">
@@ -859,6 +874,7 @@ function App() {
                     : "stopped"
           }
           onDone={() => setBooting(false)}
+          agentName={agentName}
         />
       )}
     </>

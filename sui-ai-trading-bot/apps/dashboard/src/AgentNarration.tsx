@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import type { OperationsSnapshot } from "./operationsTypes.ts";
 import { botVital } from "./botVital.ts";
 import type { ErrorShout } from "./errorShout.ts";
+import { agentDisplayName } from "./agentName.ts";
 import {
   advanceNarration,
   agentPose,
@@ -217,10 +218,17 @@ export function AgentHeaderAvatar({
   celebrating = false,
   shout = null,
   hardMode = false,
+  agentName = "",
+  onRename,
 }: {
   pose: AgentPose;
   celebrating?: boolean;
   shout?: ErrorShout | null;
+  /** The character's user-chosen name ("" shows as キャラ). */
+  agentName?: string;
+  /** When set, tapping the avatar opens the rename editor and
+   * saving calls this with the raw input (sanitised upstream). */
+  onRename?: (name: string) => void;
   /** The saved settings are the hard-mode preset: the working
    * poses wear the hard artwork, and on the base poses (normal /
    * laptop) the pill says so too — the pointing poses keep their
@@ -245,6 +253,8 @@ export function AgentHeaderAvatar({
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
   const shouting = shout !== null;
   const shownPose: AgentPose = shouting
     ? "normal"
@@ -313,6 +323,59 @@ export function AgentHeaderAvatar({
               ? "ハードモード中"
               : POSE_LABEL[shownPose]}
       </p>
+      {onRename && (
+        <button
+          type="button"
+          className="agent-avatar-tap"
+          aria-label={`${agentDisplayName(agentName)}の名前を変える`}
+          aria-expanded={renameOpen}
+          onClick={() => {
+            setRenameDraft(agentName);
+            setRenameOpen((v) => !v);
+          }}
+        >
+          <span className="agent-avatar-edit-badge" aria-hidden="true">
+            ✎
+          </span>
+        </button>
+      )}
+      {onRename && renameOpen && (
+        <form
+          className="agent-rename"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onRename(renameDraft);
+            setRenameOpen(false);
+          }}
+        >
+          <label>
+            キャラの名前
+            <input
+              type="text"
+              value={renameDraft}
+              maxLength={20}
+              placeholder="キャラ"
+              aria-label="キャラの名前"
+              onChange={(e) => setRenameDraft(e.target.value)}
+            />
+          </label>
+          <div className="agent-rename-actions">
+            <button type="submit">保存</button>
+            <button
+              type="button"
+              onClick={() => {
+                onRename("");
+                setRenameOpen(false);
+              }}
+            >
+              元に戻す
+            </button>
+            <button type="button" onClick={() => setRenameOpen(false)}>
+              やめる
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }
@@ -382,11 +445,14 @@ export function AgentFeedEntryRow({
   entry,
   justBought = false,
   onPromptChip,
+  speakerName = "キャラ",
 }: {
   entry: NarrationEntry;
   justBought?: boolean;
   /** Tapping the suggested question on a chatPrompt entry asks it. */
   onPromptChip?: (chip: string) => void;
+  /** The character's display name, for its speak-up tag. */
+  speakerName?: string;
 }) {
   const buy = isBuyTradeEntry(entry);
   return (
@@ -427,7 +493,7 @@ export function AgentFeedEntryRow({
         <span className="agent-feed-entry-tag reply">返信</span>
       )}
       {entry.kind === "chatPrompt" && (
-        <span className="agent-feed-entry-tag reply">キャラ</span>
+        <span className="agent-feed-entry-tag reply">{speakerName}</span>
       )}
       {buy && <span className="agent-feed-entry-tag buy">買えた！</span>}
       <p>{entry.text}</p>
@@ -451,9 +517,12 @@ export function AgentNarrationFeed({
   onCelebrate,
   pairLabel = "SUI",
   active = true,
+  agentName = "",
 }: {
   data: OperationsSnapshot;
   stale: boolean;
+  /** The character's user-chosen name ("" shows as キャラ). */
+  agentName?: string;
   /** Whether the narration tab is the one on screen. The feed
    * stays mounted (hidden) on other tabs; the fixed chat bar's
    * page-level effects must only apply while it is visible. */
@@ -468,6 +537,7 @@ export function AgentNarrationFeed({
    * so the app shell can run the buy celebration. */
   onCelebrate?: () => void;
 }) {
+  const displayName = agentDisplayName(agentName);
   const [narration, setNarration] = useState<NarrationState>(() =>
     restoreNarration(undefined, pairLabel),
   );
@@ -813,14 +883,14 @@ export function AgentNarrationFeed({
             aria-expanded={false}
             onClick={() => setChatOpen(true)}
           >
-            キャラに聞く
+            {displayName}に聞く
           </button>
         ) : (
           <>
         <div
           className="agent-chat-chips"
           role="group"
-          aria-label="キャラへの質問候補"
+          aria-label={`${displayName}への質問候補`}
         >
           {(chatTopic == null
             ? orderedChips(
@@ -871,8 +941,8 @@ export function AgentNarrationFeed({
             onCompositionEnd={() => {
               composingRef.current = false;
             }}
-            placeholder="キャラへのコメント"
-            aria-label="キャラへのコメント"
+            placeholder={`${displayName}へのコメント`}
+            aria-label={`${displayName}へのコメント`}
           />
           <button type="submit" disabled={chatThinking}>
             送信
@@ -911,6 +981,7 @@ export function AgentNarrationFeed({
                 entry={entry}
                 justBought={celebration?.entryId === entry.id}
                 onPromptChip={submitChat}
+                speakerName={displayName}
               />
             ))
         )}

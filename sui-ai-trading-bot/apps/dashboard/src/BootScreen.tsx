@@ -32,6 +32,8 @@ export function bootLines(input: {
   pairLabel: string;
   api: BootApiState;
   bot: BootBotState;
+  /** The character's user-chosen name, when one is set. */
+  agentName?: string;
 }): BootLine[] {
   return [
     { key: "token", label: "token", dots: "............", value: "OK", tone: "ok" },
@@ -67,7 +69,13 @@ export function bootLines(input: {
               ? "dim"
               : "plain",
     },
-    { key: "character", label: "character", dots: "........", value: "ready", tone: "ok" },
+    {
+      key: "character",
+      label: "character",
+      dots: "........",
+      value: input.agentName ? `${input.agentName} ready` : "ready",
+      tone: "ok",
+    },
   ];
 }
 
@@ -82,13 +90,15 @@ export function BootScreen({
   api,
   bot,
   onDone,
+  agentName = "",
 }: {
   pairLabel: string;
   api: BootApiState;
   bot: BootBotState;
   onDone: () => void;
+  agentName?: string;
 }) {
-  const lines = bootLines({ pairLabel, api, bot });
+  const lines = bootLines({ pairLabel, api, bot, agentName });
   const reducedMotion = usePrefersReducedMotion();
   const [step, setStep] = useState(reducedMotion ? lines.length : 0);
   const [leaving, setLeaving] = useState(false);
