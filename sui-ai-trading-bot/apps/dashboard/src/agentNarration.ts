@@ -109,6 +109,9 @@ export interface NarrationEntry {
    * ChatTopic as a plain string, to keep the modules decoupled):
    * the conversation memory the next reply reads. */
   topic?: string;
+  /** A slash-command reply: rendered as a monospace readout
+   * with a CMD tag, and never spoken aloud. */
+  mono?: boolean;
   /** The suggested question on a chatPrompt entry, rendered as a
    * tappable chip inside the entry. */
   promptChip?: string;

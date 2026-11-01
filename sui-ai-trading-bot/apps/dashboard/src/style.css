@@ -4779,3 +4779,11 @@ summary {
   border-color: #43dfb2;
   color: #43dfb2;
 }
+
+/* Slash-command replies render as terminal readouts. */
+.agent-feed-entry.mono p {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}

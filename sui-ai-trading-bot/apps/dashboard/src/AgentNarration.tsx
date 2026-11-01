@@ -16,6 +16,11 @@ import {
   type AgentSpeaker,
 } from "./voiceSpeech.ts";
 import {
+  commandSuggestions,
+  isCommandText,
+  runChatCommand,
+} from "./chatCommands.ts";
+import {
   advanceNarration,
   agentPose,
   BUY_CELEBRATION_MS,
@@ -488,7 +493,7 @@ export function AgentFeedEntryRow({
   const buy = isBuyTradeEntry(entry);
   return (
     <div
-      className={`agent-feed-entry ${entry.kind}${buy ? " buy" : ""}${justBought ? " just-bought" : ""}`}
+      className={`agent-feed-entry ${entry.kind}${buy ? " buy" : ""}${justBought ? " just-bought" : ""}${entry.mono ? " mono" : ""}`}
     >
       <time dateTime={new Date(entry.at).toISOString()}>
         {timeText(entry.at)}
@@ -521,7 +526,9 @@ export function AgentFeedEntryRow({
         <span className="agent-feed-entry-tag user">あなた</span>
       )}
       {entry.kind === "chatReply" && (
-        <span className="agent-feed-entry-tag reply">返信</span>
+        <span className="agent-feed-entry-tag reply">
+          {entry.mono ? "CMD" : "返信"}
+        </span>
       )}
       {entry.kind === "chatPrompt" && (
         <span className="agent-feed-entry-tag reply">{speakerName}</span>
@@ -807,7 +814,10 @@ export function AgentNarrationFeed({
         exchangeCount: prev.entries.filter((e) => e.kind === "chatReply")
           .length,
       };
-      const reply = agentReply(text, ctx);
+      const command = isCommandText(text);
+      const reply = command
+        ? { text: runChatCommand(text, ctx), topic: null, mono: true }
+        : { ...agentReply(text, ctx), mono: false };
       const landedAt = Date.now();
       const next: NarrationState = {
         ...prev,
@@ -818,7 +828,8 @@ export function AgentNarrationFeed({
             at: landedAt,
             kind: "chatReply",
             text: reply.text,
-            topic: reply.topic,
+            topic: reply.topic ?? undefined,
+            mono: reply.mono || undefined,
           } satisfies NarrationEntry,
         ]),
         nextEntryId: prev.nextEntryId + 1,
@@ -829,7 +840,8 @@ export function AgentNarrationFeed({
       setChatTopic(reply.topic);
       setChatReplyAt(landedAt);
       setChatReplyText(reply.text);
-      speakReply(reply.text);
+      // A command readout is for the eyes, not the voice.
+      if (!command) speakReply(reply.text);
       setChatThinking(false);
     }, 650);
   };
@@ -1045,33 +1057,46 @@ export function AgentNarrationFeed({
           role="group"
           aria-label={`${displayName}への質問候補`}
         >
-          {(chatTopic == null
-            ? orderedChips(
-                narration.entries
-                  .filter((e) => e.kind === "chatUser")
-                  .map((e) => e.text),
-              )
-            : followUpChips(chatTopic)
-          ).map(
-            (chip) => (
+          {isCommandText(chatInput) ? (
+            commandSuggestions(chatInput).map((cmd) => (
               <button
-                key={chip}
+                key={cmd.name}
                 type="button"
                 disabled={chatThinking}
-                onClick={() => submitChat(chip)}
+                onClick={() => submitChat(cmd.name)}
               >
-                {chip}
+                {cmd.name}（{cmd.hint}）
               </button>
-            ),
-          )}
-          {chatTopic != null && (
-            <button
-              type="button"
-              disabled={chatThinking}
-              onClick={() => setChatTopic(null)}
-            >
-              ほかの質問
-            </button>
+            ))
+          ) : (
+            <>
+              {(chatTopic == null
+                ? orderedChips(
+                    narration.entries
+                      .filter((e) => e.kind === "chatUser")
+                      .map((e) => e.text),
+                  )
+                : followUpChips(chatTopic)
+              ).map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  disabled={chatThinking}
+                  onClick={() => submitChat(chip)}
+                >
+                  {chip}
+                </button>
+              ))}
+              {chatTopic != null && (
+                <button
+                  type="button"
+                  disabled={chatThinking}
+                  onClick={() => setChatTopic(null)}
+                >
+                  ほかの質問
+                </button>
+              )}
+            </>
           )}
           {speechSupported && (
             <button
