@@ -5,11 +5,12 @@ import { ema, rsi } from "../../../packages/indicators/src/index.ts";
  * A model outlook for the next candles, drawn on the price chart.
  *
  * This is NOT a price prediction and never feeds the bot: it is a
- * transparent statistical sketch — the recent EMA20 trend extended
- * with damping, widened by the recent average true range — labelled
- * as a model （模式） wherever it is shown. It fails closed (null)
- * unless the trailing candles are contiguous and long enough to
- * carry a trend and a volatility estimate.
+ * transparent statistical sketch — a blended trend extended with
+ * damping, widened by a cone whose shape was measured from real
+ * forecast errors (in ATR units, per step) — labelled as a model
+ * （模式） wherever it is shown. It fails closed (null) unless the
+ * trailing candles are contiguous and long enough to carry a
+ * trend and a volatility estimate.
  */
 export const FORECAST_BARS = 24;
 
@@ -42,17 +43,36 @@ export interface ForecastParams {
   driftMode: "ema" | "blend";
 }
 
-/** Calibrated by walk-forward evaluation on real SUI/USDC
- * 5-minute candles (1,000 candles, 2026-10-29..11-01, 299
- * origins): cone coverage 0.81, horizon-end MAE 0.91%. The same
- * evaluation found the 2-hour direction is a coin flip (about
- * 50%) except when the drift is strong — see DIRECTION_MIN_DRIFT. */
+/** Drift calibrated by walk-forward evaluation on real SUI/USDC
+ * 5-minute candles: horizon-end MAE 0.91% (3.5-day window). The
+ * same evaluation found the 2-hour direction is a coin flip
+ * (about 50%) except when the drift is strong — see
+ * DIRECTION_MIN_DRIFT. bandFactor now scales the empirical cone
+ * shape below (1 = as measured). */
 export const FORECAST_PARAMS: ForecastParams = {
   slopeLookback: 6,
   damping: 0.85,
-  bandFactor: 0.75,
+  bandFactor: 1,
   driftMode: "blend",
 };
+
+/** Empirical cone shape: per-step 10%/90% quantiles of actual
+ * forecast errors in ATR units, measured walk-forward on 9,991
+ * SUI/USDC 5-minute candles (2026-09-27..11-01, 2,297 calibration
+ * origins, target coverage 80%). Held-out coverage was 0.846 vs
+ * 0.781 for the previous ATR×√t cone. Downside excursions run
+ * wider than upside ones in the sample, hence the asymmetry.
+ * Re-measure periodically; the shape ages with the market. */
+export const CONE_UPPER_SHAPE = [
+  1.171, 1.28, 1.54, 1.78, 1.988, 2.174, 2.363, 2.553, 2.721, 2.856,
+  2.966, 3.082, 3.16, 3.268, 3.357, 3.494, 3.59, 3.692, 3.794, 3.884,
+  3.946, 3.946, 4.018, 4.036,
+];
+export const CONE_LOWER_SHAPE = [
+  1.057, 1.177, 1.443, 1.688, 1.928, 2.118, 2.263, 2.398, 2.551,
+  2.752, 2.936, 3.102, 3.234, 3.347, 3.479, 3.598, 3.741, 3.841,
+  3.935, 4.027, 4.171, 4.259, 4.375, 4.38,
+];
 
 /** A direction word is only claimed when the projected drift is
  * at least this large: at |drift| >= 0.5% the walk-forward hit
@@ -135,17 +155,32 @@ export function forecastWith(
   for (let i = 0; i < bars; i++) {
     drift += slope * params.damping ** i;
     const mid = lastClose + drift,
-      half = atr * Math.sqrt(i + 1) * params.bandFactor;
+      // Beyond the measured horizon, keep widening like the
+      // shape's own tail (square-root on the last measured step).
+      stretch =
+        i < CONE_UPPER_SHAPE.length
+          ? 1
+          : Math.sqrt((i + 1) / CONE_UPPER_SHAPE.length),
+      up =
+        atr *
+        params.bandFactor *
+        CONE_UPPER_SHAPE[Math.min(i, CONE_UPPER_SHAPE.length - 1)] *
+        stretch,
+      low =
+        atr *
+        params.bandFactor *
+        CONE_LOWER_SHAPE[Math.min(i, CONE_LOWER_SHAPE.length - 1)] *
+        stretch;
     points.push({
       timestamp: last.timestamp + (i + 1) * last.timeframe,
       mid,
-      upper: mid + half,
-      lower: mid - half,
+      upper: mid + up,
+      lower: mid - low,
     });
   }
   const driftPct = drift / lastClose,
     bandPct =
-      (points.at(-1)!.upper - points.at(-1)!.mid) / lastClose,
+      (points.at(-1)!.upper - points.at(-1)!.lower) / 2 / lastClose,
     direction =
       Math.abs(driftPct) >= DIRECTION_MIN_DRIFT
         ? driftPct > 0

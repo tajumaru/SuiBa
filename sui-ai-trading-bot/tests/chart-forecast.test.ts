@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import type { Candle } from "../packages/shared/src/index.ts";
 import {
   chartForecast,
+  CONE_LOWER_SHAPE,
+  CONE_UPPER_SHAPE,
   FORECAST_BARS,
 } from "../apps/dashboard/src/chartForecast.ts";
 import { PriceChart } from "../apps/dashboard/src/PriceChart.tsx";
@@ -64,6 +66,22 @@ describe("chartForecast", () => {
     const fc = chartForecast(flat)!;
     expect(fc.direction).toBe("flat");
     expect(fc.directionWord).toBe("横ばい気味");
+  });
+
+  it("uses the measured asymmetric cone shape", () => {
+    expect(CONE_UPPER_SHAPE).toHaveLength(FORECAST_BARS);
+    expect(CONE_LOWER_SHAPE).toHaveLength(FORECAST_BARS);
+    for (const shape of [CONE_UPPER_SHAPE, CONE_LOWER_SHAPE]) {
+      expect(shape[0]).toBeGreaterThan(0);
+      for (let i = 1; i < shape.length; i++)
+        expect(shape[i]).toBeGreaterThanOrEqual(shape[i - 1]);
+    }
+    // In the measured sample, downside excursions ran wider.
+    const fc = chartForecast(rising)!;
+    const lastPoint = fc.points.at(-1)!;
+    expect(lastPoint.mid - lastPoint.lower).toBeGreaterThan(
+      lastPoint.upper - lastPoint.mid,
+    );
   });
 
   it("fails closed on short, gapped or motionless input", () => {
