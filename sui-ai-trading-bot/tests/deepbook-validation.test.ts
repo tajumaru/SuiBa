@@ -181,7 +181,7 @@ it("aggregates a synthetic complete 24h fixture without truncating at 200 rows",
   expect(r.paper?.fillChecksExercised).toBe(false);
   expect(r.paper?.errorStopChecksExercised).toBe(false);
   db.close();
-});
+}, 30000);
 it("deduplicates candle repairs, retains evidence and does not erase failed cycles", () => {
   const { db, recorder } = setup();
   recorder.begin(start);

@@ -380,8 +380,8 @@ it("diagnostic reads cannot finish recovery or restore an automatic start cancel
 it("restarts recovery progress after another failure and hard-stops a long episode", () => {
   const { db, monitor } = setup();
   const start = Date.now();
-  const f = failure();
-  monitor.transientFailure(f.api, f.code, f);
+  const f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
   monitor.market(start, start);
   monitor.beginCycle();
   monitor.recoveryCycle({ market: true, sui: true }, start + 1000);
