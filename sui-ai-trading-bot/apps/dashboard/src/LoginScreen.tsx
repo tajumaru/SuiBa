@@ -31,13 +31,14 @@ export function LoginScreen({
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
+    const attemptsInstance = attempts.current;
     const result = removeLegacyPatternLock();
     setMigration((previous) =>
       previous === "removed" && result === "empty" ? previous : result,
     );
     return () => {
       mounted.current = false;
-      attempts.current.invalidate();
+      attemptsInstance.invalidate();
       if (timer.current !== null) clearTimeout(timer.current);
     };
   }, []);

@@ -141,7 +141,7 @@ export function PriceChart({
     finish = visible.end ?? 1;
   const gapQuality = useMemo(
     () => chartGapQuality(c, start, finish, tf),
-    [visible, tf],
+    [visible, tf, c, start, finish],
   );
   const selectedGap = gapQuality.entries.find((g) => g.timestamp === gapTime);
   const xFinish = fc ? latestEnd + FORECAST_BARS * tf : finish;
