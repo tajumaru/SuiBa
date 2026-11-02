@@ -221,6 +221,17 @@ export function AgentHeaderAvatar({
   const artworkHard = hardMode && !shouting && !celebrating;
   const hardShown =
     artworkHard && (shownPose === "normal" || shownPose === "laptop");
+  const stateLabel = shouting
+    ? shout.label
+    : celebrating
+      ? "買えた！"
+      : listening
+        ? "聞いてる…"
+        : speaking
+          ? "喋ってる…"
+          : hardShown
+            ? "ハードモード中"
+            : POSE_LABEL[shownPose];
   return (
     <div className={`agent-avatar-dock${stuck ? " stuck" : ""}`}>
       <div
@@ -275,17 +286,12 @@ export function AgentHeaderAvatar({
           }
           aria-hidden="true"
         />
-        {shouting
-          ? shout.label
-          : celebrating
-            ? "買えた！"
-            : listening
-              ? "聞いてる…"
-              : speaking
-                ? "喋ってる…"
-                : hardShown
-                  ? "ハードモード中"
-                  : POSE_LABEL[shownPose]}
+        {agentName !== "" && (
+          <span className="agent-avatar-name">
+            {agentDisplayName(agentName)}：
+          </span>
+        )}
+        {stateLabel}
       </p>
       {onRename && (
         <button

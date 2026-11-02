@@ -271,6 +271,12 @@
   white-space: nowrap;
   color: #dce8f0;
 }
+/* A custom name rides at the head of the pill ("シロ：監視中")
+   so the rename is visible on screen, not only in the chat.
+   The default name keeps the pill exactly as it was. */
+.agent-avatar-name {
+  font-weight: 600;
+}
 .agent-avatar-dot {
   flex: 0 0 auto;
   width: 8px;

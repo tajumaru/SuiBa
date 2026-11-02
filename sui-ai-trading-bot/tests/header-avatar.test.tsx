@@ -34,6 +34,20 @@ const EXPECTED: Record<AgentPose, { label: string; dot: string }> = {
 };
 
 describe("agent header avatar", () => {
+  it("shows a custom name at the head of the pill, and only then", () => {
+    const named = renderToStaticMarkup(
+      <AgentHeaderAvatar pose="laptop" agentName="シロ" />,
+    );
+    expect(named).toContain('class="agent-avatar-name"');
+    expect(named).toContain("シロ：");
+    expect(named).toContain(EXPECTED.laptop.label);
+    const unnamed = renderToStaticMarkup(
+      <AgentHeaderAvatar pose="laptop" />,
+    );
+    expect(unnamed).not.toContain("agent-avatar-name");
+    expect(unnamed).not.toContain("キャラ：");
+  });
+
   it("keys the circle to the current pose and labels the pill", () => {
     for (const pose of POSES) {
       const html = renderToStaticMarkup(<AgentHeaderAvatar pose={pose} />);
