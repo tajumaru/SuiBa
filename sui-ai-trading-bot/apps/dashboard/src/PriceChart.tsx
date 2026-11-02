@@ -16,6 +16,39 @@ import {
   chartTicks,
 } from "./chartPresentation.ts";
 import { number, dateTime, label } from "./presentation.ts";
+const hoverTimeFormat = new Intl.DateTimeFormat("ja-JP", {
+  timeZone: "Asia/Tokyo",
+  month: "numeric",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+/**
+ * The two readout lines shown inside the chart while a candle
+ * is hovered or tapped: when it started and where it closed
+ * (with the move across the candle), then the rest of the
+ * OHLC. The full record (volume, source, provenance) stays in
+ * the detail panel below; this is the at-a-glance version.
+ */
+export function candleHoverLines(b: Candle): {
+  main: string;
+  sub: string;
+} {
+  const pct =
+    b.open > 0 ? ((b.close - b.open) / b.open) * 100 : 0;
+  return {
+    main: `${hoverTimeFormat.format(b.timestamp * 1000)} 終 ${number(b.close, 4)} (${pct >= 0 ? "+" : ""}${number(pct, 2)}%)`,
+    sub: `始 ${number(b.open, 4)} 高 ${number(b.high, 4)} 安 ${number(b.low, 4)}`,
+  };
+}
+/** Rough rendered width of a readout line (full-width glyphs
+ * count double) so the backdrop box can hug the text. */
+function hoverLineWidth(line: string): number {
+  let w = 0;
+  for (const ch of line) w += ch.charCodeAt(0) > 0x2000 ? 11.5 : 6.9;
+  return w;
+}
 export function PriceChart({
   pair = "SUI_USDC",
   candles,
@@ -184,6 +217,27 @@ export function PriceChart({
     [visible, w, min, max, tf],
   );
   const chosen = c.find((b) => b.timestamp === selected) ?? c.at(-1);
+  // In-chart readout for the hovered/tapped candle. Only while
+  // a candle is actually selected — the default "latest" state
+  // keeps the chart clean.
+  const hoverLines =
+    selected != null && chosen ? candleHoverLines(chosen) : null;
+  const hoverCx = chosen ? x(chosen.timestamp + tf / 2) : 0;
+  const hoverBoxW = hoverLines
+    ? Math.max(hoverLineWidth(hoverLines.main), hoverLineWidth(hoverLines.sub)) +
+      16
+    : 0;
+  const hoverBoxX = hoverLines
+    ? Math.min(
+        Math.max(
+          left,
+          hoverCx + 10 + hoverBoxW <= right
+            ? hoverCx + 10
+            : hoverCx - 10 - hoverBoxW,
+        ),
+        Math.max(left, right - hoverBoxW),
+      )
+    : 0;
   const pick = (clientX: number) => {
     if (!svg.current || !c.length) return;
     const rect = svg.current.getBoundingClientRect(),
@@ -565,6 +619,53 @@ export function PriceChart({
                 stroke="#b0c1cf"
                 strokeDasharray="3 3"
               />
+            )}
+            {hoverLines && chosen && (
+              <g className="chart-hover-readout" pointerEvents="none">
+                <line
+                  x1={left}
+                  x2={right}
+                  y1={y(chosen.close)}
+                  y2={y(chosen.close)}
+                  stroke="#b0c1cf"
+                  strokeDasharray="2 4"
+                  opacity="0.35"
+                />
+                <circle
+                  cx={hoverCx}
+                  cy={y(chosen.close)}
+                  r="3"
+                  fill="none"
+                  stroke="#d7e3ea"
+                  strokeWidth="1.4"
+                />
+                <rect
+                  x={hoverBoxX}
+                  y="30"
+                  width={hoverBoxW}
+                  height="37"
+                  fill="rgba(4,10,16,0.87)"
+                  stroke="#1b2836"
+                />
+                <text
+                  x={hoverBoxX + 8}
+                  y="46"
+                  fill="#d7e3ea"
+                  fontSize="11.5"
+                  fontFamily="ui-monospace, Menlo, monospace"
+                >
+                  {hoverLines.main}
+                </text>
+                <text
+                  x={hoverBoxX + 8}
+                  y="61"
+                  fill="#9fb8ad"
+                  fontSize="11.5"
+                  fontFamily="ui-monospace, Menlo, monospace"
+                >
+                  {hoverLines.sub}
+                </text>
+              </g>
             )}
             {chartTicks(c, plot).map((t, i, ticks) => (
               <text
