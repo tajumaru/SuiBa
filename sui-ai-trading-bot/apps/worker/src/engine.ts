@@ -61,6 +61,7 @@ export class BotEngine {
     readonly pair: TradingPair = "SUI_USDC",
     private readonly deploymentBlocked: () => boolean = () => false,
     private readonly chainInfoSource: () => ChainInfo | null = () => null,
+    private readonly bookImbalanceSource: () => number | null = () => null,
   ) {
     const portfolio = db.portfolio();
     const baseCoin = tradingPairs[pair].base;
@@ -801,6 +802,12 @@ export class BotEngine {
     return {
       pair: this.pair,
       chain: this.chainInfoSource(),
+      // Display-only book imbalance for the model outlook:
+      // the live validated book when the trading path has one
+      // (DeepBook routes), else the independent sampler.
+      bookImbalance:
+        this.market.bookImbalance?.(Date.now()) ??
+        this.bookImbalanceSource(),
       marketData: this.market.status?.() ?? null,
       marketQuality: this.db.get("market_quality") ?? null,
       mode: "PAPER",

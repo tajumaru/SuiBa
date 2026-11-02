@@ -53,6 +53,10 @@ import {
 } from "../../../packages/shared/src/index.ts";
 import { BotEngine } from "./engine.ts";
 import { ChainSampler, createChainInfoFetcher } from "./chainInfo.ts";
+import {
+  BookImbalanceSampler,
+  createBookImbalanceFetcher,
+} from "./bookInfo.ts";
 import { backtestMetadata, savedComparison } from "./backtest-service.ts";
 import { comparisonOptionsSchema } from "../../../packages/backtest-engine/src/index.ts";
 if (process.env.MODE && process.env.MODE !== "PAPER")
@@ -128,6 +132,25 @@ const pollChain = async () => {
 void pollChain();
 const chainTimer = setInterval(() => void pollChain(), 15000);
 chainTimer.unref();
+// Display-only book imbalance, sampled on its own fetch path
+// for the dashboard's model outlook (see bookInfo.ts). The
+// DeepBook routes already hold a validated book; this sampler
+// covers the GeckoTerminal route, which never fetches one.
+const bookSamplers: Record<TradingPair, BookImbalanceSampler> = {
+  SUI_USDC: new BookImbalanceSampler(),
+  WAL_USDC: new BookImbalanceSampler(),
+};
+const bookFetchers: Record<TradingPair, () => Promise<number | null>> = {
+  SUI_USDC: createBookImbalanceFetcher("SUI_USDC"),
+  WAL_USDC: createBookImbalanceFetcher("WAL_USDC"),
+};
+const pollBooks = async () => {
+  for (const p of ["SUI_USDC", "WAL_USDC"] as const)
+    bookSamplers[p].observe(await bookFetchers[p]());
+};
+void pollBooks();
+const bookTimer = setInterval(() => void pollBooks(), 45000);
+bookTimer.unref();
 function createEngine(database: BotDatabase, selected: TradingPair) {
   const client = new ReadOnlySuiClient(process.env.SUI_GRPC_URL, {
     onObservation: (event) =>
@@ -157,6 +180,7 @@ function createEngine(database: BotDatabase, selected: TradingPair) {
         selected,
         () => stopping || deploymentGate.blocked(),
         () => chainSampler.current(),
+        () => bookSamplers[selected].current(),
       ),
     };
   } catch (error) {

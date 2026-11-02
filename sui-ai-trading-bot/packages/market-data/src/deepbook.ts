@@ -136,6 +136,44 @@ export function validateBook(
   }
   return { timestamp, bid, ask, spread, bids, asks };
 }
+/**
+ * Order-book imbalance within a price band around the mid:
+ * (bid notional − ask notional) / (bid + ask notional), in
+ * [-1, 1]. Display-grade telemetry for the dashboard's model
+ * outlook — never an input to trading or safety decisions.
+ * Fails closed (null) when either side is missing or too thin
+ * inside the band (fewer than two levels), where the ratio
+ * would just be noise.
+ */
+export function bookImbalance(
+  book: { bids: number[][]; asks: number[][] },
+  bandPct = 0.01,
+): number | null {
+  const bid0 = book.bids[0]?.[0],
+    ask0 = book.asks[0]?.[0];
+  if (!bid0 || !ask0 || !(ask0 > bid0)) return null;
+  const mid = (bid0 + ask0) / 2,
+    lo = mid * (1 - bandPct),
+    hi = mid * (1 + bandPct);
+  let bidNotional = 0,
+    askNotional = 0,
+    bidLevels = 0,
+    askLevels = 0;
+  for (const [price, qty] of book.bids) {
+    if (price < lo) break;
+    bidNotional += price * qty;
+    bidLevels++;
+  }
+  for (const [price, qty] of book.asks) {
+    if (price > hi) break;
+    askNotional += price * qty;
+    askLevels++;
+  }
+  if (bidLevels < 2 || askLevels < 2) return null;
+  if (!(bidNotional > 0) || !(askNotional > 0)) return null;
+  const total = bidNotional + askNotional;
+  return Math.max(-1, Math.min(1, (bidNotional - askNotional) / total));
+}
 /** Same-response evidence, including books rejected by the safety gate. No rescaling. */
 export function bookObservation(
   raw: unknown,
@@ -338,6 +376,12 @@ export class DeepBookMarketData {
       limits.maxOrder,
       limits.maxSlippage,
     );
+  }
+  /** Display-only book imbalance from the last validated book;
+   * null when there is no book or it is older than 30 seconds. */
+  imbalance(now: number): number | null {
+    if (!this.book || now - this.book.timestamp > 30000) return null;
+    return bookImbalance(this.book);
   }
   private async checkedRead(path: string, ttl = 0) {
     const budget = currentReadBudget();

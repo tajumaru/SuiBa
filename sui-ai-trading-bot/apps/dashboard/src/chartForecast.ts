@@ -30,6 +30,9 @@ export interface ChartForecast {
   bandPct: number;
   direction: "up" | "down" | "flat";
   directionWord: string;
+  /** The part of driftPct contributed by the order-book tilt
+   * (0 when no imbalance was supplied). */
+  bookTiltPct: number;
 }
 
 const MIN_RUN = 26;
@@ -79,17 +82,26 @@ export const CONE_LOWER_SHAPE = [
  * rate was 67% (n=33); below it, direction carried no signal. */
 export const DIRECTION_MIN_DRIFT = 0.005;
 
+/** How far a fully one-sided book may lean the outlook's mid
+ * over the whole horizon, in ATR units. Deliberately small:
+ * book history is not recorded, so this strength cannot be
+ * back-tested — it starts conservative and the forecast score
+ * (forecastLog) judges it on live outcomes. */
+export const BOOK_TILT_MAX_ATR = 0.5;
+
 export function chartForecast(
   candles: Candle[],
   bars: number = FORECAST_BARS,
+  imbalance: number | null = null,
 ): ChartForecast | null {
-  return forecastWith(candles, bars, FORECAST_PARAMS);
+  return forecastWith(candles, bars, FORECAST_PARAMS, imbalance);
 }
 
 export function forecastWith(
   candles: Candle[],
   bars: number,
   params: ForecastParams,
+  imbalance: number | null = null,
 ): ChartForecast | null {
   if (!candles.length || bars < 1) return null;
   // Only the trailing contiguous run can carry a trend; a gap
@@ -150,10 +162,18 @@ export function forecastWith(
     !(lastClose > 0)
   )
     return null;
+  // Book tilt: a steady lean added step by step, so the mid
+  // ramps toward the heavy side of the book. The cone keeps
+  // its measured shape around the tilted mid.
+  const tiltTotal =
+    imbalance == null || !Number.isFinite(imbalance)
+      ? 0
+      : Math.max(-1, Math.min(1, imbalance)) * BOOK_TILT_MAX_ATR * atr,
+    tiltStep = tiltTotal / bars;
   const points: ForecastPoint[] = [];
   let drift = 0;
   for (let i = 0; i < bars; i++) {
-    drift += slope * params.damping ** i;
+    drift += slope * params.damping ** i + tiltStep;
     const mid = lastClose + drift,
       // Beyond the measured horizon, keep widening like the
       // shape's own tail (square-root on the last measured step).
@@ -198,5 +218,6 @@ export function forecastWith(
         : direction === "down"
           ? "下向き気味"
           : "横ばい気味",
+    bookTiltPct: tiltTotal / lastClose,
   };
 }

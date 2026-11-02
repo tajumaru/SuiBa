@@ -24,6 +24,7 @@ export function PriceChart({
   synchronized = false,
   historyApi,
   forecastScoreText,
+  bookImbalance,
 }: {
   pair?: ReturnType<BotEngine["snapshot"]>["pair"];
   candles: Candle[];
@@ -32,6 +33,7 @@ export function PriceChart({
   synchronized?: boolean;
   historyApi?: SettingsApi;
   forecastScoreText?: string | null;
+  bookImbalance?: number | null;
 }) {
   const [gapTime, setGapTime] = useState<number | null>(null);
   const [history, setHistory] = useState<HistoryResult | null>(null),
@@ -93,8 +95,11 @@ export function PriceChart({
   // latest view; panning into the past hides it. Display only:
   // it never feeds the bot or the indicators.
   const fc = useMemo(
-    () => (anchor == null ? chartForecast(data.candles) : null),
-    [data, anchor],
+    () =>
+      anchor == null
+        ? chartForecast(data.candles, FORECAST_BARS, bookImbalance ?? null)
+        : null,
+    [data, anchor, bookImbalance],
   );
   const first = data.candles[0]?.timestamp ?? 0,
     available = latestEnd - first,
@@ -305,6 +310,8 @@ export function PriceChart({
           時間）の見通しは{fc.directionWord}、振れ幅 ±
           {number(fc.bandPct * 100, 1)}
           %。トレンドと値幅（ATR）から伸ばしたもので、実際の価格ではありません。
+          {fc.bookTiltPct !== 0 &&
+            `板の偏り（${fc.bookTiltPct > 0 ? "買い優勢" : "売り優勢"}）も少し反映しています。`}
         </p>
       )}
       {fc && tf === 300 && forecastScoreText && (

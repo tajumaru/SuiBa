@@ -27,6 +27,11 @@ export interface ForecastRecord {
   dir: "up" | "down" | "flat";
   up: number[];
   lo: number[];
+  /** Book-tilt share of the drift when recorded (fraction of
+   * startClose); null for records from before the tilt and
+   * for untilted forecasts. Lets the score judge the tilt on
+   * live outcomes later. */
+  tilt?: number | null;
 }
 
 export const MAX_FORECAST_RECORDS = 288;
@@ -48,6 +53,7 @@ export function forecastRecordFrom(
     dir: fc.direction,
     up: fc.points.map((p) => round6(p.upper)),
     lo: fc.points.map((p) => round6(p.lower)),
+    tilt: fc.bookTiltPct === 0 ? null : round6(fc.bookTiltPct),
   };
 }
 
@@ -71,6 +77,7 @@ const recordSchema = z.object({
   dir: z.enum(["up", "down", "flat"]),
   up: z.array(num).min(1).max(48),
   lo: z.array(num).min(1).max(48),
+  tilt: z.number().nullable().optional(),
 });
 const schema = z.array(recordSchema).max(MAX_FORECAST_RECORDS);
 

@@ -19,7 +19,7 @@ import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
 import { BootScreen } from "./BootScreen.tsx";
 import { ActivityGrass } from "./ActivityGrass.tsx";
 import { ChainStrip } from "./ChainStrip.tsx";
-import { chartForecast } from "./chartForecast.ts";
+import { chartForecast, FORECAST_BARS } from "./chartForecast.ts";
 import {
   appendForecastRecord,
   forecastRecordFrom,
@@ -187,6 +187,7 @@ function Chart(props: {
   synchronized?: boolean;
   historyApi?: import("./settingsPresets.ts").SettingsApi;
   forecastScoreText?: string | null;
+  bookImbalance?: number | null;
 }) {
   return props.kind === "Price" ? (
     <PriceChart
@@ -386,7 +387,7 @@ function App() {
     const candles300 = data.candlesByTimeframe[300],
       last = candles300.at(-1);
     if (!last) return;
-    const fc = chartForecast(candles300);
+    const fc = chartForecast(candles300, FORECAST_BARS, data.bookImbalance);
     if (!fc) return;
     setForecastLog((prev) => {
       const next = appendForecastRecord(
@@ -866,6 +867,7 @@ function App() {
                         synchronized
                         historyApi={api}
                         forecastScoreText={forecastScoreLine}
+                        bookImbalance={data.bookImbalance}
                       />
                     </section>
                     <details className="overview-details">
