@@ -4982,3 +4982,71 @@ summary {
   border-color: #2e5a8f;
   color: #8fb8dd;
 }
+
+/* Book lean bar: the DeepBook book's bid/ask split for the
+   current pair, growing from the centre. */
+.book-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 5px 12px;
+  background: #04070b;
+  border: 1px solid #123324;
+  border-radius: 6px;
+  color: #9fb8ad;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.book-bar-label {
+  color: #6fbcf0;
+  font-weight: 700;
+}
+.book-bar-track {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  min-width: 60px;
+  background: #0a141f;
+  border: 1px solid #123324;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.book-bar-center {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #2c4a3a;
+}
+.book-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.book-bar-fill.buy {
+  background: #43dfb2;
+}
+.book-bar-fill.sell {
+  background: #ff7d9c;
+}
+.book-bar-side.sell {
+  color: #e8a7b8;
+}
+.book-bar-side.buy {
+  color: #9fe8d2;
+}
+.book-bar-word {
+  font-weight: 600;
+}
+.book-bar-word.buy {
+  color: #43dfb2;
+}
+.book-bar-word.sell {
+  color: #ff7d9c;
+}
+.book-bar-word.even {
+  color: #e8f5ef;
+}

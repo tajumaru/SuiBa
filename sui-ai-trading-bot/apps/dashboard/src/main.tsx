@@ -19,6 +19,7 @@ import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
 import { BootScreen } from "./BootScreen.tsx";
 import { ActivityGrass } from "./ActivityGrass.tsx";
 import { ChainStrip } from "./ChainStrip.tsx";
+import { BookBar } from "./BookBar.tsx";
 import { chartForecast, FORECAST_BARS } from "./chartForecast.ts";
 import {
   appendForecastRecord,
@@ -780,6 +781,9 @@ function App() {
                 {/* The chain's own vital signs ride under the
                     ticker on every tab (display only). */}
                 <ChainStrip chain={data.chain} />
+                {/* The order book's lean, same sample that
+                    tilts the model outlook (display only). */}
+                <BookBar imbalance={data.bookImbalance} />
                 {/* The narration tab stays mounted (only hidden) so
                     the feed history accumulated from snapshot diffs
                     survives tab switches. */}
