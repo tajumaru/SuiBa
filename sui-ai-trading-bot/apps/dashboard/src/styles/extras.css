@@ -426,7 +426,7 @@
 .book-bar-track {
   position: relative;
   flex: 1;
-  height: 8px;
+  height: 12px;
   min-width: 60px;
   background: #0a141f;
   border: 1px solid #123324;
@@ -441,16 +441,11 @@
   width: 1px;
   background: #2c4a3a;
 }
-.book-bar-fill {
+.book-bar-wave {
   position: absolute;
-  top: 0;
-  bottom: 0;
-}
-.book-bar-fill.buy {
-  background: #43dfb2;
-}
-.book-bar-fill.sell {
-  background: #ff7d9c;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 .book-bar-side.sell {
   color: #e8a7b8;

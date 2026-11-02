@@ -19,14 +19,14 @@ describe("bookBarModel", () => {
 });
 
 describe("BookBar", () => {
-  it("renders the split and grows the fill toward the heavy side", () => {
+  it("renders the split and leans the liquid toward the heavy side", () => {
     const html = renderToStaticMarkup(<BookBar imbalance={0.3} />);
     expect(html).toContain("買い 65%");
     expect(html).toContain("売り 35%");
     expect(html).toContain("買い優勢");
-    expect(html).toContain("book-bar-fill buy");
+    expect(html).toContain("book-bar-wave buy");
     const sellHtml = renderToStaticMarkup(<BookBar imbalance={-0.6} />);
-    expect(sellHtml).toContain("book-bar-fill sell");
+    expect(sellHtml).toContain("book-bar-wave sell");
     expect(sellHtml).toContain("売り優勢");
   });
   it("hides itself without a sample", () => {
