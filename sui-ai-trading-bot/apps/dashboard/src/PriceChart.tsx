@@ -1,6 +1,10 @@
 import { chartGapQuality } from "../../../packages/shared/src/chart-gap-quality.ts";
 import { candleGeometry } from "./candleGeometry.ts";
-import { chartForecast, FORECAST_BARS } from "./chartForecast.ts";
+import {
+  chartForecast,
+  forecastLineCrossings,
+  FORECAST_BARS,
+} from "./chartForecast.ts";
 import { IndicatorPanel } from "./IndicatorPanel.tsx";
 import { chartSeries, lineSegments } from "./chartIndicators.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
@@ -58,6 +62,7 @@ export function PriceChart({
   historyApi,
   forecastScoreText,
   bookImbalance,
+  sellLines,
 }: {
   pair?: ReturnType<BotEngine["snapshot"]>["pair"];
   candles: Candle[];
@@ -67,6 +72,9 @@ export function PriceChart({
   historyApi?: SettingsApi;
   forecastScoreText?: string | null;
   bookImbalance?: number | null;
+  /** The open position's real sell lines (same prices the
+   * ticker counts down to), for forecast crossing marks. */
+  sellLines?: { tp: number; sl: number } | null;
 }) {
   const [gapTime, setGapTime] = useState<number | null>(null);
   const [history, setHistory] = useState<HistoryResult | null>(null),
@@ -212,6 +220,45 @@ export function PriceChart({
           .map((p) => `${x(p.timestamp + tf / 2)},${y(p.lower)}`),
       ].join(" ")
     : null;
+  // Where the outlook meets the position's sell lines, if it
+  // does: geometry over the sketch, labelled as such in place.
+  const crossings =
+    fc && sellLines ? forecastLineCrossings(fc.points, sellLines) : null;
+  const crossingMarks = crossings
+    ? (
+        [
+          {
+            key: "tp",
+            line: sellLines!.tp,
+            hit: crossings.tpMid,
+            edge: crossings.tpEdge,
+            color: "#43dfb2",
+            word: "利確ライン",
+          },
+          {
+            key: "sl",
+            line: sellLines!.sl,
+            hit: crossings.slMid,
+            edge: crossings.slEdge,
+            color: "#f77d8f",
+            word: "損切りライン",
+          },
+        ] as const
+      ).flatMap((m) => {
+        const c = m.hit ?? m.edge;
+        return c
+          ? [
+              {
+                ...m,
+                bars: c.bars,
+                cx: x(c.timestamp + tf / 2),
+                cy: y(m.line),
+                edgeOnly: !m.hit,
+              },
+            ]
+          : [];
+      })
+    : [];
   const geometry = useMemo(
     () => candleGeometry(c, x, y, dx),
     [visible, w, min, max, tf],
@@ -608,6 +655,45 @@ export function PriceChart({
                 >
                   予測
                 </text>
+                {crossingMarks.map((m) => (
+                  <g
+                    key={m.key}
+                    className="chart-forecast-crossing"
+                    opacity={m.edgeOnly ? 0.65 : 1}
+                  >
+                    <line
+                      x1={x(latestEnd)}
+                      x2={m.cx}
+                      y1={m.cy}
+                      y2={m.cy}
+                      stroke={m.color}
+                      strokeDasharray="3 3"
+                      opacity="0.55"
+                    />
+                    <circle
+                      cx={m.cx}
+                      cy={m.cy}
+                      r="3.2"
+                      fill={m.edgeOnly ? "none" : m.color}
+                      stroke={m.color}
+                      strokeWidth="1.4"
+                    />
+                    <text
+                      x={
+                        m.cx <= (left + right) / 2 ? m.cx + 6 : m.cx - 6
+                      }
+                      y={m.cy < 48 ? m.cy + 15 : m.cy - 7}
+                      textAnchor={
+                        m.cx <= (left + right) / 2 ? "start" : "end"
+                      }
+                      fill={m.color}
+                      fontSize="11"
+                      fontFamily="ui-monospace, Menlo, monospace"
+                    >
+                      {`${m.word} ${m.edgeOnly ? "幅では" : ""}あと${m.bars}本`}
+                    </text>
+                  </g>
+                ))}
               </g>
             )}
             {chosen && (

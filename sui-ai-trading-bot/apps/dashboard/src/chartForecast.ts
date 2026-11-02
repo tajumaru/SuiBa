@@ -221,3 +221,49 @@ export function forecastWith(
     bookTiltPct: tiltTotal / lastClose,
   };
 }
+
+export interface ForecastCrossing {
+  /** Bars ahead of the forecast origin (1-based) at which the
+   * path first reaches the line. */
+  bars: number;
+  timestamp: number;
+}
+
+export interface ForecastLineCrossings {
+  /** The centre path reaches the take-profit line. */
+  tpMid: ForecastCrossing | null;
+  /** Only the cone's upper edge reaches the take-profit line. */
+  tpEdge: ForecastCrossing | null;
+  /** The centre path reaches the stop-loss line. */
+  slMid: ForecastCrossing | null;
+  /** Only the cone's lower edge reaches the stop-loss line. */
+  slEdge: ForecastCrossing | null;
+}
+
+/**
+ * Where the model outlook meets the position's real sell lines
+ * (take-profit / stop-loss prices from sellLinesOf). Pure
+ * geometry over the sketch: "if price followed this model, it
+ * would touch the line at bar N" — it adds no new prediction
+ * and never feeds the bot. The edge crossing is reported only
+ * when the centre path itself does not reach.
+ */
+export function forecastLineCrossings(
+  points: ForecastPoint[],
+  lines: { tp: number; sl: number },
+): ForecastLineCrossings {
+  const first = (
+    test: (p: ForecastPoint) => boolean,
+  ): ForecastCrossing | null => {
+    const i = points.findIndex(test);
+    return i < 0 ? null : { bars: i + 1, timestamp: points[i].timestamp };
+  };
+  const tpMid = first((p) => p.mid >= lines.tp);
+  const slMid = first((p) => p.mid <= lines.sl);
+  return {
+    tpMid,
+    tpEdge: tpMid ? null : first((p) => p.upper >= lines.tp),
+    slMid,
+    slEdge: slMid ? null : first((p) => p.lower <= lines.sl),
+  };
+}

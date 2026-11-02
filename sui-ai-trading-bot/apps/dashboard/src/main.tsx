@@ -187,6 +187,7 @@ function Chart(props: {
   historyApi?: import("./settingsPresets.ts").SettingsApi;
   forecastScoreText?: string | null;
   bookImbalance?: number | null;
+  sellLines?: { tp: number; sl: number } | null;
 }) {
   return props.kind === "Price" ? (
     <PriceChart
@@ -870,6 +871,11 @@ function App() {
                         historyApi={api}
                         forecastScoreText={forecastScoreLine}
                         bookImbalance={data.bookImbalance}
+                        sellLines={
+                          operations.data?.decision
+                            ? sellLinesOf(operations.data.decision)
+                            : null
+                        }
                       />
                     </section>
                     <details className="overview-details">
