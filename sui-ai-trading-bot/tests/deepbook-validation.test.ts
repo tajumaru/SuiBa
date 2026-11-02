@@ -12,6 +12,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BotDatabase } from "../packages/database/src/index.ts";
+import type { Fill } from "../packages/paper-trading/src/index.ts";
+import type { AccountingCheck } from "../packages/paper-trading/src/reconciliation.ts";
+import type { CandidateAudit } from "../packages/shared/src/operations.ts";
 import {
   ValidationRecorder,
   assertValidationProfile,
@@ -542,11 +545,53 @@ it("rolls back PAPER order and trade when atomic validation evidence cannot be s
       "test",
       {},
       db.portfolio(),
-      { timestamp: start } as any,
+      {
+        orderId: "test",
+        side: "BUY",
+        timestamp: start,
+        quantity: 1,
+        price: 2,
+        fee: 0,
+        pnl: null,
+        slippage: 0,
+        priceImpact: 0,
+      } satisfies Fill,
       db.runtime(),
       {
-        audit: {} as any,
-        check: { ok: true } as any,
+        audit: {
+          id: "test",
+          orderId: "test",
+          timestamp: start,
+          createdAt: start,
+          side: "BUY",
+          requestedInputAtomic: "0",
+          quantityAtomic: null,
+          quotePriceUsdc: null,
+          quoteExpiresAt: null,
+          acquisitionCostUsdc: null,
+          expectedSaleUsdc: null,
+          saleModel: null,
+          dexFeeUsdc: null,
+          gasUsdc: null,
+          additionalFeeUsdc: null,
+          buyGasUsdc: null,
+          netProfitUsdc: null,
+          minProfitUsdc: "0",
+          minProfitPct: "0",
+          profitGuard: { evaluated: false, allowed: null, reason: null },
+          risk: { status: "NOT_EVALUATED", reasons: [] },
+          finalAction: "PENDING",
+          reasons: [],
+        } satisfies CandidateAudit,
+        check: {
+          timestamp: start,
+          orderId: "test",
+          ok: true,
+          reasons: [],
+          tolerance: { sui: "0", usdc: "0", equityUsdc: "0" },
+          expected: {},
+          actual: {},
+        } satisfies AccountingCheck,
         markPrice: 2,
         validation: { kind: "fill" },
       },

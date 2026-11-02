@@ -19,9 +19,15 @@ import {
   USDC,
   defaults,
   type Candle,
+  type CycleEvidence,
   type DexRouter,
   type QuoteResult,
+  type TradingDecision,
 } from "../packages/shared/src/index.ts";
+
+// A cycle_audits row: the cycle evidence plus the phase stamped on
+// append (START, then the same row shape closed with END).
+type CycleAuditRow = CycleEvidence & { phase: string };
 import type { CandidateAudit } from "../packages/shared/src/operations.ts";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -775,19 +781,19 @@ it("links running and stopped analyses to durable cycle start/end records withou
     t.db.set("runtime", { ...t.db.runtime(), running: false });
     t.engine.monitor.transition("MANUAL_STOP");
     await t.engine.tick();
-    const decisions = t.db.history<any>("strategy_decisions");
+    const decisions = t.db.history<TradingDecision>("strategy_decisions");
     expect(
-      decisions.map((d) => d.analysisContext.runningAtAnalysis).sort(),
+      decisions.map((d) => d.analysisContext!.runningAtAnalysis).sort(),
     ).toEqual([false, true]);
-    const events = t.db.history<any>("cycle_audits");
+    const events = t.db.history<CycleAuditRow>("cycle_audits");
     expect(events).toHaveLength(4);
     for (const d of decisions) {
       const rows = events.filter(
-        (e) => e.cycleId === d.analysisContext.cycleId,
+        (e) => e.cycleId === d.analysisContext!.cycleId,
       );
       expect(rows.map((e) => e.phase).sort()).toEqual(["END", "START"]);
-      expect(rows.find((e) => e.phase === "END").outcome).toBe(
-        d.analysisContext.runningAtAnalysis ? "STRATEGY_WAIT" : "SAFETY_GATE",
+      expect(rows.find((e) => e.phase === "END")!.outcome).toBe(
+        d.analysisContext!.runningAtAnalysis ? "STRATEGY_WAIT" : "SAFETY_GATE",
       );
     }
     expect(t.db.history("operation_candidates")).toHaveLength(0);
@@ -801,7 +807,7 @@ it("records failed acquisition as unevaluated rather than a strategy WAIT", asyn
     t.market.candles.mockRejectedValue(new Error("CANDLE_GAP"));
     await t.engine.tick();
     const end = t.db
-      .history<any>("cycle_audits")
+      .history<CycleAuditRow>("cycle_audits")
       .find((e) => e.phase === "END");
     expect(end).toMatchObject({
       outcome: "FAILED",
@@ -864,7 +870,7 @@ it("completes an isolated BUY and protective SELL with exact cash, fees, realize
         profitGuard: { allowed: true },
         risk: { status: "ALLOWED" },
       });
-    expect(t.db.history<any>("paper_checks").every((c) => c.ok)).toBe(true);
+    expect(t.db.history<{ ok: boolean }>("paper_checks").every((c) => c.ok)).toBe(true);
     expect(t.engine.monitor.ledger().ok).toBe(true);
     await t.engine.tick();
     expect(t.db.history("paper_trades")).toHaveLength(2); // same candle cannot double fill

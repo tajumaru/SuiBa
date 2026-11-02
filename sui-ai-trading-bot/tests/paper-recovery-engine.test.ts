@@ -15,9 +15,15 @@ import {
   SUI,
   type Candle,
   type Timeframe,
+  type CycleEvidence,
   type QuoteResult,
   type QuoteRequest,
 } from "../packages/shared/src/index.ts";
+import type { OperationEvent } from "../packages/shared/src/operations.ts";
+
+// A cycle_audits row: the cycle evidence plus the phase stamped on
+// append (START, then the same row shape closed with END).
+type CycleAuditRow = CycleEvidence & { phase: string };
 import { RuleBasedStrategy } from "../packages/strategy-engine/src/index.ts";
 import { ValidationRecorder } from "../apps/worker/src/validation.ts";
 import {
@@ -598,7 +604,7 @@ it("retry success cannot reopen orders in the failure cycle; clean full cycles r
   expect(t.db.history("paper_trades")).toHaveLength(0);
   expect(
     t.db
-      .history<any>("operation_events")
+      .history<OperationEvent>("operation_events")
       .filter((e) => e.code === "PAPER_NETWORK_RECOVERED"),
   ).toHaveLength(1);
 });
@@ -932,7 +938,7 @@ it("classifies stopped and recovery-confirmation analyses separately from eligib
   });
   expect(
     t.db
-      .history<any>("cycle_audits")
+      .history<CycleAuditRow>("cycle_audits")
       .filter((e) => e.phase === "END")
       .map((e) => e.outcome),
   ).toContain("RECOVERY_CONFIRMATION");

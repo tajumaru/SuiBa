@@ -25,6 +25,13 @@ vi.mock("node:perf_hooks", async (importOriginal) => ({
 }));
 import { installDetailedMetrics } from "../scripts/preflight-detailed-metrics.mjs";
 
+// The event-loop spike records this test reads back from the writer.
+interface SpikeRecord {
+  maxDelayMs?: number;
+  startedAt?: number;
+  endedAt?: number;
+}
+
 afterEach(() => {
   histograms.length = 0;
   vi.useRealTimers();
@@ -35,11 +42,11 @@ it("keeps a later window spike separate from an older cumulative peak", () => {
   class Database {
     static perfSink = null;
   }
-  const records: any[] = [];
+  const records: SpikeRecord[] = [];
   const writer: BufferedJsonlWriter = {
     onFlush: null,
     push(record) {
-      records.push(record);
+      records.push(record as SpikeRecord);
       return true;
     },
     flush() {},

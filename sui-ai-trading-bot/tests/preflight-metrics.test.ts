@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { installPreflightMetrics } from "../scripts/preflight-passive-metrics.mjs";
+import type { PreflightPassiveMetricsRecord } from "../scripts/preflight-passive-metrics.mjs";
 it("measures synchronous persistence without changing acknowledgement or exposing values", () => {
   class Fixture {
     saved = false;
@@ -13,7 +14,7 @@ it("measures synchronous persistence without changing acknowledgement or exposin
     }
   }
   const original = Fixture.prototype.append,
-    events: any[] = [];
+    events: PreflightPassiveMetricsRecord[] = [];
   const metrics = installPreflightMetrics(Fixture.prototype, (event) =>
     events.push(event),
   );
@@ -46,7 +47,7 @@ it("preserves thrown BUSY and counts nested errors once without retry", () => {
       return fn();
     }
   }
-  const events: any[] = [];
+  const events: PreflightPassiveMetricsRecord[] = [];
   const metrics = installPreflightMetrics(Fixture.prototype, (event) =>
     events.push(event),
   );

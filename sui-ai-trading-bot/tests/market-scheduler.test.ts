@@ -9,6 +9,7 @@ import { BotDatabase } from "../packages/database/src/index.ts";
 import { BotEngine } from "../apps/worker/src/engine.ts";
 import { ApiAccess } from "../packages/shared/src/api.ts";
 import type { Candle, Timeframe } from "../packages/shared/src/index.ts";
+import type { OperationEvent } from "../packages/shared/src/operations.ts";
 const boundary = Date.UTC(2026, 9, 21, 12, 40);
 const clock = { wall: () => Date.now(), mono: () => performance.now() };
 const input: CadenceInput = {
@@ -176,9 +177,9 @@ it("pauses (DEGRADED, resume pending) on the 67s fetch/361s candle stall, even d
     resumePending: true,
   });
   const stop = db
-    .history<any>("operation_events")
+    .history<OperationEvent>("operation_events")
     .find((x) => x.code === "MARKET_DATA_STALLED" && x.details);
-  expect(stop.details).toMatchObject({
+  expect(stop!.details).toMatchObject({
     candleAgeSeconds: 361,
     lastValidatedMarketAgeSeconds: 67,
     fetching: true,
@@ -240,9 +241,9 @@ it("does not exempt an in-flight request forever; deadline pauses via monotonic 
     resumePending: true,
   });
   const stop = db
-    .history<any>("operation_events")
+    .history<OperationEvent>("operation_events")
     .find((x) => x.code === "MARKET_DATA_STALLED" && x.details);
-  expect(stop.details).toMatchObject({
+  expect(stop!.details).toMatchObject({
     reasonDetail: "FETCH_DEADLINE_EXCEEDED",
     fetching: true,
   });

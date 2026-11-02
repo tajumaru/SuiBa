@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { requestIdentity } from "../packages/shared/src/http-errors.ts";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { OperationMonitor } from "../apps/worker/src/operations.ts";
+import type { OperationEvent } from "../packages/shared/src/operations.ts";
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -88,10 +89,10 @@ it("logs a successful-operation timestamp, phase, duration and bounded retry cou
   await vi.runAllTimersAsync();
   await rejected;
   const events = db
-    .range<any>("operation_events", 0, Date.now())
+    .range<OperationEvent>("operation_events", 0, Date.now())
     .filter((e) => e.kind === "API");
   expect(events).toHaveLength(3);
-  expect(events.map((e) => e.apiFailure.retryCount)).toEqual([0, 1, 2]);
+  expect(events.map((e) => e.apiFailure!.retryCount)).toEqual([0, 1, 2]);
   for (const e of events) {
     expect(e.apiFailure).toMatchObject({
       operation: "OHLCV_FETCH",
@@ -100,8 +101,8 @@ it("logs a successful-operation timestamp, phase, duration and bounded retry cou
       timeoutType: "HEADERS_OR_CONNECT",
       lastSuccessAt: succeededAt,
     });
-    expect(e.apiFailure.endedAt).toBeGreaterThanOrEqual(e.apiFailure.startedAt);
-    expect(e.apiFailure.elapsedMs).toBeGreaterThanOrEqual(0);
+    expect(e.apiFailure!.endedAt).toBeGreaterThanOrEqual(e.apiFailure!.startedAt!);
+    expect(e.apiFailure!.elapsedMs).toBeGreaterThanOrEqual(0);
   }
   expect(JSON.stringify(events)).not.toMatch(
     /DO_NOT_LOG|private key|secret header/,
