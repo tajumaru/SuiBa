@@ -21,7 +21,8 @@
     "test:e2e": "node scripts/run-project.mjs test:e2e",
     "verify:node": "node scripts/verify-node-version.mjs",
     "typecheck": "node scripts/run-project.mjs typecheck",
-    "test:offline": "node scripts/run-project.mjs test:offline"
+    "test:offline": "node scripts/run-project.mjs test:offline",
+    "lint": "node scripts/run-project.mjs lint"
   },
   "dependencies": {
     "@cetusprotocol/aggregator-sdk": "1.7.5",
@@ -33,13 +34,18 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9",
     "@playwright/test": "^1.64.1",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "eslint": "^9",
+    "eslint-plugin-react-hooks": "^5",
+    "globals": "^17.14.0",
     "prettier": "^3.9.10",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
+    "typescript-eslint": "^8",
     "vite": "^7.0.0",
     "vitest": "^3.2.0"
   }

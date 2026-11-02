@@ -197,6 +197,7 @@ export function verifyPaperBackup(directory: string): Manifest {
     name.length > 0 &&
     name !== "." &&
     name !== ".." &&
+    // eslint-disable-next-line no-control-regex -- NUL bytes are rejected on purpose
     !/[\\/:\x00]/.test(name);
   if (
     manifest.version !== 1 ||

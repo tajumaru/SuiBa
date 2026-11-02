@@ -57,8 +57,6 @@ const NAV_TABS = [
   "バックテスト比較",
 ];
 const money = (v: number | null | undefined) => number(v, 4);
-const precise = (v: string | null | undefined) =>
-  v == null ? "不明" : `${number(v)} USDC`;
 function IndicatorChart({
   candles,
   kind,

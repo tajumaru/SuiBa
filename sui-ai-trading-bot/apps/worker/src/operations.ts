@@ -804,8 +804,6 @@ export class OperationMonitor {
   }
   watchdog(now = Date.now()) {
     this.db.assertHealthy();
-    const s = this.state(),
-      r = this.db.runtime();
     const details = this.stallDetails(now);
     this.checkRecoveryDeadline(now);
     if (details) this.stallFailure(details, now);

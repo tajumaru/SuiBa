@@ -62,6 +62,15 @@ const tasks = {
       "pnpm-workspace.yaml",
     ],
   ],
+  lint: [
+    [
+      "node_modules/eslint/bin/eslint.js",
+      "apps",
+      "packages",
+      "tests",
+      "scripts",
+    ],
+  ],
 };
 const name = process.argv[2],
   steps = tasks[name];

@@ -157,16 +157,15 @@ export class BotDatabase {
   }
   private prepare(sql: string) {
     const statement = this.sql(() => this.db.prepare(sql));
-    const database = this;
     return new Proxy(statement, {
-      get(target, property) {
+      get: (target, property) => {
         const value = Reflect.get(target, property, target);
         if (typeof value !== "function") return value;
         if (property === "get" || property === "all" || property === "run")
           return (...args: unknown[]) =>
             timeSql(() => {
-              if (property === "run") database.assertHealthy();
-              return database.sql(() => Reflect.apply(value, target, args));
+              if (property === "run") this.assertHealthy();
+              return this.sql(() => Reflect.apply(value, target, args));
             });
         return value.bind(target);
       },

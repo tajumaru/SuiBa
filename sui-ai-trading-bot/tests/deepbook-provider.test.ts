@@ -9,7 +9,6 @@ import { calculate } from "../packages/indicators/src/index.ts";
 import { BotEngine } from "../apps/worker/src/engine.ts";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import {
-  defaults,
   SUI,
   USDC,
   type Timeframe,

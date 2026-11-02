@@ -125,7 +125,7 @@ export function validateBook(
   if (spread <= 0) throw new Error("INVALID_ORDERBOOK");
   if (spread > maxSpread) throw new Error("SPREAD_TOO_WIDE");
   // Both directions must cover maxOrder within the configured slippage envelope.
-  for (const [levels, buy] of [
+  for (const [levels, _buy] of [
     [asks, true],
     [bids, false],
   ] as const) {
@@ -268,7 +268,7 @@ export class DeepBookMarketData {
     private reconstruct = false,
     readonly pair: TradingPair = "SUI_USDC",
   ) {}
-  async prepare(now = Date.now()) {
+  async prepare(_now = Date.now()) {
     const pools = z
       .array(
         z.object({

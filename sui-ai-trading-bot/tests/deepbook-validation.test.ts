@@ -14,9 +14,7 @@ import { join } from "node:path";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import {
   ValidationRecorder,
-  aggregateValidation,
   assertValidationProfile,
-  validationLimits,
 } from "../apps/worker/src/validation.ts";
 import {
   validationMarkdown,

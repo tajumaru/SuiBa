@@ -7,7 +7,6 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
-  readlinkSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -15,7 +14,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { acquireInstanceLock } from "./deployment-safety.ts";
 import { createPaperBackup, verifyPaperBackup } from "./paper-backup.ts";
 import {

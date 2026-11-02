@@ -9,6 +9,12 @@ import {
 import { AgentHeaderAvatar } from "../apps/dashboard/src/AgentNarration.tsx";
 
 class FakeRecognition implements RecognitionLike {
+  // The most recently constructed instance, so tests can drive the
+  // recognizer that startListening created internally.
+  static latest: FakeRecognition | null = null;
+  constructor() {
+    FakeRecognition.latest = this;
+  }
   lang = "";
   interimResults = false;
   continuous = false;
@@ -62,14 +68,8 @@ describe("voice input", () => {
 
   it("streams interim text, then delivers the final once", () => {
     const cb = callbacks();
-    let rec: FakeRecognition | null = null;
-    class Ctor extends FakeRecognition {
-      constructor() {
-        super();
-        rec = this;
-      }
-    }
-    const session = startListening(cb, Ctor);
+    const session = startListening(cb, FakeRecognition);
+    const rec = FakeRecognition.latest;
     expect(session).not.toBeNull();
     expect(rec!.started).toBe(true);
     expect(rec!.lang).toBe("ja-JP");
@@ -88,15 +88,9 @@ describe("voice input", () => {
   it("maps platform errors to kinds", () => {
     const seen: string[] = [];
     const run = (error: string) => {
-      let rec: FakeRecognition | null = null;
-      class Ctor extends FakeRecognition {
-        constructor() {
-          super();
-          rec = this;
-        }
-      }
       const cb = callbacks();
-      startListening(cb, Ctor);
+      startListening(cb, FakeRecognition);
+      const rec = FakeRecognition.latest;
       rec!.emitError(error);
       seen.push(cb.onError.mock.calls[0][0] as string);
     };

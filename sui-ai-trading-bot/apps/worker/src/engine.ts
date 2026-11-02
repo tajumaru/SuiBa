@@ -754,6 +754,7 @@ export class BotEngine {
           running: false,
           error: "VALIDATION_RECORD_FAILED",
         });
+        // eslint-disable-next-line no-unsafe-finally -- deliberate: a failed validation record must fail the cycle closed, not slip through the outer finally
         throw new Error("VALIDATION_RECORD_FAILED");
       } finally {
         this.busy = false;

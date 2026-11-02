@@ -2,7 +2,6 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   MarketCadence,
   MarketScheduler,
-  cadenceLimits,
   type CadenceInput,
 } from "../apps/worker/src/scheduler.ts";
 import { OperationMonitor } from "../apps/worker/src/operations.ts";

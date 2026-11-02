@@ -190,8 +190,7 @@ it("records failures with the outcome unchanged (fault latching and rollback)", 
 });
 
 it("detects event-loop spikes above the configured threshold with memory", async () => {
-  const db = fixture(),
-    sqlite = memoryWriter(),
+  const sqlite = memoryWriter(),
     spikes = memoryWriter();
   const detailed = installDetailedMetrics({
     databaseClass: BotDatabase,

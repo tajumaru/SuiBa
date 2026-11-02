@@ -13,6 +13,7 @@ export const DEFAULT_AGENT_NAME = "キャラ";
 export function sanitizeAgentName(raw: unknown): string {
   if (typeof raw !== "string") return "";
   const cleaned = raw
+    // eslint-disable-next-line no-control-regex -- stripping control characters is the point
     .replace(/[\u0000-\u001f\u007f]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();

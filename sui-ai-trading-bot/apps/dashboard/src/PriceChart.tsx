@@ -282,8 +282,6 @@ export function PriceChart({
       drag.current = null;
     },
   };
-  const reconstructed = (b: Candle) =>
-    b.provenance != null && b.provenance.origin !== "ORIGINAL";
   const origin = (b: Candle) =>
     !b.provenance
       ? "再構築情報なし"

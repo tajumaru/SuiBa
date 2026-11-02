@@ -20,8 +20,7 @@ afterEach(() => {
   apiAccess.onTransientFailure = () => {};
   apiAccess.onRateLimit = () => {};
 });
-const now = 1792574400000,
-  first = 1792548000;
+const first = 1792548000;
 const rows = (): Candle[] =>
   Array.from({ length: 70 }, (_, i) => ({
     timestamp: first + i * 300,
