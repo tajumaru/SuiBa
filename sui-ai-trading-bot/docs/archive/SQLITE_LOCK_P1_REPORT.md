@@ -2,7 +2,7 @@
 
 対象: tajumaru/SuiBa / sui-ai-trading-bot / main。
 基準SHA: `cba02cddc6be728d283e2b0e3a947e3b70b84a2a`。実施: 2026-10-24 JST。
-[原因調査・4方式比較](SQLITE_LOCK_P1_INVESTIGATION.md) / [全性能sample](SQLITE_LOCK_P1_BENCH.json)。
+[原因調査・4方式比較](SQLITE_LOCK_P1_INVESTIGATION.md) / [全性能sample](../SQLITE_LOCK_P1_BENCH.json)。
 
 ## 1. SQLiteロック待ちの原因
 

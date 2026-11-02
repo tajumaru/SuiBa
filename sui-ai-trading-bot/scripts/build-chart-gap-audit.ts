@@ -124,7 +124,7 @@ const lines = [
   "",
   `既存reconstructFiveMinutesを変更せず適用。表示専用再構築${repairs.length}本、未解決${rebuilt.quality.unresolved}本。Bot側には返さない。`,
 ];
-fs.writeFileSync("docs/DEEPBOOK_GAPS_48_P1.md", lines.join("\n") + "\n");
+fs.writeFileSync("docs/archive/DEEPBOOK_GAPS_48_P1.md", lines.join("\n") + "\n");
 console.log(
   JSON.stringify({
     causes: report.causeCounts,

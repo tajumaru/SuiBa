@@ -38,7 +38,7 @@ WALの拒否サンプルはmid=(0.033861+0.034043)/2=0.033952、差額=0.000182 
 
 前回証跡のSPREAD_TOO_WIDEは拒否時のbook=nullで、正確なbid/askを後から復元できない。別ファイルの約2分後の正常板を、その失敗時の板として扱ってはいけない。追加のbookObservationにより今後は同一応答で検証できる。
 
-証跡：[6サンプルのJSON](evidence/pr25-spread-review-20261029.json)。再現：`node --import tsx scripts/review-wal-spread.ts`。APIタイムアウト30秒/標本の読み取り予算があり、署名・注文・売買開始は行わない。
+証跡：[6サンプルのJSON](../evidence/pr25-spread-review-20261029.json)。再現：`node --import tsx scripts/review-wal-spread.ts`。APIタイムアウト30秒/標本の読み取り予算があり、署名・注文・売買開始は行わない。
 
 ## 安全停止
 
@@ -60,7 +60,7 @@ Windows、Node v24.22.1、同じnode_modulesへの参照、同じPlaywright Chro
 
 両方ともchart-sync、dashboard-feed、deepbook-validationの2件、localizationの1件の計5件が失敗し、認証エラー表示1件が成功。session POSTを売買変更に数える、sessionに404を返す、未知リクエストとして拒否するfixtureが原因。実APIの管理認証が破壊されているという結果ではない。今回の修正でこれらの期待値や認証制約を緩和していない。
 
-証跡：[比較要約JSON](evidence/pr25-auth-fixture-comparison-20261029.json)。生ログ内のローカルパス・fixtureソースを大量にコミットせず、同じテスト名と結果・原因を要約した。
+証跡：[比較要約JSON](../evidence/pr25-auth-fixture-comparison-20261029.json)。生ログ内のローカルパス・fixtureソースを大量にコミットせず、同じテスト名と結果・原因を要約した。
 
 ## テストとCI
 

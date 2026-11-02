@@ -147,4 +147,4 @@ GeckoTerminalの過去ログの約10秒は応答ヘッダー取得前の期限�
 
 ## 5分足欠損の追加調査
 
-43本のUTC時刻・約定履歴照合・再構築・指標影響・明示設定は[5分足欠損調査](DEEPBOOK_5M_GAP_INVESTIGATION.md)を参照してください。標準Providerは変更していません。
+43本のUTC時刻・約定履歴照合・再構築・指標影響・明示設定は[5分足欠損調査](archive/DEEPBOOK_5M_GAP_INVESTIGATION.md)を参照してください。標準Providerは変更していません。

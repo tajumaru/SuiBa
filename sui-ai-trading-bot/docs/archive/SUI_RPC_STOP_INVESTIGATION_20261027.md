@@ -6,7 +6,7 @@
 
 ## 結論と確度
 
-1. **売買指標をSui RPCから直接取得してはいない。** EMA20/50、RSI14、MACD12/26/9、histogram、ATR14、volumeChange、priceChangeは市場OHLCVからローカル計算する。Sui側の必須ゲートはSUI・Native USDCの**coin metadata（decimals）のhealth確認**。このhealthが市場取得より先にawaitされるため、失敗するとDeepBookの当該周期の取得・指標計算まで進まない（[engine.ts:103](../apps/worker/src/engine.ts#L103)、[indicators:33](../packages/indicators/src/index.ts#L33)）。
+1. **売買指標をSui RPCから直接取得してはいない。** EMA20/50、RSI14、MACD12/26/9、histogram、ATR14、volumeChange、priceChangeは市場OHLCVからローカル計算する。Sui側の必須ゲートはSUI・Native USDCの**coin metadata（decimals）のhealth確認**。このhealthが市場取得より先にawaitされるため、失敗するとDeepBookの当該周期の取得・指標計算まで進まない（[engine.ts:103](../../apps/worker/src/engine.ts#L103)、[indicators:33](../../packages/indicators/src/index.ts#L33)）。
 2. 過去生ログのSHA256を独立照合し、Sui **timeout 3件／DNS EAI_AGAIN 2件 → 4周期のSUI_READ_FAILED → DEGRADED**を確認した。ただし当該実測のBotは開始時から停止中。今回依頼の「稼働中の断続停止」の最新main実行ログそのものは未入手。失敗coin名も当時のログにない。**過去ログを最新mainの稼働停止証拠に読み替えない。**
 3. 最新mainの実SDK＋模擬HTTP＋実Engine＋新規メモリDBで、health異常による停止と補助balance読取からの停止波及を再現した。通信に証拠のある一時障害は自動復旧対象だが、gRPC失敗・metadata欠損等は通常`SUI_READ_FAILED`の重大停止へ進む。HTTP成功と業務成功を区別する必要がある。
 4. 旧調査の「balance成功がhealth cacheを回復する」問題は最新mainで**修正済み**。ただし補助balance失敗はhealthを無効化し、共通通信コールバックもBotを一時停止させる。失敗したAPIの用途別の分離は未実施。
@@ -24,13 +24,13 @@
 | transaction(digest)                   | `/sui.rpc.v2.LedgerService/GetTransaction` | wrapper実装あり、production呼出し元なし                            | digest一致、effects取得。周期なし、TTL0                                                                    |
 | HTTP/gRPC/read/healthの受動観測       | 追加APIなし、`sui_observations`保存        | 通信診断用。ただし保存障害は安全上必須                             | 同期保存失敗は`VALIDATION_RECORD_FAILED`をラッチ                                                           |
 
-既定originは`https://fullnode.mainnet.sui.io:443`、`SUI_GRPC_URL`で変更可能、HTTPS必須。実運用のenv値は今回読み取っていない。[worker生成](../apps/worker/src/index.ts#L63)、[Sui wrapper](../packages/sui-client/src/index.ts#L340)。APIの名称は[公式gRPC照会資料](https://www.docs.sui.io/develop/accessing-data/grpc/using-grpc)でも確認。挙動の判定には同梱2.37.0の`src/grpc/core.ts`を優先した。
+既定originは`https://fullnode.mainnet.sui.io:443`、`SUI_GRPC_URL`で変更可能、HTTPS必須。実運用のenv値は今回読み取っていない。[worker生成](../../apps/worker/src/index.ts#L63)、[Sui wrapper](../../packages/sui-client/src/index.ts#L340)。APIの名称は[公式gRPC照会資料](https://www.docs.sui.io/develop/accessing-data/grpc/using-grpc)でも確認。挙動の判定には同梱2.37.0の`src/grpc/core.ts`を優先した。
 
 metadataではAPIが返すname/symbol/id等も受領するが、healthが検証するのはmetadata存在とdecimals。gas価格、TPS、checkpoint、validator稼働率、Suiの市場価格、オシレーターをこのclientから取得するコードはない。SDKの通常型解決を通るが、許可coinは固定の完全修飾型SUI/USDCで、MVR名前解決を要する任意coinは受け付けない。
 
 ### 共通通信制御
 
-根拠：[api.ts](../packages/shared/src/api.ts)、[read budget](../packages/shared/src/read-budget.ts)、[scheduler](../apps/worker/src/scheduler.ts)。
+根拠：[api.ts](../../packages/shared/src/api.ts)、[read budget](../../packages/shared/src/read-budget.ts)、[scheduler](../../apps/worker/src/scheduler.ts)。
 
 | 設定                | Sui                                                                                               | DeepBookとの関係                                                                             |
 | ------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -58,7 +58,7 @@ DeepBookMarketDataにはReadOnlySuiClient依存がない。依存はEngineの順
 | 5分/15分/1時間OHLCV    | `/ohclv/SUI_USDC?interval=5m,15m,1h&limit=1000`（各別要求）/ 20秒                                                                  | 全3足必須。61本以上・確定・連続・非外れ値。終値時刻からtf+60秒以内                                                                                  |
 | 欠損再構築             | `/ohclv/SUI_USDC?interval=1m&start_time=…&end_time=…&limit=1000` / 20秒、`/trades/SUI_USDC?start_time=…&end_time=…&limit=1000` / 0 | verified設定のみ。空trade証拠とindexedThroughを確認。証拠の再利用はvalidEmptyProofで検証、1時間超のproofは掃除。独立した1分足の取引シグナルではない |
 
-根拠：[deepbook.ts:169](../packages/market-data/src/deepbook.ts#L169)、[validation.ts](../packages/market-data/src/validation.ts)、[reconstruction.ts](../packages/market-data/src/reconstruction.ts)。prepare/frames/finalizeは市場周期ごと。復旧時freshはHTTP TTLを使わず、全足のfetchedAt>=周期開始・欠損0・板10秒・lag60秒等を追加確認する。指標は5分足のcurrentと1本前で計算、RSI・EMA・MACD等の計算に独立した通信retry/cacheはない。PAPER残高・原価・損益はSQLiteから読む。
+根拠：[deepbook.ts:169](../../packages/market-data/src/deepbook.ts#L169)、[validation.ts](../../packages/market-data/src/validation.ts)、[reconstruction.ts](../../packages/market-data/src/reconstruction.ts)。prepare/frames/finalizeは市場周期ごと。復旧時freshはHTTP TTLを使わず、全足のfetchedAt>=周期開始・欠損0・板10秒・lag60秒等を追加確認する。指標は5分足のcurrentと1本前で計算、RSI・EMA・MACD等の計算に独立した通信retry/cacheはない。PAPER残高・原価・損益はSQLiteから読む。
 
 GeckoTerminal選択時は同じ3足をGeckoから取得し、Sui health前提は残る。autoは許可された一時障害だけfallbackし、429、TLS、不正／薄い／古い板、ペア不一致を迂回しない。Cetusは別途見積もり用、DeepBook SDKで発注する構成ではない。Cetus quote期限15秒、SDK全体20秒、共通HTTP制御を通るがSui healthの代替証拠にはならない。
 
@@ -91,13 +91,13 @@ Engine.tick → acquisition(45秒) → request(HEALTH) → sui.health
 | 締切超過／長期障害               | 45秒取得期限、180秒／9失敗の復旧上限                  | MARKET_DATA_STALLED / PAPER_RECOVERY_EXHAUSTED                                                                                         |
 | 証拠・DB障害                     | 同期onObservation/SQL healthのラッチ                  | VALIDATION_RECORD_FAILED等。自動回復対象に緩和しない                                                                                   |
 
-根拠：[HTTP分類](../packages/shared/src/http-errors.ts#L60)、[復旧許可](../packages/shared/src/paper-recovery.ts#L56)、[一時障害処理](../apps/worker/src/operations.ts#L115)、[Engine catch](../apps/worker/src/engine.ts#L615)、[stop](../apps/worker/src/operations.ts#L702)。
+根拠：[HTTP分類](../../packages/shared/src/http-errors.ts#L60)、[復旧許可](../../packages/shared/src/paper-recovery.ts#L56)、[一時障害処理](../../apps/worker/src/operations.ts#L115)、[Engine catch](../../apps/worker/src/engine.ts#L615)、[stop](../../apps/worker/src/operations.ts#L702)。
 
 注意：内側HEALTHと外側MARKETが同じ例外を数えるため、1回のhealth失敗でもconsecutiveErrorsが2増え得る。3に到達する順序によって`CONSECUTIVE_API_ERRORS`が先にstopされ、後続`SUI_READ_FAILED`と併存し得る（softFailureThisCycle時はこのstopを抑止）。`runtime.error`は最初の値を優先し、`safety.lastStopReason`は後続stopで更新される。ダッシュボード上の両値が違っても別API障害とは限らない。
 
 ## 4. healthとの混同・復旧後の状態
 
-- `/healthz`はheartbeat45秒以内を見るliveness。Sui APIを実行せず、売買可能性を保証しない。静的ダッシュボードやAPIが表示できても注文ゲートは閉じ得る（[worker:230](../apps/worker/src/index.ts#L230)）。
+- `/healthz`はheartbeat45秒以内を見るliveness。Sui APIを実行せず、売買可能性を保証しない。静的ダッシュボードやAPIが表示できても注文ゲートは閉じ得る（[worker:230](../../apps/worker/src/index.ts#L230)）。
 - Sui healthはmetadata2件をまとめたreadiness。指標計算の成功ではない。read catchは**補助balanceを含む全readでstatus.healthy=false、epoch増加**。同じApiAccessの一時障害callbackはtick外でも稼働意図を一時停止する。補助失敗と必須データ失敗の影響範囲が結合している。
 - 正常readはreadStatusを更新するが、health statusやTTLを更新しない。health cohort完全成功だけがstatusを回復。旧cohort／遅延した成功はepochで失効。保存異常はstickyで成功通信から消えない。これは既存sui-healthテストでも確認済み。
 - 通信正常化だけではPAPER再開しない。今回の全足品質・Sui fresh・板・台帳・注文履歴・世代・API backoff終了を確認し、独立正常周期2回以上かつ60秒以上、最短間隔30秒。遷移周期は注文禁止。手動停止・緊急停止・runtime.errorは自動解除しない。
@@ -111,7 +111,7 @@ Engine.tick → acquisition(45秒) → request(HEALTH) → sui.health
 - 元ファイル：`D:/Source/SuiBa/.worktrees/validation-ux/sui-ai-trading-bot/docker/artifacts/preflight-8b05f2a/evidence-final.jsonl`
 - SHA256：`fd22a73695a3a4e9a707c87cc84049290513db28d6c574b9b0fb69bc156769a4`、1,508行。既存調査記録と一致。
 - 実行版：`8b05f2a6864e2891259b8a934b0063be9ec337b3`。最新mainとは異なる。[既存報告](PAPER_RUN2_PREFLIGHT_REPORT.md#7-障害と原因分析)を照合。
-- allowlistしたAPIコード・時間・cycle・次sampleだけを[historical-extract.json](evidence/sui-rpc-stop-20261027/historical-extract.json)へ保存。元の生ログ全文、URL、アドレス、要求本文、秘密情報はPRに追加しない。
+- allowlistしたAPIコード・時間・cycle・次sampleだけを[historical-extract.json](../evidence/sui-rpc-stop-20261027/historical-extract.json)へ保存。元の生ログ全文、URL、アドレス、要求本文、秘密情報はPRに追加しない。
 
 全時刻2026-10-23 JST。API時刻はApiAttempt.occurredAt、latencyは同latencyMs。抽出には低レイヤーelapsedMsも別保存（観測オーバーヘッドで1〜2ms差がある）。
 
@@ -137,7 +137,7 @@ Engine.tick → acquisition(45秒) → request(HEALTH) → sui.health
 - 補助balance EAI_AGAINだけで次tick前にrunning=false、DEGRADED、resumePending=true、注文禁止となるケース。
 - 正常gRPCフレーム内のbalance欠損がSDKで0に変わり、READ成功として扱われるケース。
 
-追加：[paper-recovery-engine.test.ts](../tests/paper-recovery-engine.test.ts)、[sui-observations.test.ts](../tests/sui-observations.test.ts)。共通ApiAccess breakerを成功probeで閉じる後処理を追加し、テスト間の合成障害漏れを防いだ。初回追加試験はその隔離不足で既存試験へOPENが漏れたため失敗したが、製品を変更せず後処理を修正して解消。
+追加：[paper-recovery-engine.test.ts](../../tests/paper-recovery-engine.test.ts)、[sui-observations.test.ts](../../tests/sui-observations.test.ts)。共通ApiAccess breakerを成功probeで閉じる後処理を追加し、テスト間の合成障害漏れを防いだ。初回追加試験はその隔離不足で既存試験へOPENが漏れたため失敗したが、製品を変更せず後処理を修正して解消。
 
 既存回帰も実行：sui-health（片coin失敗、TTL、古い成功、別balance成功、abort、証拠保存障害）、sui-observations（DNS/timeout/TLS/本文/gRPC/decode）、paper-recovery（連続障害180秒・9回、データ不完全、手動停止維持）、read-budget、circuit-breaker、http-errors等。ネットワーク禁止setupがSocket.connect/Server.listenを拒否。外部API・Botを起動せず実SDKのfixtureだけで実行する。メモリ／一時DBの模擬会計試験を含むが、稼働DBと実注文は使用しない。
 
@@ -153,7 +153,7 @@ node scripts/run-project.mjs typecheck
 node scripts/extract-sui-stop-evidence.mjs <退避JSONL> <新規出力JSON>
 ```
 
-検証結果は[evidence README](evidence/sui-rpc-stop-20261027/README.md)を参照。最初の全体検証は964成功・1失敗・8skip、失敗はレポート出力テストのOS一時ディレクトリrename EPERM。専用worktreeにTEMP/TMPを固定して切り分けた。製品のファイル保存実装を変えて回避していない。
+検証結果は[evidence README](../evidence/sui-rpc-stop-20261027/README.md)を参照。最初の全体検証は964成功・1失敗・8skip、失敗はレポート出力テストのOS一時ディレクトリrename EPERM。専用worktreeにTEMP/TMPを固定して切り分けた。製品のファイル保存実装を変えて回避していない。
 
 ## 7. 修正案（未実装、注文ゲート維持）
 
@@ -177,7 +177,7 @@ metadataが比較的静的でも、古い値を最新通信の証明に使わな
 
 ## 8. ダッシュボード改善仕様（未実装）
 
-既存`GET /api/operations`は`suiHealth`、`suiReads`、直近50件`suiObservations`とsafety/stopReason/latestApiErrorを提供（[worker:337](../apps/worker/src/index.ts#L337)）。Engine snapshotの`connection`もhealth statusだが、Suiの層別結果との因果がUI上で追いにくい。
+既存`GET /api/operations`は`suiHealth`、`suiReads`、直近50件`suiObservations`とsafety/stopReason/latestApiErrorを提供（[worker:337](../../apps/worker/src/index.ts#L337)）。Engine snapshotの`connection`もhealth statusだが、Suiの層別結果との因果がUI上で追いにくい。
 
 提案する表示：
 

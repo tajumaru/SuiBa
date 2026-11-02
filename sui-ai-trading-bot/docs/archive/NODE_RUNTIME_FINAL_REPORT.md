@@ -4,7 +4,7 @@
 
 - [原因調査](NODE_RUNTIME_INVESTIGATION.md)
 - [要求Nodeでの検証記録](NODE_24_OFFLINE_RESULTS.md)
-- [実行パス・binary/config/test reportのhash証拠](NODE_RUNTIME_EVIDENCE.json)
+- [実行パス・binary/config/test reportのhash証拠](../NODE_RUNTIME_EVIDENCE.json)
 - [Docker事前確認と承認後30分手順](NODE_DOCKER_30M_PREFLIGHT.md)
 
 ## 最新ソースと既存作業の保全

@@ -175,8 +175,8 @@ function Get-SuiBaEvidenceFacts {
 }
 
 function Test-SuiBaAbortCondition {
-    # Stop conditions preserved from docs/NODE_DOCKER_30M_PREFLIGHT.md and
-    # docs/PREFLIGHT_30M_20261024.md: safety violations, DB/evidence faults,
+    # Stop conditions preserved from docs/archive/NODE_DOCKER_30M_PREFLIGHT.md and
+    # docs/archive/PREFLIGHT_30M_20261024.md: safety violations, DB/evidence faults,
     # 3 consecutive failed cycles, no successful cycle for 5 minutes,
     # disk thresholds, monitor blindness, unexpected container state.
     # Returns a reason string, or $null when the run may continue.
@@ -355,7 +355,7 @@ function Get-SuiBaDockerDataDriveRootsFromEvidence {
 
 function Test-SuiBaDiskStopCondition {
     # Disk stop conditions, reconciled with the 30-minute validation
-    # agreement (docs/PREFLIGHT_30M_20261024.md section 14: "D80% /
+    # agreement (docs/archive/PREFLIGHT_30M_20261024.md section 14: "D80% /
     # C free 10 GiB", i.e. the two numbers judge DIFFERENT drives):
     #   * the drive that holds Docker's data (the Docker Desktop disk
     #     image) stops the run at >= 80% used,

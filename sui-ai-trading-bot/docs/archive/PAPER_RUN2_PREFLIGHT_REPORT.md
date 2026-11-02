@@ -6,7 +6,7 @@
 
 通常周期で2時間以上を実測したが、Sui gRPCは98試行で指定の100試行に届かなかったため、依頼の母数不足時の規則を優先する。加えてSui成功率94.8980%、市場取得周期正常率96.7742%は99%未達。終了時は通信DEGRADED、板snapshotも鮮度未達であり、母数不足だけを解消してもGOにはならない。試行を増やす負荷試験、キャッシュ解除、Bot開始、24時間セッション作成は行っていない。
 
-参照：[第1回報告](PAPER_24H_RUN1_FINAL_REPORT.md)、[RUN2準備判定](PAPER_RUN2_READINESS.md)、[UI/API操作](VALIDATION_UI_FLOW.md)。
+参照：[第1回報告](PAPER_24H_RUN1_FINAL_REPORT.md)、[RUN2準備判定](PAPER_RUN2_READINESS.md)、[UI/API操作](../VALIDATION_UI_FLOW.md)。
 
 ## 1. 検証環境と固定バージョン
 
@@ -50,7 +50,7 @@ mainにはread budget、欠損状態遷移、周期証跡、実行版固定のP0
 
 通常60秒周期と既存の限定的な5分境界再確認を維持した。停止中もengine.tickが市場取得・分析を行い、停止ゲートで注文前に終了する。開始間隔の最大は60,006ms、記録周期124（START/END各124）、正常120・失敗4、正常率96.7742%。WAIT分析120と未評価4を区別する。周期時間P50/P95/P99は2,766 / 14,598 / 20,184ms、最大21,262ms。正常率の分母は保存済みの実周期であり、全予定slotの独立した完全ログではない。
 
-既存ValidationRecorderは24時間セッション未開始時に試行を永続化しないため、[観測用preload](../scripts/preflight-observer.mjs)でattempt/cycle/sample通知をJSONLへ複写した。元メソッドには同じ引数を渡し、戻り値・取得周期・売買ゲートは変更していない。imageは固定のまま、read-only bindしたpreloadを最初からcommandに指定。追加I/Oと読み取り専用SQLite監視の負荷があるため、既定entrypointだけの無計測実行とは区別する。観測コード自体のhashも開始・終了で一致した。
+既存ValidationRecorderは24時間セッション未開始時に試行を永続化しないため、[観測用preload](../../scripts/preflight-observer.mjs)でattempt/cycle/sample通知をJSONLへ複写した。元メソッドには同じ引数を渡し、戻り値・取得周期・売買ゲートは変更していない。imageは固定のまま、read-only bindしたpreloadを最初からcommandに指定。追加I/Oと読み取り専用SQLite監視の負荷があるため、既定entrypointだけの無計測実行とは区別する。観測コード自体のhashも開始・終了で一致した。
 
 API onAttemptだけを実通信の分母とし、retryは別試行、cache・flight共有・ローカルGETは分母外。分位点は実保存latencyMs全件からnearest-rankで計算し、失敗のtimeout時間も含めた。追加のホスト/コンテナ診断は別プロセス・別ファイルで管理し、以下の試験母数には足していない。
 
@@ -162,7 +162,7 @@ EAI_AGAINは当該Dockerプロセスの名前解決で一時エラーを観測�
 
 検証コンテナだけを正常停止し、専用DB/report volume・新規secret・固定imageは証拠保全のため残した。自動再起動なし。既存3100/3101は継続中。PAPER_RUN2_READINESS.mdとUIのNO-GOは変更していない。
 
-集計成果物：[PAPER_RUN2_PREFLIGHT_RESULTS.json](PAPER_RUN2_PREFLIGHT_RESULTS.json)。再集計：[summarize-preflight.cjs](../scripts/summarize-preflight.cjs)、独立監査：[preflight-audit.cjs](../scripts/preflight-audit.cjs)、観測：[preflight-observer.mjs](../scripts/preflight-observer.mjs)。
+集計成果物：[PAPER_RUN2_PREFLIGHT_RESULTS.json](../PAPER_RUN2_PREFLIGHT_RESULTS.json)。再集計：[summarize-preflight.cjs](../../scripts/summarize-preflight.cjs)、独立監査：[preflight-audit.cjs](../../scripts/preflight-audit.cjs)、観測：[preflight-observer.mjs](../../scripts/preflight-observer.mjs)。
 
 生データは実施worktreeのGit管理外 docker/artifacts/preflight-8b05f2a/ と専用report volumeに保存した。JSONL全1,508行＝observer1＋API895＋cycle124＋sample488（評価内487・shutdown時1）。API6失敗を全件掲載し、独立DB監査の件数・counter・hashと照合済み。大きな生ログや認証値はコミットしない。
 

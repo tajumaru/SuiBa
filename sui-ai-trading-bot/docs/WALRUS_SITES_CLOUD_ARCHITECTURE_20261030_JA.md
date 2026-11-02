@@ -392,7 +392,7 @@ SSH秘密鍵はEnvironment Secret、公開host fingerprintは改ざんを防ぐ�
 
 ### 自動ロックとの整合（公開前の必須実装）
 
-既存の [自動ロック・パターン再認証設計](AUTOLOCK_PATTERN_REAUTH_DESIGN_20261027_JA.md) B〜G章を維持する。**現行mainは個別失効/サーバー側自動ロックを未実装**で、既存CookieをHTTPS化するだけでは完了しない。gatewayのOIDC sessionと、アプリの短命タブ別操作許可を分離し、強い認証を終えてもロック中の変更APIは許可しない。内部Bearerによるworker認証は操作ロックを迂回できるため、gateway/adapterを含むすべての公開経路に同じ認可を強制する。公開旧token入力・worker session交換APIは管理browserから到達不可にし、OIDC login/session確認へ置換する。
+既存の [自動ロック・パターン再認証設計](archive/AUTOLOCK_PATTERN_REAUTH_DESIGN_20261027_JA.md) B〜G章を維持する。**現行mainは個別失効/サーバー側自動ロックを未実装**で、既存CookieをHTTPS化するだけでは完了しない。gatewayのOIDC sessionと、アプリの短命タブ別操作許可を分離し、強い認証を終えてもロック中の変更APIは許可しない。内部Bearerによるworker認証は操作ロックを迂回できるため、gateway/adapterを含むすべての公開経路に同じ認可を強制する。公開旧token入力・worker session交換APIは管理browserから到達不可にし、OIDC login/session確認へ置換する。
 
 既存設計の親session、サーバー失効、タブ別許可、単回チケット固定期限による最大15秒の残存許可、復帰時再認証、失敗回数制限を後続PRで実装する。UIで非表示にするだけのlockや、pollingで操作許可が延長される実装は禁止。Safari背景化・強制終了・通信断で「即時のserver検知」を保証できない限界も表示する。gatewayログアウト/期限切れ/worker再起動/DB復元時は操作許可も失効し、OIDC Cookieだけで勝手に再解除しない。安全停止をロック時に許可する場合も専用の認可経路とし、start/resetと混同しない。sessionロック自体はBotの停止/再開とは独立である。
 

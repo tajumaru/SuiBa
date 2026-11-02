@@ -65,4 +65,4 @@
 実行環境・実行結果と表示確認の証跡は `verification/mobile-recovery/` に記録する。
 PlaywrightのWebKitでSafariのエンジンに対する回帰検証を行う。実機iPhone Safariの確認は別途必要。
 
-検証結果と再実行コマンドは [検証記録](verification/mobile-recovery/README.md) を参照。
+検証結果と再実行コマンドは [検証記録](../verification/mobile-recovery/README.md) を参照。

@@ -125,6 +125,6 @@ node docker/verify-deepbook-24h.mjs
 
 既存Composeの回帰試験は `node docker/verify-compose.mjs <検証イメージ名> --browser` です。別のランダムなComposeプロジェクトを使い、Linuxユニットテスト、認証済みブラウザー、WAL、バックアップ、強制再起動、LIVE拒否、ディスク満杯時の安全性を確認します。本番環境には接続しません。
 
-実装時に実行したテストと未実施項目は [検証結果](DEEPBOOK_24H_VALIDATION_RESULTS.md) を参照してください。
+実装時に実行したテストと未実施項目は [検証結果](archive/DEEPBOOK_24H_VALIDATION_RESULTS.md) を参照してください。
 
 P0スケジューラ修正後の固定周期、境界再確認、停止診断については [DeepBook P0修正](DEEPBOOK_P0_SCHEDULER.md) を参照してください。既存の計測記録はリセットせず、新規の24時間試験は別プロジェクト・別ボリュームで開始します。

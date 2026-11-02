@@ -1,6 +1,6 @@
 # 運用検証UIの検証結果
 
-実施日：2026-10-23 JST。対象：main。操作対応と実際の開始手順は [VALIDATION_UI_FLOW.md](VALIDATION_UI_FLOW.md)。
+実施日：2026-10-23 JST。対象：main。操作対応と実際の開始手順は [VALIDATION_UI_FLOW.md](../VALIDATION_UI_FLOW.md)。
 
 ## 結果
 
@@ -31,8 +31,8 @@
 
 ## 確認画像
 
-- [現リリースNO-GO・375px](images/validation-ui/no-go-mobile.png)
-- [テスト専用GO・1280px](images/validation-ui/mock-go-desktop.png) — モックの計測中・Bot手動停止後。実環境のGO判定ではない。
+- [現リリースNO-GO・375px](../images/validation-ui/no-go-mobile.png)
+- [テスト専用GO・1280px](../images/validation-ui/mock-go-desktop.png) — モックの計測中・Bot手動停止後。実環境のGO判定ではない。
 
 ## 環境と限界
 

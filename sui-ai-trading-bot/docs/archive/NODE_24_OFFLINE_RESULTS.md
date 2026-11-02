@@ -29,4 +29,4 @@ SQLite lock11件、BotEngine recovery25件、Sui health14件、観測12件、既
 
 offline configはsocket connect/listenを禁止し、loopbackを使う7件をskip、settings-api/deepbook-transportの2ファイルを除外。実Sui/DeepBook、Docker、既存3100/3101、PAPER運転には接続していない。CIのWindows/Linux matrixは設定追加だけであり、GitHub Actions実行結果とWSL/Linux実測は今回まだ未確認。
 
-最終構成確認後の追記: 第4単位で受動計測3件とDocker静的設定3件を追加し、最終guardのCLIパス解決も回帰確認した。実Node v24.22.1で再実行した最終結果は **40ファイル、506成功、7skip、失敗0**。型チェック・本番buildも再成功。[実runtimeと結果の機械可読証拠](NODE_RUNTIME_EVIDENCE.json)に、Node実体hash、実行パス、JSONテストレポートhash、対象設定hashを保存した。生JSONレポートは新規Git対象外data/node24-proof-20261024/vitest.jsonに保全した。
+最終構成確認後の追記: 第4単位で受動計測3件とDocker静的設定3件を追加し、最終guardのCLIパス解決も回帰確認した。実Node v24.22.1で再実行した最終結果は **40ファイル、506成功、7skip、失敗0**。型チェック・本番buildも再成功。[実runtimeと結果の機械可読証拠](../NODE_RUNTIME_EVIDENCE.json)に、Node実体hash、実行パス、JSONテストレポートhash、対象設定hashを保存した。生JSONレポートは新規Git対象外data/node24-proof-20261024/vitest.jsonに保全した。

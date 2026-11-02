@@ -57,8 +57,8 @@
 
 ## 証拠と限界
 
-- [該当周期・停止前後のDB抽出](evidence/deepbook-timeout-followup-20261023.json)
-- [該当周期の全API試行](evidence/deepbook-timeout-attempts-20261023.json)
+- [該当周期・停止前後のDB抽出](../evidence/deepbook-timeout-followup-20261023.json)
+- [該当周期の全API試行](../evidence/deepbook-timeout-attempts-20261023.json)
 - 稼働イメージ: `sha256:b7ddf53183c1c089fb79c852eeb4384a1d6e2e307e1ca9c9ccdd96346ea3ad13`。主要4ファイル（engine、deepbook、deepbook-transport、api）はローカルとSHA256一致。イメージ全体のコミット一致を保証するものではない。
 - HTTP/2の失敗ログはstatusがnullだが、phase=BODYとheadersMsはヘッダー受信を示す。nullを「ヘッダー未受信」と解釈しない。
 - 回線・サーバーへの帰属には、障害時の別回線比較と対象ホストに限定したパケット観測が必要。今回実施していない。

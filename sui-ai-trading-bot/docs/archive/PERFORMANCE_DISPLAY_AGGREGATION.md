@@ -101,7 +101,7 @@ coldのsummaryはp50・p95・p99が悪化した。更新確認SQLが1回増え�
 
 warmのoperations p95も初期目標200msには届かない。全期間読込と会計計算の残コストがある。
 
-3 APIのJSON本文SHA256はwarm/cold双方で前後一致。固定mainとの差分回帰22ケースも全てdeep equalityで一致。詳細な全分位点は [PERFORMANCE_DISPLAY_RESULTS.json](PERFORMANCE_DISPLAY_RESULTS.json) に保存した。
+3 APIのJSON本文SHA256はwarm/cold双方で前後一致。固定mainとの差分回帰22ケースも全てdeep equalityで一致。詳細な全分位点は [PERFORMANCE_DISPLAY_RESULTS.json](../PERFORMANCE_DISPLAY_RESULTS.json) に保存した。
 
 ### テスト結果と未完了確認
 

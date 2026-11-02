@@ -63,7 +63,7 @@ Windowsレポート側でも `qualityWindow.context` とreport自身のrunId/SHA
 
 ## 保存証拠の再現結果
 
-[再集計結果・原本ハッシュ・性能抽出](evidence/quality-gates-20261025/saved-run-replay.json)を収録。原本はローカル `tools/windows-verification/runs/winverify-20261024T233151002Z-df2afd7/` にあり変更していない。DBやsecretはPRに含めない。
+[再集計結果・原本ハッシュ・性能抽出](../evidence/quality-gates-20261025/saved-run-replay.json)を収録。原本はローカル `tools/windows-verification/runs/winverify-20261024T233151002Z-df2afd7/` にあり変更していない。DBやsecretはPRに含めない。
 
 | 指標 | 修正前 | 修正後 |
 | --- | --- | --- |

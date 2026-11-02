@@ -155,4 +155,4 @@ node --import tsx scripts/probe-trading-pairs.ts
 - `tests/wal-pair.test.ts`
 
 
-PR #25の最終レビューと修正内容は[PR25_FINAL_REVIEW_JA.md](PR25_FINAL_REVIEW_JA.md)を参照。
+PR #25の最終レビューと修正内容は[PR25_FINAL_REVIEW_JA.md](archive/PR25_FINAL_REVIEW_JA.md)を参照。

@@ -7,7 +7,7 @@
 - NO_TRADES_VERIFIED: 48
 - INDEXER_MISSING / PAGINATION_GAP / DATA_INVALID / UNKNOWN: 各0
 
-[全48本のUTC・日本時間](DEEPBOOK_GAPS_48_P1.md)、[個別証拠と前後OHLCV](evidence/chart-gaps-48/report.json)、[公開API生応答](evidence/chart-gaps-48/responses.json)を保存した。
+[全48本のUTC・日本時間](DEEPBOOK_GAPS_48_P1.md)、[個別証拠と前後OHLCV](../evidence/chart-gaps-48/report.json)、[公開API生応答](../evidence/chart-gaps-48/responses.json)を保存した。
 
 同一窓の5分足2ページ、対象範囲の1分足4ページ、欠損ごとの5分間の約定48リクエスト、最終同期状態1リクエストの計55件を2.5秒以上の間隔で照合した。すべてHTTP200。各約定応答は完全な空配列、1分足にも該当区間の足はなく、order_fillの非backfillパイプラインの同期時刻は全区間終了を超えていた。単なるOHLCV未返却を根拠にしていない。
 
@@ -27,7 +27,7 @@ pnpm exec tsx scripts/build-chart-gap-audit.ts
 
 ## 通信量の実測と比較
 
-[変更前](evidence/dashboard-before.json)は稼働中3100への認証付き読み取り。約1秒隔てた2応答でデータフィールドの変更なし。取得所要64.2ms、Content-Encodingなし。
+[変更前](../evidence/dashboard-before.json)は稼働中3100への認証付き読み取り。約1秒隔てた2応答でデータフィールドの変更なし。取得所要64.2ms、Content-Encodingなし。
 
 | 対象 | 変更前 /api/state | 新summary形式 |
 |---|---:|---:|
@@ -35,7 +35,7 @@ pnpm exec tsx scripts/build-chart-gap-audit.ts
 | gzip相当 | 157,617 B | 997 B |
 | 10秒×6回/分 非圧縮 | 6,208,908 B | 10,776 B |
 
-新形式は同じ稼働中状態を読み取り、ローカルで新サーバー形式へ変換した値（[比較証拠](evidence/dashboard-after.json)）。通常更新の非圧縮削減率99.826%、gzip同士99.367%。gzip前値の数バイト差は別取得時の時刻差。初回チャート・記録・明示7日履歴・実際の変更分は別途加算される。HTTPヘッダー/TLSは含めない。新APIの実環境へのデプロイおよび実回線での削減率測定は未実施。
+新形式は同じ稼働中状態を読み取り、ローカルで新サーバー形式へ変換した値（[比較証拠](../evidence/dashboard-after.json)）。通常更新の非圧縮削減率99.826%、gzip同士99.367%。gzip前値の数バイト差は別取得時の時刻差。初回チャート・記録・明示7日履歴・実際の変更分は別途加算される。HTTPヘッダー/TLSは含めない。新APIの実環境へのデプロイおよび実回線での削減率測定は未実施。
 
 重複5分足253,706 B、candlesByTimeframe766,810 B、リスク履歴12,801 Bが主因。変更前のレスポンスの1,034,486 Bが比較時点で不変だった。10秒ごとに約3,000本と重複1,000本を受信・再解析していた。
 

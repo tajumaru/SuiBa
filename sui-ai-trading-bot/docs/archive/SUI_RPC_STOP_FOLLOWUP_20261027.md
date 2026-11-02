@@ -45,7 +45,7 @@
 
 ## 検証結果と再現コマンド
 
-結果は[evidence README](evidence/sui-rpc-stop-20261027/README.md)と`loopback-vitest.json`、`offline-vitest-followup.json`に記録する。後者は最新main取り込み後の追加5ケースを含む全オフライン回帰。前回の`offline-vitest.json`は履歴として残す。
+結果は[evidence README](../evidence/sui-rpc-stop-20261027/README.md)と`loopback-vitest.json`、`offline-vitest-followup.json`に記録する。後者は最新main取り込み後の追加5ケースを含む全オフライン回帰。前回の`offline-vitest.json`は履歴として残す。
 
 | 最終検証                         | 結果                                                              |
 | -------------------------------- | ----------------------------------------------------------------- |

@@ -146,4 +146,4 @@ SUIBA_BROKER_ENABLEDを現時点でtrueにしない。新規空台帳の準備�
 実Worker入り通常validateが許可されるまではDEPLOY-PAPERを実行しない。
 
 本資料作成・レビュー・環境準備マージは、VPS接続/設定変更/配備、Worker/Bot起動、maintenance解除、LIVE/実資金取引の許可を意味しない。
-具体的なUbuntuコマンドは[既存運用手順](SAKURA_DEPLOY_BROKER_JA.md)を参照し、この資料のレビュー中には実行しない。
+具体的なUbuntuコマンドは[既存運用手順](archive/SAKURA_DEPLOY_BROKER_JA.md)を参照し、この資料のレビュー中には実行しない。
