@@ -226,7 +226,6 @@ table {
 td,
 th {
   padding: 14px;
-  border-bottom: 1px solid #263448;
 }
 .scroll {
   overflow: auto;

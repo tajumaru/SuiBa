@@ -1,8 +1,5 @@
 /* Character chat on the narration tab: a slim in-flow box (never
    fixed), so it scrolls away with the page and cannot cover the feed. */
-.agent-chat {
-  margin: 0 0 10px;
-}
 .agent-chat-chips {
   display: flex;
   gap: 6px;
@@ -16,7 +13,6 @@
 }
 .agent-chat-chips button {
   flex: none;
-  background: #12283a;
   color: #cfe6f5;
   border: 1px solid #2b4a5f;
   border-radius: 999px;
@@ -31,7 +27,6 @@
 .agent-chat-form input {
   flex: 1;
   min-width: 0;
-  background: #0b1520;
   border: 1px solid #2b4a5f;
   border-radius: 10px;
   color: #e8f1f8;

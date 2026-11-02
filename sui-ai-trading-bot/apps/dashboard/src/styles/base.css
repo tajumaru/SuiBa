@@ -14,9 +14,6 @@ main,
 header {
   overflow-wrap: anywhere;
 }
-.cards {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
 .cards > * {
   min-width: 0;
 }
@@ -49,11 +46,6 @@ pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-@media (max-width: 800px) {
-  .cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 @media (max-width: 450px) {
   .cards {
     grid-template-columns: minmax(0, 1fr);
@@ -77,8 +69,6 @@ header {
   flex-direction: column;
   gap: 8px;
   padding: 10px 5% 12px;
-  border-bottom: 1px solid #243146;
-  background: #101a27;
   /* Narrow-screen safety net: a row that still cannot shrink
      clips at the header's edge instead of widening the page
      (overflow-x: clip, unlike hidden, creates no scroll
@@ -193,22 +183,14 @@ header strong::after {
 header .danger {
   border-radius: 3px;
 }
-.agent-avatar,
-.agent-avatar-bob {
-  border-radius: 14px;
-}
 button {
   cursor: pointer;
   color: #c9dbe8;
-  background: #1c3043;
   border: 1px solid #314b61;
   border-radius: 7px;
   padding: 10px 17px;
   font: inherit;
   font-size: 13px;
-}
-button:hover {
-  background: #294b65;
 }
 button:disabled {
   opacity: 0.5;
@@ -287,7 +269,6 @@ em {
   gap: 15px;
 }
 section {
-  background: #111d2b;
   border: 1px solid #263448;
   border-radius: 12px;
   padding: 22px;
@@ -304,8 +285,6 @@ section svg {
 }
 .error {
   padding: 15px;
-  background: #3d2028;
-  color: #ffbac4;
   border-radius: 8px;
 }
 /* Keep operation names visible and the touch targets at least 44px.
@@ -342,14 +321,6 @@ section svg {
 }
 .operation-bar.tone-ok .operation-bar-dot {
   background: #43dfb2;
-}
-.operation-bar.tone-caution {
-  border-color: #7a5c1e;
-  background: #2e2511;
-}
-.operation-bar.tone-alert {
-  border-color: #7a3040;
-  background: #331a24;
 }
 .operation-bar.tone-alert .operation-bar-dot {
   background: #f77d8f;
@@ -474,7 +445,6 @@ section svg {
 .price-ticker-coin {
   width: 24px;
   height: 24px;
-  border-radius: 50%;
   background: #1d2c44;
   display: inline-flex;
   align-items: center;
@@ -714,7 +684,6 @@ select {
   width: 100%;
   padding: 12px;
   margin-top: 9px;
-  background: #0c1520;
   border: 1px solid #344e65;
   color: #dce8f0;
   border-radius: 6px;

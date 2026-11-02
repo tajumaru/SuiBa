@@ -122,7 +122,6 @@
 }
 .preset-cards button[aria-pressed="true"] {
   border: 2px solid #41d9b0;
-  background: #173448;
 }
 .easy-settings button,
 .easy-settings summary {
@@ -156,9 +155,6 @@
   }
   .easy-settings {
     padding: 16px;
-  }
-  header {
-    flex-wrap: wrap;
   }
 }
 /* Settings 1.1: wrap content instead of clipping it on narrow screens. */
@@ -206,8 +202,6 @@
   display: flex;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px 20px;
-  padding: 12px 0;
   border-bottom: 1px solid #263448;
 }
 .settings-diff li span {
@@ -315,8 +309,6 @@
     padding: 4px max(6px, env(safe-area-inset-right, 0px))
       calc(4px + env(safe-area-inset-bottom, 0px))
       max(6px, env(safe-area-inset-left, 0px));
-    background: #101a27;
-    border-top: 1px solid #243146;
   }
   /* Terminal theme for the bottom bar (design A from the
      prototype, matching the header and the login gate): grid
@@ -422,14 +414,6 @@
   width: 100%;
   margin: 0;
 }
-.operation-validation {
-  overflow-wrap: anywhere;
-}
-.operation-validation summary {
-  cursor: pointer;
-  min-height: 44px;
-  padding: 12px 0;
-}
 .operation-validation dl {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
@@ -502,7 +486,6 @@
   padding: 12px;
   border: 1px solid #344e65;
   border-radius: 10px;
-  background: #101c2a;
   min-width: 0;
 }
 .validation-overview {

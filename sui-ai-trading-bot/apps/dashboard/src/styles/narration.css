@@ -265,7 +265,6 @@
   gap: 7px;
   margin: 8px 0 0;
   padding: 4px 12px;
-  background: rgba(10, 18, 32, 0.88);
   border: 1px solid #344e65;
   border-radius: 999px;
   font-size: 12.5px;
@@ -516,7 +515,6 @@
 .agent-feed {
   margin-top: 18px;
   padding: 14px 18px;
-  background: #141d24;
   border: 1px solid #344e65;
   border-radius: 12px;
   font-size: 14px;
@@ -643,7 +641,6 @@
   gap: 6px 14px;
   margin-top: 8px;
   padding: 7px 12px;
-  background: #1a2632;
   border: 1px solid #2c4356;
   border-radius: 10px;
   font-size: 12px;
@@ -683,7 +680,6 @@
   align-items: flex-start;
   margin: 0;
   padding: 8px 12px;
-  background: #1a2632;
   border-left: 3px solid #5f7484;
   border-radius: 8px;
 }
@@ -738,7 +734,6 @@
    background, and its own tag colours. */
 .agent-feed-entry.alert {
   border-left-color: #ff7a2f;
-  background: #2b1e12;
 }
 .agent-feed-entry-tag.alert {
   border-color: rgba(255, 140, 50, 0.55);
