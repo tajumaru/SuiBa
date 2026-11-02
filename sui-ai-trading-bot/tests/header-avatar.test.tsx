@@ -1,3 +1,4 @@
+import { readDashboardCss } from "./helpers/dashboard-css";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
@@ -118,10 +119,7 @@ describe("agent header avatar", () => {
 });
 
 describe("agent header avatar stylesheet", () => {
-  const css = readFileSync(
-    new URL("../apps/dashboard/src/style.css", import.meta.url),
-    "utf8",
-  ).replace(/\r\n/g, "\n");
+  const css = readDashboardCss().replace(/\r\n/g, "\n");
   const section = css.slice(
     css.indexOf("/* Agent header avatar:"),
     css.indexOf("/* Agent narration feed:"),
@@ -245,10 +243,7 @@ describe("narration feed after the stage removal", () => {
     expect(component).not.toContain("agent-feed-stage");
     expect(component).not.toContain("AgentPoseFx");
     expect(component).not.toContain("AgentStageArtwork");
-    const css = readFileSync(
-      new URL("../apps/dashboard/src/style.css", import.meta.url),
-      "utf8",
-    );
+    const css = readDashboardCss();
     expect(css).not.toContain(".agent-feed-stage");
     expect(css).not.toContain(".agent-feed-fx");
     expect(css).not.toContain(".agent-feed-head");
@@ -320,10 +315,7 @@ describe("slim two-row header (design A)", () => {
     header.indexOf("header-row-sub"),
   );
   const rowSub = header.slice(header.indexOf("header-row-sub"));
-  const css = readFileSync(
-    new URL("../apps/dashboard/src/style.css", import.meta.url),
-    "utf8",
-  ).replace(/\r\n/g, "\n");
+  const css = readDashboardCss().replace(/\r\n/g, "\n");
 
   it("puts the title and the PAPER badge on the top row", () => {
     expect(rowMain).toContain("<strong>◈ Sui Paper Lab</strong>");

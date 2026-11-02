@@ -1,3 +1,4 @@
+import { readDashboardCss } from "./helpers/dashboard-css";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
@@ -14,7 +15,7 @@ import { ProfitGuardSummary } from "../apps/dashboard/src/ProfitGuardPanel.tsx";
 type State = ReturnType<BotEngine["snapshot"]>;
 
 const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
-const css = readFileSync(resolve("apps/dashboard/src/style.css"), "utf8");
+const css = readDashboardCss();
 const operationOverview = readFileSync(
   resolve("apps/dashboard/src/OperationOverview.tsx"),
   "utf8",

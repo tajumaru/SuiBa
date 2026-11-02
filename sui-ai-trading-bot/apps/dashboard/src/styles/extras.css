@@ -1,0 +1,472 @@
+/* Activity grass (GitHub-style heatmap on the Overview tab):
+   18 weeks of days, fills brighter than attempts, in the
+   terminal mint scale. Today is ringed in gold. */
+.activity-grass-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.activity-grass-months {
+  position: relative;
+  height: 14px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 9.5px;
+  color: #71809a;
+}
+.activity-grass-months span {
+  position: absolute;
+  top: 0;
+}
+.activity-grass {
+  display: flex;
+  gap: 3px;
+  width: max-content;
+}
+.activity-grass-weekdays {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 15px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 9.5px;
+  color: #71809a;
+}
+.activity-grass-weekdays span {
+  height: 11px;
+  line-height: 11px;
+}
+.activity-grass-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.activity-grass-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  background: #0b1a12;
+  flex: none;
+}
+.activity-grass-cell.level-1 {
+  background: #0e3a26;
+}
+.activity-grass-cell.level-2 {
+  background: #17724a;
+}
+.activity-grass-cell.level-3 {
+  background: #25a56b;
+}
+.activity-grass-cell.level-4 {
+  background: #43dfb2;
+}
+.activity-grass-cell.today {
+  outline: 1px solid #edc980;
+  outline-offset: 0;
+}
+.activity-grass-cell.future {
+  background: transparent;
+}
+.activity-grass-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: #71809a;
+}
+
+/* Character rename: tapping the header avatar opens a small
+   editor (the dock is pointer-events:none, so the interactive
+   pieces opt back in). The pencil badge is the affordance. */
+.agent-avatar-tap {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 76px;
+  height: 76px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.agent-avatar-tap:focus-visible {
+  outline: 2px solid #43dfb2;
+  outline-offset: 2px;
+}
+.agent-avatar-dock.stuck .agent-avatar-tap {
+  width: 46px;
+  height: 46px;
+}
+.agent-avatar-edit-badge {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: #0a1a12;
+  border: 1px solid #1f5c46;
+  color: #43dfb2;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+.agent-rename {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 240px;
+  z-index: 60;
+  background: #071018;
+  border: 1px solid #1f5c46;
+  border-radius: 6px;
+  padding: 10px;
+  pointer-events: auto;
+  text-align: left;
+}
+.agent-avatar-dock.stuck .agent-rename {
+  top: auto;
+  bottom: calc(100% + 8px);
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.agent-rename label {
+  display: block;
+  font-size: 12px;
+  color: #9fb0c8;
+}
+.agent-rename input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  background: #020a06;
+  border: 1px solid #1f5c46;
+  border-radius: 4px;
+  color: #d7e3f2;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 14px;
+  padding: 7px 8px;
+}
+.agent-rename-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.agent-rename-actions button {
+  flex: 1;
+  background: #0a1a12;
+  border: 1px solid #1f5c46;
+  border-radius: 4px;
+  color: #d7e3f2;
+  font-size: 12px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+/* Voice input mic in the chat form: quiet until it listens,
+   then rose with a slow pulse (stilled for reduced motion). */
+.agent-chat-mic {
+  min-width: 40px;
+  font-size: 16px;
+  line-height: 1;
+}
+.agent-chat-mic.listening {
+  background: #3a0d18;
+  border-color: #ff7d9c;
+  animation: mic-pulse 1.1s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 125, 156, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(255, 125, 156, 0.18);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-chat-mic.listening {
+    animation: none;
+  }
+}
+
+/* Spoken-replies toggle, sitting with the question chips. */
+.agent-chat-chips .agent-voice-toggle.on {
+  border-color: #43dfb2;
+  color: #43dfb2;
+}
+
+/* Slash-command replies render as terminal readouts. */
+.agent-feed-entry.mono p {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+/* Forecast note (model outlook on the price chart) */
+.chart-forecast-note {
+  color: #8fb8dd;
+  font-size: 12px;
+}
+
+/* Grass streak line */
+.activity-grass-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.activity-grass-streak {
+  margin: 0;
+  color: #43dfb2;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Forecast score line (D): the cone's running report card,
+   under the forecast note on the 5-minute chart. */
+.chart-forecast-score {
+  color: #43dfb2;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  margin: 2px 0 6px;
+}
+
+/* Sui chain strip: the chain's vital signs under the ticker. */
+.chain-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  align-items: baseline;
+  padding: 5px 12px;
+  background: #04070b;
+  border: 1px solid #123324;
+  border-radius: 6px;
+  color: #9fb8ad;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.chain-strip-label {
+  color: #6fbcf0;
+  font-weight: 700;
+}
+.chain-strip strong {
+  color: #e8f5ef;
+  font-weight: 600;
+}
+
+/* Highlights: bookmarked moments + the replay sheet. */
+.highlight-bar {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 8px 0;
+}
+.highlight-bar-title {
+  color: #edc980;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  padding-top: 5px;
+  white-space: nowrap;
+}
+.highlight-bar-list {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.highlight-chip {
+  background: #0a1a12;
+  border: 1px solid #edc980;
+  border-radius: 6px;
+  color: #edc980;
+  font-size: 12px;
+  padding: 4px 9px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.highlight-replay {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 60;
+  width: min(520px, calc(100vw - 24px));
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  background: #04070b;
+  border: 1px solid #1f5c46;
+  border-radius: 8px;
+  padding: 12px 14px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.65);
+}
+.highlight-replay-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.highlight-replay-title {
+  flex: 1;
+  font-size: 12.5px;
+  color: #cfe8db;
+}
+.highlight-replay-head button {
+  background: none;
+  border: none;
+  color: #9fb8ad;
+  font-size: 15px;
+  cursor: pointer;
+}
+.highlight-replay-stage {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.highlight-replay-stage img {
+  width: 92px;
+  height: 92px;
+  border-radius: 14px;
+  flex: none;
+}
+.highlight-replay-entries {
+  flex: 1;
+  min-height: 92px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.highlight-replay-entry {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #cfe8db;
+  display: flex;
+  gap: 7px;
+}
+.highlight-replay-entry time {
+  color: #6f8f81;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  padding-top: 2px;
+  flex: none;
+}
+.highlight-replay-entry strong {
+  color: #fff;
+}
+.highlight-replay-spark {
+  width: 100%;
+  height: 48px;
+  margin-top: 10px;
+}
+.highlight-replay-spark polyline {
+  stroke: #43dfb2;
+  stroke-width: 1.6;
+}
+.highlight-replay-spark circle {
+  fill: #edc980;
+}
+.highlight-replay-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+.highlight-replay-controls button {
+  background: #0a1a12;
+  border: 1px solid #1f5c46;
+  border-radius: 6px;
+  color: #cfe8db;
+  font-size: 12.5px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.highlight-replay-progress {
+  flex: 1;
+  text-align: center;
+  color: #6f8f81;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+/* Epoch entry tag: the chain's own milestone, in Sui blue. */
+.agent-feed-entry-tag.epoch {
+  border-color: #2e5a8f;
+  color: #8fb8dd;
+}
+
+/* Book lean bar: the DeepBook book's bid/ask split for the
+   current pair, growing from the centre. */
+.book-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 5px 12px;
+  background: #04070b;
+  border: 1px solid #123324;
+  border-radius: 6px;
+  color: #9fb8ad;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.book-bar-label {
+  color: #6fbcf0;
+  font-weight: 700;
+}
+.book-bar-track {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  min-width: 60px;
+  background: #0a141f;
+  border: 1px solid #123324;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.book-bar-center {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #2c4a3a;
+}
+.book-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.book-bar-fill.buy {
+  background: #43dfb2;
+}
+.book-bar-fill.sell {
+  background: #ff7d9c;
+}
+.book-bar-side.sell {
+  color: #e8a7b8;
+}
+.book-bar-side.buy {
+  color: #9fe8d2;
+}
+.book-bar-word {
+  font-weight: 600;
+}
+.book-bar-word.buy {
+  color: #43dfb2;
+}
+.book-bar-word.sell {
+  color: #ff7d9c;
+}
+.book-bar-word.even {
+  color: #e8f5ef;
+}

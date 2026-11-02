@@ -1,3 +1,4 @@
+import { readDashboardCss } from "./helpers/dashboard-css";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
@@ -14,10 +15,7 @@ const bar = readFileSync(
   resolve("apps/dashboard/src/OperationBar.tsx"),
   "utf8",
 );
-const css = readFileSync(
-  resolve("apps/dashboard/src/style.css"),
-  "utf8",
-).replace(/\r\n/g, "\n");
+const css = readDashboardCss().replace(/\r\n/g, "\n");
 
 function render(runtime: Partial<Runtime>, startBlocked: string[] = []) {
   return renderToStaticMarkup(
