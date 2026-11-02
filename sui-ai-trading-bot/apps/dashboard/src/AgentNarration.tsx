@@ -4,6 +4,15 @@ import { botVital } from "./botVital.ts";
 import type { ErrorShout } from "./errorShout.ts";
 import { agentDisplayName } from "./agentName.ts";
 import {
+  appendHighlights,
+  captureHighlights,
+  highlightLabel,
+  loadHighlights,
+  saveHighlights,
+  type Highlight,
+} from "./highlightStore.ts";
+import { HighlightReplay } from "./HighlightReplay.tsx";
+import {
   startListening,
   voiceRecognitionCtor,
   type VoiceSession,
@@ -668,6 +677,21 @@ export function AgentNarrationFeed({
         BUY_CELEBRATION_MS,
       );
     }
+    // Bookmark the advance's fresh highlights (a fill, a hit,
+    // a near miss, a line reached, sell lines declared) with
+    // their surrounding entries, so the moment can be replayed
+    // instead of missed. Loaded history is excluded by the
+    // freshness window inside captureHighlights.
+    {
+      const prevIds = new Set(prev.entries.map((e) => e.id));
+      const fresh = captureHighlights(prevIds, next, Date.now());
+      if (fresh.length)
+        setHighlights((list) => {
+          const merged = appendHighlights(list, fresh);
+          if (merged !== list) saveHighlights(merged, pairLabel);
+          return merged;
+        });
+    }
     // The character speaks up at a fresh milestone (a line
     // declared, a watch hit, a near miss, a sudden move): one
     // prompt per advance at most, appended after the advance's
@@ -734,6 +758,12 @@ export function AgentNarrationFeed({
   // the feed leads; it expands on tap (or when a milestone
   // prompt chip submits through it).
   const [chatOpen, setChatOpen] = useState(false);
+  // Bookmarked highlights (device-local, per pair) and the one
+  // currently being replayed, if any.
+  const [highlights, setHighlights] = useState<Highlight[]>(() =>
+    loadHighlights(pairLabel),
+  );
+  const [replay, setReplay] = useState<Highlight | null>(null);
   // The chat bar is fixed to the screen bottom (see style.css);
   // while this tab is on screen it raises the corner avatar chip
   // above itself via page-level classes (the line-mode pattern).
@@ -1042,6 +1072,30 @@ export function AgentNarrationFeed({
             {score.misses}
           </span>
         </div>
+      )}
+      {highlights.length > 0 && (
+        <div className="highlight-bar" aria-label="ハイライト">
+          <span className="highlight-bar-title">ハイライト</span>
+          <div className="highlight-bar-list">
+            {[...highlights].reverse().map((h) => (
+              <button
+                key={h.id}
+                type="button"
+                className="highlight-chip"
+                onClick={() => setReplay(h)}
+              >
+                {highlightLabel(h)}{" "}
+                {new Date(h.at).toLocaleTimeString("ja-JP", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {replay && (
+        <HighlightReplay highlight={replay} onClose={() => setReplay(null)} />
       )}
       <div className="agent-chat">
         <p className="sr-only" role="status">

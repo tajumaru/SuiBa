@@ -4842,3 +4842,137 @@ summary {
   color: #e8f5ef;
   font-weight: 600;
 }
+
+/* Highlights: bookmarked moments + the replay sheet. */
+.highlight-bar {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 8px 0;
+}
+.highlight-bar-title {
+  color: #edc980;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  padding-top: 5px;
+  white-space: nowrap;
+}
+.highlight-bar-list {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.highlight-chip {
+  background: #0a1a12;
+  border: 1px solid #edc980;
+  border-radius: 6px;
+  color: #edc980;
+  font-size: 12px;
+  padding: 4px 9px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.highlight-replay {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 60;
+  width: min(520px, calc(100vw - 24px));
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  background: #04070b;
+  border: 1px solid #1f5c46;
+  border-radius: 8px;
+  padding: 12px 14px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.65);
+}
+.highlight-replay-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.highlight-replay-title {
+  flex: 1;
+  font-size: 12.5px;
+  color: #cfe8db;
+}
+.highlight-replay-head button {
+  background: none;
+  border: none;
+  color: #9fb8ad;
+  font-size: 15px;
+  cursor: pointer;
+}
+.highlight-replay-stage {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.highlight-replay-stage img {
+  width: 92px;
+  height: 92px;
+  border-radius: 14px;
+  flex: none;
+}
+.highlight-replay-entries {
+  flex: 1;
+  min-height: 92px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.highlight-replay-entry {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #cfe8db;
+  display: flex;
+  gap: 7px;
+}
+.highlight-replay-entry time {
+  color: #6f8f81;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  padding-top: 2px;
+  flex: none;
+}
+.highlight-replay-entry strong {
+  color: #fff;
+}
+.highlight-replay-spark {
+  width: 100%;
+  height: 48px;
+  margin-top: 10px;
+}
+.highlight-replay-spark polyline {
+  stroke: #43dfb2;
+  stroke-width: 1.6;
+}
+.highlight-replay-spark circle {
+  fill: #edc980;
+}
+.highlight-replay-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+.highlight-replay-controls button {
+  background: #0a1a12;
+  border: 1px solid #1f5c46;
+  border-radius: 6px;
+  color: #cfe8db;
+  font-size: 12.5px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.highlight-replay-progress {
+  flex: 1;
+  text-align: center;
+  color: #6f8f81;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
