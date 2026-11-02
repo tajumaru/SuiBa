@@ -28,22 +28,48 @@ export interface RawChainSample {
  */
 export function createChainInfoFetcher(
   url = "https://fullnode.mainnet.sui.io:443",
+  fallbackUrls: string[] = [],
 ): () => Promise<RawChainSample | null> {
-  if (new URL(url).protocol !== "https:") throw new Error("HTTPS_REQUIRED");
+  const endpoints = [url, ...fallbackUrls].filter(
+    (u, i, a) => a.indexOf(u) === i,
+  );
+  for (const endpoint of endpoints) {
+    const parsed = new URL(endpoint);
+    if (parsed.protocol !== "https:") throw new Error("HTTPS_REQUIRED");
+    if (parsed.pathname !== "/" || parsed.search || parsed.hash)
+      throw new Error("ENDPOINT_MUST_BE_ORIGIN");
+  }
   // The gRPC-Web fetch transport, as the trading client uses:
   // the SDK's default transport does not speak to the public
-  // fullnode from a fetch environment.
-  const client = new SuiGrpcClient({
-    network: "mainnet",
-    transport: new GrpcWebFetchTransport({ baseUrl: url }),
-  });
+  // fullnode from a fetch environment. One client per endpoint;
+  // sampling sticks to the endpoint that last served and only
+  // advances when a sample fails outright, so a dead primary
+  // freezes the strip for at most one poll.
+  const clients = endpoints.map(
+    (baseUrl) =>
+      new SuiGrpcClient({
+        network: "mainnet",
+        transport: new GrpcWebFetchTransport({ baseUrl }),
+      }),
+  );
+  let active = 0;
   let inFlight = false;
   return async () => {
     if (inFlight) return null;
     inFlight = true;
     try {
       return await Promise.race([
-        readChainSample(client),
+        (async () => {
+          for (let tried = 0; tried < clients.length; tried++) {
+            const index = (active + tried) % clients.length;
+            const sample = await readChainSample(clients[index]);
+            if (sample) {
+              active = index;
+              return sample;
+            }
+          }
+          return null;
+        })(),
         new Promise<null>((resolve) =>
           setTimeout(() => resolve(null), 10000),
         ),

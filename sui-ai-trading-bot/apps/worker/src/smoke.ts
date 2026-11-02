@@ -2,8 +2,12 @@ import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
 import { GeckoMarketData } from "../../../packages/market-data/src/index.ts";
 import { CetusRouter } from "../../../packages/dex-router/src/index.ts";
 import { SUI, USDC } from "../../../packages/shared/src/index.ts";
+import { resolveSuiGrpcEndpoints } from "./suiEndpoints.ts";
 try {
-  const sui = new ReadOnlySuiClient();
+  const endpoints = resolveSuiGrpcEndpoints();
+  const sui = new ReadOnlySuiClient(endpoints.primary, {
+    fallbackUrls: endpoints.fallbacks,
+  });
   console.info("gRPC", await sui.health());
   const market = new GeckoMarketData();
   console.info("pool", await market.discover());

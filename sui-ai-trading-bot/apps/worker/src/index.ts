@@ -53,6 +53,7 @@ import {
 } from "../../../packages/shared/src/index.ts";
 import { BotEngine } from "./engine.ts";
 import { ChainSampler, createChainInfoFetcher } from "./chainInfo.ts";
+import { resolveSuiGrpcEndpoints } from "./suiEndpoints.ts";
 import {
   BookImbalanceSampler,
   createBookImbalanceFetcher,
@@ -124,7 +125,11 @@ db.set(
 // freezes the displayed numbers (see chainInfo.ts for why it
 // must not share the trading client's transport plumbing).
 const chainSampler = new ChainSampler();
-const fetchChainInfo = createChainInfoFetcher(process.env.SUI_GRPC_URL);
+const suiGrpcEndpoints = resolveSuiGrpcEndpoints();
+const fetchChainInfo = createChainInfoFetcher(
+  suiGrpcEndpoints.primary,
+  suiGrpcEndpoints.fallbacks,
+);
 const pollChain = async () => {
   const raw = await fetchChainInfo();
   if (raw) chainSampler.observe(raw);
@@ -152,9 +157,10 @@ void pollBooks();
 const bookTimer = setInterval(() => void pollBooks(), 45000);
 bookTimer.unref();
 function createEngine(database: BotDatabase, selected: TradingPair) {
-  const client = new ReadOnlySuiClient(process.env.SUI_GRPC_URL, {
+  const client = new ReadOnlySuiClient(suiGrpcEndpoints.primary, {
     onObservation: (event) =>
       database.append("sui_observations", randomUUID(), event, event.at),
+    fallbackUrls: suiGrpcEndpoints.fallbacks,
   });
   const deep = new DeepBookMarketData(
     () => database.settings(),
