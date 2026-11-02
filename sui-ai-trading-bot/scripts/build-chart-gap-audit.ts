@@ -5,6 +5,21 @@ import {
   type EmptyTradeProof,
 } from "../packages/market-data/src/reconstruction.ts";
 import { classifyChartGap } from "../packages/shared/src/chart-gaps.ts";
+
+// The slices of the captured Indexer evidence file this audit reads.
+interface EvidencePipeline {
+  pipeline: string;
+  is_backfill: boolean;
+  indexed_timestamp_ms: number;
+}
+interface EvidenceGap {
+  timestamp: number;
+  fetchedAt: number;
+  complete: boolean;
+  validRange: boolean;
+  path: string;
+  trades: { timestamp: number }[] | null;
+}
 const file = process.argv[2] ?? "docs/evidence/chart-gaps-48/responses.json",
   raw = JSON.parse(fs.readFileSync(file, "utf8")),
   original = process.argv[3]
@@ -14,7 +29,7 @@ const now = raw.completedAt,
   through =
     raw.status.status === "OK"
       ? (raw.status.pipelines.find(
-          (p: any) => p.pipeline === "order_fill" && !p.is_backfill,
+          (p: EvidencePipeline) => p.pipeline === "order_fill" && !p.is_backfill,
         )?.indexed_timestamp_ms ?? 0)
       : 0;
 const five = parseDeepBook(
@@ -24,7 +39,7 @@ const five = parseDeepBook(
   ) as import("../packages/shared/src/index.ts").Candle[],
   minutes = parseDeepBook({ candles: raw.minutes }, 60, now),
   proofs = new Map<number, EmptyTradeProof>();
-const records = raw.gaps.map((g: any) => {
+const records = raw.gaps.map((g: EvidenceGap) => {
   const parts = minutes.filter(
       (m) => m.timestamp >= g.timestamp && m.timestamp < g.timestamp + 300,
     ),
@@ -85,14 +100,14 @@ const report = {
   expected: 2016,
   originalCount: 1968,
   originalDuplicates:
-    original.rows.length - new Set(original.rows.map((r: any) => r[0])).size,
+    original.rows.length - new Set(original.rows.map((r: number[]) => r[0])).size,
   invalidOriginal: original.rows.filter(
-    (r: any) =>
-      r[0] % 300000 || r.slice(1).some((v: any) => !Number.isFinite(v)),
+    (r: number[]) =>
+      r[0] % 300000 || r.slice(1).some((v: number) => !Number.isFinite(v)),
   ).length,
   groups,
   causeCounts: records.reduce(
-    (a: any, r: any) => ((a[r.cause] = (a[r.cause] ?? 0) + 1), a),
+    (a: Record<string, number>, r: (typeof records)[number]) => ((a[r.cause] = (a[r.cause] ?? 0) + 1), a),
     {},
   ),
   reconstructed: repairs.length,
@@ -109,7 +124,7 @@ fs.writeFileSync(
 );
 fs.writeFileSync(
   "packages/shared/src/chart-gap-audit.ts",
-  `// Captured, public Indexer evidence. DISPLAY ONLY; never imported by trading providers.\nimport type {Candle} from './index.ts';\nimport type {GapCause} from './chart-gaps.ts';\nexport const auditedChartGaps:${"{timestamp:number;cause:GapCause;observedAt:number;tradePath:string;indexedThrough:number}[]"}=${JSON.stringify(records.map(({ timestamp, cause, observedAt, tradePath, indexedThrough }: any) => ({ timestamp, cause, observedAt, tradePath, indexedThrough })))};\nexport const verifiedDisplayRepairs:Candle[]=${JSON.stringify(repairs)};\n`,
+  `// Captured, public Indexer evidence. DISPLAY ONLY; never imported by trading providers.\nimport type {Candle} from './index.ts';\nimport type {GapCause} from './chart-gaps.ts';\nexport const auditedChartGaps:${"{timestamp:number;cause:GapCause;observedAt:number;tradePath:string;indexedThrough:number}[]"}=${JSON.stringify(records.map(({ timestamp, cause, observedAt, tradePath, indexedThrough }: (typeof records)[number]) => ({ timestamp, cause, observedAt, tradePath, indexedThrough })))};\nexport const verifiedDisplayRepairs:Candle[]=${JSON.stringify(repairs)};\n`,
 );
 const lines = [
   "# DeepBook欠損48本の調査",
@@ -120,7 +135,7 @@ const lines = [
   "",
   "| UTC（足の開始） | 日本時間 | 分類 |",
   "|---|---|---|",
-  ...records.map((r: any) => `|${r.utc}|${r.jst}|${r.cause}|`),
+  ...records.map((r: (typeof records)[number]) => `|${r.utc}|${r.jst}|${r.cause}|`),
   "",
   `既存reconstructFiveMinutesを変更せず適用。表示専用再構築${repairs.length}本、未解決${rebuilt.quality.unresolved}本。Bot側には返さない。`,
 ];

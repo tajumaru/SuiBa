@@ -17,15 +17,34 @@ import { BotDatabase } from "../packages/database/src/index.ts";
 import {
   defaults,
   type Candle,
+  type Indicators,
   type Timeframe,
 } from "../packages/shared/src/index.ts";
+
+// The slices of docs/evidence/gaps/cross-check.json this script reads.
+interface CrossCheckGap {
+  timestamp: number;
+  queryComplete: boolean;
+  trades: unknown[];
+  utc: string;
+  minuteCount: number;
+}
+interface CrossCheckQuery {
+  path: string;
+  observedAt: number;
+}
+interface CrossCheckPipeline {
+  pipeline: string;
+  is_backfill: boolean;
+  indexed_timestamp_ms: number;
+}
 const dir = "docs/evidence/gaps/",
   h = JSON.parse(readFileSync(dir + "historical-5m.json", "utf8")),
   x = JSON.parse(readFileSync(dir + "cross-check.json", "utf8"));
 const raw = parseDeepBook(h.raw, 300, h.to * 1000) as Candle[],
   minutes = parseDeepBook({ candles: x.minutes }, 60, h.to * 1000);
 const proofs = new Map<number, EmptyTradeProof>(
-  x.gaps.map((g: any) => {
+  x.gaps.map((g: CrossCheckGap) => {
     const path =
       "/trades/SUI_USDC?start_time=" +
       g.timestamp +
@@ -39,9 +58,9 @@ const proofs = new Map<number, EmptyTradeProof>(
         pair: "SUI_USDC",
         start: g.timestamp,
         end: g.timestamp + 300,
-        fetchedAt: x.queries.find((q: any) => q.path === path).observedAt,
+        fetchedAt: x.queries.find((q: CrossCheckQuery) => q.path === path).observedAt,
         indexedThrough: x.finalStatus.pipelines.find(
-          (p: any) => p.pipeline === "order_fill" && !p.is_backfill,
+          (p: CrossCheckPipeline) => p.pipeline === "order_fill" && !p.is_backfill,
         ).indexed_timestamp_ms,
         complete: g.queryComplete,
         tradeCount: g.trades.length,
@@ -93,8 +112,8 @@ for (let i = 61; i < after.length; i++) {
   if (original.length >= 61) {
     const a = calculate(original),
       b = calculate(rows);
-    for (const [k, v] of Object.entries(b)) {
-      const d = Math.abs(v - (a as any)[k]);
+    for (const k of Object.keys(b) as (keyof Indicators)[]) {
+      const d = Math.abs(b[k] - a[k]);
       if (!maxDiagnosticDelta[k] || d > maxDiagnosticDelta[k].absolute)
         maxDiagnosticDelta[k] = {
           absolute: d,
@@ -143,10 +162,8 @@ for (const c of agg) {
     continue;
   }
   if (
-    ["open", "high", "low", "close", "volume"].every(
-      (k) =>
-        Math.abs((c as any)[k] - (r as any)[k]) <=
-        Math.max(1e-8, Math.abs((r as any)[k]) * 1e-10),
+    (["open", "high", "low", "close", "volume"] as const).every(
+      (k) => Math.abs(c[k] - r[k]) <= Math.max(1e-8, Math.abs(r[k]) * 1e-10),
     )
   )
     matches++;
@@ -219,7 +236,7 @@ const beforeIndicators = calculate(raw),
   afterIndicators = calculate(after);
 const result = {
   quality: rebuilt.quality,
-  classification: x.gaps.map((g: any) => ({
+  classification: x.gaps.map((g: CrossCheckGap) => ({
     timestamp: g.timestamp,
     utc: g.utc,
     classification:
@@ -237,9 +254,9 @@ const result = {
   },
   afterIndicators,
   difference: Object.fromEntries(
-    Object.entries(afterIndicators).map(([k, v]) => [
+    (Object.keys(afterIndicators) as (keyof Indicators)[]).map((k) => [
       k,
-      v - (beforeIndicators as any)[k],
+      afterIndicators[k] - beforeIndicators[k],
     ]),
   ),
   decisions: {
@@ -272,7 +289,7 @@ writeFileSync(
   dir + "missing-43.csv",
   "utc,timestamp,classification,indexed_trades,minute_candles\n" +
     result.classification
-      .map((g: any) =>
+      .map((g: (typeof result.classification)[number]) =>
         [g.utc, g.timestamp, g.classification, g.trades, g.minuteCount].join(
           ",",
         ),
