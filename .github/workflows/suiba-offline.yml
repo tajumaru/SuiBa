@@ -38,6 +38,7 @@ jobs:
       - run: corepack prepare pnpm@9.12.3 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm lint
       - run: pnpm build
       - run: pnpm test:offline
       - name: Verify PAPER deployment safety over loopback
