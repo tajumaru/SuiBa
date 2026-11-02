@@ -269,6 +269,16 @@ export interface Runtime {
   error: string | null;
   lastCandle: number | null;
 }
+/** A display-only sample of the Sui chain itself (epoch, latest
+ * checkpoint, and a TPS estimate derived from the cumulative
+ * network transaction count). Sampled beside the trading paths;
+ * never an input to any trading or safety decision. */
+export interface ChainInfo {
+  epoch: number;
+  checkpoint: number;
+  tps: number | null;
+  at: number;
+}
 export const settingsSchema = z
   .object({
     maxOrder: z.number().positive().max(5),

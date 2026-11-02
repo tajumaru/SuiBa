@@ -18,6 +18,7 @@ import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
 import { BootScreen } from "./BootScreen.tsx";
 import { ActivityGrass } from "./ActivityGrass.tsx";
+import { ChainStrip } from "./ChainStrip.tsx";
 import { chartForecast } from "./chartForecast.ts";
 import {
   appendForecastRecord,
@@ -775,6 +776,9 @@ function App() {
                       : null
                   }
                 />
+                {/* The chain's own vital signs ride under the
+                    ticker on every tab (display only). */}
+                <ChainStrip chain={data.chain} />
                 {/* The narration tab stays mounted (only hidden) so
                     the feed history accumulated from snapshot diffs
                     survives tab switches. */}
@@ -791,6 +795,7 @@ function App() {
                       onPoseChange={setAgentPose}
                       onCelebrate={handleBuyCelebration}
                       pairLabel={data?.pair === "WAL_USDC" ? "WAL" : "SUI"}
+                      chain={data?.chain ?? null}
                       active={activeTab === "Live"}
                       agentName={agentName}
                       onListeningChange={setVoiceListening}

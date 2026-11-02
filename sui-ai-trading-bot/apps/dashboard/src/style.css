@@ -4817,3 +4817,28 @@ summary {
   font-size: 12px;
   margin: 2px 0 6px;
 }
+
+/* Sui chain strip: the chain's vital signs under the ticker. */
+.chain-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  align-items: baseline;
+  padding: 5px 12px;
+  background: #04070b;
+  border: 1px solid #123324;
+  border-radius: 6px;
+  color: #9fb8ad;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.chain-strip-label {
+  color: #6fbcf0;
+  font-weight: 700;
+}
+.chain-strip strong {
+  color: #e8f5ef;
+  font-weight: 600;
+}

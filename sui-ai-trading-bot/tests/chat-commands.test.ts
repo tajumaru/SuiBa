@@ -22,6 +22,7 @@ const ctx = (over: Partial<AgentChatContext> = {}): AgentChatContext =>
     lastTopic: null,
     exchangeCount: 0,
     pairLabel: "SUI",
+    chain: null,
     ...over,
   }) as AgentChatContext;
 

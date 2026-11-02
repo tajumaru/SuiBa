@@ -556,11 +556,15 @@ export function AgentNarrationFeed({
   pairLabel = "SUI",
   active = true,
   agentName = "",
+  chain = null,
   onListeningChange,
   onSpeakingChange,
 }: {
   data: OperationsSnapshot;
   stale: boolean;
+  /** The latest Sui chain sample (display-only, from the engine
+   * state rather than the operations snapshot), quoted by /status. */
+  chain?: { epoch: number; checkpoint: number; tps: number | null } | null;
   /** The character's user-chosen name ("" shows as キャラ). */
   agentName?: string;
   /** Whether the narration tab is the one on screen. The feed
@@ -759,7 +763,7 @@ export function AgentNarrationFeed({
   // freshest snapshot, not from the moment the user hit send.
   const chatCtxRef = useRef<Pick<
     AgentChatContext,
-    "dec" | "score" | "running" | "stoppedKind" | "pairLabel"
+    "dec" | "score" | "running" | "stoppedKind" | "pairLabel" | "chain"
   > | null>(null);
   const [chatReplyText, setChatReplyText] = useState("");
   const submitChat = (raw: string) => {
@@ -804,6 +808,7 @@ export function AgentNarrationFeed({
         running: base?.running ?? false,
         stoppedKind: base?.stoppedKind ?? null,
         pairLabel: base?.pairLabel ?? pairLabel,
+        chain: base?.chain ?? null,
         linePrice: prev.priceLine?.price ?? null,
         tradeCount: prev.entries.filter((e) => e.kind === "trade").length,
         recentMovePct:
@@ -983,6 +988,7 @@ export function AgentNarrationFeed({
               ? "weak"
               : null,
       pairLabel,
+      chain,
     };
   });
 

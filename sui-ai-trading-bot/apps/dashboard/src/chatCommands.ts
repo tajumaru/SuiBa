@@ -52,6 +52,13 @@ function statusText(ctx: AgentChatContext): string {
     ),
   );
   lines.push(row("pair", `${ctx.pairLabel} / USDC`));
+  if (ctx.chain)
+    lines.push(
+      row(
+        "chain",
+        `EPOCH ${ctx.chain.epoch} · CKP ${ctx.chain.checkpoint.toLocaleString("en-US")} · TPS ${ctx.chain.tps ?? "—"}`,
+      ),
+    );
   const dec = ctx.dec;
   if (dec) {
     lines.push(row("price", `$${dec.price}`));

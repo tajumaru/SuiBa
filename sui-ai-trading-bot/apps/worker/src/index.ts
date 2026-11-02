@@ -52,6 +52,7 @@ import {
   type TradingPair,
 } from "../../../packages/shared/src/index.ts";
 import { BotEngine } from "./engine.ts";
+import { ChainSampler, createChainInfoFetcher } from "./chainInfo.ts";
 import { backtestMetadata, savedComparison } from "./backtest-service.ts";
 import { comparisonOptionsSchema } from "../../../packages/backtest-engine/src/index.ts";
 if (process.env.MODE && process.env.MODE !== "PAPER")
@@ -113,6 +114,20 @@ db.set(
     readFileSync(new URL("../../../pnpm-lock.yaml", import.meta.url), "utf8"),
   ),
 );
+// Display-only Sui chain sampling (epoch / checkpoint / TPS for
+// the dashboard's chain strip). A dedicated raw fetcher and
+// timer, fully beside the trading paths: its failure only
+// freezes the displayed numbers (see chainInfo.ts for why it
+// must not share the trading client's transport plumbing).
+const chainSampler = new ChainSampler();
+const fetchChainInfo = createChainInfoFetcher(process.env.SUI_GRPC_URL);
+const pollChain = async () => {
+  const raw = await fetchChainInfo();
+  if (raw) chainSampler.observe(raw);
+};
+void pollChain();
+const chainTimer = setInterval(() => void pollChain(), 15000);
+chainTimer.unref();
 function createEngine(database: BotDatabase, selected: TradingPair) {
   const client = new ReadOnlySuiClient(process.env.SUI_GRPC_URL, {
     onObservation: (event) =>
@@ -141,6 +156,7 @@ function createEngine(database: BotDatabase, selected: TradingPair) {
         client,
         selected,
         () => stopping || deploymentGate.blocked(),
+        () => chainSampler.current(),
       ),
     };
   } catch (error) {
@@ -784,6 +800,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
     apiAccess.cancel();
     deepBookTransport.close();
     clearInterval(watchdog);
+    clearInterval(chainTimer);
     db.set("runtime", { ...db.runtime(), running: false });
     engine.monitor.transition("PROCESS_SHUTDOWN");
     server.close(() => {

@@ -69,6 +69,7 @@ function ctx(overrides: Partial<AgentChatContext> = {}): AgentChatContext {
     lastTopic: null,
     exchangeCount: 0,
     pairLabel: "SUI",
+    chain: null,
     ...overrides,
   };
 }

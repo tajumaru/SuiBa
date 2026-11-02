@@ -11,6 +11,7 @@ import {
   dayKey,
   safeFailure,
   type Candle,
+  type ChainInfo,
   type CycleEvidence,
   type DexRouter,
   type TradingDecision,
@@ -59,6 +60,7 @@ export class BotEngine {
     readonly sui: Pick<ReadOnlySuiClient, "health" | "status">,
     readonly pair: TradingPair = "SUI_USDC",
     private readonly deploymentBlocked: () => boolean = () => false,
+    private readonly chainInfoSource: () => ChainInfo | null = () => null,
   ) {
     const portfolio = db.portfolio();
     const baseCoin = tradingPairs[pair].base;
@@ -798,6 +800,7 @@ export class BotEngine {
         .map((x) => x.equity);
     return {
       pair: this.pair,
+      chain: this.chainInfoSource(),
       marketData: this.market.status?.() ?? null,
       marketQuality: this.db.get("market_quality") ?? null,
       mode: "PAPER",
