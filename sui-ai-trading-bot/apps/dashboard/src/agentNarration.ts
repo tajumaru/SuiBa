@@ -94,6 +94,7 @@ export type NarrationKind =
   | "chatUser" // a comment the user typed to the character
   | "chatReply" // the character's record-grounded reply (agentChat.ts)
   | "chatPrompt" // the character speaking up at a milestone, with a suggested question
+  | "epoch" // a new Sui epoch began (the chain's own daily milestone)
   | "status"; // feed-initialised status line
 
 export interface NarrationEntry {

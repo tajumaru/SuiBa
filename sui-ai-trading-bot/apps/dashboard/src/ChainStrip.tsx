@@ -9,6 +9,11 @@ import type { ChainInfo } from "../../../packages/shared/src/index.ts";
  * sign that the chain read has gone quiet. Renders nothing
  * until the first sample exists (fail-closed, like the ticker).
  */
+/** Reference gas price as Sui tooling quotes it: raw MIST. */
+export function gasPriceText(gasMist: number): string {
+  return `${gasMist.toLocaleString("en-US")} MIST`;
+}
+
 export function ChainStrip({ chain }: { chain: ChainInfo | null }) {
   if (!chain) return null;
   return (
@@ -24,6 +29,11 @@ export function ChainStrip({ chain }: { chain: ChainInfo | null }) {
       <span>
         TPS <strong>{chain.tps == null ? "—" : chain.tps.toLocaleString("en-US")}</strong>
       </span>
+      {chain.gasMist != null && (
+        <span>
+          GAS <strong>{gasPriceText(chain.gasMist)}</strong>
+        </span>
+      )}
     </div>
   );
 }

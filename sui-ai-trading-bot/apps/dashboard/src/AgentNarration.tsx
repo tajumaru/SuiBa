@@ -13,6 +13,11 @@ import {
 } from "./highlightStore.ts";
 import { HighlightReplay } from "./HighlightReplay.tsx";
 import {
+  epochTransition,
+  loadLastEpoch,
+  saveLastEpoch,
+} from "./epochMark.ts";
+import {
   startListening,
   voiceRecognitionCtor,
   type VoiceSession,
@@ -522,6 +527,9 @@ export function AgentFeedEntryRow({
       {entry.kind === "sleepTalk" && (
         <span className="agent-feed-entry-tag sleep">寝言</span>
       )}
+      {entry.kind === "epoch" && (
+        <span className="agent-feed-entry-tag epoch">チェーン</span>
+      )}
       {entry.kind === "priceLine" && (
         <span className="agent-feed-entry-tag line">買い走りライン</span>
       )}
@@ -1021,6 +1029,33 @@ export function AgentNarrationFeed({
       chain,
     };
   });
+  // Epoch boundary: when the chain sample reports a newer epoch
+  // than this device last saw, the feed marks the chain's own
+  // milestone with one line. The first sighting only records.
+  useEffect(() => {
+    if (!chain) return;
+    const seen = loadLastEpoch();
+    const began = epochTransition(seen, chain.epoch);
+    if (seen !== chain.epoch) saveLastEpoch(chain.epoch);
+    if (began == null) return;
+    const prev = narrationRef.current;
+    const next: NarrationState = {
+      ...prev,
+      entries: trimNarrationEntries([
+        ...prev.entries,
+        {
+          id: `narration:${prev.nextEntryId}`,
+          at: Date.now(),
+          kind: "epoch",
+          text: `エポック ${began} が始まった（Suiチェーンの節目）`,
+        } satisfies NarrationEntry,
+      ]),
+      nextEntryId: prev.nextEntryId + 1,
+    };
+    narrationRef.current = next;
+    persist(next);
+    setNarration(next);
+  }, [chain]);
 
   return (
     <section className="agent-feed" aria-label="エージェント実況">

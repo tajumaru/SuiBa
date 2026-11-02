@@ -4976,3 +4976,9 @@ summary {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
 }
+
+/* Epoch entry tag: the chain's own milestone, in Sui blue. */
+.agent-feed-entry-tag.epoch {
+  border-color: #2e5a8f;
+  color: #8fb8dd;
+}

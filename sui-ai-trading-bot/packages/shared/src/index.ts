@@ -277,6 +277,8 @@ export interface ChainInfo {
   epoch: number;
   checkpoint: number;
   tps: number | null;
+  /** Reference gas price in MIST for the current epoch. */
+  gasMist: number | null;
   at: number;
 }
 export const settingsSchema = z

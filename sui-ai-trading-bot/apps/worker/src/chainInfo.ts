@@ -5,6 +5,9 @@ export interface RawChainSample {
   epoch: number;
   checkpoint: number;
   totalNetworkTransactions: number;
+  /** Reference gas price in MIST, or null when that read alone
+   * failed (the rest of the sample still counts). */
+  gasMist: number | null;
 }
 
 /**
@@ -62,10 +65,19 @@ async function readChainSample(
     }).response;
     const total = detail.checkpoint?.summary?.totalNetworkTransactions;
     if (total == null) return null;
+    let gasMist: number | null = null;
+    try {
+      const gas = await client.getReferenceGasPrice();
+      const parsed = Number(gas.referenceGasPrice);
+      if (Number.isSafeInteger(parsed) && parsed >= 0) gasMist = parsed;
+    } catch {
+      // Gas is garnish: a failed gas read never voids the sample.
+    }
     const out: RawChainSample = {
       epoch: Number(epoch),
       checkpoint: Number(checkpoint),
       totalNetworkTransactions: Number(total),
+      gasMist,
     };
     return Number.isSafeInteger(out.epoch) &&
       out.epoch >= 0 &&
@@ -110,6 +122,9 @@ export class ChainSampler {
       epoch: raw.epoch,
       checkpoint: raw.checkpoint,
       tps,
+      // The gas price only moves at epoch boundaries; a sample
+      // whose gas read failed keeps the last known price.
+      gasMist: raw.gasMist ?? this.latest?.gasMist ?? null,
       at: now,
     };
     return this.latest;
