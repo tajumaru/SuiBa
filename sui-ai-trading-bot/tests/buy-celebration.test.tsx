@@ -266,7 +266,7 @@ describe("buy celebration: spotting a genuinely new buy", () => {
 
   it("wires the initialised guard and the callback into the feed", () => {
     const component = readFileSync(
-      resolve("apps/dashboard/src/AgentNarration.tsx"),
+      resolve("apps/dashboard/src/AgentNarrationFeed.tsx"),
       "utf8",
     );
     expect(component).toContain("if (firstAdvance || !prev.initialized) return;");

@@ -237,7 +237,7 @@ describe("narration feed after the stage removal", () => {
 
   it("leaves no stage or expression-overlay code behind", () => {
     const component = readFileSync(
-      resolve("apps/dashboard/src/AgentNarration.tsx"),
+      resolve("apps/dashboard/src/AgentNarrationFeed.tsx"),
       "utf8",
     );
     expect(component).not.toContain("agent-feed-stage");
@@ -251,7 +251,7 @@ describe("narration feed after the stage removal", () => {
 
   it("reports the derived pose to the app shell", () => {
     const component = readFileSync(
-      resolve("apps/dashboard/src/AgentNarration.tsx"),
+      resolve("apps/dashboard/src/AgentNarrationFeed.tsx"),
       "utf8",
     );
     expect(component).toContain("onPoseChange?.(reportedPose)");
