@@ -11,12 +11,12 @@ describe("ChainSampler", () => {
     const s = new ChainSampler();
     const t0 = 1_700_000_000_000;
     const first = s.observe(
-      { epoch: 900, checkpoint: 1000, totalNetworkTransactions: 5000, gasMist: 1000 },
+      { epoch: 900, checkpoint: 1000, totalNetworkTransactions: 5000, gasMist: 1000, epochStartMs: null, epochDurationMs: null, validators: null },
       t0,
     );
-    expect(first).toEqual({ epoch: 900, checkpoint: 1000, tps: null, gasMist: 1000, at: t0 });
+    expect(first).toEqual({ epoch: 900, checkpoint: 1000, tps: null, gasMist: 1000, epochStartMs: null, epochDurationMs: null, validators: null, at: t0 });
     const second = s.observe(
-      { epoch: 900, checkpoint: 1040, totalNetworkTransactions: 5000 + 30000, gasMist: 1000 },
+      { epoch: 900, checkpoint: 1040, totalNetworkTransactions: 5000 + 30000, gasMist: 1000, epochStartMs: null, epochDurationMs: null, validators: null },
       t0 + 30000,
     );
     // 30,000 transactions over 30 seconds.
@@ -27,9 +27,9 @@ describe("ChainSampler", () => {
   it("never reports a negative TPS when the counter regresses", () => {
     const s = new ChainSampler();
     const t0 = 1_700_000_000_000;
-    s.observe({ epoch: 1, checkpoint: 10, totalNetworkTransactions: 9000, gasMist: null }, t0);
+    s.observe({ epoch: 1, checkpoint: 10, totalNetworkTransactions: 9000, gasMist: null, epochStartMs: null, epochDurationMs: null, validators: null }, t0);
     const next = s.observe(
-      { epoch: 1, checkpoint: 20, totalNetworkTransactions: 100, gasMist: null },
+      { epoch: 1, checkpoint: 20, totalNetworkTransactions: 100, gasMist: null, epochStartMs: null, epochDurationMs: null, validators: null },
       t0 + 30000,
     );
     expect(next.tps).toBeNull();
@@ -40,7 +40,7 @@ describe("ChainStrip", () => {
   it("renders the chain vitals and hides itself before the first sample", () => {
     const html = renderToStaticMarkup(
       React.createElement(ChainStrip, {
-        chain: { epoch: 1024, checkpoint: 182394551, tps: 1208, gasMist: 1000, at: 1 },
+        chain: { epoch: 1024, checkpoint: 182394551, tps: 1208, gasMist: 1000, epochStartMs: Date.now() - 3600000, epochDurationMs: 86400000, validators: 108, at: 1 },
       }),
     );
     expect(html).toContain("SUI CHAIN");
@@ -49,12 +49,16 @@ describe("ChainStrip", () => {
     expect(html).toContain("1,208");
     expect(html).toContain("GAS");
     expect(html).toContain("1,000 MIST");
+    expect(html).toContain("NEXT EPOCH");
+    expect(html).toContain("（目安）");
+    expect(html).toContain("VALIDATORS");
+    expect(html).toContain("108");
     expect(
       renderToStaticMarkup(React.createElement(ChainStrip, { chain: null })),
     ).toBe("");
     const noTps = renderToStaticMarkup(
       React.createElement(ChainStrip, {
-        chain: { epoch: 1, checkpoint: 5, tps: null, gasMist: null, at: 1 },
+        chain: { epoch: 1, checkpoint: 5, tps: null, gasMist: null, epochStartMs: null, epochDurationMs: null, validators: null, at: 1 },
       }),
     );
     expect(noTps).toContain("—");
@@ -110,13 +114,44 @@ describe("epoch marks", () => {
     const s = new ChainSampler();
     const t0 = 1_700_000_000_000;
     s.observe(
-      { epoch: 1, checkpoint: 10, totalNetworkTransactions: 100, gasMist: 750 },
+      { epoch: 1, checkpoint: 10, totalNetworkTransactions: 100, gasMist: 750, epochStartMs: null, epochDurationMs: null, validators: null },
       t0,
     );
     const next = s.observe(
-      { epoch: 1, checkpoint: 20, totalNetworkTransactions: 200, gasMist: null },
+      { epoch: 1, checkpoint: 20, totalNetworkTransactions: 200, gasMist: null, epochStartMs: null, epochDurationMs: null, validators: null },
       t0 + 15000,
     );
     expect(next.gasMist).toBe(750);
+  });
+});
+
+describe("epochRemainingText", () => {
+  it("counts down from the chain's own duration and lands on まもなく", async () => {
+    const { epochRemainingText } = await import(
+      "../apps/dashboard/src/ChainStrip.tsx"
+    );
+    const start = 1_700_000_000_000,
+      day = 86400000;
+    expect(epochRemainingText(start, day, start + 3600000)).toBe("あと23時間0分");
+    expect(epochRemainingText(start, day, start + day - 30 * 60000)).toBe("あと30分");
+    expect(epochRemainingText(start, day, start + day + 1000)).toBe("まもなく");
+  });
+
+  it("never inherits the previous epoch's start time", () => {
+    const s = new ChainSampler();
+    const t0 = 1_700_000_000_000;
+    const raw = (epoch: number, startMs: number | null) => ({
+      epoch,
+      checkpoint: 10,
+      totalNetworkTransactions: 100,
+      gasMist: null,
+      epochStartMs: startMs,
+      epochDurationMs: 86400000,
+      validators: 108,
+    });
+    s.observe(raw(5, t0), t0);
+    const next = s.observe(raw(6, null), t0 + 1000);
+    expect(next.epochStartMs).toBeNull();
+    expect(next.validators).toBe(108);
   });
 });

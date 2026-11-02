@@ -279,6 +279,12 @@ export interface ChainInfo {
   tps: number | null;
   /** Reference gas price in MIST for the current epoch. */
   gasMist: number | null;
+  /** When the current epoch began (ms), when known. */
+  epochStartMs: number | null;
+  /** The chain's configured epoch duration (ms), when known. */
+  epochDurationMs: number | null;
+  /** Active validator count, when known. */
+  validators: number | null;
   at: number;
 }
 export const settingsSchema = z

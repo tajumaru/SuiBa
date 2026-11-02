@@ -8,6 +8,12 @@ export interface RawChainSample {
   /** Reference gas price in MIST, or null when that read alone
    * failed (the rest of the sample still counts). */
   gasMist: number | null;
+  /** When the current epoch began (ms), from the system state. */
+  epochStartMs: number | null;
+  /** The chain's own epoch duration parameter (ms). */
+  epochDurationMs: number | null;
+  /** Active validator count, from the system state. */
+  validators: number | null;
 }
 
 /**
@@ -73,11 +79,42 @@ async function readChainSample(
     } catch {
       // Gas is garnish: a failed gas read never voids the sample.
     }
+    // The epoch's start and configured duration come from the
+    // system state (the SDK resolves them via LedgerService
+    // GetEpoch); the validator count needs the raw GetEpoch
+    // with a validators read mask. Same garnish rules: each
+    // read fails alone.
+    let epochStartMs: number | null = null,
+      epochDurationMs: number | null = null,
+      validators: number | null = null;
+    try {
+      const { systemState } = await client.getCurrentSystemState();
+      const start = Number(systemState.epochStartTimestampMs),
+        duration = Number(systemState.parameters?.epochDurationMs);
+      if (Number.isSafeInteger(start) && start > 0) epochStartMs = start;
+      if (Number.isSafeInteger(duration) && duration > 0)
+        epochDurationMs = duration;
+    } catch {
+      // Garnish only, as above.
+    }
+    try {
+      const ep = await client.ledgerService.getEpoch({
+        readMask: { paths: ["system_state.validators"] },
+      });
+      const count =
+        ep.response.epoch?.systemState?.validators?.activeValidators?.length;
+      if (typeof count === "number" && count > 0) validators = count;
+    } catch {
+      // Garnish only, as above.
+    }
     const out: RawChainSample = {
       epoch: Number(epoch),
       checkpoint: Number(checkpoint),
       totalNetworkTransactions: Number(total),
       gasMist,
+      epochStartMs,
+      epochDurationMs,
+      validators,
     };
     return Number.isSafeInteger(out.epoch) &&
       out.epoch >= 0 &&
@@ -125,6 +162,15 @@ export class ChainSampler {
       // The gas price only moves at epoch boundaries; a sample
       // whose gas read failed keeps the last known price.
       gasMist: raw.gasMist ?? this.latest?.gasMist ?? null,
+      // Same retention for the system-state garnish, except
+      // the epoch start, which belongs to the epoch itself:
+      // a new epoch must not inherit the previous start time.
+      epochStartMs:
+        this.latest?.epoch === raw.epoch
+          ? (raw.epochStartMs ?? this.latest?.epochStartMs ?? null)
+          : raw.epochStartMs,
+      epochDurationMs: raw.epochDurationMs ?? this.latest?.epochDurationMs ?? null,
+      validators: raw.validators ?? this.latest?.validators ?? null,
       at: now,
     };
     return this.latest;
