@@ -21,6 +21,7 @@ import { ActivityGrass } from "./ActivityGrass.tsx";
 import { MonthlyReportCard } from "./MonthlyReportCard.tsx";
 import { FillAnalysisCard } from "./FillAnalysisCard.tsx";
 import { EquityCurve } from "./EquityCurve.tsx";
+import { PortfolioMix } from "./PortfolioMix.tsx";
 import { ChainStrip } from "./ChainStrip.tsx";
 import { BookBar } from "./BookBar.tsx";
 import { chartForecast, FORECAST_BARS } from "./chartForecast.ts";
@@ -894,6 +895,13 @@ function App() {
                         </p>
                       </section>
                     </div>
+                    <PortfolioMix
+                      usdc={data.portfolio.usdc}
+                      baseQty={data.portfolio.sui}
+                      price={data.price}
+                      costBasis={data.portfolio.costBasis}
+                      baseSymbol={data.pair === "WAL_USDC" ? "WAL" : "SUI"}
+                    />
                     <EquityCurve points={data.equityCurve} />
                     <ActivityGrass orders={data.orders} />
                     <MonthlyReportCard
