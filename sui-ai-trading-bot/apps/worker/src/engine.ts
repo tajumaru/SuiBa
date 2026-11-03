@@ -45,6 +45,30 @@ import { equity, metrics } from "../../../packages/portfolio/src/index.ts";
 import { validateCandles } from "../../../packages/market-data/src/index.ts";
 import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
 import type { ValidationRecorder } from "./validation.ts";
+
+/**
+ * Downsample the recorded equity snapshots for the dashboard's
+ * asset curve: the last point of each hour over the newest 30
+ * days. The snapshots themselves are appended every analysis
+ * cycle whether or not the dashboard is open; the wire gets at
+ * most ~720 points, the full history stays in the database.
+ */
+export function downsampleEquityCurve(
+  points: readonly { timestamp: number; equity: number }[],
+  now: number,
+): { t: number; equity: number }[] {
+  const from = now - 30 * 24 * 3600 * 1000;
+  const byHour = new Map<number, { t: number; equity: number }>();
+  for (const p of points) {
+    if (!Number.isFinite(p.equity) || p.timestamp < from) continue;
+    byHour.set(Math.floor(p.timestamp / 3600000), {
+      t: p.timestamp,
+      equity: p.equity,
+    });
+  }
+  return [...byHour.values()].sort((a, b) => a.t - b.t);
+}
+
 export class BotEngine {
   validation?: ValidationRecorder;
   marketStatus() {
@@ -796,10 +820,13 @@ export class BotEngine {
     const p = this.db.portfolio(),
       price = this.db.get<number>("price") ?? null,
       trades = this.db.history<Fill>("paper_trades", 10000),
-      values = this.db
-        .history<{ equity: number }>("portfolio_snapshots", 10000)
-        .reverse()
-        .map((x) => x.equity);
+      snapshots = this.db
+        .history<{ timestamp: number; equity: number }>(
+          "portfolio_snapshots",
+          10000,
+        )
+        .reverse(),
+      values = snapshots.map((x) => x.equity);
     return {
       pair: this.pair,
       chain: this.chainInfoSource(),
@@ -821,6 +848,7 @@ export class BotEngine {
       pnl: price === null ? null : equity(p, price) - p.initialEquity,
       dailyPnl: price === null ? null : equity(p, price) - p.dayStartEquity,
       unrealized: price === null ? null : p.sui * price - p.costBasis,
+      equityCurve: downsampleEquityCurve(snapshots, Date.now()),
       todayTrades: trades.filter(
         (x) => dayKey(x.timestamp) === dayKey(Date.now()),
       ).length,

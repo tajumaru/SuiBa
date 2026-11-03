@@ -20,6 +20,7 @@ import { BootScreen } from "./BootScreen.tsx";
 import { ActivityGrass } from "./ActivityGrass.tsx";
 import { MonthlyReportCard } from "./MonthlyReportCard.tsx";
 import { FillAnalysisCard } from "./FillAnalysisCard.tsx";
+import { EquityCurve } from "./EquityCurve.tsx";
 import { ChainStrip } from "./ChainStrip.tsx";
 import { BookBar } from "./BookBar.tsx";
 import { chartForecast, FORECAST_BARS } from "./chartForecast.ts";
@@ -846,6 +847,7 @@ function App() {
                         </p>
                       </section>
                     </div>
+                    <EquityCurve points={data.equityCurve} />
                     <ActivityGrass orders={data.orders} />
                     <MonthlyReportCard
                       pair={data.pair}
