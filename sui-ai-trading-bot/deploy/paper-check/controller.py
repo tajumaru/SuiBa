@@ -535,6 +535,15 @@ class Controller:
             except Exception: errors.append('STOP_UNKNOWN')
         return errors
 
+    def consume_retry(self, record, permit):
+        consumed = permit.with_name('retry-consumed.json')
+        require(not os.path.lexists(consumed))
+        require(self.b.decode(self.b.read_trusted(permit)) == {'id': record['id']})
+        self.b.atomic(permit.with_name('failed-run.json'), record)
+        os.rename(permit, consumed)
+        with self.b.directory(permit.parent) as directory_fd:
+            os.fsync(directory_fd)
+
     def run(self):
         import fcntl
         # Same lock inode as deployment. Never unlink it.
@@ -546,21 +555,30 @@ class Controller:
             s = os.fstat(fd)
             require(stat.S_ISREG(s.st_mode) and s.st_uid == 0 and s.st_nlink == 1 and not s.st_mode & 0o077)
             fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB)
-            self.b.Broker(state=self.b.STATE).check_paper_session()
             config = self.b.decode(self.b.read_trusted(POLICY))
             require(config == {'enabled': True, 'mode': 'sui-30m'})
-            if self.record.exists():
-                old = self.b.decode(self.b.read_trusted(self.record))
-                require(old['status'] == 'completed')
             with self.locked('stop'), self.locked('mutation'):
                 require(not (self.state/'abort-inhibit.json').exists())
                 self.quiescent()
+                permit = None
                 if self.record.exists():
                     old = self.current()
-                    require(old['status'] == 'completed')
+                    if old['status'] == 'failed_requires_review':
+                        require(not os.path.lexists(self.b.STATE/'paper-check-failed.json'))
+                        marker = self.b.decode(self.b.read_trusted(self.b.STATE/'paper-check.json'))
+                        require(marker == {'status': 'in_progress'})
+                        permit = self.folder(old)/'retry-approved.json'
+                        require(not os.path.lexists(permit.with_name('retry-consumed.json')))
+                        require(self.b.decode(self.b.read_trusted(permit)) == {'id': old['id']})
+                    else:
+                        require(old['status'] == 'completed')
                     require(self.exited(old))
                     previous = self.b.decode(self.b.read_trusted(self.folder(old)/'stop.json'))
                     require(previous['id'] == old['id'] and previous['status'] == 'clean_stopped' and not self.faults(old))
+                if permit is None:
+                    self.b.Broker(state=self.b.STATE).check_paper_session()
+                else:
+                    self.consume_retry(old, permit)
                 now = int(time.time()*1000)
                 self.run_id = uuid.uuid4().hex
                 (self.state/self.run_id).mkdir(mode=0o700)
@@ -680,7 +698,7 @@ class Controller:
 def main():
     os.umask(0o077)
     try:
-        require(os.geteuid() == 0 and len(sys.argv) == 2 and sys.argv[1] in ('request', 'run', 'stop', 'post-stop'))
+        require(os.geteuid() == 0 and ((len(sys.argv) == 2 and sys.argv[1] in ('request', 'run', 'stop', 'post-stop')) or (len(sys.argv) == 3 and sys.argv[1] == 'approve-retry')))
         # All ancestors and module must be root-owned/non-writable by SSH user.
         import stat
         current = BROKER.parent
@@ -695,7 +713,19 @@ def main():
         spec.loader.exec_module(b)
         b.read_trusted(Path(__file__))
         controller = Controller(b)
-        if sys.argv[1] == 'request':
+        if sys.argv[1] == 'approve-retry':
+            report = controller.diagnose()
+            run = report['run']
+            require(run['id'] == sys.argv[2] and run['status'] == 'failed_requires_review')
+            require(report['stop']['status'] == 'clean_stopped' and not report['requires_review'])
+            folder = controller.folder(run)
+            with controller.locked('stop'), controller.locked('mutation'):
+                require(controller.current()['id'] == run['id'])
+                require(not os.path.lexists(folder/'retry-consumed.json'))
+                require(not os.path.lexists(folder/'retry-approved.json'))
+                b.atomic(folder/'retry-approved.json', {'id': run['id']})
+            print('PAPER_CHECK_RETRY_APPROVED')
+        elif sys.argv[1] == 'request':
             import pwd
             account = pwd.getpwnam('suiba-deploy')
             require(os.environ.get('SUDO_USER') == account.pw_name and os.environ.get('SUDO_UID') == str(account.pw_uid))

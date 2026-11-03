@@ -56,6 +56,26 @@ class StopTests(unittest.TestCase):
             self.local_lock.start()
             self.addCleanup(self.local_lock.stop)
 
+    def test_retry_permission_bound_to_run_and_consumed_before_fsync_failure(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = object.__new__(c.Controller)
+            ctl.b = FakeBroker
+            record = {'id': 'a'*32, 'status': 'failed_requires_review'}
+            permit = Path(root)/'retry-approved.json'
+            FakeBroker.atomic(permit, {'id': 'b'*32})
+            with self.assertRaises(Exception):
+                ctl.consume_retry(record, permit)
+            self.assertTrue(permit.exists())
+            FakeBroker.atomic(permit, {'id': record['id']})
+            with patch.object(os, 'fsync', side_effect=OSError('fixture fsync failure')):
+                with self.assertRaises(OSError):
+                    ctl.consume_retry(record, permit)
+            self.assertFalse(permit.exists())
+            self.assertEqual(json.loads(permit.with_name('failed-run.json').read_bytes()), record)
+            FakeBroker.atomic(permit, {'id': record['id']})
+            with self.assertRaises(Exception):
+                ctl.consume_retry(record, permit)
+
     def test_normal_api_failure_docker_hang_oom_and_db_failure(self):
         for failure in (None, 'api', 'stop', 'daemon', 'oom', 'db'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
