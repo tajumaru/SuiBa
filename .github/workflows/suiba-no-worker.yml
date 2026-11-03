@@ -22,7 +22,7 @@ jobs:
       # The pnpm version comes from package.json's
       # packageManager pin, via Corepack.
       - run: corepack enable
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24.22.1"
       - run: node scripts/verify-node-version.mjs
