@@ -40,6 +40,11 @@ import {
   sanitizeAgentName,
   saveAgentName,
 } from "./agentName.ts";
+import { useAgentCharacter } from "./agentCharacter.ts";
+import {
+  shareCardInputFor,
+  type ShareCardInput,
+} from "./shareCard.ts";
 import { errorShout } from "./errorShout.ts";
 import { presetName } from "./settingsPresets.ts";
 import { firstFilledBuy } from "./firstFill.ts";
@@ -194,6 +199,7 @@ function Chart(props: {
   bookImbalance?: number | null;
   sellLines?: { tp: number; sl: number } | null;
   answerCheck?: ForecastAnswerCheck | null;
+  shareCard?: ShareCardInput | null;
 }) {
   return props.kind === "Price" ? (
     <PriceChart
@@ -420,6 +426,25 @@ function App() {
         ? latestAnswerCheck(forecastLog, data.candlesByTimeframe[300])
         : null,
     [forecastLog, data],
+  );
+  const character = useAgentCharacter();
+  const shareCard = useMemo(
+    () =>
+      data
+        ? shareCardInputFor({
+            pair: data.pair,
+            candles: data.candlesByTimeframe[300],
+            bookImbalance: data.bookImbalance,
+            score: scoreForecasts(
+              forecastLog,
+              data.candlesByTimeframe[300],
+            ),
+            character,
+            agentName,
+            at: Date.now(),
+          })
+        : null,
+    [data, forecastLog, character, agentName],
   );
   const changeAgentName = (raw: string) => {
     const next = sanitizeAgentName(raw);
@@ -892,6 +917,7 @@ function App() {
                         historyApi={api}
                         forecastScoreText={forecastScoreLine}
                         answerCheck={forecastAnswer}
+                        shareCard={shareCard}
                         bookImbalance={data.bookImbalance}
                         sellLines={
                           operations.data?.decision

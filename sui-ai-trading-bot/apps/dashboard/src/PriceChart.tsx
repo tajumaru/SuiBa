@@ -24,6 +24,10 @@ import {
   chartTicks,
 } from "./chartPresentation.ts";
 import { number, dateTime, label } from "./presentation.ts";
+import {
+  createShareCardPng,
+  type ShareCardInput,
+} from "./shareCard.ts";
 const hoverTimeFormat = new Intl.DateTimeFormat("ja-JP", {
   timeZone: "Asia/Tokyo",
   month: "numeric",
@@ -85,6 +89,7 @@ export function PriceChart({
   sellLines,
   answerCheck,
   answerDefaultOn = false,
+  shareCard,
 }: {
   pair?: ReturnType<BotEngine["snapshot"]>["pair"];
   candles: Candle[];
@@ -101,9 +106,14 @@ export function PriceChart({
    * (the recorded cone laid over what actually happened). */
   answerCheck?: ForecastAnswerCheck | null;
   answerDefaultOn?: boolean;
+  /** Everything the share card needs, assembled by the shell
+   * from the live forecast and the recorded score. */
+  shareCard?: ShareCardInput | null;
 }) {
   const [gapTime, setGapTime] = useState<number | null>(null);
   const [answerOn, setAnswerOn] = useState(answerDefaultOn);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareNote, setShareNote] = useState("");
   const [history, setHistory] = useState<HistoryResult | null>(null),
     [historyBusy, setHistoryBusy] = useState(false),
     [historyNotice, setHistoryNotice] = useState("");
@@ -504,6 +514,31 @@ export function PriceChart({
       )}
       {fc && tf === 300 && forecastScoreText && (
         <p className="chart-forecast-score">{forecastScoreText}</p>
+      )}
+      {fc && tf === 300 && shareCard && (
+        <div className="chart-share-row">
+          <button
+            type="button"
+            className="chart-share-button"
+            disabled={shareBusy}
+            onClick={async () => {
+              setShareBusy(true);
+              setShareNote("");
+              try {
+                await createShareCardPng(shareCard);
+              } catch (e) {
+                // Closing the share sheet is not a failure.
+                if ((e as Error)?.name !== "AbortError")
+                  setShareNote("カードを作れませんでした");
+              } finally {
+                setShareBusy(false);
+              }
+            }}
+          >
+            共有カードを作る
+          </button>
+          {shareNote && <p className="chart-share-note">{shareNote}</p>}
+        </div>
       )}
       {tf === 300 && answerCheck && (
         <div className="chart-answer-row">
