@@ -1,9 +1,15 @@
 name: SuiBa offline validation
 on:
   push:
-    paths: ["sui-ai-trading-bot/**", ".github/workflows/suiba-offline.yml"]
+    paths:
+      - "sui-ai-trading-bot/**"
+      - ".github/workflows/suiba-offline.yml"
+      - ".github/workflows/suiba-no-worker.yml"
   pull_request:
-    paths: ["sui-ai-trading-bot/**", ".github/workflows/suiba-offline.yml"]
+    paths:
+      - "sui-ai-trading-bot/**"
+      - ".github/workflows/suiba-offline.yml"
+      - ".github/workflows/suiba-no-worker.yml"
   workflow_dispatch:
     inputs:
       confirmation:
@@ -21,6 +27,9 @@ jobs:
   offline:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'RUN-WORKER-CI' && vars.SUIBA_WORKER_CI_ENABLED == 'true'
     environment: worker-ci
+    # Without a cap a hung Worker test burns the 360-minute
+    # platform default on both matrix legs.
+    timeout-minutes: 60
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
