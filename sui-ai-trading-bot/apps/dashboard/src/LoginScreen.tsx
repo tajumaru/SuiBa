@@ -9,6 +9,20 @@ import {
 
 export type VerifyResult = { ok: true } | { ok: false; code: string };
 
+function loginError(code: string): string {
+  const guidance: Record<string, string> = {
+    NETWORK:
+      "サーバーに接続できません。VPN経由で利用している場合は、WireGuardをオンにしてページを再読み込みしてください。",
+    TIMEOUT:
+      "サーバーから時間内に応答がありませんでした。回線やVPNの接続を確認して、もう一度お試しください。",
+    HTTP_404:
+      "ログイン確認用APIが見つかりません。管理画面のURLを確認してください。",
+    UNAUTHORIZED:
+      "管理トークンを確認できません。保存したトークンを確認してください。",
+  };
+  return `${guidance[code] ?? "接続できませんでした。"} コード：${code}`;
+}
+
 /** Credentials stay in memory. Future authentication methods can use their own
  * verifier without reintroducing a pattern-derived persistent bearer token. */
 export function LoginScreen({
@@ -90,16 +104,12 @@ export function LoginScreen({
       } else {
         attempts.current.release(attempt);
         setPhase("error");
-        setAlertText(
-          result.code === "UNAUTHORIZED"
-            ? "管理トークンを確認できません。コード：UNAUTHORIZED"
-            : `接続できませんでした。コード：${result.code}`,
-        );
+        setAlertText(loginError(result.code));
       }
     } catch {
       if (!mounted.current || !attempts.current.release(attempt)) return;
       setPhase("error");
-      setAlertText("接続できませんでした。コード：NETWORK");
+      setAlertText(loginError("NETWORK"));
     }
   }
   function cancel() {

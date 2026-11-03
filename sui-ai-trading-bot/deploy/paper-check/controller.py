@@ -446,22 +446,32 @@ class Controller:
                         not (self.folder(record)/'stop-request.json').exists())
                 record['backup'] = backup
                 self.b.atomic(self.record, record)
+            stage = 'maintenance-release'
             try:
                 self.guard('unlatch', lambda: self.maintenance(False))
+                stage = 'worker-start'
                 self.guard('worker-start', lambda: self.docker.call(['start', CONTAINER], timeout=20))
                 # Readiness GETs only. Never retry a start/arm/order/reset action.
+                stage = 'worker-readiness'
                 d = self.wait_ready(record['cutoff'])
+                stage = 'deployment-state'
                 require(d['mode'] == 'PAPER' and not d['running'] and not d['maintenance'] and
                         d['databaseHealthy'] and d['ledgerOk'] and d['paperCheck']['enabled'] and not d['paperCheck']['armed'])
+                stage = 'pair-selection'
                 require(self.api('GET', '/api/pairs')['selected'] == 'SUI_USDC')
+                stage = 'market-summary'
                 market = self.api('GET', '/api/dashboard/summary')['summary']['marketData']
+                stage = 'market-freshness'
                 require(market['source'] == 'GeckoTerminal' and 0 <= time.time()*1000-market['lastSuccessAt'] <= 90000)
                 # Existing start guards check connectivity/accounting/market state.
+                stage = 'arm'
                 armed = self.guard('arm', lambda: self.api('POST', '/api/paper-check/arm',
                                  {'expiresAt': record['cutoff'], 'issuedAt': int(time.time()*1000)}))
                 require(armed['expires'] == record['cutoff'] and armed['armed'] and not armed['expired'])
+                stage = 'paper-start'
                 started = self.guard('paper-start', lambda: self.api('POST', '/api/control', {'command': 'start'}))
                 require(started['running'] is True)
+                stage = 'monitoring'
                 end = time.monotonic()+1800
                 while time.monotonic() < end and time.time()*1000 < record['cutoff']-5000:
                     self.system('is-active', '--quiet', TIMER)
@@ -486,6 +496,7 @@ class Controller:
                                                              'memory_percent': memory_percent, 'host_available_kib': available_kib,
                                                              'market_last_success': market['lastSuccessAt']})
                     time.sleep(5)
+                stage = 'normal-stop'
                 require(self.stop(own=True, expected=self.run_id, source='normal'))
                 self.system('stop', TIMER)
                 with self.locked('stop'), self.locked('mutation'):
@@ -496,7 +507,12 @@ class Controller:
                     self.b.atomic(self.record, record)
                 # ExecStopPost confirms this process actually exited, then alone
                 # publishes clean_stopped/completed and releases deployment gate.
-            except BaseException:
+            except BaseException as error:
+                # Never log exception text, HTTP bodies, headers, or argv.
+                detail = ''
+                if isinstance(error, urllib.error.HTTPError) and type(error.code) is int and 100 <= error.code <= 599:
+                    detail = f' http_status={error.code}'
+                print(f'PAPER_CHECK_STAGE_FAILED stage={stage}{detail}', file=sys.stderr, flush=True)
                 self.stop(own=True, expected=self.run_id, source='failure')
                 raise
         finally:
