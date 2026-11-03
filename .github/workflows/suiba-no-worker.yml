@@ -37,6 +37,8 @@ jobs:
           shellcheck docker/deploy-vps.sh
           bash -n docker/ssh-preflight.sh
           shellcheck docker/ssh-preflight.sh
+          bash -n docker/ssh-paper-status.sh
+          shellcheck docker/ssh-paper-status.sh
       - name: SSH preflight mock tests (no real SSH or keys)
         run: node --test docker/ssh-preflight.node.mjs
       - name: PAPER controller failure tests (no Worker)

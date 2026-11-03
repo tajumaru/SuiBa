@@ -36,10 +36,15 @@ opts=(-F /dev/null -i "$key" -p "$port" -T
   -o ClearAllForwardings=yes -o RequestTTY=no -o LogLevel=ERROR
   -o ConnectTimeout=10 -o ConnectionAttempts=1
   -o ServerAliveInterval=5 -o ServerAliveCountMax=2)
-# Only the fixed status operation is sent. Never echo the remote response.
-printf '%s\n' '{"operation":"status"}' |
-  timeout 30s ssh "${opts[@]}" "$VPS_USER@$VPS_HOST" 'sudo -n -- /usr/local/sbin/suiba-paper-check' >"$result" 2>"$errors" || fail
-python3 - "$result" >>"${GITHUB_STEP_SUMMARY:?}" <<'PYCODE'
+# Only fixed read-only operations are sent. Never echo the remote response.
+case "${PAPER_STATUS_CONFIRMATION:-CHECK-PAPER-STATUS}" in
+  CHECK-PAPER-STATUS) operation=status ;;
+  CHECK-PAPER-DIAGNOSTICS) operation=diagnose ;;
+  *) fail ;;
+esac
+printf '{"operation":"%s"}\n' "$operation" |
+  timeout 100s ssh "${opts[@]}" "$VPS_USER@$VPS_HOST" 'sudo -n -- /usr/local/sbin/suiba-paper-check' >"$result" 2>"$errors" || fail
+python3 - "$result" "$operation" >>"${GITHUB_STEP_SUMMARY:?}" <<'PYCODE'
 import json
 import sys
 from pathlib import Path
@@ -66,10 +71,37 @@ try:
     fault = payload["requires_review"]
     if type(fault) is not bool:
         raise ValueError()
+    details = None
+    if sys.argv[2] == "diagnose":
+        details = payload["diagnostics"]
+        stages = (None, "maintenance-release", "worker-start", "worker-readiness",
+                  "deployment-state", "pair-selection", "market-summary",
+                  "market-freshness", "arm", "paper-start", "monitoring", "normal-stop")
+        if details["stage"] not in stages:
+            raise ValueError()
+        if details["maintenance"] is not True or details["backup_verified"] is not True:
+            raise ValueError()
+        if type(details["oom_killed"]) is not bool or type(details["exit_code"]) is not int:
+            raise ValueError()
+        for key in ("healthcheck_exit", "http_status"):
+            if details[key] is not None and type(details[key]) is not int:
+                raise ValueError()
+        for pair in ("SUI_USDC", "WAL_USDC"):
+            for key in ("starts", "orders", "fills"):
+                if type(details["deltas"][pair][key]) is not int:
+                    raise ValueError()
 except (OSError, ValueError, KeyError, TypeError):
     sys.exit("PAPER_STATUS_INVALID")
 print("### SuiBa PAPER verification")
 print(f"- Run: `{state}`")
 print(f"- Stop receipt: `{status}`")
 print(f"- Manual review needed: {'yes' if fault or state == 'failed_requires_review' else 'no'}")
+if details is not None:
+    print(f"- Container exit code: {details['exit_code']}, OOM killed: {details['oom_killed']}")
+    print(f"- Last healthcheck exit code: {details['healthcheck_exit']}")
+    print("- Maintenance: enabled; backup SHA-256 verified; SQLite copies passed integrity checks")
+    print(f"- Failed stage: {details['stage'] or 'not recorded'}, HTTP status: {details['http_status']}")
+    for pair in ("SUI_USDC", "WAL_USDC"):
+        delta = details["deltas"][pair]
+        print(f"- {pair} difference: starts={delta['starts']:+d}, orders={delta['orders']:+d}, fills={delta['fills']:+d}")
 PYCODE

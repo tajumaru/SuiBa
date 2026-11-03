@@ -10,9 +10,14 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
+import shutil
 import signal
+import stat
 import subprocess
 import sys
+import tarfile
+import tempfile
 import time
 import urllib.request
 import urllib.error
@@ -25,11 +30,50 @@ TIMER = 'suiba-paper-check-cutoff.timer'
 SERVICE = 'suiba-paper-check.service'
 CUTOFF = 'suiba-paper-check-cutoff.service'
 POLICY = Path('/etc/suiba-paper-check/policy.json')
+DIAGNOSTIC_STAGES = (
+    'maintenance-release', 'worker-start', 'worker-readiness', 'deployment-state',
+    'pair-selection', 'market-summary', 'market-freshness', 'arm', 'paper-start',
+    'monitoring', 'normal-stop',
+)
+DIAGNOSTIC_LIMIT = 128 * 1024**2
+DIAGNOSTIC_DATABASES = ('bot.sqlite', 'bot.sqlite.WAL_USDC.sqlite')
+DIAGNOSTIC_FILES = frozenset(
+    name + suffix for name in DIAGNOSTIC_DATABASES
+    for suffix in ('', '-wal', '-shm', '-journal')
+)
 
 
 def require(value):
     if not value:
         raise RuntimeError('PAPER_CHECK_REJECTED')
+
+
+# Query only temporary copies inside the existing pinned, offline helper image.
+DIAGNOSTIC_QUERY = """
+const { DatabaseSync } = require("node:sqlite");
+const result = {};
+for (const name of ["bot.sqlite", "bot.sqlite.WAL_USDC.sqlite"]) {
+  const counts = [];
+  for (const folder of ["before", "after"]) {
+    const db = new DatabaseSync("/audit/" + folder + "/" + name, { readOnly: true });
+    try {
+      db.exec("PRAGMA trusted_schema=OFF");
+      const integrity = db.prepare("PRAGMA integrity_check").all();
+      if (integrity.length !== 1 || integrity[0].integrity_check !== "ok" ||
+          db.prepare("PRAGMA foreign_key_check").get()) throw Error("integrity");
+      counts.push([
+        db.prepare("SELECT count(*) n FROM operation_events WHERE json_extract(json,'$.code')='MANUAL_START'").get().n,
+        db.prepare("SELECT count(*) n FROM paper_orders").get().n,
+        db.prepare("SELECT count(*) n FROM paper_trades").get().n,
+      ]);
+    } finally {
+      db.close();
+    }
+  }
+  result[name] = counts[1].map((value, index) => value - counts[0][index]);
+}
+console.log(JSON.stringify(result));
+"""
 
 
 class Controller:
@@ -171,6 +215,114 @@ class Controller:
         values = self.b.decode(self.docker.call(['inspect', CONTAINER], timeout=10))
         require(len(values) == 1)
         return values[0]
+
+    def diagnose(self):
+        # Same lock order as run(). Refuse an active run or deployment.
+        with self.b.regular(self.b.STATE/'lock') as lock:
+            import fcntl
+            fcntl.flock(lock, fcntl.LOCK_EX|fcntl.LOCK_NB)
+            with self.locked('stop'), self.locked('mutation'):
+                record = self.current()
+                require(record['status'] in ('completed', 'failed_requires_review') and self.exited(record))
+                i = self.inspect()
+                state = i['State']
+                require(state['Status'] in ('created', 'exited') and not state['Running'] and state['Pid'] == 0)
+                require(not self.docker.call(['ps', '-q', '--filter', 'volume='+self.b.DATA], timeout=10))
+                volume = self.b.decode(self.docker.call(['volume', 'inspect', self.b.DATA], timeout=10))
+                require(len(volume) == 1 and volume[0]['Driver'] == 'local' and volume[0]['Name'] == self.b.DATA)
+                source = Path(volume[0]['Mountpoint'])
+                require(source.is_absolute() and source.is_dir() and source.resolve() == source)
+                latch = (source/'bot.sqlite.maintenance').lstat()
+                maintenance = stat.S_ISREG(latch.st_mode) and latch.st_uid == 1000 and latch.st_nlink == 1
+                require(maintenance)
+                stop = self.b.decode(self.b.read_trusted(self.folder(record)/'stop.json'))
+                require(stop['id'] == record['id'])
+                report = self.diagnostic_backup(record, source)
+                health = state.get('Health', {}).get('Log', [])
+                failure_path = self.folder(record)/'failure.json'
+                stage, http = None, None
+                if failure_path.exists():
+                    failure = self.b.decode(self.b.read_trusted(failure_path))
+                    require(failure['id'] == record['id'] and failure['stage'] in DIAGNOSTIC_STAGES)
+                    stage = failure['stage']
+                    http = failure.get('http_status')
+                    require(http is None or type(http) is int and 100 <= http <= 599)
+                return {
+                    'run': {'id': record['id'], 'status': record['status']},
+                    'stop': {'id': stop['id'], 'status': stop['status']},
+                    'requires_review': self.faults(record),
+                    'diagnostics': {
+                        'exit_code': state['ExitCode'], 'oom_killed': state['OOMKilled'],
+                        'healthcheck_exit': health[-1]['ExitCode'] if health else None,
+                        'maintenance': maintenance, 'stage': stage, 'http_status': http,
+                        'backup_verified': True, 'deltas': report,
+                    },
+                }
+
+    def diagnostic_backup(self, record, source):
+        backup = record['backup']
+        require(re.fullmatch(r'paper-check-[0-9a-f]{32}\.tar', backup['file']))
+        require(self.b.HEX.fullmatch(backup['sha256']))
+        deadline = time.monotonic()+45
+        with tempfile.TemporaryDirectory(prefix='suiba-diagnostics-', dir=self.state) as tmp:
+            before, after = Path(tmp)/'before', Path(tmp)/'after'
+            before.mkdir()
+            after.mkdir()
+            with self.b.regular(self.b.BACKUPS/backup['file']) as fd:
+                require(0 < os.fstat(fd).st_size <= DIAGNOSTIC_LIMIT)
+                with os.fdopen(os.dup(fd), 'rb') as stream:
+                    require(hashlib.file_digest(stream, 'sha256').hexdigest() == backup['sha256'])
+                    stream.seek(0)
+                    with tarfile.open(fileobj=stream, mode='r:') as archive:
+                        for index, member in enumerate(archive):
+                            require(index < 4096 and time.monotonic() < deadline)
+                            name = member.name.removeprefix('./')
+                            if name in DIAGNOSTIC_FILES:
+                                require(member.isfile() and 0 <= member.size <= DIAGNOSTIC_LIMIT)
+                                with archive.extractfile(member) as data, (before/name).open('xb') as out:
+                                    shutil.copyfileobj(data, out)
+            total = 0
+            for name in sorted(DIAGNOSTIC_FILES):
+                require(time.monotonic() < deadline)
+                try:
+                    fd = os.open(source/name, os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+                except FileNotFoundError:
+                    continue
+                with os.fdopen(fd, 'rb') as data:
+                    info = os.fstat(data.fileno())
+                    require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_uid == 1000)
+                    total += info.st_size
+                    require(total <= DIAGNOSTIC_LIMIT)
+                    with (after/name).open('xb') as out:
+                        shutil.copyfileobj(data, out)
+            for directory in (before, after):
+                directory.chmod(0o700)
+                for path in directory.iterdir():
+                    os.chown(path, 1000, 1000)
+                os.chown(directory, 1000, 1000)
+            os.chown(tmp, 1000, 1000)
+            _, image = self.helper()
+            name = 'suiba-paper-diagnostic-'+uuid.uuid4().hex
+            try:
+                raw = self.docker.call([
+                    'run', '--rm', '--name', name, '--pull', 'never', '--network', 'none',
+                    '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
+                    '--user', '1000:1000', '--memory', '128m', '--memory-swap', '128m',
+                    '--pids-limit', '32', '--mount', 'type=bind,src='+tmp+',dst=/audit',
+                    '--entrypoint', '/usr/local/bin/node', image, '-e', DIAGNOSTIC_QUERY,
+                ], timeout=15)
+            except Exception:
+                with contextlib.suppress(Exception):
+                    self.docker.call(['rm', '-f', name], timeout=5)
+                raise
+            require(len(raw) <= 1024)
+            counts = self.b.decode(raw)
+            result = {}
+            for pair, name in zip(('SUI_USDC', 'WAL_USDC'), DIAGNOSTIC_DATABASES):
+                values = counts[name]
+                require(len(values) == 3 and all(type(v) is int for v in values))
+                result[pair] = dict(zip(('starts', 'orders', 'fills'), values))
+            return result
 
     def api(self, method, path, value=None):
         require(path in ('/api/deployment', '/api/pairs', '/api/control', '/api/paper-check/arm', '/api/dashboard/summary'))
@@ -513,6 +665,11 @@ class Controller:
                 detail = ''
                 if isinstance(error, urllib.error.HTTPError) and type(error.code) is int and 100 <= error.code <= 599:
                     detail = f' http_status={error.code}'
+                with contextlib.suppress(Exception):
+                    failure = {'id': self.run_id, 'stage': stage}
+                    if detail:
+                        failure['http_status'] = error.code
+                    self.b.atomic(self.folder(self.current(self.run_id))/'failure.json', failure)
                 print(f'PAPER_CHECK_STAGE_FAILED stage={stage}{detail}', file=sys.stderr, flush=True)
                 self.stop(own=True, expected=self.run_id, source='failure')
                 raise
@@ -546,8 +703,10 @@ def main():
             signal.alarm(5)
             request = b.decode(sys.stdin.buffer.read(257))
             signal.alarm(0)
-            require(request in ({'operation': 'start'}, {'operation': 'status'}, {'operation': 'abort'}))
-            if request['operation'] == 'status':
+            require(request in ({'operation': 'start'}, {'operation': 'status'}, {'operation': 'abort'}, {'operation': 'diagnose'}))
+            if request['operation'] == 'diagnose':
+                print(json.dumps(controller.diagnose()))
+            elif request['operation'] == 'status':
                 record = controller.current()
                 receipt = controller.folder(record)/'stop.json'
                 print(json.dumps({'run': record, 'requires_review': controller.faults(record),
