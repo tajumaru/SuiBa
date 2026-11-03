@@ -31,7 +31,9 @@ export interface Highlight {
   side?: "BUY" | "SELL";
   /** The moment's own entry text (the list label). */
   title: string;
-  /** Up to eight entries ending at the moment, oldest first. */
+  /** Up to eight entries ending at the moment, oldest first.
+   * A watchHit may carry one more: its declaration, prepended
+   * when it fell outside the window (see captureHighlights). */
   entries: HighlightEntry[];
   /** The recent price path at capture time (the feed's own
    * decision-price window), for the replay's sparkline. */
@@ -110,6 +112,45 @@ const slim = (e: NarrationEntry): HighlightEntry => ({
   ...(e.side ? { side: e.side } : {}),
 });
 
+/**
+ * The declaration behind a watchHit. Declarations are the only
+ * entries that open 「次は○○を見てる」 (declareWatchText), and a
+ * hit opens with its condition's short name (hitWatchText), so
+ * the pairing is recoverable from the texts themselves. Watches
+ * are serial — one at a time, settled before the next is
+ * declared — so the nearest preceding declaration OF THE SAME
+ * CONDITION is the promise this hit kept. The scan stops at any
+ * settlement (a hit or a near miss): a declaration older than
+ * that already met its own outcome and must not be borrowed.
+ * The silent first watch posts no declaration; it simply finds
+ * none here.
+ */
+const DECLARATION_RE = /^次は(EMAの差|RSI|MACD)を見てる/;
+const HIT_CONDITIONS: { prefix: string; name: string }[] = [
+  { prefix: "EMA、", name: "EMAの差" },
+  { prefix: "RSI、", name: "RSI" },
+  { prefix: "MACD、", name: "MACD" },
+];
+
+export function declarationForHit(
+  entries: NarrationEntry[],
+  hitIndex: number,
+): NarrationEntry | null {
+  const hit = entries[hitIndex];
+  if (!hit || hit.kind !== "watchHit") return null;
+  const condition = HIT_CONDITIONS.find((c) =>
+    hit.text.startsWith(c.prefix),
+  );
+  if (!condition) return null;
+  for (let i = hitIndex - 1; i >= 0; i--) {
+    const e = entries[i];
+    if (e.kind === "watchHit" || e.kind === "nearMiss") return null;
+    const m = DECLARATION_RE.exec(e.text);
+    if (m && m[1] === condition.name) return e;
+  }
+  return null;
+}
+
 /** Moments that appeared in `next` since `prevIds` was taken,
  * fresh enough to bookmark, oldest first. */
 export function captureHighlights(
@@ -121,15 +162,26 @@ export function captureHighlights(
   next.entries.forEach((entry, index) => {
     if (prevIds.has(entry.id) || !isHighlightEntry(entry)) return;
     if (Math.abs(now - entry.at) > HIGHLIGHT_FRESH_MS) return;
+    const window = next.entries.slice(
+      Math.max(0, index - (ENTRIES_AROUND - 1)),
+      index + 1,
+    );
+    // A hit replay that opens mid-boast is unreadable — 田嶋
+    // could not tell whether the moment had really hit. When
+    // the declaration that promised it fell outside the window,
+    // prepend it, so the replay starts with the promise.
+    if (entry.kind === "watchHit") {
+      const declaration = declarationForHit(next.entries, index);
+      if (declaration && !window.some((e) => e.id === declaration.id))
+        window.unshift(declaration);
+    }
     out.push({
       id: entry.id,
       at: entry.at,
       kind: entry.kind,
       ...(entry.side ? { side: entry.side } : {}),
       title: entry.text,
-      entries: next.entries
-        .slice(Math.max(0, index - (ENTRIES_AROUND - 1)), index + 1)
-        .map(slim),
+      entries: window.map(slim),
       prices: [...next.priceHistory],
     });
   });
@@ -166,7 +218,9 @@ const schema = z
       kind: z.string(),
       side: z.enum(["BUY", "SELL"]).optional(),
       title: z.string(),
-      entries: z.array(entrySchema).max(ENTRIES_AROUND),
+      // +1: a watchHit highlight may carry its prepended
+      // declaration on top of the usual window.
+      entries: z.array(entrySchema).max(ENTRIES_AROUND + 1),
       prices: z.array(z.number().finite()).max(60),
     }),
   )

@@ -138,3 +138,90 @@ describe("HighlightReplay", () => {
     expect(html).toContain("highlight-replay-spark");
   });
 });
+
+describe("watch hit declarations", () => {
+  const now = Date.UTC(2026, 10, 3, 0, 0);
+  const declaration = (id: string, at: number, name = "RSI") =>
+    entry(id, "cycle", at, `次は${name}を見てる。今40.0、ラインまで5。近づいたら声かけるね`);
+  const hit = (id: string, at: number) =>
+    entry(id, "watchHit", at, "RSI、上抜けた。44.7→49.1。ほらな、言うてたやろ");
+  const filler = (n: number, from: number) =>
+    Array.from({ length: n }, (_, i) =>
+      entry(`f${from + i}`, "cycle", now - 50000 + (from + i) * 1000),
+    );
+
+  it("prepends a declaration that fell outside the window", () => {
+    const entries = [
+      declaration("d", now - 60000),
+      ...filler(10, 0),
+      hit("h", now - 1000),
+    ];
+    const got = captureHighlights(new Set(), state(entries), now);
+    expect(got).toHaveLength(1);
+    expect(got[0].entries).toHaveLength(9);
+    expect(got[0].entries[0].id).toBe("d");
+    expect(got[0].entries.at(-1)?.id).toBe("h");
+  });
+
+  it("does not duplicate a declaration already inside the window", () => {
+    const entries = [
+      ...filler(3, 0),
+      declaration("d", now - 5000),
+      entry("x", "cycle", now - 3000),
+      hit("h", now - 1000),
+    ];
+    const got = captureHighlights(new Set(), state(entries), now);
+    expect(got[0].entries.map((e) => e.id)).toEqual([
+      "f0",
+      "f1",
+      "f2",
+      "d",
+      "x",
+      "h",
+    ]);
+  });
+
+  it("ignores declarations of another condition and settled ones", () => {
+    const other = [
+      declaration("d", now - 60000, "MACD"),
+      ...filler(10, 0),
+      hit("h", now - 1000),
+    ];
+    expect(
+      captureHighlights(new Set(), state(other), now)[0].entries,
+    ).toHaveLength(8);
+    const settled = [
+      declaration("d", now - 60000),
+      entry("nm", "nearMiss", now - 30000, "RSI、あと3まで来てたのに…"),
+      ...filler(9, 0),
+      hit("h", now - 1000),
+    ];
+    const hitHighlight = captureHighlights(new Set(), state(settled), now).find(
+      (h) => h.id === "h",
+    );
+    expect(hitHighlight).toBeDefined();
+    expect(hitHighlight!.entries[0].id).not.toBe("d");
+    expect(hitHighlight!.entries).toHaveLength(8);
+  });
+
+  it("round-trips a nine-entry highlight through storage", () => {
+    const entries = [
+      declaration("d", now - 60000),
+      ...filler(10, 0),
+      hit("h", now - 1000),
+    ];
+    const got = captureHighlights(new Set(), state(entries), now);
+    const store = new Map<string, string>();
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        store.set(k, v);
+      },
+    } as unknown as Storage;
+    saveHighlights(got, "SUI", storage);
+    const loaded = loadHighlights("SUI", storage);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].entries).toHaveLength(9);
+    expect(loaded[0].entries[0].id).toBe("d");
+  });
+});
