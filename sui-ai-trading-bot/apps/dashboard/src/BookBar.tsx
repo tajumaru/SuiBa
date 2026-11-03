@@ -81,19 +81,19 @@ function BookWave({
       const x0 = v >= 0 ? mid : mid - fillW;
       const x1 = v >= 0 ? mid + fillW : mid;
       const rgb = v >= 0 ? WAVE_RGB.buy : WAVE_RGB.sell;
-      const amp = 0.5 + Math.abs(v) * 2.4;
+      const amp = 1.2 + Math.abs(v) * 5.6;
       const surface = h * 0.38;
       for (const [phase, alpha] of [
-        [0, 0.32],
-        [2.2, 0.55],
+        [0, 0.45],
+        [2.2, 0.78],
       ] as const) {
         ctx.beginPath();
         ctx.moveTo(x0, h);
         for (let x = x0; x <= x1; x += 3) {
           const y =
             surface +
-            Math.sin(x * 0.055 + t * 1.6 + phase) * amp * 0.6 +
-            Math.sin(x * 0.11 - t * 2.3 + phase) * amp * 0.4;
+            Math.sin(x * 0.055 + t * 2.56 + phase) * amp * 0.6 +
+            Math.sin(x * 0.11 - t * 3.68 + phase) * amp * 0.4;
           ctx.lineTo(x, Math.max(0.5, Math.min(h - 0.5, y)));
         }
         ctx.lineTo(x1, h);
@@ -141,7 +141,7 @@ export function BookBar({ imbalance }: { imbalance: number | null }) {
     <div className="book-bar" aria-label="板の偏り">
       <span className="book-bar-label">板</span>
       <span className="book-bar-side sell">売り {m.askPct}%</span>
-      <span className="book-bar-track" aria-hidden="true">
+      <span className={`book-bar-track ${m.side}`} aria-hidden="true">
         <BookWave imbalance={v} side={m.side} />
         <span className="book-bar-center" />
       </span>
