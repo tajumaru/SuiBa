@@ -117,10 +117,11 @@ class StopTests(unittest.TestCase):
             values = iter(['starting', 'healthy' if outcome == 'healthy' else 'unhealthy'])
             calls = []
             ctl.inspect = lambda: {'State': {'Running': True, 'OOMKilled': False, 'Health': {'Status': next(values)}}, 'RestartCount': 0}
-            ctl.api = lambda *a: calls.append(a) or {'startReady': True}
+            ctl.api = lambda *a: calls.append(a) or {'startReady': True, 'readiness': {'ledger': True, 'secret': 'fixture'}}
             with patch.object(c.time, 'monotonic', side_effect=[0, 0, 61] if outcome == 'timeout' else [0, 0, 1]), patch.object(c.time, 'time', return_value=0), patch.object(c.time, 'sleep'):
                 if outcome == 'healthy':
                     self.assertTrue(ctl.wait_ready(100000)['startReady'])
+                    self.assertEqual(ctl.readiness, {'health': 'healthy', 'ledger': True})
                     self.assertEqual(len(calls), 1)
                 else:
                     with self.assertRaises(RuntimeError): ctl.wait_ready(100000)

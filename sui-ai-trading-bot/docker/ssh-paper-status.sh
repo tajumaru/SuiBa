@@ -101,6 +101,15 @@ if details is not None:
     print(f"- Last healthcheck exit code: {details['healthcheck_exit']}")
     print("- Maintenance: enabled; backup SHA-256 verified; SQLite copies passed integrity checks")
     print(f"- Failed stage: {details['stage'] or 'not recorded'}, HTTP status: {details['http_status']}")
+    readiness = details.get("readiness")
+    if isinstance(readiness, dict):
+        health = readiness.get("health")
+        if health in ("starting", "healthy", "unhealthy", "unknown"):
+            print(f"- Docker health during readiness: {health}")
+        checks = ("connectivity", "apiAccess", "emergencyClear", "runtimeClear", "suiHealthy", "suiFresh", "ledger")
+        blocked = [key for key in checks if readiness.get(key) is False]
+        if blocked:
+            print("- Readiness checks blocking start: " + ", ".join(blocked))
     for pair in ("SUI_USDC", "WAL_USDC"):
         delta = details["deltas"][pair]
         print(f"- {pair} difference: starts={delta['starts']:+d}, orders={delta['orders']:+d}, fills={delta['fills']:+d}")

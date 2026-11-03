@@ -240,11 +240,12 @@ class Controller:
                 report = self.diagnostic_backup(record, source)
                 health = state.get('Health', {}).get('Log', [])
                 failure_path = self.folder(record)/'failure.json'
-                stage, http = None, None
+                stage, http, readiness = None, None, None
                 if failure_path.exists():
                     failure = self.b.decode(self.b.read_trusted(failure_path))
                     require(failure['id'] == record['id'] and failure['stage'] in DIAGNOSTIC_STAGES)
                     stage = failure['stage']
+                    readiness = failure.get('readiness')
                     http = failure.get('http_status')
                     require(http is None or type(http) is int and 100 <= http <= 599)
                 return {
@@ -255,7 +256,7 @@ class Controller:
                         'exit_code': state['ExitCode'], 'oom_killed': state['OOMKilled'],
                         'healthcheck_exit': health[-1]['ExitCode'] if health else None,
                         'maintenance': maintenance, 'stage': stage, 'http_status': http,
-                        'backup_verified': True, 'deltas': report,
+                        'backup_verified': True, 'deltas': report, 'readiness': readiness,
                     },
                 }
 
@@ -402,16 +403,23 @@ class Controller:
             'const {DatabaseSync}=require("node:sqlite");const d=new DatabaseSync("/app/data/bot.sqlite.pairs.sqlite",{readOnly:true});try{const r=d.prepare("SELECT json FROM bot_runtime_state WHERE key=?").get("selected_pair");if(!r||JSON.parse(r.json)!=="SUI_USDC")throw Error("SUI_SELECTION_REQUIRED")}finally{d.close()}'], timeout=20)
 
     def wait_ready(self, cutoff):
+        self.readiness = {}
         deadline = time.monotonic()+60
         while True:
             require(time.monotonic() < deadline and time.time()*1000 < cutoff)
             i = self.inspect()
             require(i['State']['Running'] and not i['State']['OOMKilled'] and i['RestartCount'] == 0)
             health = i['State'].get('Health', {}).get('Status')
+            self.readiness = {'health': health if health in ('starting', 'healthy', 'unhealthy') else 'unknown'}
             require(health in ('starting', 'healthy'))
             if health == 'healthy':
                 try:
                     d = self.api('GET', '/api/deployment')
+                    checks = d.get('readiness')
+                    if isinstance(checks, dict):
+                        self.readiness.update({key: checks[key] for key in (
+                            'connectivity', 'apiAccess', 'emergencyClear', 'runtimeClear',
+                            'suiHealthy', 'suiFresh', 'ledger') if type(checks.get(key)) is bool})
                     if d.get('startReady') is True:
                         return d
                 except urllib.error.URLError as error:
@@ -687,6 +695,8 @@ class Controller:
                     failure = {'id': self.run_id, 'stage': stage}
                     if detail:
                         failure['http_status'] = error.code
+                    if stage == 'worker-readiness':
+                        failure['readiness'] = getattr(self, 'readiness', {})
                     self.b.atomic(self.folder(self.current(self.run_id))/'failure.json', failure)
                 print(f'PAPER_CHECK_STAGE_FAILED stage={stage}{detail}', file=sys.stderr, flush=True)
                 self.stop(own=True, expected=self.run_id, source='failure')
