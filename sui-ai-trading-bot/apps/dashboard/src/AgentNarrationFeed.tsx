@@ -28,11 +28,15 @@ export function AgentNarrationFeed({
   agentName = "",
   chain = null,
   trades,
+  btc = null,
   onListeningChange,
   onSpeakingChange,
 }: {
   data: OperationsSnapshot;
   stale: boolean;
+  /** The latest BTC weather sample (display-only), for the
+   * character's ambient mutters about the market's weather. */
+  btc?: import("../../../packages/shared/src/index.ts").BtcInfo | null;
   /** The engine's newest fills, threaded to the narration
    * advance so a finished month's report can be priced and
    * posted. Display/record only. */
@@ -121,6 +125,7 @@ export function AgentNarrationFeed({
       botVital(data, stale, Date.now(), receivedRef.current).state,
       Date.now(),
       trades,
+      btc,
     );
     narrationRef.current = next;
     persist(next);
@@ -204,7 +209,7 @@ export function AgentNarrationFeed({
       persist(withPrompt);
       setNarration(withPrompt);
     }
-  }, [data, stale, onCelebrate, trades]);
+  }, [data, stale, onCelebrate, trades, btc]);
   const vital = botVital(data, stale, now, receivedAt);
   const pose = agentPose(narration, data, vital, now);
   // While a chat reply is fresh, the character turns to the user

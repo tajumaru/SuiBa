@@ -53,6 +53,7 @@ import {
 } from "../../../packages/shared/src/index.ts";
 import { BotEngine } from "./engine.ts";
 import { ChainSampler, createChainInfoFetcher } from "./chainInfo.ts";
+import { BtcSampler, createBtcPriceFetcher } from "./btcInfo.ts";
 import { resolveSuiGrpcEndpoints } from "./suiEndpoints.ts";
 import {
   BookImbalanceSampler,
@@ -137,6 +138,19 @@ const pollChain = async () => {
 void pollChain();
 const chainTimer = setInterval(() => void pollChain(), 15000);
 chainTimer.unref();
+// Display-only BTC/USD sampling for the narration's market
+// weather (see btcInfo.ts). Its own plain fetch and timer,
+// beside the trading paths; a failure only stales the sample
+// and the mutters stop until it recovers.
+const btcSampler = new BtcSampler();
+const fetchBtcPrice = createBtcPriceFetcher();
+const pollBtc = async () => {
+  const price = await fetchBtcPrice();
+  if (price != null) btcSampler.observe(price);
+};
+void pollBtc();
+const btcTimer = setInterval(() => void pollBtc(), 60000);
+btcTimer.unref();
 // Display-only book imbalance, sampled on its own fetch path
 // for the dashboard's model outlook (see bookInfo.ts). The
 // DeepBook routes already hold a validated book; this sampler
@@ -187,6 +201,7 @@ function createEngine(database: BotDatabase, selected: TradingPair) {
         () => stopping || deploymentGate.blocked(),
         () => chainSampler.current(),
         () => bookSamplers[selected].current(),
+        () => btcSampler.current(),
       ),
     };
   } catch (error) {

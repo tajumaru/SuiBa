@@ -10,6 +10,7 @@ import {
   USDC,
   dayKey,
   safeFailure,
+  type BtcInfo,
   type Candle,
   type ChainInfo,
   type CycleEvidence,
@@ -86,6 +87,7 @@ export class BotEngine {
     private readonly deploymentBlocked: () => boolean = () => false,
     private readonly chainInfoSource: () => ChainInfo | null = () => null,
     private readonly bookImbalanceSource: () => number | null = () => null,
+    private readonly btcInfoSource: () => BtcInfo | null = () => null,
   ) {
     const portfolio = db.portfolio();
     const baseCoin = tradingPairs[pair].base;
@@ -830,6 +832,7 @@ export class BotEngine {
     return {
       pair: this.pair,
       chain: this.chainInfoSource(),
+      btc: this.btcInfoSource(),
       // Display-only book imbalance for the model outlook:
       // the live validated book when the trading path has one
       // (DeepBook routes), else the independent sampler.

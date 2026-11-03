@@ -776,6 +776,15 @@
   border-color: rgba(237, 201, 128, 0.55);
   color: #edc980;
 }
+/* BTC weather mutters wear Bitcoin orange: market ambience,
+   never a decision. */
+.agent-feed-entry.btc {
+  border-left-color: #f7931a;
+}
+.agent-feed-entry-tag.btc {
+  border-color: rgba(247, 147, 26, 0.55);
+  color: #f7931a;
+}
 /* The buy-run line wears the same Sui blue as the avatar's
    line pose while it stands, and the green of a met condition
    once the price touches it (the reached entry below). */

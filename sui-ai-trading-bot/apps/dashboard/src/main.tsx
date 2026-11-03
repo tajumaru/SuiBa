@@ -804,6 +804,7 @@ function App() {
                       pairLabel={data?.pair === "WAL_USDC" ? "WAL" : "SUI"}
                       chain={data?.chain ?? null}
                       trades={data?.trades ?? []}
+                      btc={data?.btc ?? null}
                       active={activeTab === "Live"}
                       agentName={agentName}
                       onListeningChange={setVoiceListening}

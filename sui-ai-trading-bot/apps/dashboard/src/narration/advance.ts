@@ -1,6 +1,7 @@
 import type { EntryDraft, MonthlyCounters, NarrationEntry, NarrationState, WatchScore, WatchTarget } from "./state.ts";
 import { emptyMonthlyCounters } from "./state.ts";
 import type { Fill } from "../../../../packages/paper-trading/src/index.ts";
+import type { BtcInfo } from "../../../../packages/shared/src/index.ts";
 import {
   buildMonthlyReport,
   monthKeyOf,
@@ -23,6 +24,48 @@ export const PRICE_LINE_MURMUR_PCT = -1.5;
 /** Sleep talk cadence: the first mutter comes this long after the
  * sleep begins, and later mutters keep at least this much space. */
 export const SLEEP_TALK_INTERVAL_MS = 15 * 60_000;
+
+/** BTC weather mutters: the character remarks when Bitcoin has
+ * moved at least ±1% within the hour (±2% earns a 急に), at
+ * most once per direction per two hours, and only off a fresh
+ * sample. Pure ambience — the measured verdict was that BTC
+ * carries no usable signal for this bot's decisions, so it is
+ * never wired to any of them. */
+export const BTC_MUTTER_PCT = 1;
+export const BTC_MUTTER_RUSH_PCT = 2;
+export const BTC_MUTTER_COOLDOWN_MS = 2 * 3600 * 1000;
+export const BTC_SAMPLE_FRESH_MS = 3 * 60 * 1000;
+
+export function btcMutter(
+  btc: BtcInfo | null | undefined,
+  last: NarrationState["lastBtcMutter"],
+  now: number,
+): { text: string; direction: "up" | "down" } | null {
+  if (!btc || btc.change1hPct == null || !Number.isFinite(btc.change1hPct))
+    return null;
+  if (now - btc.at > BTC_SAMPLE_FRESH_MS) return null;
+  const change = btc.change1hPct;
+  if (Math.abs(change) < BTC_MUTTER_PCT) return null;
+  const direction: "up" | "down" = change > 0 ? "up" : "down";
+  if (
+    last &&
+    last.direction === direction &&
+    now - last.at < BTC_MUTTER_COOLDOWN_MS
+  )
+    return null;
+  const rush = Math.abs(change) >= BTC_MUTTER_RUSH_PCT;
+  const head =
+    direction === "up"
+      ? rush
+        ? "BTCが急に上がってきた！"
+        : "BTCが上がってきた！"
+      : rush
+        ? "BTCが急に下がってきた…"
+        : "BTCが下がってきた…";
+  const pct = `${change > 0 ? "+" : "-"}${Math.abs(change).toFixed(1)}%`;
+  const price = `$${Math.round(btc.price).toLocaleString("en-US")}`;
+  return { text: `${head} 1時間で${pct}（${price}）`, direction };
+}
 
 /**
  * Sleep-talk candidates, in the order the sleeping character would
@@ -141,6 +184,9 @@ export function advanceNarration(
    * build a finished month's report. Without them the monthly
    * finalisation waits — counters still accumulate. */
   fills?: readonly Fill[],
+  /** The latest BTC weather sample (display-only), for the
+   * character's ambient mutters. */
+  btc?: BtcInfo | null,
 ): NarrationState {
   const seen = new Set(prev.seen);
   const pending = new Set(prev.pendingCandidateIds);
@@ -149,6 +195,7 @@ export function advanceNarration(
   // moments the facts themselves are narrated, never recounted.
   let monthly = prev.monthly;
   let monthlyFinalised = prev.monthlyFinalised;
+  let lastBtcMutter = prev.lastBtcMutter;
   const bumpMonthly = (at: number, fn: (c: MonthlyCounters) => void) => {
     const key = monthKeyOf(at);
     const base = monthly[key] ?? emptyMonthlyCounters();
@@ -641,6 +688,15 @@ export function advanceNarration(
 
   if (d.status) lastStatus = d.status;
 
+  // BTC weather: an ambient mutter when Bitcoin has moved an
+  // hour's worth. The character noticing the market's weather
+  // — never an input to any decision.
+  const mutter = btcMutter(btc, lastBtcMutter, now);
+  if (mutter) {
+    drafts.push({ at: now, kind: "btc", text: mutter.text });
+    lastBtcMutter = { at: now, direction: mutter.direction };
+  }
+
   // Monthly report: a finished month with tallies is posted to
   // the feed exactly once, oldest first, once the fills that
   // price it are at hand.
@@ -676,6 +732,7 @@ export function advanceNarration(
       watchScore,
       monthly,
       monthlyFinalised,
+      lastBtcMutter,
       sessionStartPrice,
       priceHistory,
       alertCooldown,
