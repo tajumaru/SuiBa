@@ -16,6 +16,17 @@ on:
         required: true
         type: string
   workflow_call:
+    secrets:
+      VPS_HOST:
+        required: true
+      VPS_USER:
+        required: true
+      VPS_PORT:
+        required: true
+      VPS_SSH_KEY:
+        required: true
+      VPS_KNOWN_HOSTS:
+        required: true
     inputs:
       run_id:
         required: true
@@ -77,6 +88,10 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
+          if [[ -z $VPS_HOST || -z $VPS_USER || -z $VPS_PORT || -z $SSH_KEY || -z $KNOWN_HOSTS ]]; then
+            echo '::error::Required VPS SSH secrets are missing'
+            exit 1
+          fi
           [[ $VPS_HOST =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ && $VPS_USER == suiba-deploy && $VPS_PORT =~ ^[0-9]{1,5}$ ]]
           (( 10#$VPS_PORT >= 1 && 10#$VPS_PORT <= 65535 ))
           printf '%s  %s\n' "$ARCHIVE_SHA" release/image.tar.gz | sha256sum -c -
