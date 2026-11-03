@@ -1,0 +1,15 @@
+# Weekly update PRs for the two surfaces that move on their
+# own: the Actions used by the workflows and the app's npm
+# dependencies (pnpm lockfile aware). Nothing auto-merges —
+# every update arrives as a PR and goes through CI like any
+# other change.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "npm"
+    directory: "/sui-ai-trading-bot"
+    schedule:
+      interval: "weekly"
