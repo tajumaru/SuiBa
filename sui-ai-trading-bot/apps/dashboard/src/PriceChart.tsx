@@ -35,6 +35,22 @@ const hoverTimeFormat = new Intl.DateTimeFormat("ja-JP", {
  * OHLC. The full record (volume, source, provenance) stays in
  * the detail panel below; this is the at-a-glance version.
  */
+/** Forecast overlay colours: a claimed direction wears the
+ * app's own up/down hues so the outlook reads at a glance; an
+ * unclaimed one keeps the neutral Sui blue. The colour never
+ * claims more than the direction rule in chartForecast does —
+ * it follows fc.direction exactly. */
+export function forecastPalette(direction: "up" | "down" | "flat"): {
+  stroke: string;
+  fill: string;
+} {
+  if (direction === "up")
+    return { stroke: "#43dfb2", fill: "rgba(67, 223, 178, 0.10)" };
+  if (direction === "down")
+    return { stroke: "#f77d8f", fill: "rgba(247, 125, 143, 0.10)" };
+  return { stroke: "#64b5ff", fill: "rgba(100, 181, 255, 0.10)" };
+}
+
 export function candleHoverLines(b: Candle): {
   main: string;
   sub: string;
@@ -219,6 +235,12 @@ export function PriceChart({
           .reverse()
           .map((p) => `${x(p.timestamp + tf / 2)},${y(p.lower)}`),
       ].join(" ")
+    : null;
+  const fcPalette = fc ? forecastPalette(fc.direction) : null;
+  const fcLabel = fc
+    ? fc.direction === "flat"
+      ? "予測"
+      : `予測 ${fc.driftPct >= 0 ? "+" : ""}${(fc.driftPct * 100).toFixed(1)}%`
     : null;
   // Where the outlook meets the position's sell lines, if it
   // does: geometry over the sketch, labelled as such in place.
@@ -638,11 +660,11 @@ export function PriceChart({
                   strokeDasharray="2 4"
                   opacity="0.6"
                 />
-                <polygon points={fcCone} fill="rgba(100,181,255,0.10)" />
+                <polygon points={fcCone} fill={fcPalette!.fill} />
                 <polyline
                   points={fcMid}
                   fill="none"
-                  stroke="#64b5ff"
+                  stroke={fcPalette!.stroke}
                   strokeWidth="1.6"
                   strokeDasharray="5 4"
                 />
@@ -650,10 +672,10 @@ export function PriceChart({
                   x={x(fc.points.at(-1)!.timestamp + tf / 2)}
                   y={y(fc.points.at(-1)!.mid) - 8}
                   textAnchor="end"
-                  fill="#64b5ff"
+                  fill={fcPalette!.stroke}
                   fontSize="11"
                 >
-                  予測
+                  {fcLabel}
                 </text>
                 {crossingMarks.map((m) => (
                   <g

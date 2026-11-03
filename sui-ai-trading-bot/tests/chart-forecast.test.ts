@@ -8,7 +8,10 @@ import {
   CONE_UPPER_SHAPE,
   FORECAST_BARS,
 } from "../apps/dashboard/src/chartForecast.ts";
-import { PriceChart } from "../apps/dashboard/src/PriceChart.tsx";
+import {
+  PriceChart,
+  forecastPalette,
+} from "../apps/dashboard/src/PriceChart.tsx";
 
 const T0 = Date.UTC(2026, 10, 1, 0) / 1000;
 function candles(
@@ -114,6 +117,27 @@ describe("PriceChart forecast overlay", () => {
     const html = render(rising.slice(0, 10));
     expect(html).not.toContain("chart-forecast");
     expect(html).not.toContain("予測（模式）");
+  });
+
+  it("wears the direction's colour only when a direction is claimed", () => {
+    expect(forecastPalette("up").stroke).toBe("#43dfb2");
+    expect(forecastPalette("down").stroke).toBe("#f77d8f");
+    expect(forecastPalette("flat").stroke).toBe("#64b5ff");
+
+    const up = render(rising);
+    expect(up).toContain('stroke="#43dfb2"');
+    expect(up).toContain("rgba(67, 223, 178");
+    expect(up).toMatch(/予測 \+\d+\.\d%/);
+
+    const down = render(falling);
+    expect(down).toContain('stroke="#f77d8f"');
+    expect(down).toContain("rgba(247, 125, 143");
+    expect(down).toMatch(/予測 -\d+\.\d%/);
+
+    const flatHtml = render(flat);
+    expect(flatHtml).toContain('stroke="#64b5ff"');
+    expect(flatHtml).toContain(">予測<");
+    expect(flatHtml).not.toMatch(/予測 [+-]/);
   });
 
   it("shows the score line only with a forecast and score text", () => {
