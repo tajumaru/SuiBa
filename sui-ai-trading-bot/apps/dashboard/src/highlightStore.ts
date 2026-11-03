@@ -42,6 +42,39 @@ export const MAX_HIGHLIGHTS = 30;
 export const HIGHLIGHT_FRESH_MS = 600000;
 const ENTRIES_AROUND = 8;
 
+/**
+ * Per-kind caps inside the store. A trending day can mint a
+ * watch hit every few minutes; under a single global cap the
+ * flood evicts the rare moments (a fill, a line reached) the
+ * highlights exist for, and the chip strip sprawls into one
+ * long row of 的中. Each kind now keeps only its newest few,
+ * evicting its own kind first. The caps sum to MAX_HIGHLIGHTS.
+ */
+export const HIGHLIGHT_KIND_CAPS: Record<string, number> = {
+  trade: 10,
+  watchHit: 6,
+  nearMiss: 6,
+  priceLineReached: 4,
+  sellLine: 4,
+};
+
+/** Trim a list to the per-kind caps (then the global cap),
+ * keeping each kind's newest. Order stays chronological. */
+export function capHighlights(list: Highlight[]): Highlight[] {
+  const sorted = [...list].sort((a, b) => a.at - b.at);
+  const counts = new Map<string, number>();
+  const keptReversed: Highlight[] = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const h = sorted[i];
+    const cap = HIGHLIGHT_KIND_CAPS[h.kind] ?? MAX_HIGHLIGHTS;
+    const n = counts.get(h.kind) ?? 0;
+    if (n >= cap) continue;
+    counts.set(h.kind, n + 1);
+    keptReversed.push(h);
+  }
+  return keptReversed.reverse().slice(-MAX_HIGHLIGHTS);
+}
+
 export function isHighlightEntry(entry: NarrationEntry): boolean {
   return (
     entry.kind === "trade" ||
@@ -103,8 +136,9 @@ export function captureHighlights(
   return out;
 }
 
-/** Append fresh highlights, deduped by id, newest kept. Returns
- * the same array reference when nothing was added. */
+/** Append fresh highlights, deduped by id, newest kept, then
+ * trimmed to the per-kind caps. Returns the same array
+ * reference when nothing was added. */
 export function appendHighlights(
   list: Highlight[],
   fresh: Highlight[],
@@ -112,9 +146,7 @@ export function appendHighlights(
   const known = new Set(list.map((h) => h.id));
   const added = fresh.filter((h) => !known.has(h.id));
   if (!added.length) return list;
-  return [...list, ...added]
-    .sort((a, b) => a.at - b.at)
-    .slice(-MAX_HIGHLIGHTS);
+  return capHighlights([...list, ...added]);
 }
 
 const KEY = "suiba.highlights.v1";
@@ -154,7 +186,10 @@ export function loadHighlights(
     const raw = (storage ?? window.localStorage).getItem(keyFor(scope));
     if (!raw || raw.length > 500_000) return [];
     const result = schema.safeParse(JSON.parse(raw));
-    return result.success ? (result.data as Highlight[]) : [];
+    // Lists stored before the per-kind caps may already be
+    // flooded with one kind; trim on the way in so the strip
+    // recovers without waiting for new moments.
+    return result.success ? capHighlights(result.data as Highlight[]) : [];
   } catch {
     return [];
   }

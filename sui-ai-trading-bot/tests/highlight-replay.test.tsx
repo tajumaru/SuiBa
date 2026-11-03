@@ -71,9 +71,21 @@ describe("highlight capture", () => {
     });
     let list = appendHighlights([], [h("1", 1)]);
     expect(appendHighlights(list, [h("1", 1)])).toBe(list);
+    // A single kind floods only itself: watchHit keeps its
+    // newest 6 (see HIGHLIGHT_KIND_CAPS), so the strip cannot
+    // sprawl into one long row of 的中.
     for (let i = 2; i <= 35; i++) list = appendHighlights(list, [h(`${i}`, i)]);
-    expect(list).toHaveLength(30);
-    expect(list[0].id).toBe("6");
+    expect(list).toHaveLength(6);
+    expect(list[0].id).toBe("30");
+    // Mixed kinds still fill the store to the global cap.
+    const kinds = ["trade", "nearMiss", "priceLineReached", "sellLine"];
+    let mixed: Highlight[] = [];
+    for (let i = 1; i <= 35; i++)
+      mixed = appendHighlights(mixed, [
+        { ...h(`m${i}`, i), kind: kinds[i % kinds.length] },
+      ]);
+    expect(mixed).toHaveLength(22);
+    expect(mixed.filter((x) => x.kind === "trade")).toHaveLength(8);
   });
 
   it("round-trips through storage per pair and rejects junk", () => {
