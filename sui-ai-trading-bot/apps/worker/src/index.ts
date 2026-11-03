@@ -458,14 +458,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         databaseHealthy: db.health().healthy,
         ledgerOk: engine.monitor.ledger().ok,
         paperCheck: paperCheck.status(),
-        startReady:
-          engine.monitor.safety().connectivity === "HEALTHY" &&
-          !apiAccess.blocked() &&
-          !db.runtime().emergency &&
-          !db.runtime().error &&
-          sui.status.healthy &&
-          Date.now() - sui.status.checkedAt <= 180000 &&
-          engine.monitor.ledger().ok,
+        ...(() => {
+          const readiness = {
+            connectivity: engine.monitor.safety().connectivity === "HEALTHY",
+            apiAccess: !apiAccess.blocked(),
+            emergencyClear: !db.runtime().emergency,
+            runtimeClear: !db.runtime().error,
+            suiHealthy: sui.status.healthy,
+            suiFresh: Date.now() - sui.status.checkedAt <= 180000,
+            ledger: engine.monitor.ledger().ok,
+          };
+          return { readiness, startReady: Object.values(readiness).every(Boolean) };
+        })(),
       });
       return;
     }
