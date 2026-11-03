@@ -1,0 +1,33 @@
+name: SuiBa PAPER status
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type CHECK-PAPER-STATUS to read the recorded state"
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: suiba-paper-status
+  cancel-in-progress: false
+jobs:
+  paper-status:
+    # Repository variable, NOT an Environment variable: evaluated before job startup.
+    # Missing/false disables all SSH. Do not enable until separately approved.
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'CHECK-PAPER-STATUS' && vars.SUIBA_PAPER_STATUS_ENABLED == 'true'
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read PAPER status through the fixed wrapper
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-paper-status.sh
