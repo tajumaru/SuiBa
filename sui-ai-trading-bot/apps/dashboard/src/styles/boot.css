@@ -28,6 +28,12 @@
   opacity: 0;
   pointer-events: none;
 }
+/* The terminal block itself is centred on wide screens; the
+   lines inside it stay left-aligned, as a terminal's are. */
+.boot-inner {
+  max-width: 560px;
+  margin: 0 auto;
+}
 .boot-logo {
   font-size: 24px;
   letter-spacing: 0.14em;
