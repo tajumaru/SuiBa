@@ -237,6 +237,37 @@
   font-size: 12px;
   margin: 2px 0 6px;
 }
+.chart-answer-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 2px 0 6px;
+}
+.chart-answer-toggle {
+  min-height: 36px;
+  margin: 0;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+.chart-answer-toggle[aria-pressed="true"] {
+  background: #254f61;
+  border-color: #43dfb2;
+  color: #e5fff6;
+  box-shadow: inset 0 -3px #43dfb2;
+}
+.chart-answer-verdict {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  margin: 0;
+  color: #8fa3b0;
+}
+.chart-answer-verdict.hit {
+  color: #43dfb2;
+}
+.chart-answer-verdict.miss {
+  color: #f77d8f;
+}
 
 /* Sui chain strip: the chain's vital signs under the ticker. */
 .chain-strip {

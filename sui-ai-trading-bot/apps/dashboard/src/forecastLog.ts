@@ -27,6 +27,10 @@ export interface ForecastRecord {
   dir: "up" | "down" | "flat";
   up: number[];
   lo: number[];
+  /** The cone's centre line per step. Present only on records
+   * written since the answer-check view arrived; older records
+   * carry the bounds alone and cannot be redrawn. */
+  mid?: number[];
   /** Book-tilt share of the drift when recorded (fraction of
    * startClose); null for records from before the tilt and
    * for untilted forecasts. Lets the score judge the tilt on
@@ -53,6 +57,7 @@ export function forecastRecordFrom(
     dir: fc.direction,
     up: fc.points.map((p) => round6(p.upper)),
     lo: fc.points.map((p) => round6(p.lower)),
+    mid: fc.points.map((p) => round6(p.mid)),
     tilt: fc.bookTiltPct === 0 ? null : round6(fc.bookTiltPct),
   };
 }
@@ -77,6 +82,7 @@ const recordSchema = z.object({
   dir: z.enum(["up", "down", "flat"]),
   up: z.array(num).min(1).max(48),
   lo: z.array(num).min(1).max(48),
+  mid: z.array(num).min(1).max(48).optional(),
   tilt: z.number().nullable().optional(),
 });
 const schema = z.array(recordSchema).max(MAX_FORECAST_RECORDS);
@@ -160,6 +166,96 @@ export function scoreForecasts(
     dirTotal,
     dirPct: dirTotal ? Math.round((dirHits / dirTotal) * 100) : null,
   };
+}
+
+/** One finished forecast, ready to be laid over what actually
+ * happened: the recorded cone (ghost) plus the real closes. */
+export interface ForecastAnswerCheck {
+  /** Start time (seconds) of the first projected candle. */
+  origin: number;
+  startClose: number;
+  dir: "up" | "down" | "flat";
+  /** Projected drift over the horizon, as a fraction. */
+  driftPct: number;
+  /** Realised change over the same window, as a fraction. */
+  actualPct: number;
+  /** Share of steps whose real close stayed inside the cone. */
+  coveragePct: number;
+  /** Direction verdict; null when none was claimed (flat). */
+  directionHit: boolean | null;
+  points: { timestamp: number; mid: number; upper: number; lower: number }[];
+  actuals: { timestamp: number; close: number }[];
+}
+
+/** The newest forecast that can be answer-checked: it carries
+ * its centre line, every projected step has a real candle, and
+ * the whole story still sits in the chart's recent window (the
+ * origin candle within the last 48 bars). Older records without
+ * a centre line are skipped — they were never drawn with one
+ * stored, so there is nothing honest to redraw. */
+export function latestAnswerCheck(
+  records: ForecastRecord[],
+  candles: Candle[],
+  timeframe = 300,
+): ForecastAnswerCheck | null {
+  const latest = candles.at(-1);
+  if (!latest) return null;
+  const closeAt = new Map(candles.map((c) => [c.timestamp, c.close]));
+  for (let i = records.length - 1; i >= 0; i--) {
+    const r = records[i];
+    if (!r.mid || r.mid.length !== r.up.length || r.up.length === 0)
+      continue;
+    if (r.origin - timeframe < latest.timestamp - 47 * timeframe) continue;
+    const points: ForecastAnswerCheck["points"] = [];
+    const actuals: ForecastAnswerCheck["actuals"] = [];
+    let covered = 0;
+    let complete = true;
+    for (let j = 0; j < r.up.length; j++) {
+      const ts = r.origin + j * timeframe;
+      const close = closeAt.get(ts);
+      if (close == null) {
+        complete = false;
+        break;
+      }
+      points.push({
+        timestamp: ts,
+        mid: r.mid[j],
+        upper: r.up[j],
+        lower: r.lo[j],
+      });
+      actuals.push({ timestamp: ts, close });
+      if (close >= r.lo[j] && close <= r.up[j]) covered++;
+    }
+    if (!complete || actuals.length === 0) continue;
+    const lastClose = actuals.at(-1)!.close;
+    return {
+      origin: r.origin,
+      startClose: r.startClose,
+      dir: r.dir,
+      driftPct: (r.mid.at(-1)! - r.startClose) / r.startClose,
+      actualPct: (lastClose - r.startClose) / r.startClose,
+      coveragePct: Math.round((covered / actuals.length) * 100),
+      directionHit:
+        r.dir === "flat"
+          ? null
+          : r.dir === "up"
+            ? lastClose > r.startClose
+            : lastClose < r.startClose,
+      points,
+      actuals,
+    };
+  }
+  return null;
+}
+
+const pctText = (frac: number) =>
+  `${frac >= 0 ? "+" : ""}${(frac * 100).toFixed(1)}%`;
+
+export function answerCheckText(check: ForecastAnswerCheck): string {
+  const head = "答え合わせ（2時間前の予測）：";
+  if (check.directionHit == null)
+    return `${head}方向は名乗らず ／ コーン収まり ${check.coveragePct}%`;
+  return `${head}方向 ${check.directionHit ? "的中" : "外れ"}（予測 ${pctText(check.driftPct)} → 実際 ${pctText(check.actualPct)}）／ コーン収まり ${check.coveragePct}%`;
 }
 
 export function forecastScoreText(

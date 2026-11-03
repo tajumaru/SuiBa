@@ -5,6 +5,10 @@ import {
   forecastLineCrossings,
   FORECAST_BARS,
 } from "./chartForecast.ts";
+import {
+  answerCheckText,
+  type ForecastAnswerCheck,
+} from "./forecastLog.ts";
 import { IndicatorPanel } from "./IndicatorPanel.tsx";
 import { chartSeries, lineSegments } from "./chartIndicators.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
@@ -79,6 +83,8 @@ export function PriceChart({
   forecastScoreText,
   bookImbalance,
   sellLines,
+  answerCheck,
+  answerDefaultOn = false,
 }: {
   pair?: ReturnType<BotEngine["snapshot"]>["pair"];
   candles: Candle[];
@@ -91,8 +97,13 @@ export function PriceChart({
   /** The open position's real sell lines (same prices the
    * ticker counts down to), for forecast crossing marks. */
   sellLines?: { tp: number; sl: number } | null;
+  /** The newest finished forecast, for the answer-check view
+   * (the recorded cone laid over what actually happened). */
+  answerCheck?: ForecastAnswerCheck | null;
+  answerDefaultOn?: boolean;
 }) {
   const [gapTime, setGapTime] = useState<number | null>(null);
+  const [answerOn, setAnswerOn] = useState(answerDefaultOn);
   const [history, setHistory] = useState<HistoryResult | null>(null),
     [historyBusy, setHistoryBusy] = useState(false),
     [historyNotice, setHistoryNotice] = useState("");
@@ -203,11 +214,18 @@ export function PriceChart({
   const selectedGap = gapQuality.entries.find((g) => g.timestamp === gapTime);
   const xFinish = fc ? latestEnd + FORECAST_BARS * tf : finish;
   const x = (t: number) => left + ((t - start) / (xFinish - start)) * plot;
+  // The answer-check view exists only in the latest 5-minute
+  // view, like the forecast itself (its records are 5-minute).
+  const showAnswer =
+    answerOn && answerCheck != null && anchor == null && tf === 300;
   const values = [
     ...c.flatMap((b) => [b.low, b.high]),
     ...visible.ema20,
     ...visible.ema50,
     ...(fc ? fc.points.flatMap((p) => [p.lower, p.upper]) : []),
+    ...(showAnswer
+      ? answerCheck.points.flatMap((p) => [p.lower, p.upper])
+      : []),
   ].filter((v): v is number => v != null);
   const min = Math.min(...values),
     max = Math.max(...values),
@@ -241,6 +259,55 @@ export function PriceChart({
     ? fc.direction === "flat"
       ? "予測"
       : `予測 ${fc.driftPct >= 0 ? "+" : ""}${(fc.driftPct * 100).toFixed(1)}%`
+    : null;
+  // Answer-check geometry: the recorded cone (ghost) over the
+  // bars that actually followed it, with the real closes as a
+  // solid white line — dotted was the claim, solid is the fact.
+  const ghost = showAnswer
+    ? (() => {
+        const a = answerCheck,
+          anchorPt = `${x(a.origin - tf / 2)},${y(a.startClose)}`,
+          palette = forecastPalette(a.dir),
+          pct = (f: number) =>
+            `${f >= 0 ? "+" : ""}${(f * 100).toFixed(1)}%`;
+        return {
+          palette,
+          dividerX: x(a.origin),
+          cone: [
+            anchorPt,
+            ...a.points.map(
+              (p) => `${x(p.timestamp + tf / 2)},${y(p.upper)}`,
+            ),
+            ...[...a.points]
+              .reverse()
+              .map((p) => `${x(p.timestamp + tf / 2)},${y(p.lower)}`),
+          ].join(" "),
+          upper: a.points
+            .map((p) => `${x(p.timestamp + tf / 2)},${y(p.upper)}`)
+            .join(" "),
+          lower: a.points
+            .map((p) => `${x(p.timestamp + tf / 2)},${y(p.lower)}`)
+            .join(" "),
+          mid: [
+            anchorPt,
+            ...a.points.map(
+              (p) => `${x(p.timestamp + tf / 2)},${y(p.mid)}`,
+            ),
+          ].join(" "),
+          actual: [
+            anchorPt,
+            ...a.actuals.map(
+              (p) => `${x(p.timestamp + tf / 2)},${y(p.close)}`,
+            ),
+          ].join(" "),
+          endX: x(a.points.at(-1)!.timestamp + tf / 2),
+          midEndY: y(a.points.at(-1)!.mid),
+          actualEndY: y(a.actuals.at(-1)!.close),
+          midAbove: a.points.at(-1)!.mid >= a.actuals.at(-1)!.close,
+          forecastTag: `予測 ${pct(a.driftPct)}`,
+          actualTag: `実際 ${pct(a.actualPct)}`,
+        };
+      })()
     : null;
   // Where the outlook meets the position's sell lines, if it
   // does: geometry over the sketch, labelled as such in place.
@@ -437,6 +504,31 @@ export function PriceChart({
       )}
       {fc && tf === 300 && forecastScoreText && (
         <p className="chart-forecast-score">{forecastScoreText}</p>
+      )}
+      {tf === 300 && answerCheck && (
+        <div className="chart-answer-row">
+          <button
+            type="button"
+            className="chart-answer-toggle"
+            aria-pressed={answerOn}
+            onClick={() => setAnswerOn((v) => !v)}
+          >
+            答え合わせ
+          </button>
+          {answerOn && (
+            <p
+              className={`chart-answer-verdict${
+                answerCheck.directionHit == null
+                  ? ""
+                  : answerCheck.directionHit
+                    ? " hit"
+                    : " miss"
+              }`}
+            >
+              {answerCheckText(answerCheck)}
+            </p>
+          )}
+        </div>
       )}
       <div className="chart-controls" role="group" aria-label="表示期間の選択">
         {chartPeriods.map((n) => (
@@ -716,6 +808,77 @@ export function PriceChart({
                     </text>
                   </g>
                 ))}
+              </g>
+            )}
+            {ghost && (
+              <g className="chart-answer" aria-label="予測の答え合わせ">
+                <line
+                  x1={ghost.dividerX}
+                  x2={ghost.dividerX}
+                  y1="30"
+                  y2="215"
+                  stroke="#64b5ff"
+                  strokeDasharray="2 4"
+                  opacity="0.6"
+                />
+                <text
+                  x={ghost.dividerX + 6}
+                  y="42"
+                  fill="#8fa3b0"
+                  fontSize="10"
+                >
+                  2時間前の予測 → 実際
+                </text>
+                <polygon points={ghost.cone} fill={ghost.palette.fill} />
+                <polyline
+                  points={ghost.upper}
+                  fill="none"
+                  stroke={ghost.palette.stroke}
+                  strokeWidth="1"
+                  opacity="0.45"
+                />
+                <polyline
+                  points={ghost.lower}
+                  fill="none"
+                  stroke={ghost.palette.stroke}
+                  strokeWidth="1"
+                  opacity="0.45"
+                />
+                <polyline
+                  points={ghost.mid}
+                  fill="none"
+                  stroke={ghost.palette.stroke}
+                  strokeWidth="1.4"
+                  strokeDasharray="5 4"
+                  opacity="0.9"
+                />
+                <polyline
+                  points={ghost.actual}
+                  fill="none"
+                  stroke="#ffffff"
+                  strokeWidth="1.8"
+                  strokeLinejoin="round"
+                />
+                <text
+                  x={ghost.endX}
+                  y={ghost.midAbove ? ghost.midEndY - 6 : ghost.midEndY + 13}
+                  textAnchor="end"
+                  fill={ghost.palette.stroke}
+                  fontSize="10.5"
+                >
+                  {ghost.forecastTag}
+                </text>
+                <text
+                  x={ghost.endX}
+                  y={
+                    ghost.midAbove ? ghost.actualEndY + 13 : ghost.actualEndY - 6
+                  }
+                  textAnchor="end"
+                  fill="#ffffff"
+                  fontSize="10.5"
+                >
+                  {ghost.actualTag}
+                </text>
               </g>
             )}
             {chosen && (

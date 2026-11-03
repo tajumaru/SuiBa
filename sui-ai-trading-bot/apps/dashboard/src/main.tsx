@@ -28,9 +28,11 @@ import {
   appendForecastRecord,
   forecastRecordFrom,
   forecastScoreText,
+  latestAnswerCheck,
   loadForecastLog,
   saveForecastLog,
   scoreForecasts,
+  type ForecastAnswerCheck,
   type ForecastRecord,
 } from "./forecastLog.ts";
 import {
@@ -191,6 +193,7 @@ function Chart(props: {
   forecastScoreText?: string | null;
   bookImbalance?: number | null;
   sellLines?: { tp: number; sl: number } | null;
+  answerCheck?: ForecastAnswerCheck | null;
 }) {
   return props.kind === "Price" ? (
     <PriceChart
@@ -408,6 +411,13 @@ function App() {
             scoreForecasts(forecastLog, data.candlesByTimeframe[300]),
             forecastLog.length,
           )
+        : null,
+    [forecastLog, data],
+  );
+  const forecastAnswer = useMemo(
+    () =>
+      data
+        ? latestAnswerCheck(forecastLog, data.candlesByTimeframe[300])
         : null,
     [forecastLog, data],
   );
@@ -881,6 +891,7 @@ function App() {
                         synchronized
                         historyApi={api}
                         forecastScoreText={forecastScoreLine}
+                        answerCheck={forecastAnswer}
                         bookImbalance={data.bookImbalance}
                         sellLines={
                           operations.data?.decision
