@@ -1,0 +1,91 @@
+name: SuiBa VPS stage existing release
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        required: true
+        type: string
+      release_sha:
+        required: true
+        type: string
+      archive_sha256:
+        required: true
+        type: string
+      confirmation:
+        description: Type STAGE-PAPER
+        required: true
+        type: string
+permissions:
+  actions: read
+concurrency:
+  group: suiba-vps-deployment
+  cancel-in-progress: false
+jobs:
+  stage:
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'STAGE-PAPER' && vars.SUIBA_STAGE_ENABLED == 'true' && vars.SUIBA_BROKER_ENABLED != 'true'
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RUN_ID: ${{ inputs.run_id }}
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      ARCHIVE_SHA: ${{ inputs.archive_sha256 }}
+    steps:
+      - name: Verify source run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ $RUN_ID =~ ^[1-9][0-9]{0,19}$ && $RELEASE_SHA =~ ^[a-f0-9]{40}$ && $ARCHIVE_SHA =~ ^[a-f0-9]{64}$ ]]
+          workflow=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/suiba-vps.yml" --jq .id)
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" |
+            jq -e --arg sha "$RELEASE_SHA" --arg repo "$GITHUB_REPOSITORY" --arg workflow "$workflow" '
+              .head_sha == $sha and .head_branch == "main" and .head_repository.full_name == $repo
+              and (.workflow_id | tostring) == $workflow and .event == "workflow_dispatch" and .conclusion == "success"' >/dev/null
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.run_id }}
+          name: vps-release
+          path: release
+      - name: Verify and stage archive over pinned SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ $VPS_HOST =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ && $VPS_USER == suiba-deploy && $VPS_PORT =~ ^[0-9]{1,5}$ ]]
+          (( 10#$VPS_PORT >= 1 && 10#$VPS_PORT <= 65535 ))
+          printf '%s  %s\n' "$ARCHIVE_SHA" release/image.tar.gz | sha256sum -c -
+          bytes=$(stat -c %s release/image.tar.gz)
+          (( bytes > 0 && bytes <= 1073741824 ))
+          key=$(mktemp)
+          hosts=$(mktemp)
+          trap 'rm -f -- "$key" "$hosts"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$hosts"
+          ssh -F /dev/null -T -i "$key" -p "$VPS_PORT" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o IdentityAgent=none -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$hosts" \
+            -o ClearAllForwardings=yes -o ConnectTimeout=15 "$VPS_USER@$VPS_HOST" \
+            "sh -eu -c '
+              umask 077
+              dir=/var/lib/suiba-incoming/$RELEASE_SHA
+              mkdir -m 700 -- \"\$dir\" || test -d \"\$dir\"
+              test ! -L \"\$dir\"
+              test \"\$(stat -c %u:%a \"\$dir\")\" = \"\$(id -u):700\"
+              final=\"\$dir/image.tar.gz\"
+              test ! -e \"\$final\" && test ! -L \"\$final\"
+              partial=\$(mktemp \"\$dir/.image.partial.XXXXXXXX\")
+              head -c $((bytes + 1)) > \"\$partial\"
+              test \"\$(stat -c %s:%a \"\$partial\")\" = $bytes:600
+              printf \"%s  %s\\n\" $ARCHIVE_SHA \"\$partial\" | sha256sum -c -
+              sync -f \"\$partial\"
+              ln -T -- \"\$partial\" \"\$final\"
+              rm -- \"\$partial\"
+              sync -f \"\$dir\"
+              echo STAGED_VERIFIED
+            '" < release/image.tar.gz
