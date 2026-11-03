@@ -17,6 +17,7 @@ import type { Candle } from "../../../packages/shared/src/index.ts";
 import {
   FORECAST_BARS,
   chartForecast,
+  forecastPalette,
   type ChartForecast,
 } from "./chartForecast.ts";
 import {
@@ -72,14 +73,6 @@ export function shareCardInputFor(args: {
   };
 }
 
-// The direction palette, matching PriceChart's forecastPalette
-// (duplicated to keep this module free of a component import).
-const PALETTE = {
-  up: { line: "#43dfb2", fill: "rgba(67,223,178,0.13)" },
-  down: { line: "#f77d8f", fill: "rgba(247,125,143,0.13)" },
-  flat: { line: "#64b5ff", fill: "rgba(100,181,255,0.10)" },
-} as const;
-
 const MINT = "#43dfb2";
 const PINK = "#f77d8f";
 const INK = "#e6f0f6";
@@ -104,7 +97,7 @@ export function buildShareCardSvg(
   characterImageDataUrl: string,
 ): string {
   const { forecast, score } = input;
-  const palette = PALETTE[forecast.direction];
+  const palette = forecastPalette(forecast.direction, "card");
   const hist = input.candles;
   const steps = forecast.points;
   const total = hist.length + steps.length;
@@ -186,14 +179,14 @@ export function buildShareCardSvg(
   ].join(" ");
   out.push(
     `<polygon points="${upPts} ${loPts.split(" ").reverse().join(" ")}" fill="${palette.fill}"/>`,
-    `<polyline points="${upPts}" fill="none" stroke="${palette.line}" stroke-width="1.5" opacity="0.75"/>`,
-    `<polyline points="${loPts}" fill="none" stroke="${palette.line}" stroke-width="1.5" opacity="0.75"/>`,
-    `<polyline points="${midPts}" fill="none" stroke="${palette.line}" stroke-width="3" stroke-dasharray="7 6"/>`,
+    `<polyline points="${upPts}" fill="none" stroke="${palette.stroke}" stroke-width="1.5" opacity="0.75"/>`,
+    `<polyline points="${loPts}" fill="none" stroke="${palette.stroke}" stroke-width="1.5" opacity="0.75"/>`,
+    `<polyline points="${midPts}" fill="none" stroke="${palette.stroke}" stroke-width="3" stroke-dasharray="7 6"/>`,
     `<line x1="${originX}" y1="${y0}" x2="${originX}" y2="${y1}" stroke="#64b5ff" stroke-width="1.5"/>`,
   );
   const drift = forecast.driftPct * 100;
   out.push(
-    `<text x="${n1(originX + 10)}" y="140" font-family="${SANS}" font-size="25" font-weight="bold" fill="${palette.line}">予測 ${drift >= 0 ? "+" : ""}${drift.toFixed(1)}%</text>`,
+    `<text x="${n1(originX + 10)}" y="140" font-family="${SANS}" font-size="25" font-weight="bold" fill="${palette.stroke}">予測 ${drift >= 0 ? "+" : ""}${drift.toFixed(1)}%</text>`,
   );
   // Right column: character, verdict, recorded score.
   out.push(
@@ -208,7 +201,7 @@ export function buildShareCardSvg(
         ? "2時間で 下落"
         : "2時間は 横ばい";
   out.push(
-    `<text x="856" y="440" font-family="${SANS}" font-size="31" font-weight="bold" fill="${palette.line}">${directionLine}</text>`,
+    `<text x="856" y="440" font-family="${SANS}" font-size="31" font-weight="bold" fill="${palette.stroke}">${directionLine}</text>`,
     `<text x="856" y="482" font-family="${SANS}" font-size="17" fill="${DIM}">予測の成績（この端末の記録）</text>`,
   );
   if (score.scoredRecords >= MIN_SCORED_RECORDS && score.coveragePct != null) {

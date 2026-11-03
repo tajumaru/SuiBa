@@ -123,6 +123,17 @@ describe("PriceChart forecast overlay", () => {
     expect(forecastPalette("up").stroke).toBe("#43dfb2");
     expect(forecastPalette("down").stroke).toBe("#f77d8f");
     expect(forecastPalette("flat").stroke).toBe("#64b5ff");
+    // The share card shares the hues with a stronger wash for
+    // claimed directions; flat keeps the chart's alpha.
+    expect(forecastPalette("up", "card").fill).toBe(
+      "rgba(67, 223, 178, 0.13)",
+    );
+    expect(forecastPalette("down", "card").fill).toBe(
+      "rgba(247, 125, 143, 0.13)",
+    );
+    expect(forecastPalette("flat", "card").fill).toBe(
+      "rgba(100, 181, 255, 0.1)",
+    );
 
     const up = render(rising);
     expect(up).toContain('stroke="#43dfb2"');

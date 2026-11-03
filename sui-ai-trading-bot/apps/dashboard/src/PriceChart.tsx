@@ -3,8 +3,14 @@ import { candleGeometry } from "./candleGeometry.ts";
 import {
   chartForecast,
   forecastLineCrossings,
+  forecastPalette,
   FORECAST_BARS,
 } from "./chartForecast.ts";
+
+// Kept as a re-export: the palette's home is chartForecast.ts
+// (shared with the share card), and existing imports name this
+// module.
+export { forecastPalette };
 import {
   answerCheckText,
   type ForecastAnswerCheck,
@@ -43,22 +49,6 @@ const hoverTimeFormat = new Intl.DateTimeFormat("ja-JP", {
  * OHLC. The full record (volume, source, provenance) stays in
  * the detail panel below; this is the at-a-glance version.
  */
-/** Forecast overlay colours: a claimed direction wears the
- * app's own up/down hues so the outlook reads at a glance; an
- * unclaimed one keeps the neutral Sui blue. The colour never
- * claims more than the direction rule in chartForecast does —
- * it follows fc.direction exactly. */
-export function forecastPalette(direction: "up" | "down" | "flat"): {
-  stroke: string;
-  fill: string;
-} {
-  if (direction === "up")
-    return { stroke: "#43dfb2", fill: "rgba(67, 223, 178, 0.10)" };
-  if (direction === "down")
-    return { stroke: "#f77d8f", fill: "rgba(247, 125, 143, 0.10)" };
-  return { stroke: "#64b5ff", fill: "rgba(100, 181, 255, 0.10)" };
-}
-
 export function candleHoverLines(b: Candle): {
   main: string;
   sub: string;

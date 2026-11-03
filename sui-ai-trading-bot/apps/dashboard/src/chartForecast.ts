@@ -78,9 +78,34 @@ export const CONE_LOWER_SHAPE = [
 ];
 
 /** A direction word is only claimed when the projected drift is
- * at least this large: at |drift| >= 0.5% the walk-forward hit
- * rate was 67% (n=33); below it, direction carried no signal. */
+ * at least this large. The 0.5% line stands on measurement: a
+ * 2026-11-03 sweep over the saved 9,991 candles found that
+ * raising the threshold (0.8% / 1.0%) lowered the walk-forward
+ * hit rate monotonically — a bigger claim was not a better one.
+ * (An earlier calibration note here cited 67% at n=33; neither
+ * measurement could reproduce it, so it was removed rather than
+ * left standing as a basis.) */
 export const DIRECTION_MIN_DRIFT = 0.005;
+
+/** Forecast overlay colours: a claimed direction wears the
+ * app's own up/down hues so the outlook reads at a glance; an
+ * unclaimed one keeps the neutral Sui blue. The colour never
+ * claims more than the direction rule above does — it follows
+ * the forecast's direction exactly. The "card" variant is the
+ * share card's slightly stronger cone wash on a standalone
+ * image; hues are shared so the chart and the card can never
+ * drift apart. */
+export function forecastPalette(
+  direction: "up" | "down" | "flat",
+  variant: "chart" | "card" = "chart",
+): { stroke: string; fill: string } {
+  const claimed = variant === "card" ? 0.13 : 0.1;
+  if (direction === "up")
+    return { stroke: "#43dfb2", fill: `rgba(67, 223, 178, ${claimed})` };
+  if (direction === "down")
+    return { stroke: "#f77d8f", fill: `rgba(247, 125, 143, ${claimed})` };
+  return { stroke: "#64b5ff", fill: "rgba(100, 181, 255, 0.1)" };
+}
 
 /** How far a fully one-sided book may lean the outlook's mid
  * over the whole horizon, in ATR units. Deliberately small:
