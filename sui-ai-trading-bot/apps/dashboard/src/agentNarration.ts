@@ -71,5 +71,5 @@ export { MAX_NARRATION_ENTRIES, MAX_CHAT_ENTRIES, trimNarrationEntries, DECISION
 export { decisionTrail, metEntryConditions, cycleNarrationText, sellLinesOf } from "./narration/decision.ts";
 export { WATCH_APPROACH_RATIO, WATCH_WITHDRAW_RATIO, REVIEW_SETTLED_THRESHOLD, REVIEW_BUY_MIN_SETTLED, entryConditionChips, currentConditionChips, currentWatch, currentWatchScore, reviewNarrationTexts } from "./narration/watch.ts";
 export { ALERT_PRICE_LOOKBACK, ALERT_PRICE_THRESHOLD, ALERT_VOLUME_THRESHOLD, ALERT_COOLDOWN_CYCLES, spikeAlert } from "./narration/alerts.ts";
-export { PRICE_LINE_MURMUR_PCT, SLEEP_TALK_INTERVAL_MS, advanceNarration } from "./narration/advance.ts";
+export { PRICE_LINE_MURMUR_PCT, SLEEP_TALK_INTERVAL_MS, advanceNarration, btcMutter } from "./narration/advance.ts";
 export { agentPose, BUY_CELEBRATION_MS, CELEBRATION_FRESH_MS, isBuyTradeEntry, findNewBuyEntry, buyCelebrationActive } from "./narration/pose.ts";

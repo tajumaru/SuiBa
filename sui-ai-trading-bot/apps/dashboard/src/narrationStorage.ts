@@ -53,6 +53,8 @@ const schema: z.ZodType<NarrationState> = z.object({
           "chatReply",
           "chatPrompt",
           "epoch",
+          "monthlyReport",
+          "btc",
           "status",
         ]),
         text: z.string(),
@@ -129,6 +131,10 @@ const schema: z.ZodType<NarrationState> = z.object({
     )
     .default({}),
   monthlyFinalised: z.string().nullable().default(null),
+  lastBtcMutter: z
+    .object({ at: number, direction: z.enum(["up", "down"]) })
+    .nullable()
+    .default(null),
 });
 
 // Resolve storage inside the try: browsers may deny even the localStorage getter.

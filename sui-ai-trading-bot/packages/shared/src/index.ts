@@ -273,6 +273,17 @@ export interface Runtime {
  * checkpoint, and a TPS estimate derived from the cumulative
  * network transaction count). Sampled beside the trading paths;
  * never an input to any trading or safety decision. */
+/** A display-only sample of BTC/USD (the market's weather,
+ * quoted by the narration as ambience). Sampled beside the
+ * trading paths; never an input to any trading or safety
+ * decision. */
+export interface BtcInfo {
+  price: number;
+  /** Change over the last hour in percent, from the sampler's
+   * own price history; null until an hour of samples exists. */
+  change1hPct: number | null;
+  at: number;
+}
 export interface ChainInfo {
   epoch: number;
   checkpoint: number;

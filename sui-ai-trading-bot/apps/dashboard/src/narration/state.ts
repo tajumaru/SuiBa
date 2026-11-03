@@ -28,6 +28,7 @@ export type NarrationKind =
   | "chatPrompt" // the character speaking up at a milestone, with a suggested question
   | "epoch" // a new Sui epoch began (the chain's own daily milestone)
   | "monthlyReport" // the finished month's report card, posted once
+  | "btc" // market weather: BTC moved an hour's worth, worth a mutter
   | "status"; // feed-initialised status line
 
 export interface NarrationEntry {
@@ -160,6 +161,9 @@ export interface NarrationState {
   /** The newest month key a monthlyReport entry was posted for,
    * so the finalisation fires exactly once per month. */
   monthlyFinalised: string | null;
+  /** The last BTC weather mutter told, for its per-direction
+   * cooldown. Ambience bookkeeping only. */
+  lastBtcMutter: { at: number; direction: "up" | "down" } | null;
 }
 
 /** One JST month of feed-side tallies for the monthly report.
@@ -268,6 +272,7 @@ export function emptyNarrationState(): NarrationState {
     initialized: false,
     monthly: {},
     monthlyFinalised: null,
+    lastBtcMutter: null,
   };
 }
 

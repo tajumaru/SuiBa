@@ -104,6 +104,9 @@ export function AgentFeedEntryRow({
       {entry.kind === "monthlyReport" && (
         <span className="agent-feed-entry-tag monthly">月報</span>
       )}
+      {entry.kind === "btc" && (
+        <span className="agent-feed-entry-tag btc">BTC</span>
+      )}
       {entry.kind === "priceLine" && (
         <span className="agent-feed-entry-tag line">買い走りライン</span>
       )}
