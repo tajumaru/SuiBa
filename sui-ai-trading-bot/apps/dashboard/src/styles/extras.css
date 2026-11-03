@@ -544,3 +544,57 @@
   font-size: 12px;
   color: #8fa3b0;
 }
+
+/* Condition-sliced performance (History tab, under the
+   order history): real closes grouped by their entry buy. */
+.fill-analysis {
+  margin-top: 14px;
+  border: 1px solid #123324;
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: #04070b;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.fill-analysis h4 {
+  margin: 0;
+  font-size: 12.5px;
+  color: #43dfb2;
+}
+.fill-analysis-seg {
+  margin: 10px 0 4px;
+  font-size: 11.5px;
+  color: #8fa3b0;
+}
+.fill-analysis-table {
+  border-collapse: collapse;
+  font-size: 12.5px;
+  width: 100%;
+  max-width: 480px;
+}
+.fill-analysis-table th,
+.fill-analysis-table td {
+  text-align: right;
+  padding: 3px 6px;
+}
+.fill-analysis-table th:first-child,
+.fill-analysis-table td:first-child {
+  text-align: left;
+}
+.fill-analysis-table th {
+  color: #8fa3b0;
+  font-weight: normal;
+  border-bottom: 1px solid #1b2836;
+}
+.fill-analysis-table .pos {
+  color: #43dfb2;
+}
+.fill-analysis-table .neg {
+  color: #f77d8f;
+}
+.fill-analysis-note,
+.fill-analysis-empty {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: #8fa3b0;
+}

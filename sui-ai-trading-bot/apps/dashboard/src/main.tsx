@@ -19,6 +19,7 @@ import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
 import { BootScreen } from "./BootScreen.tsx";
 import { ActivityGrass } from "./ActivityGrass.tsx";
 import { MonthlyReportCard } from "./MonthlyReportCard.tsx";
+import { FillAnalysisCard } from "./FillAnalysisCard.tsx";
 import { ChainStrip } from "./ChainStrip.tsx";
 import { BookBar } from "./BookBar.tsx";
 import { chartForecast, FORECAST_BARS } from "./chartForecast.ts";
@@ -942,6 +943,10 @@ function App() {
                   <section>
                     <h3>注文 / 拒否理由</h3>
                     <OrderHistory orders={data.orders} />
+                    <FillAnalysisCard
+                      trades={data.trades}
+                      candles={data.candlesByTimeframe[300]}
+                    />
                   </section>
                 )}
                 {activeTab === "バックテスト比較" && (
