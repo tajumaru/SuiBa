@@ -1,8 +1,13 @@
 name: SuiBa offline validation
 on:
+  # Branch pushes are covered by their pull_request run; running
+  # on push as well executed the whole suite twice per PR.
   push:
+    branches:
+      - main
     paths:
       - "sui-ai-trading-bot/**"
+      - "!**/*.md"
       - ".github/workflows/suiba-offline.yml"
       - ".github/workflows/suiba-no-worker.yml"
       - ".github/workflows/suiba-vps.yml"
@@ -12,12 +17,17 @@ on:
   pull_request:
     paths:
       - "sui-ai-trading-bot/**"
+      - "!**/*.md"
       - ".github/workflows/suiba-offline.yml"
       - ".github/workflows/suiba-no-worker.yml"
       - ".github/workflows/suiba-vps.yml"
       - ".github/workflows/suiba-vps-stage.yml"
       - ".github/workflows/suiba-ssh-preflight.yml"
       - ".github/workflows/suiba-paper-status.yml"
+  # Weekly unconditional full run (Mon 03:00 JST): the safety
+  # net for the change-gated heavy suites in suiba-no-worker.
+  schedule:
+    - cron: "0 18 * * 0"
   workflow_dispatch:
     inputs:
       confirmation:
@@ -32,7 +42,7 @@ permissions:
 # cancelled out from under its operator.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' && github.event_name != 'schedule' }}
 jobs:
   without-worker:
     if: github.event_name != 'workflow_dispatch'
@@ -53,8 +63,8 @@ jobs:
       run:
         working-directory: sui-ai-trading-bot
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "24.22.1"
       - run: node scripts/verify-node-version.mjs

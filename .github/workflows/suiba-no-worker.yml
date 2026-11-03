@@ -12,17 +12,47 @@ jobs:
       run:
         working-directory: sui-ai-trading-bot
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Record the exact checked-out commit
         run: |
           test "$(git rev-parse HEAD)" = "${{ github.sha }}"
           printf 'Verified HEAD: %s\n' "${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+      # The Docker/packaging suites below verify the deploy
+      # machinery; they re-run only when that machinery (or the
+      # code it packages, or the dependency manifests, or the
+      # tests themselves) changed. Anything else — a dashboard
+      # change, say — cannot change their outcome. Scheduled
+      # and dispatched runs always take the heavy path, and a
+      # failed comparison fails safe to heavy as well.
+      - name: Decide whether the heavy suites are needed
+        id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          heavy=true
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "pull_request" ]; then
+            if [ "${{ github.event_name }}" = "push" ]; then
+              range="${{ github.event.before }}...${{ github.sha }}"
+            else
+              range="${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"
+            fi
+            files="$(gh api "repos/${{ github.repository }}/compare/$range" --jq '.files[].filename' 2>/dev/null || true)"
+            if [ -z "$files" ]; then
+              echo "Comparison unavailable; running the heavy suites."
+            elif printf '%s\n' "$files" | grep -Eq '^sui-ai-trading-bot/(docker|deploy|scripts|tests|apps/worker|packages)/|^sui-ai-trading-bot/(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$|^\.github/workflows/'; then
+              echo "Deploy machinery or packaged code changed; running the heavy suites."
+            else
+              heavy=false
+              echo "No heavy-suite inputs changed; skipping the Docker/packaging suites."
+            fi
+          fi
+          echo "heavy=$heavy" >> "$GITHUB_OUTPUT"
       # The pnpm version comes from package.json's
       # packageManager pin, via Corepack.
       - run: corepack enable
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24.22.1"
       - run: node scripts/verify-node-version.mjs
@@ -34,7 +64,7 @@ jobs:
       - name: Resolve the pnpm store path
         id: pnpm-store
         run: echo "path=$(pnpm store path)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('sui-ai-trading-bot/pnpm-lock.yaml') }}
@@ -65,21 +95,28 @@ jobs:
           sudo visudo -cf deploy/paper-check/suiba-paper-check.sudoers
           systemd-analyze verify deploy/paper-check/*.service deploy/paper-check/*.timer
       - name: Broker security and limited sudo (disposable Ubuntu, no Worker)
+        if: steps.changes.outputs.heavy == 'true'
         run: |
           docker build -f docker/Dockerfile.broker-test -t suiba-broker-tests .
           docker run --rm --network none --memory 512m --memory-swap 512m --pids-limit 128 suiba-broker-tests
       - name: Render and verify the production Compose model
+        if: steps.changes.outputs.heavy == 'true'
         run: |
           sudo mkdir -p /opt/suiba/shared
           sudo touch /opt/suiba/shared/runtime.env /opt/suiba/shared/admin-token
           node docker/verify-vps-config.mjs
       - name: Build image without running its default command
+        if: steps.changes.outputs.heavy == 'true'
         run: docker build --build-arg SUIBA_BUILD_SHA=${{ github.sha }} -f docker/Dockerfile -t suiba-no-worker:${{ github.sha }} .
       - name: Isolated HTTP/SQLite/process fixtures, never Worker
+        if: steps.changes.outputs.heavy == 'true'
         run: node docker/verify-vps-offline.mjs suiba-no-worker:${{ github.sha }}
       - name: Real broker transaction with dummy HTTP and cold restore (no Worker)
+        if: steps.changes.outputs.heavy == 'true'
         run: sudo /usr/bin/python3 -I deploy/broker/verify_docker.py suiba-no-worker:${{ github.sha }}
       - name: Independent systemd cutoff with Docker dummy (no Worker)
+        if: steps.changes.outputs.heavy == 'true'
         run: sudo /usr/bin/python3 -I deploy/paper-check/verify_timer.py suiba-no-worker:${{ github.sha }}
       - name: Production controller crash and recovery with Docker dummy (no Worker)
+        if: steps.changes.outputs.heavy == 'true'
         run: sudo /usr/bin/python3 -I deploy/paper-check/verify_run.py suiba-no-worker:${{ github.sha }}
