@@ -210,6 +210,16 @@ for scenario in ('normal', 'crash', 'timer', 'helper', 'persistence', 'worker-ab
         assert not state['Running'] and not state['OOMKilled']
         # Verify the real fixed selected_pair query accepts SUI and rejects WAL.
         c, ctl = fixture(base, name, digest, 'stop')
+        if scenario == 'normal':
+            report = ctl.diagnose()
+            assert report['run']['status'] == 'completed'
+            details = report['diagnostics']
+            assert details['backup_verified'] and details['maintenance']
+            assert details['exit_code'] == 0 and not details['oom_killed']
+            assert all(delta == {'starts': 0, 'orders': 0, 'fills': 0}
+                       for delta in details['deltas'].values())
+            assert not list(ctl.state.glob('suiba-diagnostics-*'))
+            print('PASS: stopped PAPER diagnostic report from SQLite copies')
         ctl.verify_sui()
         docker('run', '--rm', '--network', 'none', '--user', '1000:1000', '-v', name+'-data:/app/data', '--entrypoint', '/usr/local/bin/node', digest,
                '-e', 'const{DatabaseSync}=require("node:sqlite");const d=new DatabaseSync("/app/data/bot.sqlite.pairs.sqlite");d.prepare("UPDATE bot_runtime_state SET json=? WHERE key=?").run(JSON.stringify("WAL_USDC"),"selected_pair");d.close()')

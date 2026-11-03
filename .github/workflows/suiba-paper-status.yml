@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: "Type CHECK-PAPER-STATUS to read the recorded state"
+        description: "Type CHECK-PAPER-STATUS or CHECK-PAPER-DIAGNOSTICS"
         required: true
         type: string
 permissions:
@@ -15,7 +15,7 @@ jobs:
   paper-status:
     # Repository variable, NOT an Environment variable: evaluated before job startup.
     # Missing/false disables all SSH. Do not enable until separately approved.
-    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'CHECK-PAPER-STATUS' && vars.SUIBA_PAPER_STATUS_ENABLED == 'true'
+    if: github.ref == 'refs/heads/main' && (inputs.confirmation == 'CHECK-PAPER-STATUS' || inputs.confirmation == 'CHECK-PAPER-DIAGNOSTICS') && vars.SUIBA_PAPER_STATUS_ENABLED == 'true'
     environment: sakura-vps
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -25,6 +25,7 @@ jobs:
           persist-credentials: false
       - name: Read PAPER status through the fixed wrapper
         env:
+          PAPER_STATUS_CONFIRMATION: ${{ inputs.confirmation }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_PORT: ${{ secrets.VPS_PORT }}
