@@ -26,6 +26,7 @@ jobs:
       - run: corepack enable && corepack prepare pnpm@9.12.3 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm lint
       - run: pnpm build
       - name: Audited unit tests with subprocess and network guards
         run: node node_modules/vitest/vitest.mjs run --config vitest.no-worker.config.ts

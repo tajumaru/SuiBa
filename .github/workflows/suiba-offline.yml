@@ -5,11 +5,17 @@ on:
       - "sui-ai-trading-bot/**"
       - ".github/workflows/suiba-offline.yml"
       - ".github/workflows/suiba-no-worker.yml"
+      - ".github/workflows/suiba-vps.yml"
+      - ".github/workflows/suiba-ssh-preflight.yml"
+      - ".github/workflows/suiba-paper-status.yml"
   pull_request:
     paths:
       - "sui-ai-trading-bot/**"
       - ".github/workflows/suiba-offline.yml"
       - ".github/workflows/suiba-no-worker.yml"
+      - ".github/workflows/suiba-vps.yml"
+      - ".github/workflows/suiba-ssh-preflight.yml"
+      - ".github/workflows/suiba-paper-status.yml"
   workflow_dispatch:
     inputs:
       confirmation:
@@ -18,6 +24,13 @@ on:
         type: string
 permissions:
   contents: read
+# Rapid successive pushes used to run the full suite side by
+# side and pile up in the queue; per ref, only the newest run
+# matters. A manually dispatched Worker CI run is never
+# cancelled out from under its operator.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 jobs:
   without-worker:
     if: github.event_name != 'workflow_dispatch'
