@@ -53,6 +53,12 @@ import {
   type TradingPair,
 } from "../../../packages/shared/src/index.ts";
 import { BotEngine } from "./engine.ts";
+import { ChainSampler, createChainInfoFetcher } from "./chainInfo.ts";
+import { resolveSuiGrpcEndpoints } from "./suiEndpoints.ts";
+import {
+  BookImbalanceSampler,
+  createBookImbalanceFetcher,
+} from "./bookInfo.ts";
 import { backtestMetadata, savedComparison } from "./backtest-service.ts";
 import { comparisonOptionsSchema } from "../../../packages/backtest-engine/src/index.ts";
 if (process.env.MODE && process.env.MODE !== "PAPER")
@@ -116,10 +122,48 @@ db.set(
     readFileSync(new URL("../../../pnpm-lock.yaml", import.meta.url), "utf8"),
   ),
 );
+// Display-only Sui chain sampling (epoch / checkpoint / TPS for
+// the dashboard's chain strip). A dedicated raw fetcher and
+// timer, fully beside the trading paths: its failure only
+// freezes the displayed numbers (see chainInfo.ts for why it
+// must not share the trading client's transport plumbing).
+const chainSampler = new ChainSampler();
+const suiGrpcEndpoints = resolveSuiGrpcEndpoints();
+const fetchChainInfo = createChainInfoFetcher(
+  suiGrpcEndpoints.primary,
+  suiGrpcEndpoints.fallbacks,
+);
+const pollChain = async () => {
+  const raw = await fetchChainInfo();
+  if (raw) chainSampler.observe(raw);
+};
+void pollChain();
+const chainTimer = setInterval(() => void pollChain(), 15000);
+chainTimer.unref();
+// Display-only book imbalance, sampled on its own fetch path
+// for the dashboard's model outlook (see bookInfo.ts). The
+// DeepBook routes already hold a validated book; this sampler
+// covers the GeckoTerminal route, which never fetches one.
+const bookSamplers: Record<TradingPair, BookImbalanceSampler> = {
+  SUI_USDC: new BookImbalanceSampler(),
+  WAL_USDC: new BookImbalanceSampler(),
+};
+const bookFetchers: Record<TradingPair, () => Promise<number | null>> = {
+  SUI_USDC: createBookImbalanceFetcher("SUI_USDC"),
+  WAL_USDC: createBookImbalanceFetcher("WAL_USDC"),
+};
+const pollBooks = async () => {
+  for (const p of ["SUI_USDC", "WAL_USDC"] as const)
+    bookSamplers[p].observe(await bookFetchers[p]());
+};
+void pollBooks();
+const bookTimer = setInterval(() => void pollBooks(), 45000);
+bookTimer.unref();
 function createEngine(database: BotDatabase, selected: TradingPair) {
-  const client = new ReadOnlySuiClient(process.env.SUI_GRPC_URL, {
+  const client = new ReadOnlySuiClient(suiGrpcEndpoints.primary, {
     onObservation: (event) =>
       database.append("sui_observations", randomUUID(), event, event.at),
+    fallbackUrls: suiGrpcEndpoints.fallbacks,
   });
   const deep = new DeepBookMarketData(
     () => database.settings(),
@@ -144,6 +188,8 @@ function createEngine(database: BotDatabase, selected: TradingPair) {
         client,
         selected,
         () => stopping || deploymentGate.blocked() || paperCheck.expired(),
+        () => chainSampler.current(),
+        () => bookSamplers[selected].current(),
         () => paperCheck.ordersAllowed(selected),
       ),
     };
@@ -823,6 +869,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
     apiAccess.cancel();
     deepBookTransport.close();
     clearInterval(watchdog);
+    clearInterval(chainTimer);
     db.set("runtime", { ...db.runtime(), running: false });
     engine.monitor.transition("PROCESS_SHUTDOWN");
     server.close(() => {

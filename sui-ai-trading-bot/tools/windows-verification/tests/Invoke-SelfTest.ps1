@@ -94,7 +94,7 @@ try {
     Assert 'abort: no successful cycle 5min' ((Test-SuiBaAbortCondition -State $s5) -eq 'NO_SUCCESSFUL_CYCLE_5MIN')
 
     # ------------------------------------------------------------ disk conditions
-    # Definitions reconciled with docs/PREFLIGHT_30M_20261024.md
+    # Definitions reconciled with docs/archive/PREFLIGHT_30M_20261024.md
     # section 14 ("D80% / C free 10 GiB"): the >= 80% used rule judges
     # ONLY the Docker data drive; system / output / temp drives are
     # judged by free space < 10 GiB and never by used percentage; an

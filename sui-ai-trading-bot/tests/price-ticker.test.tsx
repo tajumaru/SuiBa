@@ -1,3 +1,4 @@
+import { readDashboardCss } from "./helpers/dashboard-css";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
@@ -19,10 +20,7 @@ type Frames = State["candlesByTimeframe"];
 type Candle = Frames[300][number];
 
 const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
-const css = readFileSync(
-  resolve("apps/dashboard/src/style.css"),
-  "utf8",
-).replace(/\r\n/g, "\n");
+const css = readDashboardCss().replace(/\r\n/g, "\n");
 
 const T0 = 1_700_000_000;
 

@@ -121,7 +121,7 @@ it("preserves WAL/FULL, uses no busy waiting, and synchronously acknowledges dur
 it.each([200, 10000])(
   "fails closed promptly on a %sms writer lock without implicit retries",
   async (duration) => {
-    const { db, raw, path } = fixture();
+    const { db, path } = fixture();
     db.set("runtime", { ...db.runtime(), running: true });
     const monitor = new OperationMonitor(db);
     const lock = await lockFixture(path, duration);

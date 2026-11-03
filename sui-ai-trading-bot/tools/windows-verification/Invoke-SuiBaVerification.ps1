@@ -12,7 +12,7 @@
 #     SQLite / event loop / memory via the existing preflight observer
 #     evidence (scripts/preflight-observer.mjs) and passive metrics,
 #   * stops ONLY the dedicated project when a stop condition from
-#     docs/NODE_DOCKER_30M_PREFLIGHT.md fires, and
+#     docs/archive/NODE_DOCKER_30M_PREFLIGHT.md fires, and
 #   * writes Markdown / JSON / CSV reports at the end.
 #
 # Existing containers, databases and volumes are never modified: the
@@ -263,7 +263,7 @@ function Get-DiskFacts {
     # Collects disk facts and judges them with
     # Test-SuiBaDiskStopCondition (lib/Verification.Common.ps1), which
     # encodes the 30-minute validation agreement
-    # (docs/PREFLIGHT_30M_20261024.md section 14: "D80% / C free
+    # (docs/archive/PREFLIGHT_30M_20261024.md section 14: "D80% / C free
     # 10 GiB"): the Docker data drive stops at >= 80% used; the
     # system, output (runs/: logs, reports, evidence, secret, compose
     # override) and temp drives stop at < 10 GiB free, regardless of

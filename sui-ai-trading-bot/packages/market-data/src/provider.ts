@@ -35,4 +35,7 @@ export interface MarketDataProvider {
   assertReady?(now: number): void;
   refreshForOrder?(): Promise<void>;
   status?(): MarketStatus;
+  /** Display-only order-book imbalance in [-1, 1]; never an
+   * input to trading or safety decisions. */
+  bookImbalance?(now: number): number | null;
 }

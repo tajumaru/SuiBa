@@ -271,6 +271,7 @@ function checkedIndex(value: unknown): Index {
     s.length > 0 &&
     s !== "." &&
     s !== ".." &&
+    // eslint-disable-next-line no-control-regex -- NUL bytes are rejected on purpose
     !/[\\/:\x00]/.test(s);
   const hex = (s: unknown) => typeof s === "string" && /^[a-f0-9]{64}$/.test(s);
   if (

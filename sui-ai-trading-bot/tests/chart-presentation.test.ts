@@ -6,7 +6,6 @@ import {
   chartTicks,
 } from "../apps/dashboard/src/chartPresentation.ts";
 import { ema, calculate } from "../packages/indicators/src/index.ts";
-import type { Candle } from "../packages/shared/src/index.ts";
 import { chartFixture } from "./chart-fixture.ts";
 describe("display-only chart windows", () => {
   it("uses JST and handles midnight", () => {

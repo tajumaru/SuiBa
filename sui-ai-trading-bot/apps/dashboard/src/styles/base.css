@@ -1,0 +1,702 @@
+:root {
+  font-family: "Noto Sans JP", "Yu Gothic", Meiryo, "Segoe UI", sans-serif;
+  color: #dce8f0;
+  background: #0b111b;
+  font-synthesis: none;
+}
+/* Reserve the scrollbar gutter on every page so the viewport width
+   (and with it the header's layout) does not change between tabs
+   whose content is longer or shorter than the viewport. */
+html {
+  scrollbar-gutter: stable;
+}
+main,
+header {
+  overflow-wrap: anywhere;
+}
+.cards > * {
+  min-width: 0;
+}
+button,
+summary {
+  min-height: 44px;
+}
+button,
+input,
+select {
+  max-width: 100%;
+}
+summary {
+  cursor: pointer;
+  padding: 10px 0;
+}
+.error-code {
+  margin-top: 6px;
+  font-size: 11px;
+}
+td p {
+  white-space: normal;
+  min-width: 160px;
+  max-width: 420px;
+}
+td details {
+  white-space: normal;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 450px) {
+  .cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+/* Slim two-row header (design A): the title and the PAPER badge
+   share the top row; the emergency stop, the market meta line and
+   the (mobile-only) logout link share the row underneath, so the
+   header no longer stacks title, subtitle and controls in three
+   bands. The copy is unchanged — the old subtitle simply moved
+   into the second row. */
+header {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 5% 12px;
+  /* Narrow-screen safety net: a row that still cannot shrink
+     clips at the header's edge instead of widening the page
+     (overflow-x: clip, unlike hidden, creates no scroll
+     container, so the sticky avatar dock is unaffected). */
+  overflow-x: clip;
+}
+.header-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.header-row-main {
+  gap: 8px;
+}
+/* The sub row never wraps: a wrapped meta line would make the
+   header taller on some pages than on others. The meta line
+   shrinks and ellipsises instead (see .header-meta). */
+.header-row-sub {
+  flex-wrap: nowrap;
+}
+header strong {
+  font-size: 16px;
+  /* The title is the one shrinkable piece of the top row: the
+     PAPER badge keeps its full wording (flex: none below) and
+     the title ellipsises on very narrow screens. */
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+small {
+  display: block;
+  color: #8fa7b9;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.header-meta {
+  font-size: 11px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The emergency stop stays a wide pill, but slimmer than a
+   standard button so the sub row stays compact. */
+header .danger {
+  min-height: 36px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+  flex: none;
+}
+.badge {
+  margin-left: auto;
+  border: 1px solid #41d9b0;
+  color: #41d9b0;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  white-space: nowrap;
+  flex: none;
+}
+/* Terminal theme for the header (design A from the prototype,
+   matching the login gate): grid backdrop, monospace voice, a
+   blinking cursor after the title, the PAPER badge as a
+   bracketed tag, squared controls — and the avatar frame
+   squared to match. The two slim rows, their sizes and the
+   dock geometry are unchanged. */
+header {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(120, 255, 205, 0.05) 0 1px,
+      transparent 1px 30px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(120, 255, 205, 0.05) 0 1px,
+      transparent 1px 30px
+    ),
+    #04070b;
+  border-bottom: 1px solid #1f5c46;
+  box-shadow: 0 10px 24px -18px rgba(67, 223, 178, 0.5);
+}
+header strong {
+  letter-spacing: 0.06em;
+}
+header strong::after {
+  content: "_";
+  color: #43dfb2;
+}
+@media (prefers-reduced-motion: no-preference) {
+  header strong::after {
+    animation: login-cursor-blink 1.1s steps(1) infinite;
+  }
+}
+.badge {
+  border-radius: 3px;
+  background: #0c2317;
+  border-color: #1f5c46;
+  color: #43dfb2;
+}
+.badge::before {
+  content: "[ ";
+}
+.badge::after {
+  content: " ]";
+}
+header .danger {
+  border-radius: 3px;
+}
+button {
+  cursor: pointer;
+  color: #c9dbe8;
+  border: 1px solid #314b61;
+  border-radius: 7px;
+  padding: 10px 17px;
+  font: inherit;
+  font-size: 13px;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.danger {
+  color: #ffb3bd;
+  border-color: #773c4a;
+  background: #351c29;
+}
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 22px 5%;
+  overflow: visible;
+}
+nav button {
+  background: transparent;
+  border-color: transparent;
+  white-space: nowrap;
+}
+nav .active {
+  background: #173448;
+  color: #72d1ff;
+}
+/* While connected, the agent avatar docks half below the header's
+   bottom edge (see .agent-avatar-dock): the tab bar's top padding
+   grows so the tabs start below the avatar's pill instead of
+   behind it. The nav only exists while connected — exactly when
+   the avatar does — so the clearance needs no other condition. */
+nav.has-avatar {
+  padding-top: 70px;
+}
+/* Mobile bottom-bar pieces (icon, short label, header logout link):
+   hidden until the <= 600px rules at the bottom turn them on. */
+.nav-tab-icon,
+.nav-label-short,
+.logout-link {
+  display: none;
+}
+main {
+  max-width: 1400px;
+  margin: auto;
+  padding: 12px 5% 24px;
+  /* Same narrow-screen safety net as the header: one stubborn
+     child must never widen the whole page on a phone. */
+  overflow-x: clip;
+}
+h1 {
+  font-size: 32px;
+  margin: 8px 0;
+}
+h2 {
+  font-size: 26px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+h3 {
+  font-size: 16px;
+  font-weight: 500;
+  margin: 0 0 18px;
+}
+h3 small {
+  display: inline;
+  margin-left: 14px;
+}
+em {
+  font-size: 12px;
+  font-style: normal;
+  color: #8fa7b9;
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 15px;
+}
+section {
+  border: 1px solid #263448;
+  border-radius: 12px;
+  padding: 22px;
+  margin-bottom: 18px;
+  min-width: 0;
+}
+section svg {
+  width: 100%;
+  height: auto;
+}
+.status {
+  font-size: 13px;
+  color: #9ac7c0;
+}
+.error {
+  padding: 15px;
+  border-radius: 8px;
+}
+/* Keep operation names visible and the touch targets at least 44px.
+   The state and its action wrap together on a narrow viewport. */
+.operation-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #111d2b;
+  border: 1px solid #263448;
+  border-radius: 10px;
+  padding: 6px 8px 6px 16px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+.operation-bar-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: normal;
+}
+.operation-bar-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #edc980;
+  flex: none;
+}
+.operation-bar.tone-ok {
+  border-color: #1f5c4d;
+}
+.operation-bar.tone-ok .operation-bar-dot {
+  background: #43dfb2;
+}
+.operation-bar.tone-alert .operation-bar-dot {
+  background: #f77d8f;
+}
+.operation-bar .operation-icon-button {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+}
+.operation-bar .operation-icon-button svg {
+  width: 15px;
+  height: 15px;
+}
+/* Under-bar strips: why the bar's start is currently blocked, and
+   the server-side refusal of a start pressed on the bar. Slim and
+   in-flow, directly under the bar they explain. */
+.operation-bar-notice {
+  background: #111d2b;
+  border: 1px solid #263448;
+  border-radius: 10px;
+  padding: 10px 16px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+.operation-bar-notice p {
+  margin: 0 0 6px;
+}
+.operation-bar-notice ul {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.7;
+}
+.operation-bar-failure {
+  margin: 0 0 14px;
+}
+.operation-bar button:focus-visible {
+  outline: 2px solid #9fd0ff;
+  outline-offset: 3px;
+}
+/* Operation icon buttons (operation bar + release section):
+   squared like the app's regular buttons, with a line icon whose
+   stroke — and a thinner tint of it on the border — carries the
+   meaning (green start, red stop, amber release). The visible
+   text label is gone; the action's name lives in the button's
+   aria-label and title. */
+.operation-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+  background: #16233a;
+  border: 1px solid #2b3f5f;
+  border-radius: 10px;
+}
+.operation-icon-button svg {
+  width: 19px;
+  height: 19px;
+  flex: none;
+}
+.operation-icon-button.start {
+  border-color: rgba(47, 191, 155, 0.55);
+}
+.operation-icon-button.stop {
+  border-color: rgba(255, 125, 156, 0.55);
+}
+.operation-icon-button.release {
+  border-color: rgba(237, 201, 128, 0.55);
+}
+.operation-icon-button:has(.operation-action-label) {
+  width: auto;
+  height: auto;
+  min-height: 44px;
+  padding: 6px 10px;
+  gap: 6px;
+}
+.operation-action-label {
+  white-space: nowrap;
+  font-size: 12px;
+}
+/* Price ticker (every tab, directly under the operation bar):
+   one slim line — droplet mark, pair, current price, change and
+   a closes sparkline — styled like the operation bar so the two
+   read as one status zone. Everything on it derives from the
+   recorded snapshot and candle frames the dashboard already
+   holds; the change element names its own window (24時間 or the
+   recorded span) and is absent when no frame can ground it. On
+   narrow screens the text never wraps: the sparkline is the one
+   flexible element and shrinks first. */
+/* The bar carries the ticker's chrome so the pair switch can ride
+   at its left as a sibling of the role="img" ticker body (an
+   interactive control cannot live inside role="img"). With the
+   switch present it IS the pair display, so the coin and the
+   symbol text step aside. */
+.price-ticker-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #0e1626;
+  border: 1px solid #2b3f5f;
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  min-height: 42px;
+  box-sizing: border-box;
+}
+.price-ticker-bar.has-switch .price-ticker-coin,
+.price-ticker-bar.has-switch .price-ticker-symbol {
+  display: none;
+}
+.price-ticker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.price-ticker-coin {
+  width: 24px;
+  height: 24px;
+  background: #1d2c44;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.price-ticker-symbol {
+  font-size: 13px;
+  font-weight: 600;
+  color: #9fb2c8;
+  white-space: nowrap;
+  flex: none;
+}
+.price-ticker-price {
+  font-size: 17px;
+  font-weight: 700;
+  white-space: nowrap;
+  flex: none;
+}
+.price-ticker-change {
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.price-ticker-change.up {
+  color: #43dfb2;
+}
+.price-ticker-change.down {
+  color: #ff6b81;
+}
+.price-ticker-change.flat {
+  color: #9fb2c8;
+}
+.price-ticker-range {
+  font-size: 11px;
+  font-weight: 400;
+  color: #71809a;
+}
+.price-ticker-spark {
+  margin-left: auto;
+  flex: 0 1 80px;
+  min-width: 24px;
+  height: 24px;
+}
+/* The buy-run line pill rides at the ticker's right end: gold
+   while it counts down, green once the price reaches the line. */
+.price-ticker-line {
+  flex: none;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #edc980;
+  background: #2a2113;
+  border: 1px solid rgba(237, 201, 128, 0.55);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+.price-ticker-line.reached {
+  color: #3ecf6f;
+  background: #123324;
+  border-color: rgba(62, 207, 111, 0.55);
+}
+/* The sell-line pills: take-profit green, stop-loss rose — the
+   nearer line counts down, and reaching it swaps the text. */
+.price-ticker-line.tp {
+  color: #3ecf6f;
+  background: #123324;
+  border-color: rgba(62, 207, 111, 0.55);
+}
+.price-ticker-line.sl {
+  color: #ff8fa5;
+  background: #2b1420;
+  border-color: rgba(255, 125, 156, 0.55);
+}
+/* The buy-run countdown wears the blue of the avatar's line
+   pose while the line stands; once the price touches it, the
+   reached green takes over, like the feed's reached entry. */
+.price-ticker-line.buy {
+  color: #bfe0ff;
+  background: #10325c;
+  border-color: rgba(98, 178, 255, 0.6);
+  box-shadow: 0 0 10px rgba(77, 162, 255, 0.35);
+}
+.price-ticker-line.buy.reached {
+  color: #a9ecc4;
+  background: #14401f;
+  border-color: rgba(62, 207, 111, 0.55);
+  box-shadow: none;
+}
+/* Very narrow screens (small phones, zoomed viewports): every
+   ticker child except the sparkline is nowrap and flex: none,
+   so their combined min-content can exceed the row and push
+   the whole page sideways. The range label is the one piece
+   that can go — the window stays announced in the ticker's
+   aria-label — and the gaps, price and sparkline give a
+   little each. */
+@media (max-width: 480px) {
+  .price-ticker-bar {
+    gap: 7px;
+    padding: 8px 10px;
+  }
+  .price-ticker {
+    gap: 7px;
+  }
+  .price-ticker-price {
+    font-size: 16px;
+  }
+  .price-ticker-range {
+    display: none;
+  }
+  .price-ticker-spark {
+    flex-basis: 48px;
+    min-width: 16px;
+  }
+  /* With a line pill present, the sparkline and the change give
+     up their room on narrow screens, the pill shortens to
+     「ライン $… あと…%」 and may shrink with an ellipsis as a
+     last resort, so the row never overflows. */
+  .price-ticker:has(.price-ticker-line) .price-ticker-spark,
+  .price-ticker:has(.price-ticker-line) .price-ticker-change {
+    display: none;
+  }
+  .price-ticker-line-prefix {
+    display: none;
+  }
+  .price-ticker-line-suffix {
+    display: none;
+  }
+  .price-ticker-line {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+/* Buy celebration: while the celebration window is open the
+   ticker carries the glow class and pulses gold once. Under
+   reduced motion the class changes nothing at all. */
+@media (prefers-reduced-motion: no-preference) {
+  .price-ticker-bar.glow {
+    animation: price-ticker-glow 1.6s ease-out;
+  }
+  @keyframes price-ticker-glow {
+    0% {
+      box-shadow: 0 0 0 0 rgba(237, 201, 128, 0);
+      border-color: #2b3f5f;
+    }
+    20% {
+      box-shadow: 0 0 18px 2px rgba(237, 201, 128, 0.45);
+      border-color: #edc980;
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(237, 201, 128, 0);
+      border-color: #2b3f5f;
+    }
+  }
+}
+/* Connectivity strip (dashboard only): the safety message and the
+   headline chips stay on one or two lines, with the full detail list
+   one expansion away. Tones come from connectivityStatus() so an
+   abnormal state (communication failure, safety or emergency stop)
+   reads by color as well as by text. */
+.connectivity-strip {
+  padding: 14px 22px;
+}
+.connectivity-strip-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.connectivity-strip-head h2 {
+  font-size: 15px;
+  margin: 0;
+}
+.connectivity-strip-head p {
+  margin: 0;
+}
+.connectivity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.connectivity-chips li {
+  border: 1px solid #263448;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  color: #a7c5d9;
+}
+.connectivity-strip.tone-alert {
+  border-color: #7a3040;
+  background: #331a24;
+}
+.connectivity-strip.tone-caution {
+  border-color: #7a5c1e;
+  background: #2e2511;
+}
+.connectivity-strip.tone-ok {
+  border-color: #1f5c4d;
+}
+.connectivity-details summary {
+  min-height: 0;
+  padding: 8px 0 0;
+  font-size: 13px;
+  color: #a7c5d9;
+}
+pre {
+  font-size: 12px;
+  line-height: 1.7;
+  overflow: auto;
+  max-height: 500px;
+  color: #a7c5d9;
+}
+.controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+label {
+  display: block;
+  margin: 18px 0;
+  color: #a7c5d9;
+  font-size: 13px;
+}
+input,
+textarea,
+select {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  margin-top: 9px;
+  border: 1px solid #344e65;
+  color: #dce8f0;
+  border-radius: 6px;
+}
+textarea {
+  font-family: monospace;
+  max-width: 700px;
+}
+.login {
+  max-width: 600px;
+  padding-top: 100px;
+}
+.login p {
+  color: #93adbf;
+  line-height: 1.8;
+}

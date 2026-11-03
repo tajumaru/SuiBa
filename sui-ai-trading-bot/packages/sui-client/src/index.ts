@@ -15,6 +15,7 @@ import { randomUUID } from "node:crypto";
 import {
   PassiveSuiDiagnostics,
   type NetworkObservation,
+  type NetworkTrace,
 } from "./diagnostics.ts";
 import { isValidSuiAddress, isValidTransactionDigest } from "@mysten/sui/utils";
 import { coin, decimals, SUI, USDC } from "../../shared/src/index.ts";
@@ -53,6 +54,16 @@ export interface SuiClientOptions {
   onObservation?: (event: SuiObservation) => void;
   /** Test/embedding hook; no dispatcher, protocol or retry changes by default. */
   fetch?: typeof fetch;
+  /**
+   * Additional gRPC base URLs (origin only, no path) that serve
+   * the same reads when the active endpoint fails at transport
+   * level or answers 502/503/504. Switching is sticky: traffic
+   * stays on the endpoint that served until it fails, then
+   * advances, wrapping around. The logical API stays "Sui gRPC"
+   * for backoff and failure classification regardless of which
+   * endpoint served a request.
+   */
+  fallbackUrls?: string[];
 }
 type HealthStatus = { healthy: boolean; checkedAt: number; failures: number };
 const transportCode = (error: unknown) => {
@@ -80,6 +91,8 @@ export class ReadOnlySuiClient {
   private diagnostics: PassiveSuiDiagnostics;
   private observationFault = false;
   private epoch = 0;
+  private readonly endpoints: string[];
+  private activeEndpoint = 0;
   private readonly transportId = randomUUID();
   private pendingHealth?: {
     promise: Promise<HealthStatus>;
@@ -93,6 +106,9 @@ export class ReadOnlySuiClient {
     failures: 0,
     lastSuccessAt: 0,
     lastFailureAt: 0,
+    /** Hostname (no port or credentials) of the endpoint that
+     * served the most recent transport attempt. */
+    endpoint: "",
   };
   status: { healthy: boolean; checkedAt: number; failures: number } = {
     healthy: false,
@@ -103,7 +119,19 @@ export class ReadOnlySuiClient {
     url = "https://fullnode.mainnet.sui.io:443",
     private options: SuiClientOptions = {},
   ) {
-    if (new URL(url).protocol !== "https:") throw new Error("HTTPS_REQUIRED");
+    const endpoints = [url, ...(options.fallbackUrls ?? [])].filter(
+      (u, i, a) => a.indexOf(u) === i,
+    );
+    for (const endpoint of endpoints) {
+      const parsed = new URL(endpoint);
+      if (parsed.protocol !== "https:") throw new Error("HTTPS_REQUIRED");
+      // Endpoints are retargeted by origin; a path prefix would
+      // silently change the gRPC method paths, so it is refused.
+      if (parsed.pathname !== "/" || parsed.search || parsed.hash)
+        throw new Error("ENDPOINT_MUST_BE_ORIGIN");
+    }
+    this.endpoints = endpoints;
+    this.readStatus.endpoint = new URL(endpoints[0]).hostname;
     this.diagnostics = new PassiveSuiDiagnostics(new URL(url).origin);
     const transport = new GrpcWebFetchTransport({
       baseUrl: url,
@@ -225,18 +253,13 @@ export class ReadOnlySuiClient {
         const response = await apiFetch("Sui gRPC", input, init, 0, {
           transport: async (target, settings) => {
             transportAttempted = true;
-            try {
-              const response = await (this.options.fetch ?? rawFetch)(
-                target,
-                settings,
-              );
-              status = response.status;
-              trace.headersAt ??= performance.now();
-              trace.phase = "BODY";
-              return response;
-            } catch (error) {
-              throw this.diagnostics.failure(error, trace);
-            }
+            const response = await this.fetchAcrossEndpoints(
+              target,
+              settings,
+              trace,
+            );
+            status = response.status;
+            return response;
           },
         });
         this.emit(context, "HTTP", trace.began, true, null, {
@@ -260,6 +283,85 @@ export class ReadOnlySuiClient {
         throw error;
       }
     });
+  }
+  /** Points a transport target at another endpoint's origin,
+   * keeping the gRPC method path untouched. */
+  private retarget(
+    target: Parameters<typeof fetch>[0],
+    baseUrl: string,
+  ): Parameters<typeof fetch>[0] {
+    const base = new URL(baseUrl);
+    if (typeof target === "string" || target instanceof URL) {
+      const u = new URL(target.toString());
+      u.protocol = base.protocol;
+      u.host = base.host;
+      return u.toString();
+    }
+    if (target instanceof Request) {
+      const u = new URL(target.url);
+      u.protocol = base.protocol;
+      u.host = base.host;
+      return new Request(u, target);
+    }
+    return target;
+  }
+  /**
+   * One transport attempt, served by the active endpoint. A
+   * transport-level failure or a gateway-class answer (502 /
+   * 503 / 504) advances to the next endpoint within the same
+   * attempt; the endpoint that serves becomes the sticky active
+   * one. When every endpoint fails the same way a single
+   * endpoint would have — the last error is thrown, or the last
+   * gateway response is returned for apiFetch to classify — so
+   * backoff, failure records and recovery classification see
+   * exactly today's behaviour, only with more chances first.
+   * A caller-side abort is never an endpoint failure.
+   */
+  private async fetchAcrossEndpoints(
+    target: Parameters<typeof fetch>[0],
+    settings: RequestInit | undefined,
+    trace: NetworkTrace,
+  ): Promise<Response> {
+    let lastError: unknown;
+    let lastResponse: Response | undefined;
+    for (let tried = 0; tried < this.endpoints.length; tried++) {
+      const index = (this.activeEndpoint + tried) % this.endpoints.length;
+      let response: Response;
+      try {
+        response = await (this.options.fetch ?? rawFetch)(
+          this.retarget(target, this.endpoints[index]),
+          settings,
+        );
+      } catch (error) {
+        if (
+          settings?.signal?.aborted ||
+          (error instanceof Error && error.name === "AbortError")
+        )
+          throw error;
+        lastError = this.diagnostics.failure(error, trace);
+        continue;
+      }
+      if (
+        response.status >= 502 &&
+        response.status <= 504 &&
+        tried < this.endpoints.length - 1
+      ) {
+        await response.arrayBuffer().catch(() => undefined);
+        lastResponse = response;
+        continue;
+      }
+      this.activeEndpoint = index;
+      this.readStatus.endpoint = new URL(this.endpoints[index]).hostname;
+      trace.headersAt ??= performance.now();
+      trace.phase = "BODY";
+      return response;
+    }
+    if (lastResponse) {
+      trace.headersAt ??= performance.now();
+      trace.phase = "BODY";
+      return lastResponse;
+    }
+    throw lastError;
   }
   private async read<T>(
     operation: ReadContext["operation"],

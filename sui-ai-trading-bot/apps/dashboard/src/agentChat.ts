@@ -54,6 +54,9 @@ export interface AgentChatContext {
   /** The base symbol of the pair on screen ("SUI" / "WAL"), so
    * replies can name which market they are talking about. */
   pairLabel: string;
+  /** The latest Sui chain sample (display-only), or null before
+   * the first sample arrives. Quoted by /status only. */
+  chain: { epoch: number; checkpoint: number; tps: number | null } | null;
 }
 
 export type ChatMood = "confident" | "humble" | "neutral";

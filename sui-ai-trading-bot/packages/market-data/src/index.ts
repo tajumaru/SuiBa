@@ -3,7 +3,6 @@ import { z } from "zod";
 import {
   coin,
   SUI,
-  USDC,
   jsonFetch,
   type Candle,
   type Timeframe,

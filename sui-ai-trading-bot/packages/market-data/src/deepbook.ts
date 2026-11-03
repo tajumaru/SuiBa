@@ -125,7 +125,7 @@ export function validateBook(
   if (spread <= 0) throw new Error("INVALID_ORDERBOOK");
   if (spread > maxSpread) throw new Error("SPREAD_TOO_WIDE");
   // Both directions must cover maxOrder within the configured slippage envelope.
-  for (const [levels, buy] of [
+  for (const [levels, _buy] of [
     [asks, true],
     [bids, false],
   ] as const) {
@@ -135,6 +135,44 @@ export function validateBook(
     if (depth < notional) throw new Error("THIN_ORDERBOOK");
   }
   return { timestamp, bid, ask, spread, bids, asks };
+}
+/**
+ * Order-book imbalance within a price band around the mid:
+ * (bid notional − ask notional) / (bid + ask notional), in
+ * [-1, 1]. Display-grade telemetry for the dashboard's model
+ * outlook — never an input to trading or safety decisions.
+ * Fails closed (null) when either side is missing or too thin
+ * inside the band (fewer than two levels), where the ratio
+ * would just be noise.
+ */
+export function bookImbalance(
+  book: { bids: number[][]; asks: number[][] },
+  bandPct = 0.01,
+): number | null {
+  const bid0 = book.bids[0]?.[0],
+    ask0 = book.asks[0]?.[0];
+  if (!bid0 || !ask0 || !(ask0 > bid0)) return null;
+  const mid = (bid0 + ask0) / 2,
+    lo = mid * (1 - bandPct),
+    hi = mid * (1 + bandPct);
+  let bidNotional = 0,
+    askNotional = 0,
+    bidLevels = 0,
+    askLevels = 0;
+  for (const [price, qty] of book.bids) {
+    if (price < lo) break;
+    bidNotional += price * qty;
+    bidLevels++;
+  }
+  for (const [price, qty] of book.asks) {
+    if (price > hi) break;
+    askNotional += price * qty;
+    askLevels++;
+  }
+  if (bidLevels < 2 || askLevels < 2) return null;
+  if (!(bidNotional > 0) || !(askNotional > 0)) return null;
+  const total = bidNotional + askNotional;
+  return Math.max(-1, Math.min(1, (bidNotional - askNotional) / total));
 }
 /** Same-response evidence, including books rejected by the safety gate. No rescaling. */
 export function bookObservation(
@@ -230,7 +268,7 @@ export class DeepBookMarketData {
     private reconstruct = false,
     readonly pair: TradingPair = "SUI_USDC",
   ) {}
-  async prepare(now = Date.now()) {
+  async prepare(_now = Date.now()) {
     const pools = z
       .array(
         z.object({
@@ -338,6 +376,12 @@ export class DeepBookMarketData {
       limits.maxOrder,
       limits.maxSlippage,
     );
+  }
+  /** Display-only book imbalance from the last validated book;
+   * null when there is no book or it is older than 30 seconds. */
+  imbalance(now: number): number | null {
+    if (!this.book || now - this.book.timestamp > 30000) return null;
+    return bookImbalance(this.book);
   }
   private async checkedRead(path: string, ttl = 0) {
     const budget = currentReadBudget();

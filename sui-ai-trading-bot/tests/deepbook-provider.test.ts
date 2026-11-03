@@ -9,7 +9,6 @@ import { calculate } from "../packages/indicators/src/index.ts";
 import { BotEngine } from "../apps/worker/src/engine.ts";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import {
-  defaults,
   SUI,
   USDC,
   type Timeframe,
@@ -240,18 +239,18 @@ it("refuses insufficient candles instead of computing indicators", () =>
 for (const [label, change, expected] of [
   [
     "stale",
-    (r: any) => (r.timestamp = String(Date.now() - 10001)),
+    (r: ReturnType<typeof book>) => (r.timestamp = String(Date.now() - 10001)),
     "STALE_ORDERBOOK",
   ],
   [
     "future",
-    (r: any) => (r.timestamp = String(Date.now() + 5001)),
+    (r: ReturnType<typeof book>) => (r.timestamp = String(Date.now() + 5001)),
     "STALE_ORDERBOOK",
   ],
-  ["wide", (r: any) => (r.asks[0][0] = "1.1"), "SPREAD_TOO_WIDE"],
-  ["thin", (r: any) => (r.bids[0][1] = ".001"), "THIN_ORDERBOOK"],
-  ["crossed", (r: any) => (r.bids[0][0] = "1.01"), "INVALID_ORDERBOOK"],
-  ["nonfinite", (r: any) => (r.asks[0][1] = "Infinity"), "INVALID_ORDERBOOK"],
+  ["wide", (r: ReturnType<typeof book>) => (r.asks[0][0] = "1.1"), "SPREAD_TOO_WIDE"],
+  ["thin", (r: ReturnType<typeof book>) => (r.bids[0][1] = ".001"), "THIN_ORDERBOOK"],
+  ["crossed", (r: ReturnType<typeof book>) => (r.bids[0][0] = "1.01"), "INVALID_ORDERBOOK"],
+  ["nonfinite", (r: ReturnType<typeof book>) => (r.asks[0][1] = "Infinity"), "INVALID_ORDERBOOK"],
 ] as const)
   it("rejects " + label + " order book", () => {
     const now = Date.now();

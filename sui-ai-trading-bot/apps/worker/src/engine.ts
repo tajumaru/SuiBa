@@ -11,6 +11,7 @@ import {
   dayKey,
   safeFailure,
   type Candle,
+  type ChainInfo,
   type CycleEvidence,
   type DexRouter,
   type TradingDecision,
@@ -44,6 +45,30 @@ import { equity, metrics } from "../../../packages/portfolio/src/index.ts";
 import { validateCandles } from "../../../packages/market-data/src/index.ts";
 import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
 import type { ValidationRecorder } from "./validation.ts";
+
+/**
+ * Downsample the recorded equity snapshots for the dashboard's
+ * asset curve: the last point of each hour over the newest 30
+ * days. The snapshots themselves are appended every analysis
+ * cycle whether or not the dashboard is open; the wire gets at
+ * most ~720 points, the full history stays in the database.
+ */
+export function downsampleEquityCurve(
+  points: readonly { timestamp: number; equity: number }[],
+  now: number,
+): { t: number; equity: number }[] {
+  const from = now - 30 * 24 * 3600 * 1000;
+  const byHour = new Map<number, { t: number; equity: number }>();
+  for (const p of points) {
+    if (!Number.isFinite(p.equity) || p.timestamp < from) continue;
+    byHour.set(Math.floor(p.timestamp / 3600000), {
+      t: p.timestamp,
+      equity: p.equity,
+    });
+  }
+  return [...byHour.values()].sort((a, b) => a.t - b.t);
+}
+
 export class BotEngine {
   validation?: ValidationRecorder;
   marketStatus() {
@@ -59,6 +84,8 @@ export class BotEngine {
     readonly sui: Pick<ReadOnlySuiClient, "health" | "status">,
     readonly pair: TradingPair = "SUI_USDC",
     private readonly deploymentBlocked: () => boolean = () => false,
+    private readonly chainInfoSource: () => ChainInfo | null = () => null,
+    private readonly bookImbalanceSource: () => number | null = () => null,
     private readonly sessionOrdersAllowed: () => boolean = () => true,
   ) {
     const portfolio = db.portfolio();
@@ -177,20 +204,28 @@ export class BotEngine {
         const status = this.marketStatus();
         this.market.assertReady?.(Date.now());
         const qualities = status?.quality;
+        // DeepBook keeps its strict proof (fresh quality, book
+        // and indexer lag). The GeckoTerminal route has no such
+        // evidence; its proof is that this cycle's frames were
+        // fetched and validated inside acquisition, plus the
+        // monitor's own stall gate inside the recovery check,
+        // which refuses resumption while market data is stale.
         const complete =
-          status?.source === "DeepBook" &&
+          status != null &&
           status.healthy &&
           !status.fallback &&
-          [300, 900, 3600].every(
-            (tf) =>
-              qualities?.[tf] &&
-              qualities[tf].unresolved === 0 &&
-              qualities[tf].fetchedAt >= began,
-          ) &&
-          status.bookAt != null &&
-          Date.now() - status.bookAt <= 10000 &&
-          status.diagnostics?.indexerLagMs != null &&
-          status.diagnostics.indexerLagMs <= 60000;
+          (status.source === "GeckoTerminal" ||
+            (status.source === "DeepBook" &&
+              [300, 900, 3600].every(
+                (tf) =>
+                  qualities?.[tf] &&
+                  qualities[tf].unresolved === 0 &&
+                  qualities[tf].fetchedAt >= began,
+              ) &&
+              status.bookAt != null &&
+              Date.now() - status.bookAt <= 10000 &&
+              status.diagnostics?.indexerLagMs != null &&
+              status.diagnostics.indexerLagMs <= 60000));
         recoveryTransition = this.monitor.recoveryCycle({
           market: complete,
           sui: this.sui.status.healthy && this.sui.status.checkedAt >= began,
@@ -747,6 +782,7 @@ export class BotEngine {
           running: false,
           error: "VALIDATION_RECORD_FAILED",
         });
+        // eslint-disable-next-line no-unsafe-finally -- deliberate: a failed validation record must fail the cycle closed, not slip through the outer finally
         throw new Error("VALIDATION_RECORD_FAILED");
       } finally {
         this.busy = false;
@@ -788,12 +824,22 @@ export class BotEngine {
     const p = this.db.portfolio(),
       price = this.db.get<number>("price") ?? null,
       trades = this.db.history<Fill>("paper_trades", 10000),
-      values = this.db
-        .history<{ equity: number }>("portfolio_snapshots", 10000)
-        .reverse()
-        .map((x) => x.equity);
+      snapshots = this.db
+        .history<{ timestamp: number; equity: number }>(
+          "portfolio_snapshots",
+          10000,
+        )
+        .reverse(),
+      values = snapshots.map((x) => x.equity);
     return {
       pair: this.pair,
+      chain: this.chainInfoSource(),
+      // Display-only book imbalance for the model outlook:
+      // the live validated book when the trading path has one
+      // (DeepBook routes), else the independent sampler.
+      bookImbalance:
+        this.market.bookImbalance?.(Date.now()) ??
+        this.bookImbalanceSource(),
       marketData: this.market.status?.() ?? null,
       marketQuality: this.db.get("market_quality") ?? null,
       mode: "PAPER",
@@ -806,6 +852,7 @@ export class BotEngine {
       pnl: price === null ? null : equity(p, price) - p.initialEquity,
       dailyPnl: price === null ? null : equity(p, price) - p.dayStartEquity,
       unrealized: price === null ? null : p.sui * price - p.costBasis,
+      equityCurve: downsampleEquityCurve(snapshots, Date.now()),
       todayTrades: trades.filter(
         (x) => dayKey(x.timestamp) === dayKey(Date.now()),
       ).length,

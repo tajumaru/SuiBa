@@ -15,9 +15,15 @@ import {
   SUI,
   type Candle,
   type Timeframe,
+  type CycleEvidence,
   type QuoteResult,
   type QuoteRequest,
 } from "../packages/shared/src/index.ts";
+import type { OperationEvent } from "../packages/shared/src/operations.ts";
+
+// A cycle_audits row: the cycle evidence plus the phase stamped on
+// append (START, then the same row shape closed with END).
+type CycleAuditRow = CycleEvidence & { phase: string };
 import { RuleBasedStrategy } from "../packages/strategy-engine/src/index.ts";
 import { ValidationRecorder } from "../apps/worker/src/validation.ts";
 import {
@@ -160,7 +166,7 @@ function investigationMetadataResponse(decimals: number) {
   );
 }
 
-it("investigation: first Sui 429 keeps its stop reason after a successful retry and later healthy ticks", async () => {
+it("investigation: first Sui 429 answered by a successful retry no longer stops the engine", async () => {
   const t = fixture();
   let calls = 0,
     successes = 0;
@@ -182,18 +188,12 @@ it("investigation: first Sui 429 keeps its stop reason after a successful retry 
   await ticking;
   expect(calls).toBe(3);
   expect(client.status.healthy).toBe(true);
-  expect(t.db.runtime()).toMatchObject({
-    running: false,
-    error: "UPSTREAM_HTTP_429",
-  });
-  expect(t.engine.monitor.ordersAllowed()).toBe(false);
+  // The 429 was transient: the retry answered it, so no safety
+  // stop latches and the engine keeps running.
+  expect(t.db.runtime()).toMatchObject({ running: true, error: null });
+  expect(t.engine.monitor.ordersAllowed()).toBe(true);
   await t.tick(60000);
-  expect(t.db.runtime()).toMatchObject({
-    running: false,
-    error: "UPSTREAM_HTTP_429",
-  });
-  expect(t.db.history("paper_orders")).toHaveLength(0);
-  expect(t.db.history("paper_trades")).toHaveLength(0);
+  expect(t.db.runtime()).toMatchObject({ running: true, error: null });
 });
 
 it.each([2, 4])(
@@ -604,7 +604,7 @@ it("retry success cannot reopen orders in the failure cycle; clean full cycles r
   expect(t.db.history("paper_trades")).toHaveLength(0);
   expect(
     t.db
-      .history<any>("operation_events")
+      .history<OperationEvent>("operation_events")
       .filter((e) => e.code === "PAPER_NETWORK_RECOVERED"),
   ).toHaveLength(1);
 });
@@ -938,7 +938,7 @@ it("classifies stopped and recovery-confirmation analyses separately from eligib
   });
   expect(
     t.db
-      .history<any>("cycle_audits")
+      .history<CycleAuditRow>("cycle_audits")
       .filter((e) => e.phase === "END")
       .map((e) => e.outcome),
   ).toContain("RECOVERY_CONFIRMATION");
@@ -1042,3 +1042,109 @@ it.each([false, true])(
     }
   },
 );
+
+it("recovers in GeckoTerminal mode: an evidenced Gecko failure pauses, then healthy Gecko cycles resume", async () => {
+  const db = new BotDatabase(":memory:");
+  dbs.push(db);
+  db.set("runtime", { ...db.runtime(), running: true });
+  const geckoBars = (tf: Timeframe): Candle[] => {
+    const end = Math.floor(Date.now() / (tf * 1000)) * tf - tf;
+    return Array.from({ length: 70 }, (_, i) => ({
+      timestamp: end - (69 - i) * tf,
+      timeframe: tf,
+      source: "GeckoTerminal",
+      open: 2,
+      high: 2.1,
+      low: 1.9,
+      close: 2,
+      volume: 10000,
+    }));
+  };
+  const health = { healthy: true, checkedAt: Date.now(), failures: 0 };
+  const sui = {
+    status: health,
+    health: vi.fn(async (_force = false) => {
+      health.healthy = true;
+      health.checkedAt = Date.now();
+      return health;
+    }),
+  };
+  const market = {
+    status: (): MarketStatus => ({
+      configured: "geckoterminal",
+      source: "GeckoTerminal",
+      fallback: false,
+      healthy: true,
+      lastSuccessAt: Date.now(),
+      latencyMs: 1,
+      reason: null,
+      bookAt: null,
+      bid: null,
+      ask: null,
+      spread: null,
+    }),
+    refreshForOrder: vi.fn(async () => {}),
+    candles: async (tf: Timeframe) => geckoBars(tf),
+    frames: vi.fn(async () =>
+      Object.fromEntries(
+        ([300, 900, 3600] as const).map((tf) => [tf, geckoBars(tf)]),
+      ),
+    ),
+  };
+  const router = {
+    getQuote: vi.fn(async (r: QuoteRequest): Promise<QuoteResult> => {
+      const buy = r.from === USDC,
+        output = buy ? units(r.amountIn, USDC) / 2 : units(r.amountIn, SUI) * 2;
+      return {
+        ...r,
+        amountOut: atomic(output, buy ? SUI : USDC),
+        minAmountOut: atomic(output * 0.997, buy ? SUI : USDC),
+        id: "mock",
+        liquid: true,
+        priceImpact: 0,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 15000,
+        route: ["mock"],
+        source: "mock",
+        dexFeeUsdc: null,
+      };
+    }),
+    validateQuote: vi.fn(async (_q: QuoteResult) => true),
+  };
+  const engine = new BotEngine(db, market, router, sui, "SUI_USDC");
+  vi.spyOn(RuleBasedStrategy.prototype, "analyze").mockResolvedValue({
+    action: "WAIT",
+    confidence: 1,
+    reason: "mock",
+    timestamp: "mock",
+    stopLossPct: 0.02,
+    takeProfitPct: 0.3,
+  });
+  const tick = async (advance = 0) => {
+    vi.setSystemTime(Date.now() + advance);
+    await engine.tick();
+  };
+  const f: ApiFailure = {
+    api: "GeckoTerminal",
+    host: "api.geckoterminal.com",
+    url: "https://api.geckoterminal.com/[redacted]",
+    method: "GET",
+    operation: "OHLCV_5M",
+    code: "UPSTREAM_BODY_TIMEOUT",
+    phase: "BODY",
+    timeoutType: "BODY",
+    causeCode: null,
+    status: null,
+    elapsedMs: 8000,
+    occurredAt: Date.now(),
+  };
+  apiAccess.onTransientFailure(f.api, f.code, f);
+  expect(engine.monitor.safety().connectivity).toBe("DEGRADED");
+  expect(db.runtime()).toMatchObject({ running: false, error: null });
+  await tick(60000);
+  expect(engine.monitor.safety().connectivity).toBe("RECOVERING");
+  expect(db.runtime().running).toBe(false);
+  await tick(60000);
+  expect(engine.monitor.safety().connectivity).toBe("HEALTHY");
+  expect(db.runtime().running).toBe(true);
+});

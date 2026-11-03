@@ -1,3 +1,4 @@
+import { readDashboardCss } from "./helpers/dashboard-css";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
@@ -265,7 +266,7 @@ describe("buy celebration: spotting a genuinely new buy", () => {
 
   it("wires the initialised guard and the callback into the feed", () => {
     const component = readFileSync(
-      resolve("apps/dashboard/src/AgentNarration.tsx"),
+      resolve("apps/dashboard/src/AgentNarrationFeed.tsx"),
       "utf8",
     );
     expect(component).toContain("if (firstAdvance || !prev.initialized) return;");
@@ -409,10 +410,7 @@ describe("buy celebration: the price ticker glow", () => {
 });
 
 describe("buy celebration: the stylesheet", () => {
-  const css = readFileSync(
-    resolve("apps/dashboard/src/style.css"),
-    "utf8",
-  ).replace(/\r\n/g, "\n");
+  const css = readDashboardCss().replace(/\r\n/g, "\n");
 
   it("frames buy entries gold with a gold tag", () => {
     expect(css).toContain(

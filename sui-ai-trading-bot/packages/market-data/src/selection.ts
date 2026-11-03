@@ -20,6 +20,7 @@ export class MarketSelection implements MarketDataProvider {
         ask: number;
         spread: number;
       } | null;
+      imbalance?(now: number): number | null;
     },
   ) {
     this.value = {
@@ -42,6 +43,13 @@ export class MarketSelection implements MarketDataProvider {
       quality: this.deep.quality?.(),
       diagnostics: this.deep.diagnostics?.(),
     };
+  }
+  /** Display-only: the DeepBook side's imbalance, available
+   * whenever its book was validated recently (DeepBook and auto
+   * modes). In pure GeckoTerminal mode the book is never
+   * fetched on this path and this stays null. */
+  bookImbalance(now: number): number | null {
+    return this.deep.imbalance?.(now) ?? null;
   }
   async candles(tf: Timeframe, now = Date.now()) {
     return (await this.frames(now))[tf];

@@ -1,0 +1,207 @@
+import { GrpcWebFetchTransport, SuiGrpcClient } from "@mysten/sui/grpc";
+import type { ChainInfo } from "../../../packages/shared/src/index.ts";
+
+export interface RawChainSample {
+  epoch: number;
+  checkpoint: number;
+  totalNetworkTransactions: number;
+  /** Reference gas price in MIST, or null when that read alone
+   * failed (the rest of the sample still counts). */
+  gasMist: number | null;
+  /** When the current epoch began (ms), from the system state. */
+  epochStartMs: number | null;
+  /** The chain's own epoch duration parameter (ms). */
+  epochDurationMs: number | null;
+  /** Active validator count, from the system state. */
+  validators: number | null;
+}
+
+/**
+ * Builds a fetcher for raw chain samples over a DEDICATED raw
+ * gRPC client. This must never go through ReadOnlySuiClient:
+ * every call there flows through the shared apiAccess layer
+ * (backoff, circuit breaker, transient-failure hooks) and the
+ * validation observation machinery, so a display poll could
+ * keep the Sui API in backoff, block pair switching, or pause
+ * the bot. Here a failure is just null — the displayed numbers
+ * freeze, and nothing else in the process can tell it happened.
+ */
+export function createChainInfoFetcher(
+  url = "https://fullnode.mainnet.sui.io:443",
+  fallbackUrls: string[] = [],
+): () => Promise<RawChainSample | null> {
+  const endpoints = [url, ...fallbackUrls].filter(
+    (u, i, a) => a.indexOf(u) === i,
+  );
+  for (const endpoint of endpoints) {
+    const parsed = new URL(endpoint);
+    if (parsed.protocol !== "https:") throw new Error("HTTPS_REQUIRED");
+    if (parsed.pathname !== "/" || parsed.search || parsed.hash)
+      throw new Error("ENDPOINT_MUST_BE_ORIGIN");
+  }
+  // The gRPC-Web fetch transport, as the trading client uses:
+  // the SDK's default transport does not speak to the public
+  // fullnode from a fetch environment. One client per endpoint;
+  // sampling sticks to the endpoint that last served and only
+  // advances when a sample fails outright, so a dead primary
+  // freezes the strip for at most one poll.
+  const clients = endpoints.map(
+    (baseUrl) =>
+      new SuiGrpcClient({
+        network: "mainnet",
+        transport: new GrpcWebFetchTransport({ baseUrl }),
+      }),
+  );
+  let active = 0;
+  let inFlight = false;
+  return async () => {
+    if (inFlight) return null;
+    inFlight = true;
+    try {
+      return await Promise.race([
+        (async () => {
+          for (let tried = 0; tried < clients.length; tried++) {
+            const index = (active + tried) % clients.length;
+            const sample = await readChainSample(clients[index]);
+            if (sample) {
+              active = index;
+              return sample;
+            }
+          }
+          return null;
+        })(),
+        new Promise<null>((resolve) =>
+          setTimeout(() => resolve(null), 10000),
+        ),
+      ]);
+    } finally {
+      inFlight = false;
+    }
+  };
+}
+
+async function readChainSample(
+  client: SuiGrpcClient,
+): Promise<RawChainSample | null> {
+  try {
+    const info = await client.ledgerService.getServiceInfo({}).response;
+    const epoch = info.epoch,
+      checkpoint = info.checkpointHeight;
+    if (epoch == null || checkpoint == null) return null;
+    const detail = await client.ledgerService.getCheckpoint({
+      checkpointId: {
+        oneofKind: "sequenceNumber",
+        sequenceNumber: checkpoint,
+      },
+      readMask: { paths: ["summary"] },
+    }).response;
+    const total = detail.checkpoint?.summary?.totalNetworkTransactions;
+    if (total == null) return null;
+    let gasMist: number | null = null;
+    try {
+      const gas = await client.getReferenceGasPrice();
+      const parsed = Number(gas.referenceGasPrice);
+      if (Number.isSafeInteger(parsed) && parsed >= 0) gasMist = parsed;
+    } catch {
+      // Gas is garnish: a failed gas read never voids the sample.
+    }
+    // The epoch's start and configured duration come from the
+    // system state (the SDK resolves them via LedgerService
+    // GetEpoch); the validator count needs the raw GetEpoch
+    // with a validators read mask. Same garnish rules: each
+    // read fails alone.
+    let epochStartMs: number | null = null,
+      epochDurationMs: number | null = null,
+      validators: number | null = null;
+    try {
+      const { systemState } = await client.getCurrentSystemState();
+      const start = Number(systemState.epochStartTimestampMs),
+        duration = Number(systemState.parameters?.epochDurationMs);
+      if (Number.isSafeInteger(start) && start > 0) epochStartMs = start;
+      if (Number.isSafeInteger(duration) && duration > 0)
+        epochDurationMs = duration;
+    } catch {
+      // Garnish only, as above.
+    }
+    try {
+      const ep = await client.ledgerService.getEpoch({
+        readMask: { paths: ["system_state.validators"] },
+      });
+      const count =
+        ep.response.epoch?.systemState?.validators?.activeValidators?.length;
+      if (typeof count === "number" && count > 0) validators = count;
+    } catch {
+      // Garnish only, as above.
+    }
+    const out: RawChainSample = {
+      epoch: Number(epoch),
+      checkpoint: Number(checkpoint),
+      totalNetworkTransactions: Number(total),
+      gasMist,
+      epochStartMs,
+      epochDurationMs,
+      validators,
+    };
+    return Number.isSafeInteger(out.epoch) &&
+      out.epoch >= 0 &&
+      Number.isSafeInteger(out.checkpoint) &&
+      out.checkpoint > 0 &&
+      Number.isSafeInteger(out.totalNetworkTransactions) &&
+      out.totalNetworkTransactions >= 0
+      ? out
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Turns raw chain samples (epoch / checkpoint / cumulative
+ * network transactions) into the display ChainInfo, deriving
+ * TPS from the samples inside a trailing window. Purely
+ * presentational: samples arrive from a dedicated read client
+ * on an interval, and nothing here feeds a trading or safety
+ * decision. A missing or failed sample simply leaves the last
+ * known values in place (their stillness is itself the signal).
+ */
+export class ChainSampler {
+  private samples: { totalTx: number; at: number }[] = [];
+  private latest: ChainInfo | null = null;
+  observe(raw: RawChainSample, now = Date.now()): ChainInfo {
+    this.samples = [
+      ...this.samples.filter((s) => now - s.at <= 90000),
+      { totalTx: raw.totalNetworkTransactions, at: now },
+    ];
+    let tps: number | null = null;
+    const first = this.samples[0],
+      last = this.samples.at(-1)!;
+    if (
+      this.samples.length > 1 &&
+      last.at - first.at >= 20000 &&
+      last.totalTx >= first.totalTx
+    )
+      tps = Math.round(((last.totalTx - first.totalTx) / (last.at - first.at)) * 1000);
+    this.latest = {
+      epoch: raw.epoch,
+      checkpoint: raw.checkpoint,
+      tps,
+      // The gas price only moves at epoch boundaries; a sample
+      // whose gas read failed keeps the last known price.
+      gasMist: raw.gasMist ?? this.latest?.gasMist ?? null,
+      // Same retention for the system-state garnish, except
+      // the epoch start, which belongs to the epoch itself:
+      // a new epoch must not inherit the previous start time.
+      epochStartMs:
+        this.latest?.epoch === raw.epoch
+          ? (raw.epochStartMs ?? this.latest?.epochStartMs ?? null)
+          : raw.epochStartMs,
+      epochDurationMs: raw.epochDurationMs ?? this.latest?.epochDurationMs ?? null,
+      validators: raw.validators ?? this.latest?.validators ?? null,
+      at: now,
+    };
+    return this.latest;
+  }
+  current(): ChainInfo | null {
+    return this.latest;
+  }
+}

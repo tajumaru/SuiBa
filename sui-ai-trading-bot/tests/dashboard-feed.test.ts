@@ -114,7 +114,7 @@ it("frontend polls summary only until versions change, recovers missing delta", 
 it("light summary publishes stop immediately even when chart retrieval fails", async () => {
   const { db, service } = fixture(),
     client = new DashboardClient(),
-    published: any[] = [];
+    published: ReturnType<BotEngine["snapshot"]>[] = [];
   db.set("runtime", {
     ...db.runtime(),
     running: false,

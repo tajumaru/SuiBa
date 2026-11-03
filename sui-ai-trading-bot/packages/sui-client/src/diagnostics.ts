@@ -97,9 +97,9 @@ export class PassiveSuiDiagnostics {
       };
       trace.connection = c;
       this.sockets.set(socket, c);
-      const attached: [string, (...args: any[]) => void][] = [];
-      const on = (name: string, fn: (...args: any[]) => void) => {
-        const safe = (...args: any[]) => {
+      const attached: [string, (...args: unknown[]) => void][] = [];
+      const on = (name: string, fn: (...args: unknown[]) => void) => {
+        const safe = (...args: unknown[]) => {
           try {
             fn(...args);
           } catch {

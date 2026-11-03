@@ -1,3 +1,4 @@
+import { readDashboardCss } from "./helpers/dashboard-css";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
@@ -33,6 +34,20 @@ const EXPECTED: Record<AgentPose, { label: string; dot: string }> = {
 };
 
 describe("agent header avatar", () => {
+  it("shows a custom name at the head of the pill, and only then", () => {
+    const named = renderToStaticMarkup(
+      <AgentHeaderAvatar pose="laptop" agentName="シロ" />,
+    );
+    expect(named).toContain('class="agent-avatar-name"');
+    expect(named).toContain("シロ：");
+    expect(named).toContain(EXPECTED.laptop.label);
+    const unnamed = renderToStaticMarkup(
+      <AgentHeaderAvatar pose="laptop" />,
+    );
+    expect(unnamed).not.toContain("agent-avatar-name");
+    expect(unnamed).not.toContain("キャラ：");
+  });
+
   it("keys the circle to the current pose and labels the pill", () => {
     for (const pose of POSES) {
       const html = renderToStaticMarkup(<AgentHeaderAvatar pose={pose} />);
@@ -118,10 +133,7 @@ describe("agent header avatar", () => {
 });
 
 describe("agent header avatar stylesheet", () => {
-  const css = readFileSync(
-    new URL("../apps/dashboard/src/style.css", import.meta.url),
-    "utf8",
-  ).replace(/\r\n/g, "\n");
+  const css = readDashboardCss().replace(/\r\n/g, "\n");
   const section = css.slice(
     css.indexOf("/* Agent header avatar:"),
     css.indexOf("/* Agent narration feed:"),
@@ -239,16 +251,13 @@ describe("narration feed after the stage removal", () => {
 
   it("leaves no stage or expression-overlay code behind", () => {
     const component = readFileSync(
-      resolve("apps/dashboard/src/AgentNarration.tsx"),
+      resolve("apps/dashboard/src/AgentNarrationFeed.tsx"),
       "utf8",
     );
     expect(component).not.toContain("agent-feed-stage");
     expect(component).not.toContain("AgentPoseFx");
     expect(component).not.toContain("AgentStageArtwork");
-    const css = readFileSync(
-      new URL("../apps/dashboard/src/style.css", import.meta.url),
-      "utf8",
-    );
+    const css = readDashboardCss();
     expect(css).not.toContain(".agent-feed-stage");
     expect(css).not.toContain(".agent-feed-fx");
     expect(css).not.toContain(".agent-feed-head");
@@ -256,7 +265,7 @@ describe("narration feed after the stage removal", () => {
 
   it("reports the derived pose to the app shell", () => {
     const component = readFileSync(
-      resolve("apps/dashboard/src/AgentNarration.tsx"),
+      resolve("apps/dashboard/src/AgentNarrationFeed.tsx"),
       "utf8",
     );
     expect(component).toContain("onPoseChange?.(reportedPose)");
@@ -320,10 +329,7 @@ describe("slim two-row header (design A)", () => {
     header.indexOf("header-row-sub"),
   );
   const rowSub = header.slice(header.indexOf("header-row-sub"));
-  const css = readFileSync(
-    new URL("../apps/dashboard/src/style.css", import.meta.url),
-    "utf8",
-  ).replace(/\r\n/g, "\n");
+  const css = readDashboardCss().replace(/\r\n/g, "\n");
 
   it("puts the title and the PAPER badge on the top row", () => {
     expect(rowMain).toContain("<strong>◈ Sui Paper Lab</strong>");

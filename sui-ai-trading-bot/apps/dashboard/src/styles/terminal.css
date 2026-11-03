@@ -1,0 +1,539 @@
+/* Terminal theme for the operation bar and the price ticker
+   (matching the header, login gate and bottom bar): near-black
+   panels with a faint grid on the ticker, monospace tabular
+   figures so prices stop jittering as digits change, squared
+   tags instead of pills, and a glow on the state dot. Layout,
+   tones and sizes are unchanged. */
+.operation-bar,
+.operation-bar-notice {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: #04070b;
+  border-color: #1f5c46;
+  border-radius: 6px;
+}
+.operation-bar.tone-caution {
+  background: #171106;
+  border-color: #7a5c1e;
+}
+.operation-bar.tone-alert {
+  background: #1c0a10;
+  border-color: #7a3040;
+}
+.operation-bar.tone-ok .operation-bar-dot {
+  box-shadow: 0 0 8px rgba(67, 223, 178, 0.9);
+}
+.operation-bar.tone-alert .operation-bar-dot {
+  box-shadow: 0 0 8px rgba(247, 125, 143, 0.9);
+}
+.operation-bar .operation-icon-button {
+  border-radius: 4px;
+}
+.price-ticker-bar {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(120, 255, 205, 0.04) 0 1px,
+      transparent 1px 30px
+    ),
+    #04070b;
+  border-color: #1f5c46;
+  border-radius: 6px;
+}
+.price-ticker-coin {
+  border-radius: 6px;
+}
+.price-ticker-line {
+  border-radius: 4px;
+}
+.pair-switch {
+  border-radius: 6px;
+  border-color: #1f5c46;
+  background: #020a06;
+}
+.pair-switch button {
+  border-radius: 3px;
+}
+.pair-switch button.on {
+  background: #0c2317;
+  box-shadow: inset 0 0 0 1px #1f5c46;
+}
+
+/* Full terminal skin (the modest cut of the prototype): panels
+   become near-black with mint-dark frames and squared corners,
+   headings and stat readouts go monospace tabular, the feed
+   reads as log lines with bracketed tags, and the chat input
+   gains a command prompt. Content, order, sizes and tone
+   colours are unchanged; class-level tone rules (caution /
+   alert backgrounds) still win over the element-level panel
+   rule below. */
+section {
+  background: #04070b;
+  border-color: #1f5c46;
+  border-radius: 6px;
+}
+button {
+  border-radius: 4px;
+}
+h2,
+h3 {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+h2 {
+  font-variant-numeric: tabular-nums;
+}
+.agent-feed {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.agent-feed-entry {
+  background: #020a06;
+  border-radius: 4px;
+}
+.agent-feed-entry.alert {
+  background: #170c04;
+}
+.agent-feed-entry-tag {
+  border-radius: 3px;
+}
+.agent-feed-entry-tag::before {
+  content: "[";
+}
+.agent-feed-entry-tag::after {
+  content: "]";
+}
+.agent-feed-chip,
+.agent-feed-score-item,
+.agent-feed-watch {
+  border-radius: 4px;
+}
+.agent-chat-chips button {
+  border-radius: 4px;
+}
+.agent-chat-form {
+  align-items: center;
+}
+.agent-chat-form::before {
+  content: ">";
+  color: #43dfb2;
+  font-weight: 700;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.agent-chat-form input {
+  border-radius: 4px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Terminal finish (from the real-device screenshot): pull the
+   remaining blue-grey parts into the green-black palette, give
+   the feed the terminal frame its section rule never reached
+   (it is a div, not a section), square the avatar frame — its
+   base rules live far below the header block, so the earlier
+   override lost — and turn the avatar status pill into a
+   bracketed tag. Pose/state colours keep winning through
+   their more specific rules. */
+button {
+  background: #0a1a12;
+  border-color: #1f5c46;
+}
+button:hover {
+  background: #123324;
+}
+.agent-avatar,
+.agent-avatar-bob {
+  border-radius: 14px;
+}
+.agent-avatar {
+  border-color: #2e7a5f;
+}
+.agent-avatar-pill {
+  border-radius: 4px;
+  border-color: #1f5c46;
+  background: rgba(2, 10, 6, 0.92);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.agent-avatar-pill::before {
+  content: "[";
+}
+.agent-avatar-pill::after {
+  content: "]";
+}
+.agent-feed {
+  background: #04070b;
+  border-color: #1f5c46;
+  border-radius: 6px;
+}
+.agent-feed-score {
+  background: #020a06;
+  border-color: #1f5c46;
+  border-radius: 4px;
+}
+.agent-feed-watch {
+  border-radius: 4px;
+}
+.agent-feed-chips-title::before {
+  content: "> ";
+  color: #43dfb2;
+}
+.agent-chat-chips button {
+  background: #0a1a12;
+  border-color: #1f5c46;
+}
+.agent-chat-form input {
+  border-color: #1f5c46;
+  background: #020a06;
+}
+
+/* Stuck dock (scrolled): the avatar shrinks and the status
+   pill folds away so the character stops covering the
+   operation bar's state text and the price ticker while it
+   follows the scroll. The shout bubble rides along and stays
+   visible — it is the one overlay that must never be hidden. */
+.agent-avatar-dock.stuck .agent-avatar {
+  width: 46px;
+  height: 46px;
+}
+.agent-avatar-dock.stuck .agent-avatar-pill {
+  display: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .agent-avatar {
+    transition:
+      width 0.25s ease,
+      height 0.25s ease;
+  }
+}
+
+/* Line mode: while the buy-run line stands, the whole page
+   washes Sui blue — the blue avatar pose grown into an ambient
+   theme (toggled from the reported pose in main.tsx). Frames,
+   glows and the page backdrop shift blue; alert tones and the
+   feed's tag colours keep their meaning. The wash fades in
+   and out with the line. */
+:root.line-mode {
+  background: #030a1a;
+}
+.line-mode body {
+  background: #030a1a;
+}
+.line-mode header {
+  border-bottom-color: #2e5a8f;
+  box-shadow: 0 10px 34px -12px rgba(77, 162, 255, 0.5);
+}
+.line-mode section,
+.line-mode .agent-feed {
+  background: #04101f;
+  border-color: #2e5a8f;
+}
+.line-mode .operation-bar,
+.line-mode .price-ticker-bar {
+  border-color: #2e5a8f;
+}
+.line-mode nav {
+  border-top-color: #2e5a8f;
+}
+.line-mode nav .active {
+  color: #8fc6ff;
+  box-shadow:
+    inset 0 2px 0 #4da2ff,
+    0 -6px 18px -8px rgba(77, 162, 255, 0.65);
+}
+@media (prefers-reduced-motion: no-preference) {
+  body,
+  section,
+  .agent-feed,
+  .operation-bar,
+  .price-ticker-bar,
+  header {
+    transition:
+      background-color 0.6s ease,
+      border-color 0.6s ease;
+  }
+}
+
+/* Errors as terminal output: the shared .error block goes
+   monospace on a dark red panel with a squared frame and an
+   [ERR] tag, so a failure reads like a console line instead
+   of a rounded toast. The wording itself — plain Japanese
+   plus the code — is untouched. */
+.error {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: #1c0a10;
+  border: 1px solid #7a3040;
+  border-radius: 4px;
+  color: #ffb3c0;
+}
+.error::before {
+  content: "[ERR] ";
+  color: #ff8fa5;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+/* Terminal parts for the remaining pages (strategy / history /
+   operations): tables become tabular readouts with dashed
+   rules, form fields become console inputs, preset cards and
+   validation blocks square off with a glowing selected state,
+   and the validation progress bar fills as mint blocks. */
+table {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+th {
+  color: #43dfb2;
+  letter-spacing: 0.04em;
+}
+td,
+th {
+  border-bottom: 1px dashed rgba(67, 223, 178, 0.18);
+}
+input,
+textarea,
+select {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: #020a06;
+  border-color: #1f5c46;
+  border-radius: 4px;
+}
+.preset-cards button {
+  border-radius: 4px;
+}
+.preset-cards button[aria-pressed="true"] {
+  background: #0c2317;
+  border-color: #43dfb2;
+  box-shadow:
+    0 0 0 1px #43dfb2,
+    0 0 18px -6px rgba(67, 223, 178, 0.5);
+}
+.validation-overview,
+.validation-action,
+.validation-progress,
+.validation-metric {
+  background: #020a06;
+  border-color: #1f5c46;
+  border-radius: 4px;
+}
+.operation-validation progress {
+  appearance: none;
+  height: 10px;
+}
+.operation-validation progress::-webkit-progress-bar {
+  background: #0a1a12;
+  border: 1px solid #1f5c46;
+}
+.operation-validation progress::-webkit-progress-value {
+  background: repeating-linear-gradient(
+    90deg,
+    #43dfb2 0 6px,
+    transparent 6px 8px
+  );
+}
+.operation-validation progress::-moz-progress-bar {
+  background: #43dfb2;
+}
+summary {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* The lifetime-first filled buy in the history keeps a gold
+   record mark: a bracketed tag by the side, the order amount
+   and quote price under the date, and a soft gold row tint. */
+.first-fill-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 6px;
+  border: 1px solid #edc980;
+  border-radius: 3px;
+  background: #2a2113;
+  color: #edc980;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.first-fill-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: #edc980;
+}
+.history-table tr.first-fill td {
+  background: rgba(237, 201, 128, 0.07);
+}
+
+/* Folded chat box: one quiet line until the user wants to ask.
+   The opener mirrors the form's prompt styling; the close is a
+   small text button under the form. */
+.agent-chat-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: #020a06;
+  border: 1px solid #1f5c46;
+  border-radius: 4px;
+  color: #8fa9bd;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  text-align: left;
+  min-height: 38px;
+}
+.agent-chat-open::before {
+  content: ">";
+  color: #43dfb2;
+  font-weight: 700;
+}
+.agent-chat-close {
+  margin-top: 6px;
+  padding: 4px 8px;
+  background: none;
+  border: none;
+  color: #8fa9bd;
+  font-size: 12px;
+  min-height: 28px;
+}
+/* Stuck dock, second pass: centred, the mini avatar still rode
+   over the price in the middle of the ticker. Right-aligned,
+   it covers only the sparkline's tail — the pair switch, the
+   price and the line pill all stay readable. */
+.agent-avatar-dock.stuck {
+  margin-left: auto;
+  margin-right: 10px;
+  align-items: flex-end;
+}
+
+/* Strategy page terminal pass (approved direction): bracket
+   segment tabs, ledger-flavoured parameter cells, and the
+   save-review changes as a - old / + new diff. Content and
+   behaviour are unchanged. */
+.strategy-segments [role="tab"] {
+  border-radius: 3px;
+  border-color: #1f5c46;
+  background: #020a06;
+  color: #8fa9bd;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.strategy-segments [role="tab"].active {
+  background: #0c2317;
+  border-color: #1f5c46;
+  color: #43dfb2;
+}
+.strategy-segments [role="tab"].active::before {
+  content: "[";
+}
+.strategy-segments [role="tab"].active::after {
+  content: "]";
+}
+.settings-grid label {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed rgba(67, 223, 178, 0.15);
+}
+.settings-grid input {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.settings-diff {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.settings-diff li {
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+}
+.settings-diff .diff-minus {
+  color: #ff8fa5;
+}
+.settings-diff .diff-plus {
+  color: #43dfb2;
+}
+/* Stuck dock, third pass: right-aligning at the top still left
+   the mini avatar riding over the feed's text column while
+   scrolling. The stuck avatar now leaves the reading area
+   entirely and floats as a corner chip above the bottom nav
+   (its in-flow footprint is ~0 thanks to the negative margins,
+   so the page does not jump). The shout bubble flips to the
+   avatar's left so it stays on screen. */
+.agent-avatar-dock.stuck {
+  position: fixed;
+  top: auto;
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  right: 10px;
+  left: auto;
+  margin: 0;
+  z-index: 45;
+}
+.agent-avatar-dock.stuck .agent-avatar-bubble {
+  left: auto;
+  right: calc(100% + 10px);
+}
+.agent-avatar-dock.stuck .agent-avatar-bubble::after {
+  left: auto;
+  right: -5px;
+  border-right-color: transparent;
+  border-left-color: #fff;
+}
+/* The milestone prompt chip was crushed to one character per
+   line beside a long tag: prompt entries now wrap, the text
+   keeps a readable measure, and the chip drops to its own row
+   right-aligned instead of squeezing. */
+.agent-feed-entry.chatPrompt {
+  flex-wrap: wrap;
+}
+.agent-feed-entry.chatPrompt p {
+  flex: 1 1 10em;
+  min-width: 8em;
+}
+.agent-feed-prompt-chip {
+  flex: none;
+  margin-left: auto;
+}
+
+/* Chat composer as a bottom bar (the messaging-app pattern the
+   owner asked for): the folded "キャラに聞く" line — and its
+   expanded sheet — pin to the screen bottom above the mobile
+   tab bar, inside the narration tab only (the feed wrapper is
+   display:none on other tabs, which hides the fixed bar too).
+   The feed gains bottom room so its last entry can scroll
+   clear of the bar, and the corner avatar chip lifts above
+   the bar while it is on screen (html.chat-bar, set by the
+   feed while its tab is active). */
+.agent-chat {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 42;
+  margin: 0;
+  padding: 8px 5% calc(8px + env(safe-area-inset-bottom, 0px));
+  background: rgba(2, 10, 6, 0.95);
+  border-top: 1px solid #1f5c46;
+  backdrop-filter: blur(6px);
+}
+.agent-feed {
+  margin-bottom: 72px;
+}
+@media (max-width: 600px) {
+  .agent-chat {
+    bottom: calc(58px + env(safe-area-inset-bottom, 0px));
+  }
+  .agent-feed {
+    margin-bottom: 128px;
+  }
+  html.chat-bar .agent-avatar-dock.stuck {
+    bottom: calc(122px + env(safe-area-inset-bottom, 0px));
+  }
+  html.chat-bar-open .agent-avatar-dock.stuck {
+    bottom: calc(228px + env(safe-area-inset-bottom, 0px));
+  }
+}
+@media (min-width: 601px) {
+  html.chat-bar .agent-avatar-dock.stuck {
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+  html.chat-bar-open .agent-avatar-dock.stuck {
+    bottom: calc(170px + env(safe-area-inset-bottom, 0px));
+  }
+}

@@ -1,0 +1,910 @@
+/* The narration tab container stays mounted and is only hidden, so
+   the feed history survives tab switches. */
+.narration-tab[hidden] {
+  display: none;
+}
+/* Agent header avatar: the narration character as a round avatar
+   at the top centre of the app, half floating over the header's
+   bottom edge at rest, with its status pill underneath (see
+   AgentHeaderAvatar). The dock is rendered as a sibling of the
+   header, a direct child of the app root, so its sticky
+   containing block spans the whole page. The negative margins
+   pull the dock half over the header's bottom edge and hand the
+   lower half back to the flow, which reproduces the resting
+   layout exactly: the tab bar (or, on mobile, the page top)
+   carries the extra top padding that keeps following content
+   clear of the dock at rest — see nav.has-avatar and
+   main.has-avatar. The numbers: the dock is 112px tall (76px
+   avatar + 8px pill margin + ~28px pill), so the margins are
+   -56px (half the dock, which centres the dock on the header's
+   bottom edge) and the clearance is 70px (the 56px the pill
+   extends below that edge, plus the same ~14px breathing room
+   the 92px avatar had). When the page scrolls, the header slides away
+   but the dock sticks 9px below the viewport top and stays in
+   view, floating over the content that flows underneath (it is
+   pointer-events: none, and its z-index keeps it above the tab
+   content and below the mobile bottom bar). The artwork is
+   clipped to the circle by the bob wrapper, whose transform
+   carries the gentle bob so the two typing frames never drift
+   apart. The detailed expression marks of the old in-feed stage
+   do not fit a 76px circle, so only two coarse marks remain: a
+   floating "Zzz" while asleep and a twinkling star while
+   pointing. Motion lives only in the no-preference block below;
+   under prefers-reduced-motion everything rests still, the
+   typing frame stays invisible, and the Zzz / star marks rest as
+   faint marks. */
+.agent-avatar-dock {
+  position: sticky;
+  top: 9px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: fit-content;
+  margin: -56px auto -56px;
+  pointer-events: none;
+}
+.agent-avatar {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  border: 3px solid #344e65;
+  background: #12161f;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+.agent-avatar-bob {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+}
+.agent-avatar-bob img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* Second frame of the laptop pose (AgentAvatarArtwork): the same
+   scene with the near hand's index finger raised, stacked exactly
+   on the base frame. It rests invisible; only when motion is
+   allowed does it flip against the base frame in a two-frame
+   typing loop (0.52s per cycle, about 0.26s per frame). */
+.agent-avatar-bob img.agent-avatar-typing {
+  opacity: 0;
+}
+.agent-avatar-zzz {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  font-weight: 800;
+  font-size: 16px;
+  line-height: 1;
+  color: #9fd0ff;
+  opacity: 0;
+}
+.agent-avatar-star {
+  position: absolute;
+  top: -4px;
+  right: -2px;
+  font-size: 15px;
+  line-height: 1;
+  color: #ffd166;
+  opacity: 0;
+}
+.agent-avatar.pose-sleep .agent-avatar-zzz {
+  opacity: 0.9;
+}
+.agent-avatar.pose-point .agent-avatar-star,
+.agent-avatar.pose-pointSmile .agent-avatar-star {
+  opacity: 0.95;
+}
+/* Buy celebration (AgentHeaderAvatar): while a celebration runs,
+   the pill turns gold — under reduced motion the gold pill and
+   the borrowed smile are the whole show. The burst marks are
+   rendered only when motion is allowed; they rest invisible
+   here and their drift lives in the no-preference block below. */
+.agent-avatar-burst {
+  position: absolute;
+  inset: -16px;
+  pointer-events: none;
+}
+.agent-avatar-burst span {
+  position: absolute;
+  line-height: 1;
+  opacity: 0;
+}
+.agent-avatar-burst .s1 {
+  left: 2%;
+  top: 30%;
+  font-size: 17px;
+  color: #edc980;
+}
+.agent-avatar-burst .s2 {
+  right: 4%;
+  top: 8%;
+  font-size: 13px;
+  color: #edc980;
+}
+.agent-avatar-burst .s3 {
+  right: 14%;
+  top: 48%;
+  font-size: 15px;
+  color: #ffe9b0;
+}
+.agent-avatar-burst .n1 {
+  left: 10%;
+  top: 0;
+  font-size: 16px;
+  color: #8fd0ff;
+}
+.agent-avatar-burst .n2 {
+  right: 0;
+  top: 62%;
+  font-size: 13px;
+  color: #8fd0ff;
+}
+.agent-avatar-burst .s4 {
+  left: 28%;
+  top: -6%;
+  font-size: 12px;
+  color: #edc980;
+}
+.agent-avatar-burst .s5 {
+  right: 30%;
+  top: -4%;
+  font-size: 12px;
+  color: #ffe9b0;
+}
+.agent-avatar-burst .n3 {
+  left: 0;
+  top: 55%;
+  font-size: 12px;
+  color: #8fd0ff;
+}
+.agent-avatar-pill.celebrate {
+  background: #edc980;
+  border-color: #edc980;
+  color: #0b1220;
+  font-weight: 700;
+}
+/* Error shout (AgentHeaderAvatar): while an error state lasts,
+   the circle rings red, the artwork swaps to the dedicated
+   Munch-scream pose (agent-white-scream.jpg — it needs no rules
+   of its own; the bob's img rules size it), and the fixed short
+   line is called out in a speech bubble beside the face. The
+   shake and the bubble's pop live in the no-preference block
+   below; under reduced motion the face, bubble and pill simply
+   change and rest. */
+.agent-avatar.shouting {
+  border-color: #f0564a;
+}
+/* Buy-run line (AgentHeaderAvatar): while a line stands, the
+   artwork swaps to the blue roaring-crowd pose and the circle
+   rings Sui blue. The glow's breathing and the drifting petals
+   live in the no-preference block below; under reduced motion
+   the blue ring, the artwork and the pill still change and rest.
+   The petals are rendered only when motion is allowed. */
+.agent-avatar.pose-buyLine {
+  border-color: #4da2ff;
+  box-shadow:
+    0 0 0 3px rgba(77, 162, 255, 0.28),
+    0 0 24px rgba(77, 162, 255, 0.45),
+    0 8px 24px rgba(0, 0, 0, 0.55);
+}
+.agent-avatar-petals {
+  position: absolute;
+  inset: -10px;
+  pointer-events: none;
+}
+.agent-avatar-petals span {
+  position: absolute;
+  width: 7px;
+  height: 10px;
+  border-radius: 80% 4px 80% 4px;
+  background: #57b6ff;
+  opacity: 0;
+}
+.agent-avatar-petals .p1 {
+  left: 4%;
+  top: 16%;
+}
+.agent-avatar-petals .p2 {
+  right: 5%;
+  top: 6%;
+  background: #2e8cff;
+}
+.agent-avatar-petals .p3 {
+  left: 16%;
+  top: -2%;
+  background: #8fd0ff;
+}
+.agent-avatar-petals .p4 {
+  right: 18%;
+  top: 28%;
+}
+.agent-avatar-bubble {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 0;
+  background: #fff;
+  color: #20303f;
+  font-weight: 700;
+  font-size: 12.5px;
+  line-height: 1.3;
+  white-space: nowrap;
+  padding: 6px 10px;
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+.agent-avatar-bubble::after {
+  content: "";
+  position: absolute;
+  left: -5px;
+  bottom: 10px;
+  border: 6px solid transparent;
+  border-right-color: #fff;
+  border-left: 0;
+}
+.agent-avatar-pill.shout {
+  border-color: #f0564a;
+  color: #ff9c9c;
+}
+.agent-avatar-pill.line {
+  border-color: rgba(98, 178, 255, 0.6);
+  color: #bfe0ff;
+}
+.agent-avatar-dot.shout {
+  background: #f0564a;
+}
+.agent-avatar-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 0 0;
+  padding: 4px 12px;
+  border: 1px solid #344e65;
+  border-radius: 999px;
+  font-size: 12.5px;
+  white-space: nowrap;
+  color: #dce8f0;
+}
+/* A custom name rides at the head of the pill ("シロ：監視中")
+   so the rename is visible on screen, not only in the chat.
+   The default name keeps the pill exactly as it was. */
+.agent-avatar-name {
+  font-weight: 600;
+}
+.agent-avatar-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8fa7b9;
+}
+.agent-avatar-dot.tone-run {
+  background: #43dfb2;
+}
+.agent-avatar-dot.tone-near {
+  background: #ffd166;
+}
+.agent-avatar-dot.tone-stop {
+  background: #8fa7b9;
+}
+.agent-avatar-dot.tone-line {
+  background: #4da2ff;
+  box-shadow: 0 0 6px rgba(77, 162, 255, 0.9);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .agent-avatar-bob {
+    animation: agent-avatar-bob 3.2s ease-in-out infinite;
+  }
+  .agent-avatar-bob img.agent-avatar-typing {
+    animation: agent-avatar-typing 0.52s linear infinite;
+  }
+  .agent-avatar.pose-sleep .agent-avatar-zzz {
+    animation: agent-avatar-zzz 2.6s ease-in-out infinite;
+  }
+  .agent-avatar.pose-point .agent-avatar-star,
+  .agent-avatar.pose-pointSmile .agent-avatar-star {
+    animation: agent-avatar-star 1.6s ease-in-out infinite;
+  }
+  .agent-avatar.celebrating {
+    animation: agent-avatar-hop 0.55s ease;
+  }
+  /* The buy-run line's blue glow breathes while the line stands,
+     and petals drift down around the circle. */
+  .agent-avatar.pose-buyLine {
+    animation: agent-avatar-line-pulse 2.2s ease-in-out infinite;
+  }
+  @keyframes agent-avatar-line-pulse {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 3px rgba(77, 162, 255, 0.24),
+        0 0 18px rgba(77, 162, 255, 0.38),
+        0 8px 24px rgba(0, 0, 0, 0.55);
+    }
+    50% {
+      box-shadow:
+        0 0 0 4px rgba(77, 162, 255, 0.34),
+        0 0 30px rgba(77, 162, 255, 0.6),
+        0 8px 24px rgba(0, 0, 0, 0.55);
+    }
+  }
+  .agent-avatar-petals span {
+    animation: agent-avatar-petal-drift 3.6s linear infinite;
+  }
+  .agent-avatar-petals .p2 {
+    animation-delay: 1.2s;
+  }
+  .agent-avatar-petals .p3 {
+    animation-delay: 2.1s;
+  }
+  .agent-avatar-petals .p4 {
+    animation-delay: 2.8s;
+  }
+  @keyframes agent-avatar-petal-drift {
+    0% {
+      transform: translateY(4px) rotate(0deg);
+      opacity: 0;
+    }
+    15% {
+      opacity: 0.95;
+    }
+    80% {
+      opacity: 0.75;
+    }
+    100% {
+      transform: translateY(52px) rotate(300deg);
+      opacity: 0;
+    }
+  }
+  .agent-avatar.shouting {
+    animation: agent-avatar-shout-shake 0.45s ease;
+  }
+  .agent-avatar.shouting .agent-avatar-bubble {
+    animation: agent-avatar-bubble-pop 0.18s ease;
+  }
+  /* While the error lasts, the scream artwork itself keeps
+     trembling in small jitter steps (the entrance shake above is
+     one-shot on the whole avatar). The slight scale keeps the
+     jitter from opening gaps at the circle's edge. */
+  .agent-avatar.shouting .agent-avatar-scream {
+    animation: agent-avatar-scream-tremble 0.3s linear infinite;
+  }
+  @keyframes agent-avatar-scream-tremble {
+    0%,
+    100% {
+      transform: scale(1.05) translate(0, 0) rotate(0deg);
+    }
+    25% {
+      transform: scale(1.05) translate(0.7px, -0.5px) rotate(0.6deg);
+    }
+    50% {
+      transform: scale(1.05) translate(-0.6px, 0.4px) rotate(-0.5deg);
+    }
+    75% {
+      transform: scale(1.05) translate(0.5px, 0.6px) rotate(0.4deg);
+    }
+  }
+  @keyframes agent-avatar-shout-shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    20% {
+      transform: translateX(-5px) rotate(-3deg);
+    }
+    40% {
+      transform: translateX(5px) rotate(3deg);
+    }
+    60% {
+      transform: translateX(-4px);
+    }
+    80% {
+      transform: translateX(4px);
+    }
+  }
+  @keyframes agent-avatar-bubble-pop {
+    from {
+      transform: scale(0.4);
+    }
+    to {
+      transform: scale(1);
+    }
+  }
+  .agent-avatar.celebrating .agent-avatar-burst span {
+    animation: agent-avatar-burst 1.15s ease-out both;
+  }
+  .agent-avatar.celebrating .agent-avatar-burst .s2 {
+    animation-delay: 0.08s;
+  }
+  .agent-avatar.celebrating .agent-avatar-burst .s3 {
+    animation-delay: 0.15s;
+  }
+  .agent-avatar.celebrating .agent-avatar-burst .n1 {
+    animation-delay: 0.05s;
+  }
+  .agent-avatar.celebrating .agent-avatar-burst .n2 {
+    animation-delay: 0.2s;
+  }
+  .agent-avatar.celebrating .agent-avatar-burst .s4 {
+    animation-delay: 0.12s;
+  }
+  .agent-avatar.celebrating .agent-avatar-burst .s5 {
+    animation-delay: 0.02s;
+  }
+  .agent-avatar.celebrating .agent-avatar-burst .n3 {
+    animation-delay: 0.25s;
+  }
+  @keyframes agent-avatar-hop {
+    0% {
+      transform: translateY(0);
+    }
+    35% {
+      transform: translateY(-7px);
+    }
+    100% {
+      transform: translateY(0);
+    }
+  }
+  @keyframes agent-avatar-burst {
+    0% {
+      opacity: 0;
+      transform: translateY(8px) scale(0.6);
+    }
+    25% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-20px) scale(1.15);
+    }
+  }
+  @keyframes agent-avatar-bob {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-3px);
+    }
+  }
+  @keyframes agent-avatar-typing {
+    0%,
+    49.9% {
+      opacity: 0;
+    }
+    50%,
+    100% {
+      opacity: 1;
+    }
+  }
+  @keyframes agent-avatar-zzz {
+    0% {
+      opacity: 0;
+      transform: translateY(3px) scale(0.8);
+    }
+    30% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-8px) scale(1.1);
+    }
+  }
+  @keyframes agent-avatar-star {
+    0%,
+    100% {
+      opacity: 0.15;
+      transform: scale(0.8);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.15);
+    }
+  }
+}
+/* Agent narration feed: a chat-style timeline on its own tab. The
+   character that used to be staged here now lives at the top of
+   the app as a round avatar (see .agent-avatar-dock above); this
+   panel keeps the narration itself — condition chips, the watch
+   strip, the declaration score and the entries. */
+/* The feed panel sets its own type scale: 14px body (entry text),
+   12px supporting (chips, strips, timestamps, the closing note)
+   and 11px smallest (strip titles, tags, definitions). Nothing in
+   the panel may fall back to the browser default or outsize the
+   narration itself. */
+.agent-feed {
+  margin-top: 18px;
+  padding: 14px 18px;
+  border: 1px solid #344e65;
+  border-radius: 12px;
+  font-size: 14px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* Buy-condition chips: the same decision evidence as the narration,
+   compressed to a traffic-light dot per condition (met / close /
+   far / back). Only the RSI countdown ("あと7") survives as text;
+   the precise state word stays in the title and for screen readers. */
+.agent-feed-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.agent-feed-chips-title {
+  font-size: 12px;
+  color: #9aafbf;
+}
+.agent-feed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  background: #1a2632;
+  border: 1px solid #344e65;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #dce8f0;
+}
+.agent-feed-chip-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  background: #71809a;
+}
+.agent-feed-chip.tone-met .agent-feed-chip-dot {
+  background: #3ecf6f;
+}
+.agent-feed-chip.tone-close .agent-feed-chip-dot {
+  background: #f5c93f;
+}
+.agent-feed-chip.tone-far .agent-feed-chip-dot,
+.agent-feed-chip.tone-back .agent-feed-chip-dot {
+  background: #f0564a;
+}
+.agent-feed-chip-label {
+  font-weight: 600;
+}
+.agent-feed-chip.tone-met {
+  border-color: #4caf7d;
+}
+.agent-feed-chip.tone-met .agent-feed-chip-status {
+  color: #4caf7d;
+}
+.agent-feed-chip.tone-close {
+  border-color: #edc980;
+}
+.agent-feed-chip.tone-close .agent-feed-chip-status {
+  color: #edc980;
+}
+.agent-feed-chip.tone-back {
+  border-color: #e06c75;
+}
+.agent-feed-chip.tone-back .agent-feed-chip-status {
+  color: #e06c75;
+}
+.agent-feed-chip.tone-far .agent-feed-chip-status {
+  color: #9aafbf;
+}
+/* The declared watch target's chip is ringed in gold. */
+.agent-feed-chip.watching {
+  border-color: #ffd166;
+  box-shadow: 0 0 0 1.5px #ffd166;
+}
+/* The "いまの注目" strip under the chips: the one condition the
+   narration declared it is watching, its current value, and how it
+   has moved since the declaration (or why there is no watch). */
+.agent-feed-watch {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: rgba(255, 209, 102, 0.06);
+  border: 1px dashed #a97e1f;
+  border-radius: 10px;
+  font-size: 12px;
+  color: #dce8f0;
+}
+.agent-feed-watch-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #ffd166;
+}
+.agent-feed-watch-value {
+  font-weight: 700;
+  color: #ffd166;
+}
+.agent-feed-watch-detail {
+  font-size: 12px;
+  color: #9aafbf;
+}
+/* The declaration score strip under the watch: quiet numbers only,
+   with the counting definitions spelled out next to them. */
+.agent-feed-score {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 8px;
+  padding: 7px 12px;
+  border: 1px solid #2c4356;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #dce8f0;
+}
+.agent-feed-score-item small {
+  margin-right: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #9aafbf;
+}
+.agent-feed-score-item.hit {
+  color: #39d98a;
+}
+.agent-feed-score-item.miss {
+  color: #ff9c9c;
+}
+.agent-feed-score-item.prog {
+  color: #ffd166;
+}
+.agent-feed-list {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agent-feed-empty {
+  margin: 0;
+  font-size: 14px;
+  color: #9aafbf;
+}
+.agent-feed-entry {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid #5f7484;
+  border-radius: 8px;
+}
+.agent-feed-entry time {
+  flex: 0 0 auto;
+  padding-top: 2px;
+  font-size: 12px;
+  color: #9aafbf;
+  font-variant-numeric: tabular-nums;
+}
+.agent-feed-entry p {
+  margin: 0;
+  font-size: 14px;
+  color: #dce8f0;
+  line-height: 1.55;
+}
+.agent-feed-entry.trade {
+  border-left-color: #4caf7d;
+}
+.agent-feed-entry.warning {
+  border-left-color: #edc980;
+}
+.agent-feed-entry.stop {
+  border-left-color: #e06c75;
+}
+.agent-feed-entry.recovery {
+  border-left-color: #4db6ac;
+}
+.agent-feed-entry.start {
+  border-left-color: #4da2ff;
+}
+.agent-feed-entry.rejection {
+  border-left-color: #b08968;
+}
+/* A ふりかえり look-back stands out quietly: purple border and tag. */
+.agent-feed-entry.review {
+  border-left-color: #b48ce8;
+}
+.agent-feed-entry-tag {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: 1px;
+  padding: 1px 7px;
+  border: 1px solid #b48ce8;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #b48ce8;
+}
+/* A 速報 breaks in warmer: orange-red border, a faint warm
+   background, and its own tag colours. */
+.agent-feed-entry.alert {
+  border-left-color: #ff7a2f;
+}
+.agent-feed-entry-tag.alert {
+  border-color: rgba(255, 140, 50, 0.55);
+  color: #ffb27a;
+}
+/* A ニアミス (a called watch that slipped away) wears the gold of
+   the buy family — it was that close — on a faint warm wash, with
+   its own tag colours. */
+.agent-feed-entry.nearMiss {
+  border-left-color: #edc980;
+  background: #241d10;
+}
+.agent-feed-entry-tag.nearmiss {
+  border-color: rgba(237, 201, 128, 0.55);
+  color: #edc980;
+}
+/* A 的中 (a declared watch that clicked) wears the green of a met
+   condition — the near miss's counterpart — with its own tag. */
+.agent-feed-entry.watchHit {
+  border-left-color: #3ecf6f;
+  background: #0f2318;
+}
+.agent-feed-entry-tag.hit {
+  border-color: rgba(62, 207, 111, 0.55);
+  color: #3ecf6f;
+}
+/* The monthly report wears gold: a milestone entry, posted
+   once when a month closes. */
+.agent-feed-entry.monthlyReport {
+  border-left-color: #edc980;
+  background: #1d1a10;
+}
+.agent-feed-entry-tag.monthly {
+  border-color: rgba(237, 201, 128, 0.55);
+  color: #edc980;
+}
+/* The buy-run line wears the same Sui blue as the avatar's
+   line pose while it stands, and the green of a met condition
+   once the price touches it (the reached entry below). */
+.agent-feed-entry.priceLine {
+  border-left-color: #4da2ff;
+}
+.agent-feed-entry-tag.line {
+  border-color: rgba(98, 178, 255, 0.55);
+  color: #8fd0ff;
+}
+.agent-feed-entry.priceLineReached {
+  border-left-color: #3ecf6f;
+  background: #0f2318;
+}
+/* A 売りライン (sell lines) declaration: the position's exit
+   prices, in the app's sell-side rose. */
+.agent-feed-entry.sellLine {
+  border-left-color: #ff7d9c;
+}
+.agent-feed-entry-tag.sell {
+  border-color: rgba(255, 125, 156, 0.55);
+  color: #ff8fa5;
+}
+.agent-feed-entry-tag.reached {
+  border-color: rgba(62, 207, 111, 0.55);
+  color: #3ecf6f;
+}
+/* A 寝言 (sleep talk) drifts in soft blue, italic — the character
+   is asleep and dreaming of the session's facts. */
+.agent-feed-entry.sleepTalk p {
+  color: #b9d4f2;
+  font-style: italic;
+}
+.agent-feed-entry-tag.sleep {
+  border-color: rgba(159, 208, 255, 0.55);
+  color: #9fd0ff;
+}
+/* A recorded buy fill keeps a gold frame and tag for good, so a
+   buy stays recognisable in the history. The pulse below plays
+   once, on the entry whose arrival opened a celebration. */
+.agent-feed-entry.buy {
+  border-left-color: #edc980;
+  background: linear-gradient(90deg, rgba(237, 201, 128, 0.16), #1a2632 65%);
+}
+.agent-feed-entry-tag.buy {
+  border-color: #edc980;
+  color: #edc980;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .agent-feed-entry.just-bought {
+    animation: agent-feed-buy-pulse 1.6s ease-out;
+  }
+  @keyframes agent-feed-buy-pulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(237, 201, 128, 0);
+    }
+    20% {
+      box-shadow: 0 0 14px 1px rgba(237, 201, 128, 0.5);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(237, 201, 128, 0);
+    }
+  }
+}
+
+/* Keep current operation separate from the recorded validation outcome. */
+.validation-control {
+  padding: 20px 24px;
+}
+.control-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.control-header h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+.validation-control .control-state {
+  margin: 0;
+  font-size: 22px;
+}
+.validation-control p {
+  margin: 8px 0;
+}
+.control-result {
+  margin-top: 16px;
+  padding: 12px 0;
+  border-top: 1px solid #647180;
+}
+.control-result p {
+  color: #bac4cc;
+}
+.control-details {
+  margin-top: 8px;
+}
+.control-details summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #bac4cc;
+}
+.control-details summary::before {
+  content: "▸";
+}
+.control-details[open] summary::before {
+  content: "▾";
+}
+.control-details summary:focus-visible {
+  outline: 3px solid #a8d4ff;
+  outline-offset: 3px;
+}
+.validation-control .control-steps {
+  margin: 12px 0;
+  gap: 16px;
+}
+.validation-control .control-steps h3 {
+  margin: 4px 0;
+  font-size: 18px;
+}
+@media (max-width: 767px) {
+  section.validation-control {
+    padding: 15px 16px;
+  }
+  .control-header > div {
+    min-width: 0;
+  }
+}

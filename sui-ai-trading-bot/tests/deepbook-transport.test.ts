@@ -3,7 +3,6 @@ import { afterEach, expect, it, vi } from "vitest";
 import {
   createServer,
   connect,
-  type Http2Server,
   type ServerHttp2Stream,
 } from "node:http2";
 import { DeepBookTransport } from "../packages/market-data/src/deepbook-transport.ts";

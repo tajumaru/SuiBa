@@ -1,5 +1,10 @@
 import { chartGapQuality } from "../../../packages/shared/src/chart-gap-quality.ts";
 import { candleGeometry } from "./candleGeometry.ts";
+import {
+  chartForecast,
+  forecastLineCrossings,
+  FORECAST_BARS,
+} from "./chartForecast.ts";
 import { IndicatorPanel } from "./IndicatorPanel.tsx";
 import { chartSeries, lineSegments } from "./chartIndicators.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
@@ -15,6 +20,39 @@ import {
   chartTicks,
 } from "./chartPresentation.ts";
 import { number, dateTime, label } from "./presentation.ts";
+const hoverTimeFormat = new Intl.DateTimeFormat("ja-JP", {
+  timeZone: "Asia/Tokyo",
+  month: "numeric",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+/**
+ * The two readout lines shown inside the chart while a candle
+ * is hovered or tapped: when it started and where it closed
+ * (with the move across the candle), then the rest of the
+ * OHLC. The full record (volume, source, provenance) stays in
+ * the detail panel below; this is the at-a-glance version.
+ */
+export function candleHoverLines(b: Candle): {
+  main: string;
+  sub: string;
+} {
+  const pct =
+    b.open > 0 ? ((b.close - b.open) / b.open) * 100 : 0;
+  return {
+    main: `${hoverTimeFormat.format(b.timestamp * 1000)} 終 ${number(b.close, 4)} (${pct >= 0 ? "+" : ""}${number(pct, 2)}%)`,
+    sub: `始 ${number(b.open, 4)} 高 ${number(b.high, 4)} 安 ${number(b.low, 4)}`,
+  };
+}
+/** Rough rendered width of a readout line (full-width glyphs
+ * count double) so the backdrop box can hug the text. */
+function hoverLineWidth(line: string): number {
+  let w = 0;
+  for (const ch of line) w += ch.charCodeAt(0) > 0x2000 ? 11.5 : 6.9;
+  return w;
+}
 export function PriceChart({
   pair = "SUI_USDC",
   candles,
@@ -22,6 +60,9 @@ export function PriceChart({
   timeframe = 300,
   synchronized = false,
   historyApi,
+  forecastScoreText,
+  bookImbalance,
+  sellLines,
 }: {
   pair?: ReturnType<BotEngine["snapshot"]>["pair"];
   candles: Candle[];
@@ -29,6 +70,11 @@ export function PriceChart({
   timeframe?: number;
   synchronized?: boolean;
   historyApi?: SettingsApi;
+  forecastScoreText?: string | null;
+  bookImbalance?: number | null;
+  /** The open position's real sell lines (same prices the
+   * ticker counts down to), for forecast crossing marks. */
+  sellLines?: { tp: number; sl: number } | null;
 }) {
   const [gapTime, setGapTime] = useState<number | null>(null);
   const [history, setHistory] = useState<HistoryResult | null>(null),
@@ -86,6 +132,16 @@ export function PriceChart({
   const latest = data.candles.at(-1),
     latestEnd = latest ? latest.timestamp + latest.timeframe : 0,
     tf = latest?.timeframe ?? timeframe;
+  // Model outlook (next FORECAST_BARS candles) — only in the
+  // latest view; panning into the past hides it. Display only:
+  // it never feeds the bot or the indicators.
+  const fc = useMemo(
+    () =>
+      anchor == null
+        ? chartForecast(data.candles, FORECAST_BARS, bookImbalance ?? null)
+        : null,
+    [data, anchor, bookImbalance],
+  );
   const first = data.candles[0]?.timestamp ?? 0,
     available = latestEnd - first,
     end = anchor ?? latestEnd;
@@ -126,31 +182,116 @@ export function PriceChart({
     finish = visible.end ?? 1;
   const gapQuality = useMemo(
     () => chartGapQuality(c, start, finish, tf),
-    [visible, tf],
+    [visible, tf, c, start, finish],
   );
   const selectedGap = gapQuality.entries.find((g) => g.timestamp === gapTime);
-  const x = (t: number) => left + ((t - start) / (finish - start)) * plot;
+  const xFinish = fc ? latestEnd + FORECAST_BARS * tf : finish;
+  const x = (t: number) => left + ((t - start) / (xFinish - start)) * plot;
   const values = [
     ...c.flatMap((b) => [b.low, b.high]),
     ...visible.ema20,
     ...visible.ema50,
+    ...(fc ? fc.points.flatMap((p) => [p.lower, p.upper]) : []),
   ].filter((v): v is number => v != null);
   const min = Math.min(...values),
     max = Math.max(...values),
     y = (v: number) => 215 - ((v - min) / (max - min || 1)) * 180;
-  const dx = Math.max(0.8, Math.min(24, (plot / (finish - start)) * tf * 0.6));
+  const dx = Math.max(0.8, Math.min(24, (plot / (xFinish - start)) * tf * 0.6));
+  const fcAnchor =
+    fc && latest
+      ? `${x(latest.timestamp + tf / 2)},${y(latest.close)}`
+      : null;
+  const fcMid = fc
+    ? [
+        fcAnchor!,
+        ...fc.points.map(
+          (p) => `${x(p.timestamp + tf / 2)},${y(p.mid)}`,
+        ),
+      ].join(" ")
+    : null;
+  const fcCone = fc
+    ? [
+        fcAnchor!,
+        ...fc.points.map(
+          (p) => `${x(p.timestamp + tf / 2)},${y(p.upper)}`,
+        ),
+        ...[...fc.points]
+          .reverse()
+          .map((p) => `${x(p.timestamp + tf / 2)},${y(p.lower)}`),
+      ].join(" ")
+    : null;
+  // Where the outlook meets the position's sell lines, if it
+  // does: geometry over the sketch, labelled as such in place.
+  const crossings =
+    fc && sellLines ? forecastLineCrossings(fc.points, sellLines) : null;
+  const crossingMarks = crossings
+    ? (
+        [
+          {
+            key: "tp",
+            line: sellLines!.tp,
+            hit: crossings.tpMid,
+            edge: crossings.tpEdge,
+            color: "#43dfb2",
+            word: "利確ライン",
+          },
+          {
+            key: "sl",
+            line: sellLines!.sl,
+            hit: crossings.slMid,
+            edge: crossings.slEdge,
+            color: "#f77d8f",
+            word: "損切りライン",
+          },
+        ] as const
+      ).flatMap((m) => {
+        const c = m.hit ?? m.edge;
+        return c
+          ? [
+              {
+                ...m,
+                bars: c.bars,
+                cx: x(c.timestamp + tf / 2),
+                cy: y(m.line),
+                edgeOnly: !m.hit,
+              },
+            ]
+          : [];
+      })
+    : [];
   const geometry = useMemo(
     () => candleGeometry(c, x, y, dx),
     [visible, w, min, max, tf],
   );
   const chosen = c.find((b) => b.timestamp === selected) ?? c.at(-1);
+  // In-chart readout for the hovered/tapped candle. Only while
+  // a candle is actually selected — the default "latest" state
+  // keeps the chart clean.
+  const hoverLines =
+    selected != null && chosen ? candleHoverLines(chosen) : null;
+  const hoverCx = chosen ? x(chosen.timestamp + tf / 2) : 0;
+  const hoverBoxW = hoverLines
+    ? Math.max(hoverLineWidth(hoverLines.main), hoverLineWidth(hoverLines.sub)) +
+      16
+    : 0;
+  const hoverBoxX = hoverLines
+    ? Math.min(
+        Math.max(
+          left,
+          hoverCx + 10 + hoverBoxW <= right
+            ? hoverCx + 10
+            : hoverCx - 10 - hoverBoxW,
+        ),
+        Math.max(left, right - hoverBoxW),
+      )
+    : 0;
   const pick = (clientX: number) => {
     if (!svg.current || !c.length) return;
     const rect = svg.current.getBoundingClientRect(),
       t =
         start +
         ((((clientX - rect.left) / rect.width) * w - left) / plot) *
-          (finish - start);
+          (xFinish - start);
     const nearest = c.reduce((a, b) =>
       Math.abs(b.timestamp + tf / 2 - t) < Math.abs(a.timestamp + tf / 2 - t)
         ? b
@@ -242,8 +383,6 @@ export function PriceChart({
       drag.current = null;
     },
   };
-  const reconstructed = (b: Candle) =>
-    b.provenance != null && b.provenance.origin !== "ORIGINAL";
   const origin = (b: Candle) =>
     !b.provenance
       ? "再構築情報なし"
@@ -263,6 +402,20 @@ export function PriceChart({
           {pair.replace("_", " / ")} · {tf / 60}分足
         </strong>
       </p>
+      {fc && (
+        <p className="chart-forecast-note">
+          予測（模式）：この先{FORECAST_BARS}本（
+          {number((FORECAST_BARS * tf) / 3600, 1)}
+          時間）の見通しは{fc.directionWord}、振れ幅 ±
+          {number(fc.bandPct * 100, 1)}
+          %。トレンドと値幅（ATR）から伸ばしたもので、実際の価格ではありません。
+          {fc.bookTiltPct !== 0 &&
+            `板の偏り（${fc.bookTiltPct > 0 ? "買い優勢" : "売り優勢"}）も少し反映しています。`}
+        </p>
+      )}
+      {fc && tf === 300 && forecastScoreText && (
+        <p className="chart-forecast-score">{forecastScoreText}</p>
+      )}
       <div className="chart-controls" role="group" aria-label="表示期間の選択">
         {chartPeriods.map((n) => (
           <button
@@ -292,7 +445,7 @@ export function PriceChart({
       {c.length ? (
         <>
           <p aria-label="実際の表示期間">
-            表示期間：{chartTime(start)} ～ {chartTime(finish)}（日本時間）
+            表示期間：{chartTime(start)} ～ {chartTime(xFinish)}（日本時間）
           </p>
           <p>
             表示範囲：{number((finish - start) / 3600, 2)}時間 ／ {c.length}
@@ -474,6 +627,75 @@ export function PriceChart({
                 </text>
               );
             })}
+            {fc && fcCone && fcMid && (
+              <g className="chart-forecast" aria-label="予測（模式）">
+                <line
+                  x1={x(latestEnd)}
+                  x2={x(latestEnd)}
+                  y1="30"
+                  y2="215"
+                  stroke="#64b5ff"
+                  strokeDasharray="2 4"
+                  opacity="0.6"
+                />
+                <polygon points={fcCone} fill="rgba(100,181,255,0.10)" />
+                <polyline
+                  points={fcMid}
+                  fill="none"
+                  stroke="#64b5ff"
+                  strokeWidth="1.6"
+                  strokeDasharray="5 4"
+                />
+                <text
+                  x={x(fc.points.at(-1)!.timestamp + tf / 2)}
+                  y={y(fc.points.at(-1)!.mid) - 8}
+                  textAnchor="end"
+                  fill="#64b5ff"
+                  fontSize="11"
+                >
+                  予測
+                </text>
+                {crossingMarks.map((m) => (
+                  <g
+                    key={m.key}
+                    className="chart-forecast-crossing"
+                    opacity={m.edgeOnly ? 0.65 : 1}
+                  >
+                    <line
+                      x1={x(latestEnd)}
+                      x2={m.cx}
+                      y1={m.cy}
+                      y2={m.cy}
+                      stroke={m.color}
+                      strokeDasharray="3 3"
+                      opacity="0.55"
+                    />
+                    <circle
+                      cx={m.cx}
+                      cy={m.cy}
+                      r="3.2"
+                      fill={m.edgeOnly ? "none" : m.color}
+                      stroke={m.color}
+                      strokeWidth="1.4"
+                    />
+                    <text
+                      x={
+                        m.cx <= (left + right) / 2 ? m.cx + 6 : m.cx - 6
+                      }
+                      y={m.cy < 48 ? m.cy + 15 : m.cy - 7}
+                      textAnchor={
+                        m.cx <= (left + right) / 2 ? "start" : "end"
+                      }
+                      fill={m.color}
+                      fontSize="11"
+                      fontFamily="ui-monospace, Menlo, monospace"
+                    >
+                      {`${m.word} ${m.edgeOnly ? "幅では" : ""}あと${m.bars}本`}
+                    </text>
+                  </g>
+                ))}
+              </g>
+            )}
             {chosen && (
               <line
                 x1={x(chosen.timestamp + tf / 2)}
@@ -483,6 +705,53 @@ export function PriceChart({
                 stroke="#b0c1cf"
                 strokeDasharray="3 3"
               />
+            )}
+            {hoverLines && chosen && (
+              <g className="chart-hover-readout" pointerEvents="none">
+                <line
+                  x1={left}
+                  x2={right}
+                  y1={y(chosen.close)}
+                  y2={y(chosen.close)}
+                  stroke="#b0c1cf"
+                  strokeDasharray="2 4"
+                  opacity="0.35"
+                />
+                <circle
+                  cx={hoverCx}
+                  cy={y(chosen.close)}
+                  r="3"
+                  fill="none"
+                  stroke="#d7e3ea"
+                  strokeWidth="1.4"
+                />
+                <rect
+                  x={hoverBoxX}
+                  y="30"
+                  width={hoverBoxW}
+                  height="37"
+                  fill="rgba(4,10,16,0.87)"
+                  stroke="#1b2836"
+                />
+                <text
+                  x={hoverBoxX + 8}
+                  y="46"
+                  fill="#d7e3ea"
+                  fontSize="11.5"
+                  fontFamily="ui-monospace, Menlo, monospace"
+                >
+                  {hoverLines.main}
+                </text>
+                <text
+                  x={hoverBoxX + 8}
+                  y="61"
+                  fill="#9fb8ad"
+                  fontSize="11.5"
+                  fontFamily="ui-monospace, Menlo, monospace"
+                >
+                  {hoverLines.sub}
+                </text>
+              </g>
             )}
             {chartTicks(c, plot).map((t, i, ticks) => (
               <text
@@ -517,7 +786,7 @@ export function PriceChart({
                 sets={[visibleSeries("rsi")]}
                 width={w}
                 start={start}
-                end={finish}
+                end={xFinish}
                 selected={chosen?.timestamp ?? null}
               />
               <IndicatorPanel
@@ -532,7 +801,7 @@ export function PriceChart({
                 ]}
                 width={w}
                 start={start}
-                end={finish}
+                end={xFinish}
                 selected={chosen?.timestamp ?? null}
               />
             </>

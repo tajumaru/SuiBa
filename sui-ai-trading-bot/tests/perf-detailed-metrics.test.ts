@@ -7,6 +7,39 @@ import {
   createBufferedJsonlWriter,
   installDetailedMetrics,
 } from "../scripts/preflight-detailed-metrics.mjs";
+import type { BufferedJsonlWriter } from "../scripts/preflight-detailed-metrics.mjs";
+
+// The fields of the records installDetailedMetrics pushes into the
+// writers, narrowed to what these tests read. Timing phase fields are
+// null when the phase did not run.
+interface MetricRecord {
+  op?: string;
+  kind?: string;
+  source?: string;
+  file?: string;
+  table?: string;
+  key?: string;
+  rows?: number;
+  ok?: boolean;
+  context?: string | null;
+  cycleId?: string | null;
+  cyclePhase?: string;
+  startedAt?: number;
+  endedAt?: number;
+  durationMs?: number;
+  jsonMs?: number | null;
+  sqlMs?: number | null;
+  beginMs?: number | null;
+  bodyMs?: number | null;
+  commitMs?: number | null;
+  rollbackMs?: number | null;
+  maxDelayMs?: number;
+  thresholdMs?: number;
+  memory?: { rss: number };
+}
+interface MemoryWriter extends BufferedJsonlWriter {
+  records: MetricRecord[];
+}
 
 const cleanup: (() => void)[] = [];
 afterEach(() => {
@@ -17,12 +50,12 @@ afterEach(() => {
 });
 
 function memoryWriter() {
-  const records: any[] = [];
-  const writer: any = {
+  const records: MetricRecord[] = [];
+  const writer: MemoryWriter = {
     records,
     onFlush: null,
-    push(record: any) {
-      records.push(record);
+    push(record: unknown) {
+      records.push(record as MetricRecord);
       return true;
     },
     flush() {},
@@ -77,7 +110,7 @@ it("records sqlite operations with JSON/SQL phases separated and no value conten
   cleanup.push(() => detailed.stop());
   db.append("risk_events", "e1", { note: "TOP-SECRET-VALUE", n: 1 });
   db.set("some_key", { token: "TOP-SECRET-VALUE" });
-  const byOp = (op: string) => sqlite.records.find((r: any) => r.op === op);
+  const byOp = (op: string) => sqlite.records.find((r) => r.op === op)!;
   const append = byOp("append"),
     set = byOp("set");
   expect(append.table).toBe("risk_events");
@@ -85,10 +118,10 @@ it("records sqlite operations with JSON/SQL phases separated and no value conten
   expect(append.ok).toBe(true);
   expect(append.jsonMs).not.toBeNull();
   expect(append.sqlMs).not.toBeNull();
-  expect(append.jsonMs + append.sqlMs).toBeLessThanOrEqual(
-    append.durationMs + 1,
+  expect(append.jsonMs! + append.sqlMs!).toBeLessThanOrEqual(
+    append.durationMs! + 1,
   );
-  expect(append.startedAt).toBeLessThanOrEqual(append.endedAt);
+  expect(append.startedAt).toBeLessThanOrEqual(append.endedAt!);
   expect(set.table).toBe("bot_runtime_state");
   expect(set.key).toBe("some_key");
   const serialized = JSON.stringify(sqlite.records);
@@ -107,8 +140,8 @@ it("separates transaction BEGIN/body/COMMIT and stamps composite context", () =>
   });
   cleanup.push(() => detailed.stop());
   db.saveCandles([candle(1000), candle(2000), candle(3000)]);
-  const save = sqlite.records.find((r: any) => r.op === "saveCandles"),
-    tx = sqlite.records.find((r: any) => r.op === "transaction");
+  const save = sqlite.records.find((r) => r.op === "saveCandles")!,
+    tx = sqlite.records.find((r) => r.op === "transaction")!;
   expect(save.rows).toBe(3);
   expect(save.table).toBe("market_candles");
   expect(save.context).toBe("saveCandles");
@@ -122,8 +155,8 @@ it("separates transaction BEGIN/body/COMMIT and stamps composite context", () =>
   // The plain transaction path reports the same split without a context.
   db.transaction(() => db.set("k", 1));
   const plain = sqlite.records
-    .filter((r: any) => r.op === "transaction")
-    .at(-1);
+    .filter((r) => r.op === "transaction")
+    .at(-1)!;
   expect(plain.context).toBeNull();
 });
 
@@ -143,13 +176,13 @@ it("correlates operations with the in-flight market cycle id", () => {
   db.append("cycle_audits", "c2", { cycleId: "cycle-42", phase: "END" });
   db.set("after", 3);
   const setRec = (key: string) =>
-    sqlite.records.find((r: any) => r.op === "set" && r.key === key);
+    sqlite.records.find((r) => r.op === "set" && r.key === key)!;
   expect(setRec("before").cycleId).toBeNull();
   expect(setRec("during").cycleId).toBe("cycle-42");
   expect(setRec("after").cycleId).toBeNull();
   const start = sqlite.records.find(
-    (r: any) => r.op === "append" && r.cyclePhase === "START",
-  );
+    (r) => r.op === "append" && r.cyclePhase === "START",
+  )!;
   expect(start.cycleId).toBe("cycle-42");
 });
 
@@ -168,18 +201,18 @@ it("records failures with the outcome unchanged (fault latching and rollback)", 
       throw Error("boom");
     }),
   ).toThrow("boom");
-  const tx = sqlite.records.find((r: any) => r.op === "transaction");
+  const tx = sqlite.records.find((r) => r.op === "transaction")!;
   expect(tx.ok).toBe(false);
   expect(tx.rollbackMs).not.toBeNull();
   expect(tx.commitMs).toBeNull();
   // A circular value fails JSON conversion exactly as before; the
   // record shows the failure in the JSON phase with no SQL time.
-  const circular: any = {};
+  const circular: { self?: unknown } = {};
   circular.self = circular;
   expect(() => db.append("risk_events", "bad", circular)).toThrow();
   const bad = sqlite.records.find(
-    (r: any) => r.op === "append" && r.ok === false,
-  );
+    (r) => r.op === "append" && r.ok === false,
+  )!;
   expect(bad).toBeDefined();
   expect(bad.sqlMs).toBeNull();
   // Existing safety behavior is untouched: a non-constraint SQL error
@@ -190,8 +223,7 @@ it("records failures with the outcome unchanged (fault latching and rollback)", 
 });
 
 it("detects event-loop spikes above the configured threshold with memory", async () => {
-  const db = fixture(),
-    sqlite = memoryWriter(),
+  const sqlite = memoryWriter(),
     spikes = memoryWriter();
   const detailed = installDetailedMetrics({
     databaseClass: BotDatabase,
@@ -210,12 +242,12 @@ it("detects event-loop spikes above the configured threshold with memory", async
     // Deliberate synchronous block: the event loop cannot tick.
   }
   await sleep(500);
-  const spike = spikes.records.find((r: any) => r.kind === "event-loop-spike");
+  const spike = spikes.records.find((r) => r.kind === "event-loop-spike")!;
   expect(spike).toBeDefined();
   expect(spike.maxDelayMs).toBeGreaterThanOrEqual(30);
   expect(spike.thresholdMs).toBe(30);
-  expect(spike.memory.rss).toBeGreaterThan(0);
-  expect(spike.endedAt).toBeGreaterThanOrEqual(spike.startedAt);
+  expect(spike.memory!.rss).toBeGreaterThan(0);
+  expect(spike.endedAt).toBeGreaterThanOrEqual(spike.startedAt!);
   const status = detailed.stop();
   cleanup.pop();
   expect(status.spikesDetected).toBeGreaterThanOrEqual(1);
@@ -245,8 +277,8 @@ it("records the metrics writer's own flushes as sync-io evidence", () => {
   const spikeLines = readFileSync(join(dir, "event-loop-spikes.jsonl"), "utf8")
     .trim()
     .split("\n")
-    .map((line) => JSON.parse(line));
-  const io = spikeLines.find((r: any) => r.kind === "sync-io");
+    .map((line) => JSON.parse(line) as MetricRecord);
+  const io = spikeLines.find((r) => r.kind === "sync-io")!;
   expect(io).toBeDefined();
   expect(io.source).toBe("perf-detail-writer");
   expect(io.file).toBe("sqlite-timing.jsonl");
@@ -331,7 +363,7 @@ it("drops unserializable records at flush without throwing", () => {
   const writer = createBufferedJsonlWriter(join(dir, "bad.jsonl"), {
     flushIntervalMs: 60000,
   });
-  const circular: any = {};
+  const circular: { self?: unknown } = {};
   circular.self = circular;
   // Serialization is deferred to flush time, so the drop is counted
   // there; the caller path never throws either way.

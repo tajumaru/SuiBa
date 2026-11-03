@@ -20,8 +20,7 @@ afterEach(() => {
   apiAccess.onTransientFailure = () => {};
   apiAccess.onRateLimit = () => {};
 });
-const now = 1792574400000,
-  first = 1792548000;
+const first = 1792548000;
 const rows = (): Candle[] =>
   Array.from({ length: 70 }, (_, i) => ({
     timestamp: first + i * 300,
@@ -183,6 +182,21 @@ it("leaves unresolved gaps invalid under the unchanged validator", () => {
     "CANDLE_GAP",
   );
 });
+// The slices of docs/evidence/gaps/cross-check.json this test reads.
+interface CrossCheckGap {
+  timestamp: number;
+  queryComplete: boolean;
+  trades: unknown[];
+}
+interface CrossCheckQuery {
+  path: string;
+  observedAt: number;
+}
+interface CrossCheckPipeline {
+  pipeline: string;
+  is_backfill: boolean;
+  indexed_timestamp_ms: number;
+}
 it("reproduces all 43 historical empty buckets and preserves all 999 source candles", () => {
   const h = JSON.parse(
       readFileSync("docs/evidence/gaps/historical-5m.json", "utf8"),
@@ -192,7 +206,7 @@ it("reproduces all 43 historical empty buckets and preserves all 999 source cand
     m = parseDeepBook({ candles: x.minutes }, 60, h.to * 1000),
     n = x.completedAt;
   const ps = new Map<number, EmptyTradeProof>(
-    x.gaps.map((g: any) => {
+    x.gaps.map((g: CrossCheckGap) => {
       const path =
         "/trades/SUI_USDC?start_time=" +
         g.timestamp +
@@ -206,9 +220,9 @@ it("reproduces all 43 historical empty buckets and preserves all 999 source cand
           pair: "SUI_USDC",
           start: g.timestamp,
           end: g.timestamp + 300,
-          fetchedAt: x.queries.find((q: any) => q.path === path).observedAt,
+          fetchedAt: x.queries.find((q: CrossCheckQuery) => q.path === path).observedAt,
           indexedThrough: x.finalStatus.pipelines.find(
-            (p: any) => p.pipeline === "order_fill" && !p.is_backfill,
+            (p: CrossCheckPipeline) => p.pipeline === "order_fill" && !p.is_backfill,
           ).indexed_timestamp_ms,
           complete: g.queryComplete,
           tradeCount: g.trades.length,

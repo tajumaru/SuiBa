@@ -5,7 +5,7 @@ import { PriceTicker } from "./PriceTicker.tsx";
 import { LoginScreen } from "./LoginScreen.tsx";
 import { loginSession, SESSION } from "./browserSession.ts";
 import { DashboardClient } from "./dashboardClient.ts";
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import type { BotEngine } from "../../worker/src/engine.ts";
 import { calculate, ema } from "../../../packages/indicators/src/index.ts";
@@ -16,6 +16,28 @@ import { Reason } from "./Reason.tsx";
 import { StrategyTab, type StrategySegment } from "./StrategyTab.tsx";
 import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
+import { BootScreen } from "./BootScreen.tsx";
+import { ActivityGrass } from "./ActivityGrass.tsx";
+import { MonthlyReportCard } from "./MonthlyReportCard.tsx";
+import { FillAnalysisCard } from "./FillAnalysisCard.tsx";
+import { EquityCurve } from "./EquityCurve.tsx";
+import { ChainStrip } from "./ChainStrip.tsx";
+import { BookBar } from "./BookBar.tsx";
+import { chartForecast, FORECAST_BARS } from "./chartForecast.ts";
+import {
+  appendForecastRecord,
+  forecastRecordFrom,
+  forecastScoreText,
+  loadForecastLog,
+  saveForecastLog,
+  scoreForecasts,
+  type ForecastRecord,
+} from "./forecastLog.ts";
+import {
+  loadAgentName,
+  sanitizeAgentName,
+  saveAgentName,
+} from "./agentName.ts";
 import { errorShout } from "./errorShout.ts";
 import { presetName } from "./settingsPresets.ts";
 import { firstFilledBuy } from "./firstFill.ts";
@@ -38,8 +60,6 @@ const NAV_TABS = [
   "バックテスト比較",
 ];
 const money = (v: number | null | undefined) => number(v, 4);
-const precise = (v: string | null | undefined) =>
-  v == null ? "不明" : `${number(v)} USDC`;
 function IndicatorChart({
   candles,
   kind,
@@ -168,6 +188,9 @@ function Chart(props: {
   timeframe?: number;
   synchronized?: boolean;
   historyApi?: import("./settingsPresets.ts").SettingsApi;
+  forecastScoreText?: string | null;
+  bookImbalance?: number | null;
+  sellLines?: { tp: number; sl: number } | null;
 }) {
   return props.kind === "Price" ? (
     <PriceChart
@@ -260,8 +283,10 @@ function App() {
           r.ok &&
           (await r.json()).authenticated === true &&
           !controller.signal.aborted
-        )
+        ) {
           setToken(SESSION);
+          setBooting(true);
+        }
       })
       .catch(() => {})
       .finally(() => {
@@ -270,6 +295,9 @@ function App() {
     return () => controller.abort();
   }, []);
   const [token, setToken] = useState(""),
+    // The boot sequence overlays the shell once per login
+    // session (form login and session restore alike).
+    [booting, setBooting] = useState(false),
     [data, setData] = useState<State | null>(null),
     [error, setError] = useState(""),
     // Operation failures do not invalidate a successfully fetched state.
@@ -340,6 +368,54 @@ function App() {
   // the feed can never show different poses. Before the feed first
   // reports (no snapshot yet), the unconfirmed "normal" pose shows.
   const [agentPose, setAgentPose] = useState<AgentPose>("normal");
+  // The character's user-chosen name (device-local; "" = キャラ).
+  const [agentName, setAgentName] = useState<string>(() => loadAgentName());
+  // Voice recognition is live in the chat (the avatar listens).
+  const [voiceListening, setVoiceListening] = useState(false);
+  // A spoken reply is playing (the avatar is mid-speech).
+  const [agentSpeaking, setAgentSpeaking] = useState(false);
+  // Forecast score log (device-local, per pair): every new
+  // 5-minute forecast origin seen while the app is open is
+  // snapshotted, then scored against the real candles later.
+  const [forecastLog, setForecastLog] = useState<ForecastRecord[]>([]);
+  const forecastScopeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!data) return;
+    const pair = data.pair;
+    if (forecastScopeRef.current !== pair) {
+      forecastScopeRef.current = pair;
+      setForecastLog(loadForecastLog(pair));
+      return;
+    }
+    const candles300 = data.candlesByTimeframe[300],
+      last = candles300.at(-1);
+    if (!last) return;
+    const fc = chartForecast(candles300, FORECAST_BARS, data.bookImbalance);
+    if (!fc) return;
+    setForecastLog((prev) => {
+      const next = appendForecastRecord(
+        prev,
+        forecastRecordFrom(fc, last.close),
+      );
+      if (next !== prev) saveForecastLog(next, pair);
+      return next;
+    });
+  }, [data]);
+  const forecastScoreLine = useMemo(
+    () =>
+      data
+        ? forecastScoreText(
+            scoreForecasts(forecastLog, data.candlesByTimeframe[300]),
+            forecastLog.length,
+          )
+        : null,
+    [forecastLog, data],
+  );
+  const changeAgentName = (raw: string) => {
+    const next = sanitizeAgentName(raw);
+    saveAgentName(next);
+    setAgentName(next);
+  };
   // Line mode: while the buy-run line stands (the feed reports
   // the buyLine pose), the whole page washes Sui blue — the
   // avatar's blue pose grown into an ambient theme. The class
@@ -536,19 +612,37 @@ function App() {
   async function switchPair(pair: string) {
     setPairBusy(true);
     setBannerError("");
-    try {
-      await api("pairs", { pair });
-      window.location.reload();
-    } catch (error) {
-      const code = error instanceof Error ? error.message : "";
-      setBannerError(
-        code === "PAIR_POSITION_OPEN"
-          ? "未決済ポジションまたは未精算の原価が残っています。対象ペアで決済・会計確認を完了してから切り替えてください。"
-          : code === "PAIR_PENDING_WORK" || code === "PAIR_INVALID_LEDGER"
-            ? "未処理注文または会計の確認が必要です。運用検証で対象ペアを確認してください。"
-            : "ペアを切り替えられません。売買を停止し、市場データ取得の完了後に再試行してください。",
-      );
-      setPairBusy(false);
+    // STOP_AND_WAIT_BEFORE_PAIR_SWITCH is the server's "not right
+    // now" gate: it also fires for purely transient collisions —
+    // this dashboard's own state poll in flight, an engine tick
+    // running, a short API backoff — which usually clear within a
+    // couple of seconds. Wait and retry a few times before
+    // bothering the user; the endpoint answers a no-op success
+    // when the pair is already selected, so retrying the same
+    // target can never switch twice.
+    for (let tries = 0; ; tries++) {
+      try {
+        await api("pairs", { pair });
+        window.location.reload();
+        return;
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "";
+        if (code === "STOP_AND_WAIT_BEFORE_PAIR_SWITCH" && tries < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          continue;
+        }
+        setBannerError(
+          code === "PAIR_POSITION_OPEN"
+            ? "未決済ポジションまたは未精算の原価が残っています。対象ペアで決済・会計確認を完了してから切り替えてください。"
+            : code === "PAIR_PENDING_WORK" || code === "PAIR_INVALID_LEDGER"
+              ? "未処理注文または会計の確認が必要です。運用検証で対象ペアを確認してください。"
+              : code === "STOP_AND_WAIT_BEFORE_PAIR_SWITCH"
+                ? "切り替えの準備が整いませんでした。市場データの取得が落ち着いてから、もう一度タップしてください。"
+                : "ペアを切り替えられません。売買を停止し、市場データ取得の完了後に再試行してください。",
+        );
+        setPairBusy(false);
+        return;
+      }
     }
   }
   return (
@@ -588,6 +682,10 @@ function App() {
           celebrating={buyCelebration}
           shout={shout}
           hardMode={data != null && presetName(data.settings) === "hard"}
+          agentName={agentName}
+          onRename={changeAgentName}
+          listening={voiceListening}
+          speaking={agentSpeaking}
         />
       )}
       {restoringSession ? (
@@ -595,7 +693,10 @@ function App() {
       ) : !token ? (
         <LoginScreen
           verify={loginSession}
-          onAuthenticated={() => setToken(SESSION)}
+          onAuthenticated={() => {
+            setToken(SESSION);
+            setBooting(true);
+          }}
         />
       ) : (
         <>
@@ -679,6 +780,12 @@ function App() {
                       : null
                   }
                 />
+                {/* The chain's own vital signs ride under the
+                    ticker on every tab (display only). */}
+                <ChainStrip chain={data.chain} />
+                {/* The order book's lean, same sample that
+                    tilts the model outlook (display only). */}
+                <BookBar imbalance={data.bookImbalance} />
                 {/* The narration tab stays mounted (only hidden) so
                     the feed history accumulated from snapshot diffs
                     survives tab switches. */}
@@ -695,7 +802,12 @@ function App() {
                       onPoseChange={setAgentPose}
                       onCelebrate={handleBuyCelebration}
                       pairLabel={data?.pair === "WAL_USDC" ? "WAL" : "SUI"}
+                      chain={data?.chain ?? null}
+                      trades={data?.trades ?? []}
                       active={activeTab === "Live"}
+                      agentName={agentName}
+                      onListeningChange={setVoiceListening}
+                      onSpeakingChange={setAgentSpeaking}
                     />
                   ) : (
                     <p role="status">
@@ -735,6 +847,13 @@ function App() {
                         </p>
                       </section>
                     </div>
+                    <EquityCurve points={data.equityCurve} />
+                    <ActivityGrass orders={data.orders} />
+                    <MonthlyReportCard
+                      pair={data.pair}
+                      trades={data.trades}
+                      orders={data.orders}
+                    />
                     <label>
                       時間足
                       <select
@@ -760,6 +879,13 @@ function App() {
                         trades={data.trades}
                         synchronized
                         historyApi={api}
+                        forecastScoreText={forecastScoreLine}
+                        bookImbalance={data.bookImbalance}
+                        sellLines={
+                          operations.data?.decision
+                            ? sellLinesOf(operations.data.decision)
+                            : null
+                        }
                       />
                     </section>
                     <details className="overview-details">
@@ -819,6 +945,10 @@ function App() {
                   <section>
                     <h3>注文 / 拒否理由</h3>
                     <OrderHistory orders={data.orders} />
+                    <FillAnalysisCard
+                      trades={data.trades}
+                      candles={data.candlesByTimeframe[300]}
+                    />
                   </section>
                 )}
                 {activeTab === "バックテスト比較" && (
@@ -831,6 +961,25 @@ function App() {
             )}
           </main>
         </>
+      )}
+      {token && booting && (
+        <BootScreen
+          pairLabel={data?.pair === "WAL_USDC" ? "WAL / USDC" : "SUI / USDC"}
+          api={operations.data ? "ok" : operations.error ? "error" : "pending"}
+          bot={
+            !data
+              ? "unknown"
+              : data.runtime.emergency
+                ? "emergency"
+                : data.runtime.error
+                  ? "error"
+                  : data.runtime.running
+                    ? "running"
+                    : "stopped"
+          }
+          onDone={() => setBooting(false)}
+          agentName={agentName}
+        />
       )}
     </>
   );

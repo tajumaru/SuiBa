@@ -485,7 +485,6 @@ function summarizeEvents(events: Event[]) {
     book,
     actions,
     qualities,
-    unresolved,
     latestQuality,
   };
 }
@@ -536,7 +535,6 @@ export function aggregateValidation(
     apis,
     actions,
     qualities,
-    unresolved,
     latestQuality,
   } = derived;
   const operations = db.range<OperationEvent>(
