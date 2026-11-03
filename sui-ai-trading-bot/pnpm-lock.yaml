@@ -10,10 +10,10 @@ importers:
     dependencies:
       '@cetusprotocol/aggregator-sdk':
         specifier: 1.7.5
-        version: 1.7.5(axios@1.20.0)(typescript@5.9.3)
+        version: 1.7.5(axios@1.20.0)(typescript@6.0.3)
       '@mysten/sui':
         specifier: 2.37.0
-        version: 2.37.0(typescript@5.9.3)
+        version: 2.37.0(typescript@6.0.3)
       decimal.js:
         specifier: ^10.6.0
         version: 10.6.0
@@ -61,11 +61,11 @@ importers:
         specifier: ^4.20.0
         version: 4.23.15
       typescript:
-        specifier: ^5.9.0
-        version: 5.9.3
+        specifier: ^6.0.3
+        version: 6.0.3
       typescript-eslint:
         specifier: ^8
-        version: 8.72.1(eslint@9.39.5)(typescript@5.9.3)
+        version: 8.72.1(eslint@9.39.5)(typescript@6.0.3)
       vite:
         specifier: ^7.0.0
         version: 7.3.7(@types/node@24.19.2)(tsx@4.23.15)
@@ -943,8 +943,8 @@ packages:
   flatted@3.4.4:
     resolution: {integrity: sha512-5+ybhBZANEJxaH3X5evAFatUxLfEHSr7n6kYJ+1Qd0mUqr4eu9gIf6GDbWHf8RJijHrjjO8G+la14SlL2SeS1Q==}
 
-  follow-redirects@1.16.1:
-    resolution: {integrity: sha512-FNvFGzoMLWmE6Yj9spb/zjd7yiNCHiAW9/Tg9CXrQ8wuu32HtlJOwWO11OJafl5FfY3DxTdQ0vj42zU1kvv5jg==}
+  follow-redirects@1.16.2:
+    resolution: {integrity: sha512-/kVP2U8z596Ia0gwFrwyIeo74ta5aVmSeU1FfAUMAmcEP5EP7zydmag3SLiN64NaRKef3lxsq7i/g7ltJQDGow==}
     engines: {node: '>=4.0'}
     peerDependencies:
       debug: '*'
@@ -1301,8 +1301,8 @@ packages:
       eslint: ^8.57.0 || ^9.0.0 || ^10.0.0
       typescript: '>=4.8.4 <6.1.0'
 
-  typescript@5.9.3:
-    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -1427,15 +1427,15 @@ snapshots:
     optionalDependencies:
       graphql: 17.0.2
 
-  '@0no-co/graphqlsp@1.17.5(graphql@17.0.2)(typescript@5.9.3)':
+  '@0no-co/graphqlsp@1.17.5(graphql@17.0.2)(typescript@6.0.3)':
     dependencies:
-      '@gql.tada/internal': 1.2.2(graphql@17.0.2)(typescript@5.9.3)
+      '@gql.tada/internal': 1.2.2(graphql@17.0.2)(typescript@6.0.3)
       graphql: 17.0.2
-      typescript: 5.9.3
+      typescript: 6.0.3
 
-  '@cetusprotocol/aggregator-sdk@1.7.5(axios@1.20.0)(typescript@5.9.3)':
+  '@cetusprotocol/aggregator-sdk@1.7.5(axios@1.20.0)(typescript@6.0.3)':
     dependencies:
-      '@mysten/sui': 2.31.2(typescript@5.9.3)
+      '@mysten/sui': 2.31.2(typescript@6.0.3)
       '@pythnetwork/hermes-client': 3.1.0(axios@1.20.0)
       bip39: 3.1.2
       dotenv: 16.6.1
@@ -1571,18 +1571,18 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  '@gql.tada/cli-utils@1.9.4(@0no-co/graphqlsp@1.17.5(graphql@17.0.2)(typescript@5.9.3))(graphql@17.0.2)(typescript@5.9.3)':
+  '@gql.tada/cli-utils@1.9.4(@0no-co/graphqlsp@1.17.5(graphql@17.0.2)(typescript@6.0.3))(graphql@17.0.2)(typescript@6.0.3)':
     dependencies:
-      '@0no-co/graphqlsp': 1.17.5(graphql@17.0.2)(typescript@5.9.3)
-      '@gql.tada/internal': 1.2.2(graphql@17.0.2)(typescript@5.9.3)
+      '@0no-co/graphqlsp': 1.17.5(graphql@17.0.2)(typescript@6.0.3)
+      '@gql.tada/internal': 1.2.2(graphql@17.0.2)(typescript@6.0.3)
       graphql: 17.0.2
-      typescript: 5.9.3
+      typescript: 6.0.3
 
-  '@gql.tada/internal@1.2.2(graphql@17.0.2)(typescript@5.9.3)':
+  '@gql.tada/internal@1.2.2(graphql@17.0.2)(typescript@6.0.3)':
     dependencies:
       '@0no-co/graphql.web': 1.3.4(graphql@17.0.2)
       graphql: 17.0.2
-      typescript: 5.9.3
+      typescript: 6.0.3
 
   '@graphql-typed-document-node/core@3.2.0(graphql@17.0.2)':
     dependencies:
@@ -1611,7 +1611,7 @@ snapshots:
       '@mysten/utils': 0.4.2
       '@scure/base': 2.4.0
 
-  '@mysten/sui@2.31.2(typescript@5.9.3)':
+  '@mysten/sui@2.31.2(typescript@6.0.3)':
     dependencies:
       '@graphql-typed-document-node/core': 3.2.0(graphql@17.0.2)
       '@mysten/bcs': 2.1.3
@@ -1624,16 +1624,16 @@ snapshots:
       '@scure/base': 2.4.0
       '@scure/bip32': 2.4.0
       '@scure/bip39': 2.4.0
-      gql.tada: 1.11.4(graphql@17.0.2)(typescript@5.9.3)
+      gql.tada: 1.11.4(graphql@17.0.2)(typescript@6.0.3)
       graphql: 17.0.2
       poseidon-lite: 0.3.0
-      valibot: 1.5.0(typescript@5.9.3)
+      valibot: 1.5.0(typescript@6.0.3)
     transitivePeerDependencies:
       - '@gql.tada/svelte-support'
       - '@gql.tada/vue-support'
       - typescript
 
-  '@mysten/sui@2.37.0(typescript@5.9.3)':
+  '@mysten/sui@2.37.0(typescript@6.0.3)':
     dependencies:
       '@graphql-typed-document-node/core': 3.2.0(graphql@17.0.2)
       '@mysten/bcs': 2.1.3
@@ -1647,10 +1647,10 @@ snapshots:
       '@scure/base': 2.4.0
       '@scure/bip32': 2.4.0
       '@scure/bip39': 2.4.0
-      gql.tada: 1.11.4(graphql@17.0.2)(typescript@5.9.3)
+      gql.tada: 1.11.4(graphql@17.0.2)(typescript@6.0.3)
       graphql: 17.0.2
       poseidon-lite: 0.3.0
-      valibot: 1.5.0(typescript@5.9.3)
+      valibot: 1.5.0(typescript@6.0.3)
     transitivePeerDependencies:
       - '@gql.tada/svelte-support'
       - '@gql.tada/vue-support'
@@ -1810,40 +1810,40 @@ snapshots:
     dependencies:
       csstype: 3.2.3
 
-  '@typescript-eslint/eslint-plugin@8.72.1(@typescript-eslint/parser@8.72.1(eslint@9.39.5)(typescript@5.9.3))(eslint@9.39.5)(typescript@5.9.3)':
+  '@typescript-eslint/eslint-plugin@8.72.1(@typescript-eslint/parser@8.72.1(eslint@9.39.5)(typescript@6.0.3))(eslint@9.39.5)(typescript@6.0.3)':
     dependencies:
       '@eslint-community/regexpp': 4.12.2
-      '@typescript-eslint/parser': 8.72.1(eslint@9.39.5)(typescript@5.9.3)
+      '@typescript-eslint/parser': 8.72.1(eslint@9.39.5)(typescript@6.0.3)
       '@typescript-eslint/scope-manager': 8.72.1
-      '@typescript-eslint/type-utils': 8.72.1(eslint@9.39.5)(typescript@5.9.3)
-      '@typescript-eslint/utils': 8.72.1(eslint@9.39.5)(typescript@5.9.3)
+      '@typescript-eslint/type-utils': 8.72.1(eslint@9.39.5)(typescript@6.0.3)
+      '@typescript-eslint/utils': 8.72.1(eslint@9.39.5)(typescript@6.0.3)
       '@typescript-eslint/visitor-keys': 8.72.1
       eslint: 9.39.5
       ignore: 7.0.14
       natural-compare: 1.4.0
-      ts-api-utils: 2.5.0(typescript@5.9.3)
-      typescript: 5.9.3
+      ts-api-utils: 2.5.0(typescript@6.0.3)
+      typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
 
-  '@typescript-eslint/parser@8.72.1(eslint@9.39.5)(typescript@5.9.3)':
+  '@typescript-eslint/parser@8.72.1(eslint@9.39.5)(typescript@6.0.3)':
     dependencies:
       '@typescript-eslint/scope-manager': 8.72.1
       '@typescript-eslint/types': 8.72.1
-      '@typescript-eslint/typescript-estree': 8.72.1(typescript@5.9.3)
+      '@typescript-eslint/typescript-estree': 8.72.1(typescript@6.0.3)
       '@typescript-eslint/visitor-keys': 8.72.1
       debug: 4.4.3
       eslint: 9.39.5
-      typescript: 5.9.3
+      typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
 
-  '@typescript-eslint/project-service@8.72.1(typescript@5.9.3)':
+  '@typescript-eslint/project-service@8.72.1(typescript@6.0.3)':
     dependencies:
-      '@typescript-eslint/tsconfig-utils': 8.72.1(typescript@5.9.3)
+      '@typescript-eslint/tsconfig-utils': 8.72.1(typescript@6.0.3)
       '@typescript-eslint/types': 8.72.1
       debug: 4.4.3
-      typescript: 5.9.3
+      typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
 
@@ -1852,47 +1852,47 @@ snapshots:
       '@typescript-eslint/types': 8.72.1
       '@typescript-eslint/visitor-keys': 8.72.1
 
-  '@typescript-eslint/tsconfig-utils@8.72.1(typescript@5.9.3)':
+  '@typescript-eslint/tsconfig-utils@8.72.1(typescript@6.0.3)':
     dependencies:
-      typescript: 5.9.3
+      typescript: 6.0.3
 
-  '@typescript-eslint/type-utils@8.72.1(eslint@9.39.5)(typescript@5.9.3)':
+  '@typescript-eslint/type-utils@8.72.1(eslint@9.39.5)(typescript@6.0.3)':
     dependencies:
       '@typescript-eslint/types': 8.72.1
-      '@typescript-eslint/typescript-estree': 8.72.1(typescript@5.9.3)
-      '@typescript-eslint/utils': 8.72.1(eslint@9.39.5)(typescript@5.9.3)
+      '@typescript-eslint/typescript-estree': 8.72.1(typescript@6.0.3)
+      '@typescript-eslint/utils': 8.72.1(eslint@9.39.5)(typescript@6.0.3)
       debug: 4.4.3
       eslint: 9.39.5
-      ts-api-utils: 2.5.0(typescript@5.9.3)
-      typescript: 5.9.3
+      ts-api-utils: 2.5.0(typescript@6.0.3)
+      typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
 
   '@typescript-eslint/types@8.72.1': {}
 
-  '@typescript-eslint/typescript-estree@8.72.1(typescript@5.9.3)':
+  '@typescript-eslint/typescript-estree@8.72.1(typescript@6.0.3)':
     dependencies:
-      '@typescript-eslint/project-service': 8.72.1(typescript@5.9.3)
-      '@typescript-eslint/tsconfig-utils': 8.72.1(typescript@5.9.3)
+      '@typescript-eslint/project-service': 8.72.1(typescript@6.0.3)
+      '@typescript-eslint/tsconfig-utils': 8.72.1(typescript@6.0.3)
       '@typescript-eslint/types': 8.72.1
       '@typescript-eslint/visitor-keys': 8.72.1
       debug: 4.4.3
       minimatch: 10.2.6
       semver: 7.8.5
       tinyglobby: 0.2.17
-      ts-api-utils: 2.5.0(typescript@5.9.3)
-      typescript: 5.9.3
+      ts-api-utils: 2.5.0(typescript@6.0.3)
+      typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
 
-  '@typescript-eslint/utils@8.72.1(eslint@9.39.5)(typescript@5.9.3)':
+  '@typescript-eslint/utils@8.72.1(eslint@9.39.5)(typescript@6.0.3)':
     dependencies:
       '@eslint-community/eslint-utils': 4.10.1(eslint@9.39.5)
       '@typescript-eslint/scope-manager': 8.72.1
       '@typescript-eslint/types': 8.72.1
-      '@typescript-eslint/typescript-estree': 8.72.1(typescript@5.9.3)
+      '@typescript-eslint/typescript-estree': 8.72.1(typescript@6.0.3)
       eslint: 9.39.5
-      typescript: 5.9.3
+      typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
 
@@ -1979,7 +1979,7 @@ snapshots:
 
   axios@1.20.0:
     dependencies:
-      follow-redirects: 1.16.1
+      follow-redirects: 1.16.2
       form-data: 4.0.6
       https-proxy-agent: 5.0.1
       proxy-from-env: 2.1.0
@@ -2237,7 +2237,7 @@ snapshots:
 
   flatted@3.4.4: {}
 
-  follow-redirects@1.16.1: {}
+  follow-redirects@1.16.2: {}
 
   form-data@4.0.6:
     dependencies:
@@ -2284,13 +2284,13 @@ snapshots:
 
   gopd@1.2.0: {}
 
-  gql.tada@1.11.4(graphql@17.0.2)(typescript@5.9.3):
+  gql.tada@1.11.4(graphql@17.0.2)(typescript@6.0.3):
     dependencies:
       '@0no-co/graphql.web': 1.3.4(graphql@17.0.2)
-      '@0no-co/graphqlsp': 1.17.5(graphql@17.0.2)(typescript@5.9.3)
-      '@gql.tada/cli-utils': 1.9.4(@0no-co/graphqlsp@1.17.5(graphql@17.0.2)(typescript@5.9.3))(graphql@17.0.2)(typescript@5.9.3)
-      '@gql.tada/internal': 1.2.2(graphql@17.0.2)(typescript@5.9.3)
-      typescript: 5.9.3
+      '@0no-co/graphqlsp': 1.17.5(graphql@17.0.2)(typescript@6.0.3)
+      '@gql.tada/cli-utils': 1.9.4(@0no-co/graphqlsp@1.17.5(graphql@17.0.2)(typescript@6.0.3))(graphql@17.0.2)(typescript@6.0.3)
+      '@gql.tada/internal': 1.2.2(graphql@17.0.2)(typescript@6.0.3)
+      typescript: 6.0.3
     transitivePeerDependencies:
       - '@gql.tada/svelte-support'
       - '@gql.tada/vue-support'
@@ -2542,9 +2542,9 @@ snapshots:
 
   tinyspy@4.0.6: {}
 
-  ts-api-utils@2.5.0(typescript@5.9.3):
+  ts-api-utils@2.5.0(typescript@6.0.3):
     dependencies:
-      typescript: 5.9.3
+      typescript: 6.0.3
 
   tsx@4.23.15:
     dependencies:
@@ -2556,18 +2556,18 @@ snapshots:
     dependencies:
       prelude-ls: 1.2.1
 
-  typescript-eslint@8.72.1(eslint@9.39.5)(typescript@5.9.3):
+  typescript-eslint@8.72.1(eslint@9.39.5)(typescript@6.0.3):
     dependencies:
-      '@typescript-eslint/eslint-plugin': 8.72.1(@typescript-eslint/parser@8.72.1(eslint@9.39.5)(typescript@5.9.3))(eslint@9.39.5)(typescript@5.9.3)
-      '@typescript-eslint/parser': 8.72.1(eslint@9.39.5)(typescript@5.9.3)
-      '@typescript-eslint/typescript-estree': 8.72.1(typescript@5.9.3)
-      '@typescript-eslint/utils': 8.72.1(eslint@9.39.5)(typescript@5.9.3)
+      '@typescript-eslint/eslint-plugin': 8.72.1(@typescript-eslint/parser@8.72.1(eslint@9.39.5)(typescript@6.0.3))(eslint@9.39.5)(typescript@6.0.3)
+      '@typescript-eslint/parser': 8.72.1(eslint@9.39.5)(typescript@6.0.3)
+      '@typescript-eslint/typescript-estree': 8.72.1(typescript@6.0.3)
+      '@typescript-eslint/utils': 8.72.1(eslint@9.39.5)(typescript@6.0.3)
       eslint: 9.39.5
-      typescript: 5.9.3
+      typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
 
-  typescript@5.9.3: {}
+  typescript@6.0.3: {}
 
   undici-types@7.24.6: {}
 
@@ -2575,9 +2575,9 @@ snapshots:
     dependencies:
       punycode: 2.3.1
 
-  valibot@1.5.0(typescript@5.9.3):
+  valibot@1.5.0(typescript@6.0.3):
     optionalDependencies:
-      typescript: 5.9.3
+      typescript: 6.0.3
 
   vite-node@3.2.4(@types/node@24.19.2)(tsx@4.23.15):
     dependencies:
