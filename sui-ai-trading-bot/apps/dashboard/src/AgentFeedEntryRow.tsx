@@ -101,6 +101,9 @@ export function AgentFeedEntryRow({
       {entry.kind === "epoch" && (
         <span className="agent-feed-entry-tag epoch">チェーン</span>
       )}
+      {entry.kind === "monthlyReport" && (
+        <span className="agent-feed-entry-tag monthly">月報</span>
+      )}
       {entry.kind === "priceLine" && (
         <span className="agent-feed-entry-tag line">買い走りライン</span>
       )}

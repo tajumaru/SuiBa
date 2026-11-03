@@ -27,11 +27,16 @@ export function AgentNarrationFeed({
   active = true,
   agentName = "",
   chain = null,
+  trades,
   onListeningChange,
   onSpeakingChange,
 }: {
   data: OperationsSnapshot;
   stale: boolean;
+  /** The engine's newest fills, threaded to the narration
+   * advance so a finished month's report can be priced and
+   * posted. Display/record only. */
+  trades?: readonly import("../../../packages/paper-trading/src/index.ts").Fill[];
   /** The latest Sui chain sample (display-only, from the engine
    * state rather than the operations snapshot), quoted by /status. */
   chain?: { epoch: number; checkpoint: number; tps: number | null } | null;
@@ -115,6 +120,7 @@ export function AgentNarrationFeed({
       data,
       botVital(data, stale, Date.now(), receivedRef.current).state,
       Date.now(),
+      trades,
     );
     narrationRef.current = next;
     persist(next);
@@ -198,7 +204,7 @@ export function AgentNarrationFeed({
       persist(withPrompt);
       setNarration(withPrompt);
     }
-  }, [data, stale, onCelebrate]);
+  }, [data, stale, onCelebrate, trades]);
   const vital = botVital(data, stale, now, receivedAt);
   const pose = agentPose(narration, data, vital, now);
   // While a chat reply is fresh, the character turns to the user

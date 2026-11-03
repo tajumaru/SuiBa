@@ -27,6 +27,7 @@ export type NarrationKind =
   | "chatReply" // the character's record-grounded reply (agentChat.ts)
   | "chatPrompt" // the character speaking up at a milestone, with a suggested question
   | "epoch" // a new Sui epoch began (the chain's own daily milestone)
+  | "monthlyReport" // the finished month's report card, posted once
   | "status"; // feed-initialised status line
 
 export interface NarrationEntry {
@@ -150,6 +151,44 @@ export interface NarrationState {
   lastConnectivity: string | null;
   lastStatus: string | null;
   initialized: boolean;
+  /** Per-month tallies (JST month keys "YYYY-MM") counted at the
+   * same authoritative moments as the watch score and the stop /
+   * trade drafts, so a finished month can be reported exactly.
+   * Counting started when the monthly report shipped — earlier
+   * months simply have no counters. */
+  monthly: Record<string, MonthlyCounters>;
+  /** The newest month key a monthlyReport entry was posted for,
+   * so the finalisation fires exactly once per month. */
+  monthlyFinalised: string | null;
+}
+
+/** One JST month of feed-side tallies for the monthly report.
+ * The money side (PnL, win rate) is computed from the engine's
+ * fills at read time; these counters cover what only the feed
+ * witnesses: watches, near misses and stops. */
+export interface MonthlyCounters {
+  declared: number;
+  hits: number;
+  misses: number;
+  nearMisses: number;
+  /** Non-manual STOP events, total and by reason code. */
+  stops: number;
+  stopReasons: Record<string, number>;
+  fillsBuy: number;
+  fillsSell: number;
+}
+
+export function emptyMonthlyCounters(): MonthlyCounters {
+  return {
+    declared: 0,
+    hits: 0,
+    misses: 0,
+    nearMisses: 0,
+    stops: 0,
+    stopReasons: {},
+    fillsBuy: 0,
+    fillsSell: 0,
+  };
 }
 
 export const MAX_NARRATION_ENTRIES = 30;
@@ -227,6 +266,8 @@ export function emptyNarrationState(): NarrationState {
     lastConnectivity: null,
     lastStatus: null,
     initialized: false,
+    monthly: {},
+    monthlyFinalised: null,
   };
 }
 

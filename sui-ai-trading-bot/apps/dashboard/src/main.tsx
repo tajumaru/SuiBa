@@ -18,6 +18,7 @@ import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
 import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
 import { BootScreen } from "./BootScreen.tsx";
 import { ActivityGrass } from "./ActivityGrass.tsx";
+import { MonthlyReportCard } from "./MonthlyReportCard.tsx";
 import { ChainStrip } from "./ChainStrip.tsx";
 import { BookBar } from "./BookBar.tsx";
 import { chartForecast, FORECAST_BARS } from "./chartForecast.ts";
@@ -800,6 +801,7 @@ function App() {
                       onCelebrate={handleBuyCelebration}
                       pairLabel={data?.pair === "WAL_USDC" ? "WAL" : "SUI"}
                       chain={data?.chain ?? null}
+                      trades={data?.trades ?? []}
                       active={activeTab === "Live"}
                       agentName={agentName}
                       onListeningChange={setVoiceListening}
@@ -844,6 +846,11 @@ function App() {
                       </section>
                     </div>
                     <ActivityGrass orders={data.orders} />
+                    <MonthlyReportCard
+                      pair={data.pair}
+                      trades={data.trades}
+                      orders={data.orders}
+                    />
                     <label>
                       時間足
                       <select

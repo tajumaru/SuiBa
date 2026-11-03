@@ -766,6 +766,16 @@
   border-color: rgba(62, 207, 111, 0.55);
   color: #3ecf6f;
 }
+/* The monthly report wears gold: a milestone entry, posted
+   once when a month closes. */
+.agent-feed-entry.monthlyReport {
+  border-left-color: #edc980;
+  background: #1d1a10;
+}
+.agent-feed-entry-tag.monthly {
+  border-color: rgba(237, 201, 128, 0.55);
+  color: #edc980;
+}
 /* The buy-run line wears the same Sui blue as the avatar's
    line pose while it stands, and the green of a met condition
    once the price touches it (the reached entry below). */

@@ -1,4 +1,11 @@
-import type { EntryDraft, NarrationEntry, NarrationState, WatchScore, WatchTarget } from "./state.ts";
+import type { EntryDraft, MonthlyCounters, NarrationEntry, NarrationState, WatchScore, WatchTarget } from "./state.ts";
+import { emptyMonthlyCounters } from "./state.ts";
+import type { Fill } from "../../../../packages/paper-trading/src/index.ts";
+import {
+  buildMonthlyReport,
+  monthKeyOf,
+  monthlyReportText,
+} from "../monthlyReport.ts";
 import { number as fmtNumber, percent as fmtPercent } from "../presentation.ts";
 import type { OperationsSnapshot } from "../operationsTypes.ts";
 import { operationReason } from "../operationLabels.ts";
@@ -130,10 +137,28 @@ export function advanceNarration(
   d: OperationsSnapshot,
   vitalState: VitalState,
   now: number,
+  /** The engine's newest fills (snapshot window), used only to
+   * build a finished month's report. Without them the monthly
+   * finalisation waits — counters still accumulate. */
+  fills?: readonly Fill[],
 ): NarrationState {
   const seen = new Set(prev.seen);
   const pending = new Set(prev.pendingCandidateIds);
   const drafts: EntryDraft[] = [];
+  // Monthly tallies for the report: counted here, at the same
+  // moments the facts themselves are narrated, never recounted.
+  let monthly = prev.monthly;
+  let monthlyFinalised = prev.monthlyFinalised;
+  const bumpMonthly = (at: number, fn: (c: MonthlyCounters) => void) => {
+    const key = monthKeyOf(at);
+    const base = monthly[key] ?? emptyMonthlyCounters();
+    const next: MonthlyCounters = {
+      ...base,
+      stopReasons: { ...base.stopReasons },
+    };
+    fn(next);
+    monthly = { ...monthly, [key]: next };
+  };
   let narratedStop = false;
   let narratedPaused = false;
   let narratedRecovered = false;
@@ -243,6 +268,11 @@ export function advanceNarration(
     seen.add(key);
     if (e.kind === "STOP") {
       narratedStop = true;
+      if (e.code !== "MANUAL_STOP")
+        bumpMonthly(e.timestamp, (c) => {
+          c.stops += 1;
+          c.stopReasons[e.code] = (c.stopReasons[e.code] ?? 0) + 1;
+        });
       drafts.push({
         at: e.timestamp,
         kind: "stop",
@@ -341,6 +371,10 @@ export function advanceNarration(
       .filter(Boolean)
       .join("・");
     if (c.finalAction === "BUY" || c.finalAction === "SELL") {
+      bumpMonthly(c.timestamp, (mc) => {
+        if (c.finalAction === "BUY") mc.fillsBuy += 1;
+        else mc.fillsSell += 1;
+      });
       drafts.push({
         at: c.timestamp,
         kind: "trade",
@@ -440,6 +474,13 @@ export function advanceNarration(
         misses: watchScore.misses + (outcome.settled === "miss" ? 1 : 0),
         unreviewed: watchScore.unreviewed + (settled ? 1 : 0),
       };
+      if (outcome.created || settled || outcome.nearMiss)
+        bumpMonthly(dec.evaluatedAt, (mc) => {
+          mc.declared += outcome.created ? 1 : 0;
+          mc.hits += outcome.settled === "hit" ? 1 : 0;
+          mc.misses += outcome.settled === "miss" ? 1 : 0;
+          mc.nearMisses += outcome.nearMiss ? 1 : 0;
+        });
       const buyMilestone = dec.action === "BUY";
       if (
         watchScore.unreviewed >= REVIEW_SETTLED_THRESHOLD ||
@@ -600,11 +641,41 @@ export function advanceNarration(
 
   if (d.status) lastStatus = d.status;
 
+  // Monthly report: a finished month with tallies is posted to
+  // the feed exactly once, oldest first, once the fills that
+  // price it are at hand.
+  if (fills) {
+    const currentMonth = monthKeyOf(now);
+    const pendingMonths = Object.keys(monthly)
+      .filter(
+        (k) =>
+          k < currentMonth &&
+          (monthlyFinalised == null || k > monthlyFinalised),
+      )
+      .sort();
+    for (const key of pendingMonths) {
+      const report = buildMonthlyReport({
+        monthKey: key,
+        fills,
+        fillsWindowCapped: fills.length >= 200,
+        counters: monthly[key],
+      });
+      drafts.push({
+        at: now,
+        kind: "monthlyReport",
+        text: monthlyReportText(report),
+      });
+      monthlyFinalised = key;
+    }
+  }
+
   return finish(
     {
       ...prev,
       watch,
       watchScore,
+      monthly,
+      monthlyFinalised,
       sessionStartPrice,
       priceHistory,
       alertCooldown,

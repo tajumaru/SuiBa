@@ -111,6 +111,24 @@ const schema: z.ZodType<NarrationState> = z.object({
   lastConnectivity: z.string().nullable(),
   lastStatus: z.string().nullable(),
   initialized: z.boolean(),
+  // Stored states from before the monthly report existed parse
+  // with the defaults instead of being thrown away.
+  monthly: z
+    .record(
+      z.string(),
+      z.object({
+        declared: number,
+        hits: number,
+        misses: number,
+        nearMisses: number,
+        stops: number,
+        stopReasons: z.record(z.string(), number),
+        fillsBuy: number,
+        fillsSell: number,
+      }),
+    )
+    .default({}),
+  monthlyFinalised: z.string().nullable().default(null),
 });
 
 // Resolve storage inside the try: browsers may deny even the localStorage getter.
