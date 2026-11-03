@@ -19,16 +19,27 @@ jobs:
         run: |
           test "$(git rev-parse HEAD)" = "${{ github.sha }}"
           printf 'Verified HEAD: %s\n' "${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
-      # Corepack first: setup-node's pnpm cache resolves the
-      # store path through the pnpm shim, and the version itself
-      # comes from package.json's packageManager pin.
+      # The pnpm version comes from package.json's
+      # packageManager pin, via Corepack.
       - run: corepack enable
       - uses: actions/setup-node@v4
         with:
           node-version: "24.22.1"
-          cache: pnpm
-          cache-dependency-path: sui-ai-trading-bot/pnpm-lock.yaml
       - run: node scripts/verify-node-version.mjs
+      # Hand-rolled store cache: setup-node's own pnpm cache
+      # resolves the store path from the repository root, where
+      # no package.json pins a pnpm — it computed a store this
+      # pnpm never used and failed the job saving it. Resolved
+      # here, inside the app directory, the path is this pnpm's.
+      - name: Resolve the pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('sui-ai-trading-bot/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint

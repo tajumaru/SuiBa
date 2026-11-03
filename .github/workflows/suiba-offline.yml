@@ -52,16 +52,13 @@ jobs:
         working-directory: sui-ai-trading-bot
     steps:
       - uses: actions/checkout@v4
-      # Corepack first: setup-node's pnpm cache resolves the
-      # store path through the pnpm shim, and the version itself
-      # comes from package.json's packageManager pin.
-      - run: corepack enable
       - uses: actions/setup-node@v4
         with:
           node-version: "24.22.1"
-          cache: pnpm
-          cache-dependency-path: sui-ai-trading-bot/pnpm-lock.yaml
       - run: node scripts/verify-node-version.mjs
+      # The pnpm version comes from package.json's
+      # packageManager pin, via Corepack.
+      - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
