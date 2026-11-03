@@ -22,6 +22,7 @@ export default defineConfig({
   test: {
     ...offline.test,
     include: [
+      "tests/paper-check-session.unit.ts",
       "tests/no-worker-policy.unit.ts",
       "tests/agent-chat-ui.test.tsx",
       "tests/agent-chat.test.ts",

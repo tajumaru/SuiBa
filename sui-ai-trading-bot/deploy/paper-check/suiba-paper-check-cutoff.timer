@@ -1,0 +1,8 @@
+[Unit]
+Description=Independent SuiBa validation cutoff
+
+[Timer]
+OnActiveSec=30min
+AccuracySec=1s
+RandomizedDelaySec=0
+Unit=suiba-paper-check-cutoff.service

@@ -88,6 +88,7 @@ export class BotEngine {
     private readonly chainInfoSource: () => ChainInfo | null = () => null,
     private readonly bookImbalanceSource: () => number | null = () => null,
     private readonly btcInfoSource: () => BtcInfo | null = () => null,
+    private readonly sessionOrdersAllowed: () => boolean = () => true,
   ) {
     const portfolio = db.portfolio();
     const baseCoin = tradingPairs[pair].base;
@@ -325,6 +326,7 @@ export class BotEngine {
       }
       if (
         this.deploymentStopped() ||
+        !this.sessionOrdersAllowed() ||
         !this.monitor.ordersAllowed(cycleToken) ||
         !runtime.running ||
         runtime.emergency ||
@@ -643,7 +645,7 @@ export class BotEngine {
         this.reject(id, finalReasons, decision, executionNow, last.timestamp);
         return;
       }
-      if (this.deploymentStopped()) {
+      if (this.deploymentStopped() || !this.sessionOrdersAllowed()) {
         const reasons = ["DEPLOYMENT_MAINTENANCE"];
         this.monitor.finishCandidate({
           ...audit,
@@ -674,6 +676,8 @@ export class BotEngine {
         this.db.append("paper_checks", randomUUID(), check, fresh);
         throw new Error("PAPER_RECONCILIATION_FAILED");
       }
+      if (!this.sessionOrdersAllowed())
+        throw Error("PAPER_CHECK_LEASE_EXPIRED");
       this.db.commitFill(
         id,
         { id, side, status: "FILLED", quote: q, profitGuard: profit },

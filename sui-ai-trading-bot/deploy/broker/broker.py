@@ -392,6 +392,7 @@ class Broker:
             s = os.fstat(lockfd)
             require(s.st_uid == 0 and s.st_nlink == 1 and stat.S_ISREG(s.st_mode) and not (s.st_mode & 0o077), 'LOCK_FILE')
             fcntl.flock(lockfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.check_paper_session()
             # Revalidate imported callers too; CLI never accepts a path/image/config.
             request(json.dumps(req).encode())
             try:
@@ -402,6 +403,12 @@ class Broker:
                     self.archive.unlink(missing_ok=True)
         finally:
             os.close(lockfd)
+
+    def check_paper_session(self):
+        require(not os.path.lexists(self.state/'paper-check-failed.json'), 'PAPER_CHECK_RECONCILIATION_REQUIRED')
+        marker = self.state/'paper-check.json'
+        if os.path.lexists(marker):
+            require(decode(read_trusted(marker)) == {'status': 'completed'}, 'PAPER_CHECK_RECONCILIATION_REQUIRED')
 
     def transaction(self, req, uid):
         sha, operation = req['sha'], req['operation']
