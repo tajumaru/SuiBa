@@ -18,6 +18,8 @@ jobs:
     permissions:
       contents: read
   validate:
+    outputs:
+      archive_sha256: ${{ steps.package.outputs.archive_sha256 }}
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY-PAPER'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -65,6 +67,7 @@ jobs:
         working-directory: sui-ai-trading-bot
         run: node docker/verify-vps-offline.mjs suiba:${{ github.sha }}
       - name: Package immutable release
+        id: package
         if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY-PAPER'
         run: |
           mkdir release
@@ -72,12 +75,25 @@ jobs:
           docker image inspect --format '{{.Id}}' suiba:${{ github.sha }} > release/image-id.txt
           cd release
           sha256sum image.tar.gz > image.tar.gz.sha256
+          read -r digest _ < image.tar.gz.sha256
+          printf 'archive_sha256=%s\n' "$digest" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY-PAPER'
         with:
           name: vps-release
           path: release/
           retention-days: 3
+  stage:
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY-PAPER' && vars.SUIBA_STAGE_ENABLED == 'true' && vars.SUIBA_BROKER_ENABLED != 'true'
+    uses: ./.github/workflows/suiba-vps-stage.yml
+    permissions:
+      actions: read
+    with:
+      run_id: ${{ github.run_id }}
+      release_sha: ${{ github.sha }}
+      archive_sha256: ${{ needs.validate.outputs.archive_sha256 }}
+      confirmation: STAGE-PAPER
   deploy:
     needs: validate
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY-PAPER' && vars.SUIBA_BROKER_ENABLED == 'true'
