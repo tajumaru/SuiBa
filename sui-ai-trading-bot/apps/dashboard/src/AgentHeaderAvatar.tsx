@@ -12,6 +12,20 @@ import imgHardGuitar2 from "./assets/agent-hard-guitar-2.jpg";
 import imgLaptopTyping from "./assets/agent-white-laptop-typing.jpg";
 import imgScream from "./assets/agent-white-scream.jpg";
 import imgListen from "./assets/agent-white-listen.jpg";
+import imgPenNormal from "./assets/agent-pen-normal.jpg";
+import imgPenPoint from "./assets/agent-pen-point.jpg";
+import imgPenPointSmile from "./assets/agent-pen-point-smile.jpg";
+import imgPenSleep from "./assets/agent-pen-sleep.jpg";
+import imgPenLaptop from "./assets/agent-pen-laptop.jpg";
+import imgPenLaptopTyping from "./assets/agent-pen-laptop-typing.jpg";
+import imgPenBlueLine from "./assets/agent-pen-blue-line.jpg";
+import imgPenScream from "./assets/agent-pen-scream.jpg";
+import imgPenListen from "./assets/agent-pen-listen.jpg";
+import {
+  saveAgentCharacter,
+  useAgentCharacter,
+  type AgentCharacter,
+} from "./agentCharacter.ts";
 import type { AgentPose } from "./agentNarration.ts";
 import type { ErrorShout } from "./errorShout.ts";
 import { usePrefersReducedMotion } from "./usePrefersReducedMotion.ts";
@@ -26,6 +40,51 @@ export const POSE_IMAGE: Record<AgentPose, string> = {
   laptop: imgLaptop,
   buyLine: imgBlueLine,
 };
+
+/** ぺんちゃん's artwork, pose for pose with the white set: the
+ * pink penguin (pink hood, white face, orange beak) in the same
+ * flat style and the same scenes — the blue-line crowd included. */
+export const PEN_POSE_IMAGE: Record<AgentPose, string> = {
+  normal: imgPenNormal,
+  point: imgPenPoint,
+  pointSmile: imgPenPointSmile,
+  sleep: imgPenSleep,
+  laptop: imgPenLaptop,
+  buyLine: imgPenBlueLine,
+};
+
+/**
+ * The artwork for one pose: the still frame, plus — for the
+ * laptop pose only — the second typing frame stacked over it.
+ * ぺんちゃん wears its own artwork for every pose and has no
+ * hard-mode set (the hard portraits belong to the white
+ * character's persona); the white character's hard set covers
+ * only the working poses, exactly as before, and its sleep and
+ * blue-line artwork stay its own in every mode.
+ */
+export function artworkFor(
+  character: AgentCharacter,
+  pose: AgentPose,
+  hardMode: boolean,
+): { main: string; typing: string | null } {
+  if (character === "pen")
+    return {
+      main: PEN_POSE_IMAGE[pose],
+      typing: pose === "laptop" ? imgPenLaptopTyping : null,
+    };
+  if (hardMode) {
+    if (pose === "normal") return { main: imgHard, typing: null };
+    if (pose === "point") return { main: imgHardPoint, typing: null };
+    if (pose === "pointSmile")
+      return { main: imgHardPointSmile, typing: null };
+    if (pose === "laptop")
+      return { main: imgHardGuitar, typing: imgHardGuitar2 };
+  }
+  return {
+    main: POSE_IMAGE[pose],
+    typing: pose === "laptop" ? imgLaptopTyping : null,
+  };
+}
 export const POSE_LABEL: Record<AgentPose, string> = {
   normal: "様子を見ています",
   point: "条件が近づいています",
@@ -62,26 +121,13 @@ export function AgentAvatarArtwork({
   pose: AgentPose;
   hardMode?: boolean;
 }) {
-  if (hardMode && pose === "normal") return <img src={imgHard} alt="" />;
-  if (hardMode && pose === "point") return <img src={imgHardPoint} alt="" />;
-  if (hardMode && pose === "pointSmile")
-    return <img src={imgHardPointSmile} alt="" />;
-  if (hardMode && pose === "laptop")
-    return (
-      <>
-        <img src={imgHardGuitar} alt="" />
-        <img
-          className="agent-avatar-typing"
-          src={imgHardGuitar2}
-          alt=""
-        />
-      </>
-    );
+  const character = useAgentCharacter();
+  const art = artworkFor(character, pose, hardMode);
   return (
     <>
-      <img src={POSE_IMAGE[pose]} alt="" />
-      {pose === "laptop" && (
-        <img className="agent-avatar-typing" src={imgLaptopTyping} alt="" />
+      <img src={art.main} alt="" />
+      {art.typing && (
+        <img className="agent-avatar-typing" src={art.typing} alt="" />
       )}
     </>
   );
@@ -192,6 +238,7 @@ export function AgentHeaderAvatar({
   hardMode?: boolean;
 }) {
   const reducedMotion = usePrefersReducedMotion();
+  const character = useAgentCharacter();
   // While the page is scrolled, the sticky dock rides over the
   // operation bar and the ticker: shrink the avatar and fold
   // the status pill away so the character never covers the
@@ -242,9 +289,17 @@ export function AgentHeaderAvatar({
       >
         <div className="agent-avatar-bob">
           {shouting ? (
-            <img className="agent-avatar-scream" src={imgScream} alt="" />
+            <img
+              className="agent-avatar-scream"
+              src={character === "pen" ? imgPenScream : imgScream}
+              alt=""
+            />
           ) : listening && !celebrating ? (
-            <img className="agent-avatar-listen" src={imgListen} alt="" />
+            <img
+              className="agent-avatar-listen"
+              src={character === "pen" ? imgPenListen : imgListen}
+              alt=""
+            />
           ) : speaking && !celebrating ? (
             <AgentAvatarArtwork pose="pointSmile" hardMode={artworkHard} />
           ) : (
@@ -286,9 +341,9 @@ export function AgentHeaderAvatar({
           }
           aria-hidden="true"
         />
-        {agentName !== "" && (
+        {(agentName !== "" || character === "pen") && (
           <span className="agent-avatar-name">
-            {agentDisplayName(agentName)}：
+            {agentDisplayName(agentName, character)}：
           </span>
         )}
         {stateLabel}
@@ -297,7 +352,7 @@ export function AgentHeaderAvatar({
         <button
           type="button"
           className="agent-avatar-tap"
-          aria-label={`${agentDisplayName(agentName)}の名前を変える`}
+          aria-label={`${agentDisplayName(agentName, character)}の名前を変える`}
           aria-expanded={renameOpen}
           onClick={() => {
             setRenameDraft(agentName);
@@ -329,6 +384,30 @@ export function AgentHeaderAvatar({
               onChange={(e) => setRenameDraft(e.target.value)}
             />
           </label>
+          <div
+            className="agent-character-picker"
+            role="group"
+            aria-label="キャラを選ぶ"
+          >
+            <button
+              type="button"
+              className={character === "white" ? "active" : ""}
+              aria-pressed={character === "white"}
+              onClick={() => saveAgentCharacter("white")}
+            >
+              <img src={imgNormal} alt="" />
+              白キャラ
+            </button>
+            <button
+              type="button"
+              className={character === "pen" ? "active" : ""}
+              aria-pressed={character === "pen"}
+              onClick={() => saveAgentCharacter("pen")}
+            >
+              <img src={imgPenNormal} alt="" />
+              ぺんちゃん
+            </button>
+          </div>
           <div className="agent-rename-actions">
             <button type="submit">保存</button>
             <button

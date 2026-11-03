@@ -5,16 +5,29 @@ import imgNormal from "./assets/agent-white-normal.jpg";
 import imgPoint from "./assets/agent-white-point.jpg";
 import imgPointSmile from "./assets/agent-white-point-smile.jpg";
 import imgBlueLine from "./assets/agent-blue-line.jpg";
+import imgPenNormal from "./assets/agent-pen-normal.jpg";
+import imgPenPoint from "./assets/agent-pen-point.jpg";
+import imgPenPointSmile from "./assets/agent-pen-point-smile.jpg";
+import imgPenBlueLine from "./assets/agent-pen-blue-line.jpg";
+import { useAgentCharacter } from "./agentCharacter.ts";
 
-// The replay renders the white artwork itself rather than
+// The replay renders the pose artwork itself rather than
 // importing the feed's avatar component: the feed imports this
 // replay, and the module graph must stay acyclic. Poses outside
-// the map fall back to the normal artwork.
+// the map fall back to the normal artwork. The selected
+// character's set is used, so a replay watched as ぺんちゃん
+// replays with ぺんちゃん on stage.
 const POSE_IMAGE: Partial<Record<AgentPose, string>> = {
   normal: imgNormal,
   point: imgPoint,
   pointSmile: imgPointSmile,
   buyLine: imgBlueLine,
+};
+const PEN_POSE_IMAGE: Partial<Record<AgentPose, string>> = {
+  normal: imgPenNormal,
+  point: imgPenPoint,
+  pointSmile: imgPenPointSmile,
+  buyLine: imgPenBlueLine,
 };
 
 function usePrefersReducedMotion(): boolean {
@@ -62,6 +75,9 @@ export function HighlightReplay({
   onClose: () => void;
 }) {
   const reduced = usePrefersReducedMotion();
+  const character = useAgentCharacter();
+  const poseImages = character === "pen" ? PEN_POSE_IMAGE : POSE_IMAGE;
+  const poseFallback = character === "pen" ? imgPenNormal : imgNormal;
   const total = highlight.entries.length;
   const [step, setStep] = useState(reduced ? total - 1 : 0);
   const [playing, setPlaying] = useState(!reduced);
@@ -120,7 +136,7 @@ export function HighlightReplay({
         </button>
       </div>
       <div className="highlight-replay-stage">
-        <img src={POSE_IMAGE[pose] ?? imgNormal} alt="" />
+        <img src={poseImages[pose] ?? poseFallback} alt="" />
         <div className="highlight-replay-entries">
           {highlight.entries.slice(0, step + 1).map((e) => (
             <p key={e.id} className="highlight-replay-entry">

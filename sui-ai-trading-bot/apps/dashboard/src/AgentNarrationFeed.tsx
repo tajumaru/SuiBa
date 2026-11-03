@@ -1,6 +1,7 @@
 import type { OperationsSnapshot } from "./operationsTypes.ts";
 import type { AgentPose, NarrationEntry, NarrationState } from "./agentNarration.ts";
 import { agentDisplayName } from "./agentName.ts";
+import { useAgentCharacter } from "./agentCharacter.ts";
 import { useEffect, useRef, useState } from "react";
 import { persistNarration, restoreNarration } from "./narrationStorage.ts";
 import { BUY_CELEBRATION_MS, CELEBRATION_FRESH_MS, advanceNarration, agentPose, currentConditionChips, currentWatch, currentWatchScore, findNewBuyEntry, isBuyTradeEntry, trimNarrationEntries } from "./agentNarration.ts";
@@ -66,7 +67,8 @@ export function AgentNarrationFeed({
    * the avatar mid-speech. */
   onSpeakingChange?: (speaking: boolean) => void;
 }) {
-  const displayName = agentDisplayName(agentName);
+  const character = useAgentCharacter();
+  const displayName = agentDisplayName(agentName, character);
   const [narration, setNarration] = useState<NarrationState>(() =>
     restoreNarration(undefined, pairLabel),
   );

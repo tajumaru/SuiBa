@@ -694,3 +694,38 @@
   font-size: 12px;
   color: #8fa3b0;
 }
+
+/* Character picker in the rename panel: two thumbnail choices
+   (white character / ぺんちゃん); the current character's button
+   wears the mint ring. Picking swaps every artwork at once and
+   is saved device-locally (see agentCharacter.ts). */
+.agent-character-picker {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.agent-character-picker button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #0a1a12;
+  border: 1px solid #1f5c46;
+  border-radius: 4px;
+  color: #d7e3f2;
+  font-size: 12px;
+  padding: 4px 8px 4px 4px;
+  cursor: pointer;
+}
+.agent-character-picker button img {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 3px;
+  display: block;
+}
+.agent-character-picker button.active {
+  border-color: #43dfb2;
+  box-shadow: inset 0 0 0 1px #43dfb2;
+  color: #43dfb2;
+}
