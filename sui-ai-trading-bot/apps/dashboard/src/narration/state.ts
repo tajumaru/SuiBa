@@ -29,6 +29,9 @@ export type NarrationKind =
   | "epoch" // a new Sui epoch began (the chain's own daily milestone)
   | "monthlyReport" // the finished month's report card, posted once
   | "btc" // market weather: BTC moved an hour's worth, worth a mutter
+  | "forecastCall" // a direction-claiming chart forecast, declared out loud
+  | "forecastHit" // a declared forecast whose direction came true
+  | "forecastMiss" // a declared forecast whose direction did not
   | "status"; // feed-initialised status line
 
 export interface NarrationEntry {
@@ -164,6 +167,20 @@ export interface NarrationState {
   /** The last BTC weather mutter told, for its per-direction
    * cooldown. Ambience bookkeeping only. */
   lastBtcMutter: { at: number; direction: "up" | "down" } | null;
+  /** Chart forecasts the feed has declared out loud, by origin
+   * (seconds, as a string key) → when the declaration was told.
+   * Only direction-claiming forecasts are ever declared; the
+   * record is what entitles a forecast to a verdict entry when
+   * its horizon closes. */
+  forecastDeclared: Record<string, number>;
+  /** Declared forecasts whose verdict has been settled — told
+   * (hit or miss) or quietly closed when it came too late to
+   * tell. By origin, like forecastDeclared. */
+  forecastSettled: Record<string, boolean>;
+  /** When the last forecast declaration was told; declarations
+   * are spaced at least an hour apart so a trending market
+   * cannot turn the feed into a forecast ticker. */
+  lastForecastCallAt: number | null;
 }
 
 /** One JST month of feed-side tallies for the monthly report.
@@ -273,6 +290,9 @@ export function emptyNarrationState(): NarrationState {
     monthly: {},
     monthlyFinalised: null,
     lastBtcMutter: null,
+    forecastDeclared: {},
+    forecastSettled: {},
+    lastForecastCallAt: null,
   };
 }
 

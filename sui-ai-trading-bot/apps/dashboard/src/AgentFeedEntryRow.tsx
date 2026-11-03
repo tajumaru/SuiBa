@@ -107,6 +107,15 @@ export function AgentFeedEntryRow({
       {entry.kind === "btc" && (
         <span className="agent-feed-entry-tag btc">BTC</span>
       )}
+      {entry.kind === "forecastCall" && (
+        <span className="agent-feed-entry-tag forecast">予測</span>
+      )}
+      {entry.kind === "forecastHit" && (
+        <span className="agent-feed-entry-tag hit">予測的中</span>
+      )}
+      {entry.kind === "forecastMiss" && (
+        <span className="agent-feed-entry-tag forecast-miss">予測外れ</span>
+      )}
       {entry.kind === "priceLine" && (
         <span className="agent-feed-entry-tag line">買い走りライン</span>
       )}

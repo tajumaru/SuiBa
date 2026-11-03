@@ -1,7 +1,16 @@
 import type { EntryDraft, MonthlyCounters, NarrationEntry, NarrationState, WatchScore, WatchTarget } from "./state.ts";
 import { emptyMonthlyCounters } from "./state.ts";
 import type { Fill } from "../../../../packages/paper-trading/src/index.ts";
-import type { BtcInfo } from "../../../../packages/shared/src/index.ts";
+import type {
+  BtcInfo,
+  Candle,
+} from "../../../../packages/shared/src/index.ts";
+import {
+  forecastCallText,
+  forecastVerdictOf,
+  forecastVerdictText,
+  type ForecastRecord,
+} from "../forecastLog.ts";
 import {
   buildMonthlyReport,
   monthKeyOf,
@@ -35,6 +44,16 @@ export const BTC_MUTTER_PCT = 1;
 export const BTC_MUTTER_RUSH_PCT = 2;
 export const BTC_MUTTER_COOLDOWN_MS = 2 * 3600 * 1000;
 export const BTC_SAMPLE_FRESH_MS = 3 * 60 * 1000;
+
+/** Forecast declarations: a direction-claiming chart forecast
+ * is declared out loud while it is fresh, at most once an hour,
+ * and its verdict is told when the horizon closes — or settled
+ * quietly when the telling would come more than two hours late.
+ * The forecast is the chart's model outlook; the feed declares
+ * and judges it on the record, and never feeds it into trading. */
+export const FORECAST_CALL_FRESH_MS = 10 * 60_000;
+export const FORECAST_CALL_COOLDOWN_MS = 60 * 60_000;
+export const FORECAST_VERDICT_FRESH_MS = 2 * 3600 * 1000;
 
 export function btcMutter(
   btc: BtcInfo | null | undefined,
@@ -187,6 +206,12 @@ export function advanceNarration(
   /** The latest BTC weather sample (display-only), for the
    * character's ambient mutters. */
   btc?: BtcInfo | null,
+  /** The chart's recorded forecasts with the candles that judge
+   * them (display-only), for declarations and verdicts. */
+  forecasts?: {
+    records: readonly ForecastRecord[];
+    candles: readonly Candle[];
+  } | null,
 ): NarrationState {
   const seen = new Set(prev.seen);
   const pending = new Set(prev.pendingCandidateIds);
@@ -255,9 +280,26 @@ export function advanceNarration(
               (firstLine / firstDec.price - 1) * 100 >= PRICE_LINE_MURMUR_PCT,
           }
         : null;
+    // Existing forecasts are adopted silently on first load,
+    // like the first watch and the buy-run line: their stories
+    // are already under way. Only forecasts recorded from here
+    // on are declared out loud, and adopted verdicts settle
+    // quietly — no backlog of old answers on a fresh feed.
+    const adoptedDeclared: Record<string, number> = {};
+    const adoptedSettled: Record<string, boolean> = {};
+    if (forecasts) {
+      for (const rec of forecasts.records) {
+        if (rec.dir === "flat") continue;
+        adoptedDeclared[String(rec.origin)] = now;
+        if (forecastVerdictOf(rec, forecasts.candles))
+          adoptedSettled[String(rec.origin)] = true;
+      }
+    }
     return finish(
       {
         ...prev,
+        forecastDeclared: adoptedDeclared,
+        forecastSettled: adoptedSettled,
         watch: firstWatch,
         watchScore: firstScore,
         priceLine: firstPriceLine,
@@ -697,6 +739,59 @@ export function advanceNarration(
     lastBtcMutter = { at: now, direction: mutter.direction };
   }
 
+  // Forecast declarations and verdicts: the chart's outlook,
+  // spoken as a promise and settled on the record. Verdicts of
+  // promises already made are settled first; then the newest
+  // fresh claim may be declared, at most once an hour.
+  let forecastDeclared = prev.forecastDeclared;
+  let forecastSettled = prev.forecastSettled;
+  let lastForecastCallAt = prev.lastForecastCallAt;
+  if (forecasts) {
+    const pruneBefore = now - 3 * 24 * 3600 * 1000;
+    const pruned = <T,>(m: Record<string, T>): Record<string, T> =>
+      Object.fromEntries(
+        Object.entries(m).filter(([k]) => Number(k) * 1000 >= pruneBefore),
+      );
+    forecastDeclared = pruned(forecastDeclared);
+    forecastSettled = pruned(forecastSettled);
+    for (const rec of forecasts.records) {
+      const key = String(rec.origin);
+      if (forecastDeclared[key] == null || forecastSettled[key]) continue;
+      const verdict = forecastVerdictOf(rec, forecasts.candles);
+      if (!verdict) continue;
+      forecastSettled = { ...forecastSettled, [key]: true };
+      if (now - verdict.completedAt > FORECAST_VERDICT_FRESH_MS) continue;
+      drafts.push({
+        at: now,
+        kind: verdict.hit ? "forecastHit" : "forecastMiss",
+        text: forecastVerdictText(verdict),
+      });
+      if (verdict.hit) lastHitAt = now;
+    }
+    for (let i = forecasts.records.length - 1; i >= 0; i--) {
+      const rec = forecasts.records[i];
+      if (rec.dir === "flat") continue;
+      const key = String(rec.origin);
+      if (forecastDeclared[key] != null) continue;
+      const originMs = rec.origin * 1000;
+      if (now - originMs > FORECAST_CALL_FRESH_MS || originMs > now + 60_000)
+        continue;
+      if (
+        lastForecastCallAt != null &&
+        now - lastForecastCallAt < FORECAST_CALL_COOLDOWN_MS
+      )
+        break;
+      drafts.push({
+        at: now,
+        kind: "forecastCall",
+        text: forecastCallText(rec),
+      });
+      forecastDeclared = { ...forecastDeclared, [key]: now };
+      lastForecastCallAt = now;
+      break;
+    }
+  }
+
   // Monthly report: a finished month with tallies is posted to
   // the feed exactly once, oldest first, once the fills that
   // price it are at hand.
@@ -733,6 +828,9 @@ export function advanceNarration(
       monthly,
       monthlyFinalised,
       lastBtcMutter,
+      forecastDeclared,
+      forecastSettled,
+      lastForecastCallAt,
       sessionStartPrice,
       priceHistory,
       alertCooldown,

@@ -258,6 +258,81 @@ export function answerCheckText(check: ForecastAnswerCheck): string {
   return `${head}方向 ${check.directionHit ? "的中" : "外れ"}（予測 ${pctText(check.driftPct)} → 実際 ${pctText(check.actualPct)}）／ コーン収まり ${check.coveragePct}%`;
 }
 
+/** The projected drift of a recorded forecast, as a fraction;
+ * null for the older records that carry no centre line. */
+export function forecastDriftPct(rec: ForecastRecord): number | null {
+  if (!rec.mid || rec.mid.length === 0) return null;
+  return (rec.mid.at(-1)! - rec.startClose) / rec.startClose;
+}
+
+export interface ForecastVerdict {
+  origin: number;
+  dir: "up" | "down";
+  /** What the forecast claimed, as a fraction. */
+  driftPct: number;
+  /** What actually happened over the horizon, as a fraction. */
+  actualPct: number;
+  hit: boolean;
+  /** When the horizon closed (ms since epoch): the first
+   * candle after the last projected step begins. */
+  completedAt: number;
+}
+
+/**
+ * The verdict of one recorded forecast, once its horizon has
+ * fully closed — the same judgement the score and the answer
+ * check make: the final close against the start close, and only
+ * for forecasts that named a direction. Null while the horizon
+ * is still open (the final candle must itself be closed, so a
+ * later candle has to exist), for flat forecasts, and for
+ * records without a centre line.
+ */
+export function forecastVerdictOf(
+  rec: ForecastRecord,
+  candles: readonly Candle[],
+  timeframe = 300,
+): ForecastVerdict | null {
+  if (rec.dir === "flat") return null;
+  const driftPct = forecastDriftPct(rec);
+  if (driftPct == null || rec.up.length === 0) return null;
+  const lastStep = rec.origin + (rec.up.length - 1) * timeframe;
+  const closeAt = new Map(candles.map((c) => [c.timestamp, c.close]));
+  const finalClose = closeAt.get(lastStep);
+  if (finalClose == null) return null;
+  const latest = candles.at(-1);
+  if (!latest || latest.timestamp <= lastStep) return null;
+  return {
+    origin: rec.origin,
+    dir: rec.dir,
+    driftPct,
+    actualPct: (finalClose - rec.startClose) / rec.startClose,
+    hit:
+      rec.dir === "up"
+        ? finalClose > rec.startClose
+        : finalClose < rec.startClose,
+    completedAt: (lastStep + timeframe) * 1000,
+  };
+}
+
+/** The declaration line for a direction-claiming forecast:
+ * the claim, the size, and when the answer arrives. */
+export function forecastCallText(rec: ForecastRecord): string {
+  const drift = forecastDriftPct(rec);
+  const word = rec.dir === "up" ? "上昇" : "下落";
+  return drift != null
+    ? `予測を宣言：2時間で${word} ${pctText(drift)} と見てる。答え合わせは2時間後`
+    : `予測を宣言：2時間で${word}と見てる。答え合わせは2時間後`;
+}
+
+/** The verdict line for a declared forecast: the recorded
+ * claim against the recorded outcome, nothing embroidered. */
+export function forecastVerdictText(v: ForecastVerdict): string {
+  const word = v.dir === "up" ? "上昇" : "下落";
+  return v.hit
+    ? `予測、的中。${word} ${pctText(v.driftPct)} の宣言どおり、実際は ${pctText(v.actualPct)}`
+    : `予測は外れ。${word} ${pctText(v.driftPct)} と言ったけど、実際は ${pctText(v.actualPct)}`;
+}
+
 export function forecastScoreText(
   score: ForecastScore,
   recordCount: number,

@@ -785,6 +785,27 @@
   border-color: rgba(247, 147, 26, 0.55);
   color: #f7931a;
 }
+/* Forecast declarations wear the outlook's own Sui blue; a
+   missed verdict dims to the down hue, a hit reuses the green
+   的中 tag. */
+.agent-feed-entry.forecastCall {
+  border-left-color: #4da2ff;
+}
+.agent-feed-entry-tag.forecast {
+  border-color: rgba(100, 181, 255, 0.55);
+  color: #64b5ff;
+}
+.agent-feed-entry.forecastHit {
+  border-left-color: #3ecf6f;
+  background: #0f2318;
+}
+.agent-feed-entry.forecastMiss {
+  border-left-color: #f77d8f;
+}
+.agent-feed-entry-tag.forecast-miss {
+  border-color: rgba(247, 125, 143, 0.55);
+  color: #f77d8f;
+}
 /* The buy-run line wears the same Sui blue as the avatar's
    line pose while it stands, and the green of a met condition
    once the price touches it (the reached entry below). */

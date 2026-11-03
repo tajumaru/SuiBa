@@ -30,6 +30,7 @@ export function AgentNarrationFeed({
   chain = null,
   trades,
   btc = null,
+  forecasts = null,
   onListeningChange,
   onSpeakingChange,
 }: {
@@ -38,6 +39,14 @@ export function AgentNarrationFeed({
   /** The latest BTC weather sample (display-only), for the
    * character's ambient mutters about the market's weather. */
   btc?: import("../../../packages/shared/src/index.ts").BtcInfo | null;
+  /** The chart's recorded forecasts and the 5-minute candles
+   * that judge them (display-only), so the character can declare
+   * a direction-claiming forecast and tell its verdict when the
+   * horizon closes. */
+  forecasts?: {
+    records: readonly import("./forecastLog.ts").ForecastRecord[];
+    candles: readonly import("../../../packages/shared/src/index.ts").Candle[];
+  } | null;
   /** The engine's newest fills, threaded to the narration
    * advance so a finished month's report can be priced and
    * posted. Display/record only. */
@@ -128,6 +137,7 @@ export function AgentNarrationFeed({
       Date.now(),
       trades,
       btc,
+      forecasts,
     );
     narrationRef.current = next;
     persist(next);
@@ -211,7 +221,7 @@ export function AgentNarrationFeed({
       persist(withPrompt);
       setNarration(withPrompt);
     }
-  }, [data, stale, onCelebrate, trades, btc]);
+  }, [data, stale, onCelebrate, trades, btc, forecasts]);
   const vital = botVital(data, stale, now, receivedAt);
   const pose = agentPose(narration, data, vital, now);
   // While a chat reply is fresh, the character turns to the user

@@ -55,6 +55,9 @@ const schema: z.ZodType<NarrationState> = z.object({
           "epoch",
           "monthlyReport",
           "btc",
+          "forecastCall",
+          "forecastHit",
+          "forecastMiss",
           "status",
         ]),
         text: z.string(),
@@ -135,6 +138,9 @@ const schema: z.ZodType<NarrationState> = z.object({
     .object({ at: number, direction: z.enum(["up", "down"]) })
     .nullable()
     .default(null),
+  forecastDeclared: z.record(z.string(), number).default({}),
+  forecastSettled: z.record(z.string(), z.boolean()).default({}),
+  lastForecastCallAt: number.nullable().default(null),
 });
 
 // Resolve storage inside the try: browsers may deny even the localStorage getter.

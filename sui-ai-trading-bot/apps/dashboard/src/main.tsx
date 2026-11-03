@@ -427,6 +427,16 @@ function App() {
         : null,
     [forecastLog, data],
   );
+  const forecastInput = useMemo(
+    () =>
+      data
+        ? {
+            records: forecastLog,
+            candles: data.candlesByTimeframe[300],
+          }
+        : null,
+    [forecastLog, data],
+  );
   const character = useAgentCharacter();
   const shareCard = useMemo(
     () =>
@@ -840,6 +850,7 @@ function App() {
                       chain={data?.chain ?? null}
                       trades={data?.trades ?? []}
                       btc={data?.btc ?? null}
+                      forecasts={forecastInput}
                       active={activeTab === "Live"}
                       agentName={agentName}
                       onListeningChange={setVoiceListening}
