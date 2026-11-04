@@ -5,6 +5,7 @@ import {
   fetchServedVersion,
   parseServedVersion,
   updateAvailable,
+  versionSkew,
 } from "../apps/dashboard/src/appVersion.ts";
 import {
   UpdateBanner,
@@ -65,5 +66,20 @@ it("renders the banner with the new build and the footer with this build", () =>
   expect(banner).toContain("新機能");
   expect(banner).toContain("再読み込み");
   const footer = renderToStaticMarkup(React.createElement(VersionFooter));
-  expect(footer).toContain("SuiBa dev");
+  expect(footer).toContain("SuiBa 画面 dev");
+});
+
+it("flags a skew only between two different real build stamps", () => {
+  expect(versionSkew("aaa1111", "bbb2222")).toBe(true);
+  expect(versionSkew("aaa1111", "aaa1111")).toBe(false);
+  expect(versionSkew("dev", "bbb2222")).toBe(false);
+  expect(versionSkew("aaa1111", "unknown")).toBe(false);
+  expect(versionSkew("aaa1111", null)).toBe(false);
+  expect(versionSkew("aaa1111", undefined)).toBe(false);
+  const footer = renderToStaticMarkup(
+    React.createElement(VersionFooter, { workerBuild: "abc1234" }),
+  );
+  expect(footer).toContain("Bot abc1234");
+  // In tests the page build is "dev", so no skew warning renders.
+  expect(footer).not.toContain("版がズレています");
 });

@@ -1,4 +1,5 @@
 import type { EpisodeSummary } from "../../../packages/shared/src/paper-recovery.ts";
+import { APP_BUILD, versionSkew } from "./appVersion.ts";
 import type { OperationsSnapshot } from "./operationsTypes.ts";
 
 /**
@@ -48,6 +49,7 @@ export function buildDiagnosticReport(
     "",
     "## 現在の状態",
     `- status: ${data.status}`,
+    `- build: 画面 ${APP_BUILD} / Bot ${data.workerBuild}${versionSkew(APP_BUILD, data.workerBuild) ? "（版がズレています）" : ""}`,
     `- stopReason: ${data.stopReason ?? "なし"}`,
     `- botState: ${s.botState} / connectivity: ${s.connectivity} / resumePending: ${s.resumePending}`,
     `- 稼働： processStartedAt=${iso(data.processStartedAt)} / runningMs=${data.runningMs}`,

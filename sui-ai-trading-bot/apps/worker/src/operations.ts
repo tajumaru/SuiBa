@@ -11,6 +11,7 @@ import {
   type PaperRecoveryProof,
 } from "../../../packages/shared/src/paper-recovery.ts";
 import type { ApiFailure } from "../../../packages/shared/src/http-errors.ts";
+import { workerBuild } from "./buildInfo.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
 import { randomUUID } from "node:crypto";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
@@ -1216,6 +1217,7 @@ export class OperationMonitor {
       decision,
       apis: apiAccess.snapshot(now),
       mode: "PAPER" as const,
+      workerBuild: workerBuild(),
       status:
         r.emergency || r.error
           ? "ABNORMAL_STOP"

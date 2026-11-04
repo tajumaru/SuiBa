@@ -1,4 +1,9 @@
-import { APP_BUILD, APP_SUBJECT, type ServedVersion } from "./appVersion.ts";
+import {
+  APP_BUILD,
+  APP_SUBJECT,
+  versionSkew,
+  type ServedVersion,
+} from "./appVersion.ts";
 
 /** Shown when the server is already serving a newer build than
  * the page in hand: the one tap reload lands on the new build. */
@@ -16,13 +21,23 @@ export function UpdateBanner({ served }: { served: ServedVersion }) {
   );
 }
 
-/** The running build's identity, always visible at the page
- * foot so a reflected deploy can be verified at a glance. */
-export function VersionFooter() {
+/** The running builds' identity, always visible at the page
+ * foot: the screen's build next to the bot's, so a reflected
+ * deploy — or a skew between the two — can be verified at a
+ * glance. */
+export function VersionFooter({
+  workerBuild,
+}: {
+  workerBuild?: string | null;
+}) {
   return (
     <footer className="version-footer">
-      SuiBa {APP_BUILD}
+      SuiBa 画面 {APP_BUILD}
+      {workerBuild ? ` ・ Bot ${workerBuild}` : ""}
       {APP_SUBJECT ? ` ・ ${APP_SUBJECT}` : ""}
+      {versionSkew(APP_BUILD, workerBuild) && (
+        <span className="version-skew"> ・ 版がズレています</span>
+      )}
     </footer>
   );
 }

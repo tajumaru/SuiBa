@@ -8,6 +8,7 @@ import type { OperationsSnapshot } from "../apps/dashboard/src/operationsTypes.t
 const snapshot = (patch: Record<string, unknown> = {}) =>
   ({
     status: "ABNORMAL_STOP",
+    workerBuild: "abc1234",
     stopReason: "PAPER_RECOVERY_EXHAUSTED",
     processStartedAt: 1000,
     runningMs: 60000,
@@ -83,6 +84,7 @@ it("builds a self-describing report with the episode evidence inline", () => {
   const report = buildDiagnosticReport(snapshot(), 100000);
   expect(report).toContain("# SuiBa 診断レポート（AI調査用）");
   expect(report).toContain("status: ABNORMAL_STOP");
+  expect(report).toContain("Bot abc1234");
   expect(report).toContain("stopReason: PAPER_RECOVERY_EXHAUSTED");
   expect(report).toContain("GeckoTerminal/UPSTREAM_HTTP_429 ×9");
   expect(report).toContain("進行中のエピソード: なし");

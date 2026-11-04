@@ -42,6 +42,20 @@ export function updateAvailable(
   );
 }
 
+/** True only when the page's build and the worker's build are
+ * both real stamps and differ — dev/unknown never counts as a
+ * skew, so the warning cannot cry wolf. */
+export function versionSkew(
+  appBuild: string,
+  workerBuildValue: string | null | undefined,
+): boolean {
+  if (!workerBuildValue) return false;
+  if (appBuild === "dev" || appBuild === "unknown") return false;
+  if (workerBuildValue === "dev" || workerBuildValue === "unknown")
+    return false;
+  return appBuild !== workerBuildValue;
+}
+
 export async function fetchServedVersion(
   fetcher: typeof fetch = fetch,
 ): Promise<ServedVersion | null> {

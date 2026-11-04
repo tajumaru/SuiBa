@@ -1002,7 +1002,7 @@ function App() {
           </main>
         </>
       )}
-      <VersionFooter />
+      <VersionFooter workerBuild={operations.data?.workerBuild ?? null} />
       {token && booting && (
         <BootScreen
           pairLabel={data?.pair === "WAL_USDC" ? "WAL / USDC" : "SUI / USDC"}
