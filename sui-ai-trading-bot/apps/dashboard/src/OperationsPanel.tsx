@@ -5,7 +5,7 @@ import { MarketDataPanel } from "./MarketDataPanel.tsx";
 import { ConnectivityPanel } from "./ConnectivityPanel.tsx";
 import { operationReason } from "./operationLabels.ts";
 import { DeepBookValidation } from "./DeepBookValidation.tsx";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useState } from "react";
 import type { SettingsApi } from "./settingsPresets.ts";
 import {
   dateTime,
@@ -13,7 +13,6 @@ import {
   label,
   percent,
   nextStep,
-  errorCode,
 } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
 import type { OperationsSnapshot } from "./operationsTypes.ts";

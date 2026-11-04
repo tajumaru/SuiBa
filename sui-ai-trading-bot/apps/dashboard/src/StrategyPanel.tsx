@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import type { BotEngine } from "../../worker/src/engine.ts";
 import type { DecisionTelemetry } from "../../worker/src/operations.ts";
 import type { Settings } from "../../../packages/shared/src/index.ts";
