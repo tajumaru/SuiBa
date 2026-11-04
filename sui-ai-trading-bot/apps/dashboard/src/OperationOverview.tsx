@@ -139,10 +139,14 @@ export function OperationGuidance({
   data,
   hours,
   stale,
+  insideDiagnostics = false,
 }: {
   data: OperationsSnapshot;
   hours: number;
   stale: boolean;
+  /** Rendered inside the diagnostics details: the "go to the
+   * diagnostics" link would point at itself, so it is omitted. */
+  insideDiagnostics?: boolean;
 }) {
   const reasons = noTradeReasons(data, hours, stale);
   const v = operationSummary(data, stale);
@@ -184,7 +188,9 @@ export function OperationGuidance({
               <li key={c}>{c}</li>
             ))}
           </ol>
-          <a href="#operation-diagnostics">詳細診断へ</a>
+          {!insideDiagnostics && (
+            <a href="#operation-diagnostics">詳細診断へ</a>
+          )}
         </section>
       )}
     </>

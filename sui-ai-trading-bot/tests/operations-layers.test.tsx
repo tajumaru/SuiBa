@@ -94,6 +94,29 @@ it("puts the full report, market panel, DeepBook validation and then the existin
   db.close();
 });
 
+it("folds the secondary KPIs and the guidance into the diagnostics details", () => {
+  const { db, data, state } = fixture();
+  const html = renderToStaticMarkup(
+    <OperationsView data={data} state={state} />,
+  );
+  const diag = html.indexOf('id="operation-diagnostics"');
+  // The everyday KPI layer keeps only trades and net PnL.
+  const kpi = html.indexOf('aria-label="主要KPI"');
+  const trades = html.indexOf("取引（24時間）");
+  const pnl = html.indexOf("純損益（24時間）");
+  for (const at of [trades, pnl]) {
+    expect(at).toBeGreaterThan(kpi);
+    expect(at).toBeLessThan(diag);
+  }
+  // Data health, running time and the no-trade guidance are
+  // diagnostics material now.
+  for (const text of ["データ正常性", "稼働（監視開始以降）", "なぜ売買されない？"]) {
+    const at = html.indexOf(text);
+    expect(at).toBeGreaterThan(diag);
+  }
+  db.close();
+});
+
 it("keeps the ledger-mismatch alert banner outside the diagnostics details", () => {
   const { db, data, state } = fixture();
   const broken: OperationsSnapshot = {

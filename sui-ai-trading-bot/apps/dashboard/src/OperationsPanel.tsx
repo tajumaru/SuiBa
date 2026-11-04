@@ -87,61 +87,32 @@ export function OperationsView({
           ))}
         </div>
         {report ? (
-          <>
-            <p>
-              {date(report.observedFrom)} 〜 {date(report.until)}
-              {!report.fullMonitoringCoverage &&
-                " · 記録期間不足（一部期間の集計）"}
-              {stale && " · 最終取得時点"}
-            </p>
-            <div className="operation-kpis">
-              <article>
-                <h3>データ正常性</h3>
-                <strong>
-                  {stale
-                    ? "状態不明"
-                    : data.timing?.dataStatus === "FRESH" &&
-                        data.timing.transportRecent
-                      ? "鮮度内"
-                      : data.timing?.dataStatus === "UPDATING" &&
-                          data.timing.transportRecent
-                        ? "確定足待ち"
-                        : "要確認"}
-                </strong>
-                <small>現在の取得状態</small>
-              </article>
-              <article>
-                <h3>稼働（監視開始以降）</h3>
-                <strong>{Math.floor(data.runningMs / 60000)}分</strong>
-                <small>確認済み稼働</small>
-              </article>
-              <article>
-                <h3>取引（{hours === 24 ? "24時間" : "7日間"}）</h3>
-                <strong>{report.tradeCount}件</strong>
-                <small>
-                  買い {number(report.buyCount)} / 売り{" "}
-                  {number(report.sellCount)}
-                </small>
-              </article>
-              <article>
-                <h3>純損益（{hours === 24 ? "24時間" : "7日間"}）</h3>
-                <strong>
-                  {report.netPnl == null
-                    ? "評価データ不足"
-                    : `${number(report.netPnl)} USDC`}
-                </strong>
-                <small>
-                  見送り 利益保護{report.profitGuardSkipped} · リスク
-                  {report.riskSkipped}
-                </small>
-              </article>
-            </div>
-          </>
+          <div className="operation-kpis">
+            <article>
+              <h3>取引（{hours === 24 ? "24時間" : "7日間"}）</h3>
+              <strong>{report.tradeCount}件</strong>
+              <small>
+                買い {number(report.buyCount)} / 売り{" "}
+                {number(report.sellCount)}
+              </small>
+            </article>
+            <article>
+              <h3>純損益（{hours === 24 ? "24時間" : "7日間"}）</h3>
+              <strong>
+                {report.netPnl == null
+                  ? "評価データ不足"
+                  : `${number(report.netPnl)} USDC`}
+              </strong>
+              <small>
+                見送り 利益保護{report.profitGuardSkipped} · リスク
+                {report.riskSkipped}
+              </small>
+            </article>
+          </div>
         ) : (
           <p>選択期間のレポートを取得できません。</p>
         )}
       </section>
-      <OperationGuidance data={data} hours={hours} stale={stale} />
       <details id="operation-diagnostics" className="operation-diagnostics">
         <summary>詳細診断 · API通信・停止理由・品質・会計・監査ログ</summary>
         <p>
@@ -152,6 +123,39 @@ export function OperationsView({
             止まった原因を AI に調べさせるためのファイル（状態・失敗の内訳・直近の記録）を保存します。
           </small>
         </p>
+        {/* Secondary KPIs and the guidance sections live in the
+            diagnostics fold: the everyday layer keeps only the
+            trade count and net PnL next to the hero and the
+            alert banners (the report periods and coverage notes
+            are on the full reports just below). */}
+        <div className="operation-kpis">
+          <article>
+            <h3>データ正常性</h3>
+            <strong>
+              {stale
+                ? "状態不明"
+                : data.timing?.dataStatus === "FRESH" &&
+                    data.timing.transportRecent
+                  ? "鮮度内"
+                  : data.timing?.dataStatus === "UPDATING" &&
+                      data.timing.transportRecent
+                    ? "確定足待ち"
+                    : "要確認"}
+            </strong>
+            <small>現在の取得状態</small>
+          </article>
+          <article>
+            <h3>稼働（監視開始以降）</h3>
+            <strong>{Math.floor(data.runningMs / 60000)}分</strong>
+            <small>確認済み稼働</small>
+          </article>
+        </div>
+        <OperationGuidance
+          data={data}
+          hours={hours}
+          stale={stale}
+          insideDiagnostics
+        />
         <section>
           <h2>24時間・7日間の検証レポート</h2>
           <div className="operation-reports">
