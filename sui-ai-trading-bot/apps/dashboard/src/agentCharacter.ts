@@ -1,7 +1,9 @@
 /**
  * Which character the narration avatar wears: the original white
- * character, or ぺんちゃん — the pink penguin (pink hood, white
- * face and belly, big orange beak) added as a second cast member.
+ * character, ぺんちゃん — the pink penguin (pink hood, white
+ * face and belly, big orange beak) — or Sui King Fizh, the blue
+ * fish king (gold crown, monocle, red royal robe), each added as
+ * a cast member with a full pose set of their own.
  * Device-local, like the character's name: the choice belongs to
  * the viewer, not to a pair or the bot. The white character is
  * the default, and anything unreadable falls back to it. Saving
@@ -10,13 +12,17 @@
 
 import { useEffect, useState } from "react";
 
-export type AgentCharacter = "white" | "pen";
+export type AgentCharacter = "white" | "pen" | "fizh";
 
 export const AGENT_CHARACTER_KEY = "suiba.agentCharacter";
 
 /** ぺんちゃん's own name, used while the user has not renamed
  * the character (see agentDisplayName). */
 export const PEN_DEFAULT_NAME = "ぺんちゃん";
+
+/** Sui King Fizh's own name, used while the user has not
+ * renamed the character (see agentDisplayName). */
+export const FIZH_DEFAULT_NAME = "King Fizh";
 
 interface CharacterStorage {
   getItem(key: string): string | null;
@@ -38,7 +44,8 @@ export function loadAgentCharacter(
 ): AgentCharacter {
   if (!storage) return "white";
   try {
-    return storage.getItem(AGENT_CHARACTER_KEY) === "pen" ? "pen" : "white";
+    const saved = storage.getItem(AGENT_CHARACTER_KEY);
+    return saved === "pen" || saved === "fizh" ? saved : "white";
   } catch {
     return "white";
   }

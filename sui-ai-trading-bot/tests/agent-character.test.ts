@@ -7,6 +7,7 @@ import {
 } from "../apps/dashboard/src/agentCharacter.ts";
 import { agentDisplayName } from "../apps/dashboard/src/agentName.ts";
 import {
+  FIZH_POSE_IMAGE,
   PEN_POSE_IMAGE,
   POSE_IMAGE,
   artworkFor,
@@ -43,6 +44,13 @@ describe("agent character storage", () => {
     expect(loadAgentCharacter(storage)).toBe("white");
   });
 
+  it("round-trips fizh", () => {
+    const storage = fakeStorage();
+    saveAgentCharacter("fizh", storage);
+    expect(storage.getItem(AGENT_CHARACTER_KEY)).toBe("fizh");
+    expect(loadAgentCharacter(storage)).toBe("fizh");
+  });
+
   it("treats anything unreadable as the white character", () => {
     expect(loadAgentCharacter(fakeStorage({ [AGENT_CHARACTER_KEY]: "junk" })))
       .toBe("white");
@@ -64,11 +72,13 @@ describe("agent display name defaults", () => {
     expect(agentDisplayName("")).toBe("キャラ");
     expect(agentDisplayName("", "white")).toBe("キャラ");
     expect(agentDisplayName("", "pen")).toBe("ぺんちゃん");
+    expect(agentDisplayName("", "fizh")).toBe("King Fizh");
   });
 
   it("a custom name wins for either character", () => {
     expect(agentDisplayName("シロ", "pen")).toBe("シロ");
     expect(agentDisplayName("シロ", "white")).toBe("シロ");
+    expect(agentDisplayName("シロ", "fizh")).toBe("シロ");
   });
 });
 
@@ -85,6 +95,17 @@ describe("artwork selection", () => {
     expect(art.main).toBe(PEN_POSE_IMAGE.laptop);
     expect(art.typing).toContain("agent-pen-laptop-typing");
     expect(artworkFor("pen", "normal", false).typing).toBeNull();
+  });
+
+  it("gives Sui King Fizh its own artwork for every pose", () => {
+    for (const pose of POSES) {
+      expect(artworkFor("fizh", pose, false).main).toBe(FIZH_POSE_IMAGE[pose]);
+      expect(FIZH_POSE_IMAGE[pose]).toContain("agent-fizh-");
+    }
+    const art = artworkFor("fizh", "laptop", true);
+    expect(art.main).toBe(FIZH_POSE_IMAGE.laptop);
+    expect(art.typing).toContain("agent-fizh-laptop-typing");
+    expect(artworkFor("fizh", "normal", false).typing).toBeNull();
   });
 
   it("keeps the white set and its hard variants exactly as before", () => {

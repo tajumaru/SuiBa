@@ -21,6 +21,15 @@ import imgPenLaptopTyping from "./assets/agent-pen-laptop-typing.jpg";
 import imgPenBlueLine from "./assets/agent-pen-blue-line.jpg";
 import imgPenScream from "./assets/agent-pen-scream.jpg";
 import imgPenListen from "./assets/agent-pen-listen.jpg";
+import imgFizhNormal from "./assets/agent-fizh-normal.jpg";
+import imgFizhPoint from "./assets/agent-fizh-point.jpg";
+import imgFizhPointSmile from "./assets/agent-fizh-point-smile.jpg";
+import imgFizhSleep from "./assets/agent-fizh-sleep.jpg";
+import imgFizhLaptop from "./assets/agent-fizh-laptop.jpg";
+import imgFizhLaptopTyping from "./assets/agent-fizh-laptop-typing.jpg";
+import imgFizhBlueLine from "./assets/agent-fizh-blue-line.jpg";
+import imgFizhScream from "./assets/agent-fizh-scream.jpg";
+import imgFizhListen from "./assets/agent-fizh-listen.jpg";
 import {
   saveAgentCharacter,
   useAgentCharacter,
@@ -53,6 +62,33 @@ export const PEN_POSE_IMAGE: Record<AgentPose, string> = {
   buyLine: imgPenBlueLine,
 };
 
+/** Sui King Fizh's artwork, pose for pose with the other sets:
+ * the blue fish king in his own painterly style — gold crown,
+ * monocle, white fur collar, red royal robe and the Sui-drop
+ * medallion — with a crowd of smaller blue fish for the
+ * blue-line celebration. */
+export const FIZH_POSE_IMAGE: Record<AgentPose, string> = {
+  normal: imgFizhNormal,
+  point: imgFizhPoint,
+  pointSmile: imgFizhPointSmile,
+  sleep: imgFizhSleep,
+  laptop: imgFizhLaptop,
+  buyLine: imgFizhBlueLine,
+};
+
+/** The shout and listen overlays per character (they are not
+ * poses in the map above; the avatar swaps them in directly). */
+const SCREAM_IMAGE: Record<AgentCharacter, string> = {
+  white: imgScream,
+  pen: imgPenScream,
+  fizh: imgFizhScream,
+};
+const LISTEN_IMAGE: Record<AgentCharacter, string> = {
+  white: imgListen,
+  pen: imgPenListen,
+  fizh: imgFizhListen,
+};
+
 /**
  * The artwork for one pose: the still frame, plus — for the
  * laptop pose only — the second typing frame stacked over it.
@@ -71,6 +107,11 @@ export function artworkFor(
     return {
       main: PEN_POSE_IMAGE[pose],
       typing: pose === "laptop" ? imgPenLaptopTyping : null,
+    };
+  if (character === "fizh")
+    return {
+      main: FIZH_POSE_IMAGE[pose],
+      typing: pose === "laptop" ? imgFizhLaptopTyping : null,
     };
   if (hardMode) {
     if (pose === "normal") return { main: imgHard, typing: null };
@@ -291,13 +332,13 @@ export function AgentHeaderAvatar({
           {shouting ? (
             <img
               className="agent-avatar-scream"
-              src={character === "pen" ? imgPenScream : imgScream}
+              src={SCREAM_IMAGE[character]}
               alt=""
             />
           ) : listening && !celebrating ? (
             <img
               className="agent-avatar-listen"
-              src={character === "pen" ? imgPenListen : imgListen}
+              src={LISTEN_IMAGE[character]}
               alt=""
             />
           ) : speaking && !celebrating ? (
@@ -341,7 +382,7 @@ export function AgentHeaderAvatar({
           }
           aria-hidden="true"
         />
-        {(agentName !== "" || character === "pen") && (
+        {(agentName !== "" || character !== "white") && (
           <span className="agent-avatar-name">
             {agentDisplayName(agentName, character)}：
           </span>
@@ -406,6 +447,15 @@ export function AgentHeaderAvatar({
             >
               <img src={imgPenNormal} alt="" />
               ぺんちゃん
+            </button>
+            <button
+              type="button"
+              className={character === "fizh" ? "active" : ""}
+              aria-pressed={character === "fizh"}
+              onClick={() => saveAgentCharacter("fizh")}
+            >
+              <img src={imgFizhNormal} alt="" />
+              King Fizh
             </button>
           </div>
           <div className="agent-rename-actions">

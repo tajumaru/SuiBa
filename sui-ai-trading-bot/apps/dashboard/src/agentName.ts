@@ -7,6 +7,7 @@
  */
 
 import {
+  FIZH_DEFAULT_NAME,
   PEN_DEFAULT_NAME,
   type AgentCharacter,
 } from "./agentCharacter.ts";
@@ -31,9 +32,12 @@ export function agentDisplayName(
   character: AgentCharacter = "white",
 ): string {
   if (name !== "") return name;
-  // ぺんちゃん arrives with a name of its own; the white
-  // character stays the plain キャラ until it is renamed.
-  return character === "pen" ? PEN_DEFAULT_NAME : DEFAULT_AGENT_NAME;
+  // ぺんちゃん and King Fizh arrive with names of their own;
+  // the white character stays the plain キャラ until it is
+  // renamed.
+  if (character === "pen") return PEN_DEFAULT_NAME;
+  if (character === "fizh") return FIZH_DEFAULT_NAME;
+  return DEFAULT_AGENT_NAME;
 }
 
 interface NameStorage {

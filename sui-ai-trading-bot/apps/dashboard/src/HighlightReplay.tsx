@@ -9,6 +9,10 @@ import imgPenNormal from "./assets/agent-pen-normal.jpg";
 import imgPenPoint from "./assets/agent-pen-point.jpg";
 import imgPenPointSmile from "./assets/agent-pen-point-smile.jpg";
 import imgPenBlueLine from "./assets/agent-pen-blue-line.jpg";
+import imgFizhNormal from "./assets/agent-fizh-normal.jpg";
+import imgFizhPoint from "./assets/agent-fizh-point.jpg";
+import imgFizhPointSmile from "./assets/agent-fizh-point-smile.jpg";
+import imgFizhBlueLine from "./assets/agent-fizh-blue-line.jpg";
 import { useAgentCharacter } from "./agentCharacter.ts";
 
 // The replay renders the pose artwork itself rather than
@@ -28,6 +32,12 @@ const PEN_POSE_IMAGE: Partial<Record<AgentPose, string>> = {
   point: imgPenPoint,
   pointSmile: imgPenPointSmile,
   buyLine: imgPenBlueLine,
+};
+const FIZH_POSE_IMAGE: Partial<Record<AgentPose, string>> = {
+  normal: imgFizhNormal,
+  point: imgFizhPoint,
+  pointSmile: imgFizhPointSmile,
+  buyLine: imgFizhBlueLine,
 };
 
 function usePrefersReducedMotion(): boolean {
@@ -76,8 +86,18 @@ export function HighlightReplay({
 }) {
   const reduced = usePrefersReducedMotion();
   const character = useAgentCharacter();
-  const poseImages = character === "pen" ? PEN_POSE_IMAGE : POSE_IMAGE;
-  const poseFallback = character === "pen" ? imgPenNormal : imgNormal;
+  const poseImages =
+    character === "pen"
+      ? PEN_POSE_IMAGE
+      : character === "fizh"
+        ? FIZH_POSE_IMAGE
+        : POSE_IMAGE;
+  const poseFallback =
+    character === "pen"
+      ? imgPenNormal
+      : character === "fizh"
+        ? imgFizhNormal
+        : imgNormal;
   const total = highlight.entries.length;
   const [step, setStep] = useState(reduced ? total - 1 : 0);
   const [playing, setPlaying] = useState(!reduced);
