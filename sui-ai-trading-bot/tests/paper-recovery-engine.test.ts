@@ -510,7 +510,11 @@ function fixture(database?: BotDatabase, deploymentBlocked?: () => boolean) {
   const router = {
     getQuote: vi.fn(async (r: QuoteRequest): Promise<QuoteResult> => {
       const buy = r.from === USDC,
-        output = buy ? units(r.amountIn, USDC) / 2 : units(r.amountIn, SUI) * 2;
+        output = buy ? units(r.amountIn, USDC) / 2 : units(r.amountIn, SUI) * 2,
+        // One timestamp: two Date.now() calls can straddle a
+        // millisecond and stamp a 15,001 ms quote lifetime,
+        // which quote validation rightly rejects (see core.test).
+        at = Date.now();
       return {
         ...r,
         amountOut: atomic(output, buy ? SUI : USDC),
@@ -518,8 +522,8 @@ function fixture(database?: BotDatabase, deploymentBlocked?: () => boolean) {
         id: "mock",
         liquid: true,
         priceImpact: 0,
-        createdAt: Date.now(),
-        expiresAt: Date.now() + 15000,
+        createdAt: at,
+        expiresAt: at + 15000,
         route: ["mock"],
         source: "mock",
         dexFeeUsdc: null,
@@ -1094,7 +1098,11 @@ it("recovers in GeckoTerminal mode: an evidenced Gecko failure pauses, then heal
   const router = {
     getQuote: vi.fn(async (r: QuoteRequest): Promise<QuoteResult> => {
       const buy = r.from === USDC,
-        output = buy ? units(r.amountIn, USDC) / 2 : units(r.amountIn, SUI) * 2;
+        output = buy ? units(r.amountIn, USDC) / 2 : units(r.amountIn, SUI) * 2,
+        // One timestamp: two Date.now() calls can straddle a
+        // millisecond and stamp a 15,001 ms quote lifetime,
+        // which quote validation rightly rejects (see core.test).
+        at = Date.now();
       return {
         ...r,
         amountOut: atomic(output, buy ? SUI : USDC),
@@ -1102,8 +1110,8 @@ it("recovers in GeckoTerminal mode: an evidenced Gecko failure pauses, then heal
         id: "mock",
         liquid: true,
         priceImpact: 0,
-        createdAt: Date.now(),
-        expiresAt: Date.now() + 15000,
+        createdAt: at,
+        expiresAt: at + 15000,
         route: ["mock"],
         source: "mock",
         dexFeeUsdc: null,

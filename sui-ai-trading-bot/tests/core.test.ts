@@ -336,13 +336,19 @@ describe("worker execution boundaries", () => {
       getQuote: async (request) => {
         calls++;
         onQuote?.(db);
+        // One timestamp for both fields: two Date.now() calls can
+        // straddle a millisecond boundary and stamp a 15,001 ms
+        // lifetime, which the profit guard rightly rejects as an
+        // invalid quote — a flake that once surfaced as
+        // PROFIT_GUARD_INVALID_QUOTE instead of MAX_ORDER.
+        const at = Date.now();
         return {
           ...quote,
           ...request,
           amountOut: "2000000",
           minAmountOut: "1994000",
-          createdAt: Date.now(),
-          expiresAt: Date.now() + 15000,
+          createdAt: at,
+          expiresAt: at + 15000,
         };
       },
       validateQuote: async (q) => {
