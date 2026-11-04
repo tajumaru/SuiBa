@@ -44,6 +44,10 @@ class RealDocker:
             failure = json.loads((broker.model.parent/'failure.json').read_text())
             self.evidence_before_cleanup = failure['stage'] == 'verify-databases'
         raw = b.bounded_process(['/usr/bin/docker', *args], env, output, timeout)
+        if self.fail_after_verify and args[:2] == ['rm', '-f'] and args[-1].endswith('-verify'):
+            # Docker releases differ on rm -f of an already auto-removed helper.
+            # Explicitly inject unconfirmed cleanup instead of assuming its exit.
+            b.bounded_process(['/usr/bin/python3', '-c', 'raise SystemExit(24)'], {}, timeout=5)
         if self.fail_after_verify and args[0] == 'run' and args[-1] == 'verify':
             # Real offline helper exited successfully. Simulate a later CLI failure,
             # rather than treating a container's exit=0 as proof of client success.
@@ -150,6 +154,13 @@ try:
     final = json.loads(docker('inspect', cid))[0]
     assert not final['State']['Running'] and final['HostConfig']['RestartPolicy']['Name'] == 'no'
     assert backup.is_file() and not (base/'state'/failed['transaction']/'backup.json').exists()
+    previous_calls = len(transport.calls)
+    try:
+        broker.execute({'operation': 'deploy', 'sha': sha}, 1001)
+        raise AssertionError('unknown state was allowed to retry')
+    except b.Rejected as error:
+        assert str(error) in ('REPLAY_OR_OLD_RELEASE', 'ADMIN_RECONCILIATION_REQUIRED')
+    assert len(transport.calls) == previous_calls
     print('PASS: successful helper followed by CLI failure retains safe evidence and blocks replay; no Worker')
 finally:
     # Only random test resources; never suiba-vps production objects.
