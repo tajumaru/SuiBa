@@ -34,6 +34,7 @@ REPORTS = 'suiba-vps-reports'
 PROJECT = 'suiba-vps'
 RUNTIME = '/opt/suiba/shared/runtime.env'
 TOKEN = '/opt/suiba/shared/admin-token'
+PAPER_STATE = Path('/var/lib/suiba-paper-check')
 
 
 class Rejected(Exception):
@@ -392,23 +393,68 @@ class Broker:
             s = os.fstat(lockfd)
             require(s.st_uid == 0 and s.st_nlink == 1 and stat.S_ISREG(s.st_mode) and not (s.st_mode & 0o077), 'LOCK_FILE')
             fcntl.flock(lockfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            self.check_paper_session()
             # Revalidate imported callers too; CLI never accepts a path/image/config.
             request(json.dumps(req).encode())
-            try:
-                return self.transaction(req, uid)
-            finally:
-                # Only the root-created snapshot file, never incoming/DB/backup.
-                if getattr(self, 'archive', None):
-                    self.archive.unlink(missing_ok=True)
+            with contextlib.ExitStack() as locks:
+                permit = self.check_paper_session(req)
+                if permit is not None:
+                    for name in ('stop', 'mutation'):
+                        fd = locks.enter_context(regular(PAPER_STATE/(name+'.lock')))
+                        fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB)
+                    permit = self.check_paper_session(req)
+                    self.consume_paper_deploy(permit)
+                try:
+                    return self.transaction(req, uid)
+                finally:
+                    # Only the root-created snapshot file, never incoming/DB/backup.
+                    if getattr(self, 'archive', None):
+                        self.archive.unlink(missing_ok=True)
+
         finally:
             os.close(lockfd)
 
-    def check_paper_session(self):
+    def check_paper_session(self, req=None):
         require(not os.path.lexists(self.state/'paper-check-failed.json'), 'PAPER_CHECK_RECONCILIATION_REQUIRED')
         marker = self.state/'paper-check.json'
         if os.path.lexists(marker):
-            require(decode(read_trusted(marker)) == {'status': 'completed'}, 'PAPER_CHECK_RECONCILIATION_REQUIRED')
+            value = decode(read_trusted(marker))
+            if value == {'status': 'completed'}:
+                return
+            require(value == {'status': 'in_progress'} and req is not None and req['operation'] == 'deploy',
+                    'PAPER_CHECK_RECONCILIATION_REQUIRED')
+            path = self.state/('paper-deploy-'+req['sha']+'.json')
+            require(not os.path.lexists(path.with_suffix('.consumed.json')), 'PAPER_DEPLOY_ALREADY_CONSUMED')
+            permit = decode(read_trusted(path))
+            require(set(permit) == {'id', 'sha', 'approval_sha256', 'run_sha256', 'stop_sha256'} and
+                    permit['sha'] == req['sha'] and isinstance(permit['id'], str) and
+                    re.fullmatch(r'[a-f0-9]{32}', permit['id']), 'PAPER_DEPLOY_PERMIT')
+            run = PAPER_STATE/'run.json'
+            folder = PAPER_STATE/permit['id']
+            for target, digest in ((run, permit['run_sha256']), (folder/'stop.json', permit['stop_sha256']),
+                                   (self.policy/'approvals'/(req['sha']+'.json'), permit['approval_sha256'])):
+                require(isinstance(digest, str) and HEX.fullmatch(digest) and
+                        hashlib.sha256(read_trusted(target)).hexdigest() == digest, 'PAPER_DEPLOY_STATE_CHANGED')
+            record = decode(read_trusted(run))
+            stop = decode(read_trusted(folder/'stop.json'))
+            approval = decode(read_trusted(self.policy/'approvals'/(req['sha']+'.json')))
+            require(record['id'] == permit['id'] and record['status'] == 'failed_requires_review' and
+                    stop['id'] == permit['id'] and stop['status'] == 'clean_stopped' and stop['errors'] == [],
+                    'PAPER_DEPLOY_NOT_CLEAN')
+            require(not os.path.lexists(PAPER_STATE/'abort-inhibit.json') and
+                    not os.path.lexists(folder/'retry-approved.json') and not any(folder.glob('fault-*.json')),
+                    'PAPER_DEPLOY_FAULT')
+            require(approval['sha'] == req['sha'] and approval['operation'] == 'deploy' and
+                    type(approval['expires']) is int and approval['expires'] > time.time(), 'PAPER_DEPLOY_EXPIRED')
+            return path
+
+    def consume_paper_deploy(self, permit):
+        consumed = permit.with_suffix('.consumed.json')
+        # Link creation is exclusive. If interrupted, the retained consumed record blocks replay.
+        os.link(permit, consumed, follow_symlinks=False)
+        os.unlink(permit)
+        with directory(self.state) as parent:
+            os.fsync(parent)
+
 
     def transaction(self, req, uid):
         sha, operation = req['sha'], req['operation']

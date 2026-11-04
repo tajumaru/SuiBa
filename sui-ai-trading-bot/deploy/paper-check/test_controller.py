@@ -76,6 +76,63 @@ class StopTests(unittest.TestCase):
             with self.assertRaises(Exception):
                 ctl.consume_retry(record, permit)
 
+    @unittest.skipIf(os.name == 'nt', 'Linux flock and directory fsync')
+    def test_deploy_review_requires_clean_proof_and_is_exclusive(self):
+        import re
+        from types import SimpleNamespace
+        for failure in (None, 'diagnostic', 'quiescent', 'helper', 'pair', 'wrong-id', 'retry', 'expired'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+                root = Path(tmp)
+                paper, state, policy = [root/name for name in ('paper', 'broker', 'policy')]
+                for folder in (paper, state, policy, policy/'approvals'):
+                    folder.mkdir(mode=0o700)
+                ctl = object.__new__(c.Controller)
+                ctl.state, ctl.record = paper, paper/'run.json'
+                record = initialize(ctl)
+                record['status'] = 'failed_requires_review'
+                FakeBroker.atomic(ctl.record, record)
+                FakeBroker.atomic(state/'paper-check.json', {'status': 'in_progress'})
+                (state/'lock').touch(mode=0o600)
+                @contextlib.contextmanager
+                def regular(path):
+                    fd = os.open(path, os.O_RDONLY)
+                    try:
+                        yield fd
+                    finally:
+                        os.close(fd)
+                ctl.b = SimpleNamespace(STATE=state, POLICY=policy, SHA=re.compile(r'[a-f0-9]{40}'),
+                    regular=regular, decode=FakeBroker.decode, read_trusted=FakeBroker.read_trusted,
+                    atomic=FakeBroker.atomic, directory=FakeBroker.directory)
+                sha = 'f'*40
+                approval = {'sha': sha, 'operation': 'deploy', 'expires': int(time.time())+60}
+                if failure == 'expired':
+                    approval['expires'] = 0
+                FakeBroker.atomic(policy/'approvals'/(sha+'.json'), approval)
+                FakeBroker.atomic(paper/record['id']/'stop.json', {'id': record['id'], 'status': 'clean_stopped'})
+                def check(stage):
+                    if failure == stage:
+                        raise RuntimeError('fixture')
+                ctl.quiescent = lambda: check('quiescent')
+                ctl.diagnose_locked = lambda: check('diagnostic') or {
+                    'stop': {'status': 'clean_stopped'}, 'requires_review': False,
+                    'diagnostics': {'exit_code': 0, 'oom_killed': False}}
+                ctl.helper = lambda: (SimpleNamespace(helper=lambda *args: check('helper')), 'fixture')
+                ctl.verify_sui = lambda: check('pair')
+                if failure == 'retry':
+                    FakeBroker.atomic(paper/record['id']/'retry-approved.json', {})
+                run_id = 'b'*32 if failure == 'wrong-id' else record['id']
+                permit = state/('paper-deploy-'+sha+'.json')
+                if failure:
+                    with self.assertRaises(Exception):
+                        ctl.approve_deploy(run_id, sha)
+                    self.assertFalse(permit.exists())
+                else:
+                    ctl.approve_deploy(run_id, sha)
+                    self.assertEqual(json.loads(permit.read_bytes())['id'], record['id'])
+                    self.assertEqual(json.loads(ctl.record.read_bytes())['status'], 'failed_requires_review')
+                    with self.assertRaises(Exception):
+                        ctl.approve_deploy(run_id, sha)
+
     def test_normal_api_failure_docker_hang_oom_and_db_failure(self):
         for failure in (None, 'api', 'stop', 'daemon', 'oom', 'db'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:

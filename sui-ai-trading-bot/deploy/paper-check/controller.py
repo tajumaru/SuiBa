@@ -3,6 +3,10 @@
 
 No image/path/duration/command is accepted from SSH. No token is returned.
 The stop entrypoint deliberately does not acquire the run/deploy lock.
+
+Root-only recovery: approve-deploy RUN_ID RELEASE_SHA. Requires an inactive
+cutoff and an existing independent release approval. Preserves failed history;
+issues one permission consumed by the broker before the next deployment attempt.
 """
 import contextlib
 import hashlib
@@ -222,43 +226,91 @@ class Controller:
             import fcntl
             fcntl.flock(lock, fcntl.LOCK_EX|fcntl.LOCK_NB)
             with self.locked('stop'), self.locked('mutation'):
-                record = self.current()
-                require(record['status'] in ('completed', 'failed_requires_review') and self.exited(record))
-                i = self.inspect()
-                state = i['State']
-                require(state['Status'] in ('created', 'exited') and not state['Running'] and state['Pid'] == 0)
-                require(not self.docker.call(['ps', '-q', '--filter', 'volume='+self.b.DATA], timeout=10))
-                volume = self.b.decode(self.docker.call(['volume', 'inspect', self.b.DATA], timeout=10))
-                require(len(volume) == 1 and volume[0]['Driver'] == 'local' and volume[0]['Name'] == self.b.DATA)
-                source = Path(volume[0]['Mountpoint'])
-                require(source.is_absolute() and source.is_dir() and source.resolve() == source)
-                latch = (source/'bot.sqlite.maintenance').lstat()
-                maintenance = stat.S_ISREG(latch.st_mode) and latch.st_uid == 1000 and latch.st_nlink == 1
-                require(maintenance)
-                stop = self.b.decode(self.b.read_trusted(self.folder(record)/'stop.json'))
-                require(stop['id'] == record['id'])
-                report = self.diagnostic_backup(record, source)
-                health = state.get('Health', {}).get('Log', [])
-                failure_path = self.folder(record)/'failure.json'
-                stage, http, readiness = None, None, None
-                if failure_path.exists():
-                    failure = self.b.decode(self.b.read_trusted(failure_path))
-                    require(failure['id'] == record['id'] and failure['stage'] in DIAGNOSTIC_STAGES)
-                    stage = failure['stage']
-                    readiness = failure.get('readiness')
-                    http = failure.get('http_status')
-                    require(http is None or type(http) is int and 100 <= http <= 599)
-                return {
-                    'run': {'id': record['id'], 'status': record['status']},
-                    'stop': {'id': stop['id'], 'status': stop['status']},
-                    'requires_review': self.faults(record),
-                    'diagnostics': {
-                        'exit_code': state['ExitCode'], 'oom_killed': state['OOMKilled'],
-                        'healthcheck_exit': health[-1]['ExitCode'] if health else None,
-                        'maintenance': maintenance, 'stage': stage, 'http_status': http,
-                        'backup_verified': True, 'deltas': report, 'readiness': readiness,
-                    },
+                return self.diagnose_locked()
+
+    def diagnose_locked(self):
+        record = self.current()
+        require(record['status'] in ('completed', 'failed_requires_review') and self.exited(record))
+        i = self.inspect()
+        state = i['State']
+        require(state['Status'] in ('created', 'exited') and not state['Running'] and state['Pid'] == 0)
+        require(not self.docker.call(['ps', '-q', '--filter', 'volume='+self.b.DATA], timeout=10))
+        volume = self.b.decode(self.docker.call(['volume', 'inspect', self.b.DATA], timeout=10))
+        require(len(volume) == 1 and volume[0]['Driver'] == 'local' and volume[0]['Name'] == self.b.DATA)
+        source = Path(volume[0]['Mountpoint'])
+        require(source.is_absolute() and source.is_dir() and source.resolve() == source)
+        latch = (source/'bot.sqlite.maintenance').lstat()
+        maintenance = stat.S_ISREG(latch.st_mode) and latch.st_uid == 1000 and latch.st_nlink == 1
+        require(maintenance)
+        stop = self.b.decode(self.b.read_trusted(self.folder(record)/'stop.json'))
+        require(stop['id'] == record['id'])
+        report = self.diagnostic_backup(record, source)
+        health = state.get('Health', {}).get('Log', [])
+        failure_path = self.folder(record)/'failure.json'
+        stage, http, readiness = None, None, None
+        if failure_path.exists():
+            failure = self.b.decode(self.b.read_trusted(failure_path))
+            require(failure['id'] == record['id'] and failure['stage'] in DIAGNOSTIC_STAGES)
+            stage = failure['stage']
+            readiness = failure.get('readiness')
+            http = failure.get('http_status')
+            require(http is None or type(http) is int and 100 <= http <= 599)
+        return {
+            'run': {'id': record['id'], 'status': record['status']},
+            'stop': {'id': stop['id'], 'status': stop['status']},
+            'requires_review': self.faults(record),
+            'diagnostics': {
+                'exit_code': state['ExitCode'], 'oom_killed': state['OOMKilled'],
+                'healthcheck_exit': health[-1]['ExitCode'] if health else None,
+                'maintenance': maintenance, 'stage': stage, 'http_status': http,
+                'backup_verified': True, 'deltas': report, 'readiness': readiness,
+            },
+        }
+
+    def approve_deploy(self, run_id, sha):
+        require(isinstance(run_id, str) and re.fullmatch(r'[a-f0-9]{32}', run_id))
+        require(isinstance(sha, str) and self.b.SHA.fullmatch(sha))
+        with self.b.regular(self.b.STATE/'lock') as lock:
+            import fcntl
+            fcntl.flock(lock, fcntl.LOCK_EX|fcntl.LOCK_NB)
+            with self.locked('stop'), self.locked('mutation'):
+                self.quiescent()
+                report = self.diagnose_locked()
+                record = self.current(run_id)
+                require(record['status'] == 'failed_requires_review')
+                require(report['stop']['status'] == 'clean_stopped' and not report['requires_review'])
+                require(report['diagnostics']['exit_code'] == 0 and not report['diagnostics']['oom_killed'])
+                require(not (self.state/'abort-inhibit.json').exists())
+                marker = self.b.decode(self.b.read_trusted(self.b.STATE/'paper-check.json'))
+                require(marker == {'status': 'in_progress'})
+                approval_path = self.b.POLICY/'approvals'/(sha+'.json')
+                approval_bytes = self.b.read_trusted(approval_path)
+                approval = self.b.decode(approval_bytes)
+                require(approval['sha'] == sha and approval['operation'] == 'deploy')
+                require(type(approval['expires']) is int and approval['expires'] > time.time())
+                folder = self.folder(record)
+                require(not os.path.lexists(folder/'retry-approved.json'))
+                helper, image = self.helper()
+                helper.helper(image, 'verify')
+                self.verify_sui()
+                permit = self.b.STATE/('paper-deploy-'+sha+'.json')
+                consumed = permit.with_suffix('.consumed.json')
+                require(not os.path.lexists(permit) and not os.path.lexists(consumed))
+                self.b.atomic(folder/'reviewed-for-deploy.json', record)
+                value = {
+                    'id': run_id, 'sha': sha,
+                    'approval_sha256': hashlib.sha256(approval_bytes).hexdigest(),
+                    'run_sha256': hashlib.sha256(self.b.read_trusted(self.record)).hexdigest(),
+                    'stop_sha256': hashlib.sha256(self.b.read_trusted(folder/'stop.json')).hexdigest(),
                 }
+                # Exclusive creation keeps the approval single-use even across crashes.
+                fd = os.open(permit, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW, 0o600)
+                with os.fdopen(fd, 'wb') as out:
+                    out.write(json.dumps(value).encode())
+                    out.flush()
+                    os.fsync(out.fileno())
+                with self.b.directory(self.b.STATE) as directory_fd:
+                    os.fsync(directory_fd)
 
     def diagnostic_backup(self, record, source):
         backup = record['backup']
@@ -708,7 +760,7 @@ class Controller:
 def main():
     os.umask(0o077)
     try:
-        require(os.geteuid() == 0 and ((len(sys.argv) == 2 and sys.argv[1] in ('request', 'run', 'stop', 'post-stop')) or (len(sys.argv) == 3 and sys.argv[1] == 'approve-retry')))
+        require(os.geteuid() == 0 and ((len(sys.argv) == 2 and sys.argv[1] in ('request', 'run', 'stop', 'post-stop')) or (len(sys.argv) == 3 and sys.argv[1] == 'approve-retry') or (len(sys.argv) == 4 and sys.argv[1] == 'approve-deploy')))
         # All ancestors and module must be root-owned/non-writable by SSH user.
         import stat
         current = BROKER.parent
@@ -723,7 +775,10 @@ def main():
         spec.loader.exec_module(b)
         b.read_trusted(Path(__file__))
         controller = Controller(b)
-        if sys.argv[1] == 'approve-retry':
+        if sys.argv[1] == 'approve-deploy':
+            controller.approve_deploy(sys.argv[2], sys.argv[3])
+            print('PAPER_CHECK_DEPLOY_APPROVED')
+        elif sys.argv[1] == 'approve-retry':
             report = controller.diagnose()
             run = report['run']
             require(run['id'] == sys.argv[2] and run['status'] == 'failed_requires_review')
