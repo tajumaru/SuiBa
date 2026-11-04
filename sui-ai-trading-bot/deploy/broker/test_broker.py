@@ -92,6 +92,91 @@ class BrokerTests(unittest.TestCase):
             b.atomic(Path(root)/'paper-check-failed.json', {'status':'manual_reconciliation_required'})
             with self.assertRaises(b.Rejected): broker.check_paper_session()
 
+    def paper_deploy_permit(self, paper):
+        run_id = 'e'*32
+        folder = paper/run_id
+        folder.mkdir()
+        record = {'id': run_id, 'status': 'failed_requires_review'}
+        stop = {'id': run_id, 'status': 'clean_stopped', 'errors': []}
+        b.atomic(paper/'run.json', record)
+        for name in ('stop', 'mutation'):
+            (paper/(name+'.lock')).touch(mode=0o600)
+        b.atomic(folder/'stop.json', stop)
+        b.atomic(self.state/'paper-check.json', {'status': 'in_progress'})
+        permit = {
+            'id': run_id, 'sha': SHA,
+            'approval_sha256': hashlib.sha256((self.policy/'approvals'/(SHA+'.json')).read_bytes()).hexdigest(),
+            'run_sha256': hashlib.sha256((paper/'run.json').read_bytes()).hexdigest(),
+            'stop_sha256': hashlib.sha256((folder/'stop.json').read_bytes()).hexdigest(),
+        }
+        path = self.state/('paper-deploy-'+SHA+'.json')
+        b.atomic(path, permit)
+        return path
+
+    def test_reviewed_deploy_is_single_use_and_keeps_failed_record(self):
+        with tempfile.TemporaryDirectory(dir=self.root) as tmp, patch.object(b, 'PAPER_STATE', Path(tmp)):
+            paper = Path(tmp)
+            permit = self.paper_deploy_permit(paper)
+            self.assertEqual(self.broker.check_paper_session(self.req), permit)
+            with self.assertRaises(b.Rejected):
+                self.broker.check_paper_session()  # Controller start is still blocked.
+            result = self.broker.execute(self.req, 1001)
+            self.assertEqual(result['status'], 'prepared_stopped')
+            self.assertEqual(json.loads((paper/'run.json').read_bytes())['status'], 'failed_requires_review')
+            self.assertTrue(permit.with_suffix('.consumed.json').exists())
+            with self.assertRaises(b.Rejected):
+                self.broker.execute(self.req, 1001)
+
+    def test_reviewed_deploy_refuses_changed_proof_or_approval(self):
+        for changed in ('run', 'stop', 'approval', 'fault', 'retry', 'abort', 'expired'):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory(dir=self.root) as tmp:
+                paper = Path(tmp)
+                with patch.object(b, 'PAPER_STATE', paper):
+                    permit = self.paper_deploy_permit(paper)
+                    folder = paper/('e'*32)
+                    if changed in ('run', 'stop'):
+                        path = paper/'run.json' if changed == 'run' else folder/'stop.json'
+                        path.write_bytes(path.read_bytes()+b' ')
+                    elif changed == 'approval':
+                        path = self.policy/'approvals'/(SHA+'.json')
+                        path.write_bytes(path.read_bytes()+b' ')
+                    elif changed == 'fault':
+                        b.atomic(folder/'fault-late.json', {})
+                    elif changed == 'retry':
+                        b.atomic(folder/'retry-approved.json', {})
+                    elif changed == 'abort':
+                        b.atomic(paper/'abort-inhibit.json', {})
+                    if changed == 'expired':
+                        with patch.object(b.time, 'time', return_value=self.approval['expires']+1):
+                            with self.assertRaises(b.Rejected):
+                                self.broker.check_paper_session(self.req)
+                    else:
+                        with self.assertRaises(b.Rejected):
+                            self.broker.check_paper_session(self.req)
+                    self.assertTrue(permit.exists())
+
+    def test_reviewed_deploy_refuses_concurrent_stop_without_consuming(self):
+        with tempfile.TemporaryDirectory(dir=self.root) as tmp, patch.object(b, 'PAPER_STATE', Path(tmp)):
+            paper = Path(tmp)
+            permit = self.paper_deploy_permit(paper)
+            with b.regular(paper/'stop.lock') as fd:
+                b.fcntl.flock(fd, b.fcntl.LOCK_EX|b.fcntl.LOCK_NB)
+                with self.assertRaises(BlockingIOError):
+                    self.broker.execute(self.req, 1001)
+            self.assertTrue(permit.exists())
+            self.assertFalse(self.docker.calls)
+
+    def test_consumed_permit_blocks_replay_after_unlink_failure(self):
+        with tempfile.TemporaryDirectory(dir=self.root) as tmp, patch.object(b, 'PAPER_STATE', Path(tmp)):
+            permit = self.paper_deploy_permit(Path(tmp))
+            with patch.object(b.os, 'unlink', side_effect=OSError('fixture')):
+                with self.assertRaises(OSError):
+                    self.broker.consume_paper_deploy(permit)
+            self.assertTrue(permit.exists())
+            self.assertTrue(permit.with_suffix('.consumed.json').exists())
+            with self.assertRaises(b.Rejected):
+                self.broker.check_paper_session(self.req)
+
     def setUp(self):
         # Transaction tests isolate archive parsing; real tar tests below cover it.
         self.identity_patch = patch.object(b, 'archive_identity', return_value=(IMAGE, {}))
