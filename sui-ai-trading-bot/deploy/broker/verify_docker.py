@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import uuid
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('broker', Path(__file__).with_name('broker.py'))
 b = importlib.util.module_from_spec(spec)
@@ -33,16 +34,22 @@ def docker(*args, input=None):
 class RealDocker:
     def __init__(self):
         self.calls = []
+        self.fail_after_verify = False
+        self.evidence_before_cleanup = False
 
     def call(self, args, image='', output=None, timeout=180):
         self.calls.append(args)
         env = {**docker_env, 'SUIBA_IMAGE': image}
-        r = subprocess.run(['/usr/bin/docker', *args], env=env, stdin=subprocess.DEVNULL,
-                           stdout=output or subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
-        if r.returncode:
-            # Only fixtures here. Do not copy this diagnostic into production broker.
-            raise RuntimeError('fixture Docker failure: '+r.stderr.decode()[-4000:])
-        return '' if output else r.stdout.decode().strip()
+        if self.fail_after_verify and args[0] == 'update':
+            failure = json.loads((broker.model.parent/'failure.json').read_text())
+            self.evidence_before_cleanup = failure['stage'] == 'verify-databases'
+        raw = b.bounded_process(['/usr/bin/docker', *args], env, output, timeout)
+        if self.fail_after_verify and args[0] == 'run' and args[-1] == 'verify':
+            # Real offline helper exited successfully. Simulate a later CLI failure,
+            # rather than treating a container's exit=0 as proof of client success.
+            b.bounded_process(['/usr/bin/python3', '-c',
+                "import os;os.write(2,b'secret-fixture-stderr');raise SystemExit(23)"], {}, timeout=5)
+        return '' if output else raw.decode().strip()
 
 
 def helper(volume, command, *extra):
@@ -123,6 +130,27 @@ try:
     proof = docker('run', '--rm', '--network', 'none', '-v', restore+':/app/data', image, 'node', '--input-type=module', '-e', "import {DatabaseSync} from 'node:sqlite';const d=new DatabaseSync('/app/data/bot.sqlite',{readOnly:true});console.log(d.prepare('SELECT value FROM broker_evidence').get().value);d.close()")
     assert proof == 'retained'
     print('PASS: real broker admission/stop/WAL backup/restore/create-only/1GiB policy; no Worker started')
+    approval['sequence'] = 2
+    (base/'policy'/'approvals'/(sha+'.json')).write_text(json.dumps(approval))
+    transport.fail_after_verify = True
+    later = time.time()+31
+    with patch.object(b.time, 'time', return_value=later):
+        try:
+            broker.execute({'operation': 'deploy', 'sha': sha}, 1001)
+            raise AssertionError('fixture CLI failure was accepted')
+        except b.Rejected as error:
+            assert str(error) == 'DOCKER_OPERATION_FAILED'
+    failed = json.loads((base/'state/ledger.json').read_text())
+    assert failed['sequence'] == 2 and failed['status'] == 'failed_state_unknown'
+    evidence = json.loads((base/'state'/failed['transaction']/'failure.json').read_text())
+    assert failed['failure'] == evidence and transport.evidence_before_cleanup
+    assert evidence['stage'] == 'verify-databases' and evidence['code'] == 'DOCKER_OPERATION_FAILED'
+    assert evidence['process']['exit_code'] == 23
+    assert 'secret-fixture' not in json.dumps(evidence)
+    final = json.loads(docker('inspect', cid))[0]
+    assert not final['State']['Running'] and final['HostConfig']['RestartPolicy']['Name'] == 'no'
+    assert backup.is_file() and not (base/'state'/failed['transaction']/'backup.json').exists()
+    print('PASS: successful helper followed by CLI failure retains safe evidence and blocks replay; no Worker')
 finally:
     # Only random test resources; never suiba-vps production objects.
     for cid in docker('ps', '-aq', '--filter', 'label=com.docker.compose.project='+project).split():

@@ -136,7 +136,7 @@ class StopTests(unittest.TestCase):
     def test_diagnostic_summary_is_safe_and_accepts_older_reports(self):
         import io
         script = Path(__file__).parents[2]/"docker/ssh-paper-status.sh"
-        renderer = script.read_text().split("<<'PYCODE'\n", 1)[1].rsplit("\nPYCODE", 1)[0]
+        renderer = script.read_text().split("<<'PYCODE'", 1)[1].split("\n", 1)[1].rsplit("\nPYCODE", 1)[0]
         payload = {
             'run': {'id': 'a'*32, 'status': 'failed_requires_review'},
             'stop': {'id': 'a'*32, 'status': 'clean_stopped'}, 'requires_review': False,
@@ -159,6 +159,19 @@ class StopTests(unittest.TestCase):
             output = render()
             self.assertIn('before-run error=API_CANCELLED', output)
             self.assertIn('running=False', output)
+            host = {'restart_disabled': True, 'paper': True, 'fault_marker': False,
+                'timer_active': False, 'timer_elapsed': False, 'timer_next_scheduled': False,
+                'timer_job_pending': False, 'sequence': 6, 'sha': 'a'*40,
+                'ledger_status': 'failed_state_unknown', 'paper_gate': 'in_progress',
+                'container_status': 'exited', 'controller_sha256': 'a'*64, 'broker_sha256': 'b'*64,
+                'broker_failure': {'version': 1, 'stage': 'verify-databases', 'code': 'DOCKER_OPERATION_FAILED',
+                    'process': {'phase': 'wait', 'exit_code': 23, 'stdout_bytes': 0, 'stderr_bytes': 17}}}
+            payload['diagnostics']['host'] = host
+            self.assertIn('stage=verify-databases, code=DOCKER_OPERATION_FAILED', render())
+            self.assertIn('exit=23', render())
+            host['broker_failure']['code'] = 'secret-fixture-do-not-log'
+            with self.assertRaises(SystemExit): render()
+            host['broker_failure']['code'] = 'DOCKER_OPERATION_FAILED'
             payload['diagnostics']['runtime']['SUI_USDC']['error'] = 'secret-fixture-do-not-log'
             with self.assertRaises(SystemExit) as failure:
                 render()
@@ -174,17 +187,61 @@ class StopTests(unittest.TestCase):
             ctl = object.__new__(c.Controller)
             ctl.b = SimpleNamespace(STATE=root, SHA=re.compile(r'[a-f0-9]{40}'), decode=json.loads,
                 read_trusted=FakeBroker.read_trusted, __file__=c.__file__)
-            response = b'ActiveState=active\nSubState=elapsed\nNextElapseUSecMonotonic=0\nNextElapseUSecRealtime=\nJob=\n'
             container = {'State': {'Status': 'exited'}, 'HostConfig': {'RestartPolicy': {'Name': 'no'}},
                          'Config': {'Env': ['MODE=PAPER']}}
-            with patch.object(c.subprocess, 'check_output', return_value=response):
-                result = ctl.diagnostic_host(container)
+            for next_time in ('0', 'infinity', '1min'):
+                response = ('ActiveState=active\nSubState=elapsed\nNextElapseUSecMonotonic='+next_time+'\nNextElapseUSecRealtime=\nJob=\n').encode()
+                with patch.object(c.subprocess, 'check_output', return_value=response):
+                    result = ctl.diagnostic_host(container)
+                self.assertEqual(result['timer_next_scheduled'], next_time == '1min')
             self.assertEqual(result['sequence'], 5)
             self.assertEqual(result['paper_gate'], 'in_progress')
             self.assertTrue(result['timer_elapsed'])
-            self.assertFalse(result['timer_next_scheduled'])
             self.assertFalse(result['fault_marker'])
             self.assertEqual(len(result['controller_sha256']), 64)
+            self.assertIsNone(result['broker_failure'])
+
+    @unittest.skipUnless(os.name == 'posix', 'mocked shell pipeline runs on Linux')
+    def test_actions_logs_equal_validated_summary_and_never_echo_secrets(self):
+        script = Path(__file__).parents[2]/'docker/ssh-paper-status.sh'
+        payload = {'run': {'id': 'a'*32, 'status': 'failed_requires_review'},
+            'stop': {'id': 'a'*32, 'status': 'clean_stopped'}, 'requires_review': False,
+            'diagnostics': {'stage': 'worker-readiness', 'maintenance': True, 'backup_verified': True,
+                'oom_killed': False, 'exit_code': 0, 'healthcheck_exit': 0, 'http_status': None,
+                'deltas': {pair: {'starts': 0, 'orders': 0, 'fills': 0} for pair in ('SUI_USDC', 'WAL_USDC')},
+                'runtime': {pair: {'running': False, 'emergency': False, 'error': 'API_CANCELLED',
+                    'before_error': 'API_CANCELLED'} for pair in ('SUI_USDC', 'WAL_USDC')},
+                'selected_pair': 'SUI_USDC'}}
+        with tempfile.TemporaryDirectory(dir=script.parent) as tmp:
+            root = Path(tmp)
+            (root/'bin').mkdir(); (root/'runner').mkdir()
+            for name, body in (
+                ('ssh-keygen', '#!/bin/sh\nprintf "%s" "secret-key-output"\n'),
+                ('ssh', '#!/bin/sh\ncat >/dev/null\ncat "$MOCK_RESPONSE"\nprintf "%s" "secret-ssh-stderr" >&2\n')):
+                path = root/'bin'/name
+                path.write_text(body); path.chmod(0o755)
+            env = {**os.environ, 'PATH': str(root/'bin')+':'+os.environ['PATH'],
+                'RUNNER_TEMP': str(root/'runner'), 'VPS_HOST': 'fixture.invalid',
+                'VPS_USER': 'suiba-deploy', 'VPS_PORT': '22', 'VPS_SSH_KEY': 'secret-key-fixture',
+                'VPS_KNOWN_HOSTS': 'fixture-only', 'MOCK_RESPONSE': str(root/'response'),
+                'PAPER_STATUS_CONFIRMATION': 'CHECK-PAPER-DIAGNOSTICS',
+                'GITHUB_STEP_SUMMARY': str(root/'summary')}
+            for valid in (True, False):
+                if not valid:
+                    payload['diagnostics']['runtime']['SUI_USDC']['error'] = 'secret-response-fixture'
+                (root/'response').write_text(json.dumps(payload))
+                (root/'summary').write_text('')
+                result = c.subprocess.run(['/bin/bash', str(script)], env=env, text=True,
+                                          capture_output=True, timeout=15)
+                summary = (root/'summary').read_text()
+                self.assertEqual(result.returncode == 0, valid)
+                self.assertEqual(result.stdout, summary)
+                if valid:
+                    self.assertIn('before-run error=API_CANCELLED', result.stdout)
+                else:
+                    self.assertEqual(result.stdout, '')
+                self.assertNotIn('secret-', result.stdout+result.stderr+summary)
+                self.assertEqual(list((root/'runner').iterdir()), [])
 
     def test_normal_api_failure_docker_hang_oom_and_db_failure(self):
         for failure in (None, 'api', 'stop', 'daemon', 'oom', 'db'):

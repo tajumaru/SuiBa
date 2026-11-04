@@ -1,10 +1,12 @@
 import copy
+import ast
 import io
 import tarfile
 import hashlib
 import importlib.util
 import json
 import os
+import stat
 from pathlib import Path
 import subprocess
 import tempfile
@@ -253,6 +255,39 @@ class BrokerTests(unittest.TestCase):
             b.bounded_process(['/usr/bin/python3', '-c', 'import time;time.sleep(20)'], {}, timeout=0.2)
         self.assertEqual(b.bounded_process(['/usr/bin/python3', '-c', "print('ok')"], {}), b'ok\n')
 
+    def test_process_failure_records_exit_and_counts_but_never_output(self):
+        for program, expected in (("import os;os.write(1,b'secret-output');os.write(2,b'secret-stderr');raise SystemExit(23)", 23),
+                                  ("import os,signal;os.kill(os.getpid(),signal.SIGTERM)", -15)):
+            with self.subTest(exit=expected), self.assertRaises(b.Rejected) as caught:
+                b.bounded_process(['/usr/bin/python3', '-c', program], {})
+            value = b.failure_diagnostic(caught.exception, 'verify-databases')
+            self.assertEqual(value['code'], 'DOCKER_OPERATION_FAILED')
+            self.assertEqual(value['process']['exit_code'], expected)
+            self.assertEqual(value['process']['phase'], 'wait')
+            self.assertNotIn('secret-', json.dumps(value))
+
+    def test_failure_diagnostic_redacts_untrusted_errors_and_attributes(self):
+        for error, code in ((b.Rejected('secret-token'), 'UNEXPECTED_REJECTION'),
+                            (OSError('secret-token'), 'OS_ERROR'),
+                            (RuntimeError('secret-token'), 'UNEXPECTED_EXCEPTION'),
+                            (subprocess.TimeoutExpired(['secret-token'], 1, output=b'secret-token'), 'PROCESS_TIMEOUT')):
+            error._broker_process_diagnostic = {'argv': 'secret-token'}
+            value = b.failure_diagnostic(error, 'maintenance')
+            self.assertEqual(value['code'], code)
+            self.assertIsNone(value['process'])
+            self.assertNotIn('secret-token', json.dumps(value))
+
+    def test_renderer_uses_the_same_failure_allowlists(self):
+        script = Path(__file__).parents[2]/'docker/ssh-paper-status.sh'
+        text = script.read_text().split("<<'PYCODE'", 1)[1].split('\n', 1)[1].rsplit('\nPYCODE', 1)[0]
+        values = {}
+        for node in ast.walk(ast.parse(text)):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Tuple):
+                for name in node.targets:
+                    if isinstance(name, ast.Name): values[name.id] = ast.literal_eval(node.value)
+        self.assertEqual(values['codes'], b.FAILURE_CODES)
+        self.assertEqual(values['stages'], b.FAILURE_STAGES)
+
     def test_emergency_stop_all_duplicates_despite_first_failure(self):
         calls = []
         second = 'e'*64
@@ -438,10 +473,46 @@ class BrokerTests(unittest.TestCase):
                     self.broker.execute(self.req, 1001)
                 ledger = json.loads((self.state/'ledger.json').read_text())
                 self.assertEqual(ledger['status'], 'failed_stopped')
+                evidence = json.loads((self.state/ledger['transaction']/'failure.json').read_text())
+                self.assertEqual(ledger['failure'], evidence)
+                self.assertEqual(evidence['stage'], {'maintenance': 'maintenance', 'backup': 'backup',
+                    'create': 'create-container', 'oom': 'verify-stopped', 'timeout': 'verify-stopped'}[stage])
+                self.assertEqual(stat.S_IMODE((self.state/ledger['transaction']/'failure.json').stat().st_mode), 0o600)
                 self.assertTrue(any(a[0] == 'update' and '--restart=no' in a for a in self.docker.calls))
                 self.assertTrue(any(a[0] == 'stop' for a in self.docker.calls))
                 if stage != 'create':
                     self.assertFalse(any(a[0] == 'compose' and 'create' in a for a in self.docker.calls))
+
+    def test_diagnostic_write_failure_still_attempts_safe_stop(self):
+        original = b.atomic
+        def atomic(path, value):
+            if path.name == 'failure.json':
+                raise OSError('secret-storage-details')
+            return original(path, value)
+        self.docker.failure = 'maintenance'
+        with patch.object(b, 'atomic', side_effect=atomic), self.assertRaises(b.Rejected):
+            self.broker.execute(self.req, 1001)
+        ledger = json.loads((self.state/'ledger.json').read_text())
+        self.assertEqual(ledger['status'], 'failed_stopped')
+        self.assertEqual(ledger['failure']['stage'], 'maintenance')
+        self.assertTrue(any(args[0] == 'stop' for args in self.docker.calls))
+        self.assertNotIn('secret-storage-details', json.dumps(ledger))
+
+    def test_unknown_stop_keeps_unknown_status_and_original_failure(self):
+        original = self.docker.call
+        def call(args, **kwargs):
+            if args[0] == 'run' and args[-1] == 'verify':
+                raise b.Rejected('DOCKER_OPERATION_FAILED')
+            if args[0] == 'update':
+                raise b.Rejected('secret-cleanup-error')
+            return original(args, **kwargs)
+        self.docker.call = call
+        with self.assertRaises(b.Rejected): self.broker.execute(self.req, 1001)
+        ledger = json.loads((self.state/'ledger.json').read_text())
+        self.assertEqual(ledger['status'], 'failed_state_unknown')
+        self.assertEqual(ledger['failure']['stage'], 'verify-databases')
+        self.assertEqual(ledger['failure']['code'], 'DOCKER_OPERATION_FAILED')
+        with self.assertRaises(b.Rejected): self.broker.execute(self.req, 1001)
 
     def test_replay_rejected_without_docker_calls(self):
         self.broker.execute(self.req, 1001)

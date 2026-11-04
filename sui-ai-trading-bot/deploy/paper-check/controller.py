@@ -316,6 +316,9 @@ class Controller:
     def diagnostic_host(self, container):
         ledger = self.b.decode(self.b.read_trusted(self.b.STATE/'ledger.json'))
         require(type(ledger['sequence']) is int and self.b.SHA.fullmatch(ledger['sha']))
+        failure = ledger.get('failure')
+        if failure is not None:
+            self.b.validate_failure_diagnostic(failure)
         known_states = ('in_progress', 'prepared_stopped', 'failed_stopped', 'failed_state_unknown')
         gate = self.b.decode(self.b.read_trusted(self.b.STATE/'paper-check.json'))
         raw = subprocess.check_output(['/usr/bin/systemctl', 'show', TIMER,
@@ -326,6 +329,7 @@ class Controller:
         env = dict(value.split('=', 1) for value in container['Config']['Env'])
         return {
             'ledger_status': ledger['status'] if ledger['status'] in known_states else 'unknown',
+            'broker_failure': failure,
             'sequence': ledger['sequence'], 'sha': ledger['sha'],
             'paper_gate': gate.get('status') if gate.get('status') in ('completed', 'in_progress') else 'unknown',
             'fault_marker': os.path.lexists(self.b.STATE/'paper-check-failed.json'),
@@ -334,7 +338,7 @@ class Controller:
             'paper': env.get('MODE') == 'PAPER',
             'timer_active': timer.get('ActiveState') == 'active',
             'timer_elapsed': timer.get('SubState') == 'elapsed',
-            'timer_next_scheduled': any(timer.get(key) not in (None, '', '0', 'n/a')
+            'timer_next_scheduled': any(timer.get(key) not in (None, '', '0', 'n/a', 'infinity')
                 for key in ('NextElapseUSecMonotonic', 'NextElapseUSecRealtime')),
             'timer_job_pending': timer.get('Job') not in ('', '0'),
             'controller_sha256': hashlib.sha256(self.b.read_trusted(Path(__file__))).hexdigest(),

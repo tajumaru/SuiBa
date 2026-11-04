@@ -44,7 +44,9 @@ case "${PAPER_STATUS_CONFIRMATION:-CHECK-PAPER-STATUS}" in
 esac
 printf '{"operation":"%s"}\n' "$operation" |
   timeout 100s ssh "${opts[@]}" "$VPS_USER@$VPS_HOST" 'sudo -n -- /usr/local/sbin/suiba-paper-check' >"$result" 2>"$errors" || fail
-python3 - "$result" "$operation" >>"${GITHUB_STEP_SUMMARY:?}" <<'PYCODE'
+# Only the fully validated renderer output is copied to logs. Never tee raw JSON,
+# SSH stderr, environment, token, or key. Codex can read logs without screenshots.
+python3 - "$result" "$operation" <<'PYCODE' | tee -a "${GITHUB_STEP_SUMMARY:?}"
 import json
 import sys
 from pathlib import Path
@@ -124,6 +126,32 @@ try:
             for key in ("controller_sha256", "broker_sha256"):
                 if not re.fullmatch(r"[a-f0-9]{64}", host[key]):
                     raise ValueError()
+            failure = host.get("broker_failure")
+            if failure is not None:
+                stages = ("consume-approval", "maintenance", "stop-containers", "verify-stopped",
+                    "verify-databases", "create-backup-volume", "backup", "persist-backup",
+                    "create-container", "verify-created", "complete")
+                codes = ("DOCKER_TIMEOUT", "DOCKER_OUTPUT_TOO_LARGE", "DOCKER_OPERATION_FAILED",
+                    "UNCLEAN_CONTAINER_STOP", "CONTAINER_IDENTITY", "STOP_UNCONFIRMED", "BACKUP_EMPTY",
+                    "CREATED_CONTAINER_MISSING", "CREATED_CONTAINER_RUNNING", "INTERRUPTED", "INPUT_TIMEOUT",
+                    "DIRECTORY_OWNER_MODE", "FILE_OWNER_MODE", "TRUSTED_FILE_TOO_LARGE",
+                    "UNEXPECTED_REJECTION", "OS_ERROR", "PROCESS_TIMEOUT", "UNEXPECTED_EXCEPTION")
+                if (not isinstance(failure, dict) or set(failure) != {"version", "stage", "code", "process"}
+                    or type(failure["version"]) is not int or failure["version"] != 1
+                    or failure["stage"] not in stages or failure["code"] not in codes):
+                    raise ValueError()
+                process = failure["process"]
+                if process is not None:
+                    if (not isinstance(process, dict) or set(process) !=
+                        {"phase", "exit_code", "stdout_bytes", "stderr_bytes"}
+                        or process["phase"] not in ("drain", "wait")):
+                        raise ValueError()
+                    if process["exit_code"] is not None and (type(process["exit_code"]) is not int
+                        or not -255 <= process["exit_code"] <= 255):
+                        raise ValueError()
+                    for key, limit in (("stdout_bytes", 8*1024**3+65536), ("stderr_bytes", 1024**2+65536)):
+                        if type(process[key]) is not int or not 0 <= process[key] <= limit:
+                            raise ValueError()
 
 except (OSError, ValueError, KeyError, TypeError):
     sys.exit("PAPER_STATUS_INVALID")
@@ -164,6 +192,13 @@ if details is not None:
               f"next scheduled={host['timer_next_scheduled']}, job pending={host['timer_job_pending']}")
         print(f"- Installed controller SHA-256: {host['controller_sha256']}")
         print(f"- Installed broker SHA-256: {host['broker_sha256']}")
+        failure = host.get("broker_failure")
+        if failure is not None:
+            print(f"- Broker failure: stage={failure['stage']}, code={failure['code']}")
+            process = failure["process"]
+            if process is not None:
+                print(f"- Broker CLI observation: phase={process['phase']}, exit={process['exit_code']}, "
+                      f"stdout bytes={process['stdout_bytes']}, stderr bytes={process['stderr_bytes']}")
     for pair in ("SUI_USDC", "WAL_USDC"):
         delta = details["deltas"][pair]
         print(f"- {pair} difference: starts={delta['starts']:+d}, orders={delta['orders']:+d}, fills={delta['fills']:+d}")
