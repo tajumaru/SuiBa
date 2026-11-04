@@ -21,6 +21,8 @@ import { ActivityGrass } from "./ActivityGrass.tsx";
 import { MonthlyReportCard } from "./MonthlyReportCard.tsx";
 
 import { EquityCurve } from "./EquityCurve.tsx";
+import { useUpdateCheck } from "./appVersion.ts";
+import { UpdateBanner, VersionFooter } from "./VersionFooter.tsx";
 import { PortfolioMix } from "./PortfolioMix.tsx";
 import { ChainStrip } from "./ChainStrip.tsx";
 import { BookBar } from "./BookBar.tsx";
@@ -237,6 +239,7 @@ function Chart(props: {
   );
 }
 function App() {
+  const update = useUpdateCheck();
   const [restoringSession, setRestoringSession] = useState(true);
   useEffect(() => {
     const controller = new AbortController();
@@ -663,6 +666,7 @@ function App() {
   }
   return (
     <>
+      {update && <UpdateBanner served={update} />}
       <header>
         <div className="header-row header-row-main">
           <strong>◈ Sui Paper Lab</strong>
@@ -998,6 +1002,7 @@ function App() {
           </main>
         </>
       )}
+      <VersionFooter />
       {token && booting && (
         <BootScreen
           pairLabel={data?.pair === "WAL_USDC" ? "WAL / USDC" : "SUI / USDC"}

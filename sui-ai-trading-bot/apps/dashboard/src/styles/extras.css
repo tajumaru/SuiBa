@@ -886,3 +886,41 @@
     transition: none;
   }
 }
+
+/* Build identity: the update banner (a newer build is being
+   served) and the version footer (which build this page is). */
+.update-banner {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(67, 223, 178, 0.12);
+  border-bottom: 1px solid #43dfb2;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.update-banner button {
+  flex: none;
+  background: transparent;
+  border: 1px solid #43dfb2;
+  color: #43dfb2;
+  padding: 4px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+.version-footer {
+  padding: 16px 0 28px;
+  text-align: center;
+  color: #8fa3b0;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+@media (max-width: 720px) {
+  .version-footer {
+    padding-bottom: 84px;
+  }
+}
