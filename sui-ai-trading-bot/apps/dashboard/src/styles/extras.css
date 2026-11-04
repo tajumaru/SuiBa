@@ -95,6 +95,14 @@
   outline: 2px solid #43dfb2;
   outline-offset: 2px;
 }
+/* The tap target is an empty overlay above the avatar artwork:
+ * the global button:hover background (terminal.css) outranks
+ * this class's transparent background on specificity
+ * (0,1,1 vs 0,1,0) and painted the avatar over on hover. The
+ * hover rule below (0,2,0) keeps the overlay see-through. */
+.agent-avatar-tap:hover {
+  background: transparent;
+}
 .agent-avatar-dock.stuck .agent-avatar-tap {
   width: 46px;
   height: 46px;
