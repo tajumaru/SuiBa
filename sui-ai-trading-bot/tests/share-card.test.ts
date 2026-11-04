@@ -57,6 +57,8 @@ const SCORED: ForecastScore = {
   coveragePct: 84,
   dirTotal: 41,
   dirPct: 62,
+  touchTotal: 0,
+  touchHits: 0,
 };
 
 const base = {
@@ -111,6 +113,8 @@ describe("share card svg", () => {
           coveragePct: null,
           dirTotal: 0,
           dirPct: null,
+          touchTotal: 0,
+          touchHits: 0,
         },
       },
       "data:,",

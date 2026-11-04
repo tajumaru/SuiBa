@@ -36,6 +36,11 @@ export interface ForecastRecord {
    * for untilted forecasts. Lets the score judge the tilt on
    * live outcomes later. */
   tilt?: number | null;
+  /** Touch target snapshotted with the forecast: the line in
+   * the claimed direction and its measured probability.
+   * Absent on records from before touch targets and on flat
+   * forecasts. */
+  touch?: { line: number; prob: number } | null;
 }
 
 export const MAX_FORECAST_RECORDS = 288;
@@ -59,6 +64,9 @@ export function forecastRecordFrom(
     lo: fc.points.map((p) => round6(p.lower)),
     mid: fc.points.map((p) => round6(p.mid)),
     tilt: fc.bookTiltPct === 0 ? null : round6(fc.bookTiltPct),
+    touch: fc.touch
+      ? { line: round6(fc.touch.linePrice), prob: fc.touch.prob }
+      : null,
   };
 }
 
@@ -84,6 +92,10 @@ const recordSchema = z.object({
   lo: z.array(num).min(1).max(48),
   mid: z.array(num).min(1).max(48).optional(),
   tilt: z.number().nullable().optional(),
+  touch: z
+    .object({ line: num, prob: z.number().min(0).max(1) })
+    .nullable()
+    .optional(),
 });
 const schema = z.array(recordSchema).max(MAX_FORECAST_RECORDS);
 
@@ -127,6 +139,10 @@ export interface ForecastScore {
   coveragePct: number | null;
   dirTotal: number;
   dirPct: number | null;
+  /** Touch targets whose horizon has closed (or that were
+   * touched early), and how many of them were reached. */
+  touchTotal: number;
+  touchHits: number;
 }
 
 export function scoreForecasts(
@@ -159,12 +175,22 @@ export function scoreForecasts(
     }
     if (own > 0) scoredRecords++;
   }
+  let touchTotal = 0,
+    touchHits = 0;
+  for (const r of records) {
+    const t = forecastTouchStateOf(r, candles, timeframe);
+    if (!t || t.phase === "pending") continue;
+    touchTotal++;
+    if (t.phase === "touched") touchHits++;
+  }
   return {
     scoredRecords,
     steps,
     coveragePct: steps ? Math.round((hits / steps) * 100) : null,
     dirTotal,
     dirPct: dirTotal ? Math.round((dirHits / dirTotal) * 100) : null,
+    touchTotal,
+    touchHits,
   };
 }
 
@@ -248,6 +274,8 @@ export function latestAnswerCheck(
   return null;
 }
 
+const priceText = (v: number) =>
+  `$${v >= 10 ? v.toFixed(2) : v.toFixed(4)}`;
 const pctText = (frac: number) =>
   `${frac >= 0 ? "+" : ""}${(frac * 100).toFixed(1)}%`;
 
@@ -319,9 +347,12 @@ export function forecastVerdictOf(
 export function forecastCallText(rec: ForecastRecord): string {
   const drift = forecastDriftPct(rec);
   const word = rec.dir === "up" ? "上昇" : "下落";
+  const touch = rec.touch
+    ? `${priceText(rec.touch.line)}（${pctText((rec.touch.line - rec.startClose) / rec.startClose)}）にタッチする確率は${Math.round(rec.touch.prob * 100)}%。`
+    : "";
   return drift != null
-    ? `予測を宣言：2時間で${word} ${pctText(drift)} と見てる。答え合わせは2時間後`
-    : `予測を宣言：2時間で${word}と見てる。答え合わせは2時間後`;
+    ? `予測を宣言：2時間で${word} ${pctText(drift)} と見てる。${touch}答え合わせは2時間後`
+    : `予測を宣言：2時間で${word}と見てる。${touch}答え合わせは2時間後`;
 }
 
 /** The verdict line for a declared forecast: the recorded
@@ -331,6 +362,113 @@ export function forecastVerdictText(v: ForecastVerdict): string {
   return v.hit
     ? `予測、的中。${word} ${pctText(v.driftPct)} の宣言どおり、実際は ${pctText(v.actualPct)}`
     : `予測は外れ。${word} ${pctText(v.driftPct)} と言ったけど、実際は ${pctText(v.actualPct)}`;
+}
+
+export interface ForecastTouchState {
+  origin: number;
+  dir: "up" | "down";
+  line: number;
+  prob: number;
+  phase: "pending" | "touched" | "expired";
+  /** Remaining distance from the closest approach so far
+   * (fraction of the extreme price; 0 once touched). */
+  closestAwayPct: number;
+  /** Remaining distance from the newest close in the window
+   * (fraction; negative once the close itself is past). */
+  awayPct: number | null;
+  /** When the horizon ends (ms since epoch). */
+  endsAt: number;
+}
+
+/** A touch settles as "near" when the closest approach came
+ * within this distance of the line without reaching it. */
+export const TOUCH_NEAR_PCT = 0.003;
+
+/**
+ * The live state of one record's touch target. A touch is a
+ * fact about highs and lows, so it can settle before the
+ * horizon closes — a printed extreme never un-prints. Expiry
+ * follows the verdict's closure rule (a later candle must
+ * exist), so stale data settles nothing. Null for records
+ * without a target.
+ */
+export function forecastTouchStateOf(
+  rec: ForecastRecord,
+  candles: readonly Candle[],
+  timeframe = 300,
+): ForecastTouchState | null {
+  if (!rec.touch || rec.dir === "flat" || rec.up.length === 0)
+    return null;
+  const line = rec.touch.line;
+  const lastStep = rec.origin + (rec.up.length - 1) * timeframe;
+  let best: number | null = null;
+  let lastClose: number | null = null;
+  for (const c of candles) {
+    if (c.timestamp < rec.origin || c.timestamp > lastStep) continue;
+    const extreme = rec.dir === "up" ? c.high : c.low;
+    best =
+      best === null
+        ? extreme
+        : rec.dir === "up"
+          ? Math.max(best, extreme)
+          : Math.min(best, extreme);
+    lastClose = c.close;
+  }
+  const touched =
+    best !== null &&
+    (rec.dir === "up" ? best >= line : best <= line);
+  const latest = candles.at(-1);
+  const closed = latest != null && latest.timestamp > lastStep;
+  return {
+    origin: rec.origin,
+    dir: rec.dir,
+    line,
+    prob: rec.touch.prob,
+    phase: touched ? "touched" : closed ? "expired" : "pending",
+    closestAwayPct:
+      best === null
+        ? Math.abs(line / rec.startClose - 1)
+        : touched
+          ? 0
+          : Math.abs(line / best - 1),
+    awayPct:
+      lastClose === null
+        ? null
+        : rec.dir === "up"
+          ? line / lastClose - 1
+          : 1 - line / lastClose,
+    endsAt: (lastStep + timeframe) * 1000,
+  };
+}
+
+/** Settlement line when the line was reached. */
+export function forecastTouchText(t: ForecastTouchState): string {
+  return `タッチ！${priceText(t.line)} に届いた（確率は${Math.round(t.prob * 100)}%だった）`;
+}
+
+/** Settlement line when the horizon closed just short. */
+export function forecastTouchNearText(t: ForecastTouchState): string {
+  return `タッチならず。${priceText(t.line)} まで あと${(t.closestAwayPct * 100).toFixed(2)}% のところで時間切れ（確率は${Math.round(t.prob * 100)}%）`;
+}
+
+/** The chart's live status line for the newest open (or just
+ * touched) target; null when there is nothing to follow. */
+export function touchStatusText(t: ForecastTouchState, now: number): string {
+  if (t.phase === "touched")
+    return `タッチ予測：${priceText(t.line)} にタッチ済み`;
+  const remainMin = Math.max(
+    0,
+    Math.round((t.endsAt - now) / 60000),
+  );
+  const remain =
+    remainMin >= 60
+      ? `${Math.floor(remainMin / 60)}:${String(remainMin % 60).padStart(2, "0")}`
+      : `${remainMin}分`;
+  const away =
+    t.awayPct === null
+      ? ""
+      : ` まで あと ${t.awayPct >= 0 ? "+" : "−"}${Math.abs(t.awayPct * 100).toFixed(2)}%`;
+  return `タッチ予測：${priceText(t.line)}${away}（残り ${remain}）`;
 }
 
 export function forecastScoreText(
@@ -344,5 +482,9 @@ export function forecastScoreText(
     score.dirTotal >= MIN_SCORED_RECORDS && score.dirPct != null
       ? `・方向の的中 ${score.dirPct}%（${score.dirTotal} 件）`
       : "・方向は集計中";
-  return `予測の成績：コーン収まり ${score.coveragePct}%（判定 ${score.scoredRecords} 件）${direction} ※アプリを開いていた間の予測だけを集計`;
+  const touch =
+    score.touchTotal >= MIN_SCORED_RECORDS
+      ? `・タッチ到達 ${score.touchHits}/${score.touchTotal} 件`
+      : "";
+  return `予測の成績：コーン収まり ${score.coveragePct}%（判定 ${score.scoredRecords} 件）${direction}${touch} ※アプリを開いていた間の予測だけを集計`;
 }

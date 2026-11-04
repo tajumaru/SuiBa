@@ -7,8 +7,12 @@ import type {
 } from "../../../../packages/shared/src/index.ts";
 import {
   forecastCallText,
+  forecastTouchNearText,
+  forecastTouchStateOf,
+  forecastTouchText,
   forecastVerdictOf,
   forecastVerdictText,
+  TOUCH_NEAR_PCT,
   type ForecastRecord,
 } from "../forecastLog.ts";
 import {
@@ -287,12 +291,16 @@ export function advanceNarration(
     // quietly — no backlog of old answers on a fresh feed.
     const adoptedDeclared: Record<string, number> = {};
     const adoptedSettled: Record<string, boolean> = {};
+    const adoptedTouchSettled: Record<string, boolean> = {};
     if (forecasts) {
       for (const rec of forecasts.records) {
         if (rec.dir === "flat") continue;
         adoptedDeclared[String(rec.origin)] = now;
         if (forecastVerdictOf(rec, forecasts.candles))
           adoptedSettled[String(rec.origin)] = true;
+        const t = forecastTouchStateOf(rec, forecasts.candles);
+        if (t && t.phase !== "pending")
+          adoptedTouchSettled[String(rec.origin)] = true;
       }
     }
     return finish(
@@ -300,6 +308,7 @@ export function advanceNarration(
         ...prev,
         forecastDeclared: adoptedDeclared,
         forecastSettled: adoptedSettled,
+        forecastTouchSettled: adoptedTouchSettled,
         watch: firstWatch,
         watchScore: firstScore,
         priceLine: firstPriceLine,
@@ -745,6 +754,7 @@ export function advanceNarration(
   // fresh claim may be declared, at most once an hour.
   let forecastDeclared = prev.forecastDeclared;
   let forecastSettled = prev.forecastSettled;
+  let forecastTouchSettled = prev.forecastTouchSettled;
   let lastForecastCallAt = prev.lastForecastCallAt;
   if (forecasts) {
     const pruneBefore = now - 3 * 24 * 3600 * 1000;
@@ -754,6 +764,35 @@ export function advanceNarration(
       );
     forecastDeclared = pruned(forecastDeclared);
     forecastSettled = pruned(forecastSettled);
+    forecastTouchSettled = pruned(forecastTouchSettled);
+    // Touch settlements first: a line can be reached long
+    // before its forecast's horizon closes, and that moment
+    // is the story. Only declared forecasts speak, like the
+    // verdicts; a near miss (within TOUCH_NEAR_PCT) is told,
+    // a distant one closes quietly.
+    for (const rec of forecasts.records) {
+      const key = String(rec.origin);
+      if (forecastDeclared[key] == null || forecastTouchSettled[key])
+        continue;
+      const t = forecastTouchStateOf(rec, forecasts.candles);
+      if (!t || t.phase === "pending") continue;
+      forecastTouchSettled = { ...forecastTouchSettled, [key]: true };
+      if (now - t.endsAt > FORECAST_VERDICT_FRESH_MS) continue;
+      if (t.phase === "touched") {
+        drafts.push({
+          at: now,
+          kind: "forecastTouch",
+          text: forecastTouchText(t),
+        });
+        lastHitAt = now;
+      } else if (t.closestAwayPct <= TOUCH_NEAR_PCT) {
+        drafts.push({
+          at: now,
+          kind: "forecastTouchNear",
+          text: forecastTouchNearText(t),
+        });
+      }
+    }
     for (const rec of forecasts.records) {
       const key = String(rec.origin);
       if (forecastDeclared[key] == null || forecastSettled[key]) continue;
@@ -830,6 +869,7 @@ export function advanceNarration(
       lastBtcMutter,
       forecastDeclared,
       forecastSettled,
+      forecastTouchSettled,
       lastForecastCallAt,
       sessionStartPrice,
       priceHistory,

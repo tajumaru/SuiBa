@@ -29,10 +29,12 @@ import {
   appendForecastRecord,
   forecastRecordFrom,
   forecastScoreText,
+  forecastTouchStateOf,
   latestAnswerCheck,
   loadForecastLog,
   saveForecastLog,
   scoreForecasts,
+  touchStatusText,
   type ForecastAnswerCheck,
   type ForecastRecord,
 } from "./forecastLog.ts";
@@ -197,6 +199,7 @@ function Chart(props: {
   synchronized?: boolean;
   historyApi?: import("./settingsPresets.ts").SettingsApi;
   forecastScoreText?: string | null;
+  forecastTouchText?: string | null;
   bookImbalance?: number | null;
   sellLines?: { tp: number; sl: number } | null;
   answerCheck?: ForecastAnswerCheck | null;
@@ -428,6 +431,20 @@ function App() {
         : null,
     [forecastLog, data],
   );
+  const forecastTouchLine = useMemo(() => {
+    if (!data) return null;
+    const candles = data.candlesByTimeframe[300];
+    const nowMs = Date.now();
+    for (let i = forecastLog.length - 1; i >= 0; i--) {
+      const t = forecastTouchStateOf(forecastLog[i], candles, 300);
+      if (!t) continue;
+      if (t.phase === "pending") return touchStatusText(t, nowMs);
+      if (t.phase === "touched" && nowMs < t.endsAt)
+        return touchStatusText(t, nowMs);
+      return null;
+    }
+    return null;
+  }, [forecastLog, data]);
   const forecastInput = useMemo(
     () =>
       data
@@ -935,6 +952,7 @@ function App() {
                         synchronized
                         historyApi={api}
                         forecastScoreText={forecastScoreLine}
+                        forecastTouchText={forecastTouchLine}
                         answerCheck={forecastAnswer}
                         shareCard={shareCard}
                         bookImbalance={data.bookImbalance}

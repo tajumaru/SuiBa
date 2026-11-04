@@ -32,6 +32,8 @@ export type NarrationKind =
   | "forecastCall" // a direction-claiming chart forecast, declared out loud
   | "forecastHit" // a declared forecast whose direction came true
   | "forecastMiss" // a declared forecast whose direction did not
+  | "forecastTouch" // a declared forecast's touch line was reached
+  | "forecastTouchNear" // the touch line was nearly reached before time ran out
   | "status"; // feed-initialised status line
 
 export interface NarrationEntry {
@@ -177,6 +179,9 @@ export interface NarrationState {
    * (hit or miss) or quietly closed when it came too late to
    * tell. By origin, like forecastDeclared. */
   forecastSettled: Record<string, boolean>;
+  /** Declared forecasts whose touch target has been settled —
+   * reached, nearly reached, or quietly closed. By origin. */
+  forecastTouchSettled: Record<string, boolean>;
   /** When the last forecast declaration was told; declarations
    * are spaced at least an hour apart so a trending market
    * cannot turn the feed into a forecast ticker. */
@@ -292,6 +297,7 @@ export function emptyNarrationState(): NarrationState {
     lastBtcMutter: null,
     forecastDeclared: {},
     forecastSettled: {},
+    forecastTouchSettled: {},
     lastForecastCallAt: null,
   };
 }

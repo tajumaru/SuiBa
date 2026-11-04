@@ -75,6 +75,7 @@ export function PriceChart({
   synchronized = false,
   historyApi,
   forecastScoreText,
+  forecastTouchText,
   bookImbalance,
   sellLines,
   answerCheck,
@@ -88,6 +89,8 @@ export function PriceChart({
   synchronized?: boolean;
   historyApi?: SettingsApi;
   forecastScoreText?: string | null;
+  /** Live status of the newest touch target, if one is open. */
+  forecastTouchText?: string | null;
   bookImbalance?: number | null;
   /** The open position's real sell lines (same prices the
    * ticker counts down to), for forecast crossing marks. */
@@ -500,10 +503,15 @@ export function PriceChart({
           %。トレンドと値幅（ATR）から伸ばしたもので、実際の価格ではありません。
           {fc.bookTiltPct !== 0 &&
             `板の偏り（${fc.bookTiltPct > 0 ? "買い優勢" : "売り優勢"}）も少し反映しています。`}
+          {fc.touch &&
+            `タッチラインの確率は、同じような予測の実測です。`}
         </p>
       )}
       {fc && tf === 300 && forecastScoreText && (
         <p className="chart-forecast-score">{forecastScoreText}</p>
+      )}
+      {fc && tf === 300 && forecastTouchText && (
+        <p className="chart-forecast-touch-status">{forecastTouchText}</p>
       )}
       {fc && tf === 300 && shareCard && (
         <div className="chart-share-row">
@@ -794,6 +802,32 @@ export function PriceChart({
                 >
                   {fcLabel}
                 </text>
+                {fc.touch && (
+                  <g className="chart-forecast-touch" aria-label="タッチライン">
+                    <line
+                      x1={x(latestEnd)}
+                      x2={x(fc.points.at(-1)!.timestamp)}
+                      y1={y(fc.touch.linePrice)}
+                      y2={y(fc.touch.linePrice)}
+                      stroke="#edc980"
+                      strokeWidth="1.4"
+                      strokeDasharray="7 4"
+                    />
+                    <text
+                      x={x(latestEnd) + 6}
+                      y={
+                        y(fc.touch.linePrice) < 48
+                          ? y(fc.touch.linePrice) + 15
+                          : y(fc.touch.linePrice) - 7
+                      }
+                      fill="#edc980"
+                      fontSize="11"
+                      fontFamily="ui-monospace, Menlo, monospace"
+                    >
+                      {`タッチライン $${fc.touch.linePrice >= 10 ? fc.touch.linePrice.toFixed(2) : fc.touch.linePrice.toFixed(4)}（${fc.direction === "up" ? "+" : "−"}${(fc.touch.distPct * 100).toFixed(2)}%・確率${Math.round(fc.touch.prob * 100)}%）`}
+                    </text>
+                  </g>
+                )}
                 {crossingMarks.map((m) => (
                   <g
                     key={m.key}

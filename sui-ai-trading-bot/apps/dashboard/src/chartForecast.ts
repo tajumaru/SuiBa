@@ -33,6 +33,54 @@ export interface ChartForecast {
   /** The part of driftPct contributed by the order-book tilt
    * (0 when no imbalance was supplied). */
   bookTiltPct: number;
+  /** Touch target for a claimed direction: a price line out in
+   * the leaned direction and the measured probability that the
+   * price touches it within the horizon. Null when flat. */
+  touch: { linePrice: number; prob: number; distPct: number } | null;
+}
+
+/**
+ * Touch-probability ladder, measured 2026-11-04 on the saved
+ * 9,991 SUI/USDC 5m candles: for origins where the forecast
+ * claimed a direction (258 up / 410 down), the share whose
+ * high (low) reached k × ATR within the next 24 bars. Claimed
+ * directions touch LESS than unconditional origins at the same
+ * distance — the lean tends to arrive after a move — so these
+ * conditional rates, not the base rates, are what a featured
+ * line may honestly carry. The featured k is the one whose
+ * probability sits closest to a coin flip (ties go farther:
+ * the bigger drama at the same honesty).
+ */
+export const TOUCH_LADDER: readonly {
+  k: number;
+  up: number;
+  down: number;
+}[] = [
+  { k: 1.2, up: 0.62, down: 0.61 },
+  { k: 1.4, up: 0.54, down: 0.54 },
+  { k: 1.7, up: 0.46, down: 0.47 },
+  { k: 2.0, up: 0.37, down: 0.41 },
+];
+
+export function touchTargetFor(
+  direction: "up" | "down" | "flat",
+  atrPct: number,
+): { distPct: number; prob: number } | null {
+  if (direction === "flat" || !(atrPct > 0)) return null;
+  let best: { distPct: number; prob: number } | null = null;
+  for (const row of TOUCH_LADDER) {
+    const prob = direction === "up" ? row.up : row.down;
+    const distPct = row.k * atrPct;
+    if (
+      best === null ||
+      Math.abs(prob - 0.5) < Math.abs(best.prob - 0.5) ||
+      (Math.abs(prob - 0.5) === Math.abs(best.prob - 0.5) &&
+        distPct > best.distPct)
+    ) {
+      best = { distPct, prob };
+    }
+  }
+  return best;
 }
 
 const MIN_RUN = 26;
@@ -232,6 +280,7 @@ export function forecastWith(
           ? "up"
           : "down"
         : "flat";
+  const touchBase = touchTargetFor(direction, atr / lastClose);
   return {
     points,
     driftPct,
@@ -244,6 +293,16 @@ export function forecastWith(
           ? "下向き気味"
           : "横ばい気味",
     bookTiltPct: tiltTotal / lastClose,
+    touch:
+      touchBase === null
+        ? null
+        : {
+            linePrice:
+              lastClose *
+              (1 + (direction === "up" ? 1 : -1) * touchBase.distPct),
+            prob: touchBase.prob,
+            distPct: touchBase.distPct,
+          },
   };
 }
 

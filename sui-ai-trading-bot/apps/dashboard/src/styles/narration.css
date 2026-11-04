@@ -806,6 +806,23 @@
   border-color: rgba(247, 125, 143, 0.55);
   color: #f77d8f;
 }
+/* Touch settlements wear the touch line's gold; a near miss
+   keeps the gold family but dims it — close, not reached. */
+.agent-feed-entry.forecastTouch {
+  border-left-color: #edc980;
+  background: #231c0d;
+}
+.agent-feed-entry-tag.touch {
+  border-color: rgba(237, 201, 128, 0.6);
+  color: #edc980;
+}
+.agent-feed-entry.forecastTouchNear {
+  border-left-color: rgba(237, 201, 128, 0.55);
+}
+.agent-feed-entry-tag.touch-near {
+  border-color: rgba(237, 201, 128, 0.4);
+  color: #c9a86a;
+}
 /* The buy-run line wears the same Sui blue as the avatar's
    line pose while it stands, and the green of a met condition
    once the price touches it (the reached entry below). */

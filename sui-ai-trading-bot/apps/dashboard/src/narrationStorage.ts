@@ -58,6 +58,8 @@ const schema: z.ZodType<NarrationState> = z.object({
           "forecastCall",
           "forecastHit",
           "forecastMiss",
+          "forecastTouch",
+          "forecastTouchNear",
           "status",
         ]),
         text: z.string(),
@@ -140,6 +142,7 @@ const schema: z.ZodType<NarrationState> = z.object({
     .default(null),
   forecastDeclared: z.record(z.string(), number).default({}),
   forecastSettled: z.record(z.string(), z.boolean()).default({}),
+  forecastTouchSettled: z.record(z.string(), z.boolean()).default({}),
   lastForecastCallAt: number.nullable().default(null),
 });
 
