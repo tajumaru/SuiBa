@@ -99,6 +99,18 @@ jobs:
         run: |
           docker build -f docker/Dockerfile.broker-test -t suiba-broker-tests .
           docker run --rm --network none --memory 512m --memory-swap 512m --pids-limit 128 suiba-broker-tests
+      - name: Validate stopped-release workflow wiring
+        run: >-
+          docker run --rm --network none
+          --mount "type=bind,src=${{ github.workspace }},dst=/repo,readonly" -w /repo
+          rhysd/actionlint:1.7.7@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+          .github/workflows/suiba-vps-release.yml .github/workflows/suiba-vps.yml
+          .github/workflows/suiba-offline.yml .github/workflows/suiba-no-worker.yml
+      - name: Signed stopped-release admission tests (no Worker)
+        run: |
+          python3 -c "import ast,pathlib; ast.parse(pathlib.Path('docker/ssh-stopped-release.py').read_text())"
+          docker build -f deploy/release/Dockerfile.test -t suiba-release-tests .
+          docker run --rm --init --network none --memory 512m --memory-swap 512m --pids-limit 128 suiba-release-tests
       - name: Render and verify the production Compose model
         if: steps.changes.outputs.heavy == 'true'
         run: |

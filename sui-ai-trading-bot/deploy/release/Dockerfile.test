@@ -1,0 +1,13 @@
+FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
+RUN apt-get update && apt-get install --no-install-recommends -y python3 openssl sudo shellcheck && rm -rf /var/lib/apt/lists/*
+RUN useradd --uid 1001 --create-home suiba-deploy
+COPY deploy/broker/broker.py /usr/local/libexec/suiba-deploy-broker.py
+COPY deploy/paper-check/controller.py /usr/local/libexec/suiba-paper-check.py
+COPY deploy/release/release.py /usr/local/libexec/suiba-stopped-release.py
+COPY deploy/release/suiba-stopped-release /usr/local/sbin/suiba-stopped-release
+COPY deploy/release/suiba-stopped-release.sudoers /etc/sudoers.d/suiba-stopped-release
+RUN chmod 755 /usr/local/libexec/*.py /usr/local/sbin/suiba-stopped-release && chmod 440 /etc/sudoers.d/suiba-stopped-release && visudo -cf /etc/sudoers.d/suiba-stopped-release && shellcheck /usr/local/sbin/suiba-stopped-release
+COPY docker/ssh-stopped-release.py docker/release-artifact-identity.py /client/
+COPY deploy/release /tests
+WORKDIR /tests
+CMD ["python3", "-I", "test_release.py"]
