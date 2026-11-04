@@ -24,7 +24,7 @@ async function fixture() {
     s.respond({ ":status": 200, "content-type": "application/json" });
     s.end('{"ok":true}');
   };
-  server.on("stream", (s) => {
+  server.on("stream", (s: ServerHttp2Stream) => {
     requests++;
     s.on("error", () => {});
     handler(s);
