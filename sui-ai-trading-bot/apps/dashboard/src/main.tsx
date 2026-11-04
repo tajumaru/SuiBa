@@ -5,7 +5,7 @@ import { PriceTicker } from "./PriceTicker.tsx";
 import { LoginScreen } from "./LoginScreen.tsx";
 import { loginSession, SESSION } from "./browserSession.ts";
 import { DashboardClient } from "./dashboardClient.ts";
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import type { BotEngine } from "../../worker/src/engine.ts";
 import { calculate, ema } from "../../../packages/indicators/src/index.ts";
@@ -13,13 +13,13 @@ import type { Candle } from "../../../packages/shared/src/index.ts";
 import "./style.css";
 import { dateTime, number, percent, label, errorCode } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
-import { StrategyTab, type StrategySegment } from "./StrategyTab.tsx";
-import { OperationsFeedView, useOperationsFeed } from "./OperationsPanel.tsx";
+import type { StrategySegment } from "./StrategyTab.tsx";
+import { useOperationsFeed } from "./operationsFeed.ts";
 import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
 import { BootScreen } from "./BootScreen.tsx";
 import { ActivityGrass } from "./ActivityGrass.tsx";
 import { MonthlyReportCard } from "./MonthlyReportCard.tsx";
-import { FillAnalysisCard } from "./FillAnalysisCard.tsx";
+
 import { EquityCurve } from "./EquityCurve.tsx";
 import { PortfolioMix } from "./PortfolioMix.tsx";
 import { ChainStrip } from "./ChainStrip.tsx";
@@ -50,7 +50,7 @@ import {
 } from "./shareCard.ts";
 import { errorShout } from "./errorShout.ts";
 import { presetName } from "./settingsPresets.ts";
-import { firstFilledBuy } from "./firstFill.ts";
+
 import {
   BUY_CELEBRATION_MS,
   sellLinesOf,
@@ -58,8 +58,30 @@ import {
 } from "./agentNarration.ts";
 import { NAV_SHORT_LABELS, NavTabIcon } from "./navTabs.tsx";
 import { PriceChart } from "./PriceChart.tsx";
-import { BacktestComparison } from "./BacktestComparison.tsx";
-import { useIndicatorHistory } from "./StrategyPanel.tsx";
+/* Secondary tabs load on first open, keeping the initial
+ * bundle to the shell, the live feed and the overview. */
+const StrategyTab = lazy(() =>
+  import("./StrategyTab.tsx").then((m) => ({ default: m.StrategyTab })),
+);
+const HistoryTab = lazy(() =>
+  import("./HistoryTab.tsx").then((m) => ({ default: m.HistoryTab })),
+);
+const BacktestComparison = lazy(() =>
+  import("./BacktestComparison.tsx").then((m) => ({
+    default: m.BacktestComparison,
+  })),
+);
+const OperationsFeedView = lazy(() =>
+  import("./OperationsPanel.tsx").then((m) => ({
+    default: m.OperationsFeedView,
+  })),
+);
+const tabFallback = (
+  <p className="tab-loading" role="status">
+    読み込み中…
+  </p>
+);
+import { useIndicatorHistory } from "./indicatorHistory.ts";
 type State = ReturnType<BotEngine["snapshot"]>;
 const NAV_TABS = [
   "Live",
@@ -212,75 +234,6 @@ function Chart(props: {
     />
   ) : (
     <IndicatorChart {...props} />
-  );
-}
-function OrderHistory({ orders }: { orders: Record<string, unknown>[] }) {
-  if (!orders.length) return <p>注文はまだありません。</p>;
-  const first = firstFilledBuy(orders);
-  return (
-    <div className="scroll history-scroll">
-      <table className="history-table" role="table" aria-label="注文履歴">
-        <thead>
-          <tr>
-            <th>日時（日本時間）</th>
-            <th>方向</th>
-            <th>状態</th>
-            <th>理由</th>
-          </tr>
-        </thead>
-        <tbody role="rowgroup">
-          {orders.map((o, i) => (
-            <tr
-              key={i}
-              role="row"
-              className={first?.index === i ? "first-fill" : undefined}
-            >
-              <td role="cell" data-label="日時" className="history-wide">
-                {dateTime(o.timestamp as number)}
-                {first?.index === i &&
-                  (first.amountIn !== null ||
-                    first.referencePrice !== null) && (
-                    <span className="first-fill-meta">
-                      {[
-                        first.amountIn !== null
-                          ? `${number(first.amountIn)} USDC`
-                          : null,
-                        first.referencePrice !== null
-                          ? `見積もり価格 ${number(first.referencePrice, 4)}`
-                          : null,
-                      ]
-                        .filter(Boolean)
-                        .join("・")}
-                    </span>
-                  )}
-              </td>
-              <td role="cell" data-label="方向">
-                {label(o.side)}
-                {first?.index === i && (
-                  <span className="first-fill-tag">初約定</span>
-                )}
-              </td>
-              <td role="cell" data-label="状態">
-                {label(o.status)}
-              </td>
-              <td role="cell" data-label="理由" className="history-wide">
-                {Array.isArray(o.reasons)
-                  ? o.reasons.map((r, j) => (
-                      <p key={j}>
-                        <Reason code={String(r)} />
-                      </p>
-                    ))
-                  : "—"}
-                <details>
-                  <summary>注文の技術情報</summary>
-                  <pre>{JSON.stringify(o, null, 2)}</pre>
-                </details>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
   );
 }
 function App() {
@@ -1004,33 +957,41 @@ function App() {
                   </div>
                 )}
                 {activeTab === "Strategy" && (
-                  <StrategyTab
-                    data={data}
-                    api={api}
-                    onSaved={refresh}
-                    control={control}
-                    telemetry={operations.data?.decision ?? null}
-                    history={indicatorHistory}
-                    segment={strategySegment}
-                    onSegmentChange={setStrategySegmentChoice}
-                    onStartGateChange={setStartBlocked}
-                  />
+                  <Suspense fallback={tabFallback}>
+                    <StrategyTab
+                      data={data}
+                      api={api}
+                      onSaved={refresh}
+                      control={control}
+                      telemetry={operations.data?.decision ?? null}
+                      history={indicatorHistory}
+                      segment={strategySegment}
+                      onSegmentChange={setStrategySegmentChoice}
+                      onStartGateChange={setStartBlocked}
+                    />
+                  </Suspense>
                 )}
                 {activeTab === "Trading History" && (
-                  <section>
-                    <h3>注文 / 拒否理由</h3>
-                    <OrderHistory orders={data.orders} />
-                    <FillAnalysisCard
+                  <Suspense fallback={tabFallback}>
+                    <HistoryTab
+                      orders={data.orders}
                       trades={data.trades}
                       candles={data.candlesByTimeframe[300]}
                     />
-                  </section>
+                  </Suspense>
                 )}
                 {activeTab === "バックテスト比較" && (
-                  <BacktestComparison token={token} settings={data.settings} />
+                  <Suspense fallback={tabFallback}>
+                    <BacktestComparison
+                      token={token}
+                      settings={data.settings}
+                    />
+                  </Suspense>
                 )}
                 {activeTab === "運用検証" && (
-                  <OperationsFeedView api={api} feed={operations} />
+                  <Suspense fallback={tabFallback}>
+                    <OperationsFeedView api={api} feed={operations} />
+                  </Suspense>
                 )}
               </>
             )}

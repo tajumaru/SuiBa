@@ -245,6 +245,13 @@
   font-weight: 600;
   margin: 0 0 6px;
 }
+/* Placeholder while a lazily loaded tab chunk arrives. */
+.tab-loading {
+  color: #8fa3b0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  padding: 18px 4px;
+}
 .chart-answer-row {
   display: flex;
   align-items: center;

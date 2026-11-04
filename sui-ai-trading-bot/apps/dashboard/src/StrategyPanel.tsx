@@ -6,9 +6,9 @@ import { dateTime, label, number, percent } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
 import { fields, formatSettingValue, type Field } from "./SettingsPage.tsx";
 import { ProfitGuardPanel } from "./ProfitGuardPanel.tsx";
+export { useIndicatorHistory } from "./indicatorHistory.ts";
 import {
   STRATEGY_PARAM_GROUPS,
-  appendIndicatorPoint,
   emaVizData,
   isFreshDecision,
   macdBars,
@@ -29,22 +29,7 @@ const signed = (v: number, digits = 4) =>
   `${v > 0 ? "+" : ""}${number(v, digits)}`;
 const signedPct = (ratio: number) => `${ratio > 0 ? "+" : ""}${percent(ratio)}`;
 
-/**
- * Accumulates the short indicator history the strategy mini charts
- * draw, one point per new decision. It lives at the App level (like
- * the narration state) so switching tabs does not erase what the
- * client has actually seen; points are appended only from recorded
- * decision evidence, never synthesised.
- */
-export function useIndicatorHistory(
-  decision: DecisionTelemetry | null | undefined,
-) {
-  const [history, setHistory] = useState<IndicatorPoint[]>([]);
-  useEffect(() => {
-    setHistory((h) => appendIndicatorPoint(h, decision, Date.now()));
-  }, [decision]);
-  return history;
-}
+
 
 /* ------------------------------------------------------------------ */
 /* Condition cards                                                     */
