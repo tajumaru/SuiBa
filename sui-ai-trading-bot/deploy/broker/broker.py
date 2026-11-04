@@ -41,6 +41,59 @@ class Rejected(Exception):
     pass
 
 
+FAILURE_STAGES = (
+    'consume-approval', 'maintenance', 'stop-containers', 'verify-stopped',
+    'verify-databases', 'create-backup-volume', 'backup', 'persist-backup',
+    'create-container', 'verify-created', 'complete',
+)
+FAILURE_CODES = (
+    'DOCKER_TIMEOUT', 'DOCKER_OUTPUT_TOO_LARGE', 'DOCKER_OPERATION_FAILED',
+    'UNCLEAN_CONTAINER_STOP', 'CONTAINER_IDENTITY', 'STOP_UNCONFIRMED',
+    'BACKUP_EMPTY', 'CREATED_CONTAINER_MISSING', 'CREATED_CONTAINER_RUNNING',
+    'INTERRUPTED', 'INPUT_TIMEOUT', 'DIRECTORY_OWNER_MODE', 'FILE_OWNER_MODE',
+    'TRUSTED_FILE_TOO_LARGE', 'UNEXPECTED_REJECTION', 'OS_ERROR',
+    'PROCESS_TIMEOUT', 'UNEXPECTED_EXCEPTION',
+)
+
+
+def validate_failure_diagnostic(value):
+    require(isinstance(value, dict) and set(value) == {'version', 'stage', 'code', 'process'},
+            'FAILURE_DIAGNOSTIC_SCHEMA')
+    require(type(value['version']) is int and value['version'] == 1 and
+            value['stage'] in FAILURE_STAGES and value['code'] in FAILURE_CODES,
+            'FAILURE_DIAGNOSTIC_VALUE')
+    process = value['process']
+    if process is not None:
+        require(isinstance(process, dict) and set(process) ==
+                {'phase', 'exit_code', 'stdout_bytes', 'stderr_bytes'}, 'FAILURE_PROCESS_SCHEMA')
+        require(process['phase'] in ('drain', 'wait'), 'FAILURE_PROCESS_PHASE')
+        require(process['exit_code'] is None or type(process['exit_code']) is int and
+                -255 <= process['exit_code'] <= 255, 'FAILURE_PROCESS_EXIT')
+        for key, limit in (('stdout_bytes', 8*1024**3+65536), ('stderr_bytes', 1024**2+65536)):
+            require(type(process[key]) is int and 0 <= process[key] <= limit,
+                    'FAILURE_PROCESS_SIZE')
+    return value
+
+
+def failure_diagnostic(error, stage):
+    # Never serialize str(error), argv, paths, stdout/stderr, or arbitrary attributes.
+    code = 'UNEXPECTED_EXCEPTION'
+    if isinstance(error, Rejected):
+        code = error.args[0] if len(error.args) == 1 and type(error.args[0]) is str and error.args[0] in FAILURE_CODES else 'UNEXPECTED_REJECTION'
+    elif isinstance(error, subprocess.TimeoutExpired):
+        code = 'PROCESS_TIMEOUT'
+    elif isinstance(error, OSError):
+        code = 'OS_ERROR'
+    process = getattr(error, '_broker_process_diagnostic', None)
+    value = {'version': 1, 'stage': stage, 'code': code, 'process': process}
+    try:
+        return validate_failure_diagnostic(value)
+    except Exception:
+        # An invalid attribute cannot inject text or prevent emergency cleanup.
+        value['process'] = None
+        return validate_failure_diagnostic(value)
+
+
 def archive_identity(path, approved, sha):
     """Hash archive objects without extracting or executing candidate content."""
     objects, small, total = {}, {}, 0
@@ -227,6 +280,7 @@ def bounded_process(argv, env, output=None, timeout=180):
     child = subprocess.Popen(argv, env=env, cwd='/', stdin=subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              start_new_session=True)
+    phase = 'drain'
     try:
         with selectors.DefaultSelector() as selector:
             for name in limits:
@@ -251,8 +305,18 @@ def bounded_process(argv, env, output=None, timeout=180):
                             captured.extend(block)
             remaining = deadline-time.monotonic()
             require(remaining > 0, 'DOCKER_TIMEOUT')
+            phase = 'wait'
             require(child.wait(timeout=remaining) == 0, 'DOCKER_OPERATION_FAILED')
         return bytes(captured)
+    except BaseException as error:
+        # Capture only numeric observations BEFORE cleanup kills/reaps the CLI.
+        # A null exit code means the CLI had not been observed exiting yet.
+        with contextlib.suppress(Exception):
+            error._broker_process_diagnostic = {
+                'phase': phase, 'exit_code': child.returncode,
+                'stdout_bytes': counts['stdout'], 'stderr_bytes': counts['stderr'],
+            }
+        raise
     finally:
         # Also terminate descendants holding inherited pipe descriptors.
         with contextlib.suppress(ProcessLookupError):
@@ -517,24 +581,32 @@ class Broker:
         scratch = 'suiba-vps-broker-'+transaction.name
         scratch_created = False
         require(approval['expires'] > time.time(), 'APPROVAL_EXPIRED_BEFORE_MUTATION')
+        stage = 'consume-approval'
         try:
             atomic(ledger, record)
+            stage = 'maintenance'
             self.helper(policy['helper_image'], 'maintenance')
+            stage = 'stop-containers'
             self.compose(['stop', '--timeout', '40', 'bot'])
+            stage = 'verify-stopped'
             for cid in self.stopped():
                 status = decode(self.docker.call(['inspect', '--format', '{{json .State}}', cid]))
                 require(not status['Running'] and not status['OOMKilled'] and status['ExitCode'] == 0, 'UNCLEAN_CONTAINER_STOP')
+            stage = 'verify-databases'
             self.helper(policy['helper_image'], 'verify')
+            stage = 'create-backup-volume'
             self.docker.call(['volume', 'create', scratch])
             scratch_created = True
             backup = self.backups/(transaction.name+'.tar')
             partial = backup.with_suffix('.partial')
+            stage = 'backup'
             with open(partial, 'xb') as stream:
                 os.chmod(partial, 0o600)
                 self.helper(policy['helper_image'], 'backup', scratch, stream)
                 stream.flush()
                 os.fsync(stream.fileno())
             require(partial.stat().st_size > 0, 'BACKUP_EMPTY')
+            stage = 'persist-backup'
             os.rename(partial, backup)
             with directory(self.backups) as parent:
                 os.fsync(parent)
@@ -544,18 +616,27 @@ class Broker:
                     h.update(block)
             atomic(transaction/'backup.json', {'file': backup.name, 'sha256': h.hexdigest()})
             # No up/start/restart. Runtime health acceptance is a separately approved task.
+            stage = 'create-container'
             self.compose(['create', '--no-build', '--force-recreate', 'bot'])
+            stage = 'verify-created'
             ids = self.stopped()
             require(len(ids) == 1, 'CREATED_CONTAINER_MISSING')
             status = decode(self.docker.call(['inspect', '--format', '{{json .State}}', ids[0]]))
             require(status['Status'] == 'created' and not status['Running'], 'CREATED_CONTAINER_RUNNING')
             record['status'] = 'prepared_stopped'
             record['backup'] = backup.name
+            stage = 'complete'
             atomic(ledger, record)
             atomic(transaction/'receipt.json', record)
             return record
-        except BaseException:
+        except BaseException as error:
+            evidence = failure_diagnostic(error, stage)
+            # Preserve the original failure before emergency cleanup can itself fail.
+            # A logging failure must NEVER bypass that cleanup or grant success.
+            with contextlib.suppress(BaseException):
+                atomic(transaction/'failure.json', evidence)
             record['status'] = 'failed_stopped' if self.emergency_stop() and not self.helper_unknown else 'failed_state_unknown'
+            record['failure'] = evidence
             atomic(ledger, record)
             atomic(transaction/'receipt.json', record)
             raise
