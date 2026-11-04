@@ -53,7 +53,7 @@ exit 0
           `#!/usr/bin/env node
 const fs=require('node:fs');fs.writeFileSync(process.env.CALLS,JSON.stringify(process.argv.slice(2)));
 if(process.env.SCENARIO==='connection-failure'){console.error('fixture-sensitive-error');process.exit(255)}
-const reply=['SSH_PREFLIGHT_OK','suiba-deploy','29.9.2','v2.40.1','5:29.9.2-1~ubuntu.26.04~resolute','2048000','1024000','80000000'];
+const reply=['SSH_PREFLIGHT_OK','suiba-deploy','29.9.2','v2.40.1','5:29.9.2-1~ubuntu.26.04~resolute','2048000','1024000','80000000','a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4','1730000000','3','5','1729900000','123456','0.42'];
 if(process.env.SCENARIO==='wrong-user')reply[1]='ubuntu';
 if(process.env.SCENARIO==='bad-metrics')reply[6]='fixture-sensitive-error';
 if(process.env.SCENARIO==='zero-disk')reply[7]='0';
@@ -108,6 +108,9 @@ console.log(process.env.SCENARIO==='unexpected-output'?'unexpected-sensitive-out
           assert.match(command, /MemAvailable/);
           assert.match(command, /df -Pk/);
           assert.match(command, /dpkg-query/);
+          assert.match(command, /readlink \/opt\/suiba\/current/);
+          assert.match(command, /\/proc\/loadavg/);
+          assert.match(command, /\/proc\/uptime/);
           const syntax = spawnSync("sh", ["-n"], {
             input: command,
             encoding: "utf8",
@@ -123,6 +126,14 @@ console.log(process.env.SCENARIO==='unexpected-output'?'unexpected-sensitive-out
             /MemoryTotalKiB=2048000 MemoryAvailableKiB=1024000 DiskAvailableKiB=80000000/,
           );
           assert.match(result.stdout, /DockerCLI=29.9.2 Compose=v2.40.1/);
+          assert.match(
+            result.stdout,
+            /CurrentRelease=a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4 ReleaseModifiedEpoch=1730000000 Releases=3/,
+          );
+          assert.match(
+            result.stdout,
+            /Backups=5 NewestBackupEpoch=1729900000 UptimeSeconds=123456 Load1=0.42/,
+          );
         } else {
           assert.notEqual(result.status, 0);
           assert.match(result.stderr, /SSH_CHECK_FAILED/);

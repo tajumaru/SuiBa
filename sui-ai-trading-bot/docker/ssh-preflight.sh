@@ -54,12 +54,30 @@ engine_package=$(dpkg-query -W -f='${Version}' docker-ce)
 mem_total=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
 mem_available=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
 disk_available=$(df -Pk /opt/suiba/releases | awk 'NR==2 {print $4}')
-printf '%s\n' SSH_PREFLIGHT_OK "$(id -un)" "$client" "$compose" "$engine_package" "$mem_total" "$mem_available" "$disk_available"
+current_target=$(readlink /opt/suiba/current || true)
+current_name=none
+current_mtime=0
+if [ -n "$current_target" ] && [ -d "$current_target" ]; then
+  current_name=${current_target##*/}
+  current_mtime=$(stat -c %Y "$current_target")
+fi
+releases_count=$(ls /opt/suiba/releases | wc -l)
+releases_count=$((releases_count))
+backups_count=$(ls /opt/suiba/backups | wc -l)
+backups_count=$((backups_count))
+newest_backup=$(ls -t /opt/suiba/backups | head -n 1)
+newest_backup_mtime=0
+if [ -n "$newest_backup" ]; then
+  newest_backup_mtime=$(stat -c %Y "/opt/suiba/backups/$newest_backup")
+fi
+uptime_seconds=$(awk '{print int($1)}' /proc/uptime)
+load1=$(awk '{print $1}' /proc/loadavg)
+printf '%s\n' SSH_PREFLIGHT_OK "$(id -un)" "$client" "$compose" "$engine_package" "$mem_total" "$mem_available" "$disk_available" "$current_name" "$current_mtime" "$releases_count" "$backups_count" "$newest_backup_mtime" "$uptime_seconds" "$load1"
 REMOTE
 )
 timeout 45s ssh "${opts[@]}" "$VPS_USER@$VPS_HOST" "$remote" >"$result" 2>"$errors" || fail
 mapfile -t reply < "$result"
-[[ ${#reply[@]} == 8 && ${reply[0]} == SSH_PREFLIGHT_OK && ${reply[1]} == "$VPS_USER" ]] || fail
+[[ ${#reply[@]} == 15 && ${reply[0]} == SSH_PREFLIGHT_OK && ${reply[1]} == "$VPS_USER" ]] || fail
 [[ ${reply[2]} =~ ^[0-9]+\.[0-9]+\.[0-9]+([.+~-][a-zA-Z0-9.-]+)?$ ]] || fail
 [[ ${reply[3]} =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([.+~-][a-zA-Z0-9.-]+)?$ ]] || fail
 [[ ${reply[4]} =~ ^[0-9][a-zA-Z0-9.+:~_-]*$ ]] || fail
@@ -67,7 +85,27 @@ for index in 5 6 7; do
   [[ ${reply[index]} =~ ^[0-9]{1,15}$ ]] || fail
   (( 10#${reply[index]} > 0 )) || fail
 done
+# Deployed-release and host-state fields (appended after the original
+# eight lines so their positions and validation stay unchanged).
+[[ ${reply[8]} =~ ^(none|[0-9a-f]{7,64})$ ]] || fail
+[[ ${reply[9]} =~ ^[0-9]{1,15}$ ]] || fail
+if [[ ${reply[8]} == none ]]; then
+  (( 10#${reply[9]} == 0 )) || fail
+else
+  (( 10#${reply[9]} > 0 )) || fail
+fi
+for index in 10 11 12; do
+  [[ ${reply[index]} =~ ^[0-9]{1,15}$ ]] || fail
+done
+if (( 10#${reply[11]} > 0 )); then
+  (( 10#${reply[12]} > 0 )) || fail
+fi
+[[ ${reply[13]} =~ ^[0-9]{1,15}$ ]] || fail
+(( 10#${reply[13]} > 0 )) || fail
+[[ ${reply[14]} =~ ^[0-9]+\.[0-9]{1,2}$ ]] || fail
 echo 'SSH_PREFLIGHT_OK: expected non-root user and fixed read-only checks passed; no deployment or Worker startup'
 # Only validated non-secret version/resource fields are released to the log.
 printf 'DockerCLI=%s Compose=%s EnginePackage=%s (running Engine version not checked)\n' "${reply[2]}" "${reply[3]}" "${reply[4]}"
 printf 'MemoryTotalKiB=%s MemoryAvailableKiB=%s DiskAvailableKiB=%s\n' "${reply[5]}" "${reply[6]}" "${reply[7]}"
+printf 'CurrentRelease=%s ReleaseModifiedEpoch=%s Releases=%s\n' "${reply[8]}" "${reply[9]}" "${reply[10]}"
+printf 'Backups=%s NewestBackupEpoch=%s UptimeSeconds=%s Load1=%s\n' "${reply[11]}" "${reply[12]}" "${reply[13]}" "${reply[14]}"
