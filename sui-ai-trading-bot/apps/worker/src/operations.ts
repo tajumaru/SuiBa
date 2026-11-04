@@ -2,9 +2,11 @@ import { abortable } from "../../../packages/shared/src/read-budget.ts";
 import { botControlState } from "../../../packages/shared/src/bot-state.ts";
 import { withReadBudget } from "../../../packages/shared/src/read-budget-node.ts";
 import {
+  episodeSummaryOf,
   initialPaperSafety,
   recoverableReadFailure,
   paperRecoveryLimits,
+  type EpisodeSummary,
   type PaperSafetyState,
   type PaperRecoveryProof,
 } from "../../../packages/shared/src/paper-recovery.ts";
@@ -136,6 +138,9 @@ export class OperationMonitor {
     const r = this.db.runtime(),
       s = this.safety();
     this.softFailureThisCycle = true;
+    const tally = { ...(s.episodeAt == null ? {} : s.episodeTally) },
+      tallyKey = `${failure.api}/${failure.code}`;
+    tally[tallyKey] = (tally[tallyKey] ?? 0) + 1;
     this.saveSafety({
       connectivity: "DEGRADED",
       generation: s.generation + 1,
@@ -144,6 +149,7 @@ export class OperationMonitor {
       lastFailureAt: now,
       latestFailure: failure,
       failures: s.failures + 1,
+      episodeTally: tally,
       healthyCycles: 0,
       firstHealthyAt: null,
       lastHealthyCycleAt: null,
@@ -284,6 +290,7 @@ export class OperationMonitor {
       !this.db.runtime().error &&
       !r.emergency &&
       this.mode === "PAPER";
+    const episode = episodeSummaryOf(s, now) ?? undefined;
     this.saveSafety({
       connectivity: "HEALTHY",
       healthyCycles: count,
@@ -291,23 +298,30 @@ export class OperationMonitor {
       lastHealthyCycleAt: now,
       episodeAt: null,
       failures: 0,
+      episodeTally: {},
       resumePending: false,
       recoveredAt: resume ? now : null,
     });
     if (resume) {
       this.db.set("runtime", { ...this.db.runtime(), running: true });
-      this.transition("PAPER_NETWORK_RECOVERED", now, undefined, {
-        mode: "PAPER",
-        healthyCycles: count,
-        firstHealthyAt: first,
-        lastFailureAt: s.lastFailureAt!,
-        confirmedAt: now,
-        generation: s.generation,
-        marketHealthy: true,
-        suiHealthy: true,
-        ledgerHealthy: true,
-        backoff: false,
-      });
+      this.transition(
+        "PAPER_NETWORK_RECOVERED",
+        now,
+        undefined,
+        {
+          mode: "PAPER",
+          healthyCycles: count,
+          firstHealthyAt: first,
+          lastFailureAt: s.lastFailureAt!,
+          confirmedAt: now,
+          generation: s.generation,
+          marketHealthy: true,
+          suiHealthy: true,
+          ledgerHealthy: true,
+          backoff: false,
+        },
+        episode,
+      );
     }
     return resume;
   }
@@ -421,6 +435,7 @@ export class OperationMonitor {
     fatal = false,
     details?: MarketStallDetails,
     recoveryProof?: PaperRecoveryProof,
+    episode?: EpisodeSummary,
   ) {
     this.db.append(
       "operation_events",
@@ -432,6 +447,7 @@ export class OperationMonitor {
         fatal,
         ...(details ? { details } : {}),
         ...(recoveryProof ? { recoveryProof } : {}),
+        ...(episode ? { episode } : {}),
       } satisfies OperationEvent,
       now,
     );
@@ -452,6 +468,7 @@ export class OperationMonitor {
       nextFetchReason: null,
     });
     this.fetchMono = null;
+    const episode = episodeSummaryOf(this.safety(), now) ?? undefined;
     this.saveSafety({
       ...initialPaperSafety(),
       generation: this.safety().generation + 1,
@@ -459,13 +476,22 @@ export class OperationMonitor {
     });
     this.db.set("runtime", { ...this.db.runtime(), running: false });
     this.db.interruptPending(now);
-    this.event("BOOT", "PROCESS_RESTART_STOPPED", now);
+    this.event(
+      "BOOT",
+      "PROCESS_RESTART_STOPPED",
+      now,
+      false,
+      undefined,
+      undefined,
+      episode,
+    );
   }
   transition(
     reason: string,
     now = Date.now(),
     details?: MarketStallDetails,
     recoveryProof?: PaperRecoveryProof,
+    episode?: EpisodeSummary,
   ) {
     if (
       [
@@ -500,6 +526,7 @@ export class OperationMonitor {
       false,
       details,
       recoveryProof,
+      episode,
     );
   }
   beginCycle() {
@@ -727,6 +754,7 @@ export class OperationMonitor {
   }
   stop(reason: string, now = Date.now(), details?: MarketStallDetails) {
     const r = this.db.runtime();
+    const episode = episodeSummaryOf(this.safety(), now) ?? undefined;
     this.saveSafety({
       resumePending: false,
       generation: this.safety().generation + 1,
@@ -739,7 +767,7 @@ export class OperationMonitor {
         running: false,
         error: r.error ?? code(reason),
       });
-      this.transition(reason, now, details);
+      this.transition(reason, now, details, undefined, episode);
       if (details)
         console.warn(
           JSON.stringify({ event: "MARKET_DATA_STALLED", ...details }),
@@ -786,6 +814,9 @@ export class OperationMonitor {
     }
     this.event("ANOMALY", "MARKET_DATA_STALLED", now, entering, details);
     console.warn(JSON.stringify({ event: "MARKET_DATA_STALLED", ...details }));
+    const tally = { ...(s.episodeAt == null ? {} : s.episodeTally) },
+      tallyKey = `MarketData/${details.reasonDetail}`;
+    tally[tallyKey] = (tally[tallyKey] ?? 0) + 1;
     this.saveSafety({
       connectivity: "DEGRADED",
       generation: entering ? s.generation + 1 : s.generation,
@@ -793,6 +824,7 @@ export class OperationMonitor {
       episodeAt: s.episodeAt ?? now,
       lastFailureAt: now,
       failures: s.failures + 1,
+      episodeTally: tally,
       healthyCycles: 0,
       firstHealthyAt: null,
       lastHealthyCycleAt: null,

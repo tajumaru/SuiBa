@@ -21,6 +21,12 @@ export type PaperSafetyState = {
   lastFailureAt: number | null;
   latestFailure: ApiFailure | null;
   failures: number;
+  /** Per-episode failure tally keyed "api/code" (market stalls
+   * use "MarketData/<reason>"), so a pause or stop can be
+   * diagnosed after the fact instead of only from the single
+   * latest failure. Belongs to the current episodeAt: a failure
+   * arriving while episodeAt is null starts a fresh tally. */
+  episodeTally: Record<string, number>;
   healthyCycles: number;
   firstHealthyAt: number | null;
   lastHealthyCycleAt: number | null;
@@ -42,12 +48,38 @@ export const initialPaperSafety = (): PaperSafetyState => ({
   lastFailureAt: null,
   latestFailure: null,
   failures: 0,
+  episodeTally: {},
   healthyCycles: 0,
   firstHealthyAt: null,
   lastHealthyCycleAt: null,
   recoveredAt: null,
   lastStopReason: null,
 });
+
+/** The closing record of one recovery episode (a pause that
+ * ended by recovering, by escalating to a hard stop, or by the
+ * process going away). Attached to the closing operation event
+ * and included in the AI diagnostic export. */
+export interface EpisodeSummary {
+  startedAt: number;
+  endedAt: number;
+  durationMs: number;
+  failures: number;
+  tally: Record<string, number>;
+}
+export function episodeSummaryOf(
+  s: PaperSafetyState,
+  endedAt: number,
+): EpisodeSummary | null {
+  if (s.episodeAt == null) return null;
+  return {
+    startedAt: s.episodeAt,
+    endedAt,
+    durationMs: Math.max(0, endedAt - s.episodeAt),
+    failures: s.failures,
+    tally: { ...s.episodeTally },
+  };
+}
 
 // A code alone is insufficient: require transport evidence from an approved read API.
 export function recoverableReadFailure(

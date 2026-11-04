@@ -188,6 +188,73 @@ it("treats evidenced GeckoTerminal transport failures as recoverable, host-check
     resumePending: true,
   });
 });
+it("tallies episode failures and attaches the summary to the closing events", () => {
+  const { db, monitor } = setup();
+  const start = Date.now();
+  const f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  const g = failure({
+    api: "GeckoTerminal",
+    host: "api.geckoterminal.com",
+    url: "https://api.geckoterminal.com/[redacted]",
+    occurredAt: start + 1000,
+  });
+  monitor.transientFailure(g.api, g.code, g, start + 1000);
+  monitor.transientFailure(
+    f.api,
+    f.code,
+    { ...f, occurredAt: start + 2000 },
+    start + 2000,
+  );
+  const tally = {
+    "DeepBook Indexer/UPSTREAM_BODY_TIMEOUT": 2,
+    "GeckoTerminal/UPSTREAM_BODY_TIMEOUT": 1,
+  };
+  expect(monitor.safety().episodeTally).toEqual(tally);
+  monitor.market(start + 2000, start + 2000);
+  monitor.beginCycle();
+  monitor.recoveryCycle({ market: true, sui: true }, start + 3000);
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 64000),
+  ).toBe(true);
+  const recovered = db
+    .history<{ code: string; episode?: { startedAt: number; failures: number; tally: Record<string, number> } }>("operation_events")
+    .find((e) => e.code === "PAPER_NETWORK_RECOVERED");
+  expect(recovered?.episode).toMatchObject({ startedAt: start, failures: 3 });
+  expect(recovered?.episode?.tally).toEqual(tally);
+  // The next episode starts a fresh tally.
+  const h = failure({ occurredAt: start + 70000 });
+  monitor.transientFailure(h.api, h.code, h, start + 70000);
+  expect(monitor.safety().episodeTally).toEqual({
+    "DeepBook Indexer/UPSTREAM_BODY_TIMEOUT": 1,
+  });
+});
+it("attaches the episode summary when an episode escalates to a hard stop", () => {
+  const { db, monitor } = setup();
+  const start = Date.now();
+  const f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  monitor.checkRecoveryDeadline(start + 180000);
+  expect(db.runtime().error).toBe("PAPER_RECOVERY_EXHAUSTED");
+  const stop = db
+    .history<{ code: string; episode?: { startedAt: number; failures: number; durationMs: number } }>("operation_events")
+    .find((e) => e.code === "PAPER_RECOVERY_EXHAUSTED");
+  expect(stop?.episode).toMatchObject({
+    startedAt: start,
+    failures: 1,
+    durationMs: 180000,
+  });
+});
+it("tallies market stalls into the episode breakdown", () => {
+  const { monitor } = setup();
+  const start = Date.now();
+  monitor.market(start, start);
+  monitor.watchdog(start + 361000);
+  const keys = Object.keys(monitor.safety().episodeTally);
+  expect(keys).toHaveLength(1);
+  expect(keys[0]).toMatch(/^MarketData\//);
+});
 it("pauses on a market-data stall and resumes after fresh data passes the proofs", () => {
   const { db, monitor } = setup(),
     start = Date.now();

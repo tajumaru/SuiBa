@@ -1,5 +1,8 @@
 import type { ApiFailure } from "./http-errors.ts";
-import type { PaperRecoveryProof } from "./paper-recovery.ts";
+import type {
+  EpisodeSummary,
+  PaperRecoveryProof,
+} from "./paper-recovery.ts";
 export interface CandidateAudit {
   id: string;
   orderId: string;
@@ -57,6 +60,9 @@ export interface OperationEvent {
   details?: MarketStallDetails;
   apiFailure?: ApiFailure;
   recoveryProof?: PaperRecoveryProof;
+  /** Set on the event that closes a recovery episode (recovered,
+   * hard stop, or boot): what failed, how often, for how long. */
+  episode?: EpisodeSummary;
 }
 export interface OperationState {
   lastFetchAttemptAt?: number | null;

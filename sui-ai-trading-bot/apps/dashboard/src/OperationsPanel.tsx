@@ -15,6 +15,10 @@ import {
   nextStep,
 } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
+import {
+  downloadDiagnosticReport,
+  episodeSummaryText,
+} from "./diagnosticExport.ts";
 import type { OperationsSnapshot } from "./operationsTypes.ts";
 import {
   useOperationsFeed,
@@ -140,6 +144,14 @@ export function OperationsView({
       <OperationGuidance data={data} hours={hours} stale={stale} />
       <details id="operation-diagnostics" className="operation-diagnostics">
         <summary>詳細診断 · API通信・停止理由・品質・会計・監査ログ</summary>
+        <p>
+          <button type="button" onClick={() => downloadDiagnosticReport(data)}>
+            AI調査用レポートを書き出す
+          </button>{" "}
+          <small>
+            止まった原因を AI に調べさせるためのファイル（状態・失敗の内訳・直近の記録）を保存します。
+          </small>
+        </p>
         <section>
           <h2>24時間・7日間の検証レポート</h2>
           <div className="operation-reports">
@@ -661,6 +673,12 @@ export function OperationsView({
                         {e.apiFailure.retryCount ?? "不明"} ／ HTTP：
                         {e.apiFailure.status ?? "応答なし"}
                       </p>
+                    </details>
+                  )}
+                  {e.episode && (
+                    <details>
+                      <summary>一時停止期間の内訳</summary>
+                      <p>{episodeSummaryText(e.episode)}</p>
                     </details>
                   )}
                 </li>
