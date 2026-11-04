@@ -74,6 +74,10 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm build
+      - name: Install the render-smoke browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Render smoke (the built dashboard mounts, styles apply)
+        run: node scripts/render-smoke.mjs
       - name: Audited unit tests with subprocess and network guards
         run: node node_modules/vitest/vitest.mjs run --config vitest.no-worker.config.ts
       - name: Offline data helpers and mocked deployment failures (no Worker)
