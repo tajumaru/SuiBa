@@ -53,7 +53,7 @@ exit 0
           `#!/usr/bin/env node
 const fs=require('node:fs');fs.writeFileSync(process.env.CALLS,JSON.stringify(process.argv.slice(2)));
 if(process.env.SCENARIO==='connection-failure'){console.error('fixture-sensitive-error');process.exit(255)}
-const reply=['SSH_PREFLIGHT_OK','suiba-deploy','29.9.2','v2.40.1','5:29.9.2-1~ubuntu.26.04~resolute','2048000','1024000','80000000','a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4','1730000000','3','5','1729900000','123456','0.42'];
+const reply=['SSH_PREFLIGHT_OK','suiba-deploy','29.9.2','v2.40.1','5:29.9.2-1~ubuntu.26.04~resolute','2048000','1024000','80000000','a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4','1730000000','3','5','1729900000','123456','0.42','1','1','1','1','1','2'];
 if(process.env.SCENARIO==='wrong-user')reply[1]='ubuntu';
 if(process.env.SCENARIO==='bad-metrics')reply[6]='fixture-sensitive-error';
 if(process.env.SCENARIO==='zero-disk')reply[7]='0';
@@ -118,7 +118,10 @@ console.log(process.env.SCENARIO==='unexpected-output'?'unexpected-sensitive-out
           assert.equal(syntax.status, 0, syntax.stderr);
           assert.doesNotMatch(
             command,
-            /sudo|docker run|compose up|deploy-vps|mkdir|rm |cat |printenv|\benv\b/,
+            // The env ban targets the bare env command (environment
+            // dump); the runtime.env *filename* is a prerequisite
+            // probe target, so env is anchored as a command token.
+            /sudo|docker run|compose up|deploy-vps|mkdir|rm |cat |printenv|(?:^|\s)env(?:\s|$)/,
           );
           assert.ok(args.includes("-T") && args.includes("-n"));
           assert.match(
@@ -133,6 +136,10 @@ console.log(process.env.SCENARIO==='unexpected-output'?'unexpected-sensitive-out
           assert.match(
             result.stdout,
             /Backups=5 NewestBackupEpoch=1729900000 UptimeSeconds=123456 Load1=0.42/,
+          );
+          assert.match(
+            result.stdout,
+            /PrereqDeployWrapper=1 PrereqPaperCheckWrapper=1 PrereqRuntimeEnv=1 PrereqAdminToken=1 IncomingExists=1 IncomingEntries=2/,
           );
         } else {
           assert.notEqual(result.status, 0);
