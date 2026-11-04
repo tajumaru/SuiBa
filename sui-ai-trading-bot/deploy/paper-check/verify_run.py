@@ -28,8 +28,10 @@ def module(name, path):
 
 
 def fixture(base, name, image, scenario):
-    c = module('controller', Path(__file__).with_name('controller.py'))
-    b = module('broker', Path(__file__).parent.parent/'broker/broker.py')
+    # Diagnose the installed root-owned fixture, not runner-owned checkout files.
+    # The production hash reader must retain its trusted-parent ownership checks.
+    c = module('controller', base/'code/paper-check/controller.py')
+    b = module('broker', base/'code/broker/broker.py')
     b.STATE, b.POLICY, b.BACKUPS, b.DATA = base/'broker', base/'policy', base/'backups', name+'-data'
     c.CONTAINER, c.SERVICE, c.TIMER = name, name+'.service', name+'-cutoff.timer'
     c.POLICY = base/'controller-policy.json'
