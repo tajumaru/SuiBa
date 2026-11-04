@@ -10,6 +10,7 @@ import {
   USDC,
   dayKey,
   safeFailure,
+  type BookLevels,
   type BtcInfo,
   type Candle,
   type ChainInfo,
@@ -88,6 +89,7 @@ export class BotEngine {
     private readonly chainInfoSource: () => ChainInfo | null = () => null,
     private readonly bookImbalanceSource: () => number | null = () => null,
     private readonly btcInfoSource: () => BtcInfo | null = () => null,
+    private readonly bookLevelsSource: () => BookLevels | null = () => null,
     private readonly sessionOrdersAllowed: () => boolean = () => true,
   ) {
     const portfolio = db.portfolio();
@@ -843,6 +845,11 @@ export class BotEngine {
       bookImbalance:
         this.market.bookImbalance?.(Date.now()) ??
         this.bookImbalanceSource(),
+      // Display-only top-of-book levels for the narration's
+      // wall watch: the live validated book when the trading
+      // path has one, else the independent sampler.
+      bookLevels:
+        this.market.bookLevels?.(Date.now()) ?? this.bookLevelsSource(),
       marketData: this.market.status?.() ?? null,
       marketQuality: this.db.get("market_quality") ?? null,
       mode: "PAPER",

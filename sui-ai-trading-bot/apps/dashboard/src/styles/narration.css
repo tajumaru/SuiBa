@@ -785,6 +785,10 @@
   border-color: rgba(247, 147, 26, 0.55);
   color: #f7931a;
 }
+.agent-feed-entry-tag.book {
+  border-color: rgba(178, 139, 232, 0.55);
+  color: #b48be8;
+}
 /* Forecast declarations wear the outlook's own Sui blue; a
    missed verdict dims to the down hue, a hit reuses the green
    的中 tag. */

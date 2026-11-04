@@ -16,6 +16,7 @@ import {
   tradingPairs,
   type TradingPair,
   USDC,
+  type BookLevels,
   type Candle,
   type Timeframe,
 } from "../../shared/src/index.ts";
@@ -173,6 +174,18 @@ export function bookImbalance(
   if (!(bidNotional > 0) || !(askNotional > 0)) return null;
   const total = bidNotional + askNotional;
   return Math.max(-1, Math.min(1, (bidNotional - askNotional) / total));
+}
+/** The top `count` levels of each side, best first, as
+ * [price, qty] tuples — the display-grade slice of the book the
+ * narration's wall watch reads. Pure slicing; the book's own
+ * ordering is kept. */
+export function bookTopLevels(
+  book: { bids: number[][]; asks: number[][] },
+  count = 12,
+): { bids: [number, number][]; asks: [number, number][] } {
+  const top = (levels: number[][]): [number, number][] =>
+    levels.slice(0, count).map((l) => [l[0], l[1]] as [number, number]);
+  return { bids: top(book.bids), asks: top(book.asks) };
 }
 /** Same-response evidence, including books rejected by the safety gate. No rescaling. */
 export function bookObservation(
@@ -382,6 +395,13 @@ export class DeepBookMarketData {
   imbalance(now: number): number | null {
     if (!this.book || now - this.book.timestamp > 30000) return null;
     return bookImbalance(this.book);
+  }
+  /** Display-only top-of-book levels from the last validated
+   * book (for the narration's wall watch); null under the same
+   * freshness rule as the imbalance. */
+  levels(now: number): BookLevels | null {
+    if (!this.book || now - this.book.timestamp > 30000) return null;
+    return { at: this.book.timestamp, ...bookTopLevels(this.book) };
   }
   private async checkedRead(path: string, ttl = 0) {
     const budget = currentReadBudget();

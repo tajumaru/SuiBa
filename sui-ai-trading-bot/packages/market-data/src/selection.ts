@@ -21,6 +21,7 @@ export class MarketSelection implements MarketDataProvider {
         spread: number;
       } | null;
       imbalance?(now: number): number | null;
+      levels?(now: number): import("../../shared/src/index.ts").BookLevels | null;
     },
   ) {
     this.value = {
@@ -50,6 +51,11 @@ export class MarketSelection implements MarketDataProvider {
    * fetched on this path and this stays null. */
   bookImbalance(now: number): number | null {
     return this.deep.imbalance?.(now) ?? null;
+  }
+  /** Display-only: the DeepBook side's top-of-book levels,
+   * under the same availability rule as its imbalance. */
+  bookLevels(now: number) {
+    return this.deep.levels?.(now) ?? null;
   }
   async candles(tf: Timeframe, now = Date.now()) {
     return (await this.frames(now))[tf];

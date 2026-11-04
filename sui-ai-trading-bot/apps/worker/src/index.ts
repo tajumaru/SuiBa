@@ -58,7 +58,8 @@ import { BtcSampler, createBtcPriceFetcher } from "./btcInfo.ts";
 import { resolveSuiGrpcEndpoints } from "./suiEndpoints.ts";
 import {
   BookImbalanceSampler,
-  createBookImbalanceFetcher,
+  createBookSampleFetcher,
+  type BookSample,
 } from "./bookInfo.ts";
 import { backtestMetadata, savedComparison } from "./backtest-service.ts";
 import { comparisonOptionsSchema } from "../../../packages/backtest-engine/src/index.ts";
@@ -162,13 +163,13 @@ const bookSamplers: Record<TradingPair, BookImbalanceSampler> = {
   SUI_USDC: new BookImbalanceSampler(),
   WAL_USDC: new BookImbalanceSampler(),
 };
-const bookFetchers: Record<TradingPair, () => Promise<number | null>> = {
-  SUI_USDC: createBookImbalanceFetcher("SUI_USDC"),
-  WAL_USDC: createBookImbalanceFetcher("WAL_USDC"),
+const bookFetchers: Record<TradingPair, () => Promise<BookSample | null>> = {
+  SUI_USDC: createBookSampleFetcher("SUI_USDC"),
+  WAL_USDC: createBookSampleFetcher("WAL_USDC"),
 };
 const pollBooks = async () => {
   for (const p of ["SUI_USDC", "WAL_USDC"] as const)
-    bookSamplers[p].observe(await bookFetchers[p]());
+    bookSamplers[p].observeSample(await bookFetchers[p]());
 };
 void pollBooks();
 const bookTimer = setInterval(() => void pollBooks(), 45000);
@@ -205,6 +206,7 @@ function createEngine(database: BotDatabase, selected: TradingPair) {
         () => chainSampler.current(),
         () => bookSamplers[selected].current(),
         () => btcSampler.current(),
+        () => bookSamplers[selected].currentLevels(),
         () => paperCheck.ordersAllowed(selected),
       ),
     };

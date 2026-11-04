@@ -60,6 +60,7 @@ const schema: z.ZodType<NarrationState> = z.object({
           "forecastMiss",
           "forecastTouch",
           "forecastTouchNear",
+          "bookWall",
           "status",
         ]),
         text: z.string(),
@@ -140,6 +141,22 @@ const schema: z.ZodType<NarrationState> = z.object({
     .object({ at: number, direction: z.enum(["up", "down"]) })
     .nullable()
     .default(null),
+  bookWalls: z
+    .array(
+      z.object({
+        side: z.enum(["bid", "ask"]),
+        price: number,
+        qty: number,
+        multiple: number,
+        sinceAt: number,
+        announced: z.boolean(),
+      }),
+    )
+    .default([]),
+  bookAt: number.nullable().default(null),
+  bookAdopted: z.boolean().default(false),
+  lastBookEntryAt: number.nullable().default(null),
+  bookWallCooldowns: z.record(z.string(), number).default({}),
   forecastDeclared: z.record(z.string(), number).default({}),
   forecastSettled: z.record(z.string(), z.boolean()).default({}),
   forecastTouchSettled: z.record(z.string(), z.boolean()).default({}),

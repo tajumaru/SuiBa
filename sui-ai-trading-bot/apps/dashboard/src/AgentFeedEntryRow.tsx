@@ -107,6 +107,9 @@ export function AgentFeedEntryRow({
       {entry.kind === "btc" && (
         <span className="agent-feed-entry-tag btc">BTC</span>
       )}
+      {entry.kind === "bookWall" && (
+        <span className="agent-feed-entry-tag book">板</span>
+      )}
       {entry.kind === "forecastCall" && (
         <span className="agent-feed-entry-tag forecast">予測</span>
       )}

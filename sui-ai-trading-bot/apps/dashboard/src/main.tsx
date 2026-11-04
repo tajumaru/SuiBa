@@ -825,6 +825,7 @@ function App() {
                       chain={data?.chain ?? null}
                       trades={data?.trades ?? []}
                       btc={data?.btc ?? null}
+                      book={data?.bookLevels ?? null}
                       forecasts={forecastInput}
                       active={activeTab === "Live"}
                       agentName={agentName}

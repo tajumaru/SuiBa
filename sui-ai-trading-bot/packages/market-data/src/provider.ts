@@ -1,5 +1,9 @@
 import type { CandleQuality } from "./reconstruction.ts";
-import type { Candle, Timeframe } from "../../shared/src/index.ts";
+import type {
+  BookLevels,
+  Candle,
+  Timeframe,
+} from "../../shared/src/index.ts";
 export type Frames = Record<number, Candle[]>;
 export interface MarketStatus {
   diagnostics?: {
@@ -38,4 +42,7 @@ export interface MarketDataProvider {
   /** Display-only order-book imbalance in [-1, 1]; never an
    * input to trading or safety decisions. */
   bookImbalance?(now: number): number | null;
+  /** Display-only top-of-book levels for the narration's wall
+   * watch; never an input to trading or safety decisions. */
+  bookLevels?(now: number): BookLevels | null;
 }

@@ -7,6 +7,7 @@ import {
 import {
   BookImbalanceSampler,
   createBookImbalanceFetcher,
+  createBookSampleFetcher,
 } from "../apps/worker/src/bookInfo.ts";
 import type { Candle } from "../packages/shared/src/index.ts";
 
@@ -127,6 +128,47 @@ describe("createBookImbalanceFetcher", () => {
       throw new Error("down");
     }) as never);
     expect(await broken()).toBeNull();
+  });
+});
+
+describe("book samples (levels for the wall watch)", () => {
+  const payload = (bids: string[][], asks: string[][], ts = Date.now()) =>
+    new Response(JSON.stringify({ timestamp: ts, bids, asks }), {
+      status: 200,
+    });
+  it("the sample fetcher returns the imbalance and top levels", async () => {
+    const bids = Array.from({ length: 15 }, (_, i) => [
+      String(0.998 - i * 0.001),
+      "100",
+    ]);
+    const asks = Array.from({ length: 15 }, (_, i) => [
+      String(1.002 + i * 0.001),
+      "100",
+    ]);
+    const read = createBookSampleFetcher("SUI_USDC", (async () =>
+      payload(bids, asks)) as never);
+    const sample = await read();
+    expect(sample).not.toBeNull();
+    expect(sample!.imbalance).toBeCloseTo(0, 1);
+    expect(sample!.levels.bids).toHaveLength(12);
+    expect(sample!.levels.asks).toHaveLength(12);
+    expect(sample!.levels.bids[0]).toEqual([0.998, 100]);
+    expect(sample!.levels.at).toBeGreaterThan(0);
+  });
+
+  it("the sampler serves levels inside the freshness window only", () => {
+    const s = new BookImbalanceSampler();
+    const t0 = 1_700_000_000_000;
+    expect(s.currentLevels(t0)).toBeNull();
+    s.observeSample(
+      { imbalance: 0.2, levels: { at: t0, bids: [[0.9, 5]], asks: [[1, 5]] } },
+      t0,
+    );
+    expect(s.current(t0)).toBe(0.2);
+    expect(s.currentLevels(t0 + 60000)?.bids).toEqual([[0.9, 5]]);
+    expect(s.currentLevels(t0 + 121000)).toBeNull();
+    s.observeSample(null, t0 + 1000);
+    expect(s.currentLevels(t0 + 2000)?.bids).toEqual([[0.9, 5]]);
   });
 });
 

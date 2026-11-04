@@ -284,6 +284,17 @@ export interface BtcInfo {
   change1hPct: number | null;
   at: number;
 }
+/** A display-only snapshot of the top of the DeepBook book
+ * (best-first [price, qty] levels; qty in the pair's base
+ * asset). Sampled beside the trading paths for the narration's
+ * order-book wall watch; never an input to any trading or
+ * safety decision. */
+export interface BookLevels {
+  /** When the book was sampled (ms). */
+  at: number;
+  bids: [number, number][];
+  asks: [number, number][];
+}
 export interface ChainInfo {
   epoch: number;
   checkpoint: number;

@@ -2,6 +2,7 @@ import type { EntryDraft, MonthlyCounters, NarrationEntry, NarrationState, Watch
 import { emptyMonthlyCounters } from "./state.ts";
 import type { Fill } from "../../../../packages/paper-trading/src/index.ts";
 import type {
+  BookLevels,
   BtcInfo,
   Candle,
 } from "../../../../packages/shared/src/index.ts";
@@ -29,6 +30,7 @@ import { cycleNarrationText, decisionTrail, sellLinesOf } from "./decision.ts";
 import { REVIEW_BUY_MIN_SETTLED, REVIEW_SETTLED_THRESHOLD, chooseWatchTarget, makeWatch, processWatch, reviewNarrationTexts, watchEligible } from "./watch.ts";
 import { ALERT_COOLDOWN_CYCLES, ALERT_HISTORY_KEEP, spikeAlert } from "./alerts.ts";
 import { price } from "./format.ts";
+import { advanceBookWalls, type BookWallState } from "./book.ts";
 /** The buy-run line's one approaching murmur fires when the price
  * closes to within this percent of the line (a negative distance:
  * the line sits below the price until it is touched). */
@@ -216,6 +218,12 @@ export function advanceNarration(
     records: readonly ForecastRecord[];
     candles: readonly Candle[];
   } | null,
+  /** The latest top-of-book levels (display-only), for the
+   * order-book wall watch. */
+  book?: BookLevels | null,
+  /** The pair's base symbol (e.g. "SUI"), for book entry
+   * quantities. */
+  pairLabel = "SUI",
 ): NarrationState {
   const seen = new Set(prev.seen);
   const pending = new Set(prev.pendingCandidateIds);
@@ -748,6 +756,23 @@ export function advanceNarration(
     lastBtcMutter = { at: now, direction: mutter.direction };
   }
 
+  // Order-book walls: a wall appears, vanishes, or is
+  // breached — the book's events, told like the BTC weather.
+  // Display-only; the first snapshot is adopted silently.
+  let bookWallState: BookWallState = {
+    walls: prev.bookWalls,
+    bookAt: prev.bookAt,
+    adopted: prev.bookAdopted,
+    lastEntryAt: prev.lastBookEntryAt,
+    cooldowns: prev.bookWallCooldowns,
+  };
+  if (book) {
+    const advanced = advanceBookWalls(bookWallState, book, pairLabel, now);
+    bookWallState = advanced.state;
+    for (const text of advanced.texts)
+      drafts.push({ at: now, kind: "bookWall", text });
+  }
+
   // Forecast declarations and verdicts: the chart's outlook,
   // spoken as a promise and settled on the record. Verdicts of
   // promises already made are settled first; then the newest
@@ -867,6 +892,11 @@ export function advanceNarration(
       monthly,
       monthlyFinalised,
       lastBtcMutter,
+      bookWalls: bookWallState.walls,
+      bookAt: bookWallState.bookAt,
+      bookAdopted: bookWallState.adopted,
+      lastBookEntryAt: bookWallState.lastEntryAt,
+      bookWallCooldowns: bookWallState.cooldowns,
       forecastDeclared,
       forecastSettled,
       forecastTouchSettled,

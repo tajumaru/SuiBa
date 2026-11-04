@@ -1,5 +1,11 @@
-import { bookImbalance } from "../../../packages/market-data/src/deepbook.ts";
-import type { TradingPair } from "../../../packages/shared/src/index.ts";
+import {
+  bookImbalance,
+  bookTopLevels,
+} from "../../../packages/market-data/src/deepbook.ts";
+import type {
+  BookLevels,
+  TradingPair,
+} from "../../../packages/shared/src/index.ts";
 
 /**
  * Display-only order-book imbalance sampling for pairs whose
@@ -16,12 +22,26 @@ const INDEXER = "https://deepbook-indexer.mainnet.mystenlabs.com";
 /** A sample stays usable for the outlook for this long. */
 export const BOOK_IMBALANCE_FRESH_MS = 120000;
 
+/** One sampled book: the imbalance for the outlook plus the
+ * top levels for the narration's wall watch. */
+export interface BookSample {
+  imbalance: number | null;
+  levels: BookLevels;
+}
+
 export class BookImbalanceSampler {
   private value: number | null = null;
+  private levels: BookLevels | null = null;
   private at = 0;
   observe(value: number | null, now = Date.now()): void {
     if (value == null) return;
     this.value = value;
+    this.at = now;
+  }
+  observeSample(sample: BookSample | null, now = Date.now()): void {
+    if (!sample) return;
+    if (sample.imbalance != null) this.value = sample.imbalance;
+    this.levels = sample.levels;
     this.at = now;
   }
   current(now = Date.now()): number | null {
@@ -29,19 +49,26 @@ export class BookImbalanceSampler {
       return null;
     return this.value;
   }
+  /** The latest sampled top-of-book levels, under the same
+   * freshness rule as the imbalance. */
+  currentLevels(now = Date.now()): BookLevels | null {
+    if (this.levels == null || now - this.at > BOOK_IMBALANCE_FRESH_MS)
+      return null;
+    return this.levels;
+  }
 }
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
-/** One imbalance read for a pair, or null on any failure. The
+/** One book read for a pair, or null on any failure. The
  * indexer response is parsed by hand (levels of [price, qty]
  * strings) and freshness-checked loosely — this read feeds a
- * labelled model outlook, not a safety gate, so it accepts a
- * book up to 60 seconds old. */
-export function createBookImbalanceFetcher(
+ * labelled model outlook and the narration's wall watch, not a
+ * safety gate, so it accepts a book up to 60 seconds old. */
+function createBookSampleFetcherCore(
   pair: TradingPair,
-  fetchFn: FetchFn = (url, init) => fetch(url, init),
-): () => Promise<number | null> {
+  fetchFn: FetchFn,
+): () => Promise<BookSample | null> {
   let inFlight = false;
   return async () => {
     if (inFlight) return null;
@@ -79,11 +106,32 @@ export function createBookImbalanceFetcher(
       const bids = levels(raw?.bids),
         asks = levels(raw?.asks);
       if (!bids || !asks) return null;
-      return bookImbalance({ bids, asks });
+      return {
+        imbalance: bookImbalance({ bids, asks }),
+        levels: { at: timestamp, ...bookTopLevels({ bids, asks }) },
+      };
     } catch {
       return null;
     } finally {
       inFlight = false;
     }
   };
+}
+
+/** One imbalance read for a pair, or null on any failure. */
+export function createBookImbalanceFetcher(
+  pair: TradingPair,
+  fetchFn: FetchFn = (url, init) => fetch(url, init),
+): () => Promise<number | null> {
+  const core = createBookSampleFetcherCore(pair, fetchFn);
+  return async () => (await core())?.imbalance ?? null;
+}
+
+/** One full book sample (imbalance + top levels) for a pair,
+ * or null on any failure. */
+export function createBookSampleFetcher(
+  pair: TradingPair,
+  fetchFn: FetchFn = (url, init) => fetch(url, init),
+): () => Promise<BookSample | null> {
+  return createBookSampleFetcherCore(pair, fetchFn);
 }

@@ -34,6 +34,7 @@ export type NarrationKind =
   | "forecastMiss" // a declared forecast whose direction did not
   | "forecastTouch" // a declared forecast's touch line was reached
   | "forecastTouchNear" // the touch line was nearly reached before time ran out
+  | "bookWall" // an order-book wall appeared / vanished / was breached
   | "status"; // feed-initialised status line
 
 export interface NarrationEntry {
@@ -169,6 +170,19 @@ export interface NarrationState {
   /** The last BTC weather mutter told, for its per-direction
    * cooldown. Ambience bookkeeping only. */
   lastBtcMutter: { at: number; direction: "up" | "down" } | null;
+  /** Order-book walls currently tracked by the wall watch
+   * (narration/book.ts). Ambience bookkeeping only. */
+  bookWalls: import("./book.ts").BookWall[];
+  /** The `at` of the last book snapshot the wall watch
+   * processed. */
+  bookAt: number | null;
+  /** Whether the wall watch has silently adopted the walls
+   * that were standing when the feed opened. */
+  bookAdopted: boolean;
+  /** The last book entry told, for the wall watch's spacing. */
+  lastBookEntryAt: number | null;
+  /** Per-level re-appearance cooldowns of the wall watch. */
+  bookWallCooldowns: Record<string, number>;
   /** Chart forecasts the feed has declared out loud, by origin
    * (seconds, as a string key) → when the declaration was told.
    * Only direction-claiming forecasts are ever declared; the
@@ -295,6 +309,11 @@ export function emptyNarrationState(): NarrationState {
     monthly: {},
     monthlyFinalised: null,
     lastBtcMutter: null,
+    bookWalls: [],
+    bookAt: null,
+    bookAdopted: false,
+    lastBookEntryAt: null,
+    bookWallCooldowns: {},
     forecastDeclared: {},
     forecastSettled: {},
     forecastTouchSettled: {},
