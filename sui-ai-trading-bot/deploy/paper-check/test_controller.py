@@ -133,6 +133,25 @@ class StopTests(unittest.TestCase):
                     with self.assertRaises(Exception):
                         ctl.approve_deploy(run_id, sha)
 
+    def test_renderer_uses_the_same_failure_allowlists(self):
+        # This cross-file check belongs in the repository suite. The isolated
+        # broker security image intentionally contains only /tests and broker code.
+        import ast
+        script = Path(__file__).parents[2]/'docker/ssh-paper-status.sh'
+        renderer = script.read_text().split("<<'PYCODE'", 1)[1].split('\n', 1)[1].rsplit('\nPYCODE', 1)[0]
+        values = {}
+        for node in ast.walk(ast.parse(renderer)):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Tuple):
+                for name in node.targets:
+                    if isinstance(name, ast.Name): values[name.id] = ast.literal_eval(node.value)
+        broker = Path(__file__).parent.parent/'broker/broker.py'
+        source = ast.parse(broker.read_text())
+        constants = {node.targets[0].id: ast.literal_eval(node.value) for node in source.body
+            if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id in ('FAILURE_CODES', 'FAILURE_STAGES')}
+        self.assertEqual(values['codes'], constants['FAILURE_CODES'])
+        self.assertEqual(values['stages'], constants['FAILURE_STAGES'])
+
     def test_diagnostic_summary_is_safe_and_accepts_older_reports(self):
         import io
         script = Path(__file__).parents[2]/"docker/ssh-paper-status.sh"

@@ -1,5 +1,4 @@
 import copy
-import ast
 import io
 import tarfile
 import hashlib
@@ -276,17 +275,6 @@ class BrokerTests(unittest.TestCase):
             self.assertEqual(value['code'], code)
             self.assertIsNone(value['process'])
             self.assertNotIn('secret-token', json.dumps(value))
-
-    def test_renderer_uses_the_same_failure_allowlists(self):
-        script = Path(__file__).parents[2]/'docker/ssh-paper-status.sh'
-        text = script.read_text().split("<<'PYCODE'", 1)[1].split('\n', 1)[1].rsplit('\nPYCODE', 1)[0]
-        values = {}
-        for node in ast.walk(ast.parse(text)):
-            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Tuple):
-                for name in node.targets:
-                    if isinstance(name, ast.Name): values[name.id] = ast.literal_eval(node.value)
-        self.assertEqual(values['codes'], b.FAILURE_CODES)
-        self.assertEqual(values['stages'], b.FAILURE_STAGES)
 
     def test_emergency_stop_all_duplicates_despite_first_failure(self):
         calls = []
