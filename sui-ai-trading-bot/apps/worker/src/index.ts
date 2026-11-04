@@ -470,7 +470,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             suiFresh: Date.now() - sui.status.checkedAt <= 180000,
             ledger: engine.monitor.ledger().ok,
           };
-          return { readiness, startReady: Object.values(readiness).every(Boolean) };
+          return {
+            readiness,
+            startReady: Object.values(readiness).every(Boolean),
+          };
         })(),
       });
       return;
@@ -885,6 +888,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
   process.on(signal, () => {
     if (stopping) return;
     stopping = true;
+    engine.monitor.beginShutdown();
     scheduler.stop();
     const chartClosed = chartHistory.close();
     apiAccess.cancel();

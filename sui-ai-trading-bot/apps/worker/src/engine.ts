@@ -118,7 +118,7 @@ export class BotEngine {
   private deploymentStopped() {
     let blocked = true;
     try {
-      blocked = this.deploymentBlocked();
+      blocked = this.monitor.shuttingDown || this.deploymentBlocked();
     } catch {}
     if (blocked) {
       this.db.set("runtime", { ...this.db.runtime(), running: false });
@@ -726,8 +726,10 @@ export class BotEngine {
         ].includes(error.message)
           ? error.message
           : safeFailure(error);
+      const shutdownCancelled =
+        !committed && this.monitor.isShutdownCancellation(error);
       measuredError = code;
-      cycle.outcome = "FAILED";
+      cycle.outcome = shutdownCancelled ? "CANCELLED" : "FAILED";
       if (audit && !committed)
         this.monitor.finishCandidate({
           ...audit,
@@ -736,6 +738,10 @@ export class BotEngine {
           reasons: [code],
         });
       this.db.set("decision", { action: "WAIT", reason: code, confidence: 0 });
+      if (shutdownCancelled) {
+        this.db.set("runtime", { ...this.db.runtime(), running: false });
+        return;
+      }
       if (!this.monitor.transientCycleFailure(code)) {
         this.monitor.failCycle(code);
         this.db.set("runtime", {
@@ -751,7 +757,7 @@ export class BotEngine {
     } finally {
       const quality = this.market.status?.()?.quality;
       if (quality) this.db.set("market_quality", quality);
-      this.monitor.healthy();
+      if (!this.monitor.shuttingDown) this.monitor.healthy();
       try {
         if (audit && !committed && !measuredError)
           cycle.outcome = "CANDIDATE_REJECTED";
@@ -843,8 +849,7 @@ export class BotEngine {
       // the live validated book when the trading path has one
       // (DeepBook routes), else the independent sampler.
       bookImbalance:
-        this.market.bookImbalance?.(Date.now()) ??
-        this.bookImbalanceSource(),
+        this.market.bookImbalance?.(Date.now()) ?? this.bookImbalanceSource(),
       // Display-only top-of-book levels for the narration's
       // wall watch: the live validated book when the trading
       // path has one, else the independent sampler.

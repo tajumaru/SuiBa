@@ -41,8 +41,15 @@ DIAGNOSTIC_STAGES = (
 )
 DIAGNOSTIC_LIMIT = 128 * 1024**2
 DIAGNOSTIC_DATABASES = ('bot.sqlite', 'bot.sqlite.WAL_USDC.sqlite')
+DIAGNOSTIC_EXTRA_DATABASES = ('bot.sqlite.instance.sqlite', 'bot.sqlite.pairs.sqlite')
+RUNTIME_ERROR_CODES = (
+    'API_CANCELLED', 'CANDLE_GAP', 'STALE_CANDLES', 'INVALID_CANDLE', 'PRICE_OUTLIER',
+    'SUI_READ_FAILED', 'UPSTREAM_HTTP_429', 'CONSECUTIVE_API_ERRORS',
+    'PAPER_RECOVERY_EXHAUSTED', 'PAPER_RECONCILIATION_FAILED', 'VALIDATION_RECORD_FAILED',
+    'MARKET_DATA_STALLED', 'DATABASE_UNAVAILABLE', 'OTHER_RUNTIME_ERROR',
+)
 DIAGNOSTIC_FILES = frozenset(
-    name + suffix for name in DIAGNOSTIC_DATABASES
+    name + suffix for name in DIAGNOSTIC_DATABASES + DIAGNOSTIC_EXTRA_DATABASES
     for suffix in ('', '-wal', '-shm', '-journal')
 )
 
@@ -55,9 +62,13 @@ def require(value):
 # Query only temporary copies inside the existing pinned, offline helper image.
 DIAGNOSTIC_QUERY = """
 const { DatabaseSync } = require("node:sqlite");
-const result = {};
+const result = {}, runtime = {};
+const allowedErrors = new Set(RUNTIME_ERROR_ALLOWLIST);
+function safeError(value) {
+  return value == null ? null : allowedErrors.has(value) ? value : "OTHER_RUNTIME_ERROR";
+}
 for (const name of ["bot.sqlite", "bot.sqlite.WAL_USDC.sqlite"]) {
-  const counts = [];
+  const counts = [], states = [];
   for (const folder of ["before", "after"]) {
     const db = new DatabaseSync("/audit/" + folder + "/" + name, { readOnly: true });
     try {
@@ -65,6 +76,10 @@ for (const name of ["bot.sqlite", "bot.sqlite.WAL_USDC.sqlite"]) {
       const integrity = db.prepare("PRAGMA integrity_check").all();
       if (integrity.length !== 1 || integrity[0].integrity_check !== "ok" ||
           db.prepare("PRAGMA foreign_key_check").get()) throw Error("integrity");
+      const row = db.prepare("SELECT json FROM bot_runtime_state WHERE key='runtime'").get();
+      const state = JSON.parse(row.json);
+      if (typeof state.running !== "boolean" || typeof state.emergency !== "boolean") throw Error("runtime");
+      states.push({running: state.running, emergency: state.emergency, error: safeError(state.error)});
       counts.push([
         db.prepare("SELECT count(*) n FROM operation_events WHERE json_extract(json,'$.code')='MANUAL_START'").get().n,
         db.prepare("SELECT count(*) n FROM paper_orders").get().n,
@@ -75,9 +90,27 @@ for (const name of ["bot.sqlite", "bot.sqlite.WAL_USDC.sqlite"]) {
     }
   }
   result[name] = counts[1].map((value, index) => value - counts[0][index]);
+  runtime[name] = {...states[1], before_error: states[0].error};
 }
-console.log(JSON.stringify(result));
-"""
+let selectedPair = "UNKNOWN";
+for (const name of ["bot.sqlite.instance.sqlite", "bot.sqlite.pairs.sqlite"]) {
+  const db = new DatabaseSync("/audit/after/" + name, {readOnly: true});
+  try {
+    db.exec("PRAGMA trusted_schema=OFF");
+    const integrity = db.prepare("PRAGMA integrity_check").all();
+    if (integrity.length !== 1 || integrity[0].integrity_check !== "ok" ||
+        db.prepare("PRAGMA foreign_key_check").get()) throw Error("integrity");
+    if (name === "bot.sqlite.pairs.sqlite") {
+      const row = db.prepare("SELECT json FROM bot_runtime_state WHERE key='selected_pair'").get();
+      const pair = JSON.parse(row.json);
+      selectedPair = ["SUI_USDC", "WAL_USDC"].includes(pair) ? pair : "UNKNOWN";
+      const state = JSON.parse(db.prepare("SELECT json FROM bot_runtime_state WHERE key='runtime'").get().json);
+      if (state.running !== false) throw Error("selection runtime");
+    }
+  } finally { db.close(); }
+}
+console.log(JSON.stringify({deltas: result, runtime, selected_pair: selectedPair}));
+""".replace('RUNTIME_ERROR_ALLOWLIST', json.dumps(RUNTIME_ERROR_CODES))
 
 
 class Controller:
@@ -242,6 +275,16 @@ class Controller:
         latch = (source/'bot.sqlite.maintenance').lstat()
         maintenance = stat.S_ISREG(latch.st_mode) and latch.st_uid == 1000 and latch.st_nlink == 1
         require(maintenance)
+        fd = os.open(source/'bot.sqlite.lifecycle.json', os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+        try:
+            metadata = os.fstat(fd)
+            require(stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1 and metadata.st_uid == 1000)
+            raw_lifecycle = os.read(fd, 4097)
+            require(len(raw_lifecycle) <= 4096)
+            lifecycle = self.b.decode(raw_lifecycle)
+        finally:
+            os.close(fd)
+        clean_lifecycle = lifecycle.get('mode') == 'PAPER' and lifecycle.get('state') == 'clean'
         stop = self.b.decode(self.b.read_trusted(self.folder(record)/'stop.json'))
         require(stop['id'] == record['id'])
         report = self.diagnostic_backup(record, source)
@@ -263,8 +306,39 @@ class Controller:
                 'exit_code': state['ExitCode'], 'oom_killed': state['OOMKilled'],
                 'healthcheck_exit': health[-1]['ExitCode'] if health else None,
                 'maintenance': maintenance, 'stage': stage, 'http_status': http,
-                'backup_verified': True, 'deltas': report, 'readiness': readiness,
+                'backup_verified': True, 'deltas': report['deltas'], 'readiness': readiness,
+                'runtime': report['runtime'], 'selected_pair': report['selected_pair'],
+                'clean_lifecycle': clean_lifecycle,
+                'host': self.diagnostic_host(i),
             },
+        }
+
+    def diagnostic_host(self, container):
+        ledger = self.b.decode(self.b.read_trusted(self.b.STATE/'ledger.json'))
+        require(type(ledger['sequence']) is int and self.b.SHA.fullmatch(ledger['sha']))
+        known_states = ('in_progress', 'prepared_stopped', 'failed_stopped', 'failed_state_unknown')
+        gate = self.b.decode(self.b.read_trusted(self.b.STATE/'paper-check.json'))
+        raw = subprocess.check_output(['/usr/bin/systemctl', 'show', TIMER,
+            '-p', 'ActiveState', '-p', 'SubState', '-p', 'NextElapseUSecMonotonic',
+            '-p', 'NextElapseUSecRealtime', '-p', 'Job'],
+            timeout=10, env={'PATH': '/usr/bin:/bin'}, stderr=subprocess.DEVNULL).decode()
+        timer = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
+        env = dict(value.split('=', 1) for value in container['Config']['Env'])
+        return {
+            'ledger_status': ledger['status'] if ledger['status'] in known_states else 'unknown',
+            'sequence': ledger['sequence'], 'sha': ledger['sha'],
+            'paper_gate': gate.get('status') if gate.get('status') in ('completed', 'in_progress') else 'unknown',
+            'fault_marker': os.path.lexists(self.b.STATE/'paper-check-failed.json'),
+            'container_status': container['State']['Status'],
+            'restart_disabled': container['HostConfig']['RestartPolicy']['Name'] == 'no',
+            'paper': env.get('MODE') == 'PAPER',
+            'timer_active': timer.get('ActiveState') == 'active',
+            'timer_elapsed': timer.get('SubState') == 'elapsed',
+            'timer_next_scheduled': any(timer.get(key) not in (None, '', '0', 'n/a')
+                for key in ('NextElapseUSecMonotonic', 'NextElapseUSecRealtime')),
+            'timer_job_pending': timer.get('Job') not in ('', '0'),
+            'controller_sha256': hashlib.sha256(self.b.read_trusted(Path(__file__))).hexdigest(),
+            'broker_sha256': hashlib.sha256(self.b.read_trusted(Path(self.b.__file__))).hexdigest(),
         }
 
     def approve_deploy(self, run_id, sha):
@@ -368,14 +442,22 @@ class Controller:
                 with contextlib.suppress(Exception):
                     self.docker.call(['rm', '-f', name], timeout=5)
                 raise
-            require(len(raw) <= 1024)
-            counts = self.b.decode(raw)
+            require(len(raw) <= 4096)
+            audit = self.b.decode(raw)
+            counts = audit['deltas']
             result = {}
             for pair, name in zip(('SUI_USDC', 'WAL_USDC'), DIAGNOSTIC_DATABASES):
                 values = counts[name]
                 require(len(values) == 3 and all(type(v) is int for v in values))
+                state = audit['runtime'][name]
+                require(set(state) == {'running', 'emergency', 'error', 'before_error'})
+                require(type(state['running']) is bool and type(state['emergency']) is bool)
+                require(all(state[key] is None or state[key] in RUNTIME_ERROR_CODES for key in ('error', 'before_error')))
                 result[pair] = dict(zip(('starts', 'orders', 'fills'), values))
-            return result
+            require(audit['selected_pair'] in ('SUI_USDC', 'WAL_USDC', 'UNKNOWN'))
+            return {'deltas': result, 'runtime': {pair: audit['runtime'][name]
+                    for pair, name in zip(('SUI_USDC', 'WAL_USDC'), DIAGNOSTIC_DATABASES)},
+                    'selected_pair': audit['selected_pair']}
 
     def api(self, method, path, value=None):
         require(path in ('/api/deployment', '/api/pairs', '/api/control', '/api/paper-check/arm', '/api/dashboard/summary'))
