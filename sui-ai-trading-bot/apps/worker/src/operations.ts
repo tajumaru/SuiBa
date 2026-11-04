@@ -106,6 +106,21 @@ export const numericText = (value: unknown): string | null => {
   }
 };
 export class OperationMonitor {
+  private shutdownRequested = false;
+  get shuttingDown() {
+    return this.shutdownRequested;
+  }
+  beginShutdown() {
+    this.shutdownRequested = true;
+    this.db.set("runtime", { ...this.db.runtime(), running: false });
+  }
+  isShutdownCancellation(error: unknown) {
+    return (
+      this.shutdownRequested &&
+      error instanceof Error &&
+      error.message === "API_CANCELLED"
+    );
+  }
   // A failed recovery read cannot grant orders even if stop persistence also fails.
   private recoveryReadFault = false;
   private cycleFailed = false;
@@ -181,7 +196,7 @@ export class OperationMonitor {
       this.stop("PAPER_RECOVERY_EXHAUSTED", now);
   }
   ordersAllowed(generation?: number, now = Date.now()) {
-    if (this.recoveryReadFault) return false;
+    if (this.shutdownRequested || this.recoveryReadFault) return false;
     if (!this.db.health().healthy) return false;
     const r = this.db.runtime(),
       s = this.state();
@@ -202,7 +217,7 @@ export class OperationMonitor {
   }
 
   recoveryCycle(checks: { market: boolean; sui: boolean }, now = Date.now()) {
-    if (this.recoveryReadFault) return false;
+    if (this.shutdownRequested || this.recoveryReadFault) return false;
     try {
       // Hold the write lock through identity/ledger checks and the resume write.
       return this.db.transaction(() => this.checkedRecoveryCycle(checks, now));
@@ -691,6 +706,10 @@ export class OperationMonitor {
     try {
       return await fn();
     } catch (error) {
+      if (this.isShutdownCancellation(error)) {
+        this.event("ANOMALY", "PROCESS_SHUTDOWN_CANCELLED");
+        throw error;
+      }
       this.cycleFailed = true;
       const reason = safeFailure(error);
       // A successfully read book can fail a trading gate. That is not a

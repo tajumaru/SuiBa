@@ -90,6 +90,41 @@ try:
             for key in ("starts", "orders", "fills"):
                 if type(details["deltas"][pair][key]) is not int:
                     raise ValueError()
+        if "clean_lifecycle" in details and type(details["clean_lifecycle"]) is not bool:
+            raise ValueError()
+        runtime = details.get("runtime")
+        if runtime is not None:
+            allowed_errors = {None, "API_CANCELLED", "CANDLE_GAP", "STALE_CANDLES", "INVALID_CANDLE",
+                "PRICE_OUTLIER", "SUI_READ_FAILED", "UPSTREAM_HTTP_429", "CONSECUTIVE_API_ERRORS",
+                "PAPER_RECOVERY_EXHAUSTED", "PAPER_RECONCILIATION_FAILED", "VALIDATION_RECORD_FAILED",
+                "MARKET_DATA_STALLED", "DATABASE_UNAVAILABLE", "OTHER_RUNTIME_ERROR"}
+            for pair in ("SUI_USDC", "WAL_USDC"):
+                value = runtime[pair]
+                if type(value["running"]) is not bool or type(value["emergency"]) is not bool:
+                    raise ValueError()
+                if value["error"] not in allowed_errors or value["before_error"] not in allowed_errors:
+                    raise ValueError()
+            if details.get("selected_pair") not in ("SUI_USDC", "WAL_USDC", "UNKNOWN"):
+                raise ValueError()
+        host = details.get("host")
+        if host is not None:
+            import re
+            for key in ("restart_disabled", "paper", "fault_marker", "timer_active", "timer_elapsed",
+                        "timer_next_scheduled", "timer_job_pending"):
+                if type(host[key]) is not bool:
+                    raise ValueError()
+            if type(host["sequence"]) is not int or not re.fullmatch(r"[a-f0-9]{40}", host["sha"]):
+                raise ValueError()
+            if host["ledger_status"] not in ("in_progress", "prepared_stopped", "failed_stopped", "failed_state_unknown", "unknown"):
+                raise ValueError()
+            if host["paper_gate"] not in ("completed", "in_progress", "unknown"):
+                raise ValueError()
+            if host["container_status"] not in ("created", "exited"):
+                raise ValueError()
+            for key in ("controller_sha256", "broker_sha256"):
+                if not re.fullmatch(r"[a-f0-9]{64}", host[key]):
+                    raise ValueError()
+
 except (OSError, ValueError, KeyError, TypeError):
     sys.exit("PAPER_STATUS_INVALID")
 print("### SuiBa PAPER verification")
@@ -110,6 +145,25 @@ if details is not None:
         blocked = [key for key in checks if readiness.get(key) is False]
         if blocked:
             print("- Readiness checks blocking start: " + ", ".join(blocked))
+    if "clean_lifecycle" in details:
+        print(f"- Clean PAPER lifecycle receipt: {details['clean_lifecycle']}")
+    runtime = details.get("runtime")
+    if runtime is not None:
+        print("- All four database copies passed integrity checks")
+        print(f"- Selected pair: {details['selected_pair']}")
+        for pair in ("SUI_USDC", "WAL_USDC"):
+            value = runtime[pair]
+            print(f"- {pair} runtime: running={value['running']}, emergency={value['emergency']}, "
+                  f"error={value['error']}, before-run error={value['before_error']}")
+    host = details.get("host")
+    if host is not None:
+        print(f"- Container: {host['container_status']}, restart disabled={host['restart_disabled']}, PAPER={host['paper']}")
+        print(f"- Deployment ledger: {host['ledger_status']}, sequence={host['sequence']}, SHA={host['sha']}")
+        print(f"- Deployment PAPER gate: {host['paper_gate']}, fault marker={host['fault_marker']}")
+        print(f"- Cutoff timer: active={host['timer_active']}, elapsed={host['timer_elapsed']}, "
+              f"next scheduled={host['timer_next_scheduled']}, job pending={host['timer_job_pending']}")
+        print(f"- Installed controller SHA-256: {host['controller_sha256']}")
+        print(f"- Installed broker SHA-256: {host['broker_sha256']}")
     for pair in ("SUI_USDC", "WAL_USDC"):
         delta = details["deltas"][pair]
         print(f"- {pair} difference: starts={delta['starts']:+d}, orders={delta['orders']:+d}, fills={delta['fills']:+d}")

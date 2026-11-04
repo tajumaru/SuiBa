@@ -148,7 +148,7 @@ for scenario in ('normal', 'crash', 'timer', 'helper', 'persistence', 'worker-ab
         shutil.copyfile(script.parent.parent/'broker/broker.py', code/'broker/broker.py')
         transaction = base/'broker'/('a'*32); transaction.mkdir(mode=0o700)
         (transaction/'compose.json').write_text(json.dumps({'services': {'bot': {'image': digest}}}))
-        (base/'broker/ledger.json').write_text(json.dumps({'status': 'prepared_stopped', 'sha': sha, 'transaction': 'a'*32}))
+        (base/'broker/ledger.json').write_text(json.dumps({'status': 'prepared_stopped', 'sequence': 1, 'sha': sha, 'transaction': 'a'*32}))
         (base/'policy/policy.json').write_text(json.dumps({'helper_image': digest}))
         (base/'controller-policy.json').write_text('{"enabled":true,"mode":"sui-30m"}')
         docker('volume', 'create', name+'-data')
@@ -215,6 +215,12 @@ for scenario in ('normal', 'crash', 'timer', 'helper', 'persistence', 'worker-ab
             assert report['run']['status'] == 'completed'
             details = report['diagnostics']
             assert details['backup_verified'] and details['maintenance']
+            assert details['clean_lifecycle']
+            assert details['selected_pair'] == 'SUI_USDC'
+            assert all(not state['running'] and not state['emergency'] and state['error'] is None
+                       for state in details['runtime'].values())
+            assert details['host']['restart_disabled'] and details['host']['paper']
+            assert details['host']['sequence'] == 1
             assert details['exit_code'] == 0 and not details['oom_killed']
             assert all(delta == {'starts': 0, 'orders': 0, 'fills': 0}
                        for delta in details['deltas'].values())

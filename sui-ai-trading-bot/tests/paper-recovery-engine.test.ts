@@ -1156,3 +1156,92 @@ it("recovers in GeckoTerminal mode: an evidenced Gecko failure pauses, then heal
   expect(engine.monitor.safety().connectivity).toBe("HEALTHY");
   expect(db.runtime().running).toBe(true);
 });
+
+it("intentional shutdown cancellation stops the cycle without latching a runtime error", async () => {
+  const t = fixture();
+  t.inject(() => {
+    t.engine.monitor.beginShutdown();
+    throw Error("API_CANCELLED");
+  });
+  await t.tick();
+  expect(t.db.runtime()).toMatchObject({ running: false, error: null });
+  expect(t.db.history("paper_orders")).toHaveLength(0);
+  expect(t.db.history("paper_trades")).toHaveLength(0);
+  expect(
+    t.db
+      .history<CycleAuditRow>("cycle_audits")
+      .find((row) => row.phase === "END"),
+  ).toMatchObject({
+    phase: "END",
+    outcome: "CANCELLED",
+    error: "API_CANCELLED",
+  });
+  const calls = t.market.frames.mock.calls.length;
+  await t.tick();
+  expect(t.market.frames).toHaveBeenCalledTimes(calls);
+  expect(t.router.getQuote).not.toHaveBeenCalled();
+});
+
+it("shutdown cancellation preserves a previously latched error and emergency", async () => {
+  const t = fixture();
+  t.db.set("runtime", {
+    ...t.db.runtime(),
+    error: "CANDLE_GAP",
+    emergency: true,
+  });
+  t.inject(() => {
+    t.engine.monitor.beginShutdown();
+    throw Error("API_CANCELLED");
+  });
+  await t.tick();
+  expect(t.db.runtime()).toMatchObject({
+    running: false,
+    error: "CANDLE_GAP",
+    emergency: true,
+  });
+});
+
+it.each(["API_CANCELLED", "CANDLE_GAP", "VALIDATION_RECORD_FAILED"])(
+  "normal operation still latches %s",
+  async (error) => {
+    const t = fixture();
+    t.inject(() => {
+      throw Error(error);
+    });
+    await t.tick();
+    expect(t.db.runtime()).toMatchObject({ running: false, error });
+  },
+);
+
+it("a real failure during shutdown still latches an error", async () => {
+  const t = fixture();
+  t.inject(() => {
+    t.engine.monitor.beginShutdown();
+    throw Error("VALIDATION_RECORD_FAILED");
+  });
+  await t.tick();
+  expect(t.db.runtime()).toMatchObject({
+    running: false,
+    error: "VALIDATION_RECORD_FAILED",
+  });
+});
+
+it("concurrent cancelled reads during shutdown do not trip the API error counter", async () => {
+  const t = fixture();
+  const before = t.engine.monitor.state().consecutiveErrors;
+  t.engine.monitor.beginShutdown();
+  const reads = await Promise.allSettled(
+    Array.from({ length: 4 }, () =>
+      t.engine.monitor.request("MARKET", async () => {
+        throw Error("API_CANCELLED");
+      }),
+    ),
+  );
+  expect(reads.every((value) => value.status === "rejected")).toBe(true);
+  expect(t.engine.monitor.state().consecutiveErrors).toBe(before);
+  expect(t.engine.monitor.ordersAllowed()).toBe(false);
+  expect(t.engine.monitor.recoveryCycle({ market: true, sui: true })).toBe(
+    false,
+  );
+  expect(t.db.runtime()).toMatchObject({ running: false, error: null });
+});

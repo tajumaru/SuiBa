@@ -133,6 +133,59 @@ class StopTests(unittest.TestCase):
                     with self.assertRaises(Exception):
                         ctl.approve_deploy(run_id, sha)
 
+    def test_diagnostic_summary_is_safe_and_accepts_older_reports(self):
+        import io
+        script = Path(__file__).parents[2]/"docker/ssh-paper-status.sh"
+        renderer = script.read_text().split("<<'PYCODE'\n", 1)[1].rsplit("\nPYCODE", 1)[0]
+        payload = {
+            'run': {'id': 'a'*32, 'status': 'failed_requires_review'},
+            'stop': {'id': 'a'*32, 'status': 'clean_stopped'}, 'requires_review': False,
+            'diagnostics': {'stage': 'worker-readiness', 'maintenance': True, 'backup_verified': True,
+                'oom_killed': False, 'exit_code': 0, 'healthcheck_exit': 0, 'http_status': None,
+                'deltas': {pair: {'starts': 0, 'orders': 0, 'fills': 0} for pair in ('SUI_USDC', 'WAL_USDC')}},
+        }
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            path = Path(tmp)/'response'
+            def render():
+                path.write_text(json.dumps(payload))
+                output = io.StringIO()
+                with patch.object(c.sys, 'argv', ['summary', str(path), 'diagnose']), contextlib.redirect_stdout(output):
+                    exec(compile(renderer, 'summary', 'exec'), {})
+                return output.getvalue()
+            self.assertIn('worker-readiness', render())
+            payload['diagnostics']['runtime'] = {pair: {'running': False, 'emergency': False,
+                'error': 'API_CANCELLED', 'before_error': 'API_CANCELLED'} for pair in ('SUI_USDC', 'WAL_USDC')}
+            payload['diagnostics']['selected_pair'] = 'SUI_USDC'
+            output = render()
+            self.assertIn('before-run error=API_CANCELLED', output)
+            self.assertIn('running=False', output)
+            payload['diagnostics']['runtime']['SUI_USDC']['error'] = 'secret-fixture-do-not-log'
+            with self.assertRaises(SystemExit) as failure:
+                render()
+            self.assertEqual(str(failure.exception), 'PAPER_STATUS_INVALID')
+
+    def test_host_diagnostic_reports_deployment_gate_timer_and_versions(self):
+        import re
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            root = Path(tmp)
+            FakeBroker.atomic(root/'ledger.json', {'status': 'prepared_stopped', 'sequence': 5, 'sha': 'a'*40})
+            FakeBroker.atomic(root/'paper-check.json', {'status': 'in_progress'})
+            ctl = object.__new__(c.Controller)
+            ctl.b = SimpleNamespace(STATE=root, SHA=re.compile(r'[a-f0-9]{40}'), decode=json.loads,
+                read_trusted=FakeBroker.read_trusted, __file__=c.__file__)
+            response = b'ActiveState=active\nSubState=elapsed\nNextElapseUSecMonotonic=0\nNextElapseUSecRealtime=\nJob=\n'
+            container = {'State': {'Status': 'exited'}, 'HostConfig': {'RestartPolicy': {'Name': 'no'}},
+                         'Config': {'Env': ['MODE=PAPER']}}
+            with patch.object(c.subprocess, 'check_output', return_value=response):
+                result = ctl.diagnostic_host(container)
+            self.assertEqual(result['sequence'], 5)
+            self.assertEqual(result['paper_gate'], 'in_progress')
+            self.assertTrue(result['timer_elapsed'])
+            self.assertFalse(result['timer_next_scheduled'])
+            self.assertFalse(result['fault_marker'])
+            self.assertEqual(len(result['controller_sha256']), 64)
+
     def test_normal_api_failure_docker_hang_oom_and_db_failure(self):
         for failure in (None, 'api', 'stop', 'daemon', 'oom', 'db'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
