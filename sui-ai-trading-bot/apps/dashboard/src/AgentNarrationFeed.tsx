@@ -147,6 +147,7 @@ export function AgentNarrationFeed({
       book,
       pairLabel,
       calibEvent,
+      character,
     );
     narrationRef.current = next;
     persist(next);

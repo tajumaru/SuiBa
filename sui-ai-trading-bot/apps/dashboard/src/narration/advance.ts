@@ -18,6 +18,8 @@ import {
 import type { OperationsSnapshot } from "../operationsTypes.ts";
 import type { CalibEvent } from "../forecastCalib.ts";
 import type { VitalState } from "../botVital.ts";
+import type { AgentCharacter } from "../agentCharacter.ts";
+import { voiceText } from "./voice.ts";
 import { cycleNarrationText, decisionTrail, sellLinesOf } from "./decision.ts";
 import { chooseWatchTarget, makeWatch, watchEligible } from "./watch.ts";
 import {
@@ -138,6 +140,10 @@ export function advanceNarration(
   /** The newest cone-calibration change (display-only), told
    * once when it is fresh. */
   calib?: CalibEvent | null,
+  /** Who is speaking: new entries are laid down in that
+   * character's voice (see voice.ts). Defaults to the white
+   * character, whose voice is the templates as written. */
+  character: AgentCharacter = "white",
 ): NarrationState {
   const seen = new Set(prev.seen);
   const pending = new Set(prev.pendingCandidateIds);
@@ -244,6 +250,7 @@ export function advanceNarration(
         initialized: true,
       },
       drafts,
+      character,
     );
   }
 
@@ -343,10 +350,15 @@ export function advanceNarration(
       lastStatus: work.lastStatus,
     },
     work.drafts,
+    character,
   );
 }
 
-export function finish(state: NarrationState, drafts: EntryDraft[]): NarrationState {
+export function finish(
+  state: NarrationState,
+  drafts: EntryDraft[],
+  character: AgentCharacter = "white",
+): NarrationState {
   let retiredEventThrough = state.retiredEventThrough;
   let retiredCandidateThrough = state.retiredCandidateThrough;
   for (const key of state.seen.slice(
@@ -361,6 +373,11 @@ export function finish(state: NarrationState, drafts: EntryDraft[]): NarrationSt
       retiredCandidateThrough = Math.max(retiredCandidateThrough ?? at, at);
   }
   drafts.sort((a, b) => a.at - b.at);
+  if (character !== "white") {
+    for (const draft of drafts) {
+      draft.text = voiceText(draft.kind, draft.text, character);
+    }
+  }
   const entries = [...state.entries];
   let nextEntryId = state.nextEntryId;
   for (const draft of drafts) {
