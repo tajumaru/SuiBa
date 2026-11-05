@@ -47,11 +47,15 @@ export function readOverview(): string {
   return readDashboardFiles(OVERVIEW_FILES);
 }
 
-// The narration feed surface: the feed component, its entry
-// row, and the scroll decisions factored out of it.
+// The narration feed surface: the feed component, its chat
+// composer, its entry row, the chat and scroll hooks factored
+// out of it, and the scroll decisions.
 export const NARRATION_FEED_FILES = [
   "AgentNarrationFeed.tsx",
+  "AgentChatComposer.tsx",
   "AgentFeedEntryRow.tsx",
+  "useAgentChat.ts",
+  "useFeedScroll.ts",
   "feedScroll.ts",
 ] as const;
 
