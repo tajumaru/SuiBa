@@ -66,7 +66,7 @@ systemctl is-active --quiet suiba-paper-check.service && fail '検証サービ�
 for timer in suiba-paper-check-cutoff.timer suiba-paper-check-cutoff-6h.timer suiba-paper-check-cutoff-24h.timer; do
   systemctl is-active --quiet "$timer" && fail "カットオフタイマーが残っています: $timer"
 done
-[[ -f $STATE/paper-check-failed.json ]] || fail '障害ラッチ（paper-check-failed.json）がありません'
+[[ -f $DEPLOY_STATE/paper-check-failed.json ]] || fail '障害ラッチ（paper-check-failed.json）がありません'
 echo "証拠 OK: run=$run_id は未起動のまま PREFLIGHT_INCOMPLETE で終了"
 
 echo '== 2/4 証拠の退避 =='
@@ -78,7 +78,7 @@ cp -a "$folder/stop.json" "$backup/run-stop.json"
 echo "退避先: $backup"
 
 echo '== 3/4 是正（ラッチと fault の移動、レシートの書き換え） =='
-mv "$STATE/paper-check-failed.json" "$backup/paper-check-failed.json"
+mv "$DEPLOY_STATE/paper-check-failed.json" "$backup/paper-check-failed.json"
 shopt -s nullglob
 faults=("$folder"/fault-*.json)
 if (( ${#faults[@]} > 0 )); then mv "${faults[@]}" "$backup/"; fi
