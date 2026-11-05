@@ -135,6 +135,55 @@ export class BotEngine {
     }
     return false;
   }
+  /**
+   * Tick phase 1 — acquisition: fetch and validate every
+   * timeframe's candles, persist them, and refuse a market
+   * source change mid-flight. Extracted verbatim from tick().
+   */
+  private async acquireFrames(cycle: CycleEvidence, began: number, now: number) {
+      const recovering = this.monitor.safety().connectivity !== "HEALTHY";
+      const frames: Record<number, Candle[]> = await this.monitor.acquisition(
+        async () => {
+          await this.monitor.request("HEALTH", () =>
+            this.sui.health(recovering),
+          );
+          if (this.market.frames) return this.market.frames(now);
+          const result: Record<number, Candle[]> = {};
+          for (const tf of [300, 900, 3600] as const)
+            result[tf] = await this.market.candles(tf, now);
+          return result;
+        },
+        cycle.cycleId,
+      );
+      if (this.market.frames)
+        for (const tf of [300, 900, 3600] as const)
+          validateCandles(frames[tf], tf, Date.now());
+      const source = frames[300][0].source;
+      if (
+        source.startsWith("DeepBook:") &&
+        !source.startsWith(`DeepBook:${this.pair}:USDC`)
+      )
+        throw Error("MARKET_PAIR_MISMATCH");
+      if (
+        Object.values(frames).some((rows) =>
+          rows.some((x) => x.source !== source),
+        )
+      )
+        throw new Error("MARKET_PAIR_MISMATCH");
+      const previousSource =
+        this.db.get<string>("market_source") ??
+        this.db.candles().at(-1)?.source;
+      for (const rows of Object.values(frames)) this.db.saveCandles(rows);
+      this.db.set("market_source", source);
+      if (previousSource && previousSource !== source) {
+        this.db.set("price", null);
+        this.db.set("indicators", null);
+        this.db.set("profitGuard", null);
+        throw new Error("MARKET_SOURCE_CHANGED");
+      }
+    return frames;
+  }
+
   async tick() {
     this.db.assertHealthy();
     if (this.deploymentStopped()) return;
@@ -164,47 +213,8 @@ export class BotEngine {
         began,
       );
       const now = Date.now();
-      const recovering = this.monitor.safety().connectivity !== "HEALTHY";
-      const frames: Record<number, Candle[]> = await this.monitor.acquisition(
-        async () => {
-          await this.monitor.request("HEALTH", () =>
-            this.sui.health(recovering),
-          );
-          if (this.market.frames) return this.market.frames(now);
-          const result: Record<number, Candle[]> = {};
-          for (const tf of [300, 900, 3600] as const)
-            result[tf] = await this.market.candles(tf, now);
-          return result;
-        },
-        cycle.cycleId,
-      );
-      if (this.market.frames)
-        for (const tf of [300, 900, 3600] as const)
-          validateCandles(frames[tf], tf, Date.now());
+      const frames = await this.acquireFrames(cycle, began, now);
       measuredFrames = frames;
-      const source = frames[300][0].source;
-      if (
-        source.startsWith("DeepBook:") &&
-        !source.startsWith(`DeepBook:${this.pair}:USDC`)
-      )
-        throw Error("MARKET_PAIR_MISMATCH");
-      if (
-        Object.values(frames).some((rows) =>
-          rows.some((x) => x.source !== source),
-        )
-      )
-        throw new Error("MARKET_PAIR_MISMATCH");
-      const previousSource =
-        this.db.get<string>("market_source") ??
-        this.db.candles().at(-1)?.source;
-      for (const rows of Object.values(frames)) this.db.saveCandles(rows);
-      this.db.set("market_source", source);
-      if (previousSource && previousSource !== source) {
-        this.db.set("price", null);
-        this.db.set("indicators", null);
-        this.db.set("profitGuard", null);
-        throw new Error("MARKET_SOURCE_CHANGED");
-      }
       const c = frames[300],
         last = c.at(-1)!,
         price = last.close;
