@@ -1,4 +1,3 @@
-import { WalPaperRouter } from "../../../packages/dex-router/src/pair-router.ts";
 import { PaperCheckSession } from "./paper-check-session.ts";
 import "../../../scripts/enforce-node-version.mjs";
 import { runtimeBuild } from "./runtime-build.ts";
@@ -20,17 +19,17 @@ import {
 import { deepBookTransport } from "../../../packages/market-data/src/deepbook-transport.ts";
 import { DashboardService, acceptsGzip } from "./dashboard-feed.ts";
 import { startDisplaySamplers } from "./display-samplers.ts";
-import { gzip } from "node:zlib";
-import { ChartHistoryClient } from "./chart-history-client.ts";
-import { historyQuery } from "./chart-history.ts";
-import { MarketScheduler } from "./scheduler.ts";
+import { WorkerContext } from "./worker-context.ts";
 import {
-  exportValidationReport,
-  validationMarkdown,
-} from "./validation-report.ts";
+  createChartHistory,
+  createEngine,
+  createScheduler,
+  validationHeartbeat,
+} from "./worker-factories.ts";
+import { gzip } from "node:zlib";
+import { historyQuery } from "./chart-history.ts";
 import { ValidationRecorder, assertValidationProfile } from "./validation.ts";
-import { DeepBookMarketData } from "../../../packages/market-data/src/deepbook.ts";
-import { MarketSelection } from "../../../packages/market-data/src/selection.ts";
+import { validationMarkdown } from "./validation-report.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
 import "dotenv/config";
 import {
@@ -44,16 +43,12 @@ import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { resolve, extname, dirname, basename } from "node:path";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
-import { GeckoMarketData } from "../../../packages/market-data/src/index.ts";
-import { CetusRouter } from "../../../packages/dex-router/src/index.ts";
-import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
 import {
   settingsSchema,
   tradingPair,
   tradingPairs,
   type TradingPair,
 } from "../../../packages/shared/src/index.ts";
-import { BotEngine } from "./engine.ts";
 import { resolveSuiGrpcEndpoints } from "./suiEndpoints.ts";
 import { backtestMetadata, savedComparison } from "./backtest-service.ts";
 import { comparisonOptionsSchema } from "../../../packages/backtest-engine/src/index.ts";
@@ -102,7 +97,7 @@ const paperCheck = new PaperCheckSession(process.env.PAPER_CHECK_MODE);
 const bootId = randomUUID();
 recordLifecycle(rootDatabasePath, bootId, "running");
 const selectionDb = new BotDatabase(rootDatabasePath + ".pairs.sqlite");
-let pair = tradingPair(
+const pair = tradingPair(
   process.env.TRADING_PAIR ?? selectionDb.get("selected_pair") ?? "SUI_USDC",
 );
 if (!paperCheck.pairAllowed(pair)) throw Error("PAPER_CHECK_PAIR_FORBIDDEN");
@@ -110,7 +105,7 @@ const pairPath = (value: TradingPair) =>
   value === "SUI_USDC"
     ? rootDatabasePath
     : rootDatabasePath + ".WAL_USDC.sqlite";
-let db = new BotDatabase(pairPath(pair));
+const db = new BotDatabase(pairPath(pair));
 db.set(
   "runtime_build",
   runtimeBuild(
@@ -119,93 +114,49 @@ db.set(
   ),
 );
 const suiGrpcEndpoints = resolveSuiGrpcEndpoints();
-const { chainSampler, btcSampler, longTermSampler, bookSamplers, chainTimer } =
-  startDisplaySamplers(suiGrpcEndpoints);
-function createEngine(database: BotDatabase, selected: TradingPair) {
-  const client = new ReadOnlySuiClient(suiGrpcEndpoints.primary, {
-    onObservation: (event) =>
-      database.append("sui_observations", randomUUID(), event, event.at),
-    fallbackUrls: suiGrpcEndpoints.fallbacks,
-  });
-  const deep = new DeepBookMarketData(
-    () => database.settings(),
-    undefined,
-    reconstruction === "verified",
-    selected,
-  );
-  const router = new CetusRouter();
-  try {
-    return {
-      sui: client,
-      engine: new BotEngine(
-        database,
-        new MarketSelection(
-          selected === "WAL_USDC"
-            ? "deepbook"
-            : (marketMode as "geckoterminal" | "deepbook" | "auto"),
-          new GeckoMarketData(process.env.MARKET_POOL || undefined),
-          deep,
-        ),
-        selected === "WAL_USDC" ? new WalPaperRouter(router, deep) : router,
-        client,
-        selected,
-        () => stopping || deploymentGate.blocked() || paperCheck.expired(),
-        () => chainSampler.current(),
-        () => bookSamplers[selected].current(),
-        () => btcSampler.current(),
-        () => bookSamplers[selected].currentLevels(),
-        () => (selected === "SUI_USDC" ? longTermSampler.current() : null),
-        () => paperCheck.ordersAllowed(selected),
-      ),
-    };
-  } catch (error) {
-    client.close();
-    throw error;
-  }
-}
-let { sui, engine } = createEngine(db, pair);
+const ctx = new WorkerContext({
+  browserSessions,
+  deploymentGate,
+  paperCheck,
+  selectionDb,
+  rootDatabasePath,
+  bootId,
+  marketMode,
+  reconstruction,
+  validationEnabled,
+  suiGrpcEndpoints,
+  pair,
+  db,
+  samplers: startDisplaySamplers(suiGrpcEndpoints),
+});
+const created = createEngine(ctx, db, pair);
+ctx.sui = created.sui;
+ctx.engine = created.engine;
 // Monitoring boot closes the previous uptime segment and never resumes trading.
-engine.monitor.boot();
-let validation = validationEnabled ? new ValidationRecorder(db) : undefined;
-engine.validation = validation;
-validation?.boot();
+ctx.engine.monitor.boot();
+ctx.validation = validationEnabled ? new ValidationRecorder(db) : undefined;
+ctx.engine.validation = ctx.validation;
+ctx.validation?.boot();
 apiAccess.onAttempt = (event) => {
   try {
-    if (event.failure) engine.monitor.apiFailure(event.failure);
+    if (event.failure) ctx.engine.monitor.apiFailure(event.failure);
     if (
       event.success &&
       ["DeepBook Indexer", "GeckoTerminal"].includes(event.api)
     )
-      engine.monitor.transportSuccess(event.occurredAt);
-    validation?.attempt(event);
+      ctx.engine.monitor.transportSuccess(event.occurredAt);
+    ctx.validation?.attempt(event);
   } catch {
     try {
-      validation?.fault("VALIDATION_RECORD_FAILED");
+      ctx.validation?.fault("VALIDATION_RECORD_FAILED");
     } catch {}
     throw new Error("VALIDATION_RECORD_FAILED");
   }
 };
-validation?.sample(engine.marketStatus());
-apiAccess.restoreCooldowns(db.get("api_cooldowns") ?? []);
-apiAccess.onCircuitChange = () => db.set("api_cooldowns", apiAccess.snapshot());
-let lastExportAt = 0;
-function validationHeartbeat(final = false) {
-  if (!validation) return;
-  validation.sample(engine.marketStatus());
-  const now = Date.now();
-  if (
-    process.env.VALIDATION_REPORT_DIR &&
-    (final || now - lastExportAt >= 60000)
-  ) {
-    exportValidationReport(
-      pair === "SUI_USDC"
-        ? process.env.VALIDATION_REPORT_DIR
-        : resolve(process.env.VALIDATION_REPORT_DIR, pair),
-      validation.report(now, true),
-    );
-    lastExportAt = now;
-  }
-}
+ctx.validation?.sample(ctx.engine.marketStatus());
+apiAccess.restoreCooldowns(ctx.db.get("api_cooldowns") ?? []);
+apiAccess.onCircuitChange = () =>
+  ctx.db.set("api_cooldowns", apiAccess.snapshot());
 // Log only allowlisted metadata; never raw errors, headers, bodies or credentials.
 apiAccess.onFailure = (failure) =>
   console.warn(
@@ -213,77 +164,22 @@ apiAccess.onFailure = (failure) =>
   );
 const watchdog = setInterval(() => {
   try {
-    engine.monitor.watchdog();
-    validationHeartbeat();
+    ctx.engine.monitor.watchdog();
+    validationHeartbeat(ctx);
   } catch {
     console.error(
       JSON.stringify({
         event: "PAPER_MONITORING_UNAVAILABLE",
-        databaseHealth: db.health(),
+        databaseHealth: ctx.db.health(),
       }),
     );
     process.exit(1);
   }
 }, 15000);
 watchdog.unref();
-let stopping = false;
-let backtestBusy = false;
-let activeTick: Promise<void> | undefined;
-const createChartHistory = () =>
-  new ChartHistoryClient(
-    pairPath(pair) + ".chart-history.sqlite",
-    () => {
-      const timing = engine.monitor.timing();
-      return (
-        !stopping &&
-        !apiAccess.blocked() &&
-        !apiAccess
-          .snapshot()
-          .some((a) => a.api === "DeepBook Indexer" && a.active) &&
-        !timing.fetching &&
-        (timing.nextFetchAt == null || timing.nextFetchAt - Date.now() > 12000)
-      );
-    },
-    pair,
-  );
-let chartHistory = createChartHistory();
-const createScheduler = () =>
-  new MarketScheduler(
-    async () => {
-      chartHistory.cancel();
-      activeTick = engine.tick();
-      try {
-        await activeTick;
-      } finally {
-        activeTick = undefined;
-      }
-    },
-    () => ({
-      intervalMs: db.settings().intervalMs,
-      deepbook:
-        pair === "WAL_USDC" ||
-        marketMode === "deepbook" ||
-        (marketMode === "auto" &&
-          engine.marketStatus()?.source !== "GeckoTerminal"),
-      latestClosedAt: engine.monitor.state().lastMarketClosedAt,
-      healthy: engine.marketStatus()?.healthy ?? false,
-      blocked: apiAccess.blocked(),
-    }),
-    (plan) => engine.monitor.scheduled(plan?.at ?? null, plan?.reason ?? null),
-    () => {
-      console.error(
-        JSON.stringify({
-          event: "PAPER_WORKER_UNAVAILABLE",
-          databaseHealth: db.health(),
-        }),
-      );
-      process.exit(1);
-    },
-  );
-let scheduler = createScheduler();
-let dashboard = new DashboardService(engine, db);
-let switching = false;
-let inFlightRequests = 0;
+ctx.chartHistory = createChartHistory(ctx);
+ctx.scheduler = createScheduler(ctx);
+ctx.dashboard = new DashboardService(ctx.engine, ctx.db);
 const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Cache-Control", "no-store");
@@ -329,7 +225,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   try {
     if (req.method === "GET" && url.pathname === "/healthz") {
       const healthy =
-        Date.now() - engine.monitor.state().lastHeartbeatAt < 45000;
+        Date.now() - ctx.engine.monitor.state().lastHeartbeatAt < 45000;
       send(healthy ? 200 : 503, {
         status: healthy ? "ok" : "stale",
         mode: "PAPER",
@@ -365,8 +261,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       res.end(data);
       return;
     }
-    const bearer = browserSessions.bearer(req);
-    const session = browserSessions.valid(req.headers.cookie);
+    const bearer = ctx.browserSessions.bearer(req);
+    const session = ctx.browserSessions.valid(req.headers.cookie);
     if (!bearer && !session) {
       send(401, { error: "UNAUTHORIZED" });
       return;
@@ -377,9 +273,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     if (url.pathname === "/api/auth/session") {
       if (req.method === "POST") {
-        browserSessions.setCookie(req, res);
+        ctx.browserSessions.setCookie(req, res);
       } else if (req.method === "DELETE") {
-        browserSessions.setCookie(req, res, true);
+        ctx.browserSessions.setCookie(req, res, true);
       } else if (req.method !== "GET") {
         send(405, { error: "METHOD" });
         return;
@@ -387,36 +283,36 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       send(200, { authenticated: true });
       return;
     }
-    if (req.headers["x-suiba-pair"] && req.headers["x-suiba-pair"] !== pair) {
+    if (req.headers["x-suiba-pair"] && req.headers["x-suiba-pair"] !== ctx.pair) {
       send(409, { error: "PAIR_CHANGED" });
       return;
     }
-    if (switching) {
+    if (ctx.switching) {
       send(409, { error: "PAIR_SWITCH_IN_PROGRESS" });
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/deployment") {
-      const build = db.get<{ declaredSha: string | null; lockSha256: string }>(
+      const build = ctx.db.get<{ declaredSha: string | null; lockSha256: string }>(
         "runtime_build",
       );
       send(200, {
         mode: "PAPER",
-        maintenance: stopping || deploymentGate.blocked(),
-        running: db.runtime().running,
+        maintenance: ctx.stopping || ctx.deploymentGate.blocked(),
+        running: ctx.db.runtime().running,
         revision: build?.declaredSha ?? null,
         lockSha256: build?.lockSha256 ?? null,
-        databaseHealthy: db.health().healthy,
-        ledgerOk: engine.monitor.ledger().ok,
-        paperCheck: paperCheck.status(),
+        databaseHealthy: ctx.db.health().healthy,
+        ledgerOk: ctx.engine.monitor.ledger().ok,
+        paperCheck: ctx.paperCheck.status(),
         ...(() => {
           const readiness = {
-            connectivity: engine.monitor.safety().connectivity === "HEALTHY",
+            connectivity: ctx.engine.monitor.safety().connectivity === "HEALTHY",
             apiAccess: !apiAccess.blocked(),
-            emergencyClear: !db.runtime().emergency,
-            runtimeClear: !db.runtime().error,
-            suiHealthy: sui.status.healthy,
-            suiFresh: Date.now() - sui.status.checkedAt <= 180000,
-            ledger: engine.monitor.ledger().ok,
+            emergencyClear: !ctx.db.runtime().emergency,
+            runtimeClear: !ctx.db.runtime().error,
+            suiHealthy: ctx.sui.status.healthy,
+            suiFresh: Date.now() - ctx.sui.status.checkedAt <= 180000,
+            ledger: ctx.engine.monitor.ledger().ok,
           };
           return {
             readiness,
@@ -428,7 +324,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     if (req.method === "GET" && url.pathname === "/api/pairs") {
       send(200, {
-        selected: pair,
+        selected: ctx.pair,
         pairs: Object.keys(tradingPairs),
         mode: "PAPER",
       });
@@ -437,9 +333,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method === "GET" && url.pathname === "/api/chart/history") {
       try {
         const query = historyQuery(url.searchParams);
-        const result = await chartHistory.get(
+        const result = await ctx.chartHistory.get(
           query,
-          db.candles(query.timeframe),
+          ctx.db.candles(query.timeframe),
         );
         send(200, result);
       } catch (e) {
@@ -460,7 +356,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method === "GET" && url.pathname === "/api/dashboard/summary") {
       send(
         200,
-        timeAggregation(() => dashboard.summary()),
+        timeAggregation(() => ctx.dashboard.summary()),
       );
       return;
     }
@@ -473,7 +369,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       send(
         200,
         timeAggregation(() =>
-          dashboard.candles(
+          ctx.dashboard.candles(
             tf as 300 | 900 | 3600,
             url.searchParams.get("version"),
           ),
@@ -484,44 +380,44 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method === "GET" && url.pathname === "/api/dashboard/records") {
       send(
         200,
-        timeAggregation(() => dashboard.records()),
+        timeAggregation(() => ctx.dashboard.records()),
       );
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/dashboard/long-term") {
       send(
         200,
-        timeAggregation(() => dashboard.longTerm()),
+        timeAggregation(() => ctx.dashboard.longTerm()),
       );
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/state") {
       send(
         200,
-        timeAggregation(() => engine.snapshot()),
+        timeAggregation(() => ctx.engine.snapshot()),
       );
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/operations") {
       send(200, {
-        ...timeAggregation(() => engine.monitor.snapshot()),
-        databaseHealth: db.health(),
-        suiHealth: { ...sui.status },
-        suiReads: { ...sui.readStatus },
-        suiObservations: db.history("sui_observations", 50),
-        ...(validation
-          ? { validation: timeAggregation(() => validation!.report()) }
+        ...timeAggregation(() => ctx.engine.monitor.snapshot()),
+        databaseHealth: ctx.db.health(),
+        suiHealth: { ...ctx.sui.status },
+        suiReads: { ...ctx.sui.readStatus },
+        suiObservations: ctx.db.history("sui_observations", 50),
+        ...(ctx.validation
+          ? { validation: timeAggregation(() => ctx.validation!.report()) }
           : {}),
       });
       return;
     }
     if (
-      validation &&
+      ctx.validation &&
       req.method === "GET" &&
       ["/api/validation", "/api/validation/report.md"].includes(url.pathname)
     ) {
       const report = timeAggregation(() =>
-        validation!.report(Date.now(), true),
+        ctx.validation!.report(Date.now(), true),
       );
       if (url.pathname.endsWith(".md")) {
         res.writeHead(200, {
@@ -540,14 +436,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       send(
         200,
         await Promise.all([
-          sui.balance(process.env.READ_ONLY_ADDRESS, tradingPairs[pair].base),
-          sui.balance(process.env.READ_ONLY_ADDRESS, USDC),
+          ctx.sui.balance(process.env.READ_ONLY_ADDRESS, tradingPairs[ctx.pair].base),
+          ctx.sui.balance(process.env.READ_ONLY_ADDRESS, USDC),
         ]),
       );
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/backtest") {
-      send(200, backtestMetadata(db));
+      send(200, backtestMetadata(ctx.db));
       return;
     }
     if (req.method !== "POST") {
@@ -564,7 +460,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
     }
     const body = text ? JSON.parse(text) : {};
-    if (stopping || deploymentGate.blocked()) {
+    if (ctx.stopping || ctx.deploymentGate.blocked()) {
       const safeStop =
         url.pathname === "/api/control" &&
         (body.command === "stop" || body.command === "emergency");
@@ -576,24 +472,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (url.pathname === "/api/paper-check/arm") {
       if (
         req.method !== "POST" ||
-        db.runtime().running ||
-        pair !== "SUI_USDC"
+        ctx.db.runtime().running ||
+        ctx.pair !== "SUI_USDC"
       ) {
         send(409, { error: "PAPER_CHECK_ARM_REJECTED" });
         return;
       }
       try {
-        paperCheck.arm(pair, body.expiresAt, body.issuedAt);
+        ctx.paperCheck.arm(ctx.pair, body.expiresAt, body.issuedAt);
       } catch {
         send(409, { error: "PAPER_CHECK_ARM_REJECTED" });
         return;
       }
-      send(200, paperCheck.status());
+      send(200, ctx.paperCheck.status());
       return;
     }
     if (url.pathname === "/api/pairs") {
       const parsed = body.pair;
-      if (!paperCheck.pairAllowed(String(parsed))) {
+      if (!ctx.paperCheck.pairAllowed(String(parsed))) {
         send(409, { error: "PAPER_CHECK_PAIR_FORBIDDEN" });
         return;
       }
@@ -601,15 +497,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         send(400, { error: "INVALID_TRADING_PAIR" });
         return;
       }
-      if (parsed === pair) {
-        send(200, { selected: pair });
+      if (parsed === ctx.pair) {
+        send(200, { selected: ctx.pair });
         return;
       }
       if (
-        inFlightRequests > 1 ||
-        db.runtime().running ||
-        activeTick ||
-        backtestBusy ||
+        ctx.inFlightRequests > 1 ||
+        ctx.db.runtime().running ||
+        ctx.activeTick ||
+        ctx.backtestBusy ||
         apiAccess
           .snapshot()
           .some((a) => a.active || (a.nextRetryAt ?? 0) > Date.now())
@@ -617,53 +513,53 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         send(409, { error: "STOP_AND_WAIT_BEFORE_PAIR_SWITCH" });
         return;
       }
-      const sourceBlocker = db.pairSwitchBlocker();
+      const sourceBlocker = ctx.db.pairSwitchBlocker();
       if (sourceBlocker) {
-        send(409, { error: sourceBlocker, pair });
+        send(409, { error: sourceBlocker, pair: ctx.pair });
         return;
       }
-      switching = true;
+      ctx.switching = true;
       try {
         // Fully prepare the replacement before closing the old context.
-        const nextDb = new BotDatabase(pairPath(parsed));
+        const nextDb = new BotDatabase(ctx.pairPath(parsed));
         // Inspect before boot(), which intentionally interrupts old pending candidates.
         const targetBlocker = nextDb.pairSwitchBlocker();
         if (targetBlocker) {
           nextDb.close();
-          switching = false;
+          ctx.switching = false;
           send(409, { error: targetBlocker, pair: parsed });
           return;
         }
         let next;
         try {
-          next = createEngine(nextDb, parsed);
+          next = createEngine(ctx, nextDb, parsed);
           next.engine.monitor.boot();
         } catch (error) {
           next?.sui.close();
           nextDb.close();
-          engine.activateApiHooks();
+          ctx.engine.activateApiHooks();
           throw error;
         }
-        scheduler.stop();
-        await chartHistory.close();
-        if (stopping || deploymentGate.blocked()) {
+        ctx.scheduler.stop();
+        await ctx.chartHistory.close();
+        if (ctx.stopping || ctx.deploymentGate.blocked()) {
           next.sui.close();
           nextDb.close();
-          engine.activateApiHooks();
-          switching = false;
+          ctx.engine.activateApiHooks();
+          ctx.switching = false;
           send(409, { error: "DEPLOYMENT_MAINTENANCE" });
           return;
         }
-        validationHeartbeat(true);
-        validation?.closed();
-        db.set("api_cooldowns", apiAccess.snapshot());
-        sui.close();
-        db.close();
-        pair = parsed;
-        db = nextDb;
-        engine = next.engine;
-        sui = next.sui;
-        db.set(
+        validationHeartbeat(ctx, true);
+        ctx.validation?.closed();
+        ctx.db.set("api_cooldowns", apiAccess.snapshot());
+        ctx.sui.close();
+        ctx.db.close();
+        ctx.pair = parsed;
+        ctx.db = nextDb;
+        ctx.engine = next.engine;
+        ctx.sui = next.sui;
+        ctx.db.set(
           "runtime_build",
           runtimeBuild(
             process.env,
@@ -674,32 +570,32 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           ),
         );
         apiAccess.clearPairState();
-        apiAccess.restoreCooldowns(db.get("api_cooldowns") ?? []);
-        validation = validationEnabled ? new ValidationRecorder(db) : undefined;
-        engine.validation = validation;
-        validation?.boot();
-        selectionDb.set("selected_pair", pair);
-        chartHistory = createChartHistory();
-        dashboard = new DashboardService(engine, db);
-        scheduler = createScheduler();
-        scheduler.start();
-        switching = false;
-        send(200, { selected: pair, running: false });
+        apiAccess.restoreCooldowns(ctx.db.get("api_cooldowns") ?? []);
+        ctx.validation = ctx.validationEnabled ? new ValidationRecorder(ctx.db) : undefined;
+        ctx.engine.validation = ctx.validation;
+        ctx.validation?.boot();
+        ctx.selectionDb.set("selected_pair", ctx.pair);
+        ctx.chartHistory = createChartHistory(ctx);
+        ctx.dashboard = new DashboardService(ctx.engine, ctx.db);
+        ctx.scheduler = createScheduler(ctx);
+        ctx.scheduler.start();
+        ctx.switching = false;
+        send(200, { selected: ctx.pair, running: false });
       } catch {
         // A partially replaced context must never serve data or accept orders.
         try {
-          db.set("runtime", { ...db.runtime(), running: false });
+          ctx.db.set("runtime", { ...db.runtime(), running: false });
         } catch {}
-        scheduler.stop();
+        ctx.scheduler.stop();
         send(503, { error: "PAIR_SWITCH_FAILED_RESTART_REQUIRED" });
         setTimeout(() => process.exit(1), 100).unref();
       }
       return;
     }
-    if (validation && url.pathname === "/api/validation/start") {
+    if (ctx.validation && url.pathname === "/api/validation/start") {
       try {
-        const report = validation.begin();
-        validationHeartbeat(true);
+        const report = ctx.validation.begin();
+        validationHeartbeat(ctx, true);
         send(200, report);
       } catch (error) {
         const code =
@@ -717,7 +613,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return;
     }
     if (url.pathname === "/api/backtest") {
-      if (backtestBusy) {
+      if (ctx.backtestBusy) {
         send(409, { error: "BACKTEST_BUSY" });
         return;
       }
@@ -726,9 +622,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         send(400, { error: "INVALID_BACKTEST_OPTIONS" });
         return;
       }
-      backtestBusy = true;
+      ctx.backtestBusy = true;
       try {
-        const result = await savedComparison(db, parsed.data);
+        const result = await savedComparison(ctx.db, parsed.data);
         send(200, result);
       } catch (error) {
         const allowed = new Set([
@@ -748,42 +644,42 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               : "BACKTEST_FAILED",
         });
       } finally {
-        backtestBusy = false;
+        ctx.backtestBusy = false;
       }
       return;
     }
     if (url.pathname === "/api/settings") {
       const settings = settingsSchema.parse(body);
-      db.updateSettings(settings);
+      ctx.db.updateSettings(settings);
       send(200, settings);
       return;
     }
     if (url.pathname === "/api/control") {
       const command = body.command;
-      const r = db.runtime();
+      const r = ctx.db.runtime();
       if (command === "emergency")
-        db.set("runtime", { ...r, running: false, emergency: true });
-      else if (command === "stop") db.set("runtime", { ...r, running: false });
+        ctx.db.set("runtime", { ...r, running: false, emergency: true });
+      else if (command === "stop") ctx.db.set("runtime", { ...r, running: false });
       else if (command === "reset") {
         apiAccess.reset();
-        db.set("api_cooldowns", apiAccess.snapshot());
-        db.set("runtime", {
+        ctx.db.set("api_cooldowns", apiAccess.snapshot());
+        ctx.db.set("runtime", {
           ...r,
           running: false,
           emergency: false,
           error: null,
         });
       } else if (command === "start") {
-        if (!paperCheck.ordersAllowed(pair)) {
+        if (!ctx.paperCheck.ordersAllowed(ctx.pair)) {
           send(409, { error: "PAPER_CHECK_LEASE_REQUIRED" });
           return;
         }
-        const timing = engine.monitor.timing();
+        const timing = ctx.engine.monitor.timing();
         if (timing.fetchElapsedMs != null && timing.fetchElapsedMs > 45000) {
           send(409, { error: "MARKET_FETCH_IN_PROGRESS" });
           return;
         }
-        if (engine.monitor.safety().connectivity !== "HEALTHY") {
+        if (ctx.engine.monitor.safety().connectivity !== "HEALTHY") {
           send(409, { error: "PAPER_RECOVERY_REQUIRED" });
           return;
         }
@@ -795,20 +691,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           send(409, { error: "RESET_REQUIRED" });
           return;
         }
-        if (!sui.status.healthy || Date.now() - sui.status.checkedAt > 180000) {
+        if (!ctx.sui.status.healthy || Date.now() - ctx.sui.status.checkedAt > 180000) {
           send(409, { error: "HEALTH_CHECK_REQUIRED" });
           return;
         }
-        if (!engine.monitor.ledger().ok) {
+        if (!ctx.engine.monitor.ledger().ok) {
           send(409, { error: "ACCOUNTING_CHECK_REQUIRED" });
           return;
         }
-        db.set("runtime", { ...r, running: true });
+        ctx.db.set("runtime", { ...r, running: true });
       } else {
         send(400, { error: "UNKNOWN_COMMAND" });
         return;
       }
-      engine.monitor.transition(
+      ctx.engine.monitor.transition(
         command === "start"
           ? "MANUAL_START"
           : command === "stop"
@@ -817,7 +713,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               ? "EMERGENCY_STOP"
               : "MANUAL_RESET",
       );
-      send(200, db.runtime());
+      send(200, ctx.db.runtime());
       return;
     }
     send(404, { error: "NOT_FOUND" });
@@ -826,9 +722,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   }
 };
 const server = createServer((req, res) => {
-  inFlightRequests++;
+  ctx.inFlightRequests++;
   void withApiTiming(() => handleRequest(req, res)).finally(() => {
-    inFlightRequests--;
+    ctx.inFlightRequests--;
   });
 });
 server.listen(
@@ -836,32 +732,32 @@ server.listen(
   process.env.HOST ?? "127.0.0.1",
   () => {
     console.info("PAPER dashboard/API ready");
-    scheduler.start();
+    ctx.scheduler.start();
   },
 );
 for (const signal of ["SIGINT", "SIGTERM"] as const)
   process.on(signal, () => {
-    if (stopping) return;
-    stopping = true;
-    engine.monitor.beginShutdown();
-    scheduler.stop();
-    const chartClosed = chartHistory.close();
+    if (ctx.stopping) return;
+    ctx.stopping = true;
+    ctx.engine.monitor.beginShutdown();
+    ctx.scheduler.stop();
+    const chartClosed = ctx.chartHistory.close();
     apiAccess.cancel();
     deepBookTransport.close();
     clearInterval(watchdog);
-    clearInterval(chainTimer);
-    db.set("runtime", { ...db.runtime(), running: false });
-    engine.monitor.transition("PROCESS_SHUTDOWN");
+    clearInterval(ctx.chainTimer);
+    ctx.db.set("runtime", { ...db.runtime(), running: false });
+    ctx.engine.monitor.transition("PROCESS_SHUTDOWN");
     server.close(() => {
-      void Promise.all([activeTick, chartClosed])
+      void Promise.all([ctx.activeTick, chartClosed])
         .then(() => {
           try {
-            validationHeartbeat(true);
-            validation?.closed();
-            sui.close();
-            db.close();
-            selectionDb.close();
-            recordLifecycle(rootDatabasePath, bootId, "clean");
+            validationHeartbeat(ctx, true);
+            ctx.validation?.closed();
+            ctx.sui.close();
+            ctx.db.close();
+            ctx.selectionDb.close();
+            recordLifecycle(ctx.rootDatabasePath, ctx.bootId, "clean");
             process.exit(0);
           } catch {
             console.error("PAPER_SHUTDOWN_INCOMPLETE");
