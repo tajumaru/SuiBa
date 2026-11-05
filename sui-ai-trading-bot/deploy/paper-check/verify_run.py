@@ -197,6 +197,14 @@ for scenario in ('normal', 'crash', 'timer', 'helper', 'persistence', 'worker-ab
             assert not (base/'started').exists()
         else:
             expected = ('clean_stopped',) if scenario in ('normal', 'crash', 'timer') else ('failed_state_unknown',) if scenario in ('helper', 'worker-abort', 'signal-failure', 'signal-survive') else ('clean_stopped','failed_state_unknown')
+            if receipt.get('status') not in expected:
+                # A pre-admission death (e.g. PREFLIGHT_INCOMPLETE) leaves no
+                # failure.json or stage log; the controller's stderr, which
+                # names the failed require, exists only in the unit journal.
+                # Dump it (best effort) so this CI log shows the cause, then
+                # let the assertion below report the receipt as before.
+                with contextlib.suppress(Exception):
+                    subprocess.run(['journalctl', '-u', name+'.service', '--no-pager', '-n', '40'])
             assert receipt.get('status') in expected, receipt
             record = json.loads((base/'state/run.json').read_text())
             assert receipt['id'] == record['id']

@@ -123,4 +123,7 @@ jobs:
         run: sudo /usr/bin/python3 -I deploy/paper-check/verify_timer.py suiba-no-worker:${{ github.sha }}
       - name: Production controller crash and recovery with Docker dummy (no Worker)
         if: steps.changes.outputs.heavy == 'true'
-        run: sudo /usr/bin/python3 -I deploy/paper-check/verify_run.py suiba-no-worker:${{ github.sha }}
+        run: |
+          df -h /var/lib
+          docker system df
+          sudo /usr/bin/python3 -I deploy/paper-check/verify_run.py suiba-no-worker:${{ github.sha }}
