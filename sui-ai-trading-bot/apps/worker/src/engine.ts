@@ -7,6 +7,7 @@ import {
   profitConfigOf,
   tradingPairs,
   type TradingPair,
+  type Runtime,
   USDC,
   dayKey,
   safeFailure,
@@ -318,6 +319,49 @@ export class BotEngine {
     return { recoveryTransition, p, s, runtime, decision, sellPreview };
   }
 
+  /**
+   * Tick phase 3 — the early exits: recovery confirmation,
+   * the safety gate, an already-processed candle and the
+   * strategy's WAIT. Returns true when the cycle ends here.
+   * Extracted verbatim from tick().
+   */
+  private gateStopsCycle(
+    recoveryTransition: boolean,
+    runtime: Runtime,
+    last: Candle,
+    decision: TradingDecision,
+    now: number,
+    cycle: CycleEvidence,
+    cycleToken: number,
+  ): boolean {
+      if (recoveryTransition) {
+        cycle.outcome = "RECOVERY_CONFIRMATION";
+        return true;
+      }
+      if (
+        this.deploymentStopped() ||
+        !this.sessionOrdersAllowed() ||
+        !this.monitor.ordersAllowed(cycleToken) ||
+        !runtime.running ||
+        runtime.emergency ||
+        runtime.error
+      ) {
+        cycle.outcome = "SAFETY_GATE";
+        return true;
+      }
+      if (runtime.lastCandle === last.timestamp) {
+        cycle.outcome = "ALREADY_PROCESSED_CANDLE";
+        return true;
+      }
+      if (decision.action === "WAIT") {
+        cycle.outcome = "STRATEGY_WAIT";
+        this.monitor.wait(now);
+        this.db.set("runtime", { ...runtime, lastCandle: last.timestamp });
+        return true;
+      }
+    return false;
+  }
+
   async tick() {
     this.db.assertHealthy();
     if (this.deploymentStopped()) return;
@@ -359,31 +403,22 @@ export class BotEngine {
       const { recoveryTransition, p, s, runtime, decision, sellPreview } =
         await this.analyzeCycle(c, price, began, now, cycle, cycleToken);
       measuredAction = decision.action;
-      if (recoveryTransition) {
-        cycle.outcome = "RECOVERY_CONFIRMATION";
-        return;
-      }
       if (
-        this.deploymentStopped() ||
-        !this.sessionOrdersAllowed() ||
-        !this.monitor.ordersAllowed(cycleToken) ||
-        !runtime.running ||
-        runtime.emergency ||
-        runtime.error
-      ) {
-        cycle.outcome = "SAFETY_GATE";
+        this.gateStopsCycle(
+          recoveryTransition,
+          runtime,
+          last,
+          decision,
+          now,
+          cycle,
+          cycleToken,
+        )
+      )
         return;
-      }
-      if (runtime.lastCandle === last.timestamp) {
-        cycle.outcome = "ALREADY_PROCESSED_CANDLE";
-        return;
-      }
-      if (decision.action === "WAIT") {
-        cycle.outcome = "STRATEGY_WAIT";
-        this.monitor.wait(now);
-        this.db.set("runtime", { ...runtime, lastCandle: last.timestamp });
-        return;
-      }
+      // The gate ends every WAIT cycle above; this re-check only
+      // restores the type narrowing the inline gate used to give
+      // the code below (it cannot fire while the gate holds).
+      if (decision.action === "WAIT") return;
       const side = decision.action,
         id = `paper:${last.source}:300:${last.timestamp}:${side}`,
         amount =
