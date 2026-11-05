@@ -476,79 +476,29 @@ export class BotEngine {
     return { proceed: true, audit, q, reverse };
   }
 
-  async tick() {
-    this.db.assertHealthy();
-    if (this.deploymentStopped()) return;
-    if (this.busy) return;
-    this.busy = true;
-    let audit: CandidateAudit | null = null;
-    let committed = false;
-    const began = Date.now();
-    let measuredFrames: Record<number, Candle[]> = {},
-      measuredAction: string | null = null,
-      measuredError: string | null = null;
-    const cycleToken = this.monitor.beginCycle();
-    const cycle: CycleEvidence = {
-      cycleId: randomUUID(),
-      beganAt: began,
-      runningAtStart: this.db.runtime().running,
-      generationAtStart: cycleToken,
-      connectivityAtStart: this.monitor.safety().connectivity,
-      analysis: null,
-      outcome: "NOT_EVALUATED",
-    };
-    try {
-      this.db.append(
-        "cycle_audits",
-        randomUUID(),
-        { ...cycle, phase: "START" },
-        began,
-      );
-      const now = Date.now();
-      const frames = await this.acquireFrames(cycle, began, now);
-      measuredFrames = frames;
-      const c = frames[300],
-        last = c.at(-1)!,
-        price = last.close;
-      validateCandles(c, 300, Date.now());
-      this.monitor.market((last.timestamp + 300) * 1000);
-      if (this.db.runtime().running && !this.monitor.ledger().ok)
-        throw new Error("PAPER_RECONCILIATION_FAILED");
-      const { recoveryTransition, p, s, runtime, decision, sellPreview } =
-        await this.analyzeCycle(c, price, began, now, cycle, cycleToken);
-      measuredAction = decision.action;
-      if (
-        this.gateStopsCycle(
-          recoveryTransition,
-          runtime,
-          last,
-          decision,
-          now,
-          cycle,
-          cycleToken,
-        )
-      )
-        return;
-      // The gate ends every WAIT cycle above; this re-check only
-      // restores the type narrowing the inline gate used to give
-      // the code below (it cannot fire while the gate holds).
-      if (decision.action === "WAIT") return;
-      const cand = await this.buildCandidate(
-        decision as TradingDecision & { action: "BUY" | "SELL" },
-        p,
-        s,
-        price,
-        last,
-        now,
-        sellPreview,
-        cycle,
-      );
-      audit = cand.audit;
-      if (!cand.proceed) return;
-      const q = cand.q,
-        reverse = cand.reverse,
-        side = decision.action,
-        id = cand.audit.orderId;
+  /**
+   * Tick phase 5 — quote validation, cost and profit-guard
+   * evaluation, and the candidate audit's enrichment.
+   * Returns null when the profit guard ends the cycle.
+   * Extracted verbatim from tick().
+   */
+  private async evaluateCandidate(
+    audit: CandidateAudit,
+    id: string,
+    q: QuoteResult,
+    reverse: QuoteResult | null,
+    decision: TradingDecision,
+    p: Portfolio,
+    last: Candle,
+    side: "BUY" | "SELL",
+  ): Promise<{
+    fresh: number;
+    executionSettings: Settings;
+    costs: ReturnType<typeof paperCosts>;
+    profit: ProfitReport;
+    profitAt: (at: number) => ProfitReport;
+    validQuote: boolean;
+  } | null> {
       const validQuote = await this.router.validateQuote(q);
       const fresh = Date.now();
       const executionSettings = this.db.settings();
@@ -667,8 +617,97 @@ export class BotEngine {
           fresh,
           last.timestamp,
         );
-        return;
+        return null;
       }
+    return { fresh, executionSettings, costs, profit, profitAt, validQuote };
+  }
+
+  async tick() {
+    this.db.assertHealthy();
+    if (this.deploymentStopped()) return;
+    if (this.busy) return;
+    this.busy = true;
+    let audit: CandidateAudit | null = null;
+    let committed = false;
+    const began = Date.now();
+    let measuredFrames: Record<number, Candle[]> = {},
+      measuredAction: string | null = null,
+      measuredError: string | null = null;
+    const cycleToken = this.monitor.beginCycle();
+    const cycle: CycleEvidence = {
+      cycleId: randomUUID(),
+      beganAt: began,
+      runningAtStart: this.db.runtime().running,
+      generationAtStart: cycleToken,
+      connectivityAtStart: this.monitor.safety().connectivity,
+      analysis: null,
+      outcome: "NOT_EVALUATED",
+    };
+    try {
+      this.db.append(
+        "cycle_audits",
+        randomUUID(),
+        { ...cycle, phase: "START" },
+        began,
+      );
+      const now = Date.now();
+      const frames = await this.acquireFrames(cycle, began, now);
+      measuredFrames = frames;
+      const c = frames[300],
+        last = c.at(-1)!,
+        price = last.close;
+      validateCandles(c, 300, Date.now());
+      this.monitor.market((last.timestamp + 300) * 1000);
+      if (this.db.runtime().running && !this.monitor.ledger().ok)
+        throw new Error("PAPER_RECONCILIATION_FAILED");
+      const { recoveryTransition, p, s, runtime, decision, sellPreview } =
+        await this.analyzeCycle(c, price, began, now, cycle, cycleToken);
+      measuredAction = decision.action;
+      if (
+        this.gateStopsCycle(
+          recoveryTransition,
+          runtime,
+          last,
+          decision,
+          now,
+          cycle,
+          cycleToken,
+        )
+      )
+        return;
+      // The gate ends every WAIT cycle above; this re-check only
+      // restores the type narrowing the inline gate used to give
+      // the code below (it cannot fire while the gate holds).
+      if (decision.action === "WAIT") return;
+      const cand = await this.buildCandidate(
+        decision as TradingDecision & { action: "BUY" | "SELL" },
+        p,
+        s,
+        price,
+        last,
+        now,
+        sellPreview,
+        cycle,
+      );
+      audit = cand.audit;
+      if (!cand.proceed) return;
+      const q = cand.q,
+        reverse = cand.reverse,
+        side = decision.action,
+        id = cand.audit.orderId;
+      const ev = await this.evaluateCandidate(
+        audit,
+        id,
+        q,
+        reverse,
+        decision,
+        p,
+        last,
+        side,
+      );
+      if (!ev) return;
+      const { fresh, executionSettings, costs, profit, profitAt, validQuote } =
+        ev;
       const reasons = assessRisk({
         side,
         quote: q,
