@@ -37,43 +37,19 @@ import {
   type ProfitReport,
 } from "../../../packages/profit-guard/src/index.ts";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
+import { buildSnapshot } from "./engine-snapshot.ts";
+export { downsampleEquityCurve } from "./engine-snapshot.ts";
 import { calculate } from "../../../packages/indicators/src/index.ts";
 import {
   RuleBasedStrategy,
   StrategyRegistry,
 } from "../../../packages/strategy-engine/src/index.ts";
 import { assessRisk } from "../../../packages/risk-engine/src/index.ts";
-import {
-  PaperTrading,
-  type Fill,
-} from "../../../packages/paper-trading/src/index.ts";
-import { equity, metrics } from "../../../packages/portfolio/src/index.ts";
+import { PaperTrading } from "../../../packages/paper-trading/src/index.ts";
+import { equity } from "../../../packages/portfolio/src/index.ts";
 import { validateCandles } from "../../../packages/market-data/src/index.ts";
 import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
 import type { ValidationRecorder } from "./validation.ts";
-
-/**
- * Downsample the recorded equity snapshots for the dashboard's
- * asset curve: the last point of each hour over the newest 30
- * days. The snapshots themselves are appended every analysis
- * cycle whether or not the dashboard is open; the wire gets at
- * most ~720 points, the full history stays in the database.
- */
-export function downsampleEquityCurve(
-  points: readonly { timestamp: number; equity: number }[],
-  now: number,
-): { t: number; equity: number }[] {
-  const from = now - 30 * 24 * 3600 * 1000;
-  const byHour = new Map<number, { t: number; equity: number }>();
-  for (const p of points) {
-    if (!Number.isFinite(p.equity) || p.timestamp < from) continue;
-    byHour.set(Math.floor(p.timestamp / 3600000), {
-      t: p.timestamp,
-      equity: p.equity,
-    });
-  }
-  return [...byHour.values()].sort((a, b) => a.t - b.t);
-}
 
 /** The dashboard-facing snapshot contract: one definition for
  * every consumer, so adding a snapshot field has a single
@@ -1032,72 +1008,20 @@ export class BotEngine {
     });
   }
   snapshot(options: { light?: boolean } = {}) {
-    const decision = this.monitor.displayDecision();
-    const p = this.db.portfolio(),
-      price = this.db.get<number>("price") ?? null,
-      trades = this.db.history<Fill>("paper_trades", 10000),
-      snapshots = this.db
-        .history<{ timestamp: number; equity: number }>(
-          "portfolio_snapshots",
-          10000,
-        )
-        .reverse(),
-      values = snapshots.map((x) => x.equity);
-    return {
-      pair: this.pair,
-      chain: this.chainInfoSource(),
-      btc: this.btcInfoSource(),
-      // Display-only book imbalance for the model outlook:
-      // the live validated book when the trading path has one
-      // (DeepBook routes), else the independent sampler.
-      bookImbalance:
-        this.market.bookImbalance?.(Date.now()) ?? this.bookImbalanceSource(),
-      // Display-only top-of-book levels for the narration's
-      // wall watch: the live validated book when the trading
-      // path has one, else the independent sampler.
-      bookLevels:
-        this.market.bookLevels?.(Date.now()) ?? this.bookLevelsSource(),
-      longTermDaily: this.longTermSource(),
-      marketData: this.market.status?.() ?? null,
-      marketQuality: this.db.get("market_quality") ?? null,
-      mode: "PAPER",
-      runtime: this.db.runtime(),
-      safety: this.monitor.safetySnapshot(),
-      connection: this.sui.status,
-      price,
-      portfolio: p,
-      equity: price === null ? null : equity(p, price),
-      pnl: price === null ? null : equity(p, price) - p.initialEquity,
-      dailyPnl: price === null ? null : equity(p, price) - p.dayStartEquity,
-      unrealized: price === null ? null : p.sui * price - p.costBasis,
-      equityCurve: downsampleEquityCurve(snapshots, Date.now()),
-      todayTrades: trades.filter(
-        (x) => dayKey(x.timestamp) === dayKey(Date.now()),
-      ).length,
-      metrics: metrics(
-        values,
-        trades.flatMap((x) => (x.pnl === null ? [] : [x.pnl])),
-      ),
-      decision,
-      indicators: this.db.get("indicators") ?? null,
-      settings: this.db.settings(),
-      profitGuard: this.db.get<ProfitReport>("profitGuard") ?? null,
-      acquisitionCostUsdc: positionOf(p).costUsdc,
-      acquisitionFees:
-        trades.find((t) => t.side === "BUY")?.acquisition ?? null,
-      trades: options.light ? [] : trades.slice(0, 200),
-      orders: options.light ? [] : this.db.history("paper_orders"),
-      riskEvents: options.light ? [] : this.db.history("risk_events"),
-      candles: options.light ? [] : this.db.candles(),
-      candlesByTimeframe: {
-        300: options.light ? [] : this.db.candles(300),
-        900: options.light ? [] : this.db.candles(900),
-        3600: options.light ? [] : this.db.candles(3600),
+    return buildSnapshot(
+      {
+        pair: this.pair,
+        db: this.db,
+        monitor: this.monitor,
+        market: this.market,
+        sui: this.sui,
+        chainInfo: this.chainInfoSource,
+        btcInfo: this.btcInfoSource,
+        bookImbalance: this.bookImbalanceSource,
+        bookLevels: this.bookLevelsSource,
+        longTermDaily: this.longTermSource,
       },
-      strategies: [
-        { id: "rule-based", available: true },
-        { id: "deepseek", available: false },
-      ],
-    };
+      options,
+    );
   }
 }
