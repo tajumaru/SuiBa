@@ -33,6 +33,24 @@ CONTAINER = 'suiba-vps-bot-1'
 TIMER = 'suiba-paper-check-cutoff.timer'
 SERVICE = 'suiba-paper-check.service'
 CUTOFF = 'suiba-paper-check-cutoff.service'
+# Fixed validation lengths, chosen per run through the start request.
+# The Worker's PAPER_CHECK_MODE token stays 'sui-30m': it names the lease
+# family, not the length. The length lives only here, in the record's
+# cutoff and in the per-length cutoff timer, so a started run can never
+# be extended by the container, the Worker, or a later request.
+DURATIONS = {'30m': 1800, '6h': 21600, '24h': 86400}
+
+
+def cutoff_timer(duration):
+    if duration == '30m':
+        return TIMER
+    return TIMER.removesuffix('.timer')+'-'+duration+'.timer'
+
+
+def cutoff_timers():
+    return tuple(cutoff_timer(name) for name in DURATIONS)
+
+
 POLICY = Path('/etc/suiba-paper-check/policy.json')
 DIAGNOSTIC_STAGES = (
     'maintenance-release', 'worker-start', 'worker-readiness', 'deployment-state',
@@ -237,9 +255,17 @@ class Controller:
 
     def quiescent(self):
         # Starting a new run must not repoint state while an old cutoff/job lives.
-        for unit in (TIMER, CUTOFF):
-            raw = subprocess.check_output(['/usr/bin/systemctl', 'show', unit, '-p', 'ActiveState', '-p', 'Job'],
-                                          timeout=5, env={'PATH': '/usr/bin:/bin'}, stderr=subprocess.DEVNULL).decode()
+        for unit in (*cutoff_timers(), CUTOFF):
+            try:
+                raw = subprocess.check_output(['/usr/bin/systemctl', 'show', unit, '-p', 'ActiveState', '-p', 'Job'],
+                                              timeout=5, env={'PATH': '/usr/bin:/bin'}, stderr=subprocess.DEVNULL).decode()
+            except subprocess.CalledProcessError:
+                # A cutoff timer that is not installed cannot be armed or
+                # hold a job. The cutoff service itself stays strict: if
+                # systemctl cannot report on it, nothing here is quiescent.
+                if unit == CUTOFF:
+                    raise
+                continue
             values = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
             require(values.get('ActiveState') in ('inactive', 'failed') and values.get('Job') in ('', '0'))
 
@@ -299,7 +325,7 @@ class Controller:
             http = failure.get('http_status')
             require(http is None or type(http) is int and 100 <= http <= 599)
         return {
-            'run': {'id': record['id'], 'status': record['status']},
+            'run': {'id': record['id'], 'status': record['status'], 'duration': record.get('duration', '30m')},
             'stop': {'id': stop['id'], 'status': stop['status']},
             'requires_review': self.faults(record),
             'diagnostics': {
@@ -321,11 +347,21 @@ class Controller:
             self.b.validate_failure_diagnostic(failure)
         known_states = ('in_progress', 'prepared_stopped', 'failed_stopped', 'failed_state_unknown')
         gate = self.b.decode(self.b.read_trusted(self.b.STATE/'paper-check.json'))
-        raw = subprocess.check_output(['/usr/bin/systemctl', 'show', TIMER,
-            '-p', 'ActiveState', '-p', 'SubState', '-p', 'NextElapseUSecMonotonic',
-            '-p', 'NextElapseUSecRealtime', '-p', 'Job'],
-            timeout=10, env={'PATH': '/usr/bin:/bin'}, stderr=subprocess.DEVNULL).decode()
-        timer = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
+        timer = {'active': False, 'elapsed': False, 'next': False, 'job': False}
+        for unit in cutoff_timers():
+            try:
+                raw = subprocess.check_output(['/usr/bin/systemctl', 'show', unit,
+                    '-p', 'ActiveState', '-p', 'SubState', '-p', 'NextElapseUSecMonotonic',
+                    '-p', 'NextElapseUSecRealtime', '-p', 'Job'],
+                    timeout=10, env={'PATH': '/usr/bin:/bin'}, stderr=subprocess.DEVNULL).decode()
+            except subprocess.CalledProcessError:
+                continue  # A timer that is not installed cannot be armed.
+            values = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
+            timer['active'] |= values.get('ActiveState') == 'active'
+            timer['elapsed'] |= values.get('SubState') == 'elapsed'
+            timer['next'] |= any(values.get(key) not in (None, '', '0', 'n/a', 'infinity')
+                for key in ('NextElapseUSecMonotonic', 'NextElapseUSecRealtime'))
+            timer['job'] |= values.get('Job') not in ('', '0')
         env = dict(value.split('=', 1) for value in container['Config']['Env'])
         return {
             'ledger_status': ledger['status'] if ledger['status'] in known_states else 'unknown',
@@ -336,11 +372,10 @@ class Controller:
             'container_status': container['State']['Status'],
             'restart_disabled': container['HostConfig']['RestartPolicy']['Name'] == 'no',
             'paper': env.get('MODE') == 'PAPER',
-            'timer_active': timer.get('ActiveState') == 'active',
-            'timer_elapsed': timer.get('SubState') == 'elapsed',
-            'timer_next_scheduled': any(timer.get(key) not in (None, '', '0', 'n/a', 'infinity')
-                for key in ('NextElapseUSecMonotonic', 'NextElapseUSecRealtime')),
-            'timer_job_pending': timer.get('Job') not in ('', '0'),
+            'timer_active': timer['active'],
+            'timer_elapsed': timer['elapsed'],
+            'timer_next_scheduled': timer['next'],
+            'timer_job_pending': timer['job'],
             'controller_sha256': hashlib.sha256(self.b.read_trusted(Path(__file__))).hexdigest(),
             'broker_sha256': hashlib.sha256(self.b.read_trusted(Path(self.b.__file__))).hexdigest(),
         }
@@ -690,6 +725,33 @@ class Controller:
         with self.b.directory(permit.parent) as directory_fd:
             os.fsync(directory_fd)
 
+    def note_start_request(self, duration):
+        # The fixed systemd unit cannot receive the length, so the request
+        # entrypoint leaves it as a root-owned note for the next run only.
+        require(duration in DURATIONS)
+        self.b.atomic(self.state/'start-request.json',
+                      {'duration': duration, 'at': int(time.time()*1000)})
+
+    def take_start_request(self):
+        path = self.state/'start-request.json'
+        if not os.path.lexists(path):
+            return '30m'
+        # Consume before validating, under a preserved name: a stale or
+        # malformed note must never leak into a later run, and the last
+        # request stays on disk as evidence either way.
+        consumed = path.with_name('start-request-consumed.json')
+        os.rename(path, consumed)
+        with self.b.directory(self.state) as directory_fd:
+            os.fsync(directory_fd)
+        request = self.b.decode(self.b.read_trusted(consumed))
+        require(set(request) == {'duration', 'at'} and request['duration'] in DURATIONS and
+                type(request['at']) is int)
+        now = int(time.time()*1000)
+        require(request['at'] <= now+60000)
+        if now-request['at'] > 600000:
+            return '30m'
+        return request['duration']
+
     def run(self):
         import fcntl
         # Same lock inode as deployment. Never unlink it.
@@ -704,6 +766,8 @@ class Controller:
             config = self.b.decode(self.b.read_trusted(POLICY))
             require(config == {'enabled': True, 'mode': 'sui-30m'})
             with self.locked('stop'), self.locked('mutation'):
+                duration = self.take_start_request()
+                timer = cutoff_timer(duration)
                 require(not (self.state/'abort-inhibit.json').exists())
                 self.quiescent()
                 permit = None
@@ -730,7 +794,7 @@ class Controller:
                 (self.state/self.run_id).mkdir(mode=0o700)
                 identity, _ = self.identity(os.getpid())
                 record = {'status': 'in_progress', 'id': self.run_id, 'controller': identity, 'admitted': False,
-                          'started': now, 'cutoff': now+1800000}
+                          'started': now, 'cutoff': now+DURATIONS[duration]*1000, 'duration': duration}
                 self.b.atomic(self.b.STATE/'paper-check.json', {'status': 'in_progress'})
                 self.b.atomic(self.record, record)
             space = os.statvfs(self.b.BACKUPS)
@@ -755,8 +819,8 @@ class Controller:
                 require(not (self.folder(record)/'stop-request.json').exists())
                 record['admitted'] = True
                 self.b.atomic(self.record, record)
-            self.guard('timer', lambda: self.system('start', TIMER))
-            self.system('is-active', '--quiet', TIMER)
+            self.guard('timer', lambda: self.system('start', timer))
+            self.system('is-active', '--quiet', timer)
             backup = self.guard('backup', self.backup)
             with self.locked('mutation'):
                 require(self.current(self.run_id)['status'] == 'in_progress' and
@@ -789,9 +853,9 @@ class Controller:
                 started = self.guard('paper-start', lambda: self.api('POST', '/api/control', {'command': 'start'}))
                 require(started['running'] is True)
                 stage = 'monitoring'
-                end = time.monotonic()+1800
+                end = time.monotonic()+DURATIONS[duration]
                 while time.monotonic() < end and time.time()*1000 < record['cutoff']-5000:
-                    self.system('is-active', '--quiet', TIMER)
+                    self.system('is-active', '--quiet', timer)
                     d = self.api('GET', '/api/deployment')
                     require(d['mode'] == 'PAPER' and d['running'] and d['databaseHealthy'] and d['ledgerOk'])
                     require(self.api('GET', '/api/pairs')['selected'] == 'SUI_USDC')
@@ -815,7 +879,7 @@ class Controller:
                     time.sleep(5)
                 stage = 'normal-stop'
                 require(self.stop(own=True, expected=self.run_id, source='normal'))
-                self.system('stop', TIMER)
+                self.system('stop', timer)
                 with self.locked('stop'), self.locked('mutation'):
                     record = self.current(self.run_id)
                     require(record['status'] == 'in_progress' and not self.faults(record))
@@ -884,7 +948,11 @@ def main():
             signal.alarm(5)
             request = b.decode(sys.stdin.buffer.read(257))
             signal.alarm(0)
-            require(request in ({'operation': 'start'}, {'operation': 'status'}, {'operation': 'abort'}, {'operation': 'diagnose'}))
+            require(isinstance(request, dict) and set(request) <= {'operation', 'duration'} and
+                    request.get('operation') in ('start', 'status', 'abort', 'diagnose'))
+            require(request['operation'] == 'start' or set(request) == {'operation'})
+            duration = request.get('duration', '30m')
+            require(duration in DURATIONS)
             if request['operation'] == 'diagnose':
                 print(json.dumps(controller.diagnose()))
             elif request['operation'] == 'status':
@@ -894,6 +962,7 @@ def main():
                                   'stop': b.decode(b.read_trusted(receipt)) if receipt.exists() else None}))
             elif request['operation'] == 'start':
                 require(not (controller.state/'abort-inhibit.json').exists())
+                controller.note_start_request(duration)
                 controller.system('start', '--no-block', SERVICE)
                 print('PAPER_CHECK_REQUEST_ACCEPTED')
             else:

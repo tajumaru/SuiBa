@@ -1,0 +1,45 @@
+name: SuiBa PAPER check start
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type START-PAPER"
+        required: true
+        type: string
+      duration:
+        description: "Validation run length (fixed set, enforced again by the controller)"
+        required: true
+        type: choice
+        default: "30m"
+        options:
+          - "30m"
+          - "6h"
+          - "24h"
+permissions:
+  contents: read
+concurrency:
+  group: suiba-paper-start
+  cancel-in-progress: false
+jobs:
+  paper-start:
+    # Repository variable, NOT an Environment variable: evaluated before job startup.
+    # Missing/false disables all SSH. Starting a run changes host state, so this
+    # workflow carries its own enable variable on top of the Environment approval.
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'START-PAPER' && vars.SUIBA_PAPER_START_ENABLED == 'true'
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Start a PAPER validation run through the fixed wrapper
+        env:
+          PAPER_START_CONFIRMATION: ${{ inputs.confirmation }}
+          PAPER_START_DURATION: ${{ inputs.duration }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-paper-start.sh

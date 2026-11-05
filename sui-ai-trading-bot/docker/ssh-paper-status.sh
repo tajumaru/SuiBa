@@ -157,6 +157,11 @@ except (OSError, ValueError, KeyError, TypeError):
     sys.exit("PAPER_STATUS_INVALID")
 print("### SuiBa PAPER verification")
 print(f"- Run: `{state}`")
+duration = run.get("duration")
+if duration is not None:
+    if duration not in ("30m", "6h", "24h"):
+        raise ValueError()
+    print(f"- Duration: `{duration}`")
 print(f"- Stop receipt: `{status}`")
 print(f"- Manual review needed: {'yes' if fault or state == 'failed_requires_review' else 'no'}")
 if details is not None:

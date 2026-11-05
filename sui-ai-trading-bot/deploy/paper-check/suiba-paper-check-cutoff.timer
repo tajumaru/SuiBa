@@ -1,5 +1,5 @@
 [Unit]
-Description=Independent SuiBa validation cutoff
+Description=Independent SuiBa validation cutoff (30m runs)
 
 [Timer]
 OnActiveSec=30min

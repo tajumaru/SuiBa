@@ -437,5 +437,102 @@ class StopTests(unittest.TestCase):
             self.assertTrue(ctl.stop())
 
 
+class DurationTests(unittest.TestCase):
+    def make(self, root):
+        ctl = object.__new__(c.Controller)
+        ctl.b, ctl.state = FakeBroker, Path(root)
+        return ctl
+
+    def test_cutoff_timer_names_follow_the_fixed_units(self):
+        self.assertEqual(c.cutoff_timer('30m'), c.TIMER)
+        self.assertEqual(c.cutoff_timer('6h'), 'suiba-paper-check-cutoff-6h.timer')
+        self.assertEqual(c.cutoff_timer('24h'), 'suiba-paper-check-cutoff-24h.timer')
+        self.assertEqual(c.cutoff_timers(), (c.TIMER, 'suiba-paper-check-cutoff-6h.timer',
+                                             'suiba-paper-check-cutoff-24h.timer'))
+        self.assertEqual(c.DURATIONS, {'30m': 1800, '6h': 21600, '24h': 86400})
+
+    def test_start_request_defaults_without_a_note(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertEqual(self.make(root).take_start_request(), '30m')
+
+    def test_start_request_round_trip_consumes_the_note(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            ctl.note_start_request('24h')
+            self.assertEqual(ctl.take_start_request(), '24h')
+            self.assertFalse((Path(root)/'start-request.json').exists())
+            consumed = json.loads((Path(root)/'start-request-consumed.json').read_text())
+            self.assertEqual(consumed['duration'], '24h')
+            self.assertEqual(ctl.take_start_request(), '30m')
+
+    def test_start_request_rejects_unknown_duration(self):
+        with tempfile.TemporaryDirectory() as root:
+            with self.assertRaises(Exception):
+                self.make(root).note_start_request('12h')
+
+    def test_start_request_stale_note_falls_back_to_default(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            FakeBroker.atomic(Path(root)/'start-request.json',
+                              {'duration': '6h', 'at': int(time.time()*1000)-660000})
+            self.assertEqual(ctl.take_start_request(), '30m')
+            self.assertTrue((Path(root)/'start-request-consumed.json').exists())
+
+    def test_start_request_future_note_is_rejected(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            FakeBroker.atomic(Path(root)/'start-request.json',
+                              {'duration': '6h', 'at': int(time.time()*1000)+120000})
+            with self.assertRaises(Exception):
+                ctl.take_start_request()
+
+    @unittest.skipUnless(os.name == 'posix', 'mocked shell pipeline runs on Linux')
+    def test_start_script_sends_only_the_fixed_request(self):
+        script = Path(__file__).parents[2]/'docker/ssh-paper-start.sh'
+        with tempfile.TemporaryDirectory(dir=script.parent) as tmp:
+            root = Path(tmp)
+            (root/'bin').mkdir(); (root/'runner').mkdir()
+            for name, body in (
+                ('ssh-keygen', '#!/bin/sh\nprintf "%s" "secret-key-output"\n'),
+                ('ssh', '#!/bin/sh\ncat > "$MOCK_STDIN"\ncat "$MOCK_RESPONSE"\nprintf "%s" "secret-ssh-stderr" >&2\n')):
+                path = root/'bin'/name
+                path.write_text(body); path.chmod(0o755)
+            env = {**os.environ, 'PATH': str(root/'bin')+':'+os.environ['PATH'],
+                'RUNNER_TEMP': str(root/'runner'), 'VPS_HOST': 'fixture.invalid',
+                'VPS_USER': 'suiba-deploy', 'VPS_PORT': '22', 'VPS_SSH_KEY': 'secret-key-fixture',
+                'VPS_KNOWN_HOSTS': 'fixture-only', 'MOCK_RESPONSE': str(root/'response'),
+                'MOCK_STDIN': str(root/'stdin'), 'PAPER_START_CONFIRMATION': 'START-PAPER',
+                'PAPER_START_DURATION': '6h', 'GITHUB_STEP_SUMMARY': str(root/'summary')}
+            (root/'response').write_text('PAPER_CHECK_REQUEST_ACCEPTED\n')
+            (root/'summary').write_text('')
+            result = c.subprocess.run(['/bin/bash', str(script)], env=env, text=True,
+                                      capture_output=True, timeout=15)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual((root/'stdin').read_text(), '{"operation":"start","duration":"6h"}\n')
+            self.assertIn('- Duration: `6h`', result.stdout)
+            self.assertEqual(result.stdout, (root/'summary').read_text())
+            self.assertNotIn('secret-', result.stdout+result.stderr)
+            self.assertEqual(list((root/'runner').iterdir()), [])
+            (root/'response').write_text('unexpected-response\n')
+            result = c.subprocess.run(['/bin/bash', str(script)], env=env, text=True,
+                                      capture_output=True, timeout=15)
+            self.assertEqual(result.returncode, 1)
+            self.assertNotIn('unexpected-response', result.stdout+result.stderr)
+            env['PAPER_START_DURATION'] = '12h'
+            (root/'stdin').unlink()
+            result = c.subprocess.run(['/bin/bash', str(script)], env=env, text=True,
+                                      capture_output=True, timeout=15)
+            self.assertEqual(result.returncode, 1)
+            self.assertFalse((root/'stdin').exists())
+
+    def test_start_request_malformed_note_is_rejected_and_consumed(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            FakeBroker.atomic(Path(root)/'start-request.json', {'duration': '6h'})
+            with self.assertRaises(Exception):
+                ctl.take_start_request()
+            self.assertFalse((Path(root)/'start-request.json').exists())
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

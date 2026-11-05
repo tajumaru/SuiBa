@@ -138,6 +138,9 @@ for scenario in ('normal', 'crash', 'timer', 'helper', 'persistence', 'worker-ab
     unit = Path('/run/systemd/system')/(name+'.service')
     cutoff = unit.with_name(name+'-cutoff.service')
     timer = unit.with_name(name+'-cutoff.timer')
+    # The controller enumerates one cutoff timer per validation length;
+    # mirror the production set so its quiescence checks see real units.
+    derived_timers = [unit.with_name(name+'-cutoff-'+suffix+'.timer') for suffix in ('6h', '24h')]
     try:
         for folder in ('broker', 'policy', 'backups', 'state'): (base/folder).mkdir(mode=0o700)
         # Keep ProtectHome=yes from the production unit: executable test code
@@ -169,6 +172,8 @@ for scenario in ('normal', 'crash', 'timer', 'helper', 'persistence', 'worker-ab
         unit.write_text(production)
         cutoff.write_text('[Service]\nType=oneshot\nExecStart='+command.format(op='stop')+'\nTimeoutStartSec=120s\n')
         timer.write_text('[Timer]\nOnActiveSec=12s\nAccuracySec=100ms\nUnit='+name+'-cutoff.service\n')
+        for path in derived_timers:
+            path.write_text(timer.read_text())
         subprocess.run(['systemctl', 'daemon-reload'], check=True)
         subprocess.run(['systemctl', 'start', name+'.service'], check=True)
         deadline = time.monotonic()+90
@@ -269,7 +274,7 @@ for scenario in ('normal', 'crash', 'timer', 'helper', 'persistence', 'worker-ab
         print('PASS: production run/stop '+scenario+'; no Worker; SUI SQL rejects WAL')
     finally:
         subprocess.run(['systemctl', 'stop', name+'-cutoff.timer', name+'.service', name+'-cutoff.service'], check=False)
-        for path in (unit, cutoff, timer): path.unlink(missing_ok=True)
+        for path in (unit, cutoff, timer, *derived_timers): path.unlink(missing_ok=True)
         subprocess.run(['systemctl', 'daemon-reload'], check=False)
         release = base/'state/release-helper.json'
         if release.exists():

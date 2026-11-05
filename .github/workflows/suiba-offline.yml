@@ -12,6 +12,7 @@ on:
       - ".github/workflows/suiba-no-worker.yml"
       - ".github/workflows/suiba-vps.yml"
       - ".github/workflows/suiba-vps-cleanup.yml"
+      - ".github/workflows/suiba-paper-start.yml"
       - ".github/workflows/suiba-ssh-preflight.yml"
       - ".github/workflows/suiba-paper-status.yml"
   pull_request:
@@ -22,6 +23,7 @@ on:
       - ".github/workflows/suiba-no-worker.yml"
       - ".github/workflows/suiba-vps.yml"
       - ".github/workflows/suiba-vps-cleanup.yml"
+      - ".github/workflows/suiba-paper-start.yml"
       - ".github/workflows/suiba-ssh-preflight.yml"
       - ".github/workflows/suiba-paper-status.yml"
   # Weekly unconditional full run (Mon 03:00 JST): the safety
