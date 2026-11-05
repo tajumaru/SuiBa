@@ -8,6 +8,8 @@ import {
   tradingPairs,
   type TradingPair,
   type Runtime,
+  type Portfolio,
+  type Settings,
   USDC,
   dayKey,
   safeFailure,
@@ -362,6 +364,118 @@ export class BotEngine {
     return false;
   }
 
+  /**
+   * Tick phase 4 — candidate audit, the order quote and the
+   * BUY reverse quote. Returns proceed:false when the cycle
+   * ends here (no position). Extracted verbatim from tick().
+   */
+  private async buildCandidate(
+    decision: TradingDecision & { action: "BUY" | "SELL" },
+    p: Portfolio,
+    s: Settings,
+    price: number,
+    last: Candle,
+    now: number,
+    sellPreview: QuoteResult | null,
+    cycle: CycleEvidence,
+  ): Promise<
+    | { proceed: false; audit: CandidateAudit }
+    | {
+        proceed: true;
+        audit: CandidateAudit;
+        q: QuoteResult;
+        reverse: QuoteResult | null;
+      }
+  > {
+      const side = decision.action,
+        id = `paper:${last.source}:300:${last.timestamp}:${side}`,
+        amount =
+          side === "BUY" ? s.maxOrder : Math.min(p.sui, s.maxOrder / price);
+      const audit: CandidateAudit = {
+        id: randomUUID(),
+        orderId: id,
+        timestamp: now,
+        createdAt: now,
+        side,
+        requestedInputAtomic: atomic(
+          amount,
+          side === "BUY" ? USDC : tradingPairs[this.pair].base,
+        ),
+        quantityAtomic: null,
+        quotePriceUsdc: null,
+        quoteExpiresAt: null,
+        acquisitionCostUsdc: numericText(p.costBasisUsdc ?? p.costBasis),
+        expectedSaleUsdc: null,
+        saleModel: null,
+        dexFeeUsdc: null,
+        gasUsdc: null,
+        additionalFeeUsdc: null,
+        buyGasUsdc: null,
+        netProfitUsdc: null,
+        minProfitUsdc: String(s.minNetProfitUsdc),
+        minProfitPct: String(s.minNetProfitPct),
+        profitGuard: { evaluated: false, allowed: null, reason: null },
+        risk: { status: "NOT_EVALUATED", reasons: [] },
+        finalAction: "PENDING",
+        reasons: [],
+      };
+      this.db.putCandidate(audit);
+      cycle.outcome = "CANDIDATE";
+      if (amount <= 0) {
+        this.monitor.finishCandidate({
+          ...audit,
+          finalAction: "WAIT",
+          reasons: ["NO_POSITION"],
+        });
+        this.reject(id, ["NO_POSITION"], decision, now, last.timestamp);
+        return { proceed: false as const, audit };
+      }
+      const q =
+        side === "SELL" && sellPreview
+          ? sellPreview
+          : await this.getQuote({
+              from: side === "BUY" ? USDC : tradingPairs[this.pair].base,
+              to: side === "BUY" ? tradingPairs[this.pair].base : USDC,
+              amountIn: atomic(
+                amount,
+                side === "BUY" ? USDC : tradingPairs[this.pair].base,
+              ),
+              slippage: s.maxSlippage,
+              referencePrice: price,
+            });
+      const quantity = side === "BUY" ? q.minAmountOut : q.amountIn;
+      audit.quantityAtomic = /^\d+$/.test(quantity) ? quantity : null;
+      audit.quoteExpiresAt = Number.isFinite(q.expiresAt) ? q.expiresAt : null;
+      try {
+        audit.quotePriceUsdc = numericText(
+          new Decimal(side === "BUY" ? q.amountIn : q.minAmountOut)
+            .div(1e6)
+            .div(new Decimal(quantity).div(1e9))
+            .toString(),
+        );
+      } catch {}
+      let reverse: QuoteResult | null = null;
+      if (side === "BUY") {
+        try {
+          reverse = await this.getQuote({
+            from: tradingPairs[this.pair].base,
+            to: USDC,
+            amountIn: q.minAmountOut,
+            slippage: this.db.settings().maxSlippage,
+            referencePrice: price,
+          });
+          audit.reverseQuoteExpiresAt = Number.isFinite(reverse.expiresAt)
+            ? reverse.expiresAt
+            : null;
+          if (!(await this.router.validateQuote(reverse))) reverse = null;
+        } catch {
+          reverse = null;
+        }
+      }
+      await this.market.refreshForOrder?.();
+    return { proceed: true, audit, q, reverse };
+  }
+
   async tick() {
     this.db.assertHealthy();
     if (this.deploymentStopped()) return;
@@ -419,92 +533,22 @@ export class BotEngine {
       // restores the type narrowing the inline gate used to give
       // the code below (it cannot fire while the gate holds).
       if (decision.action === "WAIT") return;
-      const side = decision.action,
-        id = `paper:${last.source}:300:${last.timestamp}:${side}`,
-        amount =
-          side === "BUY" ? s.maxOrder : Math.min(p.sui, s.maxOrder / price);
-      audit = {
-        id: randomUUID(),
-        orderId: id,
-        timestamp: now,
-        createdAt: now,
-        side,
-        requestedInputAtomic: atomic(
-          amount,
-          side === "BUY" ? USDC : tradingPairs[this.pair].base,
-        ),
-        quantityAtomic: null,
-        quotePriceUsdc: null,
-        quoteExpiresAt: null,
-        acquisitionCostUsdc: numericText(p.costBasisUsdc ?? p.costBasis),
-        expectedSaleUsdc: null,
-        saleModel: null,
-        dexFeeUsdc: null,
-        gasUsdc: null,
-        additionalFeeUsdc: null,
-        buyGasUsdc: null,
-        netProfitUsdc: null,
-        minProfitUsdc: String(s.minNetProfitUsdc),
-        minProfitPct: String(s.minNetProfitPct),
-        profitGuard: { evaluated: false, allowed: null, reason: null },
-        risk: { status: "NOT_EVALUATED", reasons: [] },
-        finalAction: "PENDING",
-        reasons: [],
-      };
-      this.db.putCandidate(audit);
-      cycle.outcome = "CANDIDATE";
-      if (amount <= 0) {
-        this.monitor.finishCandidate({
-          ...audit,
-          finalAction: "WAIT",
-          reasons: ["NO_POSITION"],
-        });
-        this.reject(id, ["NO_POSITION"], decision, now, last.timestamp);
-        return;
-      }
-      const q =
-        side === "SELL" && sellPreview
-          ? sellPreview
-          : await this.getQuote({
-              from: side === "BUY" ? USDC : tradingPairs[this.pair].base,
-              to: side === "BUY" ? tradingPairs[this.pair].base : USDC,
-              amountIn: atomic(
-                amount,
-                side === "BUY" ? USDC : tradingPairs[this.pair].base,
-              ),
-              slippage: s.maxSlippage,
-              referencePrice: price,
-            });
-      const quantity = side === "BUY" ? q.minAmountOut : q.amountIn;
-      audit.quantityAtomic = /^\d+$/.test(quantity) ? quantity : null;
-      audit.quoteExpiresAt = Number.isFinite(q.expiresAt) ? q.expiresAt : null;
-      try {
-        audit.quotePriceUsdc = numericText(
-          new Decimal(side === "BUY" ? q.amountIn : q.minAmountOut)
-            .div(1e6)
-            .div(new Decimal(quantity).div(1e9))
-            .toString(),
-        );
-      } catch {}
-      let reverse: QuoteResult | null = null;
-      if (side === "BUY") {
-        try {
-          reverse = await this.getQuote({
-            from: tradingPairs[this.pair].base,
-            to: USDC,
-            amountIn: q.minAmountOut,
-            slippage: this.db.settings().maxSlippage,
-            referencePrice: price,
-          });
-          audit.reverseQuoteExpiresAt = Number.isFinite(reverse.expiresAt)
-            ? reverse.expiresAt
-            : null;
-          if (!(await this.router.validateQuote(reverse))) reverse = null;
-        } catch {
-          reverse = null;
-        }
-      }
-      await this.market.refreshForOrder?.();
+      const cand = await this.buildCandidate(
+        decision as TradingDecision & { action: "BUY" | "SELL" },
+        p,
+        s,
+        price,
+        last,
+        now,
+        sellPreview,
+        cycle,
+      );
+      audit = cand.audit;
+      if (!cand.proceed) return;
+      const q = cand.q,
+        reverse = cand.reverse,
+        side = decision.action,
+        id = cand.audit.orderId;
       const validQuote = await this.router.validateQuote(q);
       const fresh = Date.now();
       const executionSettings = this.db.settings();
