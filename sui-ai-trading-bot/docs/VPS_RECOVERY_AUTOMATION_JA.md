@@ -74,6 +74,23 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   `image.tar.gz` と `.image.partial.*` だけ、最終更新から1時間以上経過
   したものだけ。それ以外は理由付きでスキップ表示され、消されない。
   初回配置成功（2026-11-06）時点で残置は5件。
+- `.github/workflows/suiba-paper-start.yml`（confirmation `START-PAPER`、
+  時間の選択入力 30m／6h／24h、専用変数 `SUIBA_PAPER_START_ENABLED`、
+  Environment 承認必須）：検証ランの開始。`docker/ssh-paper-start.sh` が
+  固定ラッパーへ `{"operation":"start","duration":...}` を送るだけ。
+  watch（40分）は 30m ラン用で、6h／24h ランは status を都度確認する。
+- 検証時間の持ち主は controller。開始リクエストの時間は root 所有の
+  `start-request.json` として次回ランだけに渡り、ランが消費する
+  （10分より古いメモは既定の 30m に落ちる）。cutoff・監視の長さ・
+  cutoff タイマー（時間別のユニット）は全てレコードの `duration` から
+  決まる。Worker の `PAPER_CHECK_MODE=sui-30m` はリースの名前として
+  不変で、時間は開始時にだけ決まり、途中では伸ばせない。
+- ホスト反映は `deploy/paper-check/setup-paper-check.sh`（root で1回。
+  main から取得して sha256 ピンを検証し、実行中ランがあると拒否、
+  旧ファイルはバックアップ。配置後は daemon-reload・
+  systemd-analyze verify・全ユニットの LoadState・配置後ハッシュ・
+  suiba-deploy 経由の status スモークまで自動で確認する）。
+  対象ファイルを変更したらピンも同じコミットで更新する。
 - broker 方式への一本化に伴い、旧 stage 経路を撤去した：
   `.github/workflows/suiba-vps-stage.yml` と suiba-vps.yml の `stage`
   ジョブを削除し、リポジトリ変数 `SUIBA_STAGE_ENABLED` も削除した。
