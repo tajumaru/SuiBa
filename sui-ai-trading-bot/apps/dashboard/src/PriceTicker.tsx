@@ -1,7 +1,7 @@
 import React from "react";
-import type { BotEngine } from "../../worker/src/engine.ts";
+import type { BotSnapshot } from "../../worker/src/engine.ts";
 
-type State = ReturnType<BotEngine["snapshot"]>;
+type State = BotSnapshot;
 type Frames = State["candlesByTimeframe"];
 type Candle = Frames[300][number];
 

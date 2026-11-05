@@ -1,4 +1,4 @@
-import type { BotEngine } from "../../worker/src/engine.ts";
+import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { number, percent, label } from "./presentation.ts";
 import { PortfolioMix } from "./PortfolioMix.tsx";
 import { EquityCurve } from "./EquityCurve.tsx";
@@ -10,7 +10,7 @@ import type { SettingsApi } from "./settingsPresets.ts";
 import type { ForecastAnswerCheck } from "./forecastLog.ts";
 import type { ShareCardInput } from "./shareCard.ts";
 
-type State = ReturnType<BotEngine["snapshot"]>;
+type State = BotSnapshot;
 const money = (v: number | null | undefined) => number(v, 4);
 
 /**

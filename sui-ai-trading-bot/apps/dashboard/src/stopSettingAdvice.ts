@@ -1,7 +1,7 @@
-import type { BotEngine } from "../../worker/src/engine.ts";
+import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { number } from "./presentation.ts";
 
-type State = ReturnType<BotEngine["snapshot"]>;
+type State = BotSnapshot;
 
 export function stopSettingAdvice(data: State, now = Date.now()) {
   if (data.runtime.emergency) return null;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { BotEngine } from "../../worker/src/engine.ts";
+import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { chartForecast, FORECAST_BARS } from "./chartForecast.ts";
 import {
   appendForecastRecord,
@@ -24,7 +24,7 @@ import {
 import { useAgentCharacter } from "./agentCharacter.ts";
 import { shareCardInputFor } from "./shareCard.ts";
 
-type State = ReturnType<BotEngine["snapshot"]>;
+type State = BotSnapshot;
 
 /**
  * The forecast suite, extracted from App: the device-local

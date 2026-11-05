@@ -7,7 +7,7 @@ import { loginSession, SESSION } from "./browserSession.ts";
 import { DashboardClient } from "./dashboardClient.ts";
 import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
-import type { BotEngine } from "../../worker/src/engine.ts";
+import type { BotSnapshot } from "../../worker/src/engine.ts";
 import "./style.css";
 import { label, errorCode } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
@@ -60,7 +60,7 @@ const tabFallback = (
   </p>
 );
 import { useIndicatorHistory } from "./indicatorHistory.ts";
-type State = ReturnType<BotEngine["snapshot"]>;
+type State = BotSnapshot;
 const NAV_TABS = [
   "Live",
   "Overview",

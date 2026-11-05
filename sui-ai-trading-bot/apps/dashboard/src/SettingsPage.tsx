@@ -3,7 +3,7 @@ import {
   settingsSchema,
   type Settings,
 } from "../../../packages/shared/src/index.ts";
-import type { BotEngine } from "../../worker/src/engine.ts";
+import type { BotSnapshot } from "../../worker/src/engine.ts";
 import {
   presetName,
   saveSettings,
@@ -19,7 +19,7 @@ import { number, errorCode, reason } from "./presentation.ts";
 import { startRejectionReason } from "./operationLabels.ts";
 import { OperationIcon } from "./operationIcons.tsx";
 import { stopSettingAdvice } from "./stopSettingAdvice.ts";
-type State = ReturnType<BotEngine["snapshot"]>;
+type State = BotSnapshot;
 export type Field = {
   key: keyof Settings;
   label: string;

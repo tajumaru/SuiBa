@@ -1,5 +1,5 @@
 import React from "react";
-import type { BotEngine } from "../../worker/src/engine.ts";
+import type { BotSnapshot } from "../../worker/src/engine.ts";
 import type { DecisionTelemetry } from "../../worker/src/operations.ts";
 import type { Settings } from "../../../packages/shared/src/index.ts";
 import { dateTime, label, number, percent } from "./presentation.ts";
@@ -20,7 +20,7 @@ import {
   type StrategyParamDef,
 } from "./strategyView.ts";
 
-type State = ReturnType<BotEngine["snapshot"]>;
+type State = BotSnapshot;
 
 const money = (v: number | null | undefined) => number(v, 4);
 const precise = (v: string | null | undefined) =>

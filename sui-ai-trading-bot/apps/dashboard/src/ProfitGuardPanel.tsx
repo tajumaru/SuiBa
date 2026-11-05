@@ -1,9 +1,9 @@
 import React from "react";
-import type { BotEngine } from "../../worker/src/engine.ts";
+import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { dateTime, number, percent } from "./presentation.ts";
 import { operationReason } from "./operationLabels.ts";
 
-type State = ReturnType<BotEngine["snapshot"]>;
+type State = BotSnapshot;
 const money = (v: number | null | undefined) => number(v, 4);
 const precise = (v: string | null | undefined) =>
   v == null ? "不明" : `${number(v)} USDC`;

@@ -1,7 +1,7 @@
 import type { OperationsSnapshot } from "./operationsTypes.ts";
-import type { BotEngine } from "../../worker/src/engine.ts";
+import type { BotSnapshot } from "../../worker/src/engine.ts";
 
-export type ControlState = ReturnType<BotEngine["snapshot"]>;
+export type ControlState = BotSnapshot;
 export type Readiness = { status: "GO" | "NO_GO"; reason: string };
 // This is the reviewed release decision, not a live health check or a UI approval.
 // Update only alongside the reviewed readiness document and its evidence.

@@ -1,4 +1,4 @@
-import type { BotEngine } from "../../worker/src/engine.ts";
+import type { BotSnapshot } from "../../worker/src/engine.ts";
 import type { DashboardService } from "../../worker/src/dashboard-feed.ts";
 import type {
   Candle,
@@ -10,7 +10,7 @@ import {
   canonicalFrame,
 } from "../../../packages/shared/src/dashboard-wire.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
-type State = ReturnType<BotEngine["snapshot"]>;
+type State = BotSnapshot;
 type Summary = ReturnType<DashboardService["summary"]>;
 export class DashboardClient {
   private legacy = false;

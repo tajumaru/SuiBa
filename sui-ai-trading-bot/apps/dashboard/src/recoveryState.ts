@@ -1,7 +1,7 @@
-import type { BotEngine } from "../../worker/src/engine.ts";
+import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { operationReason } from "./operationLabels.ts";
 
-type State = ReturnType<BotEngine["snapshot"]>;
+type State = BotSnapshot;
 type RecoverySnapshot = {
   mode: string;
   runtime: Pick<State["runtime"], "running" | "emergency" | "error">;

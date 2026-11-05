@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import type { BotEngine } from "../../worker/src/engine.ts";
+import type { BotSnapshot } from "../../worker/src/engine.ts";
 import type { DecisionTelemetry } from "../../worker/src/operations.ts";
 import type { IndicatorPoint } from "./strategyView.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
@@ -11,7 +11,7 @@ import {
   useSettingsEditor,
 } from "./SettingsPage.tsx";
 
-type State = ReturnType<BotEngine["snapshot"]>;
+type State = BotSnapshot;
 export type StrategySegment = "rules" | "settings";
 
 const SEGMENTS = [

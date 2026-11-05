@@ -72,6 +72,11 @@ export function downsampleEquityCurve(
   return [...byHour.values()].sort((a, b) => a.t - b.t);
 }
 
+/** The dashboard-facing snapshot contract: one definition for
+ * every consumer, so adding a snapshot field has a single
+ * type-level home (the shape itself comes from snapshot()). */
+export type BotSnapshot = ReturnType<BotEngine["snapshot"]>;
+
 export class BotEngine {
   validation?: ValidationRecorder;
   marketStatus() {

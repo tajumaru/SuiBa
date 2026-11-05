@@ -1,10 +1,10 @@
-import type { BotEngine } from "../../worker/src/engine.ts";
+import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { AgentHeaderAvatar } from "./AgentNarration.tsx";
 import { presetName } from "./settingsPresets.ts";
 import type { AgentPose } from "./agentNarration.ts";
 import type { ErrorShout } from "./errorShout.ts";
 
-type State = ReturnType<BotEngine["snapshot"]>;
+type State = BotSnapshot;
 
 /**
  * The app header and the narration character's avatar dock,

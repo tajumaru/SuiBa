@@ -16,14 +16,14 @@ import type { SettingsApi } from "./settingsPresets.ts";
 import type { HistoryResult } from "../../worker/src/chart-history.ts";
 import { useMemo, useState, useEffect, useRef } from "react";
 import type { Candle } from "../../../packages/shared/src/index.ts";
-import type { BotEngine } from "../../worker/src/engine.ts";
+import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { chartData, chartWindow } from "./chartPresentation.ts";
 import type { ShareCardInput } from "./shareCard.ts";
 
 export interface PriceChartProps {
-  pair?: ReturnType<BotEngine["snapshot"]>["pair"];
+  pair?: BotSnapshot["pair"];
   candles: Candle[];
-  trades: ReturnType<BotEngine["snapshot"]>["trades"];
+  trades: BotSnapshot["trades"];
   timeframe?: number;
   synchronized?: boolean;
   historyApi?: SettingsApi;

@@ -1,4 +1,4 @@
-import type { BotEngine } from "../../worker/src/engine.ts";
+import type { BotSnapshot } from "../../worker/src/engine.ts";
 import type { Candle } from "../../../packages/shared/src/index.ts";
 import { OrderHistory } from "./OrderHistory.tsx";
 import { FillAnalysisCard } from "./FillAnalysisCard.tsx";
@@ -11,7 +11,7 @@ export function HistoryTab({
   candles,
 }: {
   orders: Record<string, unknown>[];
-  trades: ReturnType<BotEngine["snapshot"]>["trades"];
+  trades: BotSnapshot["trades"];
   candles: Candle[];
 }) {
   return (

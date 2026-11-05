@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
-import type { BotEngine } from "../../worker/src/engine.ts";
+import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { OperationIcon } from "./operationIcons.tsx";
 import { startRejectionReason } from "./operationLabels.ts";
 import type { RecoveryStatus } from "./recoveryState.ts";
 
-type State = ReturnType<BotEngine["snapshot"]>;
+type State = BotSnapshot;
 
 /**
  * The tab-independent PAPER operation bar: one slim line at the

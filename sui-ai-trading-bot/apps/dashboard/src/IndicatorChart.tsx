@@ -1,12 +1,12 @@
 import { calculate, ema } from "../../../packages/indicators/src/index.ts";
 import type { Candle } from "../../../packages/shared/src/index.ts";
-import type { BotEngine } from "../../worker/src/engine.ts";
+import type { BotSnapshot } from "../../worker/src/engine.ts";
 import type { ForecastAnswerCheck } from "./forecastLog.ts";
 import { PriceChart } from "./PriceChart.tsx";
 import { dateTime, label, number } from "./presentation.ts";
 import type { ShareCardInput } from "./shareCard.ts";
 
-type State = ReturnType<BotEngine["snapshot"]>;
+type State = BotSnapshot;
 
 const money = (v: number | null | undefined) => number(v, 4);
 
