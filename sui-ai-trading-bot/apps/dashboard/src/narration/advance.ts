@@ -292,7 +292,7 @@ export function advanceNarration(
   stageStatusAndSleep(work, prev, d, vitalState, now);
   stageBtc(work, btc, now);
   stageBook(work, book, pairLabel, now);
-  stageForecasts(work, forecasts, now);
+  stageForecasts(work, forecasts, d.decision, now);
   stageMonthly(work, fills, now);
 
   return finish(

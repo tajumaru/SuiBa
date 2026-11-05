@@ -23,6 +23,8 @@ import {
   TOUCH_NEAR_PCT,
   type ForecastRecord,
 } from "../forecastLog.ts";
+import type { DecisionTelemetry } from "../../../worker/src/operations.ts";
+import { forecastReasonText } from "./forecast-reason.ts";
 import {
   buildMonthlyReport,
   monthKeyOf,
@@ -673,6 +675,7 @@ export function stageForecasts(
     | { records: readonly ForecastRecord[]; candles: readonly Candle[] }
     | null
     | undefined,
+  dec: DecisionTelemetry | null | undefined,
   now: number,
 ) {
 if (forecasts) {
@@ -742,7 +745,7 @@ if (forecasts) {
     work.drafts.push({
       at: now,
       kind: "forecastCall",
-      text: forecastCallText(rec),
+      text: forecastCallText(rec, forecastReasonText(rec, dec, now)),
     });
     work.forecastDeclared = { ...work.forecastDeclared, [key]: now };
     work.lastForecastCallAt = now;

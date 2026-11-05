@@ -344,15 +344,19 @@ export function forecastVerdictOf(
 
 /** The declaration line for a direction-claiming forecast:
  * the claim, the size, and when the answer arrives. */
-export function forecastCallText(rec: ForecastRecord): string {
+export function forecastCallText(
+  rec: ForecastRecord,
+  reason?: string | null,
+): string {
   const drift = forecastDriftPct(rec);
   const word = rec.dir === "up" ? "上昇" : "下落";
+  const why = reason ? `根拠：${reason}。` : "";
   const touch = rec.touch
     ? `${priceText(rec.touch.line)}（${pctText((rec.touch.line - rec.startClose) / rec.startClose)}）にタッチする確率は${Math.round(rec.touch.prob * 100)}%。`
     : "";
   return drift != null
-    ? `予測を宣言：2時間で${word} ${pctText(drift)} と見てる。${touch}答え合わせは2時間後`
-    : `予測を宣言：2時間で${word}と見てる。${touch}答え合わせは2時間後`;
+    ? `予測を宣言：2時間で${word} ${pctText(drift)} と見てる。${why}${touch}答え合わせは2時間後`
+    : `予測を宣言：2時間で${word}と見てる。${why}${touch}答え合わせは2時間後`;
 }
 
 /** The verdict line for a declared forecast: the recorded

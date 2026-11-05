@@ -73,4 +73,5 @@ export { WATCH_APPROACH_RATIO, WATCH_WITHDRAW_RATIO, WATCH_NAME, WATCH_KIND_ORDE
 export { ALERT_PRICE_LOOKBACK, ALERT_PRICE_THRESHOLD, ALERT_VOLUME_THRESHOLD, ALERT_COOLDOWN_CYCLES, spikeAlert } from "./narration/alerts.ts";
 export { FORECAST_CALL_COOLDOWN_MS, FORECAST_CALL_FRESH_MS, FORECAST_VERDICT_FRESH_MS, PRICE_LINE_MURMUR_PCT, SLEEP_TALK_INTERVAL_MS, advanceNarration, btcMutter } from "./narration/advance.ts";
 export { BOOK_ENTRY_MIN_INTERVAL_MS, BOOK_WALL_COOLDOWN_MS, WALL_MIN_MULTIPLE, WALL_NEAR_PCT, advanceBookWalls, detectBookWalls, type BookWall, type BookWallState } from "./narration/book.ts";
+export { forecastReasonText } from "./narration/forecast-reason.ts";
 export { agentPose, BUY_CELEBRATION_MS, CELEBRATION_FRESH_MS, isBuyTradeEntry, findNewBuyEntry, buyCelebrationActive } from "./narration/pose.ts";

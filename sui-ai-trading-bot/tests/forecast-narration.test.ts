@@ -202,6 +202,114 @@ describe("advanceNarration forecast declarations", () => {
   });
 });
 
+describe("forecast declaration reasons", () => {
+  const telemetry = (overrides: Record<string, unknown>) =>
+    ({
+      evaluatedAt: T0 + 2 * MIN,
+      candleTimestamp: T0,
+      action: "WAIT",
+      reason: "",
+      selectedRule: "",
+      sellPurpose: null,
+      price: 100,
+      entryPrice: null,
+      ema20: 101,
+      ema50: 100,
+      rsi: 34,
+      previousRsi: 29,
+      histogram: -0.001,
+      previousHistogram: -0.002,
+      atr: 1,
+      volumeChange: 0,
+      oversold: 30,
+      overbought: 70,
+      stopLossPct: 0.02,
+      takeProfitPct: 0.03,
+      rsiLinePrice: null,
+      conditions: {
+        emaUp: true,
+        emaGapShrinking: false,
+        rsiRecovery: true,
+        histogramImproving: true,
+        hasPosition: false,
+        stopLoss: false,
+        takeProfit: false,
+        latestVolumePositive: true,
+        previousVolumePositive: true,
+        volumeChangeExceeded: false,
+        emaDown: false,
+        rsiReversal: false,
+        histogramDeclining: false,
+      },
+      ...overrides,
+    }) as unknown as OperationsSnapshot["decision"];
+
+  const declare = (
+    dir: "up" | "down",
+    decision: OperationsSnapshot["decision"],
+    tilt: number | null = null,
+  ) => {
+    const origin = T0 / 1000;
+    const record = { ...rec(origin, dir, dir === "up" ? 0.012 : -0.012), tilt };
+    const next = advanceNarration(
+      initialized(),
+      ops({ decision }),
+      "sleeping",
+      T0 + 2 * MIN,
+      undefined,
+      null,
+      { records: [record], candles: [] },
+    );
+    return next.entries.filter((e) => e.kind === "forecastCall")[0]?.text ?? "";
+  };
+
+  it("names the supporting facts on the record for an up call", () => {
+    const text = declare("up", telemetry({}));
+    expect(text).toContain(
+      "根拠：RSIは回復しつつある、MACDも上向き、EMAは上向きの並び。",
+    );
+    expect(text).toContain("答え合わせは2時間後");
+  });
+
+  it("names book tilt and MACD for a down call, capping at three facts", () => {
+    const text = declare(
+      "down",
+      telemetry({
+        ema20: 99,
+        ema50: 100,
+        rsi: 55,
+        previousRsi: 60,
+        histogram: -0.003,
+        previousHistogram: -0.001,
+        conditions: {
+          emaUp: false,
+          emaGapShrinking: false,
+          rsiRecovery: false,
+          histogramImproving: false,
+          hasPosition: false,
+          stopLoss: false,
+          takeProfit: false,
+          latestVolumePositive: true,
+          previousVolumePositive: true,
+          volumeChangeExceeded: false,
+          emaDown: true,
+          rsiReversal: false,
+          histogramDeclining: true,
+        },
+      }),
+      -0.001,
+    );
+    expect(text).toContain("根拠：RSIは下向き、MACDも下向き、EMAは下向きの並び。");
+    expect(text).not.toContain("板の売りが後押し");
+  });
+
+  it("keeps the plain call when there is no fresh evidence", () => {
+    expect(declare("up", null)).not.toContain("根拠");
+    const stale = telemetry({ evaluatedAt: T0 - 10 * MIN });
+    expect(declare("up", stale)).not.toContain("根拠");
+  });
+});
+
 describe("advanceNarration forecast verdicts", () => {
   const origin = T0 / 1000 - 7200;
   const declaredPrev = () => ({
