@@ -81,17 +81,32 @@ try:
                   "market-freshness", "arm", "paper-start", "monitoring", "normal-stop")
         if details["stage"] not in stages:
             raise ValueError()
-        if details["maintenance"] is not True or details["backup_verified"] is not True:
+        if details["maintenance"] is not True:
             raise ValueError()
         if type(details["oom_killed"]) is not bool or type(details["exit_code"]) is not int:
             raise ValueError()
         for key in ("healthcheck_exit", "http_status"):
             if details[key] is not None and type(details[key]) is not int:
                 raise ValueError()
-        for pair in ("SUI_USDC", "WAL_USDC"):
-            for key in ("starts", "orders", "fills"):
-                if type(details["deltas"][pair][key]) is not int:
-                    raise ValueError()
+        # A run that ended before its backup stage reports
+        # backup_verified=False with deltas=None; anything else must
+        # carry the full integer difference map.
+        if details["backup_verified"] is True:
+            for pair in ("SUI_USDC", "WAL_USDC"):
+                for key in ("starts", "orders", "fills"):
+                    if type(details["deltas"][pair][key]) is not int:
+                        raise ValueError()
+        elif details["backup_verified"] is False:
+            if details["deltas"] is not None:
+                raise ValueError()
+        else:
+            raise ValueError()
+        import re
+        stop_errors = stop.get("errors", [])
+        if type(stop_errors) is not list or len(stop_errors) > 8 or any(
+                type(code) is not str or not re.fullmatch(r"[A-Z][A-Z_]{2,47}", code)
+                for code in stop_errors):
+            raise ValueError()
         if "clean_lifecycle" in details and type(details["clean_lifecycle"]) is not bool:
             raise ValueError()
         runtime = details.get("runtime")
@@ -167,8 +182,14 @@ print(f"- Manual review needed: {'yes' if fault or state == 'failed_requires_rev
 if details is not None:
     print(f"- Container exit code: {details['exit_code']}, OOM killed: {details['oom_killed']}")
     print(f"- Last healthcheck exit code: {details['healthcheck_exit']}")
-    print("- Maintenance: enabled; backup SHA-256 verified; SQLite copies passed integrity checks")
+    if details["backup_verified"]:
+        print("- Maintenance: enabled; backup SHA-256 verified; SQLite copies passed integrity checks")
+    else:
+        print("- Maintenance: enabled; backup: not taken (run ended before its backup stage)")
     print(f"- Failed stage: {details['stage'] or 'not recorded'}, HTTP status: {details['http_status']}")
+    stop_errors = stop.get("errors") or []
+    if stop_errors:
+        print(f"- Stop errors: {', '.join(stop_errors)}")
     readiness = details.get("readiness")
     if isinstance(readiness, dict):
         health = readiness.get("health")
@@ -204,7 +225,10 @@ if details is not None:
             if process is not None:
                 print(f"- Broker CLI observation: phase={process['phase']}, exit={process['exit_code']}, "
                       f"stdout bytes={process['stdout_bytes']}, stderr bytes={process['stderr_bytes']}")
-    for pair in ("SUI_USDC", "WAL_USDC"):
-        delta = details["deltas"][pair]
-        print(f"- {pair} difference: starts={delta['starts']:+d}, orders={delta['orders']:+d}, fills={delta['fills']:+d}")
+    if details["deltas"] is not None:
+        for pair in ("SUI_USDC", "WAL_USDC"):
+            delta = details["deltas"][pair]
+            print(f"- {pair} difference: starts={delta['starts']:+d}, orders={delta['orders']:+d}, fills={delta['fills']:+d}")
+    else:
+        print("- Activity difference: unavailable (no pre-run backup to compare against)")
 PYCODE

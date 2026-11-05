@@ -313,6 +313,9 @@ class Controller:
         clean_lifecycle = lifecycle.get('mode') == 'PAPER' and lifecycle.get('state') == 'clean'
         stop = self.b.decode(self.b.read_trusted(self.folder(record)/'stop.json'))
         require(stop['id'] == record['id'])
+        stop_errors = stop.get('errors', [])
+        require(type(stop_errors) is list and len(stop_errors) <= 8 and all(
+            type(code) is str and re.fullmatch(r'[A-Z][A-Z_]{2,47}', code) for code in stop_errors))
         report = self.diagnostic_backup(record, source)
         health = state.get('Health', {}).get('Log', [])
         failure_path = self.folder(record)/'failure.json'
@@ -326,14 +329,16 @@ class Controller:
             require(http is None or type(http) is int and 100 <= http <= 599)
         return {
             'run': {'id': record['id'], 'status': record['status'], 'duration': record.get('duration', '30m')},
-            'stop': {'id': stop['id'], 'status': stop['status']},
+            'stop': {'id': stop['id'], 'status': stop['status'], 'errors': stop_errors},
             'requires_review': self.faults(record),
             'diagnostics': {
                 'exit_code': state['ExitCode'], 'oom_killed': state['OOMKilled'],
                 'healthcheck_exit': health[-1]['ExitCode'] if health else None,
                 'maintenance': maintenance, 'stage': stage, 'http_status': http,
-                'backup_verified': True, 'deltas': report['deltas'], 'readiness': readiness,
-                'runtime': report['runtime'], 'selected_pair': report['selected_pair'],
+                'backup_verified': report is not None,
+                'deltas': report['deltas'] if report is not None else None, 'readiness': readiness,
+                'runtime': report['runtime'] if report is not None else None,
+                'selected_pair': report['selected_pair'] if report is not None else None,
                 'clean_lifecycle': clean_lifecycle,
                 'host': self.diagnostic_host(i),
             },
@@ -426,7 +431,13 @@ class Controller:
                     os.fsync(directory_fd)
 
     def diagnostic_backup(self, record, source):
-        backup = record['backup']
+        backup = record.get('backup')
+        if backup is None:
+            # The run ended before its backup stage, so there is no
+            # pre-run snapshot to verify or diff against. Report that
+            # honestly (the caller maps None to backup_verified=False)
+            # instead of failing the whole diagnosis with a KeyError.
+            return None
         require(re.fullmatch(r'paper-check-[0-9a-f]{32}\.tar', backup['file']))
         require(self.b.HEX.fullmatch(backup['sha256']))
         deadline = time.monotonic()+45

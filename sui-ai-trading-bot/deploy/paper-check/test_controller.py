@@ -196,6 +196,44 @@ class StopTests(unittest.TestCase):
                 render()
             self.assertEqual(str(failure.exception), 'PAPER_STATUS_INVALID')
 
+    def test_diagnostic_backup_is_none_before_the_backup_stage(self):
+        ctl = object.__new__(c.Controller)
+        self.assertIsNone(ctl.diagnostic_backup({'id': 'a'*32}, None))
+
+    def test_diagnostic_summary_accepts_a_run_without_backup(self):
+        import io
+        script = Path(__file__).parents[2]/'docker/ssh-paper-status.sh'
+        renderer = script.read_text().split("<<'PYCODE'", 1)[1].split('\n', 1)[1].rsplit('\nPYCODE', 1)[0]
+        payload = {
+            'run': {'id': 'a'*32, 'status': 'failed_requires_review', 'duration': '6h'},
+            'stop': {'id': 'a'*32, 'status': 'failed_state_unknown', 'errors': ['PREFLIGHT_INCOMPLETE']},
+            'requires_review': True,
+            'diagnostics': {'stage': None, 'maintenance': True, 'backup_verified': False,
+                'oom_killed': False, 'exit_code': 0, 'healthcheck_exit': None, 'http_status': None,
+                'deltas': None},
+        }
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            path = Path(tmp)/'response'
+            def render():
+                path.write_text(json.dumps(payload))
+                output = io.StringIO()
+                with patch.object(c.sys, 'argv', ['summary', str(path), 'diagnose']), contextlib.redirect_stdout(output):
+                    exec(compile(renderer, 'summary', 'exec'), {})
+                return output.getvalue()
+            output = render()
+            self.assertIn('PREFLIGHT_INCOMPLETE', output)
+            self.assertIn('not taken', output)
+            self.assertIn('unavailable', output)
+            # Differences claimed without a verified backup are a lie.
+            payload['diagnostics']['deltas'] = {pair: {'starts': 0, 'orders': 0, 'fills': 0}
+                                                 for pair in ('SUI_USDC', 'WAL_USDC')}
+            with self.assertRaises(SystemExit):
+                render()
+            payload['diagnostics']['deltas'] = None
+            payload['stop']['errors'] = ['secret-fixture-do-not-log']
+            with self.assertRaises(SystemExit):
+                render()
+
     def test_host_diagnostic_reports_deployment_gate_timer_and_versions(self):
         import re
         from types import SimpleNamespace
