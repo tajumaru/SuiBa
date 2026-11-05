@@ -728,6 +728,7 @@ if (forecasts) {
       at: now,
       kind: verdict.hit ? "forecastHit" : "forecastMiss",
       text: forecastVerdictText(verdict),
+      forecastOrigin: rec.origin,
     });
     if (verdict.hit) work.lastHitAt = now;
   }
@@ -748,6 +749,7 @@ if (forecasts) {
       at: now,
       kind: "forecastCall",
       text: forecastCallText(rec, forecastReasonText(rec, dec, now)),
+      forecastOrigin: rec.origin,
     });
     work.forecastDeclared = { ...work.forecastDeclared, [key]: now };
     work.lastForecastCallAt = now;

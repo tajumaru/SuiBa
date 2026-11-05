@@ -68,10 +68,12 @@ function usePrefersReducedMotion(): boolean {
 const POSE_BY_KIND: Record<string, AgentPose> = {
   trade: "pointSmile",
   watchHit: "pointSmile",
+  forecastHit: "pointSmile",
   nearMiss: "point",
   priceLineReached: "buyLine",
   sellLine: "point",
   priceLine: "buyLine",
+  forecastCall: "point",
   alert: "point",
 };
 

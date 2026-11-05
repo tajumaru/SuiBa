@@ -57,6 +57,15 @@ export interface NarrationEntry {
   /** The suggested question on a chatPrompt entry, rendered as a
    * tappable chip inside the entry. */
   promptChip?: string;
+  /** The forecast's origin (candle timestamp, seconds),
+   * recorded only on forecast declaration and verdict entries
+   * (forecastCall / forecastHit / forecastMiss): the identity
+   * of the one forecast the entry speaks of, so a verdict can
+   * be paired with the exact declaration that promised it —
+   * several forecasts can be outstanding at once, so unlike
+   * the serial watches their pairing cannot be recovered
+   * reliably from the texts alone. */
+  forecastOrigin?: number;
 }
 
 /**

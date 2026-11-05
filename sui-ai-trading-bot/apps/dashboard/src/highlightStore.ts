@@ -4,10 +4,11 @@ import type { NarrationEntry, NarrationState } from "./agentNarration.ts";
 /**
  * Highlights: the shareable moments of the feed — a buy or sell
  * fill, a watch hit, a near miss, a buy-run line reached, sell
- * lines declared — bookmarked automatically as they happen,
- * with the feed entries around them and the recent price path,
- * so the moment can be REPLAYED later (and screen-recorded for
- * sharing) instead of being lost the way the first fill was.
+ * lines declared, a forecast verdict — bookmarked automatically
+ * as they happen, with the feed entries around them and the
+ * recent price path, so the moment can be REPLAYED later (and
+ * screen-recorded for sharing) instead of being lost the way
+ * the first fill was.
  *
  * A moment is captured only while it is fresh (within ten
  * minutes of occurring): opening the app long afterwards lays
@@ -32,8 +33,9 @@ export interface Highlight {
   /** The moment's own entry text (the list label). */
   title: string;
   /** Up to eight entries ending at the moment, oldest first.
-   * A watchHit may carry one more: its declaration, prepended
-   * when it fell outside the window (see captureHighlights). */
+   * A watchHit or a forecast verdict may carry one more: its
+   * declaration, prepended when it fell outside the window
+   * (see captureHighlights). */
   entries: HighlightEntry[];
   /** The recent price path at capture time (the feed's own
    * decision-price window), for the replay's sparkline. */
@@ -50,7 +52,9 @@ const ENTRIES_AROUND = 8;
  * flood evicts the rare moments (a fill, a line reached) the
  * highlights exist for, and the chip strip sprawls into one
  * long row of 的中. Each kind now keeps only its newest few,
- * evicting its own kind first. The caps sum to MAX_HIGHLIGHTS.
+ * evicting its own kind first. The per-kind caps may sum past
+ * MAX_HIGHLIGHTS; the global cap in capHighlights is the final
+ * bound on the store.
  */
 export const HIGHLIGHT_KIND_CAPS: Record<string, number> = {
   trade: 10,
@@ -58,6 +62,8 @@ export const HIGHLIGHT_KIND_CAPS: Record<string, number> = {
   nearMiss: 6,
   priceLineReached: 4,
   sellLine: 4,
+  forecastHit: 3,
+  forecastMiss: 3,
 };
 
 /** Trim a list to the per-kind caps (then the global cap),
@@ -83,7 +89,9 @@ export function isHighlightEntry(entry: NarrationEntry): boolean {
     entry.kind === "watchHit" ||
     entry.kind === "nearMiss" ||
     entry.kind === "priceLineReached" ||
-    entry.kind === "sellLine"
+    entry.kind === "sellLine" ||
+    entry.kind === "forecastHit" ||
+    entry.kind === "forecastMiss"
   );
 }
 
@@ -99,6 +107,10 @@ export function highlightLabel(h: Pick<Highlight, "kind" | "side">): string {
       return "ライン到達";
     case "sellLine":
       return "売りライン";
+    case "forecastHit":
+      return "予測的中";
+    case "forecastMiss":
+      return "予測外れ";
     default:
       return "ハイライト";
   }
@@ -151,6 +163,41 @@ export function declarationForHit(
   return null;
 }
 
+/**
+ * The declaration behind a forecast verdict. Unlike the
+ * watches, forecasts are not serial — declarations can be an
+ * hour apart under a two-hour horizon, so two can be
+ * outstanding at once and their claim texts may read alike.
+ * The pairing is therefore by identity, not by text: the
+ * declaration and verdict entries carry the forecast's origin
+ * (see NarrationEntry.forecastOrigin), and the match is the
+ * one earlier forecastCall with the same origin. Entries from
+ * before the origin was recorded carry none and simply find
+ * no declaration here. The scan stays inside one pair's entry
+ * list, so a verdict can never borrow another pair's promise.
+ */
+export function declarationForVerdict(
+  entries: NarrationEntry[],
+  verdictIndex: number,
+): NarrationEntry | null {
+  const verdict = entries[verdictIndex];
+  if (
+    !verdict ||
+    (verdict.kind !== "forecastHit" && verdict.kind !== "forecastMiss") ||
+    verdict.forecastOrigin == null
+  )
+    return null;
+  for (let i = verdictIndex - 1; i >= 0; i--) {
+    const e = entries[i];
+    if (
+      e.kind === "forecastCall" &&
+      e.forecastOrigin === verdict.forecastOrigin
+    )
+      return e;
+  }
+  return null;
+}
+
 /** Moments that appeared in `next` since `prevIds` was taken,
  * fresh enough to bookmark, oldest first. */
 export function captureHighlights(
@@ -172,6 +219,14 @@ export function captureHighlights(
     // prepend it, so the replay starts with the promise.
     if (entry.kind === "watchHit") {
       const declaration = declarationForHit(next.entries, index);
+      if (declaration && !window.some((e) => e.id === declaration.id))
+        window.unshift(declaration);
+    }
+    // A verdict replay has the same need: the answer without
+    // the claim that set it up is only half the story. When
+    // the declaration fell outside the window, prepend it.
+    if (entry.kind === "forecastHit" || entry.kind === "forecastMiss") {
+      const declaration = declarationForVerdict(next.entries, index);
       if (declaration && !window.some((e) => e.id === declaration.id))
         window.unshift(declaration);
     }
@@ -218,8 +273,8 @@ const schema = z
       kind: z.string(),
       side: z.enum(["BUY", "SELL"]).optional(),
       title: z.string(),
-      // +1: a watchHit highlight may carry its prepended
-      // declaration on top of the usual window.
+      // +1: a watchHit or forecast-verdict highlight may carry
+      // its prepended declaration on top of the usual window.
       entries: z.array(entrySchema).max(ENTRIES_AROUND + 1),
       prices: z.array(z.number().finite()).max(60),
     }),

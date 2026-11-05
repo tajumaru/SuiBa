@@ -69,6 +69,7 @@ const schema: z.ZodType<NarrationState> = z.object({
         side: z.enum(["BUY", "SELL"]).optional(),
         topic: z.string().optional(),
         promptChip: z.string().optional(),
+        forecastOrigin: number.optional(),
       }),
     )
     .max(MAX_NARRATION_ENTRIES + MAX_CHAT_ENTRIES),

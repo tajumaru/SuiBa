@@ -55,6 +55,27 @@ describe("highlight per-kind caps", () => {
     expect(capped.some((h) => h.kind === "sellLine" && h.at === 9)).toBe(true);
   });
 
+  it("caps forecast verdicts per kind, hits and misses separately", () => {
+    const flooded = [
+      ...Array.from({ length: 8 }, (_, i) =>
+        highlight("forecastHit", 100 + i),
+      ),
+      ...Array.from({ length: 8 }, (_, i) =>
+        highlight("forecastMiss", 200 + i),
+      ),
+      highlight("trade", 300),
+    ];
+    const capped = capHighlights(flooded);
+    const hits = capped.filter((h) => h.kind === "forecastHit");
+    const misses = capped.filter((h) => h.kind === "forecastMiss");
+    expect(hits).toHaveLength(3);
+    expect(misses).toHaveLength(3);
+    // The newest verdicts survive.
+    expect(hits.at(-1)?.at).toBe(107);
+    expect(misses.at(-1)?.at).toBe(207);
+    expect(capped.filter((h) => h.kind === "trade")).toHaveLength(1);
+  });
+
   it("trims a flooded stored list on load", () => {
     let value: string | null = null;
     const storage = {

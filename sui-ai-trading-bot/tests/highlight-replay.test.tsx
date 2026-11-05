@@ -8,6 +8,7 @@ import type {
 import {
   appendHighlights,
   captureHighlights,
+  declarationForVerdict,
   highlightLabel,
   isHighlightEntry,
   loadHighlights,
@@ -209,6 +210,165 @@ describe("watch hit declarations", () => {
       declaration("d", now - 60000),
       ...filler(10, 0),
       hit("h", now - 1000),
+    ];
+    const got = captureHighlights(new Set(), state(entries), now);
+    const store = new Map<string, string>();
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        store.set(k, v);
+      },
+    } as unknown as Storage;
+    saveHighlights(got, "SUI", storage);
+    const loaded = loadHighlights("SUI", storage);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].entries).toHaveLength(9);
+    expect(loaded[0].entries[0].id).toBe("d");
+  });
+});
+
+describe("forecast verdict declarations", () => {
+  const now = Date.UTC(2026, 10, 4, 3, 0);
+  const ORIGIN_A = 1762100000;
+  const ORIGIN_B = 1762103600;
+  const call = (
+    id: string,
+    at: number,
+    origin: number,
+  ): NarrationEntry => ({
+    id,
+    at,
+    kind: "forecastCall",
+    text: "予測を宣言：2時間で上昇 +1.2% と見てる。答え合わせは2時間後",
+    forecastOrigin: origin,
+  });
+  const verdict = (
+    id: string,
+    at: number,
+    origin: number | undefined,
+    kind: "forecastHit" | "forecastMiss" = "forecastHit",
+  ): NarrationEntry => ({
+    id,
+    at,
+    kind,
+    text:
+      kind === "forecastHit"
+        ? "予測、的中。上昇 +1.2% の宣言どおり、実際は +1.5%"
+        : "予測は外れ。上昇 +1.2% と言ったけど、実際は -0.8%",
+    ...(origin != null ? { forecastOrigin: origin } : {}),
+  });
+  const filler = (n: number, from: number) =>
+    Array.from({ length: n }, (_, i) =>
+      entry(`f${from + i}`, "cycle", now - 50000 + (from + i) * 1000),
+    );
+
+  it("prepends the declaration that set the verdict up", () => {
+    const entries = [
+      call("d", now - 2 * 3600000, ORIGIN_A),
+      ...filler(10, 0),
+      verdict("v", now - 1000, ORIGIN_A),
+    ];
+    const got = captureHighlights(new Set(), state(entries), now);
+    expect(got).toHaveLength(1);
+    expect(got[0].kind).toBe("forecastHit");
+    expect(got[0].entries).toHaveLength(9);
+    expect(got[0].entries[0].id).toBe("d");
+    expect(got[0].entries.at(-1)?.id).toBe("v");
+    expect(highlightLabel(got[0])).toBe("予測的中");
+  });
+
+  it("pairs a miss the same way, with the miss label", () => {
+    const entries = [
+      call("d", now - 2 * 3600000, ORIGIN_A),
+      ...filler(10, 0),
+      verdict("v", now - 1000, ORIGIN_A, "forecastMiss"),
+    ];
+    const got = captureHighlights(new Set(), state(entries), now);
+    expect(got).toHaveLength(1);
+    expect(got[0].entries[0].id).toBe("d");
+    expect(highlightLabel(got[0])).toBe("予測外れ");
+  });
+
+  it("does not duplicate a declaration already inside the window", () => {
+    const entries = [
+      ...filler(3, 0),
+      call("d", now - 5000, ORIGIN_A),
+      entry("x", "cycle", now - 3000),
+      verdict("v", now - 1000, ORIGIN_A),
+    ];
+    const got = captureHighlights(new Set(), state(entries), now);
+    expect(got[0].entries.map((e) => e.id)).toEqual([
+      "f0",
+      "f1",
+      "f2",
+      "d",
+      "x",
+      "v",
+    ]);
+  });
+
+  it("pairs each verdict with its own declaration when two forecasts are outstanding", () => {
+    const entries = [
+      call("da", now - 2 * 3600000, ORIGIN_A),
+      call("db", now - 3600000, ORIGIN_B),
+      ...filler(10, 0),
+      verdict("va", now - 2000, ORIGIN_A),
+      verdict("vb", now - 1000, ORIGIN_B, "forecastMiss"),
+    ];
+    const got = captureHighlights(new Set(), state(entries), now);
+    expect(got).toHaveLength(2);
+    expect(got[0].entries[0].id).toBe("da");
+    expect(got[0].entries.some((e) => e.id === "db")).toBe(false);
+    expect(got[1].entries[0].id).toBe("db");
+    expect(got[1].entries.some((e) => e.id === "da")).toBe(false);
+  });
+
+  it("a declaration alone never becomes a highlight", () => {
+    const entries = [call("d", now - 1000, ORIGIN_A), ...filler(3, 0)];
+    expect(captureHighlights(new Set(), state(entries), now)).toHaveLength(0);
+    expect(isHighlightEntry(call("d", now, ORIGIN_A))).toBe(false);
+    expect(isHighlightEntry(verdict("v", now, ORIGIN_A))).toBe(true);
+    expect(isHighlightEntry(verdict("v", now, ORIGIN_A, "forecastMiss"))).toBe(
+      true,
+    );
+  });
+
+  it("a verdict from before origins were recorded finds no declaration", () => {
+    const entries = [
+      call("d", now - 2 * 3600000, ORIGIN_A),
+      ...filler(10, 0),
+      verdict("v", now - 1000, undefined),
+    ];
+    const got = captureHighlights(new Set(), state(entries), now);
+    expect(got).toHaveLength(1);
+    expect(got[0].entries).toHaveLength(8);
+    expect(got[0].entries[0].id).not.toBe("d");
+    expect(declarationForVerdict(entries, entries.length - 1)).toBeNull();
+  });
+
+  it("never borrows another pair's declaration", () => {
+    // The SUI list holds the verdict; the same origin's
+    // declaration exists only in the WAL pair's own list.
+    const suiEntries = [
+      ...filler(10, 0),
+      verdict("v", now - 1000, ORIGIN_A),
+    ];
+    const walEntries = [call("d", now - 2 * 3600000, ORIGIN_A)];
+    const got = captureHighlights(new Set(), state(suiEntries), now);
+    expect(got).toHaveLength(1);
+    expect(got[0].entries).toHaveLength(8);
+    expect(got[0].entries.some((e) => e.id === "d")).toBe(false);
+    // And the WAL list on its own has no moment to capture.
+    expect(captureHighlights(new Set(), state(walEntries), now)).toHaveLength(
+      0,
+    );
+  });
+
+  it("round-trips a nine-entry verdict highlight through storage", () => {
+    const entries = [
+      call("d", now - 2 * 3600000, ORIGIN_A),
+      ...filler(10, 0),
+      verdict("v", now - 1000, ORIGIN_A),
     ];
     const got = captureHighlights(new Set(), state(entries), now);
     const store = new Map<string, string>();

@@ -127,6 +127,9 @@ describe("advanceNarration forecast declarations", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].text).toContain("上昇 +1.2%");
     expect(calls[0].text).toContain("答え合わせは2時間後");
+    // The declaration carries the forecast's origin, so its
+    // verdict can later be paired with this exact promise.
+    expect(calls[0].forecastOrigin).toBe(origin);
     expect(next.forecastDeclared[String(origin)]).toBe(T0 + 2 * MIN);
     const again = advanceNarration(
       next,
@@ -397,6 +400,7 @@ describe("advanceNarration forecast verdicts", () => {
     expect(hits).toHaveLength(1);
     expect(hits[0].text).toContain("的中");
     expect(hits[0].text).toContain("+1.5%");
+    expect(hits[0].forecastOrigin).toBe(origin);
     expect(next.lastHitAt).toBe(T0);
     expect(next.forecastSettled[String(origin)]).toBe(true);
     const again = advanceNarration(next, ops({}), "sleeping", T0 + MIN, undefined, null, input);
@@ -422,6 +426,7 @@ describe("advanceNarration forecast verdicts", () => {
     expect(misses).toHaveLength(1);
     expect(misses[0].text).toContain("外れ");
     expect(misses[0].text).toContain("-0.8%");
+    expect(misses[0].forecastOrigin).toBe(origin);
 
     const staleOrigin = T0 / 1000 - 5 * 3600;
     const stale = advanceNarration(
@@ -492,7 +497,7 @@ describe("forecast narration rendering and storage", () => {
     const entry = (
       id: string,
       kind: "forecastCall" | "forecastHit" | "forecastMiss",
-    ) => ({ id, at: T0, kind, text: "x" });
+    ) => ({ id, at: T0, kind, text: "x", forecastOrigin: 123 });
     const state = {
       ...emptyNarrationState(),
       entries: [
@@ -511,6 +516,11 @@ describe("forecast narration rendering and storage", () => {
       "forecastCall",
       "forecastHit",
       "forecastMiss",
+    ]);
+    // The forecast origin on the entries survives the round
+    // trip, so verdict/declaration pairing works after a reload.
+    expect(restored.entries.map((e) => e.forecastOrigin)).toEqual([
+      123, 123, 123,
     ]);
     expect(restored.forecastDeclared).toEqual({ "123": T0 });
     expect(restored.forecastSettled).toEqual({ "123": true });
