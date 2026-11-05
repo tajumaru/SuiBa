@@ -87,12 +87,18 @@ if [ -d /var/lib/suiba-incoming ]; then
   incoming_count=$(ls /var/lib/suiba-incoming | wc -l)
   incoming_count=$((incoming_count))
 fi
-printf '%s\n' SSH_PREFLIGHT_OK "$(id -un)" "$client" "$compose" "$engine_package" "$mem_total" "$mem_available" "$disk_available" "$current_name" "$current_mtime" "$releases_count" "$backups_count" "$newest_backup_mtime" "$uptime_seconds" "$load1" "$deploy_wrapper" "$paper_check_wrapper" "$runtime_env" "$admin_token" "$incoming_exists" "$incoming_count"
+broker_hash=none
+if [ -r /usr/local/libexec/suiba-deploy-broker.py ]; then
+  broker_hash=$(sha256sum /usr/local/libexec/suiba-deploy-broker.py | awk '{print $1}')
+fi
+shared_uid=$(stat -c %u /opt/suiba/shared)
+shared_mode=$(stat -c %a /opt/suiba/shared)
+printf '%s\n' SSH_PREFLIGHT_OK "$(id -un)" "$client" "$compose" "$engine_package" "$mem_total" "$mem_available" "$disk_available" "$current_name" "$current_mtime" "$releases_count" "$backups_count" "$newest_backup_mtime" "$uptime_seconds" "$load1" "$deploy_wrapper" "$paper_check_wrapper" "$runtime_env" "$admin_token" "$incoming_exists" "$incoming_count" "$broker_hash" "$shared_uid" "$shared_mode"
 REMOTE
 )
 timeout 45s ssh "${opts[@]}" "$VPS_USER@$VPS_HOST" "$remote" >"$result" 2>"$errors" || fail
 mapfile -t reply < "$result"
-[[ ${#reply[@]} == 21 && ${reply[0]} == SSH_PREFLIGHT_OK && ${reply[1]} == "$VPS_USER" ]] || fail
+[[ ${#reply[@]} == 24 && ${reply[0]} == SSH_PREFLIGHT_OK && ${reply[1]} == "$VPS_USER" ]] || fail
 [[ ${reply[2]} =~ ^[0-9]+\.[0-9]+\.[0-9]+([.+~-][a-zA-Z0-9.-]+)?$ ]] || fail
 [[ ${reply[3]} =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([.+~-][a-zA-Z0-9.-]+)?$ ]] || fail
 [[ ${reply[4]} =~ ^[0-9][a-zA-Z0-9.+:~_-]*$ ]] || fail
@@ -124,6 +130,12 @@ for index in 15 16 17 18 19; do
   [[ ${reply[index]} =~ ^[01]$ ]] || fail
 done
 [[ ${reply[20]} =~ ^[0-9]{1,10}$ ]] || fail
+# Installed broker identity (lets the operator confirm a host-side
+# broker replacement landed, without opening a shell) and the shared
+# directory's owner/mode (the broker requires root-owned ancestors).
+[[ ${reply[21]} =~ ^(none|[0-9a-f]{64})$ ]] || fail
+[[ ${reply[22]} =~ ^[0-9]{1,10}$ ]] || fail
+[[ ${reply[23]} =~ ^[0-7]{3,4}$ ]] || fail
 echo 'SSH_PREFLIGHT_OK: expected non-root user and fixed read-only checks passed; no deployment or Worker startup'
 # Only validated non-secret version/resource fields are released to the log.
 printf 'DockerCLI=%s Compose=%s EnginePackage=%s (running Engine version not checked)\n' "${reply[2]}" "${reply[3]}" "${reply[4]}"
@@ -131,3 +143,4 @@ printf 'MemoryTotalKiB=%s MemoryAvailableKiB=%s DiskAvailableKiB=%s\n' "${reply[
 printf 'CurrentRelease=%s ReleaseModifiedEpoch=%s Releases=%s\n' "${reply[8]}" "${reply[9]}" "${reply[10]}"
 printf 'Backups=%s NewestBackupEpoch=%s UptimeSeconds=%s Load1=%s\n' "${reply[11]}" "${reply[12]}" "${reply[13]}" "${reply[14]}"
 printf 'PrereqDeployWrapper=%s PrereqPaperCheckWrapper=%s PrereqRuntimeEnv=%s PrereqAdminToken=%s IncomingExists=%s IncomingEntries=%s\n' "${reply[15]}" "${reply[16]}" "${reply[17]}" "${reply[18]}" "${reply[19]}" "${reply[20]}"
+printf 'BrokerSha256=%s SharedOwnerUid=%s SharedMode=%s\n' "${reply[21]}" "${reply[22]}" "${reply[23]}"

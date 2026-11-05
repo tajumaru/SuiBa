@@ -85,6 +85,16 @@ with open(path, 'w') as target:
 PYEOF
 python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); assert d["approval_source"] == "ci"; print("policy OK:", ", ".join(sorted(d)))' "$POLICY"
 
+echo '== 補足チェック: shared ディレクトリの所有者と権限 =='
+shared_uid=$(stat -c %u "$SHARED")
+shared_mode=$(stat -c %a "$SHARED")
+echo "shared: uid=$shared_uid mode=$shared_mode"
+if [[ $shared_uid -ne 0 ]] || (( (8#$shared_mode & 022) != 0 )); then
+  echo '警告: ブローカーは shared が root 所有で、グループ/他者に書込不可であることを要求します。'
+  echo 'このままだと初回配置が DIRECTORY_OWNER_MODE で止まる可能性があります。必要なら次を実行してください:'
+  echo "  sudo chown root:root $SHARED && sudo chmod 755 $SHARED"
+fi
+
 echo
 echo '完了しました。シロ（Muse）に「終わった」と伝えてください。'
 echo 'こちらで SUIBA_BROKER_ENABLED を ON にして初回配置を dispatch します。'
