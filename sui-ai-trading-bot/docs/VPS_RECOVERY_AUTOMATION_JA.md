@@ -98,3 +98,18 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   切り替え当時の記録として残す。
 - broker の `OS_ERROR` の名前付きコード化と、診断→再試行承認→開始→監視の
   一本化は未着手（tracked item「SuiBa VPSリカバリ自動化」）。
+- 是正の Actions 化（2026-11-06）: 起動前チェックで死んだランの是正を
+  コントローラの `reconcile` 操作として実装し、`suiba-paper-reconcile.yml`
+  （確認フレーズ `RECONCILE-PAPER`、変数 `SUIBA_PAPER_RECONCILE_ENABLED`、
+  モード retry/deploy、deploy 時は sha 入力）から承認タップで実行できる
+  ようにした。証拠チェックと是正手順は `reconcile-preflight.sh` と同一で、
+  シェル版は非常用として残す。あわせて CI モードで `approve-deploy` が
+  前提とする `approvals/<sha>.json` を誰も書かない不整合を解消した:
+  CI モードではコントローラが最小レコード（sha/operation/expires 1時間）
+  を materialize する（配置自体の承認は GitHub Environment と ci_run の
+  単調増加が担う）。
+- 配置コンテナの環境変数（2026-11-06）: paper-check の env 検査が
+  要求する TRADING_PAIR=SUI_USDC / PAPER_CHECK_MODE=sui-30m /
+  MARKET_DATA_PROVIDER=geckoterminal を `docker/compose.vps.yaml` に
+  固定した。broker の setup（setup-ci-approval.sh）が policy の
+  compose.yaml もピン検証付きで配布し、`compose_sha256` を更新する。

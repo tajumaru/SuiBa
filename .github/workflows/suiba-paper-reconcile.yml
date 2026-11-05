@@ -1,0 +1,49 @@
+name: SuiBa PAPER check reconcile
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type RECONCILE-PAPER"
+        required: true
+        type: string
+      mode:
+        description: "retry = same release again; deploy = permit one fresh deployment"
+        required: true
+        type: choice
+        default: "retry"
+        options:
+          - "retry"
+          - "deploy"
+      sha:
+        description: "Full release SHA to permit (deploy mode only; leave empty for retry)"
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: suiba-paper-reconcile
+  cancel-in-progress: false
+jobs:
+  paper-reconcile:
+    # Repository variable, NOT an Environment variable: evaluated before job startup.
+    # Missing/false disables all SSH. Reconciling changes host state, so this
+    # workflow carries its own enable variable on top of the Environment approval.
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'RECONCILE-PAPER' && vars.SUIBA_PAPER_RECONCILE_ENABLED == 'true'
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Reconcile a preflight-dead PAPER run through the fixed wrapper
+        env:
+          PAPER_RECONCILE_CONFIRMATION: ${{ inputs.confirmation }}
+          PAPER_RECONCILE_MODE: ${{ inputs.mode }}
+          PAPER_RECONCILE_SHA: ${{ inputs.sha }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-paper-reconcile.sh

@@ -39,6 +39,7 @@ CUTOFF = 'suiba-paper-check-cutoff.service'
 # cutoff and in the per-length cutoff timer, so a started run can never
 # be extended by the container, the Worker, or a later request.
 DURATIONS = {'30m': 1800, '6h': 21600, '24h': 86400}
+RECONCILE_BACKUPS = Path('/root')
 PREFLIGHT_CHECKS = ('storage', 'ledger', 'container', 'admission')
 
 
@@ -447,6 +448,17 @@ class Controller:
                 marker = self.b.decode(self.b.read_trusted(self.b.STATE/'paper-check.json'))
                 require(marker == {'status': 'in_progress'})
                 approval_path = self.b.POLICY/'approvals'/(sha+'.json')
+                policy = self.b.decode(self.b.read_trusted(self.b.POLICY/'policy.json'))
+                if policy.get('approval_source') == 'ci' and not os.path.lexists(approval_path):
+                    # In CI mode the deploy's approval is the GitHub
+                    # Environment approval bound to the CI run; no
+                    # local approval file is ever placed. Materialize
+                    # the minimal record the permit chain binds (sha,
+                    # operation, expiry) so a reviewed deploy can be
+                    # permitted. The one-hour window bounds how long
+                    # the permit stays consumable.
+                    self.b.atomic(approval_path, {'sha': sha, 'operation': 'deploy',
+                                                  'expires': int(time.time()) + 3600})
                 approval_bytes = self.b.read_trusted(approval_path)
                 approval = self.b.decode(approval_bytes)
                 require(approval['sha'] == sha and approval['operation'] == 'deploy')
@@ -474,6 +486,61 @@ class Controller:
                     os.fsync(out.fileno())
                 with self.b.directory(self.b.STATE) as directory_fd:
                     os.fsync(directory_fd)
+
+    def reconcile_preflight(self, mode, sha=None):
+        # The reconcile-preflight.sh procedure as a controller
+        # operation, so recovery runs through the approval-gated
+        # workflows instead of a host terminal. The scope is the
+        # same: only a run that died before admission with
+        # PREFLIGHT_INCOMPLETE and every piece of evidence in its
+        # expected place. Any mismatch refuses before any mutation.
+        require(mode in ('retry', 'deploy'))
+        if mode == 'deploy':
+            require(type(sha) is str and self.b.SHA.fullmatch(sha))
+        record = self.current()
+        require(record['status'] == 'failed_requires_review')
+        folder = self.folder(record)
+        stop = self.b.decode(self.b.read_trusted(folder/'stop.json'))
+        require(stop['id'] == record['id'] and stop['status'] == 'failed_state_unknown'
+                and stop['errors'] == ['PREFLIGHT_INCOMPLETE'])
+        state = self.inspect()['State']
+        require(state['StartedAt'] == '0001-01-01T00:00:00Z' and not state['Running'] and state['ExitCode'] == 0)
+        ledger = self.b.decode(self.b.read_trusted(self.b.STATE/'ledger.json'))
+        require(ledger['status'] == 'prepared_stopped')
+        volume = self.b.decode(self.docker.call(['volume', 'inspect', self.b.DATA], timeout=10))
+        require(len(volume) == 1 and volume[0]['Name'] == self.b.DATA)
+        require((Path(volume[0]['Mountpoint'])/'bot.sqlite.maintenance').is_file())
+        raw = subprocess.check_output(['/usr/bin/systemctl', 'show', SERVICE, '-p', 'ActiveState', '-p', 'Job'],
+                                      timeout=5, env={'PATH': '/usr/bin:/bin'}, stderr=subprocess.DEVNULL).decode()
+        values = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
+        require(values.get('ActiveState') in ('inactive', 'failed') and values.get('Job') in ('', '0'))
+        self.quiescent()
+        broker_latch = self.b.STATE/'paper-check-failed.json'
+        require(os.path.lexists(broker_latch))
+        # Evidence complete. Preserve it, move the fault markers
+        # aside and heal the stop receipts to the clean state the
+        # approval paths require.
+        backup = RECONCILE_BACKUPS/('reconcile-' + time.strftime('%Y%m%d%H%M%S'))
+        backup.mkdir(mode=0o700)
+        shutil.copy2(self.record, backup/'run.json')
+        shutil.copy2(folder/'stop.json', backup/'stop.json')
+        if (self.state/'stop.json').exists():
+            shutil.copy2(self.state/'stop.json', backup/'stop-root.json')
+        os.replace(broker_latch, backup/'paper-check-failed.json')
+        for fault in sorted(folder.glob('fault-*.json')):
+            os.replace(fault, backup/fault.name)
+        self.receipt(record, 'clean_stopped', [])
+        if mode == 'deploy':
+            self.approve_deploy(record['id'], sha)
+            return {'reconciled': True, 'mode': 'deploy', 'backup': backup.name}
+        report = self.diagnose()
+        require(report['stop']['status'] == 'clean_stopped' and not report['requires_review'])
+        with self.locked('stop'), self.locked('mutation'):
+            require(self.current()['id'] == record['id'])
+            require(not os.path.lexists(folder/'retry-consumed.json'))
+            require(not os.path.lexists(folder/'retry-approved.json'))
+            self.b.atomic(folder/'retry-approved.json', {'id': record['id']})
+        return {'reconciled': True, 'mode': 'retry', 'backup': backup.name}
 
     def diagnostic_backup(self, record, source):
         backup = record.get('backup')
@@ -1017,12 +1084,18 @@ def main():
             signal.alarm(5)
             request = b.decode(sys.stdin.buffer.read(257))
             signal.alarm(0)
-            require(isinstance(request, dict) and set(request) <= {'operation', 'duration'} and
-                    request.get('operation') in ('start', 'status', 'abort', 'diagnose'))
-            require(request['operation'] == 'start' or set(request) == {'operation'})
+            require(isinstance(request, dict) and set(request) <= {'operation', 'duration', 'mode', 'sha'} and
+                    request.get('operation') in ('start', 'status', 'abort', 'diagnose', 'reconcile'))
+            require(request['operation'] in ('start', 'reconcile') or set(request) == {'operation'})
+            require(request['operation'] == 'start' or 'duration' not in request)
             duration = request.get('duration', '30m')
             require(duration in DURATIONS)
-            if request['operation'] == 'diagnose':
+            if request['operation'] == 'reconcile':
+                mode = request.get('mode', 'retry')
+                require(mode in ('retry', 'deploy'))
+                require(mode == 'deploy' or 'sha' not in request)
+                print(json.dumps(controller.reconcile_preflight(mode, request.get('sha'))))
+            elif request['operation'] == 'diagnose':
                 print(json.dumps(controller.diagnose()))
             elif request['operation'] == 'status':
                 record = controller.current()
