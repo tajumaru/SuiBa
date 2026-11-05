@@ -1,5 +1,5 @@
 import type { DecisionTelemetry } from "../../../worker/src/operations.ts";
-import type { DecisionTrail, EntryCondKey, EntryConditionChip, EntryDraft, NarrationKind, NarrationState, WatchDisplay, WatchScoreDisplay, WatchTarget } from "./state.ts";
+import type { DecisionTrail, EntryCondKey, EntryConditionChip, EntryDraft, NarrationKind, NarrationState, WatchDisplay, WatchKindStats, WatchScoreDisplay, WatchTarget } from "./state.ts";
 import { emaGapPct, entryConditions, macdWord, metEntryConditions, rsiPoints, unmetDistance, watchDistance, watchRatio } from "./decision.ts";
 import { number as fmtNumber, percent as fmtPercent } from "../presentation.ts";
 import { freshDecision } from "./state.ts";
@@ -516,17 +516,72 @@ export function currentWatch(
  * watch strip). The counts are the session's cumulative record;
  * 進行中 simply mirrors whether a watch is live right now.
  */
+/** The fixed order kinds are listed and tie-broken in. */
+export const WATCH_KIND_ORDER: EntryCondKey[] = [
+  "emaUp",
+  "rsiRecovery",
+  "histogramImproving",
+];
+
+/** Record one settled watch in the per-kind stats (pure). */
+export function recordWatchKind(
+  stats: WatchKindStats,
+  key: EntryCondKey,
+  settled: "hit" | "miss",
+): WatchKindStats {
+  const s = stats[key];
+  return {
+    ...stats,
+    [key]: {
+      hits: s.hits + (settled === "hit" ? 1 : 0),
+      misses: s.misses + (settled === "miss" ? 1 : 0),
+    },
+  };
+}
+
+/** A kind needs at least this many settlements before the feed
+ * names it the character's specialty — below that the rate is
+ * noise, and the line stays hidden. */
+export const SPECIALTY_MIN_JUDGED = 3;
+
+/** The specialty kind: best hit rate among kinds with enough
+ * settlements; ties break toward more settlements, then toward
+ * the fixed kind order. Null while nothing qualifies. */
+export function specialtyOf(
+  stats: WatchKindStats,
+): { key: EntryCondKey; hits: number; judged: number } | null {
+  let best: { key: EntryCondKey; hits: number; judged: number } | null =
+    null;
+  for (const key of WATCH_KIND_ORDER) {
+    const s = stats[key];
+    const judged = s.hits + s.misses;
+    if (judged < SPECIALTY_MIN_JUDGED) continue;
+    if (
+      best == null ||
+      s.hits / judged > best.hits / best.judged ||
+      (s.hits / judged === best.hits / best.judged && judged > best.judged)
+    )
+      best = { key, hits: s.hits, judged };
+  }
+  return best;
+}
+
 export function currentWatchScore(
   state: NarrationState,
   dec: DecisionTelemetry | null | undefined,
   now: number,
 ): WatchScoreDisplay | null {
   if (!dec || !freshDecision(dec, now)) return null;
+  const specialty = specialtyOf(state.watchKindStats);
   return {
     declared: state.watchScore.declared,
     hits: state.watchScore.hits,
     misses: state.watchScore.misses,
     inProgress: state.watch ? 1 : 0,
+    kindStats: state.watchKindStats,
+    specialty: specialty
+      ? { ...specialty, name: WATCH_NAME[specialty.key] }
+      : null,
   };
 }
 

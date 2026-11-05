@@ -10,6 +10,7 @@ import {
   type AgentChatContext,
 } from "../apps/dashboard/src/agentChat.ts";
 import {
+  emptyWatchKindStats,
   MAX_CHAT_ENTRIES,
   MAX_NARRATION_ENTRIES,
   trimNarrationEntries,
@@ -60,7 +61,7 @@ function dec(overrides: Partial<DecisionTelemetry> = {}): DecisionTelemetry {
 function ctx(overrides: Partial<AgentChatContext> = {}): AgentChatContext {
   return {
     dec: dec(),
-    score: { declared: 6, hits: 3, misses: 2, inProgress: 1 },
+    score: { declared: 6, hits: 3, misses: 2, inProgress: 1, kindStats: emptyWatchKindStats(), specialty: null },
     linePrice: null,
     running: true,
     stoppedKind: null,
@@ -128,7 +129,7 @@ describe("agent chat replies", () => {
     expect(
       agentReply(
         "調子は？",
-        ctx({ score: { declared: 0, hits: 0, misses: 0, inProgress: 0 } }),
+        ctx({ score: { declared: 0, hits: 0, misses: 0, inProgress: 0, kindStats: emptyWatchKindStats(), specialty: null } }),
       ).text,
     ).toContain("まだ宣言は出してない");
   });
@@ -203,7 +204,7 @@ describe("agent chat replies", () => {
     expect(
       agentReply(
         "次の見どころは？",
-        ctx({ score: { declared: 0, hits: 0, misses: 0, inProgress: 0 } }),
+        ctx({ score: { declared: 0, hits: 0, misses: 0, inProgress: 0, kindStats: emptyWatchKindStats(), specialty: null } }),
       ).text,
     ).toContain("MACDが揃うかどうか");
   });
@@ -313,26 +314,26 @@ describe("agent chat replies", () => {
 
   it("derives the mood from the recorded score only", () => {
     expect(
-      chatMood({ declared: 5, hits: 4, misses: 1, inProgress: 0 }),
+      chatMood({ declared: 5, hits: 4, misses: 1, inProgress: 0, kindStats: emptyWatchKindStats(), specialty: null }),
     ).toBe("confident");
     expect(
-      chatMood({ declared: 5, hits: 1, misses: 4, inProgress: 0 }),
+      chatMood({ declared: 5, hits: 1, misses: 4, inProgress: 0, kindStats: emptyWatchKindStats(), specialty: null }),
     ).toBe("humble");
     expect(
-      chatMood({ declared: 6, hits: 3, misses: 2, inProgress: 1 }),
+      chatMood({ declared: 6, hits: 3, misses: 2, inProgress: 1, kindStats: emptyWatchKindStats(), specialty: null }),
     ).toBe("neutral");
     expect(chatMood(null)).toBe("neutral");
     // The mood colours the score closer and the encouragement.
     expect(
       agentReply(
         "調子は？",
-        ctx({ score: { declared: 5, hits: 4, misses: 1, inProgress: 0 } }),
+        ctx({ score: { declared: 5, hits: 4, misses: 1, inProgress: 0, kindStats: emptyWatchKindStats(), specialty: null } }),
       ).text,
     ).toContain("この調子でいくよ");
     expect(
       agentReply(
         "がんばれ",
-        ctx({ score: { declared: 5, hits: 1, misses: 4, inProgress: 0 } }),
+        ctx({ score: { declared: 5, hits: 1, misses: 4, inProgress: 0, kindStats: emptyWatchKindStats(), specialty: null } }),
       ).text,
     ).toContain("次は決める");
   });

@@ -3,6 +3,7 @@ import type {
   MonthlyCounters,
   NarrationEntry,
   NarrationState,
+  WatchKindStats,
   WatchScore,
 } from "./state.ts";
 import { emptyMonthlyCounters, freshDecision } from "./state.ts";
@@ -36,6 +37,7 @@ import {
   REVIEW_BUY_MIN_SETTLED,
   REVIEW_SETTLED_THRESHOLD,
   processWatch,
+  recordWatchKind,
   reviewNarrationTexts,
 } from "./watch.ts";
 import { ALERT_COOLDOWN_CYCLES, ALERT_HISTORY_KEEP, spikeAlert } from "./alerts.ts";
@@ -177,6 +179,7 @@ export interface AdvanceWork {
   priceRising: NarrationState["priceRising"];
   watch: NarrationState["watch"];
   watchScore: WatchScore;
+  watchKindStats: WatchKindStats;
   sessionStartPrice: NarrationState["sessionStartPrice"];
   priceHistory: NarrationState["priceHistory"];
   alertCooldown: NarrationState["alertCooldown"];
@@ -399,6 +402,14 @@ if (dec && (work.lastDecisionAt == null || dec.evaluatedAt > work.lastDecisionAt
     // The declared watch advances with the same cycle: its lines
     // frame the cycle's own narration (before / after).
     const outcome = processWatch(work.watch, dec);
+    // The settled watch is the one that was live at the cycle's
+    // start: its kind takes the hit or miss in the per-kind record.
+    if (outcome.settled != null && work.watch != null)
+      work.watchKindStats = recordWatchKind(
+        work.watchKindStats,
+        work.watch.key,
+        outcome.settled,
+      );
     work.watch = outcome.watch;
     if (outcome.before.some((draft) => draft.kind === "watchHit"))
       work.lastHitAt = dec.evaluatedAt;

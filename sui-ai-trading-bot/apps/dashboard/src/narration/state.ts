@@ -93,6 +93,25 @@ export interface WatchScore {
   unreviewed: number;
 }
 
+/** Settlements split by the watched condition (the character's
+ * per-kind record — the material for its 得意技）. Counted only at
+ * the same moments the session score settles a watch, so the two
+ * can never disagree; a watch that ends silently counts in
+ * neither, exactly as in WatchScore. */
+export interface WatchKindStat {
+  hits: number;
+  misses: number;
+}
+export type WatchKindStats = Record<EntryCondKey, WatchKindStat>;
+
+export function emptyWatchKindStats(): WatchKindStats {
+  return {
+    emaUp: { hits: 0, misses: 0 },
+    rsiRecovery: { hits: 0, misses: 0 },
+    histogramImproving: { hits: 0, misses: 0 },
+  };
+}
+
 /** Which way a spike alert jumped; "volume" is a volume-only spike. */
 export type SpikeAlertDirection = "up" | "down" | "volume";
 
@@ -137,6 +156,9 @@ export interface NarrationState {
   sellLines: { tp: number; sl: number } | null;
   /** Cumulative session score of declared watches (see WatchScore). */
   watchScore: WatchScore;
+  /** The same settlements split by watched condition (see
+   * WatchKindStats). */
+  watchKindStats: WatchKindStats;
   /** Price of the first decision evidence this session received. */
   sessionStartPrice: number | null;
   /** Dedupe keys for operation events (`e:...`) and candidates (`c:...`). */
@@ -294,6 +316,7 @@ export function emptyNarrationState(): NarrationState {
     lastSleepTalkText: null,
     watch: null,
     watchScore: { declared: 0, hits: 0, misses: 0, unreviewed: 0 },
+    watchKindStats: emptyWatchKindStats(),
     sessionStartPrice: null,
     seen: [],
     retiredEventThrough: null,
@@ -388,6 +411,17 @@ export interface WatchScoreDisplay {
   misses: number;
   /** 1 while a watch is live, otherwise 0. */
   inProgress: number;
+  /** Settlements split by watched condition (see WatchKindStats). */
+  kindStats: WatchKindStats;
+  /** The character's specialty: the kind with the best hit rate
+   * among those settled at least SPECIALTY_MIN_JUDGED times, or
+   * null while no kind has enough of a record to name one. */
+  specialty: {
+    key: EntryCondKey;
+    name: string;
+    hits: number;
+    judged: number;
+  } | null;
 }
 
 export interface SpikeAlert {

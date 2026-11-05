@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   emptyNarrationState,
+  emptyWatchKindStats,
   MAX_CHAT_ENTRIES,
   MAX_NARRATION_ENTRIES,
   type NarrationState,
@@ -107,6 +108,15 @@ const schema: z.ZodType<NarrationState> = z.object({
     misses: number,
     unreviewed: number,
   }),
+  // Stored states from before the per-kind stats existed parse
+  // with the default instead of being thrown away.
+  watchKindStats: z
+    .object({
+      emaUp: z.object({ hits: number, misses: number }),
+      rsiRecovery: z.object({ hits: number, misses: number }),
+      histogramImproving: z.object({ hits: number, misses: number }),
+    })
+    .default(emptyWatchKindStats()),
   sessionStartPrice: nullableNumber,
   seen: z.array(z.string()).max(200),
   retiredEventThrough: nullableNumber,

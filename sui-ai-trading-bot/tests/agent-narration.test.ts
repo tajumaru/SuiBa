@@ -18,6 +18,8 @@ import {
   cycleNarrationText,
   decisionTrail,
   emptyNarrationState,
+  emptyWatchKindStats,
+  specialtyOf,
   sellLinesOf,
   entryConditionChips,
   MAX_NARRATION_ENTRIES,
@@ -389,6 +391,16 @@ describe("agent narration: persistence across revisits", () => {
   ])("ignores invalid storage: %s", (raw) => {
     expect(restoreNarration({ getItem: () => raw, setItem: () => {} })).toEqual(
       emptyNarrationState(),
+    );
+  });
+
+  it("restores a state saved before the per-kind stats existed", () => {
+    const legacy = { ...emptyNarrationState() } as Record<string, unknown>;
+    delete legacy.watchKindStats;
+    const saved = storage();
+    saved.setItem("suiba.narration.v1", JSON.stringify(legacy));
+    expect(restoreNarration(saved).watchKindStats).toEqual(
+      emptyWatchKindStats(),
     );
   });
 
@@ -1610,6 +1622,53 @@ describe("agent narration: watch declaration", () => {
     expect(state.watch?.key).toBe("histogramImproving");
   });
 
+  it("counts settlements per watched kind, in step with the score", () => {
+    const hit = feed([
+      decision({}),
+      decision({
+        evaluatedAt: NOW - 50_000,
+        conditions: { histogramImproving: true },
+        histogram: -0.001,
+        previousHistogram: -0.002,
+      }),
+    ]);
+    expect(hit.watchScore.hits).toBe(1);
+    expect(hit.watchKindStats.histogramImproving).toEqual({
+      hits: 1,
+      misses: 0,
+    });
+    expect(hit.watchKindStats.rsiRecovery).toEqual({ hits: 0, misses: 0 });
+    expect(hit.watchKindStats.emaUp).toEqual({ hits: 0, misses: 0 });
+
+    const miss = feed([
+      decision({ rsi: 31 }),
+      decision({ evaluatedAt: NOW - 50_000, rsi: 32 }),
+    ]);
+    expect(miss.watchScore.misses).toBe(1);
+    expect(miss.watchKindStats.rsiRecovery).toEqual({ hits: 0, misses: 1 });
+    expect(miss.watchKindStats.histogramImproving).toEqual({
+      hits: 0,
+      misses: 0,
+    });
+  });
+
+  it("names a specialty only from three or more settlements of a kind", () => {
+    expect(specialtyOf(emptyWatchKindStats())).toBeNull();
+    const two = emptyWatchKindStats();
+    two.rsiRecovery = { hits: 2, misses: 0 };
+    expect(specialtyOf(two)).toBeNull();
+    // Best rate wins over raw volume: 3/3 beats 4/6.
+    const stats = emptyWatchKindStats();
+    stats.rsiRecovery = { hits: 4, misses: 2 };
+    stats.emaUp = { hits: 3, misses: 0 };
+    expect(specialtyOf(stats)).toEqual({ key: "emaUp", hits: 3, judged: 3 });
+    // Equal rates break toward more settlements.
+    const tied = emptyWatchKindStats();
+    tied.rsiRecovery = { hits: 4, misses: 2 };
+    tied.emaUp = { hits: 2, misses: 1 };
+    expect(specialtyOf(tied)?.key).toBe("rsiRecovery");
+  });
+
   it("a called RSI watch that slips away is a near miss, still scored a miss", () => {
     const far = {
       ema20: 2.3,
@@ -2260,6 +2319,8 @@ describe("agent narration: watch score and review", () => {
       hits: 0,
       misses: 0,
       inProgress: 1,
+      kindStats: emptyWatchKindStats(),
+      specialty: null,
     });
     expect(currentWatchScore(state, null, NOW)).toBeNull();
     const stale = {
@@ -2268,6 +2329,27 @@ describe("agent narration: watch score and review", () => {
       candleTimestamp: NOW - 500_000,
     };
     expect(currentWatchScore(state, stale, NOW)).toBeNull();
+  });
+
+  it("currentWatchScore names the specialty from the per-kind record", () => {
+    const { db, monitor } = fixture();
+    const d1 = runningSnapshot(db, monitor, decision({}));
+    const state = {
+      ...emptyNarrationState(),
+      watchKindStats: {
+        emaUp: { hits: 1, misses: 1 },
+        rsiRecovery: { hits: 3, misses: 1 },
+        histogramImproving: { hits: 0, misses: 0 },
+      },
+    };
+    const display = currentWatchScore(state, d1.decision, NOW);
+    expect(display?.specialty).toEqual({
+      key: "rsiRecovery",
+      name: "RSI",
+      hits: 3,
+      judged: 4,
+    });
+    expect(display?.kindStats.rsiRecovery.hits).toBe(3);
   });
 
   it("review lines are built only from the recorded facts handed in", () => {

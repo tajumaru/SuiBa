@@ -71,12 +71,29 @@ describe("chat commands", () => {
     const out = runChatCommand(
       "/score",
       ctx({
-        score: { declared: 7, inProgress: 1, hits: 4, misses: 2 },
+        score: {
+          declared: 7,
+          inProgress: 1,
+          hits: 4,
+          misses: 2,
+          kindStats: {
+            emaUp: { hits: 1, misses: 0 },
+            rsiRecovery: { hits: 3, misses: 2 },
+            histogramImproving: { hits: 0, misses: 0 },
+          },
+          specialty: null,
+        },
       }),
     );
     expect(out).toContain("declared");
     expect(out).toContain("hit-rate");
     expect(out).toContain("67%");
+    // Settled kinds get a row each; an unsettled kind gets none.
+    expect(out).toContain("EMAの差");
+    expect(out).toContain("的中 1/1");
+    expect(out).toContain("RSI");
+    expect(out).toContain("的中 3/5");
+    expect(out).not.toContain("MACD");
     expect(runChatCommand("/score", ctx())).toContain("まだ集計なし");
   });
 

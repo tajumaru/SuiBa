@@ -66,10 +66,10 @@
    decision, watch, alerts, advance, pose). This file is only the
    public surface: it re-exports exactly what the former single
    module exported, so import sites are unchanged. */
-export type { AgentPose, NarrationKind, NarrationEntry, WatchTarget, WatchScore, SpikeAlertDirection, NarrationState, DecisionTrail, ConditionChipTone, EntryConditionChip, WatchDisplay, WatchScoreDisplay, SpikeAlert } from "./narration/state.ts";
-export { MAX_NARRATION_ENTRIES, MAX_CHAT_ENTRIES, trimNarrationEntries, DECISION_FRESH_MS, emptyNarrationState } from "./narration/state.ts";
+export type { AgentPose, NarrationKind, NarrationEntry, WatchTarget, WatchScore, WatchKindStat, WatchKindStats, SpikeAlertDirection, NarrationState, DecisionTrail, ConditionChipTone, EntryConditionChip, WatchDisplay, WatchScoreDisplay, SpikeAlert } from "./narration/state.ts";
+export { MAX_NARRATION_ENTRIES, MAX_CHAT_ENTRIES, trimNarrationEntries, DECISION_FRESH_MS, emptyNarrationState, emptyWatchKindStats } from "./narration/state.ts";
 export { decisionTrail, metEntryConditions, cycleNarrationText, sellLinesOf } from "./narration/decision.ts";
-export { WATCH_APPROACH_RATIO, WATCH_WITHDRAW_RATIO, REVIEW_SETTLED_THRESHOLD, REVIEW_BUY_MIN_SETTLED, entryConditionChips, currentConditionChips, currentWatch, currentWatchScore, reviewNarrationTexts } from "./narration/watch.ts";
+export { WATCH_APPROACH_RATIO, WATCH_WITHDRAW_RATIO, WATCH_NAME, WATCH_KIND_ORDER, REVIEW_SETTLED_THRESHOLD, REVIEW_BUY_MIN_SETTLED, SPECIALTY_MIN_JUDGED, entryConditionChips, currentConditionChips, currentWatch, currentWatchScore, recordWatchKind, reviewNarrationTexts, specialtyOf } from "./narration/watch.ts";
 export { ALERT_PRICE_LOOKBACK, ALERT_PRICE_THRESHOLD, ALERT_VOLUME_THRESHOLD, ALERT_COOLDOWN_CYCLES, spikeAlert } from "./narration/alerts.ts";
 export { FORECAST_CALL_COOLDOWN_MS, FORECAST_CALL_FRESH_MS, FORECAST_VERDICT_FRESH_MS, PRICE_LINE_MURMUR_PCT, SLEEP_TALK_INTERVAL_MS, advanceNarration, btcMutter } from "./narration/advance.ts";
 export { BOOK_ENTRY_MIN_INTERVAL_MS, BOOK_WALL_COOLDOWN_MS, WALL_MIN_MULTIPLE, WALL_NEAR_PCT, advanceBookWalls, detectBookWalls, type BookWall, type BookWallState } from "./narration/book.ts";

@@ -590,6 +590,12 @@ export function AgentNarrationFeed({
           </span>
         </div>
       )}
+      {score?.specialty && (
+        <div className="agent-feed-specialty">
+          得意技は{score.specialty.name}（的中{score.specialty.hits}・外れ
+          {score.specialty.judged - score.specialty.hits}）
+        </div>
+      )}
       {highlights.length > 0 && (
         <div className="highlight-bar" aria-label="ハイライト">
           <span className="highlight-bar-title">ハイライト</span>

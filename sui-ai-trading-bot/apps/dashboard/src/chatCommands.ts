@@ -8,6 +8,7 @@
  * they never disturb the conversation memory.
  */
 import type { AgentChatContext } from "./agentChat.ts";
+import { WATCH_KIND_ORDER, WATCH_NAME } from "./agentNarration.ts";
 
 export interface ChatCommand {
   name: string;
@@ -87,12 +88,21 @@ function scoreText(ctx: AgentChatContext): string {
   const judged = score.hits + score.misses;
   const rate =
     judged > 0 ? `${Math.round((score.hits / judged) * 100)}%` : "--";
+  // The per-kind record, under the totals it sums to — only kinds
+  // that have actually settled get a row.
+  const kindRows = WATCH_KIND_ORDER.filter(
+    (k) => score.kindStats[k].hits + score.kindStats[k].misses > 0,
+  ).map((k) => {
+    const s = score.kindStats[k];
+    return row(WATCH_NAME[k], `的中 ${s.hits}/${s.hits + s.misses}`);
+  });
   return [
     row("declared", `${score.declared}`),
     row("live", `${score.inProgress}`),
     row("hit", `${score.hits}`),
     row("miss", `${score.misses}`),
     row("hit-rate", rate),
+    ...kindRows,
   ].join("\n");
 }
 
