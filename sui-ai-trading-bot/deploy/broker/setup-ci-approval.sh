@@ -54,9 +54,9 @@ if [[ -e $SHARED/runtime.env ]]; then
     grep -qx "$want" <<< "$keys" || echo "  警告: runtime.env に $want がありません"
   done
   while IFS= read -r key; do
-    case " MARKET_DATA_PROVIDER DEEPBOOK_RECONSTRUCT_CANDLES SUI_GRPC_URL " in
-      *" $key "*) ;;
-      *) [[ -n $key ]] && echo "  警告: runtime.env に想定外のキー $key があります" ;;
+    case $key in
+      ''|MARKET_DATA_PROVIDER|DEEPBOOK_RECONSTRUCT_CANDLES|SUI_GRPC_URL) ;;
+      *) echo "  警告: runtime.env に想定外のキー $key があります" ;;
     esac
   done <<< "$keys"
 else

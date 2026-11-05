@@ -51,6 +51,6 @@ printf '{"operation":"start","duration":"%s"}\n' "$duration" |
 [[ $(cat "$result") == PAPER_CHECK_REQUEST_ACCEPTED ]] || fail
 {
   echo '### SuiBa PAPER check start'
-  echo '- Start: `accepted`'
+  echo "- Start: \`accepted\`"
   echo "- Duration: \`$duration\`"
 } | tee -a "${GITHUB_STEP_SUMMARY:?}"

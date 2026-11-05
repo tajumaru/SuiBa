@@ -5,9 +5,11 @@ on:
 permissions:
   contents: read
 jobs:
+  # Light path: typecheck, lint, build, render smoke and the unit
+  # suites. Runs for every change and finishes in about a minute.
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: sui-ai-trading-bot
@@ -19,36 +21,6 @@ jobs:
         run: |
           test "$(git rev-parse HEAD)" = "${{ github.sha }}"
           printf 'Verified HEAD: %s\n' "${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
-      # The Docker/packaging suites below verify the deploy
-      # machinery; they re-run only when that machinery (or the
-      # code it packages, or the dependency manifests, or the
-      # tests themselves) changed. Anything else — a dashboard
-      # change, say — cannot change their outcome. Scheduled
-      # and dispatched runs always take the heavy path, and a
-      # failed comparison fails safe to heavy as well.
-      - name: Decide whether the heavy suites are needed
-        id: changes
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          heavy=true
-          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "pull_request" ]; then
-            if [ "${{ github.event_name }}" = "push" ]; then
-              range="${{ github.event.before }}...${{ github.sha }}"
-            else
-              range="${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"
-            fi
-            files="$(gh api "repos/${{ github.repository }}/compare/$range" --jq '.files[].filename' 2>/dev/null || true)"
-            if [ -z "$files" ]; then
-              echo "Comparison unavailable; running the heavy suites."
-            elif printf '%s\n' "$files" | grep -Eq '^sui-ai-trading-bot/(docker|deploy|scripts|tests|apps/worker|packages)/|^sui-ai-trading-bot/(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$|^\.github/workflows/'; then
-              echo "Deploy machinery or packaged code changed; running the heavy suites."
-            else
-              heavy=false
-              echo "No heavy-suite inputs changed; skipping the Docker/packaging suites."
-            fi
-          fi
-          echo "heavy=$heavy" >> "$GITHUB_OUTPUT"
       # The pnpm version comes from package.json's
       # packageManager pin, via Corepack.
       - run: corepack enable
@@ -74,6 +46,16 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm build
+      # The browser payload is large and versioned by the lockfile;
+      # cache it. System dependencies still install on every run,
+      # because the runner image's library set is not pinned.
+      - name: Cache the render-smoke browser
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-ms-playwright-${{ hashFiles('sui-ai-trading-bot/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-ms-playwright-
       - name: Install the render-smoke browser
         run: pnpm exec playwright install --with-deps chromium
       - name: Render smoke (the built dashboard mounts, styles apply)
@@ -84,20 +66,71 @@ jobs:
         run: node --import tsx --test docker/vps-data.node.mjs docker/vps-deploy.node.mjs
       - name: Shell syntax and ShellCheck
         run: |
-          bash -n docker/deploy-vps.sh
-          shellcheck docker/deploy-vps.sh
-          bash -n docker/ssh-preflight.sh
-          shellcheck docker/ssh-preflight.sh
-          bash -n docker/ssh-paper-status.sh
-          shellcheck docker/ssh-paper-status.sh
+          # Every shell script in the repository is gated, not a
+          # hand-picked list: the setup scripts run as root on the
+          # VPS, and a quoting slip in one once shipped unnoticed
+          # precisely because it was not listed here.
+          scripts=$(printf '%s\n' docker/*.sh deploy/broker/*.sh deploy/paper-check/*.sh deploy/paper-check/suiba-paper-check)
+          for script in $scripts; do bash -n "$script"; done
+          shellcheck $scripts
       - name: SSH preflight mock tests (no real SSH or keys)
         run: node --test docker/ssh-preflight.node.mjs
       - name: PAPER controller failure tests (no Worker)
         run: |
+          # Syntax-gate every deploy Python file on the light path too:
+          # the verify harnesses otherwise surface only in heavy runs.
+          python3 -m py_compile deploy/paper-check/controller.py deploy/paper-check/verify_run.py deploy/paper-check/verify_timer.py deploy/paper-check/test_controller.py deploy/broker/broker.py deploy/broker/verify_docker.py
           python3 -I deploy/paper-check/test_controller.py
           shellcheck deploy/paper-check/suiba-paper-check
           sudo visudo -cf deploy/paper-check/suiba-paper-check.sudoers
           systemd-analyze verify deploy/paper-check/*.service deploy/paper-check/*.timer
+  # Heavy path: the Docker/packaging suites for the deploy machinery.
+  # They run in parallel with the light job; wall time is the longer
+  # of the two, not the sum. The suites below re-run only when that
+  # machinery (or the code it packages, or the dependency manifests,
+  # or the tests themselves) changed. Anything else — a dashboard
+  # change, say — cannot change their outcome. Scheduled and
+  # dispatched runs always take the heavy path, and a failed
+  # comparison fails safe to heavy as well.
+  docker-suites:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: sui-ai-trading-bot
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Decide whether the heavy suites are needed
+        id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          heavy=true
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "pull_request" ]; then
+            if [ "${{ github.event_name }}" = "push" ]; then
+              range="${{ github.event.before }}...${{ github.sha }}"
+            else
+              range="${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"
+            fi
+            files="$(gh api "repos/${{ github.repository }}/compare/$range" --jq '.files[].filename' 2>/dev/null || true)"
+            if [ -z "$files" ]; then
+              echo "Comparison unavailable; running the heavy suites."
+            elif printf '%s\n' "$files" | grep -Eq '^sui-ai-trading-bot/(docker|deploy|scripts|tests|apps/worker|packages)/|^sui-ai-trading-bot/(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$|^\.github/workflows/'; then
+              echo "Deploy machinery or packaged code changed; running the heavy suites."
+            else
+              heavy=false
+              echo "No heavy-suite inputs changed; skipping the Docker/packaging suites."
+            fi
+          fi
+          echo "heavy=$heavy" >> "$GITHUB_OUTPUT"
+      # The two Compose/fixture verifiers below are plain Node with
+      # no repository dependencies, so this job needs the runtime
+      # only — no Corepack, no pnpm install.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24.22.1"
       - name: Broker security and limited sudo (disposable Ubuntu, no Worker)
         if: steps.changes.outputs.heavy == 'true'
         run: |
