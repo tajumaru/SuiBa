@@ -200,6 +200,34 @@ class StopTests(unittest.TestCase):
         ctl = object.__new__(c.Controller)
         self.assertIsNone(ctl.diagnostic_backup({'id': 'a'*32}, None))
 
+    def test_container_checks_name_the_failing_item(self):
+        import re
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            root = Path(tmp)
+            FakeBroker.atomic(root/'ledger.json', {'status': 'prepared_stopped', 'sequence': 6,
+                'sha': 'a'*40, 'transaction': 'b'*32})
+            tx = root/('b'*32)
+            tx.mkdir()
+            FakeBroker.atomic(tx/'compose.json', {'services': {'bot': {'image': 'img:1'}}})
+            FakeBroker.atomic(root/'paper-check.json', {'status': 'in_progress'})
+            ctl = object.__new__(c.Controller)
+            ctl.b = SimpleNamespace(STATE=root, SHA=re.compile(r'[a-f0-9]{40}'), decode=json.loads,
+                read_trusted=FakeBroker.read_trusted, __file__=c.__file__)
+            container = {'State': {'Status': 'created', 'Running': False, 'ExitCode': 0, 'OOMKilled': False},
+                'HostConfig': {'RestartPolicy': {'Name': 'no'},
+                    'PortBindings': {'3100/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '3101'}]},
+                    'Memory': 1024**3, 'MemorySwap': 1024**3},
+                'Config': {'User': '1000:1000', 'Image': 'img:1',
+                    'Env': ['MODE=PAPER', 'TRADING_PAIR=SUI_USDC', 'PAPER_CHECK_MODE=sui-30m',
+                            'MARKET_DATA_PROVIDER=geckoterminal'],
+                    'Labels': {'org.opencontainers.image.revision': 'a'*40}}}
+            response = b'ActiveState=inactive\nSubState=dead\nNextElapseUSecMonotonic=\nNextElapseUSecRealtime=\nJob=\n'
+            with patch.object(c.subprocess, 'check_output', return_value=response):
+                checks = ctl.diagnostic_host(container)['container_checks']
+            self.assertEqual(checks, {'state': True, 'restart_user': True, 'env': True, 'ports': False,
+                                      'memory': True, 'label': True, 'image': True})
+
     def test_record_preflight_keeps_only_check_and_error_class(self):
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
@@ -245,6 +273,19 @@ class StopTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 render()
             payload['diagnostics']['preflight'] = None
+            host = {'restart_disabled': True, 'paper': True, 'fault_marker': True,
+                'timer_active': False, 'timer_elapsed': False, 'timer_next_scheduled': False,
+                'timer_job_pending': False, 'sequence': 6, 'sha': 'a'*40,
+                'ledger_status': 'prepared_stopped', 'paper_gate': 'in_progress',
+                'container_status': 'created', 'controller_sha256': 'a'*64, 'broker_sha256': 'b'*64,
+                'broker_failure': None,
+                'container_checks': {'state': True, 'restart_user': True, 'env': True, 'ports': False,
+                                     'memory': True, 'label': True, 'image': True}}
+            payload['diagnostics']['host'] = host
+            self.assertIn('ports=NG', render())
+            host['container_checks']['ports'] = 'yes'
+            with self.assertRaises(SystemExit):
+                render()
             # Differences claimed without a verified backup are a lie.
             payload['diagnostics']['deltas'] = {pair: {'starts': 0, 'orders': 0, 'fills': 0}
                                                  for pair in ('SUI_USDC', 'WAL_USDC')}
