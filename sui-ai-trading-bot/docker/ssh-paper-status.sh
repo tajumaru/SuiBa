@@ -144,6 +144,11 @@ try:
                 raise ValueError()
             if host["container_status"] not in ("created", "exited"):
                 raise ValueError()
+            container_checks = host.get("container_checks")
+            if container_checks is not None:
+                for key in ("state", "restart_user", "env", "ports", "memory", "label", "image"):
+                    if type(container_checks[key]) is not bool:
+                        raise ValueError()
             for key in ("controller_sha256", "broker_sha256"):
                 if not re.fullmatch(r"[a-f0-9]{64}", host[key]):
                     raise ValueError()
@@ -221,6 +226,11 @@ if details is not None:
     host = details.get("host")
     if host is not None:
         print(f"- Container: {host['container_status']}, restart disabled={host['restart_disabled']}, PAPER={host['paper']}")
+        container_checks = host.get("container_checks")
+        if container_checks is not None:
+            rendered = ", ".join(f"{key}={'ok' if container_checks[key] else 'NG'}"
+                                 for key in ("state", "restart_user", "env", "ports", "memory", "label", "image"))
+            print(f"- Container checks: {rendered}")
         print(f"- Deployment ledger: {host['ledger_status']}, sequence={host['sequence']}, SHA={host['sha']}")
         print(f"- Deployment PAPER gate: {host['paper_gate']}, fault marker={host['fault_marker']}")
         print(f"- Cutoff timer: active={host['timer_active']}, elapsed={host['timer_elapsed']}, "

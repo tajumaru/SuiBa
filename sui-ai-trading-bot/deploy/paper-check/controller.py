@@ -384,6 +384,34 @@ class Controller:
                 for key in ('NextElapseUSecMonotonic', 'NextElapseUSecRealtime'))
             timer['job'] |= values.get('Job') not in ('', '0')
         env = dict(value.split('=', 1) for value in container['Config']['Env'])
+        # Per-item verdicts for the same checks run() gates admission
+        # on, as booleans only: when a run dies at check=container,
+        # this names the exact item without exposing any values.
+        # Each item fails closed on its own errors so a malformed
+        # field degrades one verdict instead of the whole diagnosis.
+        def safe(fn):
+            try:
+                return bool(fn())
+            except Exception:
+                return False
+        labels = container.get('Config', {}).get('Labels') or {}
+        frozen_image = None
+        transaction = ledger.get('transaction')
+        if type(transaction) is str and len(transaction) == 32 and all(c in '0123456789abcdef' for c in transaction):
+            with contextlib.suppress(Exception):
+                frozen_image = self.b.decode(self.b.read_trusted(
+                    self.b.STATE/transaction/'compose.json'))['services']['bot']['image']
+        container_checks = {
+            'state': safe(lambda: container['State']['Status'] in ('created', 'exited') and not container['State']['Running']
+                          and container['State']['ExitCode'] == 0 and not container['State']['OOMKilled']),
+            'restart_user': safe(lambda: container['HostConfig']['RestartPolicy']['Name'] == 'no' and container['Config']['User'] == '1000:1000'),
+            'env': safe(lambda: env.get('MODE') == 'PAPER' and env.get('TRADING_PAIR') == 'SUI_USDC'
+                        and env.get('PAPER_CHECK_MODE') == 'sui-30m' and env.get('MARKET_DATA_PROVIDER') == 'geckoterminal'),
+            'ports': safe(lambda: container['HostConfig']['PortBindings'] == {'3100/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '3100'}]}),
+            'memory': safe(lambda: container['HostConfig']['Memory'] == container['HostConfig']['MemorySwap'] == 1024**3),
+            'label': safe(lambda: self.b.SHA.fullmatch(ledger['sha']) and labels.get('org.opencontainers.image.revision') == ledger['sha']),
+            'image': safe(lambda: frozen_image is not None and container['Config']['Image'] == frozen_image),
+        }
         return {
             'ledger_status': ledger['status'] if ledger['status'] in known_states else 'unknown',
             'broker_failure': failure,
@@ -391,6 +419,7 @@ class Controller:
             'paper_gate': gate.get('status') if gate.get('status') in ('completed', 'in_progress') else 'unknown',
             'fault_marker': os.path.lexists(self.b.STATE/'paper-check-failed.json'),
             'container_status': container['State']['Status'],
+            'container_checks': container_checks,
             'restart_disabled': container['HostConfig']['RestartPolicy']['Name'] == 'no',
             'paper': env.get('MODE') == 'PAPER',
             'timer_active': timer['active'],
