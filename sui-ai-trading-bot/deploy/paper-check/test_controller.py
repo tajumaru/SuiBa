@@ -200,6 +200,21 @@ class StopTests(unittest.TestCase):
         ctl = object.__new__(c.Controller)
         self.assertIsNone(ctl.diagnostic_backup({'id': 'a'*32}, None))
 
+    def test_record_preflight_keeps_only_check_and_error_class(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            state = Path(tmp)/'paper'
+            (state/('a'*32)).mkdir(parents=True)
+            ctl = object.__new__(c.Controller)
+            ctl.state = state
+            ctl.b = SimpleNamespace(atomic=FakeBroker.atomic, directory=FakeBroker.directory)
+            try:
+                raise RuntimeError('sensitive path /var/lib/secret')
+            except RuntimeError as error:
+                ctl.record_preflight({'id': 'a'*32}, 'container', error)
+            saved = json.loads((state/('a'*32)/'preflight.json').read_bytes())
+            self.assertEqual(saved, {'id': 'a'*32, 'check': 'container', 'error': 'RuntimeError'})
+
     def test_diagnostic_summary_accepts_a_run_without_backup(self):
         import io
         script = Path(__file__).parents[2]/'docker/ssh-paper-status.sh'
@@ -224,6 +239,12 @@ class StopTests(unittest.TestCase):
             self.assertIn('PREFLIGHT_INCOMPLETE', output)
             self.assertIn('not taken', output)
             self.assertIn('unavailable', output)
+            payload['diagnostics']['preflight'] = {'check': 'container', 'error': 'RuntimeError'}
+            self.assertIn('check=container, error=RuntimeError', render())
+            payload['diagnostics']['preflight'] = {'check': 'secret-fixture', 'error': 'RuntimeError'}
+            with self.assertRaises(SystemExit):
+                render()
+            payload['diagnostics']['preflight'] = None
             # Differences claimed without a verified backup are a lie.
             payload['diagnostics']['deltas'] = {pair: {'starts': 0, 'orders': 0, 'fills': 0}
                                                  for pair in ('SUI_USDC', 'WAL_USDC')}

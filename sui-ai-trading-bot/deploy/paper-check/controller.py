@@ -39,6 +39,7 @@ CUTOFF = 'suiba-paper-check-cutoff.service'
 # cutoff and in the per-length cutoff timer, so a started run can never
 # be extended by the container, the Worker, or a later request.
 DURATIONS = {'30m': 1800, '6h': 21600, '24h': 86400}
+PREFLIGHT_CHECKS = ('storage', 'ledger', 'container', 'admission')
 
 
 def cutoff_timer(duration):
@@ -180,6 +181,14 @@ class Controller:
         path = self.state/record['id']
         with self.b.directory(path): pass
         return path
+
+    def record_preflight(self, record, check, error):
+        # Best-effort evidence for a pre-admission death: the check
+        # name and the exception class only. The message can carry
+        # paths or payloads and is never recorded.
+        with contextlib.suppress(Exception):
+            self.b.atomic(self.folder(record)/'preflight.json',
+                          {'id': record['id'], 'check': check, 'error': type(error).__name__})
 
     def fault(self, record, code):
         # Separate sticky admission fence: even a fault arriving after the last
@@ -327,6 +336,13 @@ class Controller:
             readiness = failure.get('readiness')
             http = failure.get('http_status')
             require(http is None or type(http) is int and 100 <= http <= 599)
+        preflight = None
+        preflight_path = self.folder(record)/'preflight.json'
+        if preflight_path.exists():
+            value = self.b.decode(self.b.read_trusted(preflight_path))
+            require(value['id'] == record['id'] and value['check'] in PREFLIGHT_CHECKS and
+                    type(value['error']) is str and re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', value['error']))
+            preflight = {'check': value['check'], 'error': value['error']}
         return {
             'run': {'id': record['id'], 'status': record['status'], 'duration': record.get('duration', '30m')},
             'stop': {'id': stop['id'], 'status': stop['status'], 'errors': stop_errors},
@@ -334,7 +350,7 @@ class Controller:
             'diagnostics': {
                 'exit_code': state['ExitCode'], 'oom_killed': state['OOMKilled'],
                 'healthcheck_exit': health[-1]['ExitCode'] if health else None,
-                'maintenance': maintenance, 'stage': stage, 'http_status': http,
+                'maintenance': maintenance, 'stage': stage, 'http_status': http, 'preflight': preflight,
                 'backup_verified': report is not None,
                 'deltas': report['deltas'] if report is not None else None, 'readiness': readiness,
                 'runtime': report['runtime'] if report is not None else None,
@@ -808,28 +824,41 @@ class Controller:
                           'started': now, 'cutoff': now+DURATIONS[duration]*1000, 'duration': duration}
                 self.b.atomic(self.b.STATE/'paper-check.json', {'status': 'in_progress'})
                 self.b.atomic(self.record, record)
-            space = os.statvfs(self.b.BACKUPS)
-            require(space.f_bavail*space.f_frsize >= 20*1024**3 and space.f_favail >= 100000)
-            ledger = self.b.decode(self.b.read_trusted(self.b.STATE/'ledger.json'))
-            require(ledger['status'] == 'prepared_stopped')
-            i = self.inspect()
-            require(i['State']['Status'] in ('created', 'exited') and not i['State']['Running'] and
-                    i['State']['ExitCode'] == 0 and not i['State']['OOMKilled'])
-            require(i['HostConfig']['RestartPolicy']['Name'] == 'no' and i['Config']['User'] == '1000:1000')
-            env = dict(v.split('=', 1) for v in i['Config']['Env'])
-            require(env.get('MODE') == 'PAPER' and env.get('TRADING_PAIR') == 'SUI_USDC' and
-                    env.get('PAPER_CHECK_MODE') == 'sui-30m' and env.get('MARKET_DATA_PROVIDER') == 'geckoterminal')
-            require(i['HostConfig']['PortBindings'] == {'3100/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '3100'}]})
-            require(i['HostConfig']['Memory'] == i['HostConfig']['MemorySwap'] == 1024**3)
-            require(self.b.SHA.fullmatch(ledger['sha']) and
-                    i['Config']['Labels'].get('org.opencontainers.image.revision') == ledger['sha'])
-            require(len(ledger['transaction']) == 32 and all(c in '0123456789abcdef' for c in ledger['transaction']))
-            frozen = self.b.decode(self.b.read_trusted(self.b.STATE/ledger['transaction']/'compose.json'))
-            require(i['Config']['Image'] == frozen['services']['bot']['image'])
-            with self.locked('mutation'):
-                require(not (self.folder(record)/'stop-request.json').exists())
-                record['admitted'] = True
-                self.b.atomic(self.record, record)
+            # A death in this pre-admission window used to leave only
+            # PREFLIGHT_INCOMPLETE in the stop receipt, with no hint of
+            # which check died. Record the check and the exception
+            # class (never the message) in the run folder, then let
+            # the failure propagate exactly as before.
+            check = 'storage'
+            try:
+                space = os.statvfs(self.b.BACKUPS)
+                require(space.f_bavail*space.f_frsize >= 20*1024**3 and space.f_favail >= 100000)
+                check = 'ledger'
+                ledger = self.b.decode(self.b.read_trusted(self.b.STATE/'ledger.json'))
+                require(ledger['status'] == 'prepared_stopped')
+                check = 'container'
+                i = self.inspect()
+                require(i['State']['Status'] in ('created', 'exited') and not i['State']['Running'] and
+                        i['State']['ExitCode'] == 0 and not i['State']['OOMKilled'])
+                require(i['HostConfig']['RestartPolicy']['Name'] == 'no' and i['Config']['User'] == '1000:1000')
+                env = dict(v.split('=', 1) for v in i['Config']['Env'])
+                require(env.get('MODE') == 'PAPER' and env.get('TRADING_PAIR') == 'SUI_USDC' and
+                        env.get('PAPER_CHECK_MODE') == 'sui-30m' and env.get('MARKET_DATA_PROVIDER') == 'geckoterminal')
+                require(i['HostConfig']['PortBindings'] == {'3100/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '3100'}]})
+                require(i['HostConfig']['Memory'] == i['HostConfig']['MemorySwap'] == 1024**3)
+                require(self.b.SHA.fullmatch(ledger['sha']) and
+                        i['Config']['Labels'].get('org.opencontainers.image.revision') == ledger['sha'])
+                require(len(ledger['transaction']) == 32 and all(c in '0123456789abcdef' for c in ledger['transaction']))
+                frozen = self.b.decode(self.b.read_trusted(self.b.STATE/ledger['transaction']/'compose.json'))
+                require(i['Config']['Image'] == frozen['services']['bot']['image'])
+                check = 'admission'
+                with self.locked('mutation'):
+                    require(not (self.folder(record)/'stop-request.json').exists())
+                    record['admitted'] = True
+                    self.b.atomic(self.record, record)
+            except BaseException as error:
+                self.record_preflight(record, check, error)
+                raise
             self.guard('timer', lambda: self.system('start', timer))
             self.system('is-active', '--quiet', timer)
             backup = self.guard('backup', self.backup)

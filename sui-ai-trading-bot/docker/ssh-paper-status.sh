@@ -107,6 +107,12 @@ try:
                 type(code) is not str or not re.fullmatch(r"[A-Z][A-Z_]{2,47}", code)
                 for code in stop_errors):
             raise ValueError()
+        preflight = details.get("preflight")
+        if preflight is not None:
+            if preflight["check"] not in ("storage", "ledger", "container", "admission"):
+                raise ValueError()
+            if type(preflight["error"]) is not str or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", preflight["error"]):
+                raise ValueError()
         if "clean_lifecycle" in details and type(details["clean_lifecycle"]) is not bool:
             raise ValueError()
         runtime = details.get("runtime")
@@ -190,6 +196,9 @@ if details is not None:
     stop_errors = stop.get("errors") or []
     if stop_errors:
         print(f"- Stop errors: {', '.join(stop_errors)}")
+    preflight = details.get("preflight")
+    if preflight is not None:
+        print(f"- Preflight failure: check={preflight['check']}, error={preflight['error']}")
     readiness = details.get("readiness")
     if isinstance(readiness, dict):
         health = readiness.get("health")
