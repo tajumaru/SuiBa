@@ -76,6 +76,7 @@ export function PriceChart({
   historyApi,
   forecastScoreText,
   forecastTouchText,
+  forecastBandScale = 1,
   bookImbalance,
   sellLines,
   answerCheck,
@@ -91,6 +92,9 @@ export function PriceChart({
   forecastScoreText?: string | null;
   /** Live status of the newest touch target, if one is open. */
   forecastTouchText?: string | null;
+  /** Learned cone-width scale (forecastCalib); the drawn cone
+   * and the recorded one must use the same scale. */
+  forecastBandScale?: number;
   bookImbalance?: number | null;
   /** The open position's real sell lines (same prices the
    * ticker counts down to), for forecast crossing marks. */
@@ -168,9 +172,14 @@ export function PriceChart({
   const fc = useMemo(
     () =>
       anchor == null
-        ? chartForecast(data.candles, FORECAST_BARS, bookImbalance ?? null)
+        ? chartForecast(
+            data.candles,
+            FORECAST_BARS,
+            bookImbalance ?? null,
+            forecastBandScale,
+          )
         : null,
-    [data, anchor, bookImbalance],
+    [data, anchor, bookImbalance, forecastBandScale],
   );
   const first = data.candles[0]?.timestamp ?? 0,
     available = latestEnd - first,

@@ -310,6 +310,67 @@ describe("forecast declaration reasons", () => {
   });
 });
 
+describe("forecast calibration narration", () => {
+  const event = (at: number, scored = 40) => ({
+    at,
+    scale: 1.08,
+    scored,
+    coveragePct: 65,
+    widened: true,
+  });
+
+  it("tells a fresh calibration once and never repeats it", () => {
+    const next = advanceNarration(
+      initialized(),
+      ops({}),
+      "sleeping",
+      T0,
+      undefined,
+      null,
+      null,
+      null,
+      "SUI",
+      event(T0),
+    );
+    const told = next.entries.filter((e) => e.kind === "forecastCalib");
+    expect(told).toHaveLength(1);
+    expect(told[0].text).toContain("学習：ここまでの予測40件");
+    expect(next.lastCalibScoredAt).toBe(40);
+    const again = advanceNarration(
+      next,
+      ops({}),
+      "sleeping",
+      T0 + MIN,
+      undefined,
+      null,
+      null,
+      null,
+      "SUI",
+      event(T0),
+    );
+    expect(
+      again.entries.filter((e) => e.kind === "forecastCalib"),
+    ).toHaveLength(1);
+  });
+
+  it("adopts a stale calibration silently", () => {
+    const next = advanceNarration(
+      initialized(),
+      ops({}),
+      "sleeping",
+      T0,
+      undefined,
+      null,
+      null,
+      null,
+      "SUI",
+      event(T0 - 31 * MIN),
+    );
+    expect(next.entries.filter((e) => e.kind === "forecastCalib")).toHaveLength(0);
+    expect(next.lastCalibScoredAt).toBe(40);
+  });
+});
+
 describe("advanceNarration forecast verdicts", () => {
   const origin = T0 / 1000 - 7200;
   const declaredPrev = () => ({

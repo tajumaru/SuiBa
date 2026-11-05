@@ -23,6 +23,7 @@ import {
   TOUCH_NEAR_PCT,
   type ForecastRecord,
 } from "../forecastLog.ts";
+import { calibText, type CalibEvent } from "../forecastCalib.ts";
 import type { DecisionTelemetry } from "../../../worker/src/operations.ts";
 import { forecastReasonText } from "./forecast-reason.ts";
 import {
@@ -200,6 +201,7 @@ export interface AdvanceWork {
   forecastSettled: NarrationState["forecastSettled"];
   forecastTouchSettled: NarrationState["forecastTouchSettled"];
   lastForecastCallAt: NarrationState["lastForecastCallAt"];
+  lastCalibScoredAt: NarrationState["lastCalibScoredAt"];
 }
 
 function bumpMonthly(
@@ -752,6 +754,25 @@ if (forecasts) {
     break;
   }
 }
+}
+
+/** How fresh a calibration change must be to be told; an older
+ * one is adopted silently (the feed was closed when it happened). */
+export const CALIB_TELL_FRESH_MS = 30 * 60 * 1000;
+
+// Cone calibration: when the forecast cone's width has learned
+// from its scored record, say so once — the numbers it stands
+// on, nothing more. Dedupe is by the scored count the change
+// was evaluated at, so re-renders never repeat it.
+export function stageCalibration(
+  work: AdvanceWork,
+  calib: CalibEvent | null | undefined,
+  now: number,
+) {
+  if (!calib || calib.scored <= work.lastCalibScoredAt) return;
+  work.lastCalibScoredAt = calib.scored;
+  if (now - calib.at > CALIB_TELL_FRESH_MS) return;
+  work.drafts.push({ at: now, kind: "forecastCalib", text: calibText(calib) });
 }
 
   // Monthly report: a finished month with tallies is posted to

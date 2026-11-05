@@ -50,6 +50,9 @@ export function shareCardInputFor(args: {
   pair: string;
   candles: Candle[];
   bookImbalance?: number | null;
+  /** Learned cone-width scale, so the card's cone matches the
+   * chart's. */
+  bandScale?: number;
   score: ForecastScore;
   character: AgentCharacter;
   agentName: string;
@@ -60,6 +63,7 @@ export function shareCardInputFor(args: {
     args.candles,
     FORECAST_BARS,
     args.bookImbalance ?? null,
+    args.bandScale ?? 1,
   );
   if (!forecast) return null;
   return {

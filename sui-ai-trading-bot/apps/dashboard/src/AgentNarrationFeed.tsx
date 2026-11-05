@@ -31,6 +31,7 @@ export function AgentNarrationFeed({
   trades,
   btc = null,
   forecasts = null,
+  calibEvent = null,
   book = null,
   onListeningChange,
   onSpeakingChange,
@@ -51,6 +52,9 @@ export function AgentNarrationFeed({
     records: readonly import("./forecastLog.ts").ForecastRecord[];
     candles: readonly import("../../../packages/shared/src/index.ts").Candle[];
   } | null;
+  /** The newest cone-calibration change (display-only), told
+   * once by the feed when it is fresh. */
+  calibEvent?: import("./forecastCalib.ts").CalibEvent | null;
   /** The engine's newest fills, threaded to the narration
    * advance so a finished month's report can be priced and
    * posted. Display/record only. */
@@ -144,6 +148,7 @@ export function AgentNarrationFeed({
       forecasts,
       book,
       pairLabel,
+      calibEvent,
     );
     narrationRef.current = next;
     persist(next);
@@ -227,7 +232,7 @@ export function AgentNarrationFeed({
       persist(withPrompt);
       setNarration(withPrompt);
     }
-  }, [data, stale, onCelebrate, trades, btc, forecasts, book, pairLabel]);
+  }, [data, stale, onCelebrate, trades, btc, forecasts, book, pairLabel, calibEvent]);
   const vital = botVital(data, stale, now, receivedAt);
   const pose = agentPose(narration, data, vital, now);
   // While a chat reply is fresh, the character turns to the user

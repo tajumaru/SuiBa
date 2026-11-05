@@ -35,6 +35,7 @@ export type NarrationKind =
   | "forecastTouch" // a declared forecast's touch line was reached
   | "forecastTouchNear" // the touch line was nearly reached before time ran out
   | "bookWall" // an order-book wall appeared / vanished / was breached
+  | "forecastCalib" // the cone's width learned from its scored record
   | "status"; // feed-initialised status line
 
 export interface NarrationEntry {
@@ -222,6 +223,9 @@ export interface NarrationState {
    * are spaced at least an hour apart so a trending market
    * cannot turn the feed into a forecast ticker. */
   lastForecastCallAt: number | null;
+  /** Scored-record count of the newest cone calibration the
+   * feed has taken in (told or quietly adopted). */
+  lastCalibScoredAt: number;
 }
 
 /** One JST month of feed-side tallies for the monthly report.
@@ -341,6 +345,7 @@ export function emptyNarrationState(): NarrationState {
     forecastSettled: {},
     forecastTouchSettled: {},
     lastForecastCallAt: null,
+    lastCalibScoredAt: 0,
   };
 }
 

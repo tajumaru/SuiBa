@@ -38,6 +38,14 @@ import {
   type ForecastRecord,
 } from "./forecastLog.ts";
 import {
+  calibrationStep,
+  emptyCalib,
+  loadForecastCalib,
+  saveForecastCalib,
+  type CalibEvent,
+  type ForecastCalib,
+} from "./forecastCalib.ts";
+import {
   loadAgentName,
   sanitizeAgentName,
   saveAgentName,
@@ -200,18 +208,34 @@ function App() {
   // snapshotted, then scored against the real candles later.
   const [forecastLog, setForecastLog] = useState<ForecastRecord[]>([]);
   const forecastScopeRef = useRef<string | null>(null);
+  // Cone self-calibration (per pair, device-local): the width
+  // scale the scored record has earned so far, plus the newest
+  // change for the feed to tell once.
+  const [forecastCalib, setForecastCalib] =
+    useState<ForecastCalib>(emptyCalib);
+  const calibRef = useRef<ForecastCalib>(emptyCalib());
+  const [calibEvent, setCalibEvent] = useState<CalibEvent | null>(null);
   useEffect(() => {
     if (!data) return;
     const pair = data.pair;
     if (forecastScopeRef.current !== pair) {
       forecastScopeRef.current = pair;
       setForecastLog(loadForecastLog(pair));
+      const calib = loadForecastCalib(pair);
+      calibRef.current = calib;
+      setForecastCalib(calib);
+      setCalibEvent(null);
       return;
     }
     const candles300 = data.candlesByTimeframe[300],
       last = candles300.at(-1);
     if (!last) return;
-    const fc = chartForecast(candles300, FORECAST_BARS, data.bookImbalance);
+    const fc = chartForecast(
+      candles300,
+      FORECAST_BARS,
+      data.bookImbalance,
+      calibRef.current.scale,
+    );
     if (!fc) return;
     setForecastLog((prev) => {
       const next = appendForecastRecord(
@@ -222,16 +246,42 @@ function App() {
       return next;
     });
   }, [data]);
-  const forecastScoreLine = useMemo(
+  const forecastScore = useMemo(
     () =>
       data
-        ? forecastScoreText(
-            scoreForecasts(forecastLog, data.candlesByTimeframe[300]),
-            forecastLog.length,
-          )
+        ? scoreForecasts(forecastLog, data.candlesByTimeframe[300])
         : null,
     [forecastLog, data],
   );
+  const forecastScoreLine = useMemo(() => {
+    if (!forecastScore) return null;
+    const line = forecastScoreText(forecastScore, forecastLog.length);
+    if (!line) return null;
+    return forecastCalib.scale !== 1
+      ? `${line}（予測の幅は実績で学習中 ×${forecastCalib.scale.toFixed(2)}）`
+      : line;
+  }, [forecastScore, forecastLog.length, forecastCalib.scale]);
+  // The learning step: each fresh batch of scored forecasts may
+  // nudge the cone's width toward its target coverage. Runs off
+  // the score memo; persists quietly, and only an actual change
+  // becomes a feed event.
+  useEffect(() => {
+    if (!data || !forecastScore) return;
+    const before = calibRef.current;
+    const step = calibrationStep(forecastScore, before);
+    if (step.calib === before) return;
+    calibRef.current = step.calib;
+    setForecastCalib(step.calib);
+    saveForecastCalib(step.calib, data.pair);
+    if (step.changed && forecastScore.coveragePct != null)
+      setCalibEvent({
+        at: Date.now(),
+        scale: step.calib.scale,
+        scored: forecastScore.scoredRecords,
+        coveragePct: forecastScore.coveragePct,
+        widened: step.calib.scale > before.scale,
+      });
+  }, [forecastScore, data]);
   const forecastAnswer = useMemo(
     () =>
       data
@@ -266,21 +316,19 @@ function App() {
   const character = useAgentCharacter();
   const shareCard = useMemo(
     () =>
-      data
+      data && forecastScore
         ? shareCardInputFor({
             pair: data.pair,
             candles: data.candlesByTimeframe[300],
             bookImbalance: data.bookImbalance,
-            score: scoreForecasts(
-              forecastLog,
-              data.candlesByTimeframe[300],
-            ),
+            bandScale: forecastCalib.scale,
+            score: forecastScore,
             character,
             agentName,
             at: Date.now(),
           })
         : null,
-    [data, forecastLog, character, agentName],
+    [data, forecastScore, forecastCalib.scale, character, agentName],
   );
   const changeAgentName = (raw: string) => {
     const next = sanitizeAgentName(raw);
@@ -679,6 +727,7 @@ function App() {
                       btc={data?.btc ?? null}
                       book={data?.bookLevels ?? null}
                       forecasts={forecastInput}
+                      calibEvent={calibEvent}
                       active={activeTab === "Live"}
                       agentName={agentName}
                       onListeningChange={setVoiceListening}
@@ -763,6 +812,7 @@ function App() {
                         historyApi={api}
                         forecastScoreText={forecastScoreLine}
                         forecastTouchText={forecastTouchLine}
+                        forecastBandScale={forecastCalib.scale}
                         answerCheck={forecastAnswer}
                         shareCard={shareCard}
                         bookImbalance={data.bookImbalance}

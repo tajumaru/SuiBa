@@ -810,6 +810,15 @@
   border-color: rgba(100, 181, 255, 0.55);
   color: #64b5ff;
 }
+/* The cone learned from its record: the model's own blue, but
+   the entry reads as a milestone rather than a shout. */
+.agent-feed-entry.forecastCalib {
+  border-left-color: #4da2ff;
+}
+.agent-feed-entry-tag.calib {
+  border-color: rgba(100, 181, 255, 0.55);
+  color: #64b5ff;
+}
 .agent-feed-entry.forecastHit {
   border-left-color: #3ecf6f;
   background: #0f2318;

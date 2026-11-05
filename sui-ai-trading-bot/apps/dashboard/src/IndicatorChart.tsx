@@ -140,6 +140,7 @@ export function Chart(props: {
   historyApi?: import("./settingsPresets.ts").SettingsApi;
   forecastScoreText?: string | null;
   forecastTouchText?: string | null;
+  forecastBandScale?: number;
   bookImbalance?: number | null;
   sellLines?: { tp: number; sl: number } | null;
   answerCheck?: ForecastAnswerCheck | null;

@@ -16,6 +16,7 @@ import {
   type ForecastRecord,
 } from "../forecastLog.ts";
 import type { OperationsSnapshot } from "../operationsTypes.ts";
+import type { CalibEvent } from "../forecastCalib.ts";
 import type { VitalState } from "../botVital.ts";
 import { cycleNarrationText, decisionTrail, sellLinesOf } from "./decision.ts";
 import { chooseWatchTarget, makeWatch, watchEligible } from "./watch.ts";
@@ -25,6 +26,7 @@ import {
   eventKey,
   stageBook,
   stageBtc,
+  stageCalibration,
   stageCandidates,
   stageConnectivity,
   stageEvents,
@@ -133,6 +135,9 @@ export function advanceNarration(
   /** The pair's base symbol (e.g. "SUI"), for book entry
    * quantities. */
   pairLabel = "SUI",
+  /** The newest cone-calibration change (display-only), told
+   * once when it is fresh. */
+  calib?: CalibEvent | null,
 ): NarrationState {
   const seen = new Set(prev.seen);
   const pending = new Set(prev.pendingCandidateIds);
@@ -284,6 +289,7 @@ export function advanceNarration(
     forecastSettled: prev.forecastSettled,
     forecastTouchSettled: prev.forecastTouchSettled,
     lastForecastCallAt: prev.lastForecastCallAt,
+    lastCalibScoredAt: prev.lastCalibScoredAt,
   };
   stageEvents(work, prev, d);
   stageCandidates(work, prev, d);
@@ -293,6 +299,7 @@ export function advanceNarration(
   stageBtc(work, btc, now);
   stageBook(work, book, pairLabel, now);
   stageForecasts(work, forecasts, d.decision, now);
+  stageCalibration(work, calib, now);
   stageMonthly(work, fills, now);
 
   return finish(
@@ -313,6 +320,7 @@ export function advanceNarration(
       forecastSettled: work.forecastSettled,
       forecastTouchSettled: work.forecastTouchSettled,
       lastForecastCallAt: work.lastForecastCallAt,
+      lastCalibScoredAt: work.lastCalibScoredAt,
       sessionStartPrice: work.sessionStartPrice,
       priceHistory: work.priceHistory,
       alertCooldown: work.alertCooldown,

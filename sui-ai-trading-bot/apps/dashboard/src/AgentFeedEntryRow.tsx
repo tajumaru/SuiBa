@@ -125,6 +125,9 @@ export function AgentFeedEntryRow({
       {entry.kind === "forecastTouchNear" && (
         <span className="agent-feed-entry-tag touch-near">タッチならず</span>
       )}
+      {entry.kind === "forecastCalib" && (
+        <span className="agent-feed-entry-tag calib">学習</span>
+      )}
       {entry.kind === "priceLine" && (
         <span className="agent-feed-entry-tag line">買い走りライン</span>
       )}

@@ -166,8 +166,19 @@ export function chartForecast(
   candles: Candle[],
   bars: number = FORECAST_BARS,
   imbalance: number | null = null,
+  /** Learned cone-width scale (forecastCalib); 1 = the
+   * measured shape as-is. Multiplies bandFactor only — the
+   * drift claim is never scaled. */
+  bandScale: number = 1,
 ): ChartForecast | null {
-  return forecastWith(candles, bars, FORECAST_PARAMS, imbalance);
+  return forecastWith(
+    candles,
+    bars,
+    bandScale === 1
+      ? FORECAST_PARAMS
+      : { ...FORECAST_PARAMS, bandFactor: FORECAST_PARAMS.bandFactor * bandScale },
+    imbalance,
+  );
 }
 
 export function forecastWith(

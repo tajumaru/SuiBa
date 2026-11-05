@@ -62,6 +62,7 @@ const schema: z.ZodType<NarrationState> = z.object({
           "forecastTouch",
           "forecastTouchNear",
           "bookWall",
+          "forecastCalib",
           "status",
         ]),
         text: z.string(),
@@ -171,6 +172,7 @@ const schema: z.ZodType<NarrationState> = z.object({
   forecastSettled: z.record(z.string(), z.boolean()).default({}),
   forecastTouchSettled: z.record(z.string(), z.boolean()).default({}),
   lastForecastCallAt: number.nullable().default(null),
+  lastCalibScoredAt: number.default(0),
 });
 
 // Resolve storage inside the try: browsers may deny even the localStorage getter.

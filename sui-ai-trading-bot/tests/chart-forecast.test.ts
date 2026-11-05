@@ -39,6 +39,22 @@ const flat = candles(
 );
 
 describe("chartForecast", () => {
+  it("scales only the cone width by the learned band scale", () => {
+    const base = chartForecast(rising)!;
+    const wide = chartForecast(rising, FORECAST_BARS, null, 1.5)!;
+    expect(wide.driftPct).toBeCloseTo(base.driftPct);
+    expect(wide.direction).toBe(base.direction);
+    for (let i = 0; i < FORECAST_BARS; i++) {
+      expect(wide.points[i].mid).toBeCloseTo(base.points[i].mid);
+      expect(wide.points[i].upper - wide.points[i].mid).toBeCloseTo(
+        (base.points[i].upper - base.points[i].mid) * 1.5,
+      );
+      expect(wide.points[i].mid - wide.points[i].lower).toBeCloseTo(
+        (base.points[i].mid - base.points[i].lower) * 1.5,
+      );
+    }
+  });
+
   it("projects 24 widening points along a rising trend", () => {
     const fc = chartForecast(rising)!;
     expect(fc).not.toBeNull();
