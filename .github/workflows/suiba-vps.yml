@@ -83,23 +83,6 @@ jobs:
           name: vps-release
           path: release/
           retention-days: 3
-  stage:
-    needs: validate
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY-PAPER' && vars.SUIBA_STAGE_ENABLED == 'true' && vars.SUIBA_BROKER_ENABLED != 'true'
-    uses: ./.github/workflows/suiba-vps-stage.yml
-    secrets:
-      VPS_HOST: ${{ secrets.VPS_HOST }}
-      VPS_USER: ${{ secrets.VPS_USER }}
-      VPS_PORT: ${{ secrets.VPS_PORT }}
-      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-      VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
-    permissions:
-      actions: read
-    with:
-      run_id: ${{ github.run_id }}
-      release_sha: ${{ github.sha }}
-      archive_sha256: ${{ needs.validate.outputs.archive_sha256 }}
-      confirmation: STAGE-PAPER
   deploy:
     needs: validate
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY-PAPER' && vars.SUIBA_BROKER_ENABLED == 'true'

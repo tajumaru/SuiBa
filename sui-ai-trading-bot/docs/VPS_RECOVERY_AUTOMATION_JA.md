@@ -66,5 +66,18 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   GitHub Actions 側から監視する（承認1回で最大約40分ポーリングし、
   `completed`／`failed_requires_review` で早期終了）。状態取得は既存の
   `docker/ssh-paper-status.sh`（CHECK-PAPER-STATUS）をそのまま使う。
+- `.github/workflows/suiba-vps-cleanup.yml`（confirmation `CLEAN-INCOMING`、
+  専用変数 `SUIBA_CLEANUP_ENABLED`、Environment 承認必須）：配置の失敗・
+  成功で `/var/lib/suiba-incoming/` に残ったアップロード残置を掃除する
+  （`docker/ssh-clean-incoming.sh`、非特権 SSH のみ）。削除条件は厳格に
+  固定：名前が40桁 hex の sha 形式の実ディレクトリで、中身が
+  `image.tar.gz` と `.image.partial.*` だけ、最終更新から1時間以上経過
+  したものだけ。それ以外は理由付きでスキップ表示され、消されない。
+  初回配置成功（2026-11-06）時点で残置は5件。
+- broker 方式への一本化に伴い、旧 stage 経路を撤去した：
+  `.github/workflows/suiba-vps-stage.yml` と suiba-vps.yml の `stage`
+  ジョブを削除し、リポジトリ変数 `SUIBA_STAGE_ENABLED` も削除した。
+  `deploy/broker/approval-ci.md` の導入順序にある stage の記述は
+  切り替え当時の記録として残す。
 - broker の `OS_ERROR` の名前付きコード化と、診断→再試行承認→開始→監視の
   一本化は未着手（tracked item「SuiBa VPSリカバリ自動化」）。
