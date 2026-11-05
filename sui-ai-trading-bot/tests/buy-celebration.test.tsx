@@ -292,9 +292,14 @@ describe("buy celebration: the four-second window", () => {
 
   it("clears the shell's celebration on the same constant", () => {
     const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
+    const appHeader = readFileSync(
+      resolve("apps/dashboard/src/AppHeader.tsx"),
+      "utf8",
+    );
     expect(main).toContain("BUY_CELEBRATION_MS");
     expect(main).toContain("onCelebrate={handleBuyCelebration}");
-    expect(main).toContain("celebrating={buyCelebration}");
+    // The avatar itself renders inside AppHeader since the split.
+    expect(appHeader).toContain("celebrating={buyCelebration}");
     expect(main).toContain("glow={buyCelebration}");
   });
 });

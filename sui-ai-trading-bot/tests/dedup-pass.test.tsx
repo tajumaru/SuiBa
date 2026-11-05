@@ -15,6 +15,10 @@ import { ProfitGuardSummary } from "../apps/dashboard/src/ProfitGuardPanel.tsx";
 type State = ReturnType<BotEngine["snapshot"]>;
 
 const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
+const overviewTab = readFileSync(
+  resolve("apps/dashboard/src/OverviewTab.tsx"),
+  "utf8",
+);
 const css = readDashboardCss();
 const operationOverview = readFileSync(
   resolve("apps/dashboard/src/OperationOverview.tsx"),
@@ -36,7 +40,7 @@ describe("dashboard dedup: SUI price lives only in the ticker", () => {
       "本日の取引（日本時間09:00から）",
       "未実現損益",
     ])
-      expect(main).toContain(label);
+      expect(overviewTab).toContain(label);
   });
 });
 

@@ -15,7 +15,8 @@ import type { StrategySegment } from "./StrategyTab.tsx";
 import { useOperationsFeed } from "./operationsFeed.ts";
 import { useForecastSuite } from "./useForecastSuite.ts";
 import { OverviewTab } from "./OverviewTab.tsx";
-import { AgentNarrationFeed, AgentHeaderAvatar } from "./AgentNarration.tsx";
+import { AppHeader } from "./AppHeader.tsx";
+import { AgentNarrationFeed } from "./AgentNarration.tsx";
 import { BootScreen } from "./BootScreen.tsx";
 
 import { useUpdateCheck } from "./appVersion.ts";
@@ -28,7 +29,6 @@ import {
   saveAgentName,
 } from "./agentName.ts";
 import { errorShout } from "./errorShout.ts";
-import { presetName } from "./settingsPresets.ts";
 
 import {
   BUY_CELEBRATION_MS,
@@ -420,47 +420,19 @@ function App() {
   return (
     <>
       {update && <UpdateBanner served={update} />}
-      <header>
-        <div className="header-row header-row-main">
-          <strong>◈ Sui Paper Lab</strong>
-          <span className="badge">PAPER（仮想売買）専用</span>
-        </div>
-        <div className="header-row header-row-sub">
-          <button
-            className="danger"
-            disabled={!data}
-            onClick={() => void control("emergency")}
-          >
-            緊急停止
-          </button>
-          {token && (
-            <button className="logout-link" onClick={logout}>
-              ログアウト
-            </button>
-          )}
-        </div>
-      </header>
-      {/* The narration character rides at the top centre of the app
-          as a round avatar, on every tab — but only once connected:
-          the login screen has no bot state to show, so no avatar
-          (and no placeholder) is rendered. It is a sibling of the
-          header, not a child, so its sticky dock (see
-          .agent-avatar-dock in style.css) can travel the whole
-          page: at rest it floats half over the header's bottom
-          edge, and on scroll it sticks to the top of the viewport
-          instead of scrolling away with the header. */}
-      {token && (
-        <AgentHeaderAvatar
-          pose={agentPose}
-          celebrating={buyCelebration}
-          shout={shout}
-          hardMode={data != null && presetName(data.settings) === "hard"}
-          agentName={agentName}
-          onRename={changeAgentName}
-          listening={voiceListening}
-          speaking={agentSpeaking}
-        />
-      )}
+      <AppHeader
+        data={data}
+        token={token}
+        control={control}
+        logout={logout}
+        agentPose={agentPose}
+        buyCelebration={buyCelebration}
+        shout={shout}
+        agentName={agentName}
+        changeAgentName={changeAgentName}
+        voiceListening={voiceListening}
+        agentSpeaking={agentSpeaking}
+      />
       {restoringSession ? (
         <p role="status">ログイン状態を確認しています…</p>
       ) : !token ? (

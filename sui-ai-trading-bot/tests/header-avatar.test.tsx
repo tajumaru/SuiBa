@@ -272,14 +272,18 @@ describe("narration feed after the stage removal", () => {
   });
 });
 
-describe("agent header avatar wiring (main.tsx)", () => {
+describe("agent header avatar wiring (AppHeader.tsx)", () => {
   const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
+  const appHeader = readFileSync(
+    resolve("apps/dashboard/src/AppHeader.tsx"),
+    "utf8",
+  );
 
   it("renders the avatar at the app top, fed by the narration feed", () => {
-    expect(main).toContain("<AgentHeaderAvatar");
-    expect(main).toContain("pose={agentPose}");
-    expect(main).toContain("celebrating={buyCelebration}");
-    expect(main).toContain("shout={shout}");
+    expect(appHeader).toContain("<AgentHeaderAvatar");
+    expect(appHeader).toContain("pose={agentPose}");
+    expect(appHeader).toContain("celebrating={buyCelebration}");
+    expect(appHeader).toContain("shout={shout}");
     expect(main).toContain("onPoseChange={setAgentPose}");
     expect(main).toContain('useState<AgentPose>("normal")');
   });
@@ -288,10 +292,13 @@ describe("agent header avatar wiring (main.tsx)", () => {
     // The dock can only stick for the whole page if it is not a
     // child of the header (a sticky element travels only within
     // its parent), so the single render site sits between the
-    // header and the tab bar, under the app root.
-    const avatarAt = main.indexOf("<AgentHeaderAvatar");
-    expect(avatarAt).toBeGreaterThan(main.indexOf("</header>"));
-    expect(avatarAt).toBeLessThan(main.indexOf("<nav"));
+    // header and the tab bar, under the app root. Since the
+    // AppHeader extraction the header and the avatar live in
+    // AppHeader.tsx (avatar after </header>), and the shell
+    // renders AppHeader before the tab bar.
+    const avatarAt = appHeader.indexOf("<AgentHeaderAvatar");
+    expect(avatarAt).toBeGreaterThan(appHeader.indexOf("</header>"));
+    expect(main.indexOf("<AppHeader")).toBeLessThan(main.indexOf("<nav"));
   });
 
   it("keeps the header avatar dock behind the token", () => {
@@ -301,7 +308,7 @@ describe("agent header avatar wiring (main.tsx)", () => {
     // own main, which is a different element from the dock —
     // the dock itself still never appears pre-login, and the
     // login main takes no avatar clearance class.
-    expect(main.match(/<AgentHeaderAvatar/g)).toHaveLength(1);
+    expect(appHeader.match(/<AgentHeaderAvatar/g)).toHaveLength(1);
     expect(main).toContain("<LoginScreen");
     expect(main).not.toContain('className="login has-avatar"');
     const login = readFileSync(
@@ -319,7 +326,10 @@ describe("agent header avatar wiring (main.tsx)", () => {
 });
 
 describe("slim two-row header (design A)", () => {
-  const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
+  const main = readFileSync(
+    resolve("apps/dashboard/src/AppHeader.tsx"),
+    "utf8",
+  );
   const header = main.slice(
     main.indexOf("<header>"),
     main.indexOf("</header>"),
