@@ -184,44 +184,19 @@ export class BotEngine {
     return frames;
   }
 
-  async tick() {
-    this.db.assertHealthy();
-    if (this.deploymentStopped()) return;
-    if (this.busy) return;
-    this.busy = true;
-    let audit: CandidateAudit | null = null;
-    let committed = false;
-    const began = Date.now();
-    let measuredFrames: Record<number, Candle[]> = {},
-      measuredAction: string | null = null,
-      measuredError: string | null = null;
-    const cycleToken = this.monitor.beginCycle();
-    const cycle: CycleEvidence = {
-      cycleId: randomUUID(),
-      beganAt: began,
-      runningAtStart: this.db.runtime().running,
-      generationAtStart: cycleToken,
-      connectivityAtStart: this.monitor.safety().connectivity,
-      analysis: null,
-      outcome: "NOT_EVALUATED",
-    };
-    try {
-      this.db.append(
-        "cycle_audits",
-        randomUUID(),
-        { ...cycle, phase: "START" },
-        began,
-      );
-      const now = Date.now();
-      const frames = await this.acquireFrames(cycle, began, now);
-      measuredFrames = frames;
-      const c = frames[300],
-        last = c.at(-1)!,
-        price = last.close;
-      validateCandles(c, 300, Date.now());
-      this.monitor.market((last.timestamp + 300) * 1000);
-      if (this.db.runtime().running && !this.monitor.ledger().ok)
-        throw new Error("PAPER_RECONCILIATION_FAILED");
+  /**
+   * Tick phase 2 — recovery proof, day rollover, strategy
+   * analysis and the sell preview. Extracted verbatim from
+   * tick(); the cycle evidence is mutated in place.
+   */
+  private async analyzeCycle(
+    c: Candle[],
+    price: number,
+    began: number,
+    now: number,
+    cycle: CycleEvidence,
+    cycleToken: number,
+  ) {
       let recoveryTransition = false;
       if (this.monitor.safety().connectivity !== "HEALTHY") {
         const status = this.marketStatus();
@@ -290,7 +265,6 @@ export class BotEngine {
       decision.analysisContext = cycle.analysis;
       cycle.outcome = "ANALYZED";
       this.db.recordAnalysis(cycle.cycleId, decision, current, now);
-      measuredAction = decision.action;
       this.monitor.analysis();
       this.db.set("price", price);
       this.db.append(
@@ -341,6 +315,50 @@ export class BotEngine {
           }),
         );
       }
+    return { recoveryTransition, p, s, runtime, decision, sellPreview };
+  }
+
+  async tick() {
+    this.db.assertHealthy();
+    if (this.deploymentStopped()) return;
+    if (this.busy) return;
+    this.busy = true;
+    let audit: CandidateAudit | null = null;
+    let committed = false;
+    const began = Date.now();
+    let measuredFrames: Record<number, Candle[]> = {},
+      measuredAction: string | null = null,
+      measuredError: string | null = null;
+    const cycleToken = this.monitor.beginCycle();
+    const cycle: CycleEvidence = {
+      cycleId: randomUUID(),
+      beganAt: began,
+      runningAtStart: this.db.runtime().running,
+      generationAtStart: cycleToken,
+      connectivityAtStart: this.monitor.safety().connectivity,
+      analysis: null,
+      outcome: "NOT_EVALUATED",
+    };
+    try {
+      this.db.append(
+        "cycle_audits",
+        randomUUID(),
+        { ...cycle, phase: "START" },
+        began,
+      );
+      const now = Date.now();
+      const frames = await this.acquireFrames(cycle, began, now);
+      measuredFrames = frames;
+      const c = frames[300],
+        last = c.at(-1)!,
+        price = last.close;
+      validateCandles(c, 300, Date.now());
+      this.monitor.market((last.timestamp + 300) * 1000);
+      if (this.db.runtime().running && !this.monitor.ledger().ok)
+        throw new Error("PAPER_RECONCILIATION_FAILED");
+      const { recoveryTransition, p, s, runtime, decision, sellPreview } =
+        await this.analyzeCycle(c, price, began, now, cycle, cycleToken);
+      measuredAction = decision.action;
       if (recoveryTransition) {
         cycle.outcome = "RECOVERY_CONFIRMATION";
         return;
