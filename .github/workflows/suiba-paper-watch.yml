@@ -1,0 +1,82 @@
+name: SuiBa PAPER watch
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type WATCH-PAPER"
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: suiba-paper-watch
+  cancel-in-progress: false
+jobs:
+  paper-watch:
+    # Same gate as suiba-paper-status.yml: repository variable, NOT an
+    # Environment variable, evaluated before job startup. Missing/false
+    # disables all SSH. The sakura-vps Environment approval covers the
+    # whole watch (one approval, then up to ~40 minutes of polling).
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'WATCH-PAPER' && vars.SUIBA_PAPER_STATUS_ENABLED == 'true'
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Watch PAPER status through the fixed wrapper
+        env:
+          PAPER_STATUS_CONFIRMATION: CHECK-PAPER-STATUS
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          # Observational only: a failed poll or a failed run is a result,
+          # not a job failure. Exit codes are managed manually below.
+          set +e
+          watch_seconds=2400
+          poll_interval=120
+          deadline=$(( $(date +%s) + watch_seconds ))
+          poll=0
+          final_state="unknown (no successful poll)"
+          while true; do
+            poll=$(( poll + 1 ))
+            ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+            echo "=== Poll ${poll} at ${ts} ==="
+            {
+              echo ""
+              echo "## Poll ${poll} — ${ts} UTC"
+            } >> "$GITHUB_STEP_SUMMARY"
+            # ssh-paper-status.sh renders a validated summary to stdout and
+            # also appends it to $GITHUB_STEP_SUMMARY itself (via tee).
+            out=$(bash sui-ai-trading-bot/docker/ssh-paper-status.sh 2>&1)
+            rc=$?
+            printf '%s\n' "$out"
+            if [ $rc -ne 0 ]; then
+              echo "Poll ${poll} failed (status script exit ${rc}); continuing."
+            fi
+            state=$(printf '%s\n' "$out" | sed -n 's/^- Run: `\([^`]*\)`.*/\1/p' | head -n 1)
+            if [ -n "$state" ]; then
+              final_state="$state"
+            fi
+            case "$state" in
+              completed|failed_requires_review)
+                echo "Terminal run status reached: ${state}"
+                break
+                ;;
+            esac
+            remaining=$(( deadline - $(date +%s) ))
+            if [ $remaining -le 0 ]; then
+              echo "Watch window (${watch_seconds}s) exhausted."
+              break
+            fi
+            sleep_for=$poll_interval
+            if [ $remaining -lt $sleep_for ]; then
+              sleep_for=$remaining
+            fi
+            sleep $sleep_for
+          done
+          echo "Final PAPER run status: ${final_state}"
