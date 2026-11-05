@@ -1,15 +1,14 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readAppShell } from "./helpers/source";
 import {
   errorShout,
   type SafetyLike,
 } from "../apps/dashboard/src/errorShout.ts";
 import { AgentHeaderAvatar } from "../apps/dashboard/src/AgentNarration.tsx";
 
-const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
+const shell = readAppShell();
 
 const safety = (patch: Partial<SafetyLike> = {}): SafetyLike => ({
   botState: "RUNNING",
@@ -89,7 +88,7 @@ describe("header avatar shout rendering", () => {
   });
 
   it("is wired from the app shell's safety snapshot and fetch error", () => {
-    expect(main).toContain("errorShout(data?.safety ?? null, stateStale)");
-    expect(main).toContain("shout={shout}");
+    expect(shell).toContain("errorShout(data?.safety ?? null, stateStale)");
+    expect(shell).toContain("shout={shout}");
   });
 });

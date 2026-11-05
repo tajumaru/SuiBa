@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readNarrationFeed } from "./helpers/source";
 import { AgentNarrationFeed } from "../apps/dashboard/src/AgentNarration.tsx";
 import type { OperationsSnapshot } from "../apps/dashboard/src/operationsTypes.ts";
 import {
@@ -64,10 +63,7 @@ describe("narration feed: message order", () => {
   });
 
   it("wires the jump pill and the stick management into the feed", () => {
-    const component = readFileSync(
-      resolve("apps/dashboard/src/AgentNarrationFeed.tsx"),
-      "utf8",
-    );
+    const component = readNarrationFeed();
     expect(component).toContain("最新の実況へ");
     expect(component).toContain("agent-feed-jump");
     expect(component).toContain("isStuckToFeedBottom");

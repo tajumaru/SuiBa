@@ -4,13 +4,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readAppShell } from "./helpers/source";
 import type { BotEngine } from "../apps/worker/src/engine.ts";
 import { OperationBar } from "../apps/dashboard/src/OperationBar.tsx";
 
 type State = ReturnType<BotEngine["snapshot"]>;
 type Runtime = State["runtime"];
 
-const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
+const shell = readAppShell();
 const bar = readFileSync(
   resolve("apps/dashboard/src/OperationBar.tsx"),
   "utf8",
@@ -113,33 +114,33 @@ describe("operation bar states", () => {
   });
 });
 
-describe("operation bar wiring (main.tsx)", () => {
+describe("operation bar wiring (app shell)", () => {
   it("renders once, at the top of the logged-in content on every tab", () => {
-    expect(main.match(/<OperationBar/g)).toHaveLength(1);
-    const barAt = main.indexOf("<OperationBar");
+    expect(shell.match(/<OperationBar/g)).toHaveLength(1);
+    const barAt = shell.indexOf("<OperationBar");
     // Inside the data-gated content (so it appears with the first
     // snapshot, like the global notices), right under the title —
     // and not inside any single tab's branch.
-    expect(barAt).toBeGreaterThan(main.indexOf('className="title"'));
-    expect(barAt).toBeLessThan(main.indexOf('className="narration-tab"'));
-    expect(barAt).toBeLessThan(main.indexOf('activeTab === "Strategy"'));
+    expect(barAt).toBeGreaterThan(shell.indexOf('className="title"'));
+    expect(barAt).toBeLessThan(shell.indexOf('className="narration-tab"'));
+    expect(barAt).toBeLessThan(shell.indexOf('activeTab === "Strategy"'));
     // Before connecting, the login gate renders instead of the
     // app main, so the bar cannot appear on the login screen.
-    expect(main).toContain("<LoginScreen");
+    expect(shell).toContain("<LoginScreen");
     expect(barAt).toBeGreaterThan(
-      main.indexOf('<main className="has-avatar">'),
+      shell.indexOf('<main className="has-avatar">'),
     );
   });
 
   it("feeds the live runtime and jumps via the app tab switch", () => {
-    expect(main).toContain("runtime={data.runtime}");
-    expect(main).toContain("control={control}");
-    expect(main).toContain('onOpenStrategy={() => setTab("Strategy")}');
+    expect(shell).toContain("runtime={data.runtime}");
+    expect(shell).toContain("control={control}");
+    expect(shell).toContain('onOpenStrategy={() => setTab("Strategy")}');
   });
 
   it("feeds the bar the strategy editor's start blocks", () => {
-    expect(main).toContain("startBlocked={startBlocked}");
-    expect(main).toContain("onStartGateChange={setStartBlocked}");
+    expect(shell).toContain("startBlocked={startBlocked}");
+    expect(shell).toContain("onStartGateChange={setStartBlocked}");
   });
 
   it("stays a single slim line that cannot collide with the avatar dock spacing", () => {

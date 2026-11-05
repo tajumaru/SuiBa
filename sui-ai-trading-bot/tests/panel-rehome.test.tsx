@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, it } from "vitest";
+import { readAppShell } from "./helpers/source";
 import { OperationMonitor } from "../apps/worker/src/operations.ts";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import {
@@ -150,15 +151,15 @@ it("summarizes recovery without repeating its technical requirements", () => {
 });
 
 it("keeps diagnostics on the operations tab without a duplicate overview status card", () => {
-  const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
+  const shell = readAppShell();
   // The fixed header already provides the overview's current status.
-  expect(main).toContain('activeTab === "Overview"');
-  expect(main).not.toContain("<ConnectivityStrip");
+  expect(shell).toContain('activeTab === "Overview"');
+  expect(shell).not.toContain("<ConnectivityStrip");
   // Neither full panel follows the reader across tabs any more.
-  expect(main).not.toContain("MarketDataPanel");
-  expect(main).not.toContain("<ConnectivityPanel");
+  expect(shell).not.toContain("MarketDataPanel");
+  expect(shell).not.toContain("<ConnectivityPanel");
   // The tab-independent emergency notice stays visible on every tab.
-  expect(main).not.toContain("<RecoveryGuidance");
+  expect(shell).not.toContain("<RecoveryGuidance");
   const operations = readFileSync(
     resolve("apps/dashboard/src/OperationsPanel.tsx"),
     "utf8",

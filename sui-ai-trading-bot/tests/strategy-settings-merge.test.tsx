@@ -1,8 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { readAppShell } from "./helpers/source";
 import { defaults } from "../packages/shared/src/index.ts";
 import type { BotEngine } from "../apps/worker/src/engine.ts";
 import { StrategyPanel } from "../apps/dashboard/src/StrategyPanel.tsx";
@@ -14,42 +13,42 @@ import {
 
 type State = ReturnType<BotEngine["snapshot"]>;
 
-const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
+const shell = readAppShell();
 
-describe("strategy / settings tab merge (main.tsx wiring)", () => {
+describe("strategy / settings tab merge (app shell wiring)", () => {
   it("has exactly six nav tabs and no settings tab", () => {
-    const block = main.slice(
-      main.indexOf("const NAV_TABS = ["),
-      main.indexOf("];", main.indexOf("const NAV_TABS = [")),
+    const block = shell.slice(
+      shell.indexOf("const NAV_TABS = ["),
+      shell.indexOf("];", shell.indexOf("const NAV_TABS = [")),
     );
     const entries = block.match(/"[^"]+"|運用検証|バックテスト比較/g) ?? [];
     expect(entries).toHaveLength(6);
     expect(block).not.toContain('"Settings"');
-    expect(main).not.toContain('activeTab === "Settings"');
+    expect(shell).not.toContain('activeTab === "Settings"');
   });
 
   it("falls a restored Settings value back to the strategy tab", () => {
-    expect(main).toContain('tab === "Settings"');
-    expect(main).toContain('? "Strategy"');
+    expect(shell).toContain('tab === "Settings"');
+    expect(shell).toContain('? "Strategy"');
     // ... on its 設定 segment (see strategy-segments.test.tsx).
-    expect(main).toContain('tab === "Settings" ? "settings" : "rules"');
+    expect(shell).toContain('tab === "Settings" ? "settings" : "rules"');
     // Any other unknown value still falls back to the dashboard.
-    expect(main).toContain(': "Overview"');
+    expect(shell).toContain(': "Overview"');
   });
 
   it("renders the strategy tab composition on the strategy tab", () => {
     // The diagram view and the settings editor are composed by
     // StrategyTab (segment switch: ルール / 設定, with the PAPER
     // operation controls always visible below the segments).
-    const branch = main.slice(main.indexOf('activeTab === "Strategy"'));
+    const branch = shell.slice(shell.indexOf('activeTab === "Strategy"'));
     expect(branch).toContain("<StrategyTab");
     expect(branch).toContain("segment={strategySegment}");
   });
 
   it("points the tab-independent notices at the strategy tab", () => {
-    expect(main).toContain('onOpenStrategy={() => setTab("Strategy")}');
-    expect(main).not.toContain("設定の「停止状態の解除」");
-    expect(main).not.toContain("<RecoveryGuidance");
+    expect(shell).toContain('onOpenStrategy={() => setTab("Strategy")}');
+    expect(shell).not.toContain("設定の「停止状態の解除」");
+    expect(shell).not.toContain("<RecoveryGuidance");
   });
 
   it("drops the settings entry from the mobile tab bar metadata", () => {

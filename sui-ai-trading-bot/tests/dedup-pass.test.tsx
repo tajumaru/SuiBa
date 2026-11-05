@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readOverview } from "./helpers/source";
 import { defaults } from "../packages/shared/src/index.ts";
 import type { BotEngine } from "../apps/worker/src/engine.ts";
 import {
@@ -14,11 +15,7 @@ import { ProfitGuardSummary } from "../apps/dashboard/src/ProfitGuardPanel.tsx";
 
 type State = ReturnType<BotEngine["snapshot"]>;
 
-const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
-const overviewTab = readFileSync(
-  resolve("apps/dashboard/src/OverviewTab.tsx"),
-  "utf8",
-);
+const overview = readOverview();
 const css = readDashboardCss();
 const operationOverview = readFileSync(
   resolve("apps/dashboard/src/OperationOverview.tsx"),
@@ -31,7 +28,7 @@ const operationsPanel = readFileSync(
 
 describe("dashboard dedup: SUI price lives only in the ticker", () => {
   it("drops the SUI価格 card from the overview cards and merges the holdings into one card", () => {
-    expect(main).not.toContain("SUI価格");
+    expect(overview).not.toContain("SUI価格");
     for (const label of [
       "仮想総資産",
       "累計損益",
@@ -40,7 +37,7 @@ describe("dashboard dedup: SUI price lives only in the ticker", () => {
       "本日の取引（日本時間09:00から）",
       "未実現損益",
     ])
-      expect(overviewTab).toContain(label);
+      expect(overview).toContain(label);
   });
 });
 
@@ -135,7 +132,7 @@ describe("dashboard dedup: profit guard detail lives on the strategy tab", () =>
   });
 
   it("omits profit-guard cards from the overview", () => {
-    expect(main).not.toContain("<ProfitGuardSummary");
-    expect(main).not.toContain("<ProfitGuardPanel");
+    expect(overview).not.toContain("<ProfitGuardSummary");
+    expect(overview).not.toContain("<ProfitGuardPanel");
   });
 });

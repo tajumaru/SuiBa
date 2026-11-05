@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readAppShell } from "./helpers/source";
 import { defaults } from "../packages/shared/src/index.ts";
 import type { BotEngine } from "../apps/worker/src/engine.ts";
 import {
@@ -18,7 +19,7 @@ const settingsPage = readFileSync(
   resolve("apps/dashboard/src/SettingsPage.tsx"),
   "utf8",
 );
-const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
+const shell = readAppShell();
 
 const editor = (
   flags: Partial<Pick<SettingsEditor, "busy" | "dirty" | "conflict">> & {
@@ -91,8 +92,8 @@ describe("start rejection reasons (server 409 codes)", () => {
   it("is wired into the operation controls as an alert", () => {
     // control() hands the code back and the controls translate and
     // show it where the start button was pressed.
-    expect(main).toContain("Promise<string | null>");
-    expect(main).toContain("return code;");
+    expect(shell).toContain("Promise<string | null>");
+    expect(shell).toContain("return code;");
     expect(settingsPage).toContain('setStartFailure(await control("start"))');
     expect(settingsPage).toContain("startRejectionReason(startFailure)");
     expect(settingsPage).toContain('role="alert"');
@@ -102,8 +103,8 @@ describe("start rejection reasons (server 409 codes)", () => {
     // The banner renders bannerError, and control() raises it for
     // every command except start, whose refusal the operation bar
     // already reports with the specific reason.
-    expect(main).toContain("<Reason code={bannerError} />");
-    expect(main).toContain('if (command !== "start") setBannerError(code);');
+    expect(shell).toContain("<Reason code={bannerError} />");
+    expect(shell).toContain('if (command !== "start") setBannerError(code);');
   });
 });
 

@@ -3,13 +3,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { readAppShell } from "./helpers/source";
 import { defaults } from "../packages/shared/src/index.ts";
 import type { BotEngine } from "../apps/worker/src/engine.ts";
 import { StrategyTab } from "../apps/dashboard/src/StrategyTab.tsx";
 
 type State = ReturnType<BotEngine["snapshot"]>;
 
-const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
+const shell = readAppShell();
 const strategyTab = readFileSync(
   resolve("apps/dashboard/src/StrategyTab.tsx"),
   "utf8",
@@ -164,8 +165,8 @@ describe("strategy tab segments", () => {
   });
 
   it("opens the 設定 segment for a restored Settings tab value", () => {
-    expect(main).toContain('tab === "Settings" ? "settings" : "rules"');
-    const branch = main.slice(main.indexOf('activeTab === "Strategy"'));
+    expect(shell).toContain('tab === "Settings" ? "settings" : "rules"');
+    const branch = shell.slice(shell.indexOf('activeTab === "Strategy"'));
     expect(branch).toContain("<StrategyTab");
     expect(branch).toContain("segment={strategySegment}");
     expect(branch).toContain("onSegmentChange={setStrategySegmentChoice}");

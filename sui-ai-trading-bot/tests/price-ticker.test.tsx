@@ -1,9 +1,8 @@
 import { readDashboardCss } from "./helpers/dashboard-css";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readAppShell } from "./helpers/source";
 import type { BotEngine } from "../apps/worker/src/engine.ts";
 import {
   PriceTicker,
@@ -19,7 +18,7 @@ type State = ReturnType<BotEngine["snapshot"]>;
 type Frames = State["candlesByTimeframe"];
 type Candle = Frames[300][number];
 
-const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
+const shell = readAppShell();
 const css = readDashboardCss().replace(/\r\n/g, "\n");
 
 const T0 = 1_700_000_000;
@@ -255,17 +254,17 @@ describe("price ticker rendering", () => {
 
 describe("price ticker wiring and style", () => {
   it("rides directly under the operation bar, inside the snapshot block", () => {
-    const barAt = main.indexOf("<OperationBar");
-    const tickerAt = main.indexOf("<PriceTicker");
-    const snapshotBlockAt = main.indexOf("{data && (");
+    const barAt = shell.indexOf("<OperationBar");
+    const tickerAt = shell.indexOf("<PriceTicker");
+    const snapshotBlockAt = shell.indexOf("{data && (");
     expect(barAt).toBeGreaterThan(-1);
     expect(tickerAt).toBeGreaterThan(barAt);
     expect(snapshotBlockAt).toBeGreaterThan(-1);
     expect(snapshotBlockAt).toBeLessThan(barAt);
     // Before every tab panel: the ticker is tab-independent.
-    expect(tickerAt).toBeLessThan(main.indexOf('activeTab === "Overview"'));
-    expect(main).toContain("price={data.price}");
-    expect(main).toContain("candlesByTimeframe={data.candlesByTimeframe}");
+    expect(tickerAt).toBeLessThan(shell.indexOf('activeTab === "Overview"'));
+    expect(shell).toContain("price={data.price}");
+    expect(shell).toContain("candlesByTimeframe={data.candlesByTimeframe}");
   });
 
   it("is styled like the operation bar, one line, sparkline shrinks first", () => {

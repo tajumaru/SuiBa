@@ -1,8 +1,7 @@
 import { readDashboardCss } from "./helpers/dashboard-css";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readAppShell, readNarrationFeed } from "./helpers/source";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { OperationMonitor } from "../apps/worker/src/operations.ts";
@@ -265,10 +264,7 @@ describe("buy celebration: spotting a genuinely new buy", () => {
   });
 
   it("wires the initialised guard and the callback into the feed", () => {
-    const component = readFileSync(
-      resolve("apps/dashboard/src/AgentNarrationFeed.tsx"),
-      "utf8",
-    );
+    const component = readNarrationFeed();
     expect(component).toContain("if (firstAdvance || !prev.initialized) return;");
     expect(component).toContain("findNewBuyEntry(prev.entries, next.entries)");
     expect(component).toContain("CELEBRATION_FRESH_MS");
@@ -291,16 +287,12 @@ describe("buy celebration: the four-second window", () => {
   });
 
   it("clears the shell's celebration on the same constant", () => {
-    const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
-    const appHeader = readFileSync(
-      resolve("apps/dashboard/src/AppHeader.tsx"),
-      "utf8",
-    );
-    expect(main).toContain("BUY_CELEBRATION_MS");
-    expect(main).toContain("onCelebrate={handleBuyCelebration}");
-    // The avatar itself renders inside AppHeader since the split.
-    expect(appHeader).toContain("celebrating={buyCelebration}");
-    expect(main).toContain("glow={buyCelebration}");
+    const shell = readAppShell();
+    expect(shell).toContain("BUY_CELEBRATION_MS");
+    expect(shell).toContain("onCelebrate={handleBuyCelebration}");
+    // The avatar itself renders inside the shell's header part.
+    expect(shell).toContain("celebrating={buyCelebration}");
+    expect(shell).toContain("glow={buyCelebration}");
   });
 });
 

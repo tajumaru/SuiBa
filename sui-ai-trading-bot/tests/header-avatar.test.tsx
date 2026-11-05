@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readAppShell, readNarrationFeed } from "./helpers/source";
 import {
   AgentHeaderAvatar,
   AgentNarrationFeed,
@@ -250,10 +251,7 @@ describe("narration feed after the stage removal", () => {
   });
 
   it("leaves no stage or expression-overlay code behind", () => {
-    const component = readFileSync(
-      resolve("apps/dashboard/src/AgentNarrationFeed.tsx"),
-      "utf8",
-    );
+    const component = readNarrationFeed();
     expect(component).not.toContain("agent-feed-stage");
     expect(component).not.toContain("AgentPoseFx");
     expect(component).not.toContain("AgentStageArtwork");
@@ -264,28 +262,21 @@ describe("narration feed after the stage removal", () => {
   });
 
   it("reports the derived pose to the app shell", () => {
-    const component = readFileSync(
-      resolve("apps/dashboard/src/AgentNarrationFeed.tsx"),
-      "utf8",
-    );
+    const component = readNarrationFeed();
     expect(component).toContain("onPoseChange?.(reportedPose)");
   });
 });
 
-describe("agent header avatar wiring (AppHeader.tsx)", () => {
-  const main = readFileSync(resolve("apps/dashboard/src/main.tsx"), "utf8");
-  const appHeader = readFileSync(
-    resolve("apps/dashboard/src/AppHeader.tsx"),
-    "utf8",
-  );
+describe("agent header avatar wiring (app shell)", () => {
+  const shell = readAppShell();
 
   it("renders the avatar at the app top, fed by the narration feed", () => {
-    expect(appHeader).toContain("<AgentHeaderAvatar");
-    expect(appHeader).toContain("pose={agentPose}");
-    expect(appHeader).toContain("celebrating={buyCelebration}");
-    expect(appHeader).toContain("shout={shout}");
-    expect(main).toContain("onPoseChange={setAgentPose}");
-    expect(main).toContain('useState<AgentPose>("normal")');
+    expect(shell).toContain("<AgentHeaderAvatar");
+    expect(shell).toContain("pose={agentPose}");
+    expect(shell).toContain("celebrating={buyCelebration}");
+    expect(shell).toContain("shout={shout}");
+    expect(shell).toContain("onPoseChange={setAgentPose}");
+    expect(shell).toContain('useState<AgentPose>("normal")');
   });
 
   it("renders the avatar outside the header, as its sibling", () => {
@@ -294,11 +285,11 @@ describe("agent header avatar wiring (AppHeader.tsx)", () => {
     // its parent), so the single render site sits between the
     // header and the tab bar, under the app root. Since the
     // AppHeader extraction the header and the avatar live in
-    // AppHeader.tsx (avatar after </header>), and the shell
-    // renders AppHeader before the tab bar.
-    const avatarAt = appHeader.indexOf("<AgentHeaderAvatar");
-    expect(avatarAt).toBeGreaterThan(appHeader.indexOf("</header>"));
-    expect(main.indexOf("<AppHeader")).toBeLessThan(main.indexOf("<nav"));
+    // the shell's header part (avatar after </header>), and the
+    // shell renders that part before the tab bar.
+    const avatarAt = shell.indexOf("<AgentHeaderAvatar");
+    expect(avatarAt).toBeGreaterThan(shell.indexOf("</header>"));
+    expect(shell.indexOf("<AppHeader")).toBeLessThan(shell.indexOf("<nav"));
   });
 
   it("keeps the header avatar dock behind the token", () => {
@@ -308,9 +299,9 @@ describe("agent header avatar wiring (AppHeader.tsx)", () => {
     // own main, which is a different element from the dock —
     // the dock itself still never appears pre-login, and the
     // login main takes no avatar clearance class.
-    expect(appHeader.match(/<AgentHeaderAvatar/g)).toHaveLength(1);
-    expect(main).toContain("<LoginScreen");
-    expect(main).not.toContain('className="login has-avatar"');
+    expect(shell.match(/<AgentHeaderAvatar/g)).toHaveLength(1);
+    expect(shell).toContain("<LoginScreen");
+    expect(shell).not.toContain('className="login has-avatar"');
     const login = readFileSync(
       resolve("apps/dashboard/src/LoginScreen.tsx"),
       "utf8",
@@ -320,8 +311,8 @@ describe("agent header avatar wiring (AppHeader.tsx)", () => {
   });
 
   it("gives the tab bar and the page the avatar clearance classes", () => {
-    expect(main).toContain('<nav className="has-avatar">');
-    expect(main).toContain('<main className="has-avatar">');
+    expect(shell).toContain('<nav className="has-avatar">');
+    expect(shell).toContain('<main className="has-avatar">');
   });
 });
 
