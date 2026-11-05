@@ -119,6 +119,7 @@ jobs:
           SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
           RELEASE_SHA: ${{ github.sha }}
+          ARCHIVE_SHA256: ${{ needs.validate.outputs.archive_sha256 }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -128,6 +129,9 @@ jobs:
           [[ $VPS_USER == 'suiba-deploy' ]]
           [[ $VPS_PORT =~ ^[0-9]{1,5}$ ]]
           (( 10#$VPS_PORT >= 1 && 10#$VPS_PORT <= 65535 ))
+          [[ $ARCHIVE_SHA256 =~ ^[a-f0-9]{64}$ ]]
+          image_id=$(tr -d '[:space:]' < release/image-id.txt)
+          [[ $image_id =~ ^sha256:[a-f0-9]{64}$ ]]
           key="$RUNNER_TEMP/vps-key"
           hosts="$RUNNER_TEMP/vps-known-hosts"
           trap 'rm -f "$key" "$hosts"' EXIT
@@ -138,7 +142,13 @@ jobs:
           # Unprivileged upload only. No candidate script, Compose or env is executed.
           ssh "${opts[@]}" -p "$VPS_PORT" "$target" "umask 077; mkdir -p /var/lib/suiba-incoming/$RELEASE_SHA"
           scp "${opts[@]}" -P "$VPS_PORT" release/image.tar.gz "$target:/var/lib/suiba-incoming/$RELEASE_SHA/image.tar.gz"
-          # Independent root-owned approval must already bind this SHA/archive/image.
-          # Broker has no CLI arguments and only creates a STOPPED container.
-          printf '{"operation":"deploy","sha":"%s"}\n' "$RELEASE_SHA" |
+          # The broker's administrator-owned policy selects the approval
+          # source: a pre-committed root-owned approval file ("file"), or
+          # this run's digests ("ci") — in ci mode the request below
+          # carries the archive/image digests the validate job produced
+          # for the run the Environment approval was granted to, and the
+          # broker re-verifies them against the transferred bytes and
+          # the loaded image. Broker has no CLI arguments and only
+          # creates a STOPPED container.
+          printf '{"operation":"deploy","sha":"%s","archive_sha256":"%s","image_id":"%s","ci_run":%s}\n' "$RELEASE_SHA" "$ARCHIVE_SHA256" "$image_id" "${{ github.run_id }}" |
             ssh "${opts[@]}" -T -p "$VPS_PORT" "$target" 'sudo -n -- /usr/local/sbin/suiba-deploy'

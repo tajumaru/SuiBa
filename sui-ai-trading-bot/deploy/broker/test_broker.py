@@ -509,6 +509,76 @@ class BrokerTests(unittest.TestCase):
             self.broker.execute(self.req, 1001)
         self.assertEqual(self.docker.calls, [])
 
+    def use_ci_policy(self):
+        compose = (self.policy/'compose.yaml').read_bytes()
+        (self.policy/'policy.json').write_text(json.dumps(
+            {'helper_image': HELPER, 'compose_sha256': hashlib.sha256(compose).hexdigest(),
+             'approval_source': 'ci'}))
+        return {'operation': 'deploy', 'sha': SHA,
+                'archive_sha256': hashlib.sha256(b'approved-archive').hexdigest(),
+                'image_id': IMAGE, 'ci_run': 456}
+
+    def test_ci_approval_success_derives_sequence_and_records_run(self):
+        req = self.use_ci_policy()
+        result = self.broker.execute(req, 1001)
+        self.assertEqual(result['status'], 'prepared_stopped')
+        ledger = json.loads((self.state/'ledger.json').read_text())
+        self.assertEqual(ledger['sequence'], 1)
+        self.assertEqual(ledger['ci_run'], 456)
+        self.assertEqual(ledger['status'], 'prepared_stopped')
+
+    def test_ci_approval_replay_and_older_run_rejected_newer_run_proceeds(self):
+        req = self.use_ci_policy()
+        self.broker.execute(req, 1001)
+        self.docker.calls.clear()
+        for stale in (456, 455):
+            with self.subTest(ci_run=stale), self.assertRaisesRegex(b.Rejected, 'REPLAY_OR_OLD_RELEASE'):
+                self.broker.execute({**req, 'ci_run': stale}, 1001)
+        self.assertEqual(self.docker.calls, [])
+        (self.state/'attempt.json').unlink()
+        result = self.broker.execute({**req, 'ci_run': 457}, 1001)
+        self.assertEqual(result['status'], 'prepared_stopped')
+        self.assertEqual(result['sequence'], 2)
+        self.assertEqual(result['ci_run'], 457)
+
+    def test_ci_approval_wrong_archive_digest_never_mutates(self):
+        req = self.use_ci_policy()
+        with self.assertRaisesRegex(b.Rejected, 'ARCHIVE_DIGEST'):
+            self.broker.execute({**req, 'archive_sha256': '0'*64}, 1001)
+        for a in self.docker.calls:
+            self.assertNotIn(a[0], ('load', 'run'))
+            self.assertNotIn('create', a)
+            self.assertNotIn('stop', a)
+        self.assertFalse((self.state/'ledger.json').exists())
+
+    def test_ci_fields_rejected_in_file_mode(self):
+        req = {'operation': 'deploy', 'sha': SHA,
+               'archive_sha256': hashlib.sha256(b'approved-archive').hexdigest(),
+               'image_id': IMAGE, 'ci_run': 456}
+        with self.assertRaisesRegex(b.Rejected, 'REQUEST_SCHEMA'):
+            self.broker.execute(req, 1001)
+        self.assertEqual(self.docker.calls, [])
+        self.assertFalse((self.state/'ledger.json').exists())
+
+    def test_ci_mode_requires_ci_fields(self):
+        self.use_ci_policy()
+        with self.assertRaisesRegex(b.Rejected, 'CI_APPROVAL_REQUIRED'):
+            self.broker.execute(self.req, 1001)
+        self.assertEqual(self.docker.calls, [])
+
+    def test_request_accepts_ci_shape_and_rejects_partial_or_bad_digests(self):
+        req = {'operation': 'deploy', 'sha': SHA,
+               'archive_sha256': hashlib.sha256(b'approved-archive').hexdigest(),
+               'image_id': IMAGE, 'ci_run': 456}
+        self.assertEqual(b.request(json.dumps(req).encode()), req)
+        for bad in [{k: v for k, v in req.items() if k != 'ci_run'},
+                    {**req, 'archive_sha256': 'zz'},
+                    {**req, 'image_id': 'suiba:latest'},
+                    {**req, 'ci_run': 0},
+                    {**req, 'ci_run': '456'}]:
+            with self.subTest(bad=bad), self.assertRaises(Exception):
+                b.request(json.dumps(bad).encode())
+
     def test_rollback_requires_explicit_new_approval(self):
         self.req['operation'] = 'rollback'
         with self.assertRaises(b.Rejected):

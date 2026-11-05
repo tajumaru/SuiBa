@@ -3,6 +3,9 @@
 
 The SSH caller controls only a SHA/operation request and an untrusted archive.
 All paths, Docker policy and approval records are administrator-owned.
+The administrator-owned policy selects the approval source: a pre-committed
+approval file ("file", the default), or the digests of the CI run the
+administrator approved in the hosting UI ("ci"). See approval-ci.md.
 """
 import contextlib
 import fcntl
@@ -192,9 +195,19 @@ def decode(raw):
 def request(raw):
     require(len(raw) <= 512, 'REQUEST_TOO_LARGE')
     value = decode(raw)
-    require(isinstance(value, dict) and set(value) == {'operation', 'sha'}, 'REQUEST_SCHEMA')
+    require(isinstance(value, dict) and
+            {'operation', 'sha'} <= set(value) <= {'operation', 'sha', 'archive_sha256', 'image_id', 'ci_run'},
+            'REQUEST_SCHEMA')
     require(value['operation'] in ('deploy', 'rollback'), 'OPERATION')
     require(isinstance(value['sha'], str) and SHA.fullmatch(value['sha']), 'SHA')
+    if len(value) > 2:
+        # CI-carried approval fields. Their formats are validated here;
+        # whether they may be used at all is the administrator-owned
+        # policy's approval_source decision, enforced in transaction().
+        require(set(value) == {'operation', 'sha', 'archive_sha256', 'image_id', 'ci_run'}, 'REQUEST_SCHEMA')
+        require(isinstance(value['archive_sha256'], str) and HEX.fullmatch(value['archive_sha256']), 'APPROVAL_DIGEST')
+        require(isinstance(value['image_id'], str) and DIGEST.fullmatch(value['image_id']), 'APPROVAL_DIGEST')
+        require(type(value['ci_run']) is int and value['ci_run'] > 0, 'APPROVAL_EXPIRY_SEQUENCE')
     return value
 
 
@@ -523,22 +536,40 @@ class Broker:
     def transaction(self, req, uid):
         sha, operation = req['sha'], req['operation']
         policy = decode(read_trusted(self.policy/'policy.json'))
-        require(set(policy) == {'helper_image', 'compose_sha256'} and DIGEST.fullmatch(policy['helper_image']) and HEX.fullmatch(policy['compose_sha256']), 'POLICY_SCHEMA')
+        require({'helper_image', 'compose_sha256'} <= set(policy) <= {'helper_image', 'compose_sha256', 'approval_source'} and DIGEST.fullmatch(policy['helper_image']) and HEX.fullmatch(policy['compose_sha256']), 'POLICY_SCHEMA')
+        approval_source = policy.get('approval_source', 'file')
+        require(approval_source in ('file', 'ci'), 'POLICY_SCHEMA')
         compose = read_trusted(self.policy/'compose.yaml')
         require(hashlib.sha256(compose).hexdigest() == policy['compose_sha256'], 'COMPOSE_DIGEST')
         read_trusted(RUNTIME) if self.policy == POLICY else None
         if self.policy == POLICY:
             with regular(TOKEN, 1000) as token:
                 require(os.fstat(token).st_size >= 32 and not (os.fstat(token).st_mode & 0o077), 'SECRET_MODE')
-        approval = decode(read_trusted(self.policy/'approvals'/f'{sha}.json'))
-        require(set(approval) == {'sha', 'operation', 'archive_sha256', 'image_id', 'sequence', 'expires', 'repository', 'ref', 'ci_run'}, 'APPROVAL_SCHEMA')
-        require(approval['sha'] == sha and approval['operation'] == operation and approval['repository'] == 'tajumaru/SuiBa' and approval['ref'] == 'refs/heads/main', 'APPROVAL_IDENTITY')
-        require(HEX.fullmatch(approval['archive_sha256']) and DIGEST.fullmatch(approval['image_id']), 'APPROVAL_DIGEST')
-        require(type(approval['sequence']) is int and approval['sequence'] > 0 and type(approval['expires']) is int and approval['expires'] > time.time() and type(approval['ci_run']) is int and approval['ci_run'] > 0, 'APPROVAL_EXPIRY_SEQUENCE')
         ledger = self.state/'ledger.json'
         previous = decode(read_trusted(ledger)) if os.path.lexists(ledger) else {'sequence': 0}
-        require(approval['sequence'] > previous['sequence'], 'REPLAY_OR_OLD_RELEASE')
         require(previous.get('status') not in ('in_progress', 'failed_state_unknown'), 'ADMIN_RECONCILIATION_REQUIRED')
+        if approval_source == 'ci':
+            # The approval is the CI run the administrator approved in the
+            # hosting UI; the request carries that run's digests. Every
+            # host-verifiable fact is still re-derived below (the archive
+            # hash in snapshot(), the image identity in archive_identity()
+            # and loaded_identity()); the sequence comes from this
+            # broker's own ledger, never from the caller, and the run id
+            # must strictly increase, so a consumed request cannot be
+            # replayed and an older run can never displace a newer one.
+            require(set(req) == {'operation', 'sha', 'archive_sha256', 'image_id', 'ci_run'}, 'CI_APPROVAL_REQUIRED')
+            require(req['ci_run'] > previous.get('ci_run', 0), 'REPLAY_OR_OLD_RELEASE')
+            approval = {'sha': sha, 'operation': operation, 'archive_sha256': req['archive_sha256'],
+                        'image_id': req['image_id'], 'sequence': previous['sequence'] + 1,
+                        'ci_run': req['ci_run']}
+        else:
+            require(set(req) == {'operation', 'sha'}, 'REQUEST_SCHEMA')
+            approval = decode(read_trusted(self.policy/'approvals'/f'{sha}.json'))
+            require(set(approval) == {'sha', 'operation', 'archive_sha256', 'image_id', 'sequence', 'expires', 'repository', 'ref', 'ci_run'}, 'APPROVAL_SCHEMA')
+            require(approval['sha'] == sha and approval['operation'] == operation and approval['repository'] == 'tajumaru/SuiBa' and approval['ref'] == 'refs/heads/main', 'APPROVAL_IDENTITY')
+            require(HEX.fullmatch(approval['archive_sha256']) and DIGEST.fullmatch(approval['image_id']), 'APPROVAL_DIGEST')
+            require(type(approval['sequence']) is int and approval['sequence'] > 0 and type(approval['expires']) is int and approval['expires'] > time.time() and type(approval['ci_run']) is int and approval['ci_run'] > 0, 'APPROVAL_EXPIRY_SEQUENCE')
+            require(approval['sequence'] > previous['sequence'], 'REPLAY_OR_OLD_RELEASE')
         attempt = self.state/'attempt.json'
         if os.path.lexists(attempt):
             require(time.time() - decode(read_trusted(attempt))['at'] >= 30, 'RATE_LIMIT')
@@ -578,9 +609,17 @@ class Broker:
         atomic(self.model, model)
         # Consume approval before mutation. Failure/retry requires a NEW admin sequence.
         record = {'sequence': approval['sequence'], 'sha': sha, 'image_id': image, 'operation': operation, 'status': 'in_progress', 'transaction': transaction.name}
+        if approval_source == 'ci':
+            record['ci_run'] = approval['ci_run']
         scratch = 'suiba-vps-broker-'+transaction.name
         scratch_created = False
-        require(approval['expires'] > time.time(), 'APPROVAL_EXPIRED_BEFORE_MUTATION')
+        if approval_source == 'ci':
+            # The state lock is held for the whole transaction, so the
+            # ledger cannot have advanced since the replay check above;
+            # re-assert it rather than trusting that reasoning alone.
+            require(req['ci_run'] > previous.get('ci_run', 0), 'REPLAY_OR_OLD_RELEASE')
+        else:
+            require(approval['expires'] > time.time(), 'APPROVAL_EXPIRED_BEFORE_MUTATION')
         stage = 'consume-approval'
         try:
             atomic(ledger, record)
