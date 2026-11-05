@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { voiceText } from "../apps/dashboard/src/narration/voice.ts";
+import { greetingText, voiceText } from "../apps/dashboard/src/narration/voice.ts";
 
 describe("voiceText", () => {
   it("leaves the white character's lines exactly as written", () => {
@@ -55,5 +55,25 @@ describe("voiceText", () => {
     const text = "1時間で+2.4%（0.5123）";
     expect(voiceText("alert", text, "pen")).toBe(text);
     expect(voiceText("alert", text, "fizh")).toBe(text);
+  });
+});
+
+describe("greetingText", () => {
+  it("hands over by name, in the incoming character's voice", () => {
+    expect(greetingText("white", "pen", "")).toBe(
+      "キャラ、おつかれさまだぺん。交代だぺん！ここからはぺんちゃんが実況するぺん",
+    );
+    expect(greetingText("pen", "fizh", "")).toBe(
+      "ぺんちゃん、ご苦労であった。交代であるぞ。ここからは余、King Fizhが実況するぞ",
+    );
+    expect(greetingText("fizh", "white", "")).toBe(
+      "King Fizh、おつかれさま。交代だよ。ここからはキャラが実況するよ",
+    );
+  });
+
+  it("drops the address when a custom name reads the same on both sides", () => {
+    expect(greetingText("white", "pen", "ボブ")).toBe(
+      "交代だぺん！ここからはボブが実況するぺん",
+    );
   });
 });

@@ -15,6 +15,7 @@
  */
 
 import type { AgentCharacter } from "../agentCharacter.ts";
+import { agentDisplayName } from "../agentName.ts";
 import type { NarrationKind } from "./state.ts";
 
 const UNVOICED_KINDS: ReadonlySet<NarrationKind> = new Set([
@@ -48,6 +49,40 @@ const FIZH_ENDINGS: ReadonlyArray<readonly [RegExp, string]> = [
   [/だね/, "じゃな"],
   [/よ(?=。|：|！|!|$)/, "ぞ"],
 ];
+
+/**
+ * The handover line when the speaking character is switched:
+ * the incoming character thanks the outgoing one by name and
+ * takes over, in their own voice. When a custom name makes
+ * both sides read the same, the address is dropped and the
+ * takeover stands alone.
+ */
+export function greetingText(
+  prev: AgentCharacter,
+  next: AgentCharacter,
+  name: string,
+): string {
+  const prevName = agentDisplayName(name, prev);
+  const nextName = agentDisplayName(name, next);
+  const addressed = prevName !== nextName;
+  switch (next) {
+    case "pen":
+      return (
+        (addressed ? `${prevName}、おつかれさまだぺん。` : "") +
+        `交代だぺん！ここからは${nextName}が実況するぺん`
+      );
+    case "fizh":
+      return (
+        (addressed ? `${prevName}、ご苦労であった。` : "") +
+        `交代であるぞ。ここからは余、${nextName}が実況するぞ`
+      );
+    default:
+      return (
+        (addressed ? `${prevName}、おつかれさま。` : "") +
+        `交代だよ。ここからは${nextName}が実況するよ`
+      );
+  }
+}
 
 /** Rewrite the first spoken ending of `text` in the
  * character's voice. White (and unvoiced kinds, and texts with

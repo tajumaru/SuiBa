@@ -1,6 +1,7 @@
 import type { OperationsSnapshot } from "./operationsTypes.ts";
 import type { AgentPose, NarrationEntry, NarrationState } from "./agentNarration.ts";
 import { agentDisplayName } from "./agentName.ts";
+import { greetingText } from "./narration/voice.ts";
 import { useAgentCharacter } from "./agentCharacter.ts";
 import { useEffect, useRef, useState } from "react";
 import { persistNarration, restoreNarration } from "./narrationStorage.ts";
@@ -97,6 +98,40 @@ export function AgentNarrationFeed({
   // advance effect can diff entries before and after and spot a
   // buy fill that is genuinely new to this session.
   const narrationRef = useRef(narration);
+  // A character switch is greeted by the incoming character:
+  // one handover line in the feed, in their own voice. The
+  // first mount only records who is speaking — no greeting for
+  // the character who was already on duty when the feed opened.
+  const prevCharacterRef = useRef(character);
+  useEffect(() => {
+    const prevCharacter = prevCharacterRef.current;
+    prevCharacterRef.current = character;
+    if (prevCharacter === character) return;
+    const state = narrationRef.current;
+    if (!state.initialized) return;
+    const text = greetingText(prevCharacter, character, agentName);
+    const last = state.entries[state.entries.length - 1];
+    if (last?.kind === "greeting" && last.text === text) return;
+    const next: NarrationState = {
+      ...state,
+      entries: trimNarrationEntries([
+        ...state.entries,
+        {
+          id: `narration:${state.nextEntryId}`,
+          at: Date.now(),
+          kind: "greeting",
+          text,
+        } satisfies NarrationEntry,
+      ]),
+      nextEntryId: state.nextEntryId + 1,
+    };
+    narrationRef.current = next;
+    persist(next);
+    setNarration(next);
+    // persist is re-created per render; the switch itself is
+    // the only trigger this effect should answer to.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [character]);
   const hasAdvancedRef = useRef(false);
   // The entry whose arrival opened the running celebration, and
   // when it opened; the pulse class rides on it until the timer
@@ -231,7 +266,7 @@ export function AgentNarrationFeed({
       persist(withPrompt);
       setNarration(withPrompt);
     }
-  }, [data, stale, onCelebrate, trades, btc, forecasts, book, pairLabel, calibEvent]);
+  }, [data, stale, onCelebrate, trades, btc, forecasts, book, pairLabel, calibEvent, character]);
   const vital = botVital(data, stale, now, receivedAt);
   const pose = agentPose(narration, data, vital, now);
   // While a chat reply is fresh, the character turns to the user

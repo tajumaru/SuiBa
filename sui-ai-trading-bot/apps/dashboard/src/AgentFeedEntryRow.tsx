@@ -83,6 +83,9 @@ export function AgentFeedEntryRow({
       <time dateTime={new Date(entry.at).toISOString()}>
         {timeText(entry.at)}
       </time>
+      {entry.kind === "greeting" && (
+        <span className="agent-feed-entry-tag">交代</span>
+      )}
       {entry.kind === "review" && (
         <span className="agent-feed-entry-tag">ふりかえり</span>
       )}

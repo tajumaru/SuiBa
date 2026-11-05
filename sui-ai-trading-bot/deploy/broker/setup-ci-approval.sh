@@ -72,7 +72,7 @@ if [[ -e $SHARED/admin-token ]]; then
   echo 'admin-token: 既にあるため変更しません（形だけ確認します。中身は出しません）'
   size=$(stat -c %s "$SHARED/admin-token")
   if [[ $size -ge 33 && $size -le 256 ]] && grep -qE '^[0-9a-fA-F]+$' "$SHARED/admin-token"; then
-    echo '  admin-token: <redacted>
+    echo '  admin-token: 形は正常です（中身は出しません）'
   else
     echo "  警告: admin-token の形が想定と違います（サイズ: $size バイト）"
   fi

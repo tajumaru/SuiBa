@@ -63,6 +63,7 @@ const schema: z.ZodType<NarrationState> = z.object({
           "forecastTouchNear",
           "bookWall",
           "forecastCalib",
+          "greeting",
           "status",
         ]),
         text: z.string(),

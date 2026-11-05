@@ -36,6 +36,7 @@ export type NarrationKind =
   | "forecastTouchNear" // the touch line was nearly reached before time ran out
   | "bookWall" // an order-book wall appeared / vanished / was breached
   | "forecastCalib" // the cone's width learned from its scored record
+  | "greeting" // the incoming character's handover line on a character switch
   | "status"; // feed-initialised status line
 
 export interface NarrationEntry {
