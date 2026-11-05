@@ -13,6 +13,7 @@ import {
   type BookLevels,
   type BtcInfo,
   type Candle,
+  type DailyCandle,
   type ChainInfo,
   type CycleEvidence,
   type DexRouter,
@@ -90,6 +91,9 @@ export class BotEngine {
     private readonly bookImbalanceSource: () => number | null = () => null,
     private readonly btcInfoSource: () => BtcInfo | null = () => null,
     private readonly bookLevelsSource: () => BookLevels | null = () => null,
+    /** Display-only long-term daily candles for the level map
+     * (see longTerm.ts); null for pairs without a series. */
+    private readonly longTermSource: () => DailyCandle[] | null = () => null,
     private readonly sessionOrdersAllowed: () => boolean = () => true,
   ) {
     const portfolio = db.portfolio();
@@ -855,6 +859,7 @@ export class BotEngine {
       // path has one, else the independent sampler.
       bookLevels:
         this.market.bookLevels?.(Date.now()) ?? this.bookLevelsSource(),
+      longTermDaily: this.longTermSource(),
       marketData: this.market.status?.() ?? null,
       marketQuality: this.db.get("market_quality") ?? null,
       mode: "PAPER",

@@ -55,6 +55,10 @@ import {
 import { BotEngine } from "./engine.ts";
 import { ChainSampler, createChainInfoFetcher } from "./chainInfo.ts";
 import { BtcSampler, createBtcPriceFetcher } from "./btcInfo.ts";
+import {
+  LongTermSampler,
+  createDailyCandleFetcher,
+} from "./longTerm.ts";
 import { resolveSuiGrpcEndpoints } from "./suiEndpoints.ts";
 import {
   BookImbalanceSampler,
@@ -155,6 +159,18 @@ const pollBtc = async () => {
 void pollBtc();
 const btcTimer = setInterval(() => void pollBtc(), 60000);
 btcTimer.unref();
+// Display-only long-term daily candles for the dashboard's
+// level map (see longTerm.ts). Six hours is plenty for a
+// series that changes once a day; a failure keeps the last
+// good series. SUI only — WAL has no equivalent listing.
+const longTermSampler = new LongTermSampler();
+const fetchDailyCandles = createDailyCandleFetcher();
+const pollLongTerm = async () => {
+  longTermSampler.observe(await fetchDailyCandles());
+};
+void pollLongTerm();
+const longTermTimer = setInterval(() => void pollLongTerm(), 6 * 3600 * 1000);
+longTermTimer.unref();
 // Display-only book imbalance, sampled on its own fetch path
 // for the dashboard's model outlook (see bookInfo.ts). The
 // DeepBook routes already hold a validated book; this sampler
@@ -207,6 +223,7 @@ function createEngine(database: BotDatabase, selected: TradingPair) {
         () => bookSamplers[selected].current(),
         () => btcSampler.current(),
         () => bookSamplers[selected].currentLevels(),
+        () => (selected === "SUI_USDC" ? longTermSampler.current() : null),
         () => paperCheck.ordersAllowed(selected),
       ),
     };

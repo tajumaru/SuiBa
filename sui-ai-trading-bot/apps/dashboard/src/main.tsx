@@ -22,6 +22,7 @@ import { EquityCurve } from "./EquityCurve.tsx";
 import { useUpdateCheck } from "./appVersion.ts";
 import { UpdateBanner, VersionFooter } from "./VersionFooter.tsx";
 import { PortfolioMix } from "./PortfolioMix.tsx";
+import { LongTermChart } from "./LongTermChart.tsx";
 import { ChainStrip } from "./ChainStrip.tsx";
 import { BookBar } from "./BookBar.tsx";
 import { chartForecast, FORECAST_BARS } from "./chartForecast.ts";
@@ -823,6 +824,18 @@ function App() {
                         }
                       />
                     </section>
+                    {data.longTermDaily && data.longTermDaily.length >= 30 && (
+                      <section>
+                        <h3>長期マップ（週足と水準）</h3>
+                        <LongTermChart
+                          daily={data.longTermDaily}
+                          price={
+                            data.candlesByTimeframe[300]?.at(-1)?.close ??
+                            null
+                          }
+                        />
+                      </section>
+                    )}
                     <details className="overview-details">
                       <summary>詳細の数字</summary>
                       <div className="cards">

@@ -732,6 +732,25 @@
   height: 110px;
   display: block;
 }
+/* Long-term level map (Live tab, under the price chart). */
+.long-term-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.long-term-distances {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--dim);
+}
+.long-term-note {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--faint);
+}
 .equity-curve-axis {
   display: flex;
   justify-content: space-between;

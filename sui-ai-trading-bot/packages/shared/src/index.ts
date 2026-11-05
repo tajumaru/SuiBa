@@ -277,6 +277,19 @@ export interface Runtime {
  * quoted by the narration as ambience). Sampled beside the
  * trading paths; never an input to any trading or safety
  * decision. */
+/** One closed daily candle of the display-only long-term
+ * series (worker longTerm.ts; Coinbase SUI-USD). Deliberately
+ * not a Candle: the strategy's timeframe union must never
+ * grow a daily member for a viewing layer. */
+export interface DailyCandle {
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
 export interface BtcInfo {
   price: number;
   /** Change over the last hour in percent, from the sampler's
