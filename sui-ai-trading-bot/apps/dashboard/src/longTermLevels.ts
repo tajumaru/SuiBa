@@ -190,3 +190,34 @@ export function toWeekly(daily: readonly DailyCandle[]): DailyCandle[] {
   }
   return [...weeks.values()].sort((a, b) => a.timestamp - b.timestamp);
 }
+
+/**
+ * Spread chart label baselines so neighbours keep at least
+ * `gap` px between them, inside [top, bottom]. Lines stay at
+ * their true prices; only the text moves, and only as much as
+ * the pile-up forces. Input and output are parallel arrays
+ * (the i-th output belongs to the i-th desired position).
+ */
+export function spreadLabelYs(
+  desired: readonly number[],
+  gap: number,
+  top: number,
+  bottom: number,
+): number[] {
+  const order = desired
+    .map((y, i) => ({ y, i }))
+    .sort((a, b) => a.y - b.y);
+  const placed = new Array<number>(desired.length);
+  let cursor = top;
+  for (const { y, i } of order) {
+    placed[i] = Math.max(y, cursor);
+    cursor = placed[i] + gap;
+  }
+  let floor = bottom;
+  for (let k = order.length - 1; k >= 0; k--) {
+    const { i } = order[k];
+    placed[i] = Math.min(placed[i], floor);
+    floor = placed[i] - gap;
+  }
+  return placed;
+}

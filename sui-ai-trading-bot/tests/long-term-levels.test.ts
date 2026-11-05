@@ -3,6 +3,7 @@ import type { DailyCandle } from "../packages/shared/src/index.ts";
 import {
   longTermLevels,
   longTermTrend,
+  spreadLabelYs,
   toWeekly,
 } from "../apps/dashboard/src/longTermLevels.ts";
 
@@ -92,5 +93,24 @@ describe("toWeekly", () => {
     expect(first.high).toBeGreaterThanOrEqual(first.close);
     const total = weekly.reduce((a, w) => a + w.volume, 0);
     expect(total).toBe(140);
+  });
+});
+
+describe("spreadLabelYs", () => {
+  it("separates piled-up labels by the gap, in order", () => {
+    const out = spreadLabelYs([100, 102, 101], 11, 9, 237);
+    expect(out[0]).toBe(100);
+    expect(out[2]).toBe(111);
+    expect(out[1]).toBe(122);
+  });
+
+  it("leaves sparse labels where they are", () => {
+    expect(spreadLabelYs([20, 120, 220], 11, 9, 237)).toEqual([20, 120, 220]);
+  });
+
+  it("pulls a bottom pile-up back inside the plot", () => {
+    const out = spreadLabelYs([230, 232], 11, 9, 237);
+    expect(out[1]).toBeLessThanOrEqual(237);
+    expect(out[1] - out[0]).toBeGreaterThanOrEqual(11);
   });
 });

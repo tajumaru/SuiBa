@@ -3,6 +3,7 @@ import type { DailyCandle } from "../../../packages/shared/src/index.ts";
 import {
   longTermLevels,
   longTermTrend,
+  spreadLabelYs,
   toWeekly,
 } from "./longTermLevels.ts";
 
@@ -65,6 +66,23 @@ export function LongTermChart({
   const X = (t: number) => 4 + ((t - firstT) / (endT - firstT)) * plotW;
   const Y = (v: number) => 6 + (1 - (v - lo) / (hi - lo)) * (H - 12);
   const barW = Math.max(1.5, (plotW / ((endT - firstT) / weekSec)) * 0.68);
+
+  // Label baselines, spread so neighbouring labels never
+  // pile onto each other when two landmarks sit at nearly
+  // the same price (the current price over the month open is
+  // the usual case). Lines keep their true prices.
+  const nowInRange = nowPrice != null && nowPrice >= lo && nowPrice <= hi;
+  const labelYs = spreadLabelYs(
+    [
+      ...levels.map((l) => Y(l.price) + 3),
+      ...(nowInRange ? [Y(nowPrice!) + 3] : []),
+    ],
+    11,
+    9,
+    H - 3,
+  );
+  const levelLabelY = new Map(levels.map((l, i) => [l.kind, labelYs[i]]));
+  const nowLabelY = nowInRange ? labelYs[labelYs.length - 1] : null;
 
   const levelColor = (kind: string) =>
     kind === "high" ? "#43dfb2" : kind === "low" ? "#f77d8f" : "#64b5ff";
@@ -151,7 +169,7 @@ export function LongTermChart({
             />
             <text
               x={4 + plotW + 6}
-              y={Y(l.price) + 3}
+              y={levelLabelY.get(l.kind)}
               fontSize={9.5}
               fill={levelColor(l.kind)}
             >
@@ -159,7 +177,7 @@ export function LongTermChart({
             </text>
           </g>
         ))}
-        {nowPrice != null && nowPrice >= lo && nowPrice <= hi && (
+        {nowInRange && nowPrice != null && (
           <g>
             <line
               x1={4}
@@ -172,7 +190,7 @@ export function LongTermChart({
             />
             <text
               x={4 + plotW + 6}
-              y={Y(nowPrice) + 3}
+              y={nowLabelY!}
               fontSize={9.5}
               fill="#edc980"
             >
