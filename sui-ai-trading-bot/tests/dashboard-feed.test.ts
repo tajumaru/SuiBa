@@ -46,6 +46,7 @@ function localApi(service: DashboardService) {
         u.searchParams.get("version"),
       );
     if (u.pathname === "/dashboard/records") return service.records();
+    if (u.pathname === "/dashboard/long-term") return service.longTerm();
     throw Error("UNEXPECTED_API");
   };
   return { api, calls };
@@ -297,3 +298,91 @@ it.each(["candles", "records"])(
     db.close();
   },
 );
+
+function longTermFixture() {
+  const db = new BotDatabase(":memory:"),
+    status = { healthy: true, checkedAt: Date.now(), failures: 0 };
+  const day = 86400,
+    t0 = 1735689600;
+  const makeDaily = (n: number, base: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      timestamp: t0 + i * day,
+      open: base + i,
+      high: base + i + 1,
+      low: base + i - 1,
+      close: base + i + 0.5,
+      volume: 100 + i,
+    }));
+  let daily: ReturnType<typeof makeDaily> | null = makeDaily(40, 1.0);
+  const engine = new BotEngine(
+    db,
+    { candles: async () => [] },
+    {
+      getQuote: async () => {
+        throw Error("NO_TRADE");
+      },
+      validateQuote: async () => false,
+    },
+    { health: async () => status, status },
+    "SUI_USDC",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    () => daily,
+  );
+  engine.monitor.boot();
+  const service = new DashboardService(engine, db);
+  return {
+    db,
+    service,
+    setDaily: (d: ReturnType<typeof makeDaily> | null) => {
+      daily = d;
+    },
+    makeDaily,
+  };
+}
+
+it("summary ships only the long-term version; the daily series has its own channel", async () => {
+  const { db, service, setDaily, makeDaily } = longTermFixture();
+  const light = service.summary();
+  expect("longTermDaily" in light.summary).toBe(false);
+  expect(typeof light.longTermVersion).toBe("string");
+  const first = service.longTerm();
+  expect(first.schema).toBe(1);
+  expect(first.version).toBe(light.longTermVersion);
+  expect(first.daily).toHaveLength(40);
+  // Same series, new poll: the version is stable.
+  expect(service.summary().longTermVersion).toBe(light.longTermVersion);
+  // A refreshed series changes the version and the payload.
+  setDaily(makeDaily(41, 1.2));
+  const next = service.summary();
+  expect(next.longTermVersion).not.toBe(light.longTermVersion);
+  expect(service.longTerm().daily).toHaveLength(41);
+  // The client fetches the series once per version, not per poll.
+  const { api, calls } = localApi(service);
+  const client = new DashboardClient();
+  const one = await client.poll(api, null, false, () => {});
+  expect(one.state.longTermDaily).toHaveLength(41);
+  await client.poll(api, null, false, () => {});
+  expect(calls.filter((c) => c === "dashboard/long-term")).toHaveLength(1);
+  setDaily(makeDaily(42, 1.3));
+  const three = await client.poll(api, null, false, () => {});
+  expect(three.state.longTermDaily).toHaveLength(42);
+  expect(calls.filter((c) => c === "dashboard/long-term")).toHaveLength(2);
+  db.close();
+});
+
+it("a pair without a daily series reports null and the client copes", async () => {
+  const { db, service } = fixture();
+  const light = service.summary();
+  expect("longTermDaily" in light.summary).toBe(false);
+  expect(service.longTerm().daily).toBeNull();
+  const { api } = localApi(service);
+  const client = new DashboardClient();
+  const result = await client.poll(api, null, false, () => {});
+  expect(result.state.longTermDaily ?? null).toBeNull();
+  expect(result.channelError).toBeNull();
+  db.close();
+});

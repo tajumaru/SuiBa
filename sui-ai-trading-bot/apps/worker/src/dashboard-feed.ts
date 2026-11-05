@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { canonicalFrame } from "../../../packages/shared/src/dashboard-wire.ts";
-import type { Candle, Timeframe } from "../../../packages/shared/src/index.ts";
+import type {
+  Candle,
+  DailyCandle,
+  Timeframe,
+} from "../../../packages/shared/src/index.ts";
 import type { Fill } from "../../../packages/paper-trading/src/index.ts";
 import type { BotEngine } from "./engine.ts";
 import type { BotDatabase } from "../../../packages/database/src/index.ts";
@@ -12,6 +16,10 @@ export class DashboardService {
   private recordCache: {
     token: string;
     value: ReturnType<DashboardService["readRecords"]>;
+    version: string;
+  } | null = null;
+  private longTermCache: {
+    source: DailyCandle[] | null;
     version: string;
   } | null = null;
   constructor(
@@ -55,6 +63,21 @@ export class DashboardService {
   recordsData() {
     return this.cachedRecords().value;
   }
+  /**
+   * The display-only daily series rides its own versioned
+   * channel (like frames/records): at ~730 candles it dwarfs
+   * the summary it used to piggyback on, while it changes at
+   * most every few hours when the sampler refreshes it.
+   */
+  private longTermVersion(daily: DailyCandle[] | null) {
+    if (this.longTermCache?.source !== daily) {
+      this.longTermCache = {
+        source: daily,
+        version: digest(JSON.stringify(daily)),
+      };
+    }
+    return this.longTermCache.version;
+  }
   summary() {
     const {
       candles,
@@ -62,6 +85,7 @@ export class DashboardService {
       trades,
       orders,
       riskEvents,
+      longTermDaily,
       ...summary
     } = this.engine.snapshot({ light: true });
     const token = this.db.displayVersion(),
@@ -76,6 +100,15 @@ export class DashboardService {
         3600: this.frameAtVersion(3600, token).version,
       },
       recordsVersion: records.version,
+      longTermVersion: this.longTermVersion(longTermDaily ?? null),
+    };
+  }
+  longTerm() {
+    const daily = this.engine.snapshot({ light: true }).longTermDaily ?? null;
+    return {
+      schema: 1 as const,
+      version: this.longTermVersion(daily),
+      daily,
     };
   }
   candles(tf: Timeframe, baseVersion: string | null) {

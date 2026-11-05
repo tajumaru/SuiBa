@@ -1,6 +1,10 @@
 import type { BotEngine } from "../../worker/src/engine.ts";
 import type { DashboardService } from "../../worker/src/dashboard-feed.ts";
-import type { Candle, Timeframe } from "../../../packages/shared/src/index.ts";
+import type {
+  Candle,
+  DailyCandle,
+  Timeframe,
+} from "../../../packages/shared/src/index.ts";
 import {
   browserDigest,
   canonicalFrame,
@@ -15,6 +19,7 @@ export class DashboardClient {
   private state: State | null = null;
   private versions = new Map<number, string>();
   private recordsVersion: string | null = null;
+  private longTermVersion: string | null = null;
   private tail: Promise<unknown> = Promise.resolve();
   async poll(
     api: SettingsApi,
@@ -58,6 +63,12 @@ export class DashboardClient {
     const s = reply!;
     this.state = {
       ...s.summary,
+      longTermDaily:
+        this.state?.longTermDaily ??
+        // Older workers still inline the series in the summary.
+        (s.summary as { longTermDaily?: DailyCandle[] | null })
+          .longTermDaily ??
+        null,
       candles: this.state?.candles ?? [],
       candlesByTimeframe: this.state?.candlesByTimeframe ?? {
         300: [],
@@ -140,6 +151,23 @@ export class DashboardClient {
             ...(timeframe === 300 ? { candles } : {}),
           };
           this.versions.set(timeframe, response.version);
+        }
+      })(),
+      (async () => {
+        // The daily series for the long-term map: versioned like
+        // records, fetched only when the sampler's series changed.
+        const want = s.longTermVersion;
+        if (want != null && this.longTermVersion !== want) {
+          const r = (await api("dashboard/long-term")) as ReturnType<
+            DashboardService["longTerm"]
+          >;
+          if (
+            r.schema !== 1 ||
+            (await browserDigest(JSON.stringify(r.daily))) !== r.version
+          )
+            throw Error("DASHBOARD_LONG_TERM_CHECKSUM");
+          this.state = { ...this.state!, longTermDaily: r.daily };
+          this.longTermVersion = r.version;
         }
       })(),
       (async () => {

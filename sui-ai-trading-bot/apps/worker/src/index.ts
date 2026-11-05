@@ -557,6 +557,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       );
       return;
     }
+    if (req.method === "GET" && url.pathname === "/api/dashboard/long-term") {
+      send(
+        200,
+        timeAggregation(() => dashboard.longTerm()),
+      );
+      return;
+    }
     if (req.method === "GET" && url.pathname === "/api/state") {
       send(
         200,
