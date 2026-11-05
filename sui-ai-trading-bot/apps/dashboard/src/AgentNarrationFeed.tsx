@@ -18,6 +18,12 @@ import type { AgentSpeaker } from "./voiceSpeech.ts";
 import { epochTransition, loadLastEpoch, saveLastEpoch } from "./epochMark.ts";
 import { HighlightReplay } from "./HighlightReplay.tsx";
 import { AgentFeedEntryRow } from "./AgentFeedEntryRow.tsx";
+import { usePrefersReducedMotion } from "./usePrefersReducedMotion.ts";
+import {
+  feedJumpVisible,
+  isStuckToFeedBottom,
+  pageBottomDistance,
+} from "./feedScroll.ts";
 
 export function AgentNarrationFeed({
   data,
@@ -248,6 +254,78 @@ export function AgentNarrationFeed({
   useEffect(() => {
     onPoseChange?.(reportedPose);
   }, [reportedPose, onPoseChange]);
+  // Message-order scroll management. The entries render oldest
+  // first (see the list below), so following the feed means
+  // sitting at the page bottom: while the reader is there, new
+  // entries pull the page down with them; while they are up in
+  // the history, nothing moves and a jump pill (rendered below)
+  // offers the way back. Opening the tab lands at the latest
+  // entry, like opening a chat.
+  const reducedMotion = usePrefersReducedMotion();
+  const stickRef = useRef(true);
+  // The reader's own sends always land at the bottom, even when
+  // they had scrolled up to read history first — their message
+  // and its reply would otherwise arrive out of sight.
+  const forceStickRef = useRef(false);
+  const landedRef = useRef(false);
+  const [jumpVisible, setJumpVisible] = useState(false);
+  const measureBottomDistance = () =>
+    pageBottomDistance({
+      scrollHeight: document.documentElement.scrollHeight,
+      scrollY: window.scrollY,
+      viewportHeight: window.innerHeight,
+    });
+  const scrollToLatest = (behavior: ScrollBehavior) => {
+    stickRef.current = true;
+    setJumpVisible(false);
+    window.scrollTo({
+      top: document.documentElement.scrollHeight,
+      behavior,
+    });
+  };
+  // Leaving the tab re-arms the landing: coming back to the feed
+  // is opening the chat again.
+  useEffect(() => {
+    if (!active) landedRef.current = false;
+  }, [active]);
+  useEffect(() => {
+    if (!active) return;
+    const update = () => {
+      const distance = measureBottomDistance();
+      stickRef.current = isStuckToFeedBottom(distance);
+      setJumpVisible(
+        feedJumpVisible(distance, narrationRef.current.entries.length),
+      );
+    };
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [active]);
+  const newestEntryId = narration.entries.at(-1)?.id ?? null;
+  useEffect(() => {
+    if (!active) return;
+    if (!landedRef.current) {
+      // First entries of this visit: land on the latest entry
+      // without animation. (While the list is still empty there
+      // is nothing to land on; the arrival re-runs this effect.)
+      if (narration.entries.length === 0) return;
+      landedRef.current = true;
+      scrollToLatest("auto");
+      return;
+    }
+    if (forceStickRef.current || stickRef.current) scrollToLatest("auto");
+    forceStickRef.current = false;
+    setJumpVisible(
+      feedJumpVisible(
+        measureBottomDistance(),
+        narrationRef.current.entries.length,
+      ),
+    );
+  }, [active, newestEntryId, narration.entries.length]);
   const [chatInput, setChatInput] = useState("");
   // The chat box starts folded to a single "キャラに聞く" line so
   // the feed leads; it expands on tap (or when a milestone
@@ -295,6 +373,7 @@ export function AgentNarrationFeed({
     const text = raw.trim().slice(0, 120);
     if (!text || chatThinking) return;
     setChatOpen(true);
+    forceStickRef.current = true;
     const state = narrationRef.current;
     const at = Date.now();
     const withUser: NarrationState = {
@@ -400,6 +479,7 @@ export function AgentNarrationFeed({
    * when recognition itself failed and there is no question to
    * answer, only something to say about it. */
   const sayChatLine = (text: string) => {
+    forceStickRef.current = true;
     const prev = narrationRef.current;
     const next: NarrationState = {
       ...prev,
@@ -752,32 +832,42 @@ export function AgentNarrationFeed({
         )}
       </div>
       <div className="agent-feed-list">
+        {narration.entries.length === 0 ? (
+          <p className="agent-feed-empty">
+            実況を準備中です。Botの記録が届くと、ここに実況が流れます。
+          </p>
+        ) : (
+          // Message order: oldest first, newest at the bottom,
+          // like a chat app — exchanges read top to bottom. The
+          // list flows with the page (no inner scroll box); the
+          // scroll management above keeps a reader who is at the
+          // bottom at the latest entry.
+          narration.entries.map((entry) => (
+            <AgentFeedEntryRow
+              key={entry.id}
+              entry={entry}
+              justBought={celebration?.entryId === entry.id}
+              onPromptChip={submitChat}
+              speakerName={displayName}
+            />
+          ))
+        )}
         {chatThinking && (
           <article className="agent-feed-entry chatReply thinking" role="status">
             <span className="agent-feed-entry-tag reply">返信</span>
             <p>考え中…</p>
           </article>
         )}
-        {narration.entries.length === 0 ? (
-          <p className="agent-feed-empty">
-            実況を準備中です。Botの記録が届くと、ここに実況が流れます。
-          </p>
-        ) : (
-          // Newest first: the list flows with the page (no inner scroll
-          // box), so the latest entry belongs at the top.
-          [...narration.entries]
-            .reverse()
-            .map((entry) => (
-              <AgentFeedEntryRow
-                key={entry.id}
-                entry={entry}
-                justBought={celebration?.entryId === entry.id}
-                onPromptChip={submitChat}
-                speakerName={displayName}
-              />
-            ))
-        )}
       </div>
+      {jumpVisible && (
+        <button
+          type="button"
+          className="agent-feed-jump"
+          onClick={() => scrollToLatest(reducedMotion ? "auto" : "smooth")}
+        >
+          最新の実況へ ↓
+        </button>
+      )}
     </section>
   );
 }

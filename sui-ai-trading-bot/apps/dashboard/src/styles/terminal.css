@@ -540,3 +540,42 @@ summary {
     bottom: calc(170px + env(safe-area-inset-bottom, 0px));
   }
 }
+/* "Back to the latest" jump for the message-order feed: while
+   the reader is up in the history, this pill floats centred
+   above the chat composer — its bottom offsets mirror the
+   composer's own (folded / open sheet / mobile tab bar, the
+   same numbers the stuck avatar chip uses, plus a gap) — and
+   tapping it returns to the newest entry at the bottom. It
+   renders only on the narration tab: the feed wrapper is
+   display:none on other tabs, which hides fixed children too.
+   Centred, so it never collides with the corner avatar chip. */
+.agent-feed-jump {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  z-index: 41;
+  padding: 8px 16px;
+  border: 1px solid var(--mint);
+  border-radius: 999px;
+  background: rgba(2, 10, 6, 0.95);
+  color: var(--mint);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+@media (max-width: 600px) {
+  .agent-feed-jump {
+    bottom: calc(136px + env(safe-area-inset-bottom, 0px));
+  }
+  html.chat-bar-open .agent-feed-jump {
+    bottom: calc(242px + env(safe-area-inset-bottom, 0px));
+  }
+}
+@media (min-width: 601px) {
+  html.chat-bar-open .agent-feed-jump {
+    bottom: calc(184px + env(safe-area-inset-bottom, 0px));
+  }
+}
