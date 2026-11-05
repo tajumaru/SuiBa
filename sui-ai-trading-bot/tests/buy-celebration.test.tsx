@@ -414,17 +414,17 @@ describe("buy celebration: the stylesheet", () => {
 
   it("frames buy entries gold with a gold tag", () => {
     expect(css).toContain(
-      ".agent-feed-entry.buy {\n  border-left-color: #edc980;",
+      ".agent-feed-entry.buy {\n  border-left-color: var(--gold);",
     );
     expect(css).toContain("rgba(237, 201, 128, 0.16)");
     expect(css).toContain(
-      ".agent-feed-entry-tag.buy {\n  border-color: #edc980;\n  color: #edc980;\n}",
+      ".agent-feed-entry-tag.buy {\n  border-color: var(--gold);\n  color: var(--gold);\n}",
     );
   });
 
   it("goldens the pill and keeps every celebration motion in no-preference blocks", () => {
     expect(css).toContain(
-      ".agent-avatar-pill.celebrate {\n  background: #edc980;",
+      ".agent-avatar-pill.celebrate {\n  background: var(--gold);",
     );
     const avatar = css.slice(
       css.indexOf("/* Agent header avatar:"),

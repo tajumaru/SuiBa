@@ -170,13 +170,13 @@ describe("agent header avatar stylesheet", () => {
     );
     expect(section).toContain(".agent-avatar.pose-point .agent-avatar-star,");
     expect(section).toContain(
-      ".agent-avatar-dot.tone-run {\n  background: #43dfb2;\n}",
+      ".agent-avatar-dot.tone-run {\n  background: var(--mint);\n}",
     );
     expect(section).toContain(
       ".agent-avatar-dot.tone-near {\n  background: #ffd166;\n}",
     );
     expect(section).toContain(
-      ".agent-avatar-dot.tone-stop {\n  background: #8fa7b9;\n}",
+      ".agent-avatar-dot.tone-stop {\n  background: var(--dim);\n}",
     );
   });
 

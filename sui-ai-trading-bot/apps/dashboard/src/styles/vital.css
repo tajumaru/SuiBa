@@ -10,14 +10,14 @@
   margin-top: 12px;
   padding: 12px 14px;
   background: #141d24;
-  border: 1px solid #344e65;
+  border: 1px solid var(--steel);
   border-radius: 12px;
 }
 .bot-vital.alive {
   color: #4da2ff;
 }
 .bot-vital.weak {
-  color: #edc980;
+  color: var(--gold);
 }
 .bot-vital.sleeping {
   color: #5f7484;
@@ -239,7 +239,7 @@
   right: 6%;
   bottom: 6px;
   height: 1px;
-  background: #344e65;
+  background: var(--steel);
 }
 /* Stopped: no droplet (not rendered), the un-born newest candle greys
    out. Safety stop: the whole scene freezes pale. Unknown/stale: the
@@ -265,7 +265,7 @@
 .bot-vital-readout strong {
   display: block;
   font-size: 16px;
-  color: #dce8f0;
+  color: var(--text);
 }
 .bot-vital-readout small {
   margin-top: 5px;

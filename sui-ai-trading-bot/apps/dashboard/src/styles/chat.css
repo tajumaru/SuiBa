@@ -49,10 +49,10 @@
   background: #0d1a29;
 }
 .agent-feed-entry.chatReply {
-  border-left: 3px solid #43dfb2;
+  border-left: 3px solid var(--mint);
 }
 .agent-feed-entry.chatPrompt {
-  border-left: 3px solid #43dfb2;
+  border-left: 3px solid var(--mint);
   background: #0c1a26;
 }
 .agent-feed-prompt-chip {

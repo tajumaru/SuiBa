@@ -1,6 +1,22 @@
 :root {
+  /* Terminal palette: the single source for the recurring colours.
+     Segment files reference these instead of hard-coding hex values,
+     so a colour adjustment lands everywhere at once. */
+  --mint: #43dfb2;
+  --gold: #edc980;
+  --pink: #f77d8f;
+  --pine: #1f5c46;
+  --text: #dce8f0;
+  --dim: #8fa7b9;
+  --faint: #8fa3b0;
+  --line: #263448;
+  --steel: #344e65;
+  --panel: #04070b;
+  --feed-bg: #020a06;
+  --btn-bg: #0a1a12;
+  --btn-hover: #123324;
   font-family: "Noto Sans JP", "Yu Gothic", Meiryo, "Segoe UI", sans-serif;
-  color: #dce8f0;
+  color: var(--text);
   background: #0b111b;
   font-synthesis: none;
 }
@@ -102,7 +118,7 @@ header strong {
 }
 small {
   display: block;
-  color: #8fa7b9;
+  color: var(--dim);
   font-size: 12px;
   letter-spacing: 0.04em;
 }
@@ -152,8 +168,8 @@ header {
       rgba(120, 255, 205, 0.05) 0 1px,
       transparent 1px 30px
     ),
-    #04070b;
-  border-bottom: 1px solid #1f5c46;
+    var(--panel);
+  border-bottom: 1px solid var(--pine);
   box-shadow: 0 10px 24px -18px rgba(67, 223, 178, 0.5);
 }
 header strong {
@@ -161,7 +177,7 @@ header strong {
 }
 header strong::after {
   content: "_";
-  color: #43dfb2;
+  color: var(--mint);
 }
 @media (prefers-reduced-motion: no-preference) {
   header strong::after {
@@ -171,8 +187,8 @@ header strong::after {
 .badge {
   border-radius: 3px;
   background: #0c2317;
-  border-color: #1f5c46;
-  color: #43dfb2;
+  border-color: var(--pine);
+  color: var(--mint);
 }
 .badge::before {
   content: "[ ";
@@ -261,7 +277,7 @@ h3 small {
 em {
   font-size: 12px;
   font-style: normal;
-  color: #8fa7b9;
+  color: var(--dim);
 }
 .cards {
   display: grid;
@@ -269,7 +285,7 @@ em {
   gap: 15px;
 }
 section {
-  border: 1px solid #263448;
+  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 22px;
   margin-bottom: 18px;
@@ -296,7 +312,7 @@ section svg {
   justify-content: space-between;
   gap: 12px;
   background: #111d2b;
-  border: 1px solid #263448;
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 6px 8px 6px 16px;
   margin-bottom: 14px;
@@ -313,17 +329,17 @@ section svg {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #edc980;
+  background: var(--gold);
   flex: none;
 }
 .operation-bar.tone-ok {
   border-color: #1f5c4d;
 }
 .operation-bar.tone-ok .operation-bar-dot {
-  background: #43dfb2;
+  background: var(--mint);
 }
 .operation-bar.tone-alert .operation-bar-dot {
-  background: #f77d8f;
+  background: var(--pink);
 }
 .operation-bar .operation-icon-button {
   width: 30px;
@@ -339,7 +355,7 @@ section svg {
    in-flow, directly under the bar they explain. */
 .operation-bar-notice {
   background: #111d2b;
-  border: 1px solid #263448;
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 10px 16px;
   margin-bottom: 14px;
@@ -474,7 +490,7 @@ section svg {
   gap: 6px;
 }
 .price-ticker-change.up {
-  color: #43dfb2;
+  color: var(--mint);
 }
 .price-ticker-change.down {
   color: #ff6b81;
@@ -500,7 +516,7 @@ section svg {
   white-space: nowrap;
   font-size: 12.5px;
   font-weight: 700;
-  color: #edc980;
+  color: var(--gold);
   background: #2a2113;
   border: 1px solid rgba(237, 201, 128, 0.55);
   border-radius: 999px;
@@ -508,14 +524,14 @@ section svg {
 }
 .price-ticker-line.reached {
   color: #3ecf6f;
-  background: #123324;
+  background: var(--btn-hover);
   border-color: rgba(62, 207, 111, 0.55);
 }
 /* The sell-line pills: take-profit green, stop-loss rose — the
    nearer line counts down, and reaching it swaps the text. */
 .price-ticker-line.tp {
   color: #3ecf6f;
-  background: #123324;
+  background: var(--btn-hover);
   border-color: rgba(62, 207, 111, 0.55);
 }
 .price-ticker-line.sl {
@@ -598,7 +614,7 @@ section svg {
     }
     20% {
       box-shadow: 0 0 18px 2px rgba(237, 201, 128, 0.45);
-      border-color: #edc980;
+      border-color: var(--gold);
     }
     100% {
       box-shadow: 0 0 0 0 rgba(237, 201, 128, 0);
@@ -636,7 +652,7 @@ section svg {
   padding: 0;
 }
 .connectivity-chips li {
-  border: 1px solid #263448;
+  border: 1px solid var(--line);
   border-radius: 999px;
   padding: 2px 10px;
   font-size: 12px;
@@ -684,8 +700,8 @@ select {
   width: 100%;
   padding: 12px;
   margin-top: 9px;
-  border: 1px solid #344e65;
-  color: #dce8f0;
+  border: 1px solid var(--steel);
+  color: var(--text);
   border-radius: 6px;
 }
 textarea {

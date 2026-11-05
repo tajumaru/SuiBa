@@ -18,7 +18,7 @@
       rgba(120, 255, 205, 0.05) 0 1px,
       transparent 1px 56px
     ),
-    #04070b;
+    var(--panel);
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   padding: 12vh 8% 24px;
   cursor: pointer;
@@ -41,7 +41,7 @@
   margin: 0 0 4px;
 }
 .boot-logo span {
-  color: #43dfb2;
+  color: var(--mint);
 }
 .boot-ver {
   font-size: 11px;
@@ -64,10 +64,10 @@
   color: #41586c;
 }
 .boot-value.ok {
-  color: #43dfb2;
+  color: var(--mint);
 }
 .boot-value.tag {
-  color: #edc980;
+  color: var(--gold);
 }
 .boot-value.alert {
   color: #ff8fa5;
@@ -81,7 +81,7 @@
   height: 16px;
   margin-left: 4px;
   vertical-align: -3px;
-  background: #43dfb2;
+  background: var(--mint);
   animation: boot-cursor-blink 0.85s steps(1) infinite;
 }
 @keyframes boot-cursor-blink {

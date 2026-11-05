@@ -56,10 +56,10 @@
   background: #25a56b;
 }
 .activity-grass-cell.level-4 {
-  background: #43dfb2;
+  background: var(--mint);
 }
 .activity-grass-cell.today {
-  outline: 1px solid #edc980;
+  outline: 1px solid var(--gold);
   outline-offset: 0;
 }
 .activity-grass-cell.future {
@@ -92,7 +92,7 @@
   pointer-events: auto;
 }
 .agent-avatar-tap:focus-visible {
-  outline: 2px solid #43dfb2;
+  outline: 2px solid var(--mint);
   outline-offset: 2px;
 }
 /* The tap target is an empty overlay above the avatar artwork:
@@ -114,9 +114,9 @@
   width: 19px;
   height: 19px;
   border-radius: 50%;
-  background: #0a1a12;
-  border: 1px solid #1f5c46;
-  color: #43dfb2;
+  background: var(--btn-bg);
+  border: 1px solid var(--pine);
+  color: var(--mint);
   font-size: 11px;
   line-height: 18px;
   text-align: center;
@@ -129,7 +129,7 @@
   width: 240px;
   z-index: 60;
   background: #071018;
-  border: 1px solid #1f5c46;
+  border: 1px solid var(--pine);
   border-radius: 6px;
   padding: 10px;
   pointer-events: auto;
@@ -151,8 +151,8 @@
   width: 100%;
   box-sizing: border-box;
   margin-top: 6px;
-  background: #020a06;
-  border: 1px solid #1f5c46;
+  background: var(--feed-bg);
+  border: 1px solid var(--pine);
   border-radius: 4px;
   color: #d7e3f2;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -166,8 +166,8 @@
 }
 .agent-rename-actions button {
   flex: 1;
-  background: #0a1a12;
-  border: 1px solid #1f5c46;
+  background: var(--btn-bg);
+  border: 1px solid var(--pine);
   border-radius: 4px;
   color: #d7e3f2;
   font-size: 12px;
@@ -204,8 +204,8 @@
 
 /* Spoken-replies toggle, sitting with the question chips. */
 .agent-chat-chips .agent-voice-toggle.on {
-  border-color: #43dfb2;
-  color: #43dfb2;
+  border-color: var(--mint);
+  color: var(--mint);
 }
 
 /* Slash-command replies render as terminal readouts. */
@@ -231,7 +231,7 @@
 }
 .activity-grass-streak {
   margin: 0;
-  color: #43dfb2;
+  color: var(--mint);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -240,14 +240,14 @@
 /* Forecast score line (D): the cone's running report card,
    under the forecast note on the 5-minute chart. */
 .chart-forecast-score {
-  color: #43dfb2;
+  color: var(--mint);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   margin: 2px 0 6px;
 }
 /* Live touch-target status: gold, like the line it follows. */
 .chart-forecast-touch-status {
-  color: #edc980;
+  color: var(--gold);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12.5px;
   font-weight: 600;
@@ -255,7 +255,7 @@
 }
 /* Placeholder while a lazily loaded tab chunk arrives. */
 .tab-loading {
-  color: #8fa3b0;
+  color: var(--faint);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12.5px;
   padding: 18px 4px;
@@ -275,21 +275,21 @@
 }
 .chart-answer-toggle[aria-pressed="true"] {
   background: #254f61;
-  border-color: #43dfb2;
+  border-color: var(--mint);
   color: #e5fff6;
-  box-shadow: inset 0 -3px #43dfb2;
+  box-shadow: inset 0 -3px var(--mint);
 }
 .chart-answer-verdict {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   margin: 0;
-  color: #8fa3b0;
+  color: var(--faint);
 }
 .chart-answer-verdict.hit {
-  color: #43dfb2;
+  color: var(--mint);
 }
 .chart-answer-verdict.miss {
-  color: #f77d8f;
+  color: var(--pink);
 }
 
 /* Sui chain strip: the chain's vital signs under the ticker. */
@@ -299,8 +299,8 @@
   gap: 6px 16px;
   align-items: baseline;
   padding: 5px 12px;
-  background: #04070b;
-  border: 1px solid #123324;
+  background: var(--panel);
+  border: 1px solid var(--btn-hover);
   border-radius: 6px;
   color: #9fb8ad;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -325,7 +325,7 @@
   margin: 8px 0;
 }
 .highlight-bar-title {
-  color: #edc980;
+  color: var(--gold);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   padding-top: 5px;
@@ -338,10 +338,10 @@
   padding-bottom: 2px;
 }
 .highlight-chip {
-  background: #0a1a12;
-  border: 1px solid #edc980;
+  background: var(--btn-bg);
+  border: 1px solid var(--gold);
   border-radius: 6px;
-  color: #edc980;
+  color: var(--gold);
   font-size: 12px;
   padding: 4px 9px;
   white-space: nowrap;
@@ -356,8 +356,8 @@
   width: min(520px, calc(100vw - 24px));
   max-height: calc(100dvh - 48px);
   overflow-y: auto;
-  background: #04070b;
-  border: 1px solid #1f5c46;
+  background: var(--panel);
+  border: 1px solid var(--pine);
   border-radius: 8px;
   padding: 12px 14px;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.65);
@@ -422,11 +422,11 @@
   margin-top: 10px;
 }
 .highlight-replay-spark polyline {
-  stroke: #43dfb2;
+  stroke: var(--mint);
   stroke-width: 1.6;
 }
 .highlight-replay-spark circle {
-  fill: #edc980;
+  fill: var(--gold);
 }
 .highlight-replay-controls {
   display: flex;
@@ -435,8 +435,8 @@
   margin-top: 10px;
 }
 .highlight-replay-controls button {
-  background: #0a1a12;
-  border: 1px solid #1f5c46;
+  background: var(--btn-bg);
+  border: 1px solid var(--pine);
   border-radius: 6px;
   color: #cfe8db;
   font-size: 12.5px;
@@ -465,8 +465,8 @@
   align-items: center;
   justify-content: center;
   padding: 7px 14px;
-  background: #04070b;
-  border: 1px solid #123324;
+  background: var(--panel);
+  border: 1px solid var(--btn-hover);
   border-radius: 6px;
   color: #9fb8ad;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -484,7 +484,7 @@
   height: 22px;
   min-width: 60px;
   background: #0a141f;
-  border: 1px solid #123324;
+  border: 1px solid var(--btn-hover);
   border-radius: 3px;
   overflow: hidden;
   transition:
@@ -539,7 +539,7 @@
   font-weight: 600;
 }
 .book-bar-word.buy {
-  color: #43dfb2;
+  color: var(--mint);
 }
 .book-bar-word.sell {
   color: #ff7d9c;
@@ -552,10 +552,10 @@
    current month growing live, last month final. */
 .monthly-report {
   margin-top: 14px;
-  border: 1px solid #123324;
+  border: 1px solid var(--btn-hover);
   border-radius: 6px;
   padding: 10px 12px;
-  background: #04070b;
+  background: var(--panel);
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 .monthly-report-head {
@@ -567,7 +567,7 @@
 .monthly-report-head h3 {
   margin: 0;
   font-size: 12.5px;
-  color: #43dfb2;
+  color: var(--mint);
 }
 .monthly-report-toggle {
   display: flex;
@@ -575,7 +575,7 @@
 }
 .monthly-report-toggle button {
   background: #0a1017;
-  color: #8fa3b0;
+  color: var(--faint);
   border: 1px solid #2a3a4c;
   padding: 3px 10px;
   font: inherit;
@@ -583,8 +583,8 @@
   cursor: pointer;
 }
 .monthly-report-toggle button[aria-pressed="true"] {
-  border-color: #43dfb2;
-  color: #43dfb2;
+  border-color: var(--mint);
+  color: var(--mint);
 }
 .monthly-report-rows {
   margin: 8px 0 0;
@@ -596,7 +596,7 @@
   gap: 10px;
 }
 .monthly-report-rows dt {
-  color: #8fa3b0;
+  color: var(--faint);
   flex: none;
   width: 4.5em;
 }
@@ -604,14 +604,14 @@
   margin: 0;
 }
 .monthly-report-rows .pos {
-  color: #43dfb2;
+  color: var(--mint);
 }
 .monthly-report-rows .neg {
-  color: #f77d8f;
+  color: var(--pink);
 }
 .monthly-report-voice {
   margin: 8px 0 0;
-  border-left: 3px solid #43dfb2;
+  border-left: 3px solid var(--mint);
   padding: 2px 10px;
   font-size: 12.5px;
   line-height: 1.7;
@@ -622,28 +622,28 @@
 .monthly-report-empty {
   margin: 8px 0 0;
   font-size: 12px;
-  color: #8fa3b0;
+  color: var(--faint);
 }
 
 /* Condition-sliced performance (History tab, under the
    order history): real closes grouped by their entry buy. */
 .fill-analysis {
   margin-top: 14px;
-  border: 1px solid #123324;
+  border: 1px solid var(--btn-hover);
   border-radius: 6px;
   padding: 10px 12px;
-  background: #04070b;
+  background: var(--panel);
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 .fill-analysis h4 {
   margin: 0;
   font-size: 12.5px;
-  color: #43dfb2;
+  color: var(--mint);
 }
 .fill-analysis-seg {
   margin: 10px 0 4px;
   font-size: 11.5px;
-  color: #8fa3b0;
+  color: var(--faint);
 }
 .fill-analysis-table {
   border-collapse: collapse;
@@ -661,32 +661,32 @@
   text-align: left;
 }
 .fill-analysis-table th {
-  color: #8fa3b0;
+  color: var(--faint);
   font-weight: normal;
   border-bottom: 1px solid #1b2836;
 }
 .fill-analysis-table .pos {
-  color: #43dfb2;
+  color: var(--mint);
 }
 .fill-analysis-table .neg {
-  color: #f77d8f;
+  color: var(--pink);
 }
 .fill-analysis-note,
 .fill-analysis-empty {
   margin: 8px 0 0;
   font-size: 11.5px;
   line-height: 1.7;
-  color: #8fa3b0;
+  color: var(--faint);
 }
 
 /* Asset curve (Overview, under the summary cards): the
    recorded equity, auto-scaled to its real span. */
 .equity-curve {
   margin-top: 14px;
-  border: 1px solid #123324;
+  border: 1px solid var(--btn-hover);
   border-radius: 6px;
   padding: 10px 12px;
-  background: #04070b;
+  background: var(--panel);
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 .equity-curve-head {
@@ -698,16 +698,16 @@
 .equity-curve-head h3 {
   margin: 0;
   font-size: 12.5px;
-  color: #43dfb2;
+  color: var(--mint);
 }
 .equity-curve-delta {
   font-size: 12.5px;
 }
 .equity-curve-delta.pos {
-  color: #43dfb2;
+  color: var(--mint);
 }
 .equity-curve-delta.neg {
-  color: #f77d8f;
+  color: var(--pink);
 }
 .equity-curve-tabs {
   display: flex;
@@ -716,7 +716,7 @@
 }
 .equity-curve-tabs button {
   background: #0a1017;
-  color: #8fa3b0;
+  color: var(--faint);
   border: 1px solid #2a3a4c;
   padding: 3px 10px;
   font: inherit;
@@ -724,8 +724,8 @@
   cursor: pointer;
 }
 .equity-curve-tabs button[aria-pressed="true"] {
-  border-color: #43dfb2;
-  color: #43dfb2;
+  border-color: var(--mint);
+  color: var(--mint);
 }
 .equity-curve-svg {
   width: 100%;
@@ -741,7 +741,7 @@
 .equity-curve-empty {
   margin: 8px 0 2px;
   font-size: 12px;
-  color: #8fa3b0;
+  color: var(--faint);
 }
 
 /* Character picker in the rename panel: two thumbnail choices
@@ -758,8 +758,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #0a1a12;
-  border: 1px solid #1f5c46;
+  background: var(--btn-bg);
+  border: 1px solid var(--pine);
   border-radius: 4px;
   color: #d7e3f2;
   font-size: 12px;
@@ -774,9 +774,9 @@
   display: block;
 }
 .agent-character-picker button.active {
-  border-color: #43dfb2;
-  box-shadow: inset 0 0 0 1px #43dfb2;
-  color: #43dfb2;
+  border-color: var(--mint);
+  box-shadow: inset 0 0 0 1px var(--mint);
+  color: var(--mint);
 }
 
 /* Share-card row under the forecast score: one quiet button that
@@ -804,17 +804,17 @@
 .chart-share-note {
   margin: 0;
   font-size: 12px;
-  color: #f77d8f;
+  color: var(--pink);
 }
 
 /* Portfolio composition ("資産の中身"): the cash/asset split
    under the overview cards. The segments slide as trades and
    price moves change the mix. */
 .portfolio-mix {
-  border: 1px solid #123324;
+  border: 1px solid var(--btn-hover);
   border-radius: 6px;
   padding: 12px 14px;
-  background: #04070b;
+  background: var(--panel);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   margin-bottom: 14px;
 }
@@ -831,7 +831,7 @@
 }
 .pm-total {
   font-size: 12px;
-  color: #8fa3b0;
+  color: var(--faint);
 }
 .pm-total b {
   color: #e8f5ef;
@@ -842,7 +842,7 @@
   height: 26px;
   border-radius: 4px;
   overflow: hidden;
-  border: 1px solid #123324;
+  border: 1px solid var(--btn-hover);
 }
 .pm-usdc {
   background: #1d3a4a;
@@ -856,7 +856,7 @@
   overflow: hidden;
 }
 .pm-base {
-  background: #43dfb2;
+  background: var(--mint);
   transition: width 0.8s ease;
   display: flex;
   align-items: center;
@@ -875,7 +875,7 @@
   color: #dfe9e4;
 }
 .pm-k {
-  color: #8fa3b0;
+  color: var(--faint);
   display: inline-block;
   min-width: 52px;
 }
@@ -883,7 +883,7 @@
   color: #e8f5ef;
 }
 .pm-up {
-  color: #43dfb2;
+  color: var(--mint);
 }
 .pm-down {
   color: #ff7d9c;
@@ -907,15 +907,15 @@
   justify-content: space-between;
   padding: 8px 12px;
   background: rgba(67, 223, 178, 0.12);
-  border-bottom: 1px solid #43dfb2;
+  border-bottom: 1px solid var(--mint);
   font-family: ui-monospace, monospace;
   font-size: 12px;
 }
 .update-banner button {
   flex: none;
   background: transparent;
-  border: 1px solid #43dfb2;
-  color: #43dfb2;
+  border: 1px solid var(--mint);
+  color: var(--mint);
   padding: 4px 10px;
   font: inherit;
   cursor: pointer;
@@ -923,7 +923,7 @@
 .version-footer {
   padding: 16px 0 28px;
   text-align: center;
-  color: #8fa3b0;
+  color: var(--faint);
   font-family: ui-monospace, monospace;
   font-size: 11px;
 }
@@ -933,5 +933,5 @@
   }
 }
 .version-skew {
-  color: #edc980;
+  color: var(--gold);
 }

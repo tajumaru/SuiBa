@@ -49,7 +49,7 @@
   width: 76px;
   height: 76px;
   border-radius: 50%;
-  border: 3px solid #344e65;
+  border: 3px solid var(--steel);
   background: #12161f;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
 }
@@ -120,13 +120,13 @@
   left: 2%;
   top: 30%;
   font-size: 17px;
-  color: #edc980;
+  color: var(--gold);
 }
 .agent-avatar-burst .s2 {
   right: 4%;
   top: 8%;
   font-size: 13px;
-  color: #edc980;
+  color: var(--gold);
 }
 .agent-avatar-burst .s3 {
   right: 14%;
@@ -150,7 +150,7 @@
   left: 28%;
   top: -6%;
   font-size: 12px;
-  color: #edc980;
+  color: var(--gold);
 }
 .agent-avatar-burst .s5 {
   right: 30%;
@@ -165,8 +165,8 @@
   color: #8fd0ff;
 }
 .agent-avatar-pill.celebrate {
-  background: #edc980;
-  border-color: #edc980;
+  background: var(--gold);
+  border-color: var(--gold);
   color: #0b1220;
   font-weight: 700;
 }
@@ -265,11 +265,11 @@
   gap: 7px;
   margin: 8px 0 0;
   padding: 4px 12px;
-  border: 1px solid #344e65;
+  border: 1px solid var(--steel);
   border-radius: 999px;
   font-size: 12.5px;
   white-space: nowrap;
-  color: #dce8f0;
+  color: var(--text);
 }
 /* A custom name rides at the head of the pill ("シロ：監視中")
    so the rename is visible on screen, not only in the chat.
@@ -282,16 +282,16 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #8fa7b9;
+  background: var(--dim);
 }
 .agent-avatar-dot.tone-run {
-  background: #43dfb2;
+  background: var(--mint);
 }
 .agent-avatar-dot.tone-near {
   background: #ffd166;
 }
 .agent-avatar-dot.tone-stop {
-  background: #8fa7b9;
+  background: var(--dim);
 }
 .agent-avatar-dot.tone-line {
   background: #4da2ff;
@@ -521,7 +521,7 @@
 .agent-feed {
   margin-top: 18px;
   padding: 14px 18px;
-  border: 1px solid #344e65;
+  border: 1px solid var(--steel);
   border-radius: 12px;
   font-size: 14px;
 }
@@ -557,10 +557,10 @@
   gap: 6px;
   padding: 3px 10px;
   background: #1a2632;
-  border: 1px solid #344e65;
+  border: 1px solid var(--steel);
   border-radius: 999px;
   font-size: 12px;
-  color: #dce8f0;
+  color: var(--text);
 }
 .agent-feed-chip-dot {
   width: 10px;
@@ -589,10 +589,10 @@
   color: #4caf7d;
 }
 .agent-feed-chip.tone-close {
-  border-color: #edc980;
+  border-color: var(--gold);
 }
 .agent-feed-chip.tone-close .agent-feed-chip-status {
-  color: #edc980;
+  color: var(--gold);
 }
 .agent-feed-chip.tone-back {
   border-color: #e06c75;
@@ -622,7 +622,7 @@
   border: 1px dashed #a97e1f;
   border-radius: 10px;
   font-size: 12px;
-  color: #dce8f0;
+  color: var(--text);
 }
 .agent-feed-watch-title {
   font-size: 11px;
@@ -651,7 +651,7 @@
   border-radius: 10px;
   font-size: 12px;
   font-weight: 700;
-  color: #dce8f0;
+  color: var(--text);
 }
 .agent-feed-score-item small {
   margin-right: 3px;
@@ -699,14 +699,14 @@
 .agent-feed-entry p {
   margin: 0;
   font-size: 14px;
-  color: #dce8f0;
+  color: var(--text);
   line-height: 1.55;
 }
 .agent-feed-entry.trade {
   border-left-color: #4caf7d;
 }
 .agent-feed-entry.warning {
-  border-left-color: #edc980;
+  border-left-color: var(--gold);
 }
 .agent-feed-entry.stop {
   border-left-color: #e06c75;
@@ -749,12 +749,12 @@
    the buy family — it was that close — on a faint warm wash, with
    its own tag colours. */
 .agent-feed-entry.nearMiss {
-  border-left-color: #edc980;
+  border-left-color: var(--gold);
   background: #241d10;
 }
 .agent-feed-entry-tag.nearmiss {
   border-color: rgba(237, 201, 128, 0.55);
-  color: #edc980;
+  color: var(--gold);
 }
 /* A 的中 (a declared watch that clicked) wears the green of a met
    condition — the near miss's counterpart — with its own tag. */
@@ -769,12 +769,12 @@
 /* The monthly report wears gold: a milestone entry, posted
    once when a month closes. */
 .agent-feed-entry.monthlyReport {
-  border-left-color: #edc980;
+  border-left-color: var(--gold);
   background: #1d1a10;
 }
 .agent-feed-entry-tag.monthly {
   border-color: rgba(237, 201, 128, 0.55);
-  color: #edc980;
+  color: var(--gold);
 }
 /* BTC weather mutters wear Bitcoin orange: market ambience,
    never a decision. */
@@ -804,21 +804,21 @@
   background: #0f2318;
 }
 .agent-feed-entry.forecastMiss {
-  border-left-color: #f77d8f;
+  border-left-color: var(--pink);
 }
 .agent-feed-entry-tag.forecast-miss {
   border-color: rgba(247, 125, 143, 0.55);
-  color: #f77d8f;
+  color: var(--pink);
 }
 /* Touch settlements wear the touch line's gold; a near miss
    keeps the gold family but dims it — close, not reached. */
 .agent-feed-entry.forecastTouch {
-  border-left-color: #edc980;
+  border-left-color: var(--gold);
   background: #231c0d;
 }
 .agent-feed-entry-tag.touch {
   border-color: rgba(237, 201, 128, 0.6);
-  color: #edc980;
+  color: var(--gold);
 }
 .agent-feed-entry.forecastTouchNear {
   border-left-color: rgba(237, 201, 128, 0.55);
@@ -868,12 +868,12 @@
    buy stays recognisable in the history. The pulse below plays
    once, on the entry whose arrival opened a celebration. */
 .agent-feed-entry.buy {
-  border-left-color: #edc980;
+  border-left-color: var(--gold);
   background: linear-gradient(90deg, rgba(237, 201, 128, 0.16), #1a2632 65%);
 }
 .agent-feed-entry-tag.buy {
-  border-color: #edc980;
-  color: #edc980;
+  border-color: var(--gold);
+  color: var(--gold);
 }
 @media (prefers-reduced-motion: no-preference) {
   .agent-feed-entry.just-bought {

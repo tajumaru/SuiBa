@@ -31,7 +31,7 @@
       rgba(120, 255, 205, 0.05) 0 1px,
       transparent 1px 44px
     ),
-    #04070b;
+    var(--panel);
 }
 .login-gate::after {
   content: "";
@@ -51,7 +51,7 @@
   font-weight: 700;
   letter-spacing: 0.42em;
   text-indent: 0.42em;
-  color: #43dfb2;
+  color: var(--mint);
   margin-bottom: 30px;
 }
 @media (prefers-reduced-motion: no-preference) {
@@ -68,7 +68,7 @@
   position: absolute;
   width: 22px;
   height: 22px;
-  border: 2px solid #43dfb2;
+  border: 2px solid var(--mint);
   z-index: 2;
 }
 .login-corner.c1 {
@@ -97,14 +97,14 @@
 }
 .login-gate .login-stage-art {
   border-radius: 10px;
-  border-color: #1f5c46;
+  border-color: var(--pine);
 }
 .login-gate .login-cap {
   color: #a9f5d9;
 }
 .login-gate .login-cap::before {
   content: "> ";
-  color: #43dfb2;
+  color: var(--mint);
 }
 .login-gate input,
 .login-gate button {
@@ -112,9 +112,9 @@
 }
 .login-gate form input {
   border-radius: 4px;
-  border-color: #1f5c46;
+  border-color: var(--pine);
   background: rgba(2, 10, 6, 0.9);
-  caret-color: #43dfb2;
+  caret-color: var(--mint);
 }
 .login-gate form > button {
   border-radius: 4px;
@@ -131,7 +131,7 @@
   inset: 0;
   border-radius: 50%;
   overflow: hidden;
-  border: 3px solid #344e65;
+  border: 3px solid var(--steel);
   background: #12161f;
 }
 .login-stage-art img {
@@ -167,7 +167,7 @@
   margin-top: 12px;
 }
 .login-notice {
-  color: #edc980;
+  color: var(--gold);
   font-size: 13px;
   margin-top: 12px;
 }
@@ -183,7 +183,7 @@
   border: none;
   padding: 6px 0;
   min-height: 0;
-  color: #8fa7b9;
+  color: var(--dim);
   font-size: 13px;
   text-decoration: underline;
   cursor: pointer;

@@ -7,8 +7,8 @@
 .operation-bar,
 .operation-bar-notice {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  background: #04070b;
-  border-color: #1f5c46;
+  background: var(--panel);
+  border-color: var(--pine);
   border-radius: 6px;
 }
 .operation-bar.tone-caution {
@@ -37,8 +37,8 @@
       rgba(120, 255, 205, 0.04) 0 1px,
       transparent 1px 30px
     ),
-    #04070b;
-  border-color: #1f5c46;
+    var(--panel);
+  border-color: var(--pine);
   border-radius: 6px;
 }
 .price-ticker-coin {
@@ -49,15 +49,15 @@
 }
 .pair-switch {
   border-radius: 6px;
-  border-color: #1f5c46;
-  background: #020a06;
+  border-color: var(--pine);
+  background: var(--feed-bg);
 }
 .pair-switch button {
   border-radius: 3px;
 }
 .pair-switch button.on {
   background: #0c2317;
-  box-shadow: inset 0 0 0 1px #1f5c46;
+  box-shadow: inset 0 0 0 1px var(--pine);
 }
 
 /* Full terminal skin (the modest cut of the prototype): panels
@@ -69,11 +69,14 @@
    alert backgrounds) still win over the element-level panel
    rule below. */
 section {
-  background: #04070b;
-  border-color: #1f5c46;
+  background: var(--panel);
+  border-color: var(--pine);
   border-radius: 6px;
 }
-button {
+/* The global button finish uses :where() (specificity 0) so a
+   class rule always wins over it — a bare `button` selector here
+   once painted over the avatar on hover (see extras.css). */
+:where(button) {
   border-radius: 4px;
 }
 h2,
@@ -87,7 +90,7 @@ h2 {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 .agent-feed-entry {
-  background: #020a06;
+  background: var(--feed-bg);
   border-radius: 4px;
 }
 .agent-feed-entry.alert {
@@ -115,7 +118,7 @@ h2 {
 }
 .agent-chat-form::before {
   content: ">";
-  color: #43dfb2;
+  color: var(--mint);
   font-weight: 700;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -132,12 +135,12 @@ h2 {
    override lost — and turn the avatar status pill into a
    bracketed tag. Pose/state colours keep winning through
    their more specific rules. */
-button {
-  background: #0a1a12;
-  border-color: #1f5c46;
+:where(button) {
+  background: var(--btn-bg);
+  border-color: var(--pine);
 }
-button:hover {
-  background: #123324;
+:where(button:hover) {
+  background: var(--btn-hover);
 }
 .agent-avatar,
 .agent-avatar-bob {
@@ -148,7 +151,7 @@ button:hover {
 }
 .agent-avatar-pill {
   border-radius: 4px;
-  border-color: #1f5c46;
+  border-color: var(--pine);
   background: rgba(2, 10, 6, 0.92);
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -159,13 +162,13 @@ button:hover {
   content: "]";
 }
 .agent-feed {
-  background: #04070b;
-  border-color: #1f5c46;
+  background: var(--panel);
+  border-color: var(--pine);
   border-radius: 6px;
 }
 .agent-feed-score {
-  background: #020a06;
-  border-color: #1f5c46;
+  background: var(--feed-bg);
+  border-color: var(--pine);
   border-radius: 4px;
 }
 .agent-feed-watch {
@@ -173,15 +176,15 @@ button:hover {
 }
 .agent-feed-chips-title::before {
   content: "> ";
-  color: #43dfb2;
+  color: var(--mint);
 }
 .agent-chat-chips button {
-  background: #0a1a12;
-  border-color: #1f5c46;
+  background: var(--btn-bg);
+  border-color: var(--pine);
 }
 .agent-chat-form input {
-  border-color: #1f5c46;
-  background: #020a06;
+  border-color: var(--pine);
+  background: var(--feed-bg);
 }
 
 /* Stuck dock (scrolled): the avatar shrinks and the status
@@ -280,7 +283,7 @@ table {
   font-variant-numeric: tabular-nums;
 }
 th {
-  color: #43dfb2;
+  color: var(--mint);
   letter-spacing: 0.04em;
 }
 td,
@@ -291,8 +294,8 @@ input,
 textarea,
 select {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  background: #020a06;
-  border-color: #1f5c46;
+  background: var(--feed-bg);
+  border-color: var(--pine);
   border-radius: 4px;
 }
 .preset-cards button {
@@ -300,17 +303,17 @@ select {
 }
 .preset-cards button[aria-pressed="true"] {
   background: #0c2317;
-  border-color: #43dfb2;
+  border-color: var(--mint);
   box-shadow:
-    0 0 0 1px #43dfb2,
+    0 0 0 1px var(--mint),
     0 0 18px -6px rgba(67, 223, 178, 0.5);
 }
 .validation-overview,
 .validation-action,
 .validation-progress,
 .validation-metric {
-  background: #020a06;
-  border-color: #1f5c46;
+  background: var(--feed-bg);
+  border-color: var(--pine);
   border-radius: 4px;
 }
 .operation-validation progress {
@@ -318,18 +321,18 @@ select {
   height: 10px;
 }
 .operation-validation progress::-webkit-progress-bar {
-  background: #0a1a12;
-  border: 1px solid #1f5c46;
+  background: var(--btn-bg);
+  border: 1px solid var(--pine);
 }
 .operation-validation progress::-webkit-progress-value {
   background: repeating-linear-gradient(
     90deg,
-    #43dfb2 0 6px,
+    var(--mint) 0 6px,
     transparent 6px 8px
   );
 }
 .operation-validation progress::-moz-progress-bar {
-  background: #43dfb2;
+  background: var(--mint);
 }
 summary {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -342,10 +345,10 @@ summary {
   display: inline-block;
   margin-left: 8px;
   padding: 0 6px;
-  border: 1px solid #edc980;
+  border: 1px solid var(--gold);
   border-radius: 3px;
   background: #2a2113;
-  color: #edc980;
+  color: var(--gold);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -355,7 +358,7 @@ summary {
   display: block;
   margin-top: 2px;
   font-size: 11.5px;
-  color: #edc980;
+  color: var(--gold);
 }
 .history-table tr.first-fill td {
   background: rgba(237, 201, 128, 0.07);
@@ -370,8 +373,8 @@ summary {
   gap: 8px;
   width: 100%;
   padding: 8px 10px;
-  background: #020a06;
-  border: 1px solid #1f5c46;
+  background: var(--feed-bg);
+  border: 1px solid var(--pine);
   border-radius: 4px;
   color: #8fa9bd;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -381,7 +384,7 @@ summary {
 }
 .agent-chat-open::before {
   content: ">";
-  color: #43dfb2;
+  color: var(--mint);
   font-weight: 700;
 }
 .agent-chat-close {
@@ -409,15 +412,15 @@ summary {
    behaviour are unchanged. */
 .strategy-segments [role="tab"] {
   border-radius: 3px;
-  border-color: #1f5c46;
-  background: #020a06;
+  border-color: var(--pine);
+  background: var(--feed-bg);
   color: #8fa9bd;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 .strategy-segments [role="tab"].active {
   background: #0c2317;
-  border-color: #1f5c46;
-  color: #43dfb2;
+  border-color: var(--pine);
+  color: var(--mint);
 }
 .strategy-segments [role="tab"].active::before {
   content: "[";
@@ -447,7 +450,7 @@ summary {
   color: #ff8fa5;
 }
 .settings-diff .diff-plus {
-  color: #43dfb2;
+  color: var(--mint);
 }
 /* Stuck dock, third pass: right-aligning at the top still left
    the mini avatar riding over the feed's text column while
@@ -509,7 +512,7 @@ summary {
   margin: 0;
   padding: 8px 5% calc(8px + env(safe-area-inset-bottom, 0px));
   background: rgba(2, 10, 6, 0.95);
-  border-top: 1px solid #1f5c46;
+  border-top: 1px solid var(--pine);
   backdrop-filter: blur(6px);
 }
 .agent-feed {
