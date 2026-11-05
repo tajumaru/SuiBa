@@ -1,0 +1,121 @@
+name: SuiBa signed stopped release
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful source run with a staged vps-release
+        required: true
+        type: string
+      confirmation:
+        description: Type RELEASE-STOPPED-PAPER
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      run_id:
+        required: true
+        type: string
+      confirmation:
+        required: true
+        type: string
+    secrets:
+      VPS_HOST:
+        required: true
+      VPS_USER:
+        required: true
+      VPS_PORT:
+        required: true
+      VPS_SSH_KEY:
+        required: true
+      VPS_KNOWN_HOSTS:
+        required: true
+      VPS_RELEASE_APPROVAL_KEY:
+        required: true
+permissions:
+  contents: read
+  actions: read
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE-STOPPED-PAPER' && vars.SUIBA_RELEASE_ENABLED == 'true' && vars.SUIBA_BROKER_ENABLED != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      archive: ${{ steps.identity.outputs.archive }}
+      image: ${{ steps.identity.outputs.image }}
+    steps:
+      - name: Verify source identity and show release for independent approval
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          set -euo pipefail
+          [[ $RUN_ID =~ ^[1-9][0-9]{0,19}$ ]]
+          workflow=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/suiba-vps.yml" --jq .id)
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > source.json
+          jq -e --arg repo "$GITHUB_REPOSITORY" --arg workflow "$workflow" '
+            .head_branch == "main" and .head_repository.full_name == $repo and
+            (.workflow_id | tostring) == $workflow and .event == "workflow_dispatch"' source.json >/dev/null
+          if [[ $RUN_ID != "$GITHUB_RUN_ID" ]]; then
+            jq -e '.conclusion == "success"' source.json >/dev/null
+          else
+            # jq expands $sha from --arg, rather than the shell.
+            # shellcheck disable=SC2016
+            jq -e --arg sha "$GITHUB_SHA" '.head_sha == $sha' source.json >/dev/null
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" |
+            jq -e '[.jobs[] | select(.name == "stage / stage" and .conclusion == "success")] | length == 1' >/dev/null
+          sha=$(jq -r .head_sha source.json)
+          [[ $sha =~ ^[a-f0-9]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          printf '## Release approval requested\n\nCommit %s from run %s. Review the source build and staging before approving the release job.\n' "$sha" "$RUN_ID" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.run_id }}
+          name: vps-release
+          path: sui-ai-trading-bot/release
+      - name: Pin artifact identity before approval
+        id: identity
+        working-directory: sui-ai-trading-bot
+        env:
+          RELEASE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          python3 -I docker/release-artifact-identity.py
+
+  release:
+    needs: prepare
+    concurrency:
+      group: suiba-stopped-release
+      cancel-in-progress: false
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.run_id }}
+          name: vps-release
+          path: sui-ai-trading-bot/release
+      - name: Sign reviewed artifact, reconcile and create stopped container
+        working-directory: sui-ai-trading-bot
+        env:
+          EXPECTED_ARCHIVE: ${{ needs.prepare.outputs.archive }}
+          EXPECTED_IMAGE: ${{ needs.prepare.outputs.image }}
+          RELEASE_RUN: ${{ inputs.run_id }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          VPS_RELEASE_APPROVAL_KEY: ${{ secrets.VPS_RELEASE_APPROVAL_KEY }}
+        run: python3 -I docker/ssh-stopped-release.py
