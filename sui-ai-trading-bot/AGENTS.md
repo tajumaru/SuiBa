@@ -15,6 +15,9 @@
   変えない。
 - UI の文言は日本語。`prefers-reduced-motion` 対応を維持する。
   模式・装飾の表示は、模式であることを注記で正直に示す。
+- **判断済みの事項は `docs/DECISIONS_JA.md`**（見送り・保留・未決定の
+  台帳。再提案しない）。**Bot が止まったときの手順は
+  `docs/TROUBLESHOOTING_JA.md`**。
 
 ## リポジトリ地図
 
