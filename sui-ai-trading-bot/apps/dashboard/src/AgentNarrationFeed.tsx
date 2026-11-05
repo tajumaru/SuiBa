@@ -8,14 +8,14 @@ import { BUY_CELEBRATION_MS, CELEBRATION_FRESH_MS, advanceNarration, agentPose, 
 import { botVital } from "./botVital.ts";
 import { appendHighlights, captureHighlights, highlightLabel, loadHighlights, saveHighlights } from "./highlightStore.ts";
 import type { Highlight } from "./highlightStore.ts";
-import { followUpChips, orderedChips, proactivePrompt, proactivePromptDue } from "./agentChat.ts";
-import { commandSuggestions, isCommandText } from "./chatCommands.ts";
+import { proactivePrompt, proactivePromptDue } from "./agentChat.ts";
 import { epochTransition, loadLastEpoch, saveLastEpoch } from "./epochMark.ts";
 import { HighlightReplay } from "./HighlightReplay.tsx";
 import { AgentFeedEntryRow } from "./AgentFeedEntryRow.tsx";
 import { usePrefersReducedMotion } from "./usePrefersReducedMotion.ts";
 import { useFeedScroll } from "./useFeedScroll.ts";
 import { useAgentChat } from "./useAgentChat.ts";
+import { AgentChatComposer } from "./AgentChatComposer.tsx";
 
 export function AgentNarrationFeed({
   data,
@@ -265,25 +265,10 @@ export function AgentNarrationFeed({
     onListeningChange,
     onSpeakingChange,
   });
-  const {
-    chatInput,
-    setChatInput,
-    chatOpen,
-    setChatOpen,
-    chatTopic,
-    setChatTopic,
-    chatThinking,
-    composingRef,
-    chatReplyText,
-    submitChat,
-    voiceSupported,
-    voiceListening,
-    toggleVoice,
-    speechSupported,
-    voiceOn,
-    toggleVoiceOut,
-    chatCtxRef,
-  } = chat;
+  // The feed itself uses only these four; the rest of the chat
+  // cluster is consumed by the composer (and the entry rows'
+  // prompt chips use submit).
+  const { chatOpen, chatThinking, submitChat, chatCtxRef } = chat;
   // Bookmarked highlights (device-local, per pair) and the one
   // currently being replayed, if any.
   const [highlights, setHighlights] = useState<Highlight[]>(() =>
@@ -439,132 +424,11 @@ export function AgentNarrationFeed({
       {replay && (
         <HighlightReplay highlight={replay} onClose={() => setReplay(null)} />
       )}
-      <div className="agent-chat">
-        <p className="sr-only" role="status">
-          {chatReplyText}
-        </p>
-        {!chatOpen ? (
-          <button
-            type="button"
-            className="agent-chat-open"
-            aria-expanded={false}
-            onClick={() => setChatOpen(true)}
-          >
-            {displayName}に聞く
-          </button>
-        ) : (
-          <>
-        <div
-          className="agent-chat-chips"
-          role="group"
-          aria-label={`${displayName}への質問候補`}
-        >
-          {isCommandText(chatInput) ? (
-            commandSuggestions(chatInput).map((cmd) => (
-              <button
-                key={cmd.name}
-                type="button"
-                disabled={chatThinking}
-                onClick={() => submitChat(cmd.name)}
-              >
-                {cmd.name}（{cmd.hint}）
-              </button>
-            ))
-          ) : (
-            <>
-              {(chatTopic == null
-                ? orderedChips(
-                    narration.entries
-                      .filter((e) => e.kind === "chatUser")
-                      .map((e) => e.text),
-                  )
-                : followUpChips(chatTopic)
-              ).map((chip) => (
-                <button
-                  key={chip}
-                  type="button"
-                  disabled={chatThinking}
-                  onClick={() => submitChat(chip)}
-                >
-                  {chip}
-                </button>
-              ))}
-              {chatTopic != null && (
-                <button
-                  type="button"
-                  disabled={chatThinking}
-                  onClick={() => setChatTopic(null)}
-                >
-                  ほかの質問
-                </button>
-              )}
-            </>
-          )}
-          {speechSupported && (
-            <button
-              type="button"
-              className={`agent-voice-toggle${voiceOn ? " on" : ""}`}
-              aria-pressed={voiceOn}
-              onClick={toggleVoiceOut}
-            >
-              {voiceOn ? "🔊 声あり" : "🔇 声なし"}
-            </button>
-          )}
-        </div>
-        <form
-          className="agent-chat-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (composingRef.current) return;
-            submitChat(chatInput);
-          }}
-        >
-          <input
-            type="text"
-            value={chatInput}
-            maxLength={120}
-            disabled={chatThinking}
-            onChange={(e) => setChatInput(e.target.value)}
-            onCompositionStart={() => {
-              composingRef.current = true;
-            }}
-            onCompositionEnd={() => {
-              composingRef.current = false;
-            }}
-            placeholder={
-              voiceListening
-                ? "聞いてる…話してね"
-                : `${displayName}へのコメント`
-            }
-            aria-label={`${displayName}へのコメント`}
-          />
-          {voiceSupported && (
-            <button
-              type="button"
-              className={`agent-chat-mic${voiceListening ? " listening" : ""}`}
-              aria-label={voiceListening ? "聞き取りをやめる" : "音声で聞く"}
-              aria-pressed={voiceListening}
-              disabled={chatThinking}
-              onClick={toggleVoice}
-            >
-              🎤
-            </button>
-          )}
-          <button type="submit" disabled={chatThinking}>
-            送信
-          </button>
-        </form>
-        <button
-          type="button"
-          className="agent-chat-close"
-          aria-expanded={true}
-          onClick={() => setChatOpen(false)}
-        >
-          畳む
-        </button>
-          </>
-        )}
-      </div>
+      <AgentChatComposer
+        chat={chat}
+        displayName={displayName}
+        entries={narration.entries}
+      />
       <div className="agent-feed-list">
         {narration.entries.length === 0 ? (
           <p className="agent-feed-empty">
