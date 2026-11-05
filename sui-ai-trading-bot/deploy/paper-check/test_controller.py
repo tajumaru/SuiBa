@@ -103,6 +103,7 @@ class StopTests(unittest.TestCase):
                 ctl.b = SimpleNamespace(STATE=state, POLICY=policy, SHA=re.compile(r'[a-f0-9]{40}'),
                     regular=regular, decode=FakeBroker.decode, read_trusted=FakeBroker.read_trusted,
                     atomic=FakeBroker.atomic, directory=FakeBroker.directory)
+                FakeBroker.atomic(policy/'policy.json', {'helper_image': 'fixture', 'compose_sha256': 'fixture'})
                 sha = 'f'*40
                 approval = {'sha': sha, 'operation': 'deploy', 'expires': int(time.time())+60}
                 if failure == 'expired':
@@ -227,6 +228,132 @@ class StopTests(unittest.TestCase):
                 checks = ctl.diagnostic_host(container)['container_checks']
             self.assertEqual(checks, {'state': True, 'restart_user': True, 'env': True, 'ports': False,
                                       'memory': True, 'label': True, 'image': True})
+
+    def test_approve_deploy_materializes_the_ci_approval_record(self):
+        import re
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            root = Path(tmp)
+            paper, state, policy = [root/name for name in ('paper', 'broker', 'policy')]
+            for folder in (paper, state, policy, policy/'approvals'):
+                folder.mkdir(mode=0o700)
+            ctl = object.__new__(c.Controller)
+            ctl.state, ctl.record = paper, paper/'run.json'
+            record = initialize(ctl)
+            record['status'] = 'failed_requires_review'
+            FakeBroker.atomic(ctl.record, record)
+            FakeBroker.atomic(state/'paper-check.json', {'status': 'in_progress'})
+            (state/'lock').touch(mode=0o600)
+            @contextlib.contextmanager
+            def regular(path):
+                fd = os.open(path, os.O_RDONLY)
+                try:
+                    yield fd
+                finally:
+                    os.close(fd)
+            ctl.b = SimpleNamespace(STATE=state, POLICY=policy, SHA=re.compile(r'[a-f0-9]{40}'),
+                regular=regular, decode=FakeBroker.decode, read_trusted=FakeBroker.read_trusted,
+                atomic=FakeBroker.atomic, directory=FakeBroker.directory)
+            FakeBroker.atomic(policy/'policy.json', {'helper_image': 'fixture', 'compose_sha256': 'fixture',
+                                                     'approval_source': 'ci'})
+            FakeBroker.atomic(paper/record['id']/'stop.json', {'id': record['id'], 'status': 'clean_stopped'})
+            ctl.quiescent = lambda: None
+            ctl.diagnose_locked = lambda: {'stop': {'status': 'clean_stopped'}, 'requires_review': False,
+                                           'diagnostics': {'exit_code': 0, 'oom_killed': False}}
+            ctl.helper = lambda: (SimpleNamespace(helper=lambda *args: None), 'fixture')
+            ctl.verify_sui = lambda: None
+            sha = 'f'*40
+            ctl.approve_deploy(record['id'], sha)
+            approval = json.loads((policy/'approvals'/(sha+'.json')).read_bytes())
+            self.assertEqual(approval['sha'], sha)
+            self.assertEqual(approval['operation'], 'deploy')
+            self.assertTrue(int(time.time()) < approval['expires'] <= int(time.time()) + 3600)
+            permit = json.loads((state/('paper-deploy-'+sha+'.json')).read_bytes())
+            import hashlib as hl
+            self.assertEqual(permit['approval_sha256'],
+                             hl.sha256((policy/'approvals'/(sha+'.json')).read_bytes()).hexdigest())
+
+    def make_reconcile_fixture(self, root):
+        import re
+        from types import SimpleNamespace
+        paper, state, backups_root, data = root/'paper', root/'broker', root/'backups', root/'data'
+        for folder in (paper, state, backups_root, data):
+            folder.mkdir(mode=0o700, parents=True)
+        ctl = object.__new__(c.Controller)
+        ctl.state, ctl.record = paper, paper/'run.json'
+        record = initialize(ctl)
+        record['status'] = 'failed_requires_review'
+        FakeBroker.atomic(ctl.record, record)
+        folder = paper/record['id']
+        stop = {'id': record['id'], 'status': 'failed_state_unknown', 'errors': ['PREFLIGHT_INCOMPLETE']}
+        FakeBroker.atomic(folder/'stop.json', stop)
+        FakeBroker.atomic(paper/'stop.json', stop)
+        (folder/'fault-fixture.json').write_text('{}')
+        FakeBroker.atomic(state/'paper-check-failed.json', {'status': 'manual_reconciliation_required'})
+        FakeBroker.atomic(state/'ledger.json', {'status': 'prepared_stopped', 'sequence': 6,
+                                                'sha': 'a'*40, 'transaction': 'b'*32})
+        (data/'bot.sqlite.maintenance').write_text('deployment\n')
+        ctl.b = SimpleNamespace(STATE=state, DATA='suiba-vps-data', SHA=re.compile(r'[a-f0-9]{40}'),
+            decode=FakeBroker.decode, read_trusted=FakeBroker.read_trusted, atomic=FakeBroker.atomic,
+            directory=FakeBroker.directory)
+        ctl.inspect = lambda: {'State': {'StartedAt': '0001-01-01T00:00:00Z', 'Running': False, 'ExitCode': 0}}
+        ctl.docker = SimpleNamespace(call=lambda args, timeout=0: json.dumps(
+            [{'Name': 'suiba-vps-data', 'Mountpoint': str(data)}]))
+        ctl.quiescent = lambda: None
+        ctl.diagnose = lambda: {'stop': {'status': 'clean_stopped'}, 'requires_review': False}
+        return ctl, record, paper, state, backups_root
+
+    def reconcile_fixture(self, root):
+        ctl, record, paper, state, backups_root = self.make_reconcile_fixture(root)
+        inactive = b'ActiveState=inactive\nJob=\n'
+        return ctl, record, paper, state, backups_root, inactive
+
+    def test_reconcile_retry_heals_and_approves(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record, paper, state, backups_root, inactive = self.reconcile_fixture(Path(tmp))
+            with patch.object(c, 'RECONCILE_BACKUPS', backups_root), \
+                 patch.object(c.subprocess, 'check_output', return_value=inactive):
+                result = ctl.reconcile_preflight('retry')
+            self.assertEqual(result['mode'], 'retry')
+            self.assertTrue(result['reconciled'])
+            folder = paper/record['id']
+            self.assertEqual(json.loads((folder/'retry-approved.json').read_bytes()), {'id': record['id']})
+            for stop_path in (folder/'stop.json', paper/'stop.json'):
+                healed = json.loads(stop_path.read_bytes())
+                self.assertEqual(healed['status'], 'clean_stopped')
+                self.assertEqual(healed['errors'], [])
+            self.assertFalse((state/'paper-check-failed.json').exists())
+            self.assertFalse((folder/'fault-fixture.json').exists())
+            backup = backups_root/result['backup']
+            self.assertTrue((backup/'run.json').exists())
+            self.assertTrue((backup/'paper-check-failed.json').exists())
+            self.assertTrue((backup/'fault-fixture.json').exists())
+
+    def test_reconcile_deploy_approves_the_given_sha(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record, paper, state, backups_root, inactive = self.reconcile_fixture(Path(tmp))
+            calls = []
+            ctl.approve_deploy = lambda run_id, sha: calls.append((run_id, sha))
+            with patch.object(c, 'RECONCILE_BACKUPS', backups_root), \
+                 patch.object(c.subprocess, 'check_output', return_value=inactive):
+                result = ctl.reconcile_preflight('deploy', 'e'*40)
+            self.assertEqual(result['mode'], 'deploy')
+            self.assertEqual(calls, [(record['id'], 'e'*40)])
+            self.assertFalse((paper/record['id']/'retry-approved.json').exists())
+
+    def test_reconcile_refuses_on_unexpected_evidence(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record, paper, state, backups_root, inactive = self.reconcile_fixture(Path(tmp))
+            folder = paper/record['id']
+            FakeBroker.atomic(folder/'stop.json', {'id': record['id'], 'status': 'failed_state_unknown',
+                                                   'errors': ['SOMETHING_ELSE']})
+            with patch.object(c, 'RECONCILE_BACKUPS', backups_root), \
+                 patch.object(c.subprocess, 'check_output', return_value=inactive):
+                with self.assertRaises(Exception):
+                    ctl.reconcile_preflight('retry')
+            self.assertTrue((state/'paper-check-failed.json').exists())
+            self.assertEqual(json.loads((folder/'stop.json').read_bytes())['errors'], ['SOMETHING_ELSE'])
+            self.assertEqual(list(backups_root.iterdir()), [])
 
     def test_record_preflight_keeps_only_check_and_error_class(self):
         from types import SimpleNamespace
