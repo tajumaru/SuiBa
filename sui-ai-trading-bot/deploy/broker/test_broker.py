@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+import unittest.mock
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('broker', Path(__file__).with_name('broker.py'))
@@ -660,6 +661,53 @@ class ArchiveIdentityTests(unittest.TestCase):
             for identity in ({'Id': IMAGE}, {'Id': mid, 'Descriptor': {}}, {'Id': cid, 'Os': 'linux', 'Architecture': 'amd64', 'Config': {'User': 'root'}}):
                 with self.assertRaises(Exception):
                     b.loaded_identity(identity, cid, manifests, SHA)
+
+
+class PublicResultTests(unittest.TestCase):
+    """The deploy-user-readable outcome mirror: whitelisted
+    fields only, world-readable, and never fatal."""
+
+    def publish(self, root, status, code, sha):
+        target = Path(root) / 'last-deploy.json'
+        with unittest.mock.patch.object(b, 'PUBLIC_RESULT', target):
+            b.publish_public_result(status, code, sha)
+        return target
+
+    def test_writes_whitelisted_failure_and_success(self):
+        with tempfile.TemporaryDirectory() as root:
+            target = self.publish(root, 'failed', 'SECRET_MODE', SHA)
+            value = json.loads(target.read_text())
+            self.assertEqual(value['status'], 'failed')
+            self.assertEqual(value['code'], 'SECRET_MODE')
+            self.assertEqual(value['sha'], SHA)
+            self.assertEqual(stat.S_IMODE(os.stat(target).st_mode), 0o644)
+            target = self.publish(root, 'prepared_stopped', None, SHA)
+            value = json.loads(target.read_text())
+            self.assertEqual(value['status'], 'prepared_stopped')
+            self.assertIsNone(value['code'])
+
+    def test_drops_unlisted_values(self):
+        with tempfile.TemporaryDirectory() as root:
+            target = self.publish(root, 'failed', 'leak: /root/secret', 'not-a-sha')
+            value = json.loads(target.read_text())
+            self.assertIsNone(value['code'])
+            self.assertIsNone(value['sha'])
+            # An unlisted status is never published at all.
+            target.unlink()
+            self.publish(root, 'running', None, SHA)
+            self.assertFalse(target.exists())
+
+    def test_failure_code_selection(self):
+        self.assertEqual(b.public_failure_code(b.Rejected('COMPOSE_DIGEST')), 'COMPOSE_DIGEST')
+        self.assertEqual(b.public_failure_code(b.Rejected('surprise text')), 'UNEXPECTED_REJECTION')
+        self.assertEqual(b.public_failure_code(OSError('x')), 'OS_ERROR')
+        self.assertEqual(b.public_failure_code(ValueError('x')), 'UNEXPECTED_EXCEPTION')
+
+    def test_publish_never_raises(self):
+        with tempfile.TemporaryDirectory() as root:
+            missing = Path(root) / 'no-such-dir' / 'last-deploy.json'
+            with unittest.mock.patch.object(b, 'PUBLIC_RESULT', missing):
+                b.publish_public_result('failed', 'OS_ERROR', SHA)  # must not raise
 
 
 if __name__ == '__main__':

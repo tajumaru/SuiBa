@@ -15,7 +15,7 @@ set -Eeuo pipefail
 umask 077
 
 BROKER_URL='https://raw.githubusercontent.com/tajumaru/SuiBa/main/sui-ai-trading-bot/deploy/broker/broker.py'
-BROKER_SHA256='fe180643402792f4de86e9fc4e40ad6a38dd92c328b3c2ebbd53ccd5ff72f57d'
+BROKER_SHA256='6d6cee840b27801adbaf8dd0f487bbb5f159a2fd9818493220b9ffee00004ff6'
 BROKER_TARGET='/usr/local/libexec/suiba-deploy-broker.py'
 POLICY='/etc/suiba-deploy/policy.json'
 SHARED='/opt/suiba/shared'
@@ -48,7 +48,17 @@ sha256sum "$BROKER_TARGET" | awk '{print $1}'
 
 echo '== 3/4 runtime.env と admin-token =='
 if [[ -e $SHARED/runtime.env ]]; then
-  echo 'runtime.env: 既にあるため変更しません'
+  echo 'runtime.env: 既にあるため変更しません（キー構成だけ確認します。値は出しません）'
+  keys=$(cut -d= -f1 "$SHARED/runtime.env")
+  for want in MARKET_DATA_PROVIDER DEEPBOOK_RECONSTRUCT_CANDLES SUI_GRPC_URL; do
+    grep -qx "$want" <<< "$keys" || echo "  警告: runtime.env に $want がありません"
+  done
+  while IFS= read -r key; do
+    case " MARKET_DATA_PROVIDER DEEPBOOK_RECONSTRUCT_CANDLES SUI_GRPC_URL " in
+      *" $key "*) ;;
+      *) [[ -n $key ]] && echo "  警告: runtime.env に想定外のキー $key があります" ;;
+    esac
+  done <<< "$keys"
 else
   printf '%s\n' \
     'MARKET_DATA_PROVIDER=deepbook' \
@@ -59,7 +69,13 @@ else
   echo 'runtime.env: 作成しました'
 fi
 if [[ -e $SHARED/admin-token ]]; then
-  echo 'admin-token: 既にあるため変更しません'
+  echo 'admin-token: 既にあるため変更しません（形だけ確認します。中身は出しません）'
+  size=$(stat -c %s "$SHARED/admin-token")
+  if [[ $size -ge 33 && $size -le 256 ]] && grep -qE '^[0-9a-fA-F]+$' "$SHARED/admin-token"; then
+    echo '  admin-token: <redacted>
+  else
+    echo "  警告: admin-token の形が想定と違います（サイズ: $size バイト）"
+  fi
 else
   token=$(openssl rand -hex 32)
   printf '%s' "$token" > "$SHARED/admin-token"

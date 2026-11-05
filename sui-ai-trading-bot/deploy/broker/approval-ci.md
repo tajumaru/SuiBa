@@ -29,6 +29,19 @@
 - compose モデル検証、ボリュームの事前存在、バックアップ、コンテナは
   「作成のみ・起動しない」、prepared_stopped の台帳記録は従来どおり。
 
+## 配置結果の見える化（last-deploy.json）
+
+broker は配置の成否を `/opt/suiba/last-deploy.json`（644、root 所有）
+にも書く。中身は `status`（prepared_stopped / failed）と失敗時の
+`code`（broker 自身の SCREAMING_CASE の拒否コードのみ。例外文・
+パス・出力は形が違うため混入しない）、対象の release `sha` だけ。
+root 専用の台帳・領収書が正本であることは変わらない。この写しを
+SSH 接続チェックが `LastDeployStatus/Code/Sha` として表示するので、
+拒否理由の当たりを root シェル無しで付けられる。書き込みは
+ベストエフォートで、失敗しても配置結果は変わらない。同様に、
+接続チェックの runtime.env / admin-token の前提フラグは3値化した
+（1=ある、0=無い、2=shared がこのユーザーから辿れず不明）。
+
 ## 導入順序（順序を守らないと配置が拒否される）
 
 1. 新しい broker.py をホストへ配置する（root 所有パスへ。policy はまだ

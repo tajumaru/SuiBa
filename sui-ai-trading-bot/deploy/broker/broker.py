@@ -38,6 +38,54 @@ PROJECT = 'suiba-vps'
 RUNTIME = '/opt/suiba/shared/runtime.env'
 TOKEN = '/opt/suiba/shared/admin-token'
 PAPER_STATE = Path('/var/lib/suiba-paper-check')
+# Deploy-user-readable mirror of the last deploy outcome. The
+# root-owned ledger/receipts stay the record; this file carries
+# only whitelisted, non-secret fields (status, failure code,
+# release sha) so the read-only SSH check can say WHY a deploy
+# stopped without a root shell. Written best-effort: a failure
+# here never changes an operation's result.
+PUBLIC_RESULT = Path('/opt/suiba/last-deploy.json')
+GIT_SHA = re.compile(r"[a-f0-9]{40}\Z")
+
+
+CODE_SHAPE = re.compile(r"[A-Z][A-Z_]{2,47}\Z")
+
+
+def public_failure_code(error):
+    """The failure code for a rejected operation. The broker's
+    rejection codes are its own SCREAMING_CASE constants; only
+    a value of exactly that shape is ever mirrored — exception
+    text, paths and process output (which might contain
+    credentials) can never take this form, so nothing else can
+    leak through the public record."""
+    if isinstance(error, Rejected):
+        return error.args[0] if len(error.args) == 1 and type(error.args[0]) is str and CODE_SHAPE.fullmatch(error.args[0]) else 'UNEXPECTED_REJECTION'
+    if isinstance(error, subprocess.TimeoutExpired):
+        return 'PROCESS_TIMEOUT'
+    if isinstance(error, OSError):
+        return 'OS_ERROR'
+    return 'UNEXPECTED_EXCEPTION'
+
+
+def publish_public_result(status, code, sha):
+    try:
+        if status not in ('prepared_stopped', 'failed'):
+            return
+        value = {
+            'version': 1,
+            'status': status,
+            'code': code if type(code) is str and CODE_SHAPE.fullmatch(code) else None,
+            'sha': sha if type(sha) is str and GIT_SHA.fullmatch(sha) else None,
+            'at': int(time.time()),
+        }
+        payload = (json.dumps(value) + '\n').encode()
+        tmp = PUBLIC_RESULT.with_name(f'.last-deploy.{os.getpid()}.tmp')
+        with open(tmp, 'wb') as handle:
+            handle.write(payload)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, PUBLIC_RESULT)
+    except BaseException:
+        pass
 
 
 class Rejected(Exception):
@@ -699,8 +747,12 @@ def main():
         req = request(sys.stdin.buffer.read(513))
         signal.alarm(0)
         result = Broker().execute(req, account.pw_uid)
+        if isinstance(result, dict) and result.get('operation') == 'deploy':
+            publish_public_result('prepared_stopped', None, result.get('sha'))
         print(json.dumps({'status': result['status'], 'sha': result['sha']}))
-    except BaseException:
+    except BaseException as error:
+        if 'req' in locals() and isinstance(req, dict) and req.get('operation') == 'deploy':
+            publish_public_result('failed', public_failure_code(error), req.get('sha'))
         # No exception text: Docker/paths/environment might contain credentials.
         print('SUIBA_BROKER_REJECTED_OR_FAILED; administrator must inspect root-owned receipt', file=sys.stderr)
         return 1
