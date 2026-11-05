@@ -15,7 +15,7 @@ set -Eeuo pipefail
 umask 077
 
 BROKER_URL='https://raw.githubusercontent.com/tajumaru/SuiBa/main/sui-ai-trading-bot/deploy/broker/broker.py'
-BROKER_SHA256='6d6cee840b27801adbaf8dd0f487bbb5f159a2fd9818493220b9ffee00004ff6'
+BROKER_SHA256='c18680b80444112a24ce440d7b6ce26bd5da71b4542567cd69c80ca0abdcd724'
 BROKER_TARGET='/usr/local/libexec/suiba-deploy-broker.py'
 POLICY='/etc/suiba-deploy/policy.json'
 SHARED='/opt/suiba/shared'

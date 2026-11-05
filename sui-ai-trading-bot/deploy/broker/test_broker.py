@@ -663,6 +663,101 @@ class ArchiveIdentityTests(unittest.TestCase):
                     b.loaded_identity(identity, cid, manifests, SHA)
 
 
+class VerifyTests(unittest.TestCase):
+    """The read-only verify operation: the deploy's pre-mutation
+    host checks, with no approval, no writes and no Docker
+    mutation — a diagnosis, never a deployment."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='suiba-broker-verify-', dir='/var/lib')
+        self.root = Path(self.temp.name)
+        self.policy, self.state, self.backups = [self.root/x for x in ['policy', 'state', 'backups']]
+        for p in [self.policy, self.state, self.backups, self.policy/'docker', self.policy/'approvals']:
+            p.mkdir(mode=0o700, parents=True)
+        compose = b'root-reviewed-compose-fixture'
+        (self.policy/'compose.yaml').write_bytes(compose)
+        (self.policy/'policy.json').write_text(json.dumps(
+            {'helper_image': HELPER, 'compose_sha256': hashlib.sha256(compose).hexdigest(),
+             'approval_source': 'ci'}))
+        # The broker's trusted-file checks reject group/other
+        # writable files; pin modes explicitly (a permissive
+        # umask would otherwise make the fixtures 0o660).
+        os.chmod(self.policy/'compose.yaml', 0o600)
+        os.chmod(self.policy/'policy.json', 0o600)
+        shared = self.root/'shared'
+        shared.mkdir(mode=0o700)
+        runtime = shared/'runtime.env'
+        runtime.write_text('MODE=PAPER\n')
+        os.chmod(runtime, 0o600)
+        token = shared/'admin-token'
+        token.write_bytes(b'a'*64)
+        os.chown(token, 1000, 1000)
+        os.chmod(token, 0o400)
+        self.runtime_patch = patch.object(b, 'RUNTIME', str(runtime))
+        self.token_patch = patch.object(b, 'TOKEN', str(token))
+        self.runtime_patch.start()
+        self.token_patch.start()
+        self.docker = FakeDocker()
+        self.broker = b.Broker(self.policy, self.state, self.root/'incoming', self.backups, self.docker)
+        self.req = {'operation': 'verify'}
+
+    def tearDown(self):
+        self.runtime_patch.stop()
+        self.token_patch.stop()
+        self.temp.cleanup()
+
+    def test_verify_reports_every_check_ok(self):
+        result = self.broker.execute(self.req, 1001)
+        self.assertEqual(result, {'status': 'verified', 'operation': 'verify',
+                                  'checks': {'policy': True, 'compose_digest': True,
+                                             'runtime_env': True, 'admin_token': True,
+                                             'volumes': True, 'helper_image': True}})
+
+    def test_verify_fails_on_missing_volume_with_deploy_code(self):
+        original = self.docker.call
+        def call(args, **kwargs):
+            if args[:2] == ['volume', 'inspect']:
+                raise b.Rejected('DOCKER_OPERATION_FAILED')
+            return original(args, **kwargs)
+        self.docker.call = call
+        with self.assertRaisesRegex(b.Rejected, 'DOCKER_OPERATION_FAILED'):
+            self.broker.execute(self.req, 1001)
+        # The volume check precedes the helper-image check, and a
+        # failed diagnosis leaves no deploy bookkeeping behind.
+        self.assertFalse(any(a[:2] == ['image', 'inspect'] for a in self.docker.calls))
+        self.assertFalse((self.state/'ledger.json').exists())
+        self.assertFalse((self.state/'attempt.json').exists())
+
+    def test_verify_rejects_short_admin_token(self):
+        token = Path(b.TOKEN)
+        os.chmod(token, 0o600)
+        token.write_bytes(b'a'*16)
+        os.chmod(token, 0o400)
+        with self.assertRaisesRegex(b.Rejected, 'SECRET_MODE'):
+            self.broker.execute(self.req, 1001)
+        self.assertEqual(self.docker.calls, [])
+
+    def test_verify_performs_no_mutation(self):
+        self.broker.execute(self.req, 1001)
+        # Only execute()'s own lock file may appear in state: no
+        # ledger, no attempt record, no transaction directory.
+        self.assertEqual({p.name for p in self.state.iterdir()}, {'lock'})
+        self.assertEqual(list(self.backups.iterdir()), [])
+        self.assertIsNone(self.broker.model)
+        self.assertTrue(self.docker.calls)
+        for args in self.docker.calls:
+            self.assertIn(args[0], ('volume', 'image'))
+            self.assertEqual(args[1], 'inspect')
+
+    def test_request_shape_for_verify(self):
+        self.assertEqual(b.request(b'{"operation":"verify"}'), {'operation': 'verify'})
+        for raw in [b'{"operation":"verify","sha":"'+SHA.encode()+b'"}',
+                    b'{"operation":"verify","ci_run":1}',
+                    b'{"operation":"verify","operation":"deploy"}']:
+            with self.subTest(raw=raw), self.assertRaises(Exception):
+                b.request(raw)
+
+
 class PublicResultTests(unittest.TestCase):
     """The deploy-user-readable outcome mirror: whitelisted
     fields only, world-readable, and never fatal."""

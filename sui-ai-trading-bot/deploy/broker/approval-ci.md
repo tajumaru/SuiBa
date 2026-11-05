@@ -42,6 +42,24 @@ SSH 接続チェックが `LastDeployStatus/Code/Sha` として表示するの�
 接続チェックの runtime.env / admin-token の前提フラグは3値化した
 （1=ある、0=無い、2=shared がこのユーザーから辿れず不明）。
 
+## 読み取り専用の事前診断（verify）
+
+broker は `{"operation":"verify"}` という、sha もダイジェストも
+持たないリクエストを受け付ける。配置が最初の変更に到達する前に
+踏むホスト側チェック（policy のスキーマと compose の sha256、
+runtime.env の trusted 読み取り、admin-token の所有者・モード・
+サイズ、DATA/REPORTS ボリュームの存在、helper イメージの存在）
+だけを実行し、全て通ればチェック別フラグの JSON を返す。
+承認ファイルは読まず消費せず、ledger・attempt は書かず、Docker
+には inspect しかしないため、診断が配置を肩代わりすることも、
+後続の配置をブロックすることもない。失敗時は配置と同じ拒否
+コードで即座に弾かれ、main は固定の拒否文だけを出す。verify の
+結果は last-deploy.json には書かない（あれは配置結果の記録で、
+診断で上書きしてはいけない）。
+呼び出しは `.github/workflows/suiba-vps-verify.yml`
+（confirmation `VERIFY-BROKER`、Environment 承認必須、
+`SUIBA_BROKER_ENABLED == 'true'` のときだけ）。
+
 ## 導入順序（順序を守らないと配置が拒否される）
 
 1. 新しい broker.py をホストへ配置する（root 所有パスへ。policy はまだ

@@ -243,8 +243,13 @@ def decode(raw):
 def request(raw):
     require(len(raw) <= 512, 'REQUEST_TOO_LARGE')
     value = decode(raw)
-    require(isinstance(value, dict) and
-            {'operation', 'sha'} <= set(value) <= {'operation', 'sha', 'archive_sha256', 'image_id', 'ci_run'},
+    require(isinstance(value, dict), 'REQUEST_SCHEMA')
+    if set(value) == {'operation'} and value['operation'] == 'verify':
+        # Read-only pre-diagnosis: no sha, no digests, nothing to
+        # approve or consume. execute() routes it to verify(),
+        # which writes nothing and only inspects through Docker.
+        return value
+    require({'operation', 'sha'} <= set(value) <= {'operation', 'sha', 'archive_sha256', 'image_id', 'ci_run'},
             'REQUEST_SCHEMA')
     require(value['operation'] in ('deploy', 'rollback'), 'OPERATION')
     require(isinstance(value['sha'], str) and SHA.fullmatch(value['sha']), 'SHA')
@@ -520,6 +525,8 @@ class Broker:
             fcntl.flock(lockfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             # Revalidate imported callers too; CLI never accepts a path/image/config.
             request(json.dumps(req).encode())
+            if req['operation'] == 'verify':
+                return self.verify()
             with contextlib.ExitStack() as locks:
                 permit = self.check_paper_session(req)
                 if permit is not None:
@@ -580,6 +587,39 @@ class Broker:
         with directory(self.state) as parent:
             os.fsync(parent)
 
+
+    def verify(self):
+        """Read-only pre-diagnosis: the host-side checks a deploy
+        hits before its first mutation, and nothing else. No
+        approval file is read, nothing is consumed, no ledger or
+        attempt record is written, and Docker is only asked to
+        inspect — so a verify can never deploy, block a later
+        deploy, or stand in for one. The first failing check
+        rejects with that check's own code, exactly as the deploy
+        would; on success the result carries one flag per check.
+        File contents are never returned."""
+        checks = {}
+        policy = decode(read_trusted(self.policy/'policy.json'))
+        require({'helper_image', 'compose_sha256'} <= set(policy) <= {'helper_image', 'compose_sha256', 'approval_source'} and DIGEST.fullmatch(policy['helper_image']) and HEX.fullmatch(policy['compose_sha256']), 'POLICY_SCHEMA')
+        require(policy.get('approval_source', 'file') in ('file', 'ci'), 'POLICY_SCHEMA')
+        checks['policy'] = True
+        compose = read_trusted(self.policy/'compose.yaml')
+        require(hashlib.sha256(compose).hexdigest() == policy['compose_sha256'], 'COMPOSE_DIGEST')
+        checks['compose_digest'] = True
+        # RUNTIME and TOKEN are fixed production paths, not caller
+        # or instance input. transaction() touches them only on
+        # the production policy path; verify() always checks the
+        # real files — diagnosing them is its purpose.
+        read_trusted(RUNTIME)
+        checks['runtime_env'] = True
+        with regular(TOKEN, 1000) as token:
+            require(os.fstat(token).st_size >= 32 and not (os.fstat(token).st_mode & 0o077), 'SECRET_MODE')
+        checks['admin_token'] = True
+        self.docker.call(['volume', 'inspect', DATA, REPORTS])  # Never auto-create a ledger.
+        checks['volumes'] = True
+        self.docker.call(['image', 'inspect', policy['helper_image']])
+        checks['helper_image'] = True
+        return {'status': 'verified', 'operation': 'verify', 'checks': checks}
 
     def transaction(self, req, uid):
         sha, operation = req['sha'], req['operation']
@@ -749,7 +789,16 @@ def main():
         result = Broker().execute(req, account.pw_uid)
         if isinstance(result, dict) and result.get('operation') == 'deploy':
             publish_public_result('prepared_stopped', None, result.get('sha'))
-        print(json.dumps({'status': result['status'], 'sha': result['sha']}))
+        if isinstance(result, dict) and result.get('operation') == 'verify':
+            # The whole result is the point of a diagnosis: check
+            # flags only, never file contents. Verify outcomes are
+            # NOT mirrored to last-deploy.json — that file records
+            # deploy outcomes, and a diagnosis must not overwrite
+            # one. A failed check rejects above instead, and the
+            # except path below publishes nothing for verify.
+            print(json.dumps(result))
+        else:
+            print(json.dumps({'status': result['status'], 'sha': result['sha']}))
     except BaseException as error:
         if 'req' in locals() and isinstance(req, dict) and req.get('operation') == 'deploy':
             publish_public_result('failed', public_failure_code(error), req.get('sha'))

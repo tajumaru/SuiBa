@@ -1,0 +1,58 @@
+name: SuiBa VPS broker read-only verify
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "VERIFY-BROKER to run the broker's read-only pre-diagnosis (never deploys)"
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: suiba-vps-verify
+  cancel-in-progress: false
+jobs:
+  verify:
+    # Same gate as the deploy job: the broker path must be the
+    # enabled one, and the Environment approval below is what
+    # authorizes talking to the host at all.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'VERIFY-BROKER' && vars.SUIBA_BROKER_ENABLED == 'true'
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask the broker to verify the host (read-only)
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          [[ $VPS_HOST =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ $VPS_USER =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ $VPS_USER == 'suiba-deploy' ]]
+          [[ $VPS_PORT =~ ^[0-9]{1,5}$ ]]
+          (( 10#$VPS_PORT >= 1 && 10#$VPS_PORT <= 65535 ))
+          key="$RUNNER_TEMP/vps-key"
+          hosts="$RUNNER_TEMP/vps-known-hosts"
+          trap 'rm -f "$key" "$hosts"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$hosts"
+          opts=(-F /dev/null -i "$key" -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$hosts" -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o ClearAllForwardings=yes -o ConnectTimeout=15)
+          target="$VPS_USER@$VPS_HOST"
+          # Read-only pre-diagnosis only: nothing is uploaded and
+          # no digests are sent. The broker runs the host-side
+          # checks a deploy hits before any mutation (policy and
+          # compose digest, runtime.env, admin-token shape, data
+          # volumes, helper image) and prints one JSON line of
+          # per-check flags, shown in this step's log. A failed
+          # check makes the broker print its fixed rejection
+          # string to stderr and exit non-zero, failing the step;
+          # the failing check is the one named by the broker's
+          # rejection discipline, visible in the host-side record.
+          printf '%s\n' '{"operation":"verify"}' |
+            ssh "${opts[@]}" -T -p "$VPS_PORT" "$target" 'sudo -n -- /usr/local/sbin/suiba-deploy'
