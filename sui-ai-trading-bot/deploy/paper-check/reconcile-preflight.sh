@@ -10,6 +10,9 @@
 # 使い方（ホストで root）:
 #   curl -fsSL https://raw.githubusercontent.com/tajumaru/SuiBa/main/sui-ai-trading-bot/deploy/paper-check/reconcile-preflight.sh -o /tmp/reconcile-preflight.sh
 #   sudo bash /tmp/reconcile-preflight.sh
+# 再配置で直す場合は、配置するリリースの sha を引数に渡す:
+#   sudo bash /tmp/reconcile-preflight.sh <40桁のsha>
+# （その場合は approve-retry でなく approve-deploy で終わる）
 set -euo pipefail
 
 STATE=/var/lib/suiba-paper-check
@@ -19,6 +22,16 @@ DATA_VOLUME=suiba-vps-data
 CONTROLLER=/usr/local/libexec/suiba-paper-check.py
 
 fail() { echo "RECONCILE_FAILED: $*" >&2; exit 1; }
+
+# Optional argument: a release sha (40 hex) ends with approve-deploy
+# for that sha instead of approve-retry, for when the fix requires a
+# fresh deployment rather than a retry of the current release.
+DEPLOY_SHA=${1:-}
+if [[ -n $DEPLOY_SHA && ! $DEPLOY_SHA =~ ^[0-9a-f]{40}$ ]]; then
+  echo '引数の sha の形が不正です（40桁の16進数で指定してください）' >&2
+  echo 'RECONCILE_FAILED'
+  exit 1
+fi
 [[ $(id -u) == 0 ]] || fail 'root で実行してください（sudo bash ...）'
 for cmd in python3 docker systemctl; do
   command -v "$cmd" >/dev/null || fail "$cmd がありません"
@@ -99,10 +112,20 @@ for path in targets:
 PY
 echo 'レシートを clean_stopped に是正しました'
 
-echo '== 4/4 公式の再試行許可（approve-retry） =='
-out=$(python3 -I "$CONTROLLER" approve-retry "$run_id")
-echo "$out"
-[[ $out == *PAPER_CHECK_RETRY_APPROVED* ]] || fail 'approve-retry が許可を出しませんでした'
-echo
-echo 'RECONCILE_OK: 再試行が許可されました。START-PAPER で開始できます。'
-echo "シロ（Muse）に「終わった」と伝えてください。"
+if [[ -n $DEPLOY_SHA ]]; then
+  echo '== 4/4 公式の再配置許可（approve-deploy） =='
+  out=$(python3 -I "$CONTROLLER" approve-deploy "$run_id" "$DEPLOY_SHA")
+  echo "$out"
+  [[ $out == *PAPER_CHECK_DEPLOY_APPROVED* ]] || fail 'approve-deploy が許可を出しませんでした'
+  echo
+  echo "RECONCILE_DEPLOY_OK: $DEPLOY_SHA の再配置が許可されました。DEPLOY-PAPER で配置できます。"
+  echo "シロ（Muse）に「終わった」と伝えてください。"
+else
+  echo '== 4/4 公式の再試行許可（approve-retry） =='
+  out=$(python3 -I "$CONTROLLER" approve-retry "$run_id")
+  echo "$out"
+  [[ $out == *PAPER_CHECK_RETRY_APPROVED* ]] || fail 'approve-retry が許可を出しませんでした'
+  echo
+  echo 'RECONCILE_OK: 再試行が許可されました。START-PAPER で開始できます。'
+  echo "シロ（Muse）に「終わった」と伝えてください。"
+fi
