@@ -263,6 +263,17 @@ export function createRequestHandler(ctx: WorkerContext) {
     if (req.method === "GET" && url.pathname === "/api/operations") {
       send(200, {
         ...timeAggregation(() => ctx.engine.monitor.snapshot()),
+        // The effective execution environment, for the operations
+        // view and the diagnostic export: a configuration mistake
+        // (wrong pair, provider or paper-check token) should be
+        // visible in the app, not only in host-side checks.
+        environment: {
+          mode: "PAPER",
+          pair: ctx.engine.pair,
+          provider: ctx.engine.marketStatus()?.source ?? null,
+          paperCheck: ctx.paperCheck.status(),
+          maintenance: ctx.stopping || ctx.deploymentGate.blocked(),
+        },
         databaseHealth: ctx.db.health(),
         suiHealth: { ...ctx.sui.status },
         suiReads: { ...ctx.sui.readStatus },

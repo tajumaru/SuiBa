@@ -91,6 +91,31 @@ it("builds a self-describing report with the episode evidence inline", () => {
   expect(report).toContain("ledger ok: true");
 });
 
+it("includes the execution environment when the worker provides it", () => {
+  const report = buildDiagnosticReport(
+    snapshot({
+      environment: {
+        mode: "PAPER",
+        pair: "SUI_USDC",
+        provider: "GeckoTerminal",
+        paperCheck: { enabled: true, armed: true, expired: false, expires: 90000 },
+        maintenance: false,
+      },
+    }),
+    100000,
+  );
+  expect(report).toContain("## 実行環境");
+  expect(report).toContain("pair: SUI_USDC / 市場プロバイダ: GeckoTerminal");
+  expect(report).toContain("paper-check: 検証中");
+  expect(report).toContain("maintenance: なし");
+});
+
+it("marks the environment unknown for older workers without the block", () => {
+  const report = buildDiagnosticReport(snapshot(), 100000);
+  expect(report).toContain("## 実行環境");
+  expect(report).toContain("paper-check: 不明");
+});
+
 it("reports the in-progress episode tally from the safety state", () => {
   const report = buildDiagnosticReport(
     snapshot({
