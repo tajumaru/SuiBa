@@ -1,8 +1,17 @@
 import { chartGapQuality } from "../../../packages/shared/src/chart-gap-quality.ts";
+import { candleHoverLines, hoverLineWidth } from "./chartHover.ts";
+import {
+  answerGhost,
+  crossingMarksFor,
+  forecastGeometry,
+} from "./chartOverlayGeometry.ts";
+
+// Kept as a re-export: the hover readout's home is chartHover.ts,
+// and existing imports (and tests) name this module.
+export { candleHoverLines };
 import { candleGeometry } from "./candleGeometry.ts";
 import {
   chartForecast,
-  forecastLineCrossings,
   forecastPalette,
   FORECAST_BARS,
 } from "./chartForecast.ts";
@@ -34,39 +43,6 @@ import {
   createShareCardPng,
   type ShareCardInput,
 } from "./shareCard.ts";
-const hoverTimeFormat = new Intl.DateTimeFormat("ja-JP", {
-  timeZone: "Asia/Tokyo",
-  month: "numeric",
-  day: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
-/**
- * The two readout lines shown inside the chart while a candle
- * is hovered or tapped: when it started and where it closed
- * (with the move across the candle), then the rest of the
- * OHLC. The full record (volume, source, provenance) stays in
- * the detail panel below; this is the at-a-glance version.
- */
-export function candleHoverLines(b: Candle): {
-  main: string;
-  sub: string;
-} {
-  const pct =
-    b.open > 0 ? ((b.close - b.open) / b.open) * 100 : 0;
-  return {
-    main: `${hoverTimeFormat.format(b.timestamp * 1000)} 終 ${number(b.close, 4)} (${pct >= 0 ? "+" : ""}${number(pct, 2)}%)`,
-    sub: `始 ${number(b.open, 4)} 高 ${number(b.high, 4)} 安 ${number(b.low, 4)}`,
-  };
-}
-/** Rough rendered width of a readout line (full-width glyphs
- * count double) so the backdrop box can hug the text. */
-function hoverLineWidth(line: string): number {
-  let w = 0;
-  for (const ch of line) w += ch.charCodeAt(0) > 0x2000 ? 11.5 : 6.9;
-  return w;
-}
 export function PriceChart({
   pair = "SUI_USDC",
   candles,
@@ -243,123 +219,19 @@ export function PriceChart({
     max = Math.max(...values),
     y = (v: number) => 215 - ((v - min) / (max - min || 1)) * 180;
   const dx = Math.max(0.8, Math.min(24, (plot / (xFinish - start)) * tf * 0.6));
-  const fcAnchor =
-    fc && latest
-      ? `${x(latest.timestamp + tf / 2)},${y(latest.close)}`
-      : null;
-  const fcMid = fc
-    ? [
-        fcAnchor!,
-        ...fc.points.map(
-          (p) => `${x(p.timestamp + tf / 2)},${y(p.mid)}`,
-        ),
-      ].join(" ")
-    : null;
-  const fcCone = fc
-    ? [
-        fcAnchor!,
-        ...fc.points.map(
-          (p) => `${x(p.timestamp + tf / 2)},${y(p.upper)}`,
-        ),
-        ...[...fc.points]
-          .reverse()
-          .map((p) => `${x(p.timestamp + tf / 2)},${y(p.lower)}`),
-      ].join(" ")
-    : null;
-  const fcPalette = fc ? forecastPalette(fc.direction) : null;
-  const fcLabel = fc
-    ? fc.direction === "flat"
-      ? "予測"
-      : `予測 ${fc.driftPct >= 0 ? "+" : ""}${(fc.driftPct * 100).toFixed(1)}%`
-    : null;
+  const fcGeom = fc ? forecastGeometry(fc, latest, x, y, tf) : null;
+  const fcMid = fcGeom?.mid ?? null,
+    fcCone = fcGeom?.cone ?? null,
+    fcPalette = fcGeom?.palette ?? null,
+    fcLabel = fcGeom?.label ?? null;
   // Answer-check geometry: the recorded cone (ghost) over the
   // bars that actually followed it, with the real closes as a
   // solid white line — dotted was the claim, solid is the fact.
-  const ghost = showAnswer
-    ? (() => {
-        const a = answerCheck,
-          anchorPt = `${x(a.origin - tf / 2)},${y(a.startClose)}`,
-          palette = forecastPalette(a.dir),
-          pct = (f: number) =>
-            `${f >= 0 ? "+" : ""}${(f * 100).toFixed(1)}%`;
-        return {
-          palette,
-          dividerX: x(a.origin),
-          cone: [
-            anchorPt,
-            ...a.points.map(
-              (p) => `${x(p.timestamp + tf / 2)},${y(p.upper)}`,
-            ),
-            ...[...a.points]
-              .reverse()
-              .map((p) => `${x(p.timestamp + tf / 2)},${y(p.lower)}`),
-          ].join(" "),
-          upper: a.points
-            .map((p) => `${x(p.timestamp + tf / 2)},${y(p.upper)}`)
-            .join(" "),
-          lower: a.points
-            .map((p) => `${x(p.timestamp + tf / 2)},${y(p.lower)}`)
-            .join(" "),
-          mid: [
-            anchorPt,
-            ...a.points.map(
-              (p) => `${x(p.timestamp + tf / 2)},${y(p.mid)}`,
-            ),
-          ].join(" "),
-          actual: [
-            anchorPt,
-            ...a.actuals.map(
-              (p) => `${x(p.timestamp + tf / 2)},${y(p.close)}`,
-            ),
-          ].join(" "),
-          endX: x(a.points.at(-1)!.timestamp + tf / 2),
-          midEndY: y(a.points.at(-1)!.mid),
-          actualEndY: y(a.actuals.at(-1)!.close),
-          midAbove: a.points.at(-1)!.mid >= a.actuals.at(-1)!.close,
-          forecastTag: `予測 ${pct(a.driftPct)}`,
-          actualTag: `実際 ${pct(a.actualPct)}`,
-        };
-      })()
-    : null;
+  const ghost = showAnswer ? answerGhost(answerCheck, x, y, tf) : null;
   // Where the outlook meets the position's sell lines, if it
   // does: geometry over the sketch, labelled as such in place.
-  const crossings =
-    fc && sellLines ? forecastLineCrossings(fc.points, sellLines) : null;
-  const crossingMarks = crossings
-    ? (
-        [
-          {
-            key: "tp",
-            line: sellLines!.tp,
-            hit: crossings.tpMid,
-            edge: crossings.tpEdge,
-            color: "#43dfb2",
-            word: "利確ライン",
-          },
-          {
-            key: "sl",
-            line: sellLines!.sl,
-            hit: crossings.slMid,
-            edge: crossings.slEdge,
-            color: "#f77d8f",
-            word: "損切りライン",
-          },
-        ] as const
-      ).flatMap((m) => {
-        const c = m.hit ?? m.edge;
-        return c
-          ? [
-              {
-                ...m,
-                bars: c.bars,
-                cx: x(c.timestamp + tf / 2),
-                cy: y(m.line),
-                edgeOnly: !m.hit,
-              },
-            ]
-          : [];
-      })
-    : [];
+  const crossingMarks =
+    fc && sellLines ? crossingMarksFor(fc, sellLines, x, y, tf) : [];
   const geometry = useMemo(
     () => candleGeometry(c, x, y, dx),
     [visible, w, min, max, tf],
