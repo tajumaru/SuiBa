@@ -6,9 +6,13 @@
 #      installs it only if its sha256 matches the pinned digest;
 #   2. creates /opt/suiba/shared/runtime.env and admin-token when
 #      missing (existing files are never overwritten);
-#   3. adds "approval_source": "ci" to /etc/suiba-deploy/policy.json
-#      (helper_image and compose_sha256 are left untouched).
-# Backups of broker.py and policy.json are kept next to the originals.
+#   3. fetches docker/compose.vps.yaml from the repository, verifies
+#      its pinned sha256 and installs it as the policy compose at
+#      /etc/suiba-deploy/compose.yaml;
+#   4. adds "approval_source": "ci" to /etc/suiba-deploy/policy.json
+#      and sets compose_sha256 to the installed compose's digest
+#      (helper_image is left untouched).
+# Backups of replaced files are kept next to the originals.
 # The script is idempotent: a second run reports "already present"
 # for everything it created the first time.
 set -Eeuo pipefail
@@ -17,6 +21,11 @@ umask 077
 BROKER_URL='https://raw.githubusercontent.com/tajumaru/SuiBa/main/sui-ai-trading-bot/deploy/broker/broker.py'
 BROKER_SHA256='c18680b80444112a24ce440d7b6ce26bd5da71b4542567cd69c80ca0abdcd724'
 BROKER_TARGET='/usr/local/libexec/suiba-deploy-broker.py'
+# The policy compose is the repository's docker/compose.vps.yaml.
+# Update this pin in the same commit as any compose.vps.yaml change.
+COMPOSE_URL='https://raw.githubusercontent.com/tajumaru/SuiBa/main/sui-ai-trading-bot/docker/compose.vps.yaml'
+COMPOSE_SHA256='8c7f1bd3e5f93d9e1c2630ca176218cc5e05aafd9badc49cd022da9da93eb4a4'
+COMPOSE_TARGET='/etc/suiba-deploy/compose.yaml'
 POLICY='/etc/suiba-deploy/policy.json'
 SHARED='/opt/suiba/shared'
 GRPC_URL='https://fullnode.mainnet.sui.io:443'
@@ -36,8 +45,10 @@ echo '== 1/4 broker.py を取得して検証 =='
 curl -fsSL "$BROKER_URL" -o "$tmp/broker.py" || fail 'broker.py の取得に失敗'
 printf '%s  %s\n' "$BROKER_SHA256" "$tmp/broker.py" | sha256sum -c - >/dev/null || fail 'broker.py の sha256 が一致しません'
 python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/broker.py" || fail 'broker.py の構文検証に失敗'
+curl -fsSL "$COMPOSE_URL" -o "$tmp/compose.yaml" || fail 'compose.yaml の取得に失敗'
+printf '%s  %s\n' "$COMPOSE_SHA256" "$tmp/compose.yaml" | sha256sum -c - >/dev/null || fail 'compose.yaml の sha256 が一致しません'
 
-echo '== 2/4 broker.py を配置 =='
+echo '== 2/4 broker.py と compose.yaml を配置 =='
 if [[ -e $BROKER_TARGET ]]; then
   cp -a "$BROKER_TARGET" "$BROKER_TARGET.bak-$stamp"
   echo "旧 broker.py をバックアップ: $BROKER_TARGET.bak-$stamp"
@@ -45,6 +56,13 @@ fi
 install -o root -g root -m 755 "$tmp/broker.py" "$BROKER_TARGET"
 printf '配置後の sha256: '
 sha256sum "$BROKER_TARGET" | awk '{print $1}'
+if [[ -e $COMPOSE_TARGET ]]; then
+  cp -a "$COMPOSE_TARGET" "$COMPOSE_TARGET.bak-$stamp"
+  echo "旧 compose.yaml をバックアップ: $COMPOSE_TARGET.bak-$stamp"
+fi
+install -o root -g root -m 644 "$tmp/compose.yaml" "$COMPOSE_TARGET"
+printf 'compose.yaml 配置後の sha256: '
+sha256sum "$COMPOSE_TARGET" | awk '{print $1}'
 
 echo '== 3/4 runtime.env と admin-token =='
 if [[ -e $SHARED/runtime.env ]]; then
@@ -87,19 +105,21 @@ else
   echo '--------------------------------------------------------------------------'
 fi
 
-echo '== 4/4 policy.json に approval_source を追加 =='
+echo '== 4/4 policy.json に approval_source と compose_sha256 を設定 =='
 cp -a "$POLICY" "$POLICY.bak-$stamp"
-python3 - "$POLICY" <<'PYEOF'
-import json, sys
+python3 - "$POLICY" "$COMPOSE_SHA256" <<'PYEOF'
+import json, re, sys
 path = sys.argv[1]
 with open(path) as source:
     policy = json.load(source)
 assert policy.get('helper_image') and policy.get('compose_sha256'), 'policy に必須キーがありません'
 policy['approval_source'] = 'ci'
+assert re.fullmatch(r'[0-9a-f]{64}', sys.argv[2]), 'compose_sha256 の形が不正です'
+policy['compose_sha256'] = sys.argv[2]
 with open(path, 'w') as target:
     target.write(json.dumps(policy, indent=2) + '\n')
 PYEOF
-python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); assert d["approval_source"] == "ci"; print("policy OK:", ", ".join(sorted(d)))' "$POLICY"
+python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); assert d["approval_source"] == "ci"; assert d["compose_sha256"] == sys.argv[2]; print("policy OK:", ", ".join(sorted(d)))' "$POLICY" "$COMPOSE_SHA256"
 
 echo '== 補足チェック: shared ディレクトリの所有者と権限 =='
 shared_uid=$(stat -c %u "$SHARED")
