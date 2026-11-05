@@ -622,92 +622,32 @@ export class BotEngine {
     return { fresh, executionSettings, costs, profit, profitAt, validQuote };
   }
 
-  async tick() {
-    this.db.assertHealthy();
-    if (this.deploymentStopped()) return;
-    if (this.busy) return;
-    this.busy = true;
-    let audit: CandidateAudit | null = null;
-    let committed = false;
-    const began = Date.now();
-    let measuredFrames: Record<number, Candle[]> = {},
-      measuredAction: string | null = null,
-      measuredError: string | null = null;
-    const cycleToken = this.monitor.beginCycle();
-    const cycle: CycleEvidence = {
-      cycleId: randomUUID(),
-      beganAt: began,
-      runningAtStart: this.db.runtime().running,
-      generationAtStart: cycleToken,
-      connectivityAtStart: this.monitor.safety().connectivity,
-      analysis: null,
-      outcome: "NOT_EVALUATED",
-    };
-    try {
-      this.db.append(
-        "cycle_audits",
-        randomUUID(),
-        { ...cycle, phase: "START" },
-        began,
-      );
-      const now = Date.now();
-      const frames = await this.acquireFrames(cycle, began, now);
-      measuredFrames = frames;
-      const c = frames[300],
-        last = c.at(-1)!,
-        price = last.close;
-      validateCandles(c, 300, Date.now());
-      this.monitor.market((last.timestamp + 300) * 1000);
-      if (this.db.runtime().running && !this.monitor.ledger().ok)
-        throw new Error("PAPER_RECONCILIATION_FAILED");
-      const { recoveryTransition, p, s, runtime, decision, sellPreview } =
-        await this.analyzeCycle(c, price, began, now, cycle, cycleToken);
-      measuredAction = decision.action;
-      if (
-        this.gateStopsCycle(
-          recoveryTransition,
-          runtime,
-          last,
-          decision,
-          now,
-          cycle,
-          cycleToken,
-        )
-      )
-        return;
-      // The gate ends every WAIT cycle above; this re-check only
-      // restores the type narrowing the inline gate used to give
-      // the code below (it cannot fire while the gate holds).
-      if (decision.action === "WAIT") return;
-      const cand = await this.buildCandidate(
-        decision as TradingDecision & { action: "BUY" | "SELL" },
-        p,
-        s,
-        price,
-        last,
-        now,
-        sellPreview,
-        cycle,
-      );
-      audit = cand.audit;
-      if (!cand.proceed) return;
-      const q = cand.q,
-        reverse = cand.reverse,
-        side = decision.action,
-        id = cand.audit.orderId;
-      const ev = await this.evaluateCandidate(
-        audit,
-        id,
-        q,
-        reverse,
-        decision,
-        p,
-        last,
-        side,
-      );
-      if (!ev) return;
-      const { fresh, executionSettings, costs, profit, profitAt, validQuote } =
-        ev;
+  /**
+   * Tick phase 6 — risk assessment, the final gates and the
+   * fill itself: paper execution, reconciliation and the
+   * commit. fillState.committed flips exactly where tick()
+   * used to set its local. Extracted verbatim from tick().
+   */
+  private async executeFill(
+    audit: CandidateAudit,
+    id: string,
+    q: QuoteResult,
+    reverse: QuoteResult | null,
+    p: Portfolio,
+    decision: TradingDecision,
+    price: number,
+    last: Candle,
+    c: Candle[],
+    fresh: number,
+    executionSettings: Settings,
+    profit: ProfitReport,
+    profitAt: (at: number) => ProfitReport,
+    validQuote: boolean,
+    side: "BUY" | "SELL",
+    cycle: CycleEvidence,
+    cycleToken: number,
+    fillState: { committed: boolean },
+  ): Promise<void> {
       const reasons = assessRisk({
         side,
         quote: q,
@@ -856,7 +796,7 @@ export class BotEngine {
           ),
         },
       );
-      committed = true;
+      fillState.committed = true;
       cycle.outcome = "FILLED";
       this.monitor.filled(fresh);
       const persisted = reconcileFill(
@@ -871,6 +811,113 @@ export class BotEngine {
         this.db.append("paper_checks", randomUUID(), persisted, fresh);
         throw new Error("PAPER_RECONCILIATION_FAILED");
       }
+  }
+
+  async tick() {
+    this.db.assertHealthy();
+    if (this.deploymentStopped()) return;
+    if (this.busy) return;
+    this.busy = true;
+    let audit: CandidateAudit | null = null;
+    const fillState = { committed: false };
+    const began = Date.now();
+    let measuredFrames: Record<number, Candle[]> = {},
+      measuredAction: string | null = null,
+      measuredError: string | null = null;
+    const cycleToken = this.monitor.beginCycle();
+    const cycle: CycleEvidence = {
+      cycleId: randomUUID(),
+      beganAt: began,
+      runningAtStart: this.db.runtime().running,
+      generationAtStart: cycleToken,
+      connectivityAtStart: this.monitor.safety().connectivity,
+      analysis: null,
+      outcome: "NOT_EVALUATED",
+    };
+    try {
+      this.db.append(
+        "cycle_audits",
+        randomUUID(),
+        { ...cycle, phase: "START" },
+        began,
+      );
+      const now = Date.now();
+      const frames = await this.acquireFrames(cycle, began, now);
+      measuredFrames = frames;
+      const c = frames[300],
+        last = c.at(-1)!,
+        price = last.close;
+      validateCandles(c, 300, Date.now());
+      this.monitor.market((last.timestamp + 300) * 1000);
+      if (this.db.runtime().running && !this.monitor.ledger().ok)
+        throw new Error("PAPER_RECONCILIATION_FAILED");
+      const { recoveryTransition, p, s, runtime, decision, sellPreview } =
+        await this.analyzeCycle(c, price, began, now, cycle, cycleToken);
+      measuredAction = decision.action;
+      if (
+        this.gateStopsCycle(
+          recoveryTransition,
+          runtime,
+          last,
+          decision,
+          now,
+          cycle,
+          cycleToken,
+        )
+      )
+        return;
+      // The gate ends every WAIT cycle above; this re-check only
+      // restores the type narrowing the inline gate used to give
+      // the code below (it cannot fire while the gate holds).
+      if (decision.action === "WAIT") return;
+      const cand = await this.buildCandidate(
+        decision as TradingDecision & { action: "BUY" | "SELL" },
+        p,
+        s,
+        price,
+        last,
+        now,
+        sellPreview,
+        cycle,
+      );
+      audit = cand.audit;
+      if (!cand.proceed) return;
+      const q = cand.q,
+        reverse = cand.reverse,
+        side = decision.action,
+        id = cand.audit.orderId;
+      const ev = await this.evaluateCandidate(
+        audit,
+        id,
+        q,
+        reverse,
+        decision,
+        p,
+        last,
+        side,
+      );
+      if (!ev) return;
+      const { fresh, executionSettings, profit, profitAt, validQuote } = ev;
+      await this.executeFill(
+        audit,
+        id,
+        q,
+        reverse,
+        p,
+        decision,
+        price,
+        last,
+        c,
+        fresh,
+        executionSettings,
+        profit,
+        profitAt,
+        validQuote,
+        side,
+        cycle,
+        cycleToken,
+        fillState,
+      );
     } catch (error) {
       const code =
         error instanceof Error &&
@@ -882,10 +929,10 @@ export class BotEngine {
           ? error.message
           : safeFailure(error);
       const shutdownCancelled =
-        !committed && this.monitor.isShutdownCancellation(error);
+        !fillState.committed && this.monitor.isShutdownCancellation(error);
       measuredError = code;
       cycle.outcome = shutdownCancelled ? "CANCELLED" : "FAILED";
-      if (audit && !committed)
+      if (audit && !fillState.committed)
         this.monitor.finishCandidate({
           ...audit,
           timestamp: Date.now(),
@@ -914,7 +961,7 @@ export class BotEngine {
       if (quality) this.db.set("market_quality", quality);
       if (!this.monitor.shuttingDown) this.monitor.healthy();
       try {
-        if (audit && !committed && !measuredError)
+        if (audit && !fillState.committed && !measuredError)
           cycle.outcome = "CANDIDATE_REJECTED";
         this.db.append(
           "cycle_audits",
