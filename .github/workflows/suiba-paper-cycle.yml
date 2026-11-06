@@ -1,0 +1,126 @@
+name: SuiBa PAPER validation cycle
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type CYCLE-PAPER"
+        required: true
+        type: string
+      duration:
+        description: "Validation run length (fixed set, enforced again by the controller)"
+        required: true
+        type: choice
+        default: "30m"
+        options:
+          - "30m"
+          - "6h"
+          - "24h"
+      retry:
+        description: "Approve retry of the previous failed run first (choose no for a fresh cycle)"
+        required: true
+        type: choice
+        default: "yes"
+        options:
+          - "yes"
+          - "no"
+permissions:
+  contents: read
+concurrency:
+  group: suiba-paper-cycle
+  cancel-in-progress: false
+jobs:
+  paper-cycle:
+    # One Environment approval covers the whole cycle — retry approval,
+    # start, and the watch — instead of one approval per workflow
+    # (added 2026-11-07 after a morning of per-step approvals).
+    # Gated by the start workflow's repository variable: enabling
+    # START-PAPER implies enabling the cycle that starts a run, and
+    # the Environment approval remains the human gate. The watch is
+    # observational and capped at ~45 minutes even for 6h/24h runs:
+    # early failures surface within minutes, and a long run's final
+    # state is read afterwards with the approval-free status check.
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'CYCLE-PAPER' && vars.SUIBA_PAPER_START_ENABLED == 'true'
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Approve retry of the previous failed run through the fixed wrapper
+        if: inputs.retry == 'yes'
+        env:
+          PAPER_RETRY_CONFIRMATION: RETRY-PAPER
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-paper-retry.sh
+      - name: Start a PAPER validation run through the fixed wrapper
+        env:
+          PAPER_START_CONFIRMATION: START-PAPER
+          PAPER_START_DURATION: ${{ inputs.duration }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-paper-start.sh
+      - name: Watch PAPER status through the fixed wrapper
+        env:
+          PAPER_STATUS_CONFIRMATION: CHECK-PAPER-STATUS
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          # Observational only: a failed poll or a failed run is a result,
+          # not a job failure. Exit codes are managed manually below.
+          set +e
+          if [ "${{ inputs.duration }}" = "30m" ]; then
+            watch_seconds=2400
+          else
+            watch_seconds=2700
+          fi
+          poll_interval=120
+          deadline=$(( $(date +%s) + watch_seconds ))
+          poll=0
+          final_state="unknown (no successful poll)"
+          while true; do
+            poll=$(( poll + 1 ))
+            ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+            echo "=== Poll ${poll} at ${ts} ==="
+            {
+              echo ""
+              echo "## Poll ${poll} — ${ts} UTC"
+            } >> "$GITHUB_STEP_SUMMARY"
+            out=$(bash sui-ai-trading-bot/docker/ssh-paper-status.sh 2>&1)
+            rc=$?
+            printf '%s\n' "$out"
+            if [ $rc -ne 0 ]; then
+              echo "Poll ${poll} failed (status script exit ${rc}); continuing."
+            fi
+            state=$(printf '%s\n' "$out" | sed -n 's/^- Run: `\([^`]*\)`.*/\1/p' | head -n 1)
+            if [ -n "$state" ]; then
+              final_state="$state"
+            fi
+            case "$state" in
+              completed|failed_requires_review)
+                echo "Terminal run status reached: ${state}"
+                break
+                ;;
+            esac
+            remaining=$(( deadline - $(date +%s) ))
+            if [ $remaining -le 0 ]; then
+              echo "Watch window (${watch_seconds}s) exhausted."
+              break
+            fi
+            sleep_for=$poll_interval
+            if [ $remaining -lt $sleep_for ]; then
+              sleep_for=$remaining
+            fi
+            sleep $sleep_for
+          done
+          echo "Final PAPER run status: ${final_state}"
