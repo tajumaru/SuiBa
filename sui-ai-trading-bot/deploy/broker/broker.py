@@ -302,6 +302,18 @@ def read_trusted(path, maximum=65536):
         return raw
 
 
+def read_required(path, code):
+    """read_trusted, except that a missing file rejects with the
+    given code instead of collapsing into a bare OS_ERROR. An
+    absent record is an operational state with a known meaning
+    (a permit never issued, an approval never written), and the
+    operator needs its name, not an errno."""
+    try:
+        return read_trusted(path)
+    except FileNotFoundError:
+        raise Rejected(code)
+
+
 def atomic(path, value):
     # Parent was verified and is never writable by the SSH caller.
     raw = json.dumps(value, sort_keys=True).encode() + b'\n'
@@ -486,11 +498,17 @@ class Broker:
 
     def snapshot(self, sha, uid, expected, target):
         with directory(self.incoming, uid) as base:
-            d = os.open(sha, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=base)
+            try:
+                d = os.open(sha, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=base)
+            except FileNotFoundError:
+                raise Rejected('ARCHIVE_MISSING')
             try:
                 s = os.fstat(d)
                 require(s.st_uid == uid and not (s.st_mode & 0o022), 'INCOMING_DIRECTORY')
-                fd = os.open('image.tar.gz', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=d)
+                try:
+                    fd = os.open('image.tar.gz', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=d)
+                except FileNotFoundError:
+                    raise Rejected('ARCHIVE_MISSING')
             finally:
                 os.close(d)
         try:
@@ -528,15 +546,20 @@ class Broker:
             if req['operation'] == 'verify':
                 return self.verify()
             with contextlib.ExitStack() as locks:
-                permit = self.check_paper_session(req)
-                if permit is not None:
-                    for name in ('stop', 'mutation'):
-                        fd = locks.enter_context(regular(PAPER_STATE/(name+'.lock')))
-                        fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB)
-                    permit = self.check_paper_session(req)
-                    self.consume_paper_deploy(permit)
+                self.failure_recorded = False
                 try:
+                    permit = self.check_paper_session(req)
+                    if permit is not None:
+                        for name in ('stop', 'mutation'):
+                            fd = locks.enter_context(regular(PAPER_STATE/(name+'.lock')))
+                            fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB)
+                        permit = self.check_paper_session(req)
+                        self.consume_paper_deploy(permit)
                     return self.transaction(req, uid)
+                except BaseException as error:
+                    if not self.failure_recorded:
+                        self.record_failure(req, error)
+                    raise
                 finally:
                     # Only the root-created snapshot file, never incoming/DB/backup.
                     if getattr(self, 'archive', None):
@@ -549,14 +572,14 @@ class Broker:
         require(not os.path.lexists(self.state/'paper-check-failed.json'), 'PAPER_CHECK_RECONCILIATION_REQUIRED')
         marker = self.state/'paper-check.json'
         if os.path.lexists(marker):
-            value = decode(read_trusted(marker))
+            value = decode(read_required(marker, 'PAPER_DEPLOY_STATE_MISSING'))
             if value == {'status': 'completed'}:
                 return
             require(value == {'status': 'in_progress'} and req is not None and req['operation'] == 'deploy',
                     'PAPER_CHECK_RECONCILIATION_REQUIRED')
             path = self.state/('paper-deploy-'+req['sha']+'.json')
             require(not os.path.lexists(path.with_suffix('.consumed.json')), 'PAPER_DEPLOY_ALREADY_CONSUMED')
-            permit = decode(read_trusted(path))
+            permit = decode(read_required(path, 'PAPER_DEPLOY_PERMIT_MISSING'))
             require(set(permit) == {'id', 'sha', 'approval_sha256', 'run_sha256', 'stop_sha256'} and
                     permit['sha'] == req['sha'] and isinstance(permit['id'], str) and
                     re.fullmatch(r'[a-f0-9]{32}', permit['id']), 'PAPER_DEPLOY_PERMIT')
@@ -565,10 +588,10 @@ class Broker:
             for target, digest in ((run, permit['run_sha256']), (folder/'stop.json', permit['stop_sha256']),
                                    (self.policy/'approvals'/(req['sha']+'.json'), permit['approval_sha256'])):
                 require(isinstance(digest, str) and HEX.fullmatch(digest) and
-                        hashlib.sha256(read_trusted(target)).hexdigest() == digest, 'PAPER_DEPLOY_STATE_CHANGED')
-            record = decode(read_trusted(run))
-            stop = decode(read_trusted(folder/'stop.json'))
-            approval = decode(read_trusted(self.policy/'approvals'/(req['sha']+'.json')))
+                        hashlib.sha256(read_required(target, 'PAPER_DEPLOY_STATE_MISSING')).hexdigest() == digest, 'PAPER_DEPLOY_STATE_CHANGED')
+            record = decode(read_required(run, 'PAPER_DEPLOY_STATE_MISSING'))
+            stop = decode(read_required(folder/'stop.json', 'PAPER_DEPLOY_STATE_MISSING'))
+            approval = decode(read_required(self.policy/'approvals'/(req['sha']+'.json'), 'PAPER_DEPLOY_STATE_MISSING'))
             require(record['id'] == permit['id'] and record['status'] == 'failed_requires_review' and
                     stop['id'] == permit['id'] and stop['status'] == 'clean_stopped' and stop['errors'] == [],
                     'PAPER_DEPLOY_NOT_CLEAN')
@@ -582,10 +605,30 @@ class Broker:
     def consume_paper_deploy(self, permit):
         consumed = permit.with_suffix('.consumed.json')
         # Link creation is exclusive. If interrupted, the retained consumed record blocks replay.
-        os.link(permit, consumed, follow_symlinks=False)
+        try:
+            os.link(permit, consumed, follow_symlinks=False)
+        except FileExistsError:
+            raise Rejected('PAPER_DEPLOY_ALREADY_CONSUMED')
+        except FileNotFoundError:
+            raise Rejected('PAPER_DEPLOY_PERMIT_MISSING')
         os.unlink(permit)
         with directory(self.state) as parent:
             os.fsync(parent)
+
+    def record_failure(self, req, error):
+        # Best-effort state-side record for a deploy rejected
+        # before transaction() could write its own receipt (the
+        # paper-session gate, a missing approval or archive):
+        # such a failure used to leave no record in the state
+        # area at all, only the public mirror — which the next
+        # deploy overwrites. Same public code as last-deploy.json;
+        # no decision ever reads this file, and a write failure
+        # here changes nothing about the rejection itself.
+        with contextlib.suppress(BaseException):
+            atomic(self.state/'last-failure.json', {
+                'version': 1, 'at': int(time.time()),
+                'operation': req['operation'], 'sha': req['sha'],
+                'code': public_failure_code(error)})
 
 
     def verify(self):
@@ -652,7 +695,7 @@ class Broker:
                         'ci_run': req['ci_run']}
         else:
             require(set(req) == {'operation', 'sha'}, 'REQUEST_SCHEMA')
-            approval = decode(read_trusted(self.policy/'approvals'/f'{sha}.json'))
+            approval = decode(read_required(self.policy/'approvals'/f'{sha}.json', 'APPROVAL_FILE_MISSING'))
             require(set(approval) == {'sha', 'operation', 'archive_sha256', 'image_id', 'sequence', 'expires', 'repository', 'ref', 'ci_run'}, 'APPROVAL_SCHEMA')
             require(approval['sha'] == sha and approval['operation'] == operation and approval['repository'] == 'tajumaru/SuiBa' and approval['ref'] == 'refs/heads/main', 'APPROVAL_IDENTITY')
             require(HEX.fullmatch(approval['archive_sha256']) and DIGEST.fullmatch(approval['image_id']), 'APPROVAL_DIGEST')
@@ -762,6 +805,8 @@ class Broker:
             # A logging failure must NEVER bypass that cleanup or grant success.
             with contextlib.suppress(BaseException):
                 atomic(transaction/'failure.json', evidence)
+            # execute() adds no second record for this failure now.
+            self.failure_recorded = True
             record['status'] = 'failed_stopped' if self.emergency_stop() and not self.helper_unknown else 'failed_state_unknown'
             record['failure'] = evidence
             atomic(ledger, record)
