@@ -51,14 +51,17 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   `systemctl stop suiba-paper-check-cutoff.timer`。守る対象のランが停止済みで
   あることを確認してから止める。
 
-### 5. market-freshness は worker 起動直後の一回だけの判定で競合負けする
+### 5. market-freshness は worker 起動直後の初回取得と競合した（修正済み）
 
-- 検証ランの market-freshness は、worker 起動から約10秒時点で summary の
-  `marketData.lastSuccessAt` が90秒以内かを**一回だけ**見る（リトライなし）。
-- エンジンの初回 GeckoTerminal 取得（プール発見＋OHLCV）がその前に完了して
-  いないと、取得自体は健全でも失敗になる。2026-11-06 の実測では、手動起動では
-  約11秒で初回成功したが、ランではチェックが先に来て market-freshness で落ちた
-  （数秒差の競合）。GeckoTerminal への到達性自体は VPS から正常だった。
+- 旧実装は worker 起動から約10秒時点で summary の `marketData.lastSuccessAt`
+  が90秒以内かを**一回だけ**見ていた。エンジンの初回 GeckoTerminal 取得
+  （プール発見＋OHLCV）が完了前だと `lastSuccessAt` は未記録（None）で、
+  取得自体は健全でも数秒差で競合負けした（2026-11-06 に2回発生し、いずれも
+  clean_stopped で停止。診断で段階が確定）。
+- 修正（wait_market_fresh）：同じ鮮度条件を監視と同じ5秒間隔で最大2分間
+  ポーリングする。None は「まだ成功なし」として待ち続け、2分経っても
+  鮮度が来なければ従来どおり market-freshness 失敗とする。監視中の鮮度
+  判定（5秒ごとの単発チェック）は変更していない。
 
 ## このメモに紐づく自動化
 

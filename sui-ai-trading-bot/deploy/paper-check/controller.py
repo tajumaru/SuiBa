@@ -723,6 +723,24 @@ class Controller:
                         raise
             time.sleep(1)
 
+    def wait_market_fresh(self, market, cutoff):
+        # The first GeckoTerminal success after a cold worker start
+        # can land seconds after readiness opens, so the previous
+        # single-shot check raced it: two runs stopped cleanly at
+        # this stage on 2026-11-06 with no success recorded yet
+        # (lastSuccessAt still None). Poll on the monitoring cadence
+        # for up to two minutes; a feed still stale after that is a
+        # real failure, not a race. A None lastSuccessAt means "no
+        # success yet" and keeps waiting instead of erroring.
+        deadline = time.monotonic()+120
+        while True:
+            last = market['lastSuccessAt']
+            if market['source'] == 'GeckoTerminal' and type(last) in (int, float) and 0 <= time.time()*1000-last <= 90000:
+                return
+            require(time.monotonic() < deadline and time.time()*1000 < cutoff)
+            time.sleep(5)
+            market = self.api('GET', '/api/dashboard/summary')['summary']['marketData']
+
     def backup(self):
         helper, image = self.helper()
         helper.helper(image, 'maintenance')
@@ -979,7 +997,7 @@ class Controller:
                 stage = 'market-summary'
                 market = self.api('GET', '/api/dashboard/summary')['summary']['marketData']
                 stage = 'market-freshness'
-                require(market['source'] == 'GeckoTerminal' and 0 <= time.time()*1000-market['lastSuccessAt'] <= 90000)
+                self.wait_market_fresh(market, record['cutoff'])
                 # Existing start guards check connectivity/accounting/market state.
                 stage = 'arm'
                 armed = self.guard('arm', lambda: self.api('POST', '/api/paper-check/arm',
