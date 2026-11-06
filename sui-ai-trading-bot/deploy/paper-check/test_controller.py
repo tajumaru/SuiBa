@@ -691,6 +691,28 @@ class StopTests(unittest.TestCase):
                 if expect:
                     self.assertEqual(resets[0][2], {'command': 'reset'})
                     self.assertTrue(ctl.readiness['staleReset'])
+        # A reset send that fails is resent on the next poll until
+        # one lands (the seq-10 run lost its readiness window to a
+        # single-shot send that never took effect); attempts are
+        # counted either way.
+        ctl = object.__new__(c.Controller)
+        ctl.inspect = lambda: {'State': {'Running': True, 'OOMKilled': False, 'Health': {'Status': 'healthy'}}, 'RestartCount': 0}
+        ctl.retry_admitted = True
+        calls = []
+        page_iter = iter([stale, stale, ready])
+        attempts = {'n': 0}
+        def flaky_api(method, path, value=None):
+            calls.append((method, path, value))
+            if path == '/api/control':
+                attempts['n'] += 1
+                if attempts['n'] == 1: raise RuntimeError('send failed')
+                return {'running': False}
+            return next(page_iter)
+        ctl.api = flaky_api
+        with patch.object(c.time, 'monotonic', side_effect=[0, 0, 1, 2, 3]), patch.object(c.time, 'time', return_value=0), patch.object(c.time, 'sleep'):
+            self.assertTrue(ctl.wait_ready(100000)['startReady'])
+        self.assertEqual(ctl.stale_reset_attempts, 2)
+        self.assertTrue(ctl.stale_reset_ok)
 
     def test_market_fresh_waits_for_the_first_success(self):
         fresh = {'source': 'GeckoTerminal', 'lastSuccessAt': 1000}

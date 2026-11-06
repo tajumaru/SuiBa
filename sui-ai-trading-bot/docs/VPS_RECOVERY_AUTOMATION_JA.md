@@ -163,6 +163,16 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   compose に無く、Indexer の足系列の欠け（実測で 5分足1000本中2本）
   が全取得を CANDLE_GAP で落とし、market-freshness で2回停止した。
   PR #89 で compose に追加した。
+- stale リセットの再送化（2026-11-07、PR #92）: PR #91 の計器で
+  seq 10 ランの内訳が確定した。DB の runtime error は開始前後で
+  CANDLE_GAP のまま不変＝PR #88 のリセットは届いておらず、初回
+  サイクルは取得成功（1555ms）後に MARKET_SOURCE_CHANGED（source
+  文字列が verified-v1 に変わる初回だけの仕様動作）、続いて取得
+  45秒デッドライン超過（MARKET_DATA_STALLED）が2回。リセットは
+  冪等な状態クリアであり start/arm/order とは性質が違うため、
+  送信失敗時は readiness が通るまでポーリング毎に再送するよう
+  改めた（試行回数を failure に記録）。あわせて診断イベントに
+  stall の reasonDetail を含めた。
 - readiness 失敗の帰属計器（2026-11-07、PR #91）: 再構成フラグが
   正しく届いた seq 10 ランも worker-readiness で停止した。停止中の
   worker は最初の永続エラーを書き換えない設計のため、診断の

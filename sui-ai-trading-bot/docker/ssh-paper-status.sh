@@ -234,7 +234,8 @@ if details is not None:
         print(f"- Market at failure: source={market['source']}, lastSuccessAt={market['lastSuccessAt']}, reason={market['reason']}")
     stale_reset = details.get("stale_reset")
     if isinstance(stale_reset, dict):
-        print(f"- Stale reset at readiness: sent, result={'ok' if stale_reset.get('ok') else 'failed'}")
+        print(f"- Stale reset at readiness: sent, result={'ok' if stale_reset.get('ok') else 'failed'}"
+              f", attempts={stale_reset.get('attempts')}")
     evidence = details.get("evidence")
     if isinstance(evidence, dict):
         timing = evidence.get("timing")
@@ -242,8 +243,9 @@ if details is not None:
             print(f"- Last fetch in SUI database: duration={timing['dur']}ms")
         events = evidence.get("events")
         if isinstance(events, list) and events:
-            rendered = ", ".join(f"{e['k']}/{e['c']}" for e in events[:6]
-                                 if isinstance(e, dict) and "k" in e and "c" in e)
+            rendered = ", ".join(
+                f"{e['k']}/{e['c']}" + (f"[{e['d']}]" if e.get("d") else "")
+                for e in events[:6] if isinstance(e, dict) and "k" in e and "c" in e)
             if rendered:
                 print(f"- Recent operation events (SUI, newest first): {rendered}")
     if "clean_lifecycle" in details:
