@@ -193,8 +193,11 @@ try {
         "SELECT timestamp, json FROM operation_events ORDER BY timestamp DESC LIMIT 10").all()) {
       try {
         const value = JSON.parse(row.json);
-        if (typeof row.timestamp === "number" && shape.test(value.kind) && shape.test(value.code))
-          events.push({t: row.timestamp, k: value.kind, c: value.code});
+        if (typeof row.timestamp === "number" && shape.test(value.kind) && shape.test(value.code)) {
+          const detail = value.details && typeof value.details.reasonDetail === "string" &&
+            shape.test(value.details.reasonDetail) ? value.details.reasonDetail : null;
+          events.push({t: row.timestamp, k: value.kind, c: value.code, d: detail});
+        }
       } catch {}
     }
     let timing = null;
@@ -444,8 +447,9 @@ class Controller:
                         re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', market['reason']))
             stale_reset = failure.get('stale_reset')
             if stale_reset is not None:
-                require(type(stale_reset) is dict and set(stale_reset) == {'sent', 'ok'} and
-                        stale_reset['sent'] is True and type(stale_reset['ok']) is bool)
+                require(type(stale_reset) is dict and set(stale_reset) == {'sent', 'ok', 'attempts'} and
+                        stale_reset['sent'] is True and type(stale_reset['ok']) is bool and
+                        type(stale_reset['attempts']) is int and stale_reset['attempts'] >= 1)
         preflight = None
         preflight_path = self.folder(record)/'preflight.json'
         if preflight_path.exists():
@@ -804,9 +808,11 @@ class Controller:
             if evidence is not None:
                 require(type(evidence) is dict and set(evidence) == {'events', 'timing'})
                 require(type(evidence['events']) is list and len(evidence['events']) <= 10 and all(
-                    type(e) is dict and set(e) == {'t', 'k', 'c'} and type(e['t']) in (int, float) and
+                    type(e) is dict and set(e) == {'t', 'k', 'c', 'd'} and type(e['t']) in (int, float) and
                     re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', e['k']) and
-                    re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', e['c']) for e in evidence['events']))
+                    re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', e['c']) and
+                    (e['d'] is None or re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', e['d']))
+                    for e in evidence['events']))
                 timing = evidence['timing']
                 require(timing is None or (type(timing) is dict and set(timing) == {'dur', 'att', 'suc'} and
                     all(timing[key] is None or type(timing[key]) in (int, float) for key in timing)))
@@ -927,12 +933,19 @@ class Controller:
         # on 2026-11-07 (stage worker-readiness, blocking checks
         # apiAccess and runtimeClear, before-run error
         # UPSTREAM_HTTP_429). When — and only when — this start
-        # consumed a retry approval, send that reset once: at once
-        # for a persisted runtime error, or after an API block
-        # persists across several polls. Readiness afterwards still
-        # judges live state; the reset fabricates nothing, and a
-        # start without the retry approval never sends it.
-        if not getattr(self, 'retry_admitted', False) or getattr(self, 'stale_reset_sent', False):
+        # consumed a retry approval, send that reset: at once for a
+        # persisted runtime error, or after an API block persists
+        # across several polls. The reset is idempotent state
+        # clearing (not a start/arm/order action), so a failed send
+        # is retried on the next poll until one lands: the seq-10
+        # run on 2026-11-07 lost its whole readiness window to a
+        # single-shot send that never took effect — the database
+        # error was byte-identical before and after, and the silent
+        # catch left no trace. Attempts are counted for the failure
+        # record either way. Readiness afterwards still judges live
+        # state; the reset fabricates nothing, and a start without
+        # the retry approval never sends it.
+        if not getattr(self, 'retry_admitted', False) or getattr(self, 'stale_reset_ok', False):
             return
         if self.readiness.get('runtimeClear') is False:
             due = True
@@ -946,7 +959,7 @@ class Controller:
             due = False
         if not due:
             return
-        self.stale_reset_sent = True
+        self.stale_reset_attempts = getattr(self, 'stale_reset_attempts', 0)+1
         try:
             self.api('POST', '/api/control', {'command': 'reset'})
             self.stale_reset_ok = True
@@ -1303,9 +1316,10 @@ class Controller:
                 stage = 'worker-start'
                 self.note_stage(stage)
                 self.guard('worker-start', lambda: self.docker.call(['start', CONTAINER], timeout=20))
-                # Readiness GETs only, plus the single retry-approved
-                # stale reset in maybe_reset_stale. Never retry a
-                # start/arm/order/reset action.
+                # Readiness GETs only, plus the retry-approved stale
+                # reset in maybe_reset_stale (idempotent; resent
+                # until it lands). Never retry a start/arm/order
+                # action.
                 stage = 'worker-readiness'
                 self.note_stage(stage)
                 d = self.wait_ready(self.session_cutoff(record))
@@ -1367,13 +1381,14 @@ class Controller:
                         failure['http_status'] = error.code
                     if stage == 'worker-readiness':
                         failure['readiness'] = getattr(self, 'readiness', {})
-                    if getattr(self, 'stale_reset_sent', False):
+                    if getattr(self, 'stale_reset_attempts', 0):
                         # Record the reset's outcome on failure too:
                         # the success path alone cannot distinguish
                         # "reset landed, error rewritten" from
                         # "reset never arrived" (2026-11-07).
                         failure['stale_reset'] = {'sent': True,
-                            'ok': bool(getattr(self, 'stale_reset_ok', False))}
+                            'ok': bool(getattr(self, 'stale_reset_ok', False)),
+                            'attempts': int(self.stale_reset_attempts)}
                     if stage in ('market-freshness', 'monitoring') and getattr(self, 'market', None) is not None:
                         failure['market'] = self.market
                     self.b.atomic(self.folder(self.current(self.run_id))/'failure.json', failure)
