@@ -15,8 +15,13 @@ jobs:
   paper-status:
     # Repository variable, NOT an Environment variable: evaluated before job startup.
     # Missing/false disables all SSH. Do not enable until separately approved.
+    # Read-only operations run in the sakura-vps-read Environment, which
+    # holds the same SSH secrets but has NO required reviewers, so status
+    # and diagnostics no longer need an approval tap (2026-11-07). The
+    # fixed wrapper only exposes read-only status/diagnose operations;
+    # state-changing workflows stay in the approval-gated sakura-vps.
     if: github.ref == 'refs/heads/main' && (inputs.confirmation == 'CHECK-PAPER-STATUS' || inputs.confirmation == 'CHECK-PAPER-DIAGNOSTICS') && vars.SUIBA_PAPER_STATUS_ENABLED == 'true'
-    environment: sakura-vps
+    environment: sakura-vps-read
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
