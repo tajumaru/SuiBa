@@ -1,6 +1,7 @@
 # VPS 本稼働設計 — 起動・停止経路と監視
 
-これは設計書であり、未実装である。対象は2点に限る：(1) さくら VPS
+これは設計書である。worker セッション一般化（§8-3(i)）のみ実装し、
+本番の起動・停止経路は未実装である。対象は2点に限る：(1) さくら VPS
 上で PAPER 本番を回し続けるための起動・停止経路、(3) 止まったら
 気づける監視。状態の引っ越しと更新手順は骨子のみ、閲覧経路などは
 未決定事項として §7 に置く。前提の事実は
@@ -128,7 +129,7 @@ broker 配置＋素の docker start）は、restart 強制や create-only と
 **worker（apps/worker/src/paper-check-session.ts ほか）**
 
 - `PaperCheckSession` に本番モードを足す。新しい env トークン
-  （名称は実装時に確定）でのみ有効になり、意味論は次のとおり：
+  `PAPER_CHECK_MODE=sui-prod` でのみ有効になり、意味論は次のとおり：
   - ペア制限は現行と同じ SUI_USDC のみ。
   - arm は「有効期限なし」の形を受け付ける（例：`expiresAt` を
     省いた arm を本番モードでのみ受理）。受理後は明示停止まで
@@ -141,6 +142,13 @@ broker 配置＋素の docker start）は、restart 強制や create-only と
   という形が保たれる。`/api/deployment` の paperCheck 表示は
   本番モードでも同じ形（enabled／armed／expired／expires=null）を
   返す。
+- 第1段の worker 契約：既存の認証付き `POST /api/paper-check/arm`
+  に `issuedAt`（現在の epoch ミリ秒、許容差2秒）だけを渡す。
+  `expiresAt` は省略が必須で、null や数値の期限は受理しない。
+  arm はプロセス内の単発操作で、worker を起動し直したら未 arm に
+  戻る。既存の maintenance／停止中のみの arm／start ゲートは維持する。
+  この段では controller・compose・systemd は変更せず、本番の開始や
+  自動再起動経路は追加しない。
 
 **controller（deploy/paper-check/controller.py）**
 

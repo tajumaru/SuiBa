@@ -93,3 +93,118 @@ it("rejects skew, expired preparation, invalid deadlines and backward wall clock
   wall = 99;
   expect(session.ordersAllowed("SUI_USDC")).toBe(false);
 });
+
+it("requires a single explicit SUI-only production arm without a deadline", () => {
+  let mono = 10,
+    wall = 1000;
+  const session = new PaperCheckSession(
+    "sui-prod",
+    () => mono,
+    () => wall,
+  );
+  expect(session.status()).toEqual({
+    enabled: true,
+    armed: false,
+    expired: false,
+    expires: null,
+  });
+  expect(session.ordersAllowed("SUI_USDC")).toBe(false);
+  expect(session.pairAllowed("WAL_USDC")).toBe(false);
+  expect(() => session.arm("WAL_USDC", undefined, wall)).toThrow();
+  expect(() => session.arm("SUI_USDC", wall + 1000, wall)).toThrow();
+  session.arm("SUI_USDC", undefined, wall);
+  expect(session.status()).toEqual({
+    enabled: true,
+    armed: true,
+    expired: false,
+    expires: null,
+  });
+  expect(session.ordersAllowed("SUI_USDC")).toBe(true);
+  expect(session.ordersAllowed("WAL_USDC")).toBe(false);
+  expect(() => session.arm("SUI_USDC", undefined, wall)).toThrow();
+  mono += 7 * 24 * 60 * 60 * 1000;
+  wall += 7 * 24 * 60 * 60 * 1000;
+  expect(session.expired()).toBe(false);
+  expect(session.ordersAllowed("SUI_USDC")).toBe(true);
+  const rebooted = new PaperCheckSession(
+    "sui-prod",
+    () => mono,
+    () => wall,
+  );
+  expect(rebooted.ordersAllowed("SUI_USDC")).toBe(false);
+});
+
+it("rejects missing, skewed or non-finite production issue times and explicit null deadlines", () => {
+  for (const issued of [undefined, null, NaN, Infinity, 3100, -3000, 100.5]) {
+    const session = new PaperCheckSession(
+      "sui-prod",
+      () => 0,
+      () => 100,
+    );
+    expect(() =>
+      session.arm("SUI_USDC", undefined, issued as number),
+    ).toThrow();
+    expect(session.status().armed).toBe(false);
+  }
+  const session = new PaperCheckSession(
+    "sui-prod",
+    () => 0,
+    () => 100,
+  );
+  expect(() =>
+    session.arm("SUI_USDC", null as unknown as number, 100),
+  ).toThrow();
+});
+
+it("irreversibly closes production authorization on either clock regressing or becoming non-finite", () => {
+  for (const clock of ["mono", "wall"] as const) {
+    for (const invalid of [99, NaN, Infinity, -Infinity]) {
+      for (const armed of [false, true]) {
+        let mono = 100,
+          wall = 100;
+        const session = new PaperCheckSession(
+          "sui-prod",
+          () => mono,
+          () => wall,
+        );
+        if (armed) session.arm("SUI_USDC", undefined, wall);
+        if (clock === "mono") mono = invalid;
+        else wall = invalid;
+        expect(session.expired()).toBe(true);
+        expect(session.ordersAllowed("SUI_USDC")).toBe(false);
+        mono = wall = 200;
+        expect(session.expired()).toBe(true);
+        expect(() => session.arm("SUI_USDC", undefined, wall)).toThrow();
+      }
+    }
+  }
+});
+
+it("never accepts an unbounded arm in verification or ordinary PAPER", () => {
+  for (const mode of [undefined, "sui-30m"]) {
+    const session = new PaperCheckSession(
+      mode,
+      () => 0,
+      () => 100,
+    );
+    expect(() => session.arm("SUI_USDC", undefined, 100)).toThrow();
+    expect(session.status().armed).toBe(false);
+  }
+});
+
+it("does not recover production authorization from invalid initial clock samples", () => {
+  for (const initial of [NaN, Infinity, -Infinity]) {
+    for (const clock of ["mono", "wall"] as const) {
+      let mono = clock === "mono" ? initial : 100;
+      let wall = clock === "wall" ? initial : 100;
+      const session = new PaperCheckSession(
+        "sui-prod",
+        () => mono,
+        () => wall,
+      );
+      mono = wall = 200;
+      expect(session.expired()).toBe(true);
+      expect(() => session.arm("SUI_USDC", undefined, wall)).toThrow();
+    }
+  }
+});
