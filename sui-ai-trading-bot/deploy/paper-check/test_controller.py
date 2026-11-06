@@ -228,6 +228,14 @@ class StopTests(unittest.TestCase):
                 checks = ctl.diagnostic_host(container)['container_checks']
             self.assertEqual(checks, {'state': True, 'restart_user': True, 'env': True, 'ports': False,
                                       'memory': True, 'label': True, 'image': True})
+            # A DeepBook deployment passes the env check too; the
+            # flip-flopping 'auto' mode does not.
+            for provider, expected in (('deepbook', True), ('auto', False)):
+                container['Config']['Env'] = ['MODE=PAPER', 'TRADING_PAIR=SUI_USDC', 'PAPER_CHECK_MODE=sui-30m',
+                                              f'MARKET_DATA_PROVIDER={provider}']
+                with patch.object(c.subprocess, 'check_output', return_value=response):
+                    checks = ctl.diagnostic_host(container)['container_checks']
+                self.assertEqual(checks['env'], expected, provider)
 
     def test_approve_deploy_materializes_the_ci_approval_record(self):
         import re
@@ -618,6 +626,16 @@ class StopTests(unittest.TestCase):
         ctl.api = lambda *a: {'summary': {'marketData': cold}}
         with patch.object(c.time, 'monotonic', side_effect=[0, 0, 121]), patch.object(c.time, 'time', return_value=1.0), patch.object(c.time, 'sleep'):
             with self.assertRaises(RuntimeError): ctl.wait_market_fresh(cold, 10**13)
+        # A DeepBook deployment waits for the DeepBook source, and a
+        # GeckoTerminal summary does not satisfy it.
+        ctl = object.__new__(c.Controller)
+        ctl.expected_source = 'DeepBook'
+        ctl.api = lambda *a: (_ for _ in ()).throw(AssertionError('must not poll'))
+        with patch.object(c.time, 'time', return_value=1.0):
+            ctl.wait_market_fresh({'source': 'DeepBook', 'lastSuccessAt': 1000}, 10**13)
+        ctl.api = lambda *a: {'summary': {'marketData': fresh}}
+        with patch.object(c.time, 'monotonic', side_effect=[0, 0, 121]), patch.object(c.time, 'time', return_value=1.0), patch.object(c.time, 'sleep'):
+            with self.assertRaises(RuntimeError): ctl.wait_market_fresh(fresh, 10**13)
 
     def test_release_timeout_retires_helper_before_relatch(self):
         for failure in ('start', 'daemon', None):
