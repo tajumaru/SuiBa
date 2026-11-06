@@ -1034,6 +1034,8 @@ class Controller:
             with self.locked('stop', wait=60):
                 record = self.current(expected)  # stale callers may not signal/write a newer run
                 if record['status'] == 'completed': return not self.faults(record)
+                if source == 'cutoff' and self.defer_to_normal_completion(record):
+                    return not self.faults(record)
                 self.accept_stop(record, source)
                 if not own:
                     try:
@@ -1059,6 +1061,29 @@ class Controller:
                 self.intent(record, source)
                 self.fault(record, 'STOP_LOCK_OR_STATE_UNKNOWN')
             return False
+
+    def defer_to_normal_completion(self, record):
+        # The cutoff timer is a backstop for a controller that never
+        # began its own stop. When the run's own normal stop is
+        # already in flight — its stop-request (first writer wins)
+        # says 'normal', or the record already reached 'finishing' —
+        # finalization belongs to the service's ExecStopPost: only
+        # source 'post-stop' may publish completion, so a cutoff
+        # cleanup here could only demote a healthy run to
+        # failed_requires_review. That is exactly what the
+        # 2026-11-07 30m run hit: monitoring and the clean stop
+        # completed, the timer fired mid-finalization, and the run
+        # ended failed_requires_review with a clean receipt, no
+        # faults and no failure record. Deferring stays safe even
+        # if that controller were stuck mid-stop: the worker's
+        # session lease expires at the cutoff, so nothing keeps
+        # trading.
+        if record['status'] == 'finishing': return True
+        try:
+            request = self.b.decode(self.b.read_trusted(self.folder(record)/'stop-request.json'))
+        except Exception:
+            return False
+        return request.get('id') == record['id'] and request.get('source') == 'normal'
 
     def receipt(self, record, status, errors):
         self.current(record['id'])

@@ -844,6 +844,57 @@ class StopTests(unittest.TestCase):
             ctl.fault(ctl.current(), 'LATE_STOP_FAILURE')
             self.assertFalse(ctl.stop())
 
+    def test_cutoff_defers_to_a_normal_completion_in_flight(self):
+        # Regression (2026-11-07): the 30m run completed monitoring
+        # and its clean stop, but the cutoff timer fired during
+        # finalization and its cleanup demoted the run to
+        # failed_requires_review — only post-stop may complete a
+        # run. A cutoff that finds the run's own normal stop in
+        # flight must defer; one that finds no stop still backstops.
+        with tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
+            ctl = object.__new__(c.Controller)
+            ctl.b, ctl.state = FakeBroker, Path(root)
+            record = initialize(ctl)
+            record['controller']['pid'] = os.getpid()
+            ctl.b.atomic(ctl.record, record)
+            ctl.exited = lambda r: False
+            ctl.docker = type('Docker', (), {'call': lambda *a, **k: ''})()
+            ctl.api = lambda *a: None
+            ctl.inspect = lambda: {'State': {'Running': False, 'ExitCode': 0, 'OOMKilled': False}}
+            ctl.maintenance = lambda value: None
+            ctl.helper = lambda: (type('Helper', (), {'helper': lambda *a: None})(), 'fixture')
+            ctl.verify_sui = lambda: None
+            self.assertTrue(ctl.stop(own=True, source='normal'))
+            record['status'] = 'finishing'; ctl.b.atomic(ctl.record, record)
+            ctl.exited = lambda r: True
+            ctl.quiescent = lambda: None
+            # The timer fires mid-finalization: it must not touch
+            # the record or the receipt.
+            self.assertTrue(ctl.stop(source='cutoff'))
+            self.assertEqual(ctl.current()['status'], 'finishing')
+            self.assertEqual(json.loads((ctl.state/'stop.json').read_text())['status'],
+                             'worker_stopped_pending_controller_exit')
+            # Post-stop then completes the run as designed.
+            self.assertTrue(ctl.stop(source='post-stop'))
+            self.assertEqual(ctl.current()['status'], 'completed')
+        # No normal stop in flight: the cutoff still performs its
+        # backstop cleanup and the run cannot complete.
+        with tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
+            ctl = object.__new__(c.Controller)
+            ctl.b, ctl.state = FakeBroker, Path(root)
+            record = initialize(ctl)
+            ctl.b.atomic(ctl.record, record)
+            ctl.exited = lambda r: True
+            ctl.docker = type('Docker', (), {'call': lambda *a, **k: ''})()
+            ctl.api = lambda *a: None
+            ctl.inspect = lambda: {'State': {'Running': False, 'ExitCode': 0, 'OOMKilled': False}}
+            ctl.maintenance = lambda value: None
+            ctl.helper = lambda: (type('Helper', (), {'helper': lambda *a: None})(), 'fixture')
+            ctl.verify_sui = lambda: None
+            ctl.quiescent = lambda: None
+            self.assertTrue(ctl.stop(source='cutoff'))
+            self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+
     @unittest.skipIf(os.name == 'nt', 'actual flock is tested in Linux CI')
     def test_stop_lock_failure_preserves_receipt_and_blocks_reentry(self):
         with tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
