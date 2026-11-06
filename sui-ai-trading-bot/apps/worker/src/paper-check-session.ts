@@ -1,6 +1,11 @@
-/** Opt-in VPS test lease. No database, network, Worker startup or reset path. */
+/** Opt-in VPS session. No database, network, Worker startup or reset path.
+ * sui-30m keeps its bounded test lease; sui-prod requires one explicit,
+ * unbounded arm. Neither mode persists authorization across Worker boots.
+ */
 export class PaperCheckSession {
   readonly enabled: boolean;
+  private readonly production: boolean;
+  private armed = false;
   private deadline: number | null = null;
   private wallDeadline: number | null = null;
   private last: number;
@@ -11,11 +16,17 @@ export class PaperCheckSession {
     private clock = () => performance.now(),
     private wall = () => Date.now(),
   ) {
-    if (mode !== undefined && mode !== "sui-30m")
+    if (mode !== undefined && mode !== "sui-30m" && mode !== "sui-prod")
       throw Error("INVALID_PAPER_CHECK_MODE");
-    this.enabled = mode === "sui-30m";
+    this.enabled = mode !== undefined;
+    this.production = mode === "sui-prod";
     this.last = clock();
     this.lastWall = wall();
+    if (
+      this.production &&
+      (!Number.isFinite(this.last) || !Number.isFinite(this.lastWall))
+    )
+      this.closed = true;
   }
   expired() {
     const now = this.clock();
@@ -41,31 +52,36 @@ export class PaperCheckSession {
   }
   ordersAllowed(pair: string) {
     return (
-      !this.enabled ||
-      (this.pairAllowed(pair) && this.deadline !== null && !this.expired())
+      !this.enabled || (this.pairAllowed(pair) && this.armed && !this.expired())
     );
   }
-  arm(pair: string, expiresAt: number, issuedAt: number) {
+  arm(pair: string, expiresAt: number | undefined, issuedAt: number) {
     const wall = this.wall();
     if (
       !this.enabled ||
       !this.pairAllowed(pair) ||
-      this.deadline !== null ||
+      this.armed ||
       this.expired() ||
-      !Number.isSafeInteger(expiresAt) ||
       !Number.isSafeInteger(issuedAt) ||
       Math.abs(wall - issuedAt) > 2000 ||
-      expiresAt <= wall ||
-      expiresAt > issuedAt + 30 * 60 * 1000
+      (this.production
+        ? expiresAt !== undefined
+        : !Number.isSafeInteger(expiresAt) ||
+          expiresAt! <= wall ||
+          expiresAt! > issuedAt + 30 * 60 * 1000)
     )
       throw Error("PAPER_CHECK_ARM_REJECTED");
-    this.deadline = this.clock() + Math.min(expiresAt - wall, 30 * 60 * 1000);
-    this.wallDeadline = expiresAt;
+    if (!this.production) {
+      this.deadline =
+        this.clock() + Math.min(expiresAt! - wall, 30 * 60 * 1000);
+      this.wallDeadline = expiresAt!;
+    }
+    this.armed = true;
   }
   status() {
     return {
       enabled: this.enabled,
-      armed: this.deadline !== null,
+      armed: this.armed,
       expired: this.expired(),
       expires: this.wallDeadline,
     };
