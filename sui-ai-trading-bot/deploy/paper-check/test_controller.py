@@ -540,6 +540,31 @@ class StopTests(unittest.TestCase):
                     with self.assertRaises(RuntimeError): ctl.wait_ready(100000)
                     self.assertEqual(calls, [])
 
+    def test_market_fresh_waits_for_the_first_success(self):
+        fresh = {'source': 'GeckoTerminal', 'lastSuccessAt': 1000}
+        cold = {'source': 'GeckoTerminal', 'lastSuccessAt': None}
+        # Already fresh: returns on the passed-in summary, never polls.
+        ctl = object.__new__(c.Controller)
+        def forbidden(*a): raise AssertionError('must not poll')
+        ctl.api = forbidden
+        with patch.object(c.time, 'time', return_value=1.0):
+            ctl.wait_market_fresh(fresh, 10**13)
+        # Cold start (no success recorded yet) then a success: the
+        # wait polls instead of dying on the None like the old
+        # single-shot check did.
+        ctl = object.__new__(c.Controller)
+        calls = []
+        pages = iter([{'summary': {'marketData': cold}}, {'summary': {'marketData': fresh}}])
+        ctl.api = lambda *a: calls.append(a) or next(pages)
+        with patch.object(c.time, 'time', return_value=1.0), patch.object(c.time, 'sleep'):
+            ctl.wait_market_fresh(cold, 10**13)
+        self.assertEqual(len(calls), 2)
+        # Never fresh: the two-minute deadline rejects the run.
+        ctl = object.__new__(c.Controller)
+        ctl.api = lambda *a: {'summary': {'marketData': cold}}
+        with patch.object(c.time, 'monotonic', side_effect=[0, 0, 121]), patch.object(c.time, 'time', return_value=1.0), patch.object(c.time, 'sleep'):
+            with self.assertRaises(RuntimeError): ctl.wait_market_fresh(cold, 10**13)
+
     def test_release_timeout_retires_helper_before_relatch(self):
         for failure in ('start', 'daemon', None):
             with tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
