@@ -4,6 +4,7 @@ import { PortfolioMix } from "./PortfolioMix.tsx";
 import { EquityCurve } from "./EquityCurve.tsx";
 import { ActivityGrass } from "./ActivityGrass.tsx";
 import { MonthlyReportCard } from "./MonthlyReportCard.tsx";
+import { MarketWeatherCard } from "./MarketWeatherCard.tsx";
 import { LongTermChart } from "./LongTermChart.tsx";
 import { Chart } from "./IndicatorChart.tsx";
 import type { SettingsApi } from "./settingsPresets.ts";
@@ -15,8 +16,9 @@ const money = (v: number | null | undefined) => number(v, 4);
 
 /**
  * The overview tab, extracted from App: asset cards, the
- * portfolio mix, the equity curve, the activity grass and
- * monthly report, the synchronized price/RSI/MACD chart with
+ * portfolio mix, the equity curve, the activity grass,
+ * monthly report and market weather, the synchronized
+ * price/RSI/MACD chart with
  * its forecast attachments, the long-term map, and the
  * detailed-metrics fold. Pure rendering over the snapshot.
  */
@@ -87,6 +89,7 @@ export function OverviewTab({
                       trades={data.trades}
                       orders={data.orders}
                     />
+                    <MarketWeatherCard weather={data.weather} />
                     <label>
                       時間足
                       <select

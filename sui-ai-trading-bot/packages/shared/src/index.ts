@@ -122,6 +122,28 @@ export interface Indicators {
   volumeChange: number;
   priceChange: number;
 }
+/**
+ * The market weather （相場の天気）: a mechanical five-grade
+ * read of the last 24 hours, computed by the worker from the
+ * pair's 5-minute candles and its own indicators (see
+ * apps/worker/src/market-weather.ts for the bands and their
+ * measured calibration). Display only; it feeds no decision.
+ */
+export type MarketWeatherKind =
+  | "clear"
+  | "sunny"
+  | "cloudy"
+  | "rain"
+  | "storm";
+export interface MarketWeather {
+  kind: MarketWeatherKind;
+  /** Close-to-close change over the last 24 hours, in %. */
+  change24hPct: number;
+  /** ATR(14) over the latest close, in %. */
+  atrPct: number;
+  /** The engine's RSI(14), 0–100. */
+  rsi: number;
+}
 export type TradingAction = "BUY" | "SELL" | "WAIT";
 export interface StrategyEvidence {
   version: 1;
