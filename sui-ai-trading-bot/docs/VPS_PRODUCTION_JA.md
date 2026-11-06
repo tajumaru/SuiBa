@@ -1,7 +1,7 @@
 # VPS 本稼働設計 — 起動・停止経路と監視
 
-これは設計書である。worker セッション一般化と controller の本番 op
-（§8-3(i)・(ii)）を実装し、systemd／wrapper 等の配置経路は未実装である。
+これは設計書である。worker セッション一般化、controller の本番 op、
+本番 service の配布（§8-3(i)～(iii)）を実装している。
 対象は2点に限る：(1) さくら VPS
 上で PAPER 本番を回し続けるための起動・停止経路、(3) 止まったら
 気づける監視。状態の引っ越しと更新手順は骨子のみ、閲覧経路などは
@@ -189,7 +189,8 @@ broker 配置＋素の docker start）は、restart 強制や create-only と
   request の3 op は追加引数を受け取らない。`prod-start` は固定の
   `suiba-prod.service` を要求し、そのサービスから使う root 専用の
   `prod-run`／`prod-post-stop` エントリを持つ。unit・wrapper・policy の
-  配置は第3段で行うため、第2段だけでホストの本番運転は開始しない。
+  配置のうち、unit は第3段の setup で配る。policy は切替時の明示操作で
+  配置するため、setup だけでホストの本番運転は開始しない。
   正常完了には先行する明示的な `prod-stop` と controller 終了確認が
   必須で、失敗後の遅い stop は失敗を正常完了に書き換えない。
   停止後の DB／latch 検証も broker lock で配置と直列化する。
@@ -204,6 +205,17 @@ broker 配置＋素の docker start）は、restart 強制や create-only と
   prod-start op が service を起動する。
 - setup-paper-check.sh の対象に新 unit を足し、controller の
   ピン更新と合わせて配る（ピン規律は従来どおり）。
+- 第3段の実装契約：`suiba-prod.service` は Type=exec、prod-run／
+  prod-post-stop、Restart=no とし、RuntimeMaxSec と Install セクションを
+  持たない。停止・硬化設定は検証 service と同等である。setup はこの
+  unit をピン検証して配置・daemon-reload・verify・LoadState 確認まで
+  行い、start／enable はしない。`prod-policy.json` は作成も変更も
+  しない。本番・検証いずれかの supervisor が稼働中、状態遷移中、または
+  ジョブ待ちなら、ファイル更新や cutoff の整理より前に setup を拒否する。
+  既存 wrapper は第2段の固定3 op をそのまま通せるため変更しない。
+  CI は全配布ピン・unit 契約・setup の拒否条件に加え、実 systemd と
+  ダミーコンテナで明示停止／監視役クラッシュ／市場鮮度異常を検証する。
+  watchdog と通知は次段であり、本段では追加しない。
 
 **broker／compose**
 
