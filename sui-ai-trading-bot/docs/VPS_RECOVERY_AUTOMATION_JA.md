@@ -101,6 +101,20 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   切り替え当時の記録として残す。
 - broker の `OS_ERROR` の名前付きコード化と、診断→再試行承認→開始→監視の
   一本化は未着手（tracked item「SuiBa VPSリカバリ自動化」）。
+- 再試行承認の Actions 化と preflight の詳細化（2026-11-06）:
+  起動後の段階で失敗して clean_stopped で止まったラン（例：
+  market-freshness 競合）の再試行承認を、コントローラの
+  `approve-retry` 操作として実装し、`suiba-paper-retry.yml`
+  （確認フレーズ `RETRY-PAPER`、変数 `SUIBA_PAPER_RETRY_ENABLED`）
+  から承認タップで実行できるようにした。承認条件は root CLI の
+  approve-retry と同一（診断が読める・stop が clean_stopped・
+  障害証拠なし）で、CLI とメソッドを共用する。preflight 死
+  （failed_state_unknown）はここでは承認できず reconcile が担う。
+  あわせて preflight の container 検査が、どの require で落ちたか
+  （inspect/state/restart_user/env/ports/memory/label/transaction/
+  image）を証拠の detail として記録し、診断とレポート表示まで
+  通すようにした（2026-11-06 07:52 の container 死は全項目 ok で
+  行が特定できなかったための改善）。
 - 是正の Actions 化（2026-11-06）: 起動前チェックで死んだランの是正を
   コントローラの `reconcile` 操作として実装し、`suiba-paper-reconcile.yml`
   （確認フレーズ `RECONCILE-PAPER`、変数 `SUIBA_PAPER_RECONCILE_ENABLED`、
