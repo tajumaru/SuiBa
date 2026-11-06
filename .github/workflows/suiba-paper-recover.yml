@@ -1,0 +1,49 @@
+name: SuiBa PAPER check recovery
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type RECOVER-PAPER"
+        required: true
+        type: string
+      mode:
+        description: "Recovery operation"
+        required: true
+        type: choice
+        options:
+          - release-cutoff
+          - revoke-retry
+          - approve-deploy
+      sha:
+        description: "Deploy target commit (approve-deploy only)"
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: suiba-paper-recover
+  cancel-in-progress: false
+jobs:
+  paper-recover:
+    # Repository variable, NOT an Environment variable: evaluated before job startup.
+    # Missing/false disables all SSH. Recovery operations change host state, so this
+    # workflow carries its own enable variable on top of the Environment approval.
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'RECOVER-PAPER' && vars.SUIBA_PAPER_RECOVER_ENABLED == 'true'
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Run a PAPER recovery operation through the fixed wrapper
+        env:
+          PAPER_RECOVER_CONFIRMATION: ${{ inputs.confirmation }}
+          PAPER_RECOVER_MODE: ${{ inputs.mode }}
+          PAPER_RECOVER_SHA: ${{ inputs.sha }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-paper-recover.sh
