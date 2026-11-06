@@ -15,12 +15,10 @@ jobs:
   paper-watch:
     # Same gate as suiba-paper-status.yml: repository variable, NOT an
     # Environment variable, evaluated before job startup. Missing/false
-    # disables all SSH. Read-only, so it runs in the sakura-vps-read
-    # Environment (no required reviewers): up to ~40 minutes of polling
-    # with no approval tap. (The combined cycle workflow remains the
-    # usual path; this standalone watch stays for ad-hoc observation.)
+    # disables all SSH. The sakura-vps Environment approval covers the
+    # whole watch (one approval, then up to ~40 minutes of polling).
     if: github.ref == 'refs/heads/main' && inputs.confirmation == 'WATCH-PAPER' && vars.SUIBA_PAPER_STATUS_ENABLED == 'true'
-    environment: sakura-vps-read
+    environment: sakura-vps
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:

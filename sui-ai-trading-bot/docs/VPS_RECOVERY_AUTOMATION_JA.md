@@ -169,15 +169,13 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   suiba-paper-cycle.yml は再試行承認→開始→監視を1ジョブに
   まとめ、環境承認は全体で1回（監視は観測のみで約45分上限、
   6h/24h の最終結果は後からステータスで読む）。ゲート変数は
-  SUIBA_PAPER_START_ENABLED を共用する。もう1つは読み取り専用
+  SUIBA_PAPER_START_ENABLED を共用する。読み取り専用
   （suiba-paper-status／suiba-paper-watch）を承認者なしの環境
-  sakura-vps-read へ分離し、ステータス／診断のタップを不要に
-  した（同じ SSH シークレットの複製が必要で、リポジトリの
-  Settings → Environments で sakura-vps-read を作り VPS_HOST／
-  VPS_USER／VPS_PORT／VPS_SSH_KEY／VPS_KNOWN_HOSTS の5件を
-  入れる一度きりの作業が前提。固定ラッパーは読み取り操作しか
-  公開しない）。変更系ワークフローは従来どおり sakura-vps の
-  承認つき。
+  sakura-vps-read へ分離する案も同PRに入れたが、環境シークレット
+  の値（書き込み専用で読み戻せない）の再登録が必要で、本人が
+  設定値を失念していたため同日中に取り下げた（PR #95 で環境を
+  sakura-vps に戻し、空の sakura-vps-read 環境も削除）。
+  ステータス／診断は従来どおり承認つき。
 - cutoff と正常終了の競合修正（2026-11-07、PR #93）: 同日の30分
   ランは監視とクリーン停止を完走した（runtime error 解消、
   starts +1、終了コード0、全DB正常）のに failed_requires_review
