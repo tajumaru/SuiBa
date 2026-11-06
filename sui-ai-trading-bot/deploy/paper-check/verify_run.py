@@ -222,7 +222,18 @@ def main():
                 assert receipt.get('status') in expected, receipt
                 record = json.loads((base/'state/run.json').read_text())
                 assert receipt['id'] == record['id']
-                assert record['status'] == 'completed' if scenario == 'normal' else record['status'] != 'completed'
+                if scenario == 'normal':
+                    assert record['status'] == 'completed'
+                elif scenario == 'normal-cutoff':
+                    # The cutoff races the run's own normal stop. When
+                    # the controller's stop lands first, the cutoff
+                    # defers and post-stop completes the run (the
+                    # 2026-11-07 fix); when the cutoff lands first,
+                    # it still forces the stop and the run cannot
+                    # complete. Both are correct outcomes.
+                    assert record['status'] in ('completed', 'failed_requires_review'), record['status']
+                else:
+                    assert record['status'] != 'completed'
                 if scenario == 'helper':
                     helper = json.loads((base/'state/release-helper.json').read_text())
                     assert helper['retired'] and not docker('ps', '-aq', '--filter', 'name='+helper['name'])

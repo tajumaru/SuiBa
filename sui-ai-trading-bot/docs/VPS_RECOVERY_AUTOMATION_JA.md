@@ -163,6 +163,22 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   compose に無く、Indexer の足系列の欠け（実測で 5分足1000本中2本）
   が全取得を CANDLE_GAP で落とし、market-freshness で2回停止した。
   PR #89 で compose に追加した。
+- cutoff と正常終了の競合修正（2026-11-07、PR #93）: 同日の30分
+  ランは監視とクリーン停止を完走した（runtime error 解消、
+  starts +1、終了コード0、全DB正常）のに failed_requires_review
+  で終わった。failure の記録もフォールトも無くレシートは
+  clean_stopped。原因は終了処理の競合：正常終了は record を
+  finishing にし、サービスの ExecStopPost（source=post-stop）
+  だけが completed にできる。ところがバックストップの cutoff
+  タイマーが30分ちょうどに発火して終了処理中に cleanup を実行
+  し、post-stop 以外は completed にできないルールのため healthy
+  なランを failed_requires_review に落とした（後から post-stop
+  が来ても覆せない）。cutoff が「自前の正常停止が進行中
+  （stop-request が normal、または status が finishing）」を
+  見つけたら finalization に触らず post-stop に委ねるよう改めた。
+  停止を始めていないコントローラへのバックストップは不変で、
+  仮に停止途中で固まっても worker のセッションリースが cutoff
+  で失効するため売買は続かない。
 - stale リセットの再送化（2026-11-07、PR #92）: PR #91 の計器で
   seq 10 ランの内訳が確定した。DB の runtime error は開始前後で
   CANDLE_GAP のまま不変＝PR #88 のリセットは届いておらず、初回
