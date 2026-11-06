@@ -437,8 +437,12 @@ class Controller:
             'timer_elapsed': timer['elapsed'],
             'timer_next_scheduled': timer['next'],
             'timer_job_pending': timer['job'],
-            'controller_sha256': hashlib.sha256(self.b.read_trusted(Path(__file__))).hexdigest(),
-            'broker_sha256': hashlib.sha256(self.b.read_trusted(Path(self.b.__file__))).hexdigest(),
+            # The version hashes read whole program files; the
+            # read_trusted default cap (64 KiB) is for state files
+            # and the controller outgrew it in 2026-11, which made
+            # diagnose itself fail with TRUSTED_FILE_TOO_LARGE.
+            'controller_sha256': hashlib.sha256(self.b.read_trusted(Path(__file__), maximum=262144)).hexdigest(),
+            'broker_sha256': hashlib.sha256(self.b.read_trusted(Path(self.b.__file__), maximum=262144)).hexdigest(),
         }
 
     def approve_deploy(self, run_id, sha):

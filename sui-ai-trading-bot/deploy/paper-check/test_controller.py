@@ -24,7 +24,7 @@ class FakeBroker:
             try: yield fd
             finally: os.close(fd)
     decode = staticmethod(json.loads)
-    read_trusted = staticmethod(lambda path: path.read_bytes())
+    read_trusted = staticmethod(lambda path, maximum=65536: path.read_bytes())
     @staticmethod
     def atomic(path, value):
         temp = path.with_name(path.name+'.'+uuid.uuid4().hex)
