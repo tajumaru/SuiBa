@@ -849,12 +849,49 @@ class Controller:
                         self.readiness.update({key: checks[key] for key in (
                             'connectivity', 'apiAccess', 'emergencyClear', 'runtimeClear',
                             'suiHealthy', 'suiFresh', 'ledger') if type(checks.get(key)) is bool})
+                    if getattr(self, 'stale_reset_ok', False):
+                        self.readiness['staleReset'] = True
                     if d.get('startReady') is True:
                         return d
+                    self.maybe_reset_stale()
                 except urllib.error.URLError as error:
                     if isinstance(error, urllib.error.HTTPError) or not isinstance(error.reason, ConnectionRefusedError):
                         raise
             time.sleep(1)
+
+    def maybe_reset_stale(self):
+        # A monitoring-failed run leaves its runtime error (and the
+        # API cooldowns) persisted in the worker database; only the
+        # dashboard reset clears them, so a validation start after
+        # such a failure could never pass readiness — observed twice
+        # on 2026-11-07 (stage worker-readiness, blocking checks
+        # apiAccess and runtimeClear, before-run error
+        # UPSTREAM_HTTP_429). When — and only when — this start
+        # consumed a retry approval, send that reset once: at once
+        # for a persisted runtime error, or after an API block
+        # persists across several polls. Readiness afterwards still
+        # judges live state; the reset fabricates nothing, and a
+        # start without the retry approval never sends it.
+        if not getattr(self, 'retry_admitted', False) or getattr(self, 'stale_reset_sent', False):
+            return
+        if self.readiness.get('runtimeClear') is False:
+            due = True
+        elif self.readiness.get('apiAccess') is False:
+            now = time.monotonic()
+            if getattr(self, '_stale_since', None) is None:
+                self._stale_since = now
+            due = now-self._stale_since >= 5
+        else:
+            self._stale_since = None
+            due = False
+        if not due:
+            return
+        self.stale_reset_sent = True
+        try:
+            self.api('POST', '/api/control', {'command': 'reset'})
+            self.stale_reset_ok = True
+        except (RuntimeError, urllib.error.URLError):
+            pass
 
     def wait_market_fresh(self, market, cutoff):
         # The first GeckoTerminal success after a cold worker start
@@ -1048,6 +1085,7 @@ class Controller:
         return request['duration']
 
     def admit_session(self):
+        self.retry_admitted = False
         config = self.b.decode(self.b.read_trusted(POLICY))
         require(config == {'enabled': True, 'mode': 'sui-30m'})
         with self.locked('stop'), self.locked('mutation'):
@@ -1073,6 +1111,12 @@ class Controller:
             if permit is None:
                 self.b.Broker(state=self.b.STATE).check_paper_session()
             else:
+                # The retry approval is the human review of the failed
+                # run; it also authorizes clearing that run's stale
+                # runtime error once at this start (see
+                # maybe_reset_stale), the same reset the owner would
+                # press on the dashboard after reviewing the failure.
+                self.retry_admitted = True
                 self.consume_retry(old, permit)
             now = int(time.time()*1000)
             self.run_id = uuid.uuid4().hex
@@ -1199,7 +1243,9 @@ class Controller:
                 stage = 'worker-start'
                 self.note_stage(stage)
                 self.guard('worker-start', lambda: self.docker.call(['start', CONTAINER], timeout=20))
-                # Readiness GETs only. Never retry a start/arm/order/reset action.
+                # Readiness GETs only, plus the single retry-approved
+                # stale reset in maybe_reset_stale. Never retry a
+                # start/arm/order/reset action.
                 stage = 'worker-readiness'
                 self.note_stage(stage)
                 d = self.wait_ready(self.session_cutoff(record))
@@ -1207,6 +1253,12 @@ class Controller:
                 self.note_stage(stage)
                 require(d['mode'] == 'PAPER' and not d['running'] and not d['maintenance'] and
                         d['databaseHealthy'] and d['ledgerOk'] and d['paperCheck']['enabled'] and not d['paperCheck']['armed'])
+                if self.readiness.get('staleReset'):
+                    with self.locked('mutation'):
+                        current = self.current(self.run_id)
+                        current['staleReset'] = True
+                        self.b.atomic(self.record, current)
+                        record = current
                 stage = 'pair-selection'
                 self.note_stage(stage)
                 require(self.api('GET', '/api/pairs')['selected'] == 'SUI_USDC')

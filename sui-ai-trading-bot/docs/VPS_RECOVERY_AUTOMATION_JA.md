@@ -142,6 +142,15 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   `approve-deploy` は既存メソッドをそのまま操作化したもので、
   reconcile（preflight 死専用）では届かなかった監視失敗後の再配置が
   Actions で完結する。
+- 再試行開始時の stale リセット（2026-11-07）: 監視失敗で止まった
+  ランは worker DB に runtime エラー（と API クールダウン）を残し、
+  消せるのはダッシュボードのリセット操作だけのため、次回開始が
+  worker-readiness（apiAccess／runtimeClear）で詰まることが実地で
+  確認された。再試行承認を消費した開始に限り、コントローラが
+  readiness 判定中にそのリセットを1回だけ送る（ラン記録に
+  staleReset を残す）。再試行承認＝失敗レビュー済みの合図であり、
+  本番（prod）の開始経路では送らない。リセット後も readiness は
+  実状態で判定する。
 - 市場プロバイダを DeepBook へ切り替え（2026-11-07、PR #85）:
   VPS の compose の `MARKET_DATA_PROVIDER` を geckoterminal から
   deepbook に変更した。経緯は GeckoTerminal 利用時に監視段階で
