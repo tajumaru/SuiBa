@@ -13,7 +13,7 @@ services:
       # deepbook). Compose environment wins over env_file.
       TRADING_PAIR: SUI_USDC
       PAPER_CHECK_MODE: sui-30m
-      MARKET_DATA_PROVIDER: geckoterminal
+      MARKET_DATA_PROVIDER: deepbook
       HOST: 0.0.0.0
       PORT: "3100"
       DATABASE_PATH: /app/data/bot.sqlite
