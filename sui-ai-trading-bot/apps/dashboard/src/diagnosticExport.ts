@@ -67,6 +67,14 @@ export function buildDiagnosticReport(
   } else {
     lines.push("- 進行中のエピソード: なし");
   }
+  const env = data.environment;
+  lines.push(
+    "",
+    "## 実行環境",
+    `- mode: ${env?.mode ?? "不明"} / pair: ${env?.pair ?? "不明"} / 市場プロバイダ: ${env?.provider ?? "不明"}`,
+    `- paper-check: ${env == null ? "不明" : !env.paperCheck.enabled ? "無効" : env.paperCheck.armed ? `検証中（期限 ${iso(env.paperCheck.expires)}）` : "有効・未武装"}`,
+    `- maintenance: ${env == null ? "不明" : env.maintenance ? "有効（配置ゲートで停止中）" : "なし"}`,
+  );
   lines.push(
     `- 最新の API 失敗: ${s.latestApiError ? JSON.stringify(s.latestApiError) : "なし"}`,
     "",

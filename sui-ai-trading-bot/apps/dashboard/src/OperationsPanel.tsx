@@ -123,6 +123,21 @@ export function OperationsView({
             止まった原因を AI に調べさせるためのファイル（状態・失敗の内訳・直近の記録）を保存します。
           </small>
         </p>
+        {data.environment ? (
+          <p>
+            <small>
+              実行環境： {data.environment.mode} / {data.environment.pair} /
+              市場 {data.environment.provider ?? "不明"}
+              {data.environment.paperCheck.armed &&
+              data.environment.paperCheck.expires != null
+                ? ` / 検証中（期限 ${date(data.environment.paperCheck.expires)}）`
+                : data.environment.paperCheck.enabled
+                  ? " / paper-check 有効"
+                  : ""}
+              {data.environment.maintenance ? " / maintenance 中" : ""}
+            </small>
+          </p>
+        ) : null}
         {/* Secondary KPIs and the guidance sections live in the
             diagnostics fold: the everyday layer keeps only the
             trade count and net PnL next to the hero and the
