@@ -1,7 +1,8 @@
 # VPS 本稼働設計 — 起動・停止経路と監視
 
-これは設計書である。worker セッション一般化（§8-3(i)）のみ実装し、
-本番の起動・停止経路は未実装である。対象は2点に限る：(1) さくら VPS
+これは設計書である。worker セッション一般化と controller の本番 op
+（§8-3(i)・(ii)）を実装し、systemd／wrapper 等の配置経路は未実装である。
+対象は2点に限る：(1) さくら VPS
 上で PAPER 本番を回し続けるための起動・停止経路、(3) 止まったら
 気づける監視。状態の引っ越しと更新手順は骨子のみ、閲覧経路などは
 未決定事項として §7 に置く。前提の事実は
@@ -181,6 +182,17 @@ broker 配置＋素の docker start）は、restart 強制や create-only と
   cleanup 相当）を再利用し、完了条件（worker 停止・exit 0・
   latch 復帰・DB verify・SUI 選択）も検証ランと同一にする。
   prod-status は §5 の watchdog が読む読み取り専用 op。
+- 第2段の実装契約：本番 policy は上記 `prod-policy.json`、状態は
+  `/var/lib/suiba-paper-check/production/prod.json` と同ディレクトリ内の
+  ラン別証跡に分離する。`prod-policy.json.example` は無効を初期値とし、
+  有効化は root 管理の `{"enabled": true}` の完全一致でのみ受理する。
+  request の3 op は追加引数を受け取らない。`prod-start` は固定の
+  `suiba-prod.service` を要求し、そのサービスから使う root 専用の
+  `prod-run`／`prod-post-stop` エントリを持つ。unit・wrapper・policy の
+  配置は第3段で行うため、第2段だけでホストの本番運転は開始しない。
+  正常完了には先行する明示的な `prod-stop` と controller 終了確認が
+  必須で、失敗後の遅い stop は失敗を正常完了に書き換えない。
+  停止後の DB／latch 検証も broker lock で配置と直列化する。
 
 **systemd／wrapper／setup**
 

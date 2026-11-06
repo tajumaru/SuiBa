@@ -26,7 +26,7 @@ UNITS='suiba-paper-check.service suiba-paper-check-cutoff.service suiba-paper-ch
 
 # name|sha256|target|mode
 FILES=(
-  'controller.py|45c660505b5470e4d807254bfb6b35aad6f143ef04dbb218f020ae53e232d7b0|/usr/local/libexec/suiba-paper-check.py|755'
+  'controller.py|e70caa643f21dcff8122fa586b95780381df545b792ab9afe728b40987e1c955|/usr/local/libexec/suiba-paper-check.py|755'
   'suiba-paper-check|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-check|755'
   'suiba-paper-check.sudoers|54d64fdadf0b38749008c112fc12761e03f633538e526ebe6f37eb4b1ec38607|/etc/sudoers.d/suiba-paper-check|440'
   'suiba-paper-check.service|44efe8db2b1c569fd8c2176002acc76b724d6d4c66fa1df1babb988e63f60e95|/etc/systemd/system/suiba-paper-check.service|644'

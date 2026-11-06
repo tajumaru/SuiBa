@@ -858,5 +858,348 @@ class DurationTests(unittest.TestCase):
             self.assertFalse((Path(root)/'start-request.json').exists())
 
 
+@unittest.skipIf(os.name == 'nt', 'production host lifecycle requires Linux flock and procfs')
+class ProductionTests(unittest.TestCase):
+    def setUp(self):
+        # CI's light Python job runs as an unprivileged runner. Only the
+        # fixture's deploy-lock ownership stands in for the root-owned host;
+        # flock, inode/mode checks and the per-user mutation locks stay real.
+        self.broker_locks = set()
+        original = os.fstat
+        def fstat(fd):
+            value = original(fd)
+            if os.readlink('/proc/self/fd/'+str(fd)) in self.broker_locks:
+                fields = list(value); fields[4] = 0
+                return os.stat_result(fields)
+            return value
+        ownership = patch.object(os, 'fstat', fstat)
+        ownership.start(); self.addCleanup(ownership.stop)
+
+    def test_controller_digest_is_pinned_in_the_same_change(self):
+        import hashlib
+        import re
+        controller = Path(__file__).with_name('controller.py')
+        setup = controller.with_name('setup-paper-check.sh').read_text()
+        digest = re.search(r"'controller.py\|([a-f0-9]{64})\|", setup).group(1)
+        self.assertEqual(digest, hashlib.sha256(controller.read_bytes().replace(b'\r\n', b'\n')).hexdigest())
+
+    def make(self, root):
+        import re
+        from types import SimpleNamespace
+        root = Path(root)
+        validation, broker, backups = (root/name for name in ('validation', 'broker', 'backups'))
+        for folder in (validation, broker, backups): folder.mkdir(mode=0o700)
+        self.broker_locks.add(str(broker/'lock'))
+        self.calls = []
+        self.running = False
+        self.trading = False
+        self.armed = False
+        self.market_failure = False
+        self.policy = root/'prod-policy.json'
+        FakeBroker.atomic(self.policy, {'enabled': True})
+        self.patch_policy = patch.object(c, 'PROD_POLICY', self.policy)
+        self.patch_policy.start(); self.addCleanup(self.patch_policy.stop)
+        b = SimpleNamespace(STATE=broker, BACKUPS=backups, SHA=re.compile(r'[a-f0-9]{40}\Z'),
+            decode=FakeBroker.decode, read_trusted=FakeBroker.read_trusted,
+            atomic=FakeBroker.atomic, directory=FakeBroker.directory,
+            Broker=lambda **kw: SimpleNamespace(check_paper_session=lambda: self.calls.append('validation-gate')))
+        def docker(args, **kwargs):
+            self.calls.append(tuple(args))
+            if args[:1] == ['start']: self.running = True
+            if args[:1] == ['stop']: self.running = False
+            if args[:1] == ['stats']: return json.dumps({'MemPerc': '10%'})
+            return ''
+        b.Docker = lambda state: SimpleNamespace(call=docker)
+        ctl = c.ProductionController(b, validation)
+        ctl.prepare_state()
+        ctl.identity = lambda pid: ({'pid': pid, 'start': '0', 'boot': str(uuid.UUID(int=0))}, 'S')
+        ctl.exited = lambda record: True
+        ctl.terminate = lambda record: self.calls.append('terminate') or True
+        ctl.quiescent = lambda: self.calls.append('quiescent')
+        ctl.system = lambda *args: self.calls.append(('system', *args))
+        self.sha, transaction = 'e'*40, 'b'*32
+        FakeBroker.atomic(broker/'ledger.json', {'status': 'prepared_stopped', 'sha': self.sha, 'transaction': transaction})
+        (broker/transaction).mkdir(mode=0o700)
+        FakeBroker.atomic(broker/transaction/'compose.json', {'services': {'bot': {'image': 'fixture-image'}}})
+        def inspect():
+            return {'State': {'Status': 'running' if self.running else 'exited', 'Running': self.running,
+                             'ExitCode': 0, 'OOMKilled': False, 'Health': {'Status': 'healthy'}},
+                    'RestartCount': 0, 'HostConfig': {'RestartPolicy': {'Name': 'no'},
+                        'PortBindings': {'3100/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '3100'}]},
+                        'Memory': 1024**3, 'MemorySwap': 1024**3},
+                    'Config': {'User': '1000:1000', 'Env': ['MODE=PAPER', 'TRADING_PAIR=SUI_USDC',
+                        'PAPER_CHECK_MODE=sui-prod', 'MARKET_DATA_PROVIDER=deepbook'],
+                        'Labels': {'org.opencontainers.image.revision': self.sha}, 'Image': 'fixture-image'}}
+        ctl.inspect = inspect
+        def api(method, path, value=None):
+            self.calls.append((method, path, value))
+            if path == '/api/deployment':
+                return {'mode': 'PAPER', 'running': self.trading, 'maintenance': False,
+                        'databaseHealthy': True, 'ledgerOk': True, 'startReady': True,
+                        'paperCheck': {'enabled': True, 'armed': self.armed, 'expired': False, 'expires': None}}
+            if path == '/api/pairs': return {'selected': 'SUI_USDC'}
+            if path == '/api/dashboard/summary':
+                return {'summary': {'marketData': {'source': 'DeepBook',
+                    'lastSuccessAt': 0 if self.market_failure else time.time()*1000, 'reason': None}}}
+            if path == '/api/paper-check/arm':
+                self.armed = True
+                return {'enabled': True, 'armed': True, 'expired': False, 'expires': None}
+            if path == '/api/control':
+                self.trading = value['command'] == 'start'
+                return {'running': self.trading}
+            raise AssertionError('unexpected API')
+        ctl.api = api
+        ctl.backup = lambda: self.calls.append('backup') or {'file': 'fixture.tar', 'sha256': 'f'*64}
+        ctl.maintenance = lambda enabled: self.calls.append(('maintenance', enabled))
+        ctl.helper = lambda: (SimpleNamespace(helper=lambda image, operation: self.calls.append(('helper', operation))), 'fixture')
+        ctl.verify_sui = lambda: self.calls.append('verify-sui')
+        return ctl
+
+    def admit(self, ctl):
+        ctl.note_start()
+        record, duration, timer = ctl.admit_session()
+        self.assertIsNone(duration); self.assertIsNone(timer)
+        self.assertNotIn('cutoff', record)
+        return record
+
+    def test_production_policy_is_independent_and_strictly_opt_in(self):
+        for policy in (None, {'enabled': False}, {'enabled': 1}, {'enabled': True, 'mode': 'sui-30m'}):
+            with self.subTest(policy=policy), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                if policy is None: self.policy.unlink()
+                else: FakeBroker.atomic(self.policy, policy)
+                with self.assertRaises(Exception): ctl.prod_start()
+                self.assertFalse(any(isinstance(x, tuple) and x[:2] == ('system', 'start') for x in self.calls))
+                self.assertFalse(ctl.record.exists())
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            # No validation policy is present; only the independent prod policy is needed.
+            self.assertEqual(ctl.prod_start(), {'status': 'accepted'})
+            self.assertIn(('system', 'start', '--no-block', c.PROD_SERVICE), self.calls)
+
+    def test_admission_separates_all_production_evidence_and_refuses_reentry(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            before = sorted(ctl.b.STATE.iterdir())
+            record = self.admit(ctl)
+            self.assertEqual(sorted(ctl.b.STATE.iterdir()), before)
+            self.assertFalse((ctl.validation_state/'run.json').exists())
+            self.assertEqual(record['mode'], 'sui-prod')
+            with self.assertRaises(Exception): ctl.admit_session()
+            with self.assertRaises(Exception): ctl.prod_start()
+            ctl.fault(record, 'FIXTURE_FAILURE')
+            self.assertTrue((ctl.state/'failed.json').exists())
+            self.assertFalse((ctl.b.STATE/'paper-check-failed.json').exists())
+
+    def test_validation_and_cutoff_interlocks_reject_before_worker_changes(self):
+        for gate in ('validation', 'cutoff', 'inhibit'):
+            with self.subTest(gate=gate), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                if gate == 'validation':
+                    FakeBroker.atomic(ctl.validation_state/'run.json', {'status': 'in_progress'})
+                elif gate == 'cutoff': ctl.quiescent = lambda: c.require(False)
+                else: FakeBroker.atomic(ctl.state/'abort-inhibit.json', {})
+                with self.assertRaises(Exception): ctl.admit_session()
+                self.assertFalse(ctl.record.exists())
+                self.assertFalse(self.running)
+
+    def test_preflight_uses_the_same_checks_but_requires_production_env(self):
+        from types import SimpleNamespace
+        for bad in (None, 'token', 'restart', 'memory', 'image', 'provider', 'pair'):
+            with self.subTest(bad=bad), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                record = self.admit(ctl)
+                original = ctl.inspect
+                def inspect():
+                    i = original()
+                    if bad == 'token': i['Config']['Env'][2] = 'PAPER_CHECK_MODE=sui-30m'
+                    if bad == 'restart': i['HostConfig']['RestartPolicy']['Name'] = 'always'
+                    if bad == 'memory': i['HostConfig']['Memory'] = 0
+                    if bad == 'image': i['Config']['Image'] = 'wrong-image'
+                    if bad == 'provider': i['Config']['Env'][3] = 'MARKET_DATA_PROVIDER=auto'
+                    if bad == 'pair': i['Config']['Env'][1] = 'TRADING_PAIR=WAL_USDC'
+                    return i
+                ctl.inspect = inspect
+                with patch.object(os, 'statvfs', return_value=SimpleNamespace(f_bavail=30*1024**3, f_frsize=1, f_favail=200000), create=True):
+                    if bad:
+                        with self.assertRaises(Exception): ctl.preflight(record)
+                        self.assertFalse(ctl.current()['admitted'])
+                    else:
+                        ctl.preflight(record)
+                        self.assertEqual(ctl.current()['sha'], self.sha)
+                        self.assertEqual(ctl.expected_source, 'DeepBook')
+                self.assertFalse(self.running)
+
+    def test_only_explicit_prod_stop_can_complete_and_late_stop_cannot_hide_failure(self):
+        for source in ('prod-stop', 'post-stop', 'failure', 'cutoff'):
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                record = self.admit(ctl)
+                record['admitted'] = True
+                FakeBroker.atomic(ctl.record, record)
+                self.running = self.trading = True
+                self.assertTrue(ctl.stop(expected=record['id'], source=source))
+                self.assertFalse(self.running); self.assertFalse(self.trading)
+                self.assertIn(('maintenance', True), self.calls)
+                self.assertIn(('helper', 'verify'), self.calls)
+                self.assertIn('verify-sui', self.calls)
+                self.assertEqual(ctl.current()['status'], 'completed' if source == 'prod-stop' else 'failed_requires_review')
+                self.assertEqual(json.loads((ctl.state/'stop.json').read_bytes())['status'], 'clean_stopped')
+                if source != 'prod-stop':
+                    self.assertTrue(ctl.stop(expected=record['id'], source='prod-stop'))
+                    self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+                    with self.assertRaises(Exception): ctl.prod_start()
+                self.assertFalse((ctl.b.STATE/'paper-check.json').exists())
+
+    def test_stop_errors_fail_closed_and_never_restart(self):
+        for failure in ('exit', 'db', 'pending', 'controller'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                record = self.admit(ctl); record['admitted'] = True
+                FakeBroker.atomic(ctl.record, record)
+                if failure == 'exit':
+                    original = ctl.inspect
+                    def inspect():
+                        i = original(); i['State']['ExitCode'] = 1
+                        return i
+                    ctl.inspect = inspect
+                if failure == 'db': ctl.verify_sui = lambda: c.require(False)
+                if failure == 'pending': FakeBroker.atomic(ctl.folder(record)/'mutation.json', {'pending': 'arm'})
+                if failure == 'controller': ctl.exited = lambda record: False
+                self.assertFalse(ctl.stop(expected=record['id'], source='prod-stop'))
+                self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+                self.assertTrue(ctl.faults(record))
+                self.assertNotIn(('start', c.CONTAINER), self.calls)
+
+    def test_status_is_read_only_and_never_returns_api_payloads_or_credentials(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            self.assertEqual(ctl.prod_status()['run'], None)
+            ctl.state.rmdir()
+            self.assertEqual(ctl.prod_status(), {'run': None, 'requires_review': False})
+            self.assertFalse(ctl.state.exists())
+            ctl.prepare_state()
+            record = self.admit(ctl)
+            record['admitted'] = True
+            FakeBroker.atomic(ctl.record, record)
+            ctl.exited = lambda record: False
+            original = ctl.api
+            def api(*args):
+                result = original(*args); result['secret'] = 'DO_NOT_RETURN_FIXTURE'
+                return result
+            ctl.api = api
+            before = {p: p.read_bytes() for p in Path(root).rglob('*') if p.is_file()}
+            status = ctl.prod_status()
+            after = {p: p.read_bytes() for p in Path(root).rglob('*') if p.is_file()}
+            self.assertEqual(before, after)
+            self.assertNotIn('DO_NOT_RETURN_FIXTURE', json.dumps(status))
+            self.assertTrue(status['controller_alive'])
+            self.assertEqual(status['worker']['running'], False)
+
+    @unittest.skipIf(os.name == 'nt', 'Linux broker flock and procfs')
+    def test_preparation_and_start_failures_record_stage_and_do_not_retry_mutations(self):
+        from types import SimpleNamespace
+        for failure in ('preflight', 'backup', 'maintenance-release', 'worker-readiness', 'arm', 'paper-start'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                ctl.note_start()
+                def reject(*args, **kwargs): raise RuntimeError('SECRET_FIXTURE_MUST_NOT_LEAK')
+                if failure == 'preflight': ctl.inspect = reject
+                if failure == 'backup': ctl.backup = reject
+                if failure == 'worker-readiness': ctl.wait_ready = reject
+                if failure == 'maintenance-release':
+                    original_maintenance = ctl.maintenance
+                    def maintenance(enabled):
+                        if not enabled: reject()
+                        original_maintenance(enabled)
+                    ctl.maintenance = maintenance
+                original_api = ctl.api
+                def api(method, path, value=None):
+                    if failure == 'arm' and path == '/api/paper-check/arm': reject()
+                    if failure == 'paper-start' and path == '/api/control' and value == {'command': 'start'}: reject()
+                    return original_api(method, path, value)
+                ctl.api = api
+                with patch.object(os, 'statvfs', return_value=SimpleNamespace(f_bavail=30*1024**3, f_frsize=1, f_favail=200000)):
+                    with self.assertRaises(Exception): ctl.run()
+                record = ctl.current()
+                self.assertEqual(record['status'], 'failed_requires_review')
+                self.assertEqual(record['stage'], failure)
+                evidence = (ctl.folder(record)/'failure.json').read_text()
+                self.assertNotIn('SECRET_FIXTURE_MUST_NOT_LEAK', evidence)
+                self.assertFalse(self.trading)
+                self.assertLessEqual(self.calls.count(('start', c.CONTAINER)), 1)
+                with self.assertRaises(Exception): ctl.prod_start()
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_stop_cancels_queued_start_even_after_a_completed_session(self):
+        for previous in (False, True):
+            with self.subTest(previous=previous), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                if previous:
+                    record = self.admit(ctl); record['admitted'] = True
+                    FakeBroker.atomic(ctl.record, record)
+                    self.assertTrue(ctl.stop(expected=record['id'], source='prod-stop'))
+                ctl.prod_start()
+                result = ctl.prod_stop()
+                self.assertEqual(result['status'], 'completed' if previous else 'not_started')
+                self.assertFalse((ctl.state/'start-request.json').exists())
+                with self.assertRaises(Exception): ctl.admit_session()
+                self.assertFalse(self.running)
+                # A later *explicit* start can issue a fresh request.
+                self.assertEqual(ctl.prod_start(), {'status': 'accepted'})
+                ctl.admit_session()
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_production_and_validation_share_the_deploy_lock(self):
+        import fcntl
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            validation = c.Controller(ctl.b, ctl.validation_state)
+            with ctl.deployment_lock():
+                with self.assertRaises(BlockingIOError):
+                    with validation.deployment_lock(): self.fail('validation entered production lock')
+                fd = os.open(ctl.b.STATE/'lock', os.O_RDWR)
+                try:
+                    with self.assertRaises(BlockingIOError): fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB)
+                finally: os.close(fd)
+            with validation.deployment_lock():
+                with self.assertRaises(BlockingIOError):
+                    with ctl.deployment_lock(): self.fail('production entered validation lock')
+
+    @unittest.skipIf(os.name == 'nt', 'Linux broker flock and procfs')
+    def test_real_run_reuses_ordered_start_and_monitors_without_cutoff_then_stops_on_failure(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            ctl.note_start()
+            original = ctl.monitor_once
+            cycles = []
+            def monitor(timer):
+                self.assertIsNone(timer)
+                cycles.append(timer)
+                if len(cycles) == 3: self.market_failure = True
+                original(timer)
+            ctl.monitor_once = monitor
+            original_read = Path.read_text
+            def read(path, *args, **kwargs):
+                if str(path) == '/proc/meminfo': return 'MemAvailable: 1048576 kB\n'
+                return original_read(path, *args, **kwargs)
+            with patch.object(os, 'statvfs', return_value=SimpleNamespace(f_bavail=30*1024**3, f_frsize=1, f_favail=200000)), \
+                 patch.object(Path, 'read_text', read), patch.object(c.time, 'sleep'):
+                with self.assertRaises(Exception): ctl.run()
+            self.assertEqual(len(cycles), 3)
+            self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+            self.assertEqual(ctl.current()['stage'], 'monitoring')
+            self.assertFalse(self.running); self.assertFalse(self.trading)
+            self.assertLess(self.calls.index('backup'), self.calls.index(('maintenance', False)))
+            self.assertLess(self.calls.index(('maintenance', False)), self.calls.index(('start', c.CONTAINER)))
+            arms = [x for x in self.calls if isinstance(x, tuple) and x[:2] == ('POST', '/api/paper-check/arm')]
+            self.assertEqual(len(arms), 1)
+            self.assertEqual(set(arms[0][2]), {'issuedAt'})
+            self.assertEqual(self.calls.count(('start', c.CONTAINER)), 1)
+            self.assertFalse(any(isinstance(x, tuple) and x[:2] == ('system', 'start') for x in self.calls))
+            self.assertEqual(json.loads((ctl.folder(ctl.current())/'failure.json').read_bytes())['stage'], 'monitoring')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
