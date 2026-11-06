@@ -1,0 +1,87 @@
+name: SuiBa production check and Issue notification
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Read-only production check and Issue notification'
+        required: true
+        type: choice
+        options:
+          - CHECK-PROD-MONITOR
+permissions:
+  contents: read
+concurrency:
+  group: suiba-production-monitor
+  cancel-in-progress: false
+jobs:
+  check:
+    # Repository variable (not Environment variable). Missing/false means no SSH.
+    if: >-
+      github.ref == 'refs/heads/main' && vars.SUIBA_PROD_MONITOR_ENABLED == 'true' &&
+      (github.event_name == 'schedule' || inputs.confirmation == 'CHECK-PROD-MONITOR')
+    environment: sakura-vps
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      report: ${{ steps.report.outputs.report }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.1'
+      - name: Read fixed production status and watchdog paths over pinned SSH
+        id: observation
+        env:
+          PRODUCTION_REPORT_FILE: ${{ runner.temp }}/suiba-production-monitor.json
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-prod-status.sh
+      - name: Export only the validated observation, including read failures
+        if: always()
+        id: report
+        env:
+          PRODUCTION_REPORT_FILE: ${{ runner.temp }}/suiba-production-monitor.json
+          OBSERVATION_OUTCOME: ${{ steps.observation.outcome }}
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          import { notificationReport } from './sui-ai-trading-bot/docker/production-notify.mjs';
+          let raw = '';
+          if (process.env.OBSERVATION_OUTCOME === 'success') {
+            try { raw = readFileSync(process.env.PRODUCTION_REPORT_FILE, 'utf8'); } catch {}
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, 'report=' + JSON.stringify(notificationReport(raw)) + '\n');
+          JS
+  notify:
+    # Keep this gate as well: a skipped read must never open/close an Issue.
+    if: >-
+      always() && needs.check.result != 'skipped' && github.ref == 'refs/heads/main' &&
+      vars.SUIBA_PROD_MONITOR_ENABLED == 'true' &&
+      (github.event_name == 'schedule' || inputs.confirmation == 'CHECK-PROD-MONITOR')
+    needs: check
+    permissions:
+      contents: read
+      issues: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.1'
+      - name: Reconcile only dedicated production alert Issues
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PRODUCTION_MONITOR_REPORT: ${{ needs.check.outputs.report }}
+        run: node sui-ai-trading-bot/docker/production-notify.mjs

@@ -15,6 +15,7 @@ on:
       - ".github/workflows/suiba-paper-start.yml"
       - ".github/workflows/suiba-ssh-preflight.yml"
       - ".github/workflows/suiba-paper-status.yml"
+      - ".github/workflows/suiba-production-monitor.yml"
   pull_request:
     paths:
       - "sui-ai-trading-bot/**"
@@ -26,6 +27,7 @@ on:
       - ".github/workflows/suiba-paper-start.yml"
       - ".github/workflows/suiba-ssh-preflight.yml"
       - ".github/workflows/suiba-paper-status.yml"
+      - ".github/workflows/suiba-production-monitor.yml"
   # Weekly unconditional full run (Mon 03:00 JST): the safety
   # net for the change-gated heavy suites in suiba-no-worker.
   schedule:
