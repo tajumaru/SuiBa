@@ -1,0 +1,11 @@
+[Unit]
+Description=Check SuiBa production without recovery actions
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=suiba-prod-watchdog.service
+
+[Install]
+WantedBy=timers.target

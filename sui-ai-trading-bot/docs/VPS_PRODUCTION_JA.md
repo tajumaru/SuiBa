@@ -1,7 +1,7 @@
 # VPS 本稼働設計 — 起動・停止経路と監視
 
 これは設計書である。worker セッション一般化、controller の本番 op、
-本番 service の配布（§8-3(i)～(iii)）を実装している。
+本番 service の配布と host watchdog（§8-3(i)～(iv)）を実装している。
 対象は2点に限る：(1) さくら VPS
 上で PAPER 本番を回し続けるための起動・停止経路、(3) 止まったら
 気づける監視。状態の引っ越しと更新手順は骨子のみ、閲覧経路などは
@@ -300,10 +300,39 @@ broker 配置＋素の docker start）は、restart 強制や create-only と
 
 ### 5.1 検出：host 内 watchdog
 
-- 形：systemd timer（間隔は実装時に確定、例5分）で controller の
-  読み取り専用チェックを叩く。本番稼働中は diagnose が使えない
-  ため、`prod-status` op が「prod レコード＋コンテナ状態＋
-  /api/deployment＋lifecycle＋progress」を形の検証つきで返す。
+- 第4段の実装契約：`watchdog.py` は既存 wrapper に固定の
+  `{"operation":"prod-status"}` を渡す。prod-status の正常応答は従来形の
+  ままで、稼働中 Worker の通信失敗時だけ worker が
+  `{"reachable":false,"reason":"WORKER_UNREACHABLE"}` になる。
+  ローカル認証ファイルの不正などは通信失敗に置き換えない。
+  checker 自体はトークンを読まず、残る情報を固定の systemctl show／
+  Docker inspect／volume inspect と証跡ファイルから読むだけである。
+- `suiba-prod-watchdog.timer` は起動後2分・以後5分間隔（精度30秒）。
+  oneshot service は Restart=no、ProtectSystem=strict とし、書込先は
+  StateDirectory の `/var/lib/suiba-watchdog/status.json`（root:root、600）
+  のみ。既存の su → sudo → wrapper 経路で root に戻る必要があるため、
+  watchdog service の NoNewPrivileges は no とする。本番 service と
+  検証系 unit の設定は変えない。timer は setup で配布・検証するだけで、
+  有効化は切替時に明示する。prod-policy.json も配置しない。
+- 判定は前回結果を一切読まず、正常は `SUIBA_WATCHDOG_OK`、要注意は
+  `SUIBA_WATCHDOG_ATTENTION` と固定理由コードだけを journal に出す。
+  run=null かつ requires_review=false の未開始状態は checker 自身の
+  journal 出力なしで、最終記録を not_started に更新する。最終記録は
+  verdict／reasons／at（epoch秒）／run_id のみで、値・例外文・認証情報を
+  転記しない。要注意はチェック結果であり service の失敗にはしない。
+- progress は現在ランの開始後に更新されたものだけを採用し、90秒を
+  超える停滞を検出する。市場の最終成功も90秒以内を要求する。開始準備は
+  180秒の猶予後に STARTUP_STALLED とする。資源閾値は既存 controller と
+  同じ MemAvailable 256MiB、backup 領域20GiB／10万inode。backup は現在
+  ランとの世代・作成時刻・ファイル形を確認するが、毎回の再ハッシュや
+  稼働DBの開閉はしない。checksum／DB整合性検証は既存の開始・停止経路が
+  担う。復旧・停止・再開・通知は一切実行せず、Issue通知は第5段に残す。
+
+- 形：systemd timer で controller の読み取り専用チェックを叩く。
+  本番稼働中は diagnose が使えないため、`prod-status` op の既存形
+  （prod レコード・controller 生存・/api/deployment の許可済み項目）を
+  読み、checker がコンテナ状態・lifecycle・progress の読み取り結果を
+  加えて形を検証する。prod-status の正常応答に項目は追加しない。
   prod 監視ループが書く progress の鮮度を主信号とする
   （検証ランの progress.json と同じ流儀：progress が閾値より
   古い＝監視役の死）。
