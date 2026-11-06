@@ -228,14 +228,19 @@ class StopTests(unittest.TestCase):
                 checks = ctl.diagnostic_host(container)['container_checks']
             self.assertEqual(checks, {'state': True, 'restart_user': True, 'env': True, 'ports': False,
                                       'memory': True, 'label': True, 'image': True})
-            # A DeepBook deployment passes the env check too; the
-            # flip-flopping 'auto' mode does not.
-            for provider, expected in (('deepbook', True), ('auto', False)):
-                container['Config']['Env'] = ['MODE=PAPER', 'TRADING_PAIR=SUI_USDC', 'PAPER_CHECK_MODE=sui-30m',
-                                              f'MARKET_DATA_PROVIDER={provider}']
+            # A complete DeepBook profile (provider + verified
+            # reconstruction) passes the env check; the provider
+            # alone does not, and neither does the flip-flopping
+            # 'auto' mode.
+            base = ['MODE=PAPER', 'TRADING_PAIR=SUI_USDC', 'PAPER_CHECK_MODE=sui-30m']
+            for env, expected in (
+                    (base+['MARKET_DATA_PROVIDER=deepbook', 'DEEPBOOK_RECONSTRUCT_CANDLES=verified'], True),
+                    (base+['MARKET_DATA_PROVIDER=deepbook'], False),
+                    (base+['MARKET_DATA_PROVIDER=auto'], False)):
+                container['Config']['Env'] = env
                 with patch.object(c.subprocess, 'check_output', return_value=response):
                     checks = ctl.diagnostic_host(container)['container_checks']
-                self.assertEqual(checks['env'], expected, provider)
+                self.assertEqual(checks['env'], expected, env)
 
     def test_approve_deploy_materializes_the_ci_approval_record(self):
         import re
@@ -1023,7 +1028,8 @@ class ProductionTests(unittest.TestCase):
                         'PortBindings': {'3100/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '3100'}]},
                         'Memory': 1024**3, 'MemorySwap': 1024**3},
                     'Config': {'User': '1000:1000', 'Env': ['MODE=PAPER', 'TRADING_PAIR=SUI_USDC',
-                        'PAPER_CHECK_MODE=sui-prod', 'MARKET_DATA_PROVIDER=deepbook'],
+                        'PAPER_CHECK_MODE=sui-prod', 'MARKET_DATA_PROVIDER=deepbook',
+                        'DEEPBOOK_RECONSTRUCT_CANDLES=verified'],
                         'Labels': {'org.opencontainers.image.revision': self.sha}, 'Image': 'fixture-image'}}
         ctl.inspect = inspect
         def api(method, path, value=None):
@@ -1100,7 +1106,7 @@ class ProductionTests(unittest.TestCase):
 
     def test_preflight_uses_the_same_checks_but_requires_production_env(self):
         from types import SimpleNamespace
-        for bad in (None, 'token', 'restart', 'memory', 'image', 'provider', 'pair'):
+        for bad in (None, 'token', 'restart', 'memory', 'image', 'provider', 'pair', 'profile'):
             with self.subTest(bad=bad), tempfile.TemporaryDirectory() as root:
                 ctl = self.make(root)
                 record = self.admit(ctl)
@@ -1113,6 +1119,8 @@ class ProductionTests(unittest.TestCase):
                     if bad == 'image': i['Config']['Image'] = 'wrong-image'
                     if bad == 'provider': i['Config']['Env'][3] = 'MARKET_DATA_PROVIDER=auto'
                     if bad == 'pair': i['Config']['Env'][1] = 'TRADING_PAIR=WAL_USDC'
+                    if bad == 'profile': i['Config']['Env'] = [e for e in i['Config']['Env']
+                        if not e.startswith('DEEPBOOK_RECONSTRUCT_CANDLES=')]
                     return i
                 ctl.inspect = inspect
                 with patch.object(os, 'statvfs', return_value=SimpleNamespace(f_bavail=30*1024**3, f_frsize=1, f_favail=200000), create=True):

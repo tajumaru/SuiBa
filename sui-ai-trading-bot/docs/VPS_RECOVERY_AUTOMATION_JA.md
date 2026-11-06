@@ -163,6 +163,13 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   compose に無く、Indexer の足系列の欠け（実測で 5分足1000本中2本）
   が全取得を CANDLE_GAP で落とし、market-freshness で2回停止した。
   PR #89 で compose に追加した。
+- env プロファイル完全性の preflight 化（2026-11-07、PR #90）:
+  上記の付け忘れを、開始後ではなく開始前の preflight で弾くように
+  した。コントローラの env 照合（preflight と診断の container
+  checks の両方）を `provider_profile_ok` に統一し、provider が
+  deepbook のときは `DEEPBOOK_RECONSTRUCT_CANDLES=verified` の
+  併記を必須とする。不完全なプロファイルは数秒で
+  preflight（detail=env）として表面化する。
   なお初回の切替配置（seq 8）は、setup の取得がマージ直後で
   raw の旧内容（ブランチ URL のキャッシュ）に当たり、旧 compose の
   まま配置される事故があった。setup 系スクリプトはコミット固定の
