@@ -337,7 +337,7 @@ class Controller:
         report = self.diagnostic_backup(record, source)
         health = state.get('Health', {}).get('Log', [])
         failure_path = self.folder(record)/'failure.json'
-        stage, http, readiness = None, None, None
+        stage, http, readiness, market = None, None, None, None
         if failure_path.exists():
             failure = self.b.decode(self.b.read_trusted(failure_path))
             require(failure['id'] == record['id'] and failure['stage'] in DIAGNOSTIC_STAGES)
@@ -345,6 +345,14 @@ class Controller:
             readiness = failure.get('readiness')
             http = failure.get('http_status')
             require(http is None or type(http) is int and 100 <= http <= 599)
+            market = failure.get('market')
+            if market is not None:
+                require(type(market) is dict and set(market) == {'source', 'lastSuccessAt', 'reason'})
+                require(market['source'] is None or type(market['source']) is str and
+                        re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', market['source']))
+                require(market['lastSuccessAt'] is None or type(market['lastSuccessAt']) in (int, float))
+                require(market['reason'] is None or type(market['reason']) is str and
+                        re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', market['reason']))
         preflight = None
         preflight_path = self.folder(record)/'preflight.json'
         if preflight_path.exists():
@@ -364,6 +372,7 @@ class Controller:
                 'maintenance': maintenance, 'stage': stage, 'http_status': http, 'preflight': preflight,
                 'backup_verified': report is not None,
                 'deltas': report['deltas'] if report is not None else None, 'readiness': readiness,
+                'market': market,
                 'runtime': report['runtime'] if report is not None else None,
                 'selected_pair': report['selected_pair'] if report is not None else None,
                 'clean_lifecycle': clean_lifecycle,
@@ -768,12 +777,29 @@ class Controller:
         # success yet" and keeps waiting instead of erroring.
         deadline = time.monotonic()+120
         while True:
+            self.note_market(market)
             last = market['lastSuccessAt']
             if market['source'] == 'GeckoTerminal' and type(last) in (int, float) and 0 <= time.time()*1000-last <= 90000:
                 return
             require(time.monotonic() < deadline and time.time()*1000 < cutoff)
             time.sleep(5)
             market = self.api('GET', '/api/dashboard/summary')['summary']['marketData']
+
+    def note_market(self, market):
+        # Whitelisted failure evidence, mirroring how wait_ready
+        # filters readiness: if a freshness check later fails, the
+        # failure record shows what the controller last saw — the
+        # provider, the last success time and a code-shaped reason —
+        # so "never fetched" and "fetch failing" are distinguishable
+        # from one diagnostics report. Anything else is dropped.
+        reason = market.get('reason')
+        source = market.get('source')
+        last = market.get('lastSuccessAt')
+        self.market = {
+            'source': source if type(source) is str and re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', source) else None,
+            'lastSuccessAt': last if type(last) in (int, float) else None,
+            'reason': reason if type(reason) is str and re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', reason) else None,
+        }
 
     def backup(self):
         helper, image = self.helper()
@@ -1059,6 +1085,7 @@ class Controller:
                     require(d['mode'] == 'PAPER' and d['running'] and d['databaseHealthy'] and d['ledgerOk'])
                     require(self.api('GET', '/api/pairs')['selected'] == 'SUI_USDC')
                     market = self.api('GET', '/api/dashboard/summary')['summary']['marketData']
+                    self.note_market(market)
                     require(market['source'] == 'GeckoTerminal' and 0 <= time.time()*1000-market['lastSuccessAt'] <= 90000)
                     i = self.inspect()
                     require(i['State']['Running'] and not i['State']['OOMKilled'] and i['RestartCount'] == 0)
@@ -1098,6 +1125,8 @@ class Controller:
                         failure['http_status'] = error.code
                     if stage == 'worker-readiness':
                         failure['readiness'] = getattr(self, 'readiness', {})
+                    if stage in ('market-freshness', 'monitoring') and getattr(self, 'market', None) is not None:
+                        failure['market'] = self.market
                     self.b.atomic(self.folder(self.current(self.run_id))/'failure.json', failure)
                 print(f'PAPER_CHECK_STAGE_FAILED stage={stage}{detail}', file=sys.stderr, flush=True)
                 self.stop(own=True, expected=self.run_id, source='failure')

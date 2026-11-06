@@ -117,6 +117,15 @@ try:
             if detail is not None and (preflight["check"] != "container" or detail not in (
                     "inspect", "state", "restart_user", "env", "ports", "memory", "label", "transaction", "image")):
                 raise ValueError()
+        market = details.get("market")
+        if market is not None:
+            if type(market) is not dict or set(market) != {"source", "lastSuccessAt", "reason"}:
+                raise ValueError()
+            for key in ("source", "reason"):
+                if market[key] is not None and (type(market[key]) is not str or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", market[key])):
+                    raise ValueError()
+            if market["lastSuccessAt"] is not None and type(market["lastSuccessAt"]) not in (int, float):
+                raise ValueError()
         if "clean_lifecycle" in details and type(details["clean_lifecycle"]) is not bool:
             raise ValueError()
         runtime = details.get("runtime")
@@ -220,6 +229,9 @@ if details is not None:
         blocked = [key for key in checks if readiness.get(key) is False]
         if blocked:
             print("- Readiness checks blocking start: " + ", ".join(blocked))
+    market = details.get("market")
+    if isinstance(market, dict):
+        print(f"- Market at failure: source={market['source']}, lastSuccessAt={market['lastSuccessAt']}, reason={market['reason']}")
     if "clean_lifecycle" in details:
         print(f"- Clean PAPER lifecycle receipt: {details['clean_lifecycle']}")
     runtime = details.get("runtime")
