@@ -41,6 +41,11 @@ CUTOFF = 'suiba-paper-check-cutoff.service'
 DURATIONS = {'30m': 1800, '6h': 21600, '24h': 86400}
 RECONCILE_BACKUPS = Path('/root')
 PREFLIGHT_CHECKS = ('storage', 'ledger', 'container', 'admission')
+# Sub-labels for the container preflight segment, recorded as the
+# preflight evidence's detail. A 2026-11-06 death there recorded
+# only check=container while every diagnose sub-check passed
+# afterwards, leaving the exact require unknown.
+CONTAINER_CHECKS = ('inspect', 'state', 'restart_user', 'env', 'ports', 'memory', 'label', 'transaction', 'image')
 
 
 def cutoff_timer(duration):
@@ -183,13 +188,16 @@ class Controller:
         with self.b.directory(path): pass
         return path
 
-    def record_preflight(self, record, check, error):
+    def record_preflight(self, record, check, error, detail=None):
         # Best-effort evidence for a pre-admission death: the check
         # name and the exception class only. The message can carry
-        # paths or payloads and is never recorded.
+        # paths or payloads and is never recorded. The container
+        # segment also records which of its requires died (detail).
+        evidence = {'id': record['id'], 'check': check, 'error': type(error).__name__}
+        if detail is not None:
+            evidence['detail'] = detail
         with contextlib.suppress(Exception):
-            self.b.atomic(self.folder(record)/'preflight.json',
-                          {'id': record['id'], 'check': check, 'error': type(error).__name__})
+            self.b.atomic(self.folder(record)/'preflight.json', evidence)
 
     def fault(self, record, code):
         # Separate sticky admission fence: even a fault arriving after the last
@@ -343,7 +351,9 @@ class Controller:
             value = self.b.decode(self.b.read_trusted(preflight_path))
             require(value['id'] == record['id'] and value['check'] in PREFLIGHT_CHECKS and
                     type(value['error']) is str and re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', value['error']))
-            preflight = {'check': value['check'], 'error': value['error']}
+            detail = value.get('detail')
+            require(detail is None or (value['check'] == 'container' and detail in CONTAINER_CHECKS))
+            preflight = {'check': value['check'], 'error': value['error'], 'detail': detail}
         return {
             'run': {'id': record['id'], 'status': record['status'], 'duration': record.get('duration', '30m')},
             'stop': {'id': stop['id'], 'status': stop['status'], 'errors': stop_errors},
@@ -486,6 +496,26 @@ class Controller:
                     os.fsync(out.fileno())
                 with self.b.directory(self.b.STATE) as directory_fd:
                     os.fsync(directory_fd)
+
+    def approve_retry(self, run_id):
+        # The root CLI's approval, shared with the approve-retry
+        # request op: only a run that was admitted and then stopped
+        # cleanly (stop receipt clean_stopped, no fault evidence,
+        # diagnose fully readable) may be retried. Preflight deaths
+        # end in failed_state_unknown instead and stay with the
+        # reconcile path; this method refuses them through the
+        # stop-receipt check.
+        report = self.diagnose()
+        run = report['run']
+        require(run['id'] == run_id and run['status'] == 'failed_requires_review')
+        require(report['stop']['status'] == 'clean_stopped' and not report['requires_review'])
+        folder = self.folder(run)
+        with self.locked('stop'), self.locked('mutation'):
+            require(self.current()['id'] == run['id'])
+            require(not os.path.lexists(folder/'retry-consumed.json'))
+            require(not os.path.lexists(folder/'retry-approved.json'))
+            self.b.atomic(folder/'retry-approved.json', {'id': run['id']})
+        return {'approved': run['id']}
 
     def reconcile_preflight(self, mode, sha=None):
         # The reconcile-preflight.sh procedure as a controller
@@ -944,6 +974,7 @@ class Controller:
             # class (never the message) in the run folder, then let
             # the failure propagate exactly as before.
             check = 'storage'
+            detail = None
             try:
                 space = os.statvfs(self.b.BACKUPS)
                 require(space.f_bavail*space.f_frsize >= 20*1024**3 and space.f_favail >= 100000)
@@ -951,27 +982,37 @@ class Controller:
                 ledger = self.b.decode(self.b.read_trusted(self.b.STATE/'ledger.json'))
                 require(ledger['status'] == 'prepared_stopped')
                 check = 'container'
+                detail = 'inspect'
                 i = self.inspect()
+                detail = 'state'
                 require(i['State']['Status'] in ('created', 'exited') and not i['State']['Running'] and
                         i['State']['ExitCode'] == 0 and not i['State']['OOMKilled'])
+                detail = 'restart_user'
                 require(i['HostConfig']['RestartPolicy']['Name'] == 'no' and i['Config']['User'] == '1000:1000')
+                detail = 'env'
                 env = dict(v.split('=', 1) for v in i['Config']['Env'])
                 require(env.get('MODE') == 'PAPER' and env.get('TRADING_PAIR') == 'SUI_USDC' and
                         env.get('PAPER_CHECK_MODE') == 'sui-30m' and env.get('MARKET_DATA_PROVIDER') == 'geckoterminal')
+                detail = 'ports'
                 require(i['HostConfig']['PortBindings'] == {'3100/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '3100'}]})
+                detail = 'memory'
                 require(i['HostConfig']['Memory'] == i['HostConfig']['MemorySwap'] == 1024**3)
+                detail = 'label'
                 require(self.b.SHA.fullmatch(ledger['sha']) and
                         i['Config']['Labels'].get('org.opencontainers.image.revision') == ledger['sha'])
+                detail = 'transaction'
                 require(len(ledger['transaction']) == 32 and all(c in '0123456789abcdef' for c in ledger['transaction']))
+                detail = 'image'
                 frozen = self.b.decode(self.b.read_trusted(self.b.STATE/ledger['transaction']/'compose.json'))
                 require(i['Config']['Image'] == frozen['services']['bot']['image'])
+                detail = None
                 check = 'admission'
                 with self.locked('mutation'):
                     require(not (self.folder(record)/'stop-request.json').exists())
                     record['admitted'] = True
                     self.b.atomic(self.record, record)
             except BaseException as error:
-                self.record_preflight(record, check, error)
+                self.record_preflight(record, check, error, detail)
                 raise
             self.guard('timer', lambda: self.system('start', timer))
             self.system('is-active', '--quiet', timer)
@@ -1083,16 +1124,7 @@ def main():
             controller.approve_deploy(sys.argv[2], sys.argv[3])
             print('PAPER_CHECK_DEPLOY_APPROVED')
         elif sys.argv[1] == 'approve-retry':
-            report = controller.diagnose()
-            run = report['run']
-            require(run['id'] == sys.argv[2] and run['status'] == 'failed_requires_review')
-            require(report['stop']['status'] == 'clean_stopped' and not report['requires_review'])
-            folder = controller.folder(run)
-            with controller.locked('stop'), controller.locked('mutation'):
-                require(controller.current()['id'] == run['id'])
-                require(not os.path.lexists(folder/'retry-consumed.json'))
-                require(not os.path.lexists(folder/'retry-approved.json'))
-                b.atomic(folder/'retry-approved.json', {'id': run['id']})
+            controller.approve_retry(sys.argv[2])
             print('PAPER_CHECK_RETRY_APPROVED')
         elif sys.argv[1] == 'request':
             import pwd
@@ -1103,7 +1135,7 @@ def main():
             request = b.decode(sys.stdin.buffer.read(257))
             signal.alarm(0)
             require(isinstance(request, dict) and set(request) <= {'operation', 'duration', 'mode', 'sha'} and
-                    request.get('operation') in ('start', 'status', 'abort', 'diagnose', 'reconcile'))
+                    request.get('operation') in ('start', 'status', 'abort', 'diagnose', 'reconcile', 'approve-retry'))
             require(request['operation'] in ('start', 'reconcile') or set(request) == {'operation'})
             require(request['operation'] == 'start' or 'duration' not in request)
             duration = request.get('duration', '30m')
@@ -1113,6 +1145,8 @@ def main():
                 require(mode in ('retry', 'deploy'))
                 require(mode == 'deploy' or 'sha' not in request)
                 print(json.dumps(controller.reconcile_preflight(mode, request.get('sha'))))
+            elif request['operation'] == 'approve-retry':
+                print(json.dumps(controller.approve_retry(controller.current()['id'])))
             elif request['operation'] == 'diagnose':
                 print(json.dumps(controller.diagnose()))
             elif request['operation'] == 'status':

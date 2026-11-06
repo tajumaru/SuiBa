@@ -113,6 +113,10 @@ try:
                 raise ValueError()
             if type(preflight["error"]) is not str or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", preflight["error"]):
                 raise ValueError()
+            detail = preflight.get("detail")
+            if detail is not None and (preflight["check"] != "container" or detail not in (
+                    "inspect", "state", "restart_user", "env", "ports", "memory", "label", "transaction", "image")):
+                raise ValueError()
         if "clean_lifecycle" in details and type(details["clean_lifecycle"]) is not bool:
             raise ValueError()
         runtime = details.get("runtime")
@@ -203,7 +207,10 @@ if details is not None:
         print(f"- Stop errors: {', '.join(stop_errors)}")
     preflight = details.get("preflight")
     if preflight is not None:
-        print(f"- Preflight failure: check={preflight['check']}, error={preflight['error']}")
+        line = f"- Preflight failure: check={preflight['check']}, error={preflight['error']}"
+        if preflight.get("detail") is not None:
+            line += f", detail={preflight['detail']}"
+        print(line)
     readiness = details.get("readiness")
     if isinstance(readiness, dict):
         health = readiness.get("health")

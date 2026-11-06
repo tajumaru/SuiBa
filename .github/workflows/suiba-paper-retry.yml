@@ -1,0 +1,35 @@
+name: SuiBa PAPER check retry approval
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type RETRY-PAPER"
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: suiba-paper-retry
+  cancel-in-progress: false
+jobs:
+  paper-retry:
+    # Repository variable, NOT an Environment variable: evaluated before job startup.
+    # Missing/false disables all SSH. Approving a retry changes host state, so this
+    # workflow carries its own enable variable on top of the Environment approval.
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'RETRY-PAPER' && vars.SUIBA_PAPER_RETRY_ENABLED == 'true'
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Approve retry of a cleanly stopped PAPER run through the fixed wrapper
+        env:
+          PAPER_RETRY_CONFIRMATION: ${{ inputs.confirmation }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-paper-retry.sh

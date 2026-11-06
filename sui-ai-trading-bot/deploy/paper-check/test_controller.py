@@ -369,6 +369,37 @@ class StopTests(unittest.TestCase):
                 ctl.record_preflight({'id': 'a'*32}, 'container', error)
             saved = json.loads((state/('a'*32)/'preflight.json').read_bytes())
             self.assertEqual(saved, {'id': 'a'*32, 'check': 'container', 'error': 'RuntimeError'})
+            ctl.record_preflight({'id': 'a'*32}, 'container', RuntimeError('fixture'), 'env')
+            saved = json.loads((state/('a'*32)/'preflight.json').read_bytes())
+            self.assertEqual(saved, {'id': 'a'*32, 'check': 'container', 'error': 'RuntimeError', 'detail': 'env'})
+
+    def test_approve_retry_op_writes_the_permit_only_for_a_clean_failure(self):
+        def fixture(root, stop_status='clean_stopped', requires_review=False):
+            ctl = object.__new__(c.Controller)
+            ctl.b, ctl.state = FakeBroker, root
+            record = initialize(ctl)
+            record['status'] = 'failed_requires_review'
+            run = {'id': record['id'], 'status': 'failed_requires_review'}
+            ctl.diagnose = lambda: {'run': run, 'stop': {'status': stop_status},
+                                    'requires_review': requires_review}
+            ctl.current = lambda: record
+            ctl.locked = lambda name: contextlib.nullcontext()
+            return ctl, record
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record = fixture(Path(tmp))
+            self.assertEqual(ctl.approve_retry(record['id']), {'approved': record['id']})
+            saved = json.loads((Path(tmp)/record['id']/'retry-approved.json').read_text())
+            self.assertEqual(saved, {'id': record['id']})
+            # A second approval is refused: the permit is single-use.
+            with self.assertRaises(RuntimeError): ctl.approve_retry(record['id'])
+        for patch in ({'stop_status': 'failed_state_unknown'}, {'requires_review': True}):
+            with self.subTest(**patch), tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+                ctl, record = fixture(Path(tmp), **patch)
+                with self.assertRaises(RuntimeError): ctl.approve_retry(record['id'])
+                self.assertFalse((Path(tmp)/record['id']/'retry-approved.json').exists())
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record = fixture(Path(tmp))
+            with self.assertRaises(RuntimeError): ctl.approve_retry('b'*32)
 
     def test_diagnostic_summary_accepts_a_run_without_backup(self):
         import io
@@ -397,6 +428,14 @@ class StopTests(unittest.TestCase):
             payload['diagnostics']['preflight'] = {'check': 'container', 'error': 'RuntimeError'}
             self.assertIn('check=container, error=RuntimeError', render())
             payload['diagnostics']['preflight'] = {'check': 'secret-fixture', 'error': 'RuntimeError'}
+            with self.assertRaises(SystemExit):
+                render()
+            payload['diagnostics']['preflight'] = {'check': 'container', 'error': 'RuntimeError', 'detail': 'env'}
+            self.assertIn('check=container, error=RuntimeError, detail=env', render())
+            payload['diagnostics']['preflight'] = {'check': 'container', 'error': 'RuntimeError', 'detail': 'secret-fixture'}
+            with self.assertRaises(SystemExit):
+                render()
+            payload['diagnostics']['preflight'] = {'check': 'ledger', 'error': 'RuntimeError', 'detail': 'env'}
             with self.assertRaises(SystemExit):
                 render()
             payload['diagnostics']['preflight'] = None
