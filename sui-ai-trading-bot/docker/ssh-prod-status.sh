@@ -16,9 +16,8 @@ folder=$(mktemp -d "$RUNNER_TEMP/suiba-prod-status.XXXXXXXX")
 key="$folder/key"
 hosts="$folder/known_hosts"
 result="$folder/result"
-watchdog="$folder/watchdog"
 errors="$folder/errors"
-cleanup() { rm -f "$key" "$hosts" "$result" "$watchdog" "$errors"; rmdir "$folder"; }
+cleanup() { rm -f "$key" "$hosts" "$result" "$errors"; rmdir "$folder"; }
 trap cleanup EXIT
 printf '%s\n' "$VPS_SSH_KEY" > "$key"
 printf '%s\n' "$VPS_KNOWN_HOSTS" > "$hosts"
@@ -40,16 +39,9 @@ opts=(-F /dev/null -i "$key" -p "$port" -T
 # Only fixed read-only operations are sent. Never echo the remote response.
 [[ -n ${PRODUCTION_REPORT_FILE:-} ]] || fail
 prod_read=0
-watch_read=0
 if printf '%s' '{"operation":"prod-status"}' |
     timeout 30s ssh "${opts[@]}" "$VPS_USER@$VPS_HOST" 'sudo -n -- /usr/local/sbin/suiba-paper-check' 2>"$errors" |
     head -c 65537 >"$result"; then
   prod_read=1
 fi
-# This fixed non-privileged read never widens sudo rights. On current hosts the
-# root:600 record is private; that is honestly WATCHDOG_UNAVAILABLE, not healthy.
-if timeout 30s ssh "${opts[@]}" -n "$VPS_USER@$VPS_HOST" 'cat /var/lib/suiba-watchdog/status.json' 2>"$errors" |
-    head -c 65537 >"$watchdog"; then
-  watch_read=1
-fi
-python3 "$(dirname "$0")/production-status.py" "$result" "$watchdog" "$prod_read" "$watch_read" "$PRODUCTION_REPORT_FILE"
+python3 "$(dirname "$0")/production-status.py" "$result" "$prod_read" "$PRODUCTION_REPORT_FILE"

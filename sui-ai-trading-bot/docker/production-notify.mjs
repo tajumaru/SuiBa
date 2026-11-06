@@ -50,9 +50,10 @@ export function validateReport(value, now = Date.now() / 1000) {
         ["in_progress", "completed"].includes(value.prod_state),
     );
     require(
-      integer(value.watchdog_at) &&
-        -60 <= value.at - value.watchdog_at &&
-        value.at - value.watchdog_at <= contract.watchdog_max_age,
+      value.watchdog_at === null ||
+        (integer(value.watchdog_at) &&
+          -60 <= value.at - value.watchdog_at &&
+          value.at - value.watchdog_at <= contract.watchdog_max_age),
     );
   }
   return value;

@@ -24,11 +24,18 @@ def unreachable(worker):
 
 def production(value, now):
     require(type(value) is dict and type(value.get('requires_review')) is bool and 'run' in value)
+    optional = value.get('watchdog')
+    require(type(optional) is dict and set(optional) == {'record', 'code'})
+    if optional['record'] is None:
+        require(optional['code'] in ('WATCHDOG_RECORD_MISSING', 'WATCHDOG_RECORD_INVALID'))
+    else:
+        require(optional['code'] is None)
+        watchdog(optional['record'])
     run = value['run']
     if run is None:
-        require(set(value) == {'run', 'requires_review'})
+        require(set(value) == {'run', 'requires_review', 'watchdog'})
         return value
-    require(set(value) == {'run', 'requires_review', 'worker', 'controller_alive'} and
+    require(set(value) == {'run', 'requires_review', 'worker', 'controller_alive', 'watchdog'} and
             type(value['controller_alive']) is bool and type(run) is dict and
             set(run) == {'id', 'status', 'started', 'stopped', 'sha', 'stage', 'admitted'})
     require(hex_id(run['id']) and run['status'] in CONTRACT['prod_states'][2:] and
@@ -58,7 +65,7 @@ def watchdog(value):
     return value
 
 
-def combine(prod, watch, now, prod_read=True, watch_read=True):
+def combine(prod, now, prod_read=True):
     result = {'at': int(now), 'verdict': 'attention', 'reasons': [], 'run_id': None,
               'prod_state': 'unknown', 'watchdog_at': None}
     if not prod_read:
@@ -66,6 +73,7 @@ def combine(prod, watch, now, prod_read=True, watch_read=True):
     try: production(prod, now)
     except Exception:
         result['reasons'] = ['PROD_STATUS_INVALID']; return result
+    watch = prod['watchdog']['record']
     run = prod['run']
     reasons = set()
     if prod['requires_review']: reasons.add('REVIEW_REQUIRED')
@@ -88,20 +96,14 @@ def combine(prod, watch, now, prod_read=True, watch_read=True):
             if worker['maintenance']: reasons.add('MAINTENANCE_ENABLED')
         elif run['status'] == 'in_progress' and run['stage'] == 'monitoring' and prod['controller_alive']:
             reasons.add('WORKER_STATE_INVALID')
-    if not watch_read:
-        reasons.add('WATCHDOG_UNAVAILABLE')
-    else:
-        try: watchdog(watch)
-        except Exception:
-            reasons.add('WATCHDOG_INVALID')
-        else:
-            if watch['at'] <= now+60:
-                result['watchdog_at'] = watch['at']
-            if not -60 <= now-watch['at'] <= CONTRACT['watchdog_max_age']:
-                reasons.add('WATCHDOG_STALE')
-            if watch['run_id'] != result['run_id']: reasons.add('WATCHDOG_RUN_MISMATCH')
-            if watch['verdict'] == 'not_started' and run is not None: reasons.add('STATUS_INCONSISTENT')
-            reasons.update(watch['reasons'])
+    if watch is not None:
+        if watch['at'] <= now+60:
+            result['watchdog_at'] = watch['at']
+        if not -60 <= now-watch['at'] <= CONTRACT['watchdog_max_age']:
+            reasons.add('WATCHDOG_STALE')
+        if watch['run_id'] != result['run_id']: reasons.add('WATCHDOG_RUN_MISMATCH')
+        if watch['verdict'] == 'not_started' and run is not None: reasons.add('STATUS_INCONSISTENT')
+        reasons.update(watch['reasons'])
     result.update(verdict='attention' if reasons else 'ok', reasons=sorted(reasons))
     return result
 
@@ -120,16 +122,15 @@ def read(path):
 
 def main():
     try:
-        require(len(sys.argv) == 6 and sys.argv[3] in ('0', '1') and sys.argv[4] in ('0', '1'))
-        prod, watch = None, None
-        if sys.argv[3] == '1':
+        require(len(sys.argv) == 4 and sys.argv[2] in ('0', '1'))
+        prod = None
+        if sys.argv[2] == '1':
             try: prod = read(sys.argv[1])
             except Exception: pass
-        if sys.argv[4] == '1':
-            try: watch = read(sys.argv[2])
-            except Exception: pass
-        result = combine(prod, watch, time.time(), sys.argv[3] == '1', sys.argv[4] == '1')
-        Path(sys.argv[5]).write_text(json.dumps(result, allow_nan=False)+'\n', encoding='utf-8')
+        result = combine(prod, time.time(), sys.argv[2] == '1')
+        Path(sys.argv[3]).write_text(json.dumps(result, allow_nan=False)+'\n', encoding='utf-8')
+        if type(prod) is dict and type(prod.get('watchdog')) is dict and prod['watchdog'].get('code') in ('WATCHDOG_RECORD_MISSING', 'WATCHDOG_RECORD_INVALID'):
+            print(prod['watchdog']['code'])
         print('SUIBA_PROD_MONITOR_'+result['verdict'].upper()+(' '+','.join(result['reasons']) if result['reasons'] else ''))
         return 0
     except Exception:

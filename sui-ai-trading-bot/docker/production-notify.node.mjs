@@ -253,3 +253,17 @@ test("network and API failures emit a fixed result without credentials or respon
     );
   }
 });
+
+test("live healthy status can close an alert when the optional watchdog record is missing or invalid", async () => {
+  const f = fixture([
+    ["GET", "/issues?", 200, [issue(6)]],
+    ["PATCH", "/issues/6", 200, { number: 6 }],
+  ]);
+  const value = { ...report("ok"), watchdog_at: null };
+  assert.deepEqual(notificationReport(JSON.stringify(value), 2000), value);
+  assert.deepEqual(await syncIssues(value, f.context), {
+    action: "closed",
+    count: 1,
+  });
+  assert.equal(f.calls[1].body.state, "closed");
+});

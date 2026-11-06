@@ -67,6 +67,20 @@ def cutoff_timers():
 POLICY = Path('/etc/suiba-paper-check/policy.json')
 PROD_POLICY = Path('/etc/suiba-paper-check/prod-policy.json')
 PROD_SERVICE = 'suiba-prod.service'
+WATCHDOG_RECORD = Path('/var/lib/suiba-watchdog/status.json')
+WATCHDOG_REASONS = frozenset((
+    'REVIEW_REQUIRED', 'RUN_FAILED', 'CONTROLLER_NOT_RUNNING',
+    'CONTROLLER_UNEXPECTED', 'PROD_SERVICE_INACTIVE', 'CUTOFF_NOT_QUIET',
+    'STARTUP_STALLED', 'WORKER_UNREACHABLE', 'WORKER_STATE_INVALID',
+    'TRADING_STOPPED', 'DATABASE_UNHEALTHY', 'LEDGER_UNHEALTHY',
+    'NOT_PAPER', 'MAINTENANCE_ENABLED', 'PROGRESS_STALE',
+    'MARKET_STALE', 'CONTAINER_UNAVAILABLE', 'CONTAINER_OOM',
+    'RESTART_POLICY_OR_COUNT', 'CONTAINER_STOPPED', 'CONTAINER_UNHEALTHY',
+    'UNEXPECTED_CONTAINER_RUNNING', 'UNCLEAN_CONTAINER_EXIT', 'LIFECYCLE_UNCONFIRMED',
+    'LATCH_UNCONFIRMED', 'STOPPED_WITHOUT_LATCH', 'HOST_MEMORY_LOW_OR_UNKNOWN',
+    'HOST_DISK_LOW_OR_UNKNOWN', 'BACKUP_UNCONFIRMED', 'STATUS_UNAVAILABLE',
+    'STATUS_INVALID',
+))
 DIAGNOSTIC_STAGES = (
     'maintenance-release', 'worker-start', 'worker-readiness', 'deployment-state',
     'pair-selection', 'market-summary', 'market-freshness', 'arm', 'paper-start',
@@ -1382,14 +1396,45 @@ class ProductionController(Controller):
         require(self.stop(expected=record['id'], source='prod-stop'))
         return {'status': self.current(record['id'])['status']}
 
+    def watchdog_status(self):
+        # Fixed root-trusted path only. No imports from the checker and no writes.
+        # A bad/missing optional artifact must not hide the live production state.
+        try:
+            raw = self.b.read_trusted(WATCHDOG_RECORD, maximum=8192)
+            require(len(raw) <= 8192)
+            def pairs(items):
+                result = {}
+                for key, value in items:
+                    require(key not in result)
+                    result[key] = value
+                return result
+            value = json.loads(raw, object_pairs_hook=pairs,
+                               parse_constant=lambda _: require(False))
+            require(type(value) is dict and set(value) == {'at', 'verdict', 'reasons', 'run_id'})
+            require(type(value['at']) is int and 0 <= value['at'] <= int(time.time())+60 and
+                    value['verdict'] in ('ok', 'attention', 'not_started'))
+            require(type(value['reasons']) is list and len(value['reasons']) <= 32 and
+                    all(type(code) is str and code in WATCHDOG_REASONS for code in value['reasons']))
+            require((value['verdict'] == 'attention') == bool(value['reasons']))
+            require(value['run_id'] is None or type(value['run_id']) is str and
+                    re.fullmatch(r'[a-f0-9]{32}', value['run_id']))
+            require(value['verdict'] != 'ok' or value['run_id'] is not None)
+            require(value['verdict'] != 'not_started' or value['run_id'] is None)
+            return {'record': value, 'code': None}
+        except FileNotFoundError:
+            return {'record': None, 'code': 'WATCHDOG_RECORD_MISSING'}
+        except Exception:
+            return {'record': None, 'code': 'WATCHDOG_RECORD_INVALID'}
+
     def prod_status(self):
         # Read-only even before first use: no mkdir, locks, helpers or writes.
+        watchdog = self.watchdog_status()
         if not self.state.exists():
-            return {'run': None, 'requires_review': False}
+            return {'run': None, 'requires_review': False, 'watchdog': watchdog}
         with self.b.directory(self.state):
             pass
         if not self.record.exists():
-            return {'run': None, 'requires_review': os.path.lexists(self.state/'abort-inhibit.json') or os.path.lexists(self.state/'failed.json')}
+            return {'run': None, 'requires_review': os.path.lexists(self.state/'abort-inhibit.json') or os.path.lexists(self.state/'failed.json'), 'watchdog': watchdog}
         record = self.current()
         run = {key: record.get(key) for key in ('id', 'status', 'started', 'stopped', 'sha', 'stage', 'admitted')}
         alive = not self.exited(record)
@@ -1405,7 +1450,7 @@ class ProductionController(Controller):
                 worker = {key: d[key] for key in ('running', 'maintenance', 'databaseHealthy', 'ledgerOk') if type(d.get(key)) is bool}
                 worker['paper'] = d.get('mode') == 'PAPER'
         return {'run': run, 'controller_alive': alive, 'worker': worker,
-                'requires_review': record['status'] == 'failed_requires_review' or self.faults(record)}
+                'requires_review': record['status'] == 'failed_requires_review' or self.faults(record), 'watchdog': watchdog}
 
 
 def main():

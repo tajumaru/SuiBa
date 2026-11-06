@@ -16,6 +16,12 @@ p = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(p)
 
 
+def combine(status, watch, now, prod_read=True, watch_read=True):
+    status = {**status, 'watchdog': {'record': watch if watch_read else None,
+              'code': None if watch_read else 'WATCHDOG_RECORD_MISSING'}}
+    return p.combine(status, now, prod_read)
+
+
 def healthy(now=2000):
     status = {'run': {'id': 'a'*32, 'status': 'in_progress', 'started': 1000000,
                      'stopped': None, 'sha': 'e'*40, 'stage': 'monitoring', 'admitted': True},
@@ -28,24 +34,24 @@ def healthy(now=2000):
 class ShapeTests(unittest.TestCase):
     def test_current_consistent_observations_are_normal(self):
         status, watch = healthy()
-        result = p.combine(status, watch, 2000)
+        result = combine(status, watch, 2000)
         self.assertEqual(result, {'at': 2000, 'verdict': 'ok', 'reasons': [], 'run_id': 'a'*32,
                                   'prod_state': 'in_progress', 'watchdog_at': 1999})
         status['run'].update(status='completed', stage='stopped', stopped=1900000)
         status.update(controller_alive=False, worker=None)
-        self.assertEqual(p.combine(status, watch, 2000)['verdict'], 'ok')
+        self.assertEqual(combine(status, watch, 2000)['verdict'], 'ok')
 
     def test_not_started_never_creates_an_alert_even_when_private_record_cannot_be_read(self):
         status = {'run': None, 'requires_review': False}
-        for watch, read in ((None, False), ({'SECRET_FIXTURE': True}, True), (healthy()[1], True)):
-            result = p.combine(status, watch, 2000, watch_read=read)
+        for watch, read in ((None, False), (healthy()[1], True)):
+            result = combine(status, watch, 2000, watch_read=read)
             self.assertEqual(result['verdict'], 'not_started')
             self.assertEqual(result['reasons'], [])
 
     def test_unavailable_or_invalid_data_never_becomes_healthy(self):
         status, watch = healthy()
-        for prod_read, watch_read, code in ((False, True, 'PROD_STATUS_UNAVAILABLE'), (True, False, 'WATCHDOG_UNAVAILABLE')):
-            result = p.combine(status, watch, 2000, prod_read, watch_read)
+        for prod_read, watch_read, code in ((False, True, 'PROD_STATUS_UNAVAILABLE'),):
+            result = combine(status, watch, 2000, prod_read, watch_read)
             self.assertEqual(result['verdict'], 'attention'); self.assertIn(code, result['reasons'])
         for mutate in (lambda s: s.update(requires_review='SECRET_FIXTURE'),
                        lambda s: s['run'].update(id='SECRET_FIXTURE'),
@@ -53,31 +59,42 @@ class ShapeTests(unittest.TestCase):
                        lambda s: s.update(worker={'reachable': 0, 'reason': 'WORKER_UNREACHABLE'}),
                        lambda s: s.update(secret='SECRET_FIXTURE')):
             bad = copy.deepcopy(status); mutate(bad)
-            result = p.combine(bad, watch, 2000)
+            result = combine(bad, watch, 2000)
             self.assertEqual(result['reasons'], ['PROD_STATUS_INVALID'])
             self.assertNotIn('SECRET_FIXTURE', json.dumps(result))
         for bad in ({**watch, 'reasons': ['SECRET_FIXTURE'], 'verdict': 'attention'},
                     {**watch, 'at': True}, {**watch, 'verdict': 'attention'}, {**watch, 'extra': 'SECRET_FIXTURE'}):
-            self.assertIn('WATCHDOG_INVALID', p.combine(status, bad, 2000)['reasons'])
+            self.assertIn('PROD_STATUS_INVALID', combine(status, bad, 2000)['reasons'])
 
     def test_stale_future_and_different_run_records_require_review(self):
         status, watch = healthy()
         for at in (1099, 2061, 10**50):
-            result = p.combine(status, {**watch, 'at': at}, 2000)
+            result = combine(status, {**watch, 'at': at}, 2000)
             self.assertIn('WATCHDOG_STALE', result['reasons'])
             self.assertTrue(result['watchdog_at'] is None or result['watchdog_at'] <= 2060)
-        self.assertEqual(p.combine(status, {**watch, 'at': 1100}, 2000)['verdict'], 'ok')
-        self.assertIn('WATCHDOG_RUN_MISMATCH', p.combine(status, {**watch, 'run_id': 'b'*32}, 2000)['reasons'])
-        self.assertIn('STATUS_INCONSISTENT', p.combine(status, {'at': 2000, 'run_id': None, 'verdict': 'not_started', 'reasons': []}, 2000)['reasons'])
+        self.assertEqual(combine(status, {**watch, 'at': 1100}, 2000)['verdict'], 'ok')
+        self.assertIn('WATCHDOG_RUN_MISMATCH', combine(status, {**watch, 'run_id': 'b'*32}, 2000)['reasons'])
+        self.assertIn('STATUS_INCONSISTENT', combine(status, {'at': 2000, 'run_id': None, 'verdict': 'not_started', 'reasons': []}, 2000)['reasons'])
 
     def test_live_status_can_raise_attention_even_if_last_watchdog_was_normal(self):
         status, watch = healthy()
         status['worker'] = {'reachable': False, 'reason': 'WORKER_UNREACHABLE'}
-        self.assertIn('WORKER_UNREACHABLE', p.combine(status, watch, 2000)['reasons'])
+        self.assertIn('WORKER_UNREACHABLE', combine(status, watch, 2000)['reasons'])
         status.update(controller_alive=False, worker=None)
-        self.assertIn('CONTROLLER_NOT_RUNNING', p.combine(status, watch, 2000)['reasons'])
+        self.assertIn('CONTROLLER_NOT_RUNNING', combine(status, watch, 2000)['reasons'])
         status['run']['status'] = 'failed_requires_review'; status['requires_review'] = True
-        self.assertTrue({'REVIEW_REQUIRED', 'RUN_FAILED'} <= set(p.combine(status, watch, 2000)['reasons']))
+        self.assertTrue({'REVIEW_REQUIRED', 'RUN_FAILED'} <= set(combine(status, watch, 2000)['reasons']))
+
+    def test_missing_or_invalid_optional_record_uses_live_production_state(self):
+        status, _ = healthy()
+        for code in ('WATCHDOG_RECORD_MISSING', 'WATCHDOG_RECORD_INVALID'):
+            status['watchdog'] = {'record': None, 'code': code}
+            self.assertEqual(p.combine(status, 2000)['verdict'], 'ok')
+            bad = copy.deepcopy(status); bad['worker']['running'] = False
+            self.assertIn('TRADING_STOPPED', p.combine(bad, 2000)['reasons'])
+            bad = copy.deepcopy(status); bad['requires_review'] = True
+            self.assertIn('REVIEW_REQUIRED', p.combine(bad, 2000)['reasons'])
+            self.assertEqual(p.combine({'run': None, 'requires_review': False, 'watchdog': status['watchdog']}, 2000)['verdict'], 'not_started')
 
     def test_reader_rejects_duplicate_keys_nonfinite_and_large_responses(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -131,6 +148,7 @@ class SshTests(unittest.TestCase):
     def run_script(self, status, watch, prod_exit=0, watch_exit=0):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); (root/'bin').mkdir(); (root/'runner').mkdir()
+            status = {**status, 'watchdog': {'record': watch if watch_exit == 0 else None, 'code': None if watch_exit == 0 else 'WATCHDOG_RECORD_INVALID'}}
             (root/'prod').write_text(json.dumps(status)); (root/'watch').write_text(json.dumps(watch))
             (root/'calls').write_text('')
             (root/'bin/ssh-keygen').write_text('#!/bin/sh\nprintf "SECRET_FIXTURE_KEY_OUTPUT"\n')
@@ -142,8 +160,6 @@ with open(os.environ['MOCK_CALLS'],'a') as out: out.write(json.dumps({'command':
 sys.stderr.write('SECRET_FIXTURE_SSH_ERROR')
 if command=='sudo -n -- /usr/local/sbin/suiba-paper-check':
     sys.stdout.write(open(os.environ['MOCK_PROD']).read()); sys.exit(int(os.environ['MOCK_PROD_EXIT']))
-if command=='cat /var/lib/suiba-watchdog/status.json':
-    sys.stdout.write(open(os.environ['MOCK_WATCH']).read()); sys.exit(int(os.environ['MOCK_WATCH_EXIT']))
 sys.exit(77)
 ''')
             for command in (root/'bin').iterdir(): command.chmod(0o755)
@@ -164,19 +180,18 @@ sys.exit(77)
         status, watch = healthy(time.time())
         result, calls = self.run_script(status, watch)
         self.assertEqual(result['verdict'], 'ok')
-        self.assertEqual([call['command'] for call in calls], ['sudo -n -- /usr/local/sbin/suiba-paper-check', 'cat /var/lib/suiba-watchdog/status.json'])
+        self.assertEqual([call['command'] for call in calls], ['sudo -n -- /usr/local/sbin/suiba-paper-check'])
         self.assertEqual(json.loads(calls[0]['request']), {'operation': 'prod-status'})
-        self.assertEqual(calls[1]['request'], '')
         for call in calls:
             self.assertIn('StrictHostKeyChecking=yes', call['args'])
             self.assertIn('IdentitiesOnly=yes', call['args'])
             self.assertIn('PasswordAuthentication=no', call['args'])
 
-    def test_private_watchdog_record_and_failed_ssh_are_attention_not_false_recovery(self):
+    def test_invalid_optional_record_uses_live_status_and_failed_ssh_is_attention(self):
         import time
         status, watch = healthy(time.time())
         result, _ = self.run_script(status, watch, watch_exit=1)
-        self.assertIn('WATCHDOG_UNAVAILABLE', result['reasons'])
+        self.assertEqual(result['verdict'], 'ok')
         result, _ = self.run_script(status, watch, prod_exit=1)
         self.assertEqual(result['reasons'], ['PROD_STATUS_UNAVAILABLE'])
         result, _ = self.run_script({'run': None, 'requires_review': False}, None, watch_exit=1)

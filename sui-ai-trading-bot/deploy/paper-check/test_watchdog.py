@@ -40,6 +40,13 @@ class WatchdogTests(unittest.TestCase):
         e.update(lifecycle='clean', latch=True)
         self.assertEqual(w.assess(s, e, 2000), ('ok', [], 'a'*32))
 
+    def test_optional_previous_verdict_never_affects_current_checker_decision(self):
+        status, evidence = healthy()
+        for optional in ({'record': None, 'code': 'WATCHDOG_RECORD_INVALID'},
+                         {'record': {'at': 1, 'verdict': 'attention', 'reasons': ['RUN_FAILED'], 'run_id': 'a'*32}, 'code': None}):
+            status['watchdog'] = optional
+            self.assertEqual(w.assess(status, evidence, 2000), ('ok', [], 'a'*32))
+
     def test_not_started_is_silent_and_does_not_query_the_host(self):
         host = SimpleNamespace(status=lambda: {'run': None, 'requires_review': False},
                                collect=lambda *args: self.fail('host reads before first run'))

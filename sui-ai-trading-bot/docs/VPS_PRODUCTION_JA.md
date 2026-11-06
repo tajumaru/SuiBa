@@ -2,8 +2,8 @@
 
 これは設計書である。worker セッション一般化、controller の本番 op、
 本番 service の配布、host watchdog、Actions 側の通知
-（§8-3(i)～(v)）を実装している。watchdog 最終記録の SSH 読み取り権限は
-§5.3 の制約に従う。
+（§8-3(i)～(v)）を実装している。watchdog 最終判定は prod-status に
+含めて既存 wrapper から読み取る（§5.3）。
 対象は2点に限る：(1) さくら VPS
 上で PAPER 本番を回し続けるための起動・停止経路、(3) 止まったら
 気づける監視。状態の引っ越しと更新手順は骨子のみ、閲覧経路などは
@@ -377,7 +377,8 @@ broker 配置＋素の docker start）は、restart 強制や create-only と
   追加しない。Environment の既存承認が必要なら schedule も承認待ちに
   なる。その設定をこの workflow が変更することはない。
 - `docker/ssh-prod-status.sh` はピン済み SSH で既存 wrapper の prod-status
-  と固定の watchdog 記録パスを読む。raw 応答・SSH stderr はログに出さず、
+  を1回だけ呼び、その watchdog フィールドから最終判定を取得する。
+  raw 応答・SSH stderr はログに出さず、
   型・許可済みコード・ランID・15分以内の鮮度を検証した観測だけを渡す。
   読取失敗、不正な形、古い記録、ラン不一致を正常・回復とは扱わない。
 - 通知 job のみ built-in GITHUB_TOKEN に issues:write を付ける。専用ラベル
@@ -386,16 +387,20 @@ broker 配置＋素の docker start）は、restart 強制や create-only と
   作成・更新・close を行わない（過去の障害の回復とは断定しない）。他の
   Issue や PR は変更しない。要注意は通知後に workflow も失敗扱いにする。
   同時実行を直列化し、既存 Issue をページングして調べて重複作成を防ぐ。
-- **現行ホスト権限の制約**：第4段の watchdog 記録は root 所有、directory
-  700／file 600 であり、suiba-deploy の既存 sudoers は固定 wrapper のみを
-  許す。現行 wrapper に watchdog 記録の読み取り op はない。従って、この
-  PR でホスト権限を変更せずに行う固定 cat は、現行の権限では拒否される。
-  本番ランがある場合は WATCHDOG_UNAVAILABLE として正直に通知し、正常に
-  見せたり Issue を誤って閉じたりしない。未開始・レビュー不要なら無言で
-  Issue を作らない。通知を有効にする前に、既存の承認済み読み取り経路を
-  指定するか、別途固定の読み取り op を用意する必要がある。汎用 sudo cat、
-  root SSH、chmod、追加認証情報でこの境界を迂回しない。この PR には
-  ホスト側変更を含めず、変数の有効化・実ホスト確認は別途行う。
+- prod-status の追加フィールドは `watchdog: {record, code}`。固定の root
+  信頼パス `/var/lib/suiba-watchdog/status.json` を上限8KiBで読み、時刻・
+  verdict・許可済み理由コード・run_id を検証する。正常な記録なら code は
+  null、記録なしは `WATCHDOG_RECORD_MISSING`、壊れた形や信頼できない
+  ファイルは `WATCHDOG_RECORD_INVALID` とし record は null。raw 内容・
+  例外・認証情報は返さない。読み取りに書き込み・状態作成は伴わない。
+- 記録なし／不正の2コードだけでは通知を発生させず、prod-status 本体の
+  controller・worker・要レビュー状態で判定する（正常なら回復close可）。
+  有効な最終記録がある場合は、その要注意理由・15分超の古さ・ラン不一致を
+  併せて判定する。本体自体の取得失敗／不正は要注意のまま。host watchdog
+  自身の判定はこの追加フィールドを参照せず、過去の判定を引き継がない。
+- 同じPRでcontrollerとsetupの配布ピンを更新する。既存sudoers・ファイル
+  権限・SSH認証情報は変更しない。controller配布には既存setup経路を使う。
+  repo変数の有効化、ホスト配布、実ホスト確認は明示切替時に行う。
 
 | 候補 | 即時性 | ホスト側の追加 | 備考 |
 |---|---|---|---|

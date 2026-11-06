@@ -35,7 +35,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24.22.1'
-      - name: Read fixed production status and watchdog paths over pinned SSH
+      - name: Read production status with validated watchdog verdict over pinned SSH
         id: observation
         env:
           PRODUCTION_REPORT_FILE: ${{ runner.temp }}/suiba-production-monitor.json
