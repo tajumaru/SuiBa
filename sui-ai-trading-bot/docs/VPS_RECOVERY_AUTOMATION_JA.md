@@ -142,6 +142,19 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   `approve-deploy` は既存メソッドをそのまま操作化したもので、
   reconcile（preflight 死専用）では届かなかった監視失敗後の再配置が
   Actions で完結する。
+- 市場プロバイダを DeepBook へ切り替え（2026-11-07、PR #85）:
+  VPS の compose の `MARKET_DATA_PROVIDER` を geckoterminal から
+  deepbook に変更した。経緯は GeckoTerminal 利用時に監視段階で
+  UPSTREAM_HTTP_429 のハードストップが続いたため。コントローラは
+  コンテナ env の値を期待ソースとして採用する（どちらでも可）ため、
+  切替の成否は診断の「Market at failure: source」ではなく、配置後の
+  コンテナ env と実行時ソースで確認する。
+  なお初回の切替配置（seq 8）は、setup の取得がマージ直後で
+  raw の旧内容（ブランチ URL のキャッシュ）に当たり、旧 compose の
+  まま配置される事故があった。setup 系スクリプトはコミット固定の
+  raw URL（`raw.githubusercontent.com/tajumaru/SuiBa/<sha>/...`）で
+  取得し、配置後に compose の sha256 が想定ピンと一致するか
+  setup の出力で必ず確認すること。
 - 配置コンテナの環境変数（2026-11-06）: paper-check の env 検査が
   要求する TRADING_PAIR=SUI_USDC / PAPER_CHECK_MODE=sui-30m /
   MARKET_DATA_PROVIDER=geckoterminal を `docker/compose.vps.yaml` に
