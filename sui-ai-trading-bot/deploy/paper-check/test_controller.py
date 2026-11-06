@@ -658,6 +658,35 @@ class StopTests(unittest.TestCase):
                     with self.assertRaises(RuntimeError): ctl.wait_ready(100000)
                     self.assertEqual(calls, [])
 
+    def test_readiness_reset_only_for_retry_admitted_starts(self):
+        stale = {'startReady': False, 'readiness': {'apiAccess': False, 'runtimeClear': False, 'ledger': True}}
+        ready = {'startReady': True, 'readiness': {'apiAccess': True, 'runtimeClear': True, 'ledger': True}}
+        for admitted, pages, clock, expect in (
+                (True, [stale, stale, ready], [0, 0, 1, 2], 1),
+                (True, [ready], [0, 0], 0),
+                (False, [stale, stale], [0, 0, 61], 0)):
+            with self.subTest(admitted=admitted, pages=len(pages)):
+                ctl = object.__new__(c.Controller)
+                ctl.inspect = lambda: {'State': {'Running': True, 'OOMKilled': False, 'Health': {'Status': 'healthy'}}, 'RestartCount': 0}
+                ctl.retry_admitted = admitted
+                calls = []
+                page_iter = iter(pages)
+                def api(method, path, value=None):
+                    calls.append((method, path, value))
+                    if path == '/api/control': return {'running': False}
+                    return next(page_iter)
+                ctl.api = api
+                with patch.object(c.time, 'monotonic', side_effect=clock), patch.object(c.time, 'time', return_value=0), patch.object(c.time, 'sleep'):
+                    if expect or len(pages) == 1:
+                        self.assertTrue(ctl.wait_ready(100000)['startReady'])
+                    else:
+                        with self.assertRaises(RuntimeError): ctl.wait_ready(100000)
+                resets = [x for x in calls if x[1] == '/api/control']
+                self.assertEqual(len(resets), expect)
+                if expect:
+                    self.assertEqual(resets[0][2], {'command': 'reset'})
+                    self.assertTrue(ctl.readiness['staleReset'])
+
     def test_market_fresh_waits_for_the_first_success(self):
         fresh = {'source': 'GeckoTerminal', 'lastSuccessAt': 1000}
         cold = {'source': 'GeckoTerminal', 'lastSuccessAt': None}
