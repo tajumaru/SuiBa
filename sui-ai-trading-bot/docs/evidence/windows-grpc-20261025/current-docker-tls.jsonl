@@ -1,0 +1,6 @@
+{"at": "2026-10-24T22:51:42.690Z", "host": "fullnode.mainnet.sui.io", "attempt": 1, "status": "TLS_OK", "dnsMs": 215, "tcpMs": 39, "tlsMs": 81, "totalMs": 336, "node": "v24.22.1", "platform": "linux"}
+{"at": "2026-10-24T22:51:43.027Z", "host": "fullnode.mainnet.sui.io", "attempt": 2, "status": "TLS_OK", "dnsMs": 6, "tcpMs": 57, "tlsMs": 77, "totalMs": 140, "node": "v24.22.1", "platform": "linux"}
+{"at": "2026-10-24T22:51:43.167Z", "host": "fullnode.mainnet.sui.io", "attempt": 3, "status": "TLS_OK", "dnsMs": 4, "tcpMs": 50, "tlsMs": 70, "totalMs": 125, "node": "v24.22.1", "platform": "linux"}
+{"at": "2026-10-24T22:51:43.292Z", "host": "deepbook-indexer.mainnet.mystenlabs.com", "attempt": 1, "status": "TLS_OK", "dnsMs": 10, "tcpMs": 44, "tlsMs": 86, "totalMs": 141, "node": "v24.22.1", "platform": "linux"}
+{"at": "2026-10-24T22:51:43.433Z", "host": "deepbook-indexer.mainnet.mystenlabs.com", "attempt": 2, "status": "TLS_OK", "dnsMs": 3, "tcpMs": 49, "tlsMs": 77, "totalMs": 129, "node": "v24.22.1", "platform": "linux"}
+{"at": "2026-10-24T22:51:43.562Z", "host": "deepbook-indexer.mainnet.mystenlabs.com", "attempt": 3, "status": "TLS_OK", "dnsMs": 2, "tcpMs": 55, "tlsMs": 89, "totalMs": 147, "node": "v24.22.1", "platform": "linux"}

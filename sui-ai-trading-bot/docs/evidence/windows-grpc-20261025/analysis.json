@@ -1,0 +1,1346 @@
+{
+  "targetSha": "70ca8da7742dc032b0edcc2c31ee902fe765b72a",
+  "runId": "winverify-20261024T223226112Z-70ca8da",
+  "suiHttpObservations": [
+    {
+      "transportId": "dc310f2c-3220-484b-9fa0-1773beea6de3",
+      "layer": "HTTP",
+      "operation": "METADATA",
+      "requestId": "3afc0706-1a43-46f3-9116-0d9c415b993a",
+      "rpcId": "8aa9627a-6ffc-42d3-b38f-6957275ec605",
+      "healthId": "d4ef6b4f-3d99-45f3-8fb2-3df14b63bd5e",
+      "cycleId": "8664bce6-e561-4386-a984-3bd47aa11ae5",
+      "coin": "SUI",
+      "at": 1792881272749,
+      "elapsedMs": 547,
+      "success": true,
+      "code": null,
+      "httpStatus": 200,
+      "transportAttempted": true,
+      "network": {
+        "phase": "BODY",
+        "totalMs": 547,
+        "available": true,
+        "connectionId": 1,
+        "protocol": "h1",
+        "family": 4,
+        "reusedConnection": false,
+        "tcpAttempts": 1,
+        "dnsMs": 71,
+        "tcpMs": 34,
+        "tlsMs": 80,
+        "headersMs": 542,
+        "responseWaitMs": 319,
+        "bodyMs": 4,
+        "phaseElapsedMs": 4
+      }
+    },
+    {
+      "transportId": "dc310f2c-3220-484b-9fa0-1773beea6de3",
+      "layer": "HTTP",
+      "operation": "METADATA",
+      "requestId": "041afb32-7ddd-4f5f-b9a7-04299e282c5f",
+      "rpcId": "77cdc3a9-9ece-4af5-937d-2a22869a19bc",
+      "healthId": "d4ef6b4f-3d99-45f3-8fb2-3df14b63bd5e",
+      "cycleId": "8664bce6-e561-4386-a984-3bd47aa11ae5",
+      "coin": "USDC",
+      "at": 1792881273214,
+      "elapsedMs": 987,
+      "success": true,
+      "code": null,
+      "httpStatus": 200,
+      "transportAttempted": true,
+      "network": {
+        "phase": "BODY",
+        "totalMs": 987,
+        "available": true,
+        "connectionId": 2,
+        "protocol": "h1",
+        "family": 4,
+        "reusedConnection": false,
+        "tcpAttempts": 1,
+        "dnsMs": 131,
+        "tcpMs": 51,
+        "tlsMs": 68,
+        "headersMs": 982,
+        "responseWaitMs": 134,
+        "bodyMs": 5,
+        "phaseElapsedMs": 5
+      }
+    },
+    {
+      "transportId": "dc310f2c-3220-484b-9fa0-1773beea6de3",
+      "layer": "HTTP",
+      "operation": "METADATA",
+      "requestId": "fa01dedc-1ed3-4ca1-8e07-38e4f2712be4",
+      "rpcId": "9e43fcbf-91b8-45ff-928c-e65c23d7b22e",
+      "healthId": "004e38fc-9c19-4a68-b616-04fd8ba98e28",
+      "cycleId": "d38cd49a-6a29-48e6-9073-8be1f8b3c84d",
+      "coin": "SUI",
+      "at": 1792881431014,
+      "elapsedMs": 602,
+      "success": true,
+      "code": null,
+      "httpStatus": 200,
+      "transportAttempted": true,
+      "network": {
+        "phase": "BODY",
+        "totalMs": 602,
+        "available": true,
+        "connectionId": 3,
+        "protocol": "h1",
+        "family": 4,
+        "reusedConnection": false,
+        "tcpAttempts": 1,
+        "dnsMs": 131,
+        "tcpMs": 42,
+        "tlsMs": 95,
+        "headersMs": 601,
+        "responseWaitMs": 324,
+        "bodyMs": 1,
+        "phaseElapsedMs": 1
+      }
+    },
+    {
+      "transportId": "dc310f2c-3220-484b-9fa0-1773beea6de3",
+      "layer": "HTTP",
+      "operation": "METADATA",
+      "requestId": "0eb967a4-7049-4fb2-9ca1-cf4064740d53",
+      "rpcId": "aafdfa89-018b-4ee9-a91b-454c40146188",
+      "healthId": "004e38fc-9c19-4a68-b616-04fd8ba98e28",
+      "cycleId": "d38cd49a-6a29-48e6-9073-8be1f8b3c84d",
+      "coin": "USDC",
+      "at": 1792881431495,
+      "elapsedMs": 1080,
+      "success": true,
+      "code": null,
+      "httpStatus": 200,
+      "transportAttempted": true,
+      "network": {
+        "phase": "BODY",
+        "totalMs": 1080,
+        "available": true,
+        "connectionId": 4,
+        "protocol": "h1",
+        "family": 4,
+        "reusedConnection": false,
+        "tcpAttempts": 1,
+        "dnsMs": 173,
+        "tcpMs": 65,
+        "tlsMs": 66,
+        "headersMs": 1079,
+        "responseWaitMs": 112,
+        "bodyMs": 1,
+        "phaseElapsedMs": 1
+      }
+    },
+    {
+      "transportId": "dc310f2c-3220-484b-9fa0-1773beea6de3",
+      "layer": "HTTP",
+      "operation": "METADATA",
+      "requestId": "87c6e93f-9bb3-49d5-9bc2-4596fae2a7f7",
+      "rpcId": "6d2afb08-c7fb-4c38-bc68-3131ed3f156f",
+      "healthId": "f789697d-0005-4505-b9fc-1bb7d9e2ac39",
+      "cycleId": "045f888d-0123-4085-99f5-4269580a6291",
+      "coin": "SUI",
+      "at": 1792881620617,
+      "elapsedMs": 10242,
+      "success": false,
+      "code": "UPSTREAM_TIMEOUT",
+      "httpStatus": null,
+      "transportAttempted": true,
+      "network": {
+        "phase": "TLS",
+        "totalMs": 10242,
+        "available": true,
+        "connectionId": 5,
+        "family": 4,
+        "reusedConnection": false,
+        "tcpAttempts": 1,
+        "dnsMs": 2762,
+        "tcpMs": 6496,
+        "phaseElapsedMs": 982
+      }
+    },
+    {
+      "transportId": "dc310f2c-3220-484b-9fa0-1773beea6de3",
+      "layer": "HTTP",
+      "operation": "METADATA",
+      "requestId": "72969996-ad96-4065-a28a-9cfd7cea05ff",
+      "rpcId": "df3fc59a-18d0-432e-8cce-2d414565a31a",
+      "healthId": "f789697d-0005-4505-b9fc-1bb7d9e2ac39",
+      "cycleId": "045f888d-0123-4085-99f5-4269580a6291",
+      "coin": "USDC",
+      "at": 1792881630876,
+      "elapsedMs": 20500,
+      "success": false,
+      "code": "UPSTREAM_TIMEOUT",
+      "httpStatus": null,
+      "transportAttempted": true,
+      "network": {
+        "phase": "TLS",
+        "totalMs": 20500,
+        "available": true,
+        "connectionId": 6,
+        "family": 4,
+        "reusedConnection": false,
+        "tcpAttempts": 1,
+        "dnsMs": 135,
+        "tcpMs": 3237,
+        "phaseElapsedMs": 6806
+      }
+    },
+    {
+      "transportId": "dc310f2c-3220-484b-9fa0-1773beea6de3",
+      "layer": "HTTP",
+      "operation": "METADATA",
+      "requestId": "6142f5a2-690e-4bcd-97f1-d87a337896d4",
+      "rpcId": "a36a6eb1-0d9f-4db8-9109-36ebdd319650",
+      "healthId": "c5f36240-fa5a-41b3-8c49-147beff4fb7d",
+      "cycleId": "4b6f0f9c-6bb9-420b-b2e8-3a30f6374f6d",
+      "coin": "SUI",
+      "at": 1792881650448,
+      "elapsedMs": 10225,
+      "success": false,
+      "code": "UPSTREAM_TIMEOUT",
+      "httpStatus": null,
+      "transportAttempted": true,
+      "network": {
+        "phase": "TLS",
+        "totalMs": 10225,
+        "available": true,
+        "connectionId": 7,
+        "family": 4,
+        "reusedConnection": false,
+        "tcpAttempts": 1,
+        "dnsMs": 4,
+        "tcpMs": 5328,
+        "phaseElapsedMs": 4892
+      }
+    },
+    {
+      "transportId": "dc310f2c-3220-484b-9fa0-1773beea6de3",
+      "layer": "HTTP",
+      "operation": "METADATA",
+      "requestId": "82586cba-2aa7-4c00-8d15-42b0104f4f50",
+      "rpcId": "ae128157-7fe4-4e34-a0ca-9a4560870526",
+      "healthId": "c5f36240-fa5a-41b3-8c49-147beff4fb7d",
+      "cycleId": "4b6f0f9c-6bb9-420b-b2e8-3a30f6374f6d",
+      "coin": "USDC",
+      "at": 1792881660741,
+      "elapsedMs": 20517,
+      "success": false,
+      "code": "UPSTREAM_TIMEOUT",
+      "httpStatus": null,
+      "transportAttempted": true,
+      "network": {
+        "phase": "TLS",
+        "totalMs": 20517,
+        "available": true,
+        "connectionId": 8,
+        "family": 4,
+        "reusedConnection": false,
+        "tcpAttempts": 1,
+        "dnsMs": 5900,
+        "tcpMs": 2403,
+        "phaseElapsedMs": 1913
+      }
+    },
+    {
+      "transportId": "dc310f2c-3220-484b-9fa0-1773beea6de3",
+      "layer": "HTTP",
+      "operation": "METADATA",
+      "requestId": "c85dfd68-0b97-4669-a94c-7e4636d6a0e3",
+      "rpcId": "8ea28a77-82bc-4f3b-83a3-50bc9de8064b",
+      "healthId": "b83a3b57-8b08-41d9-98f2-ddbd1e62aba4",
+      "cycleId": "0d4469ed-3969-4c80-b7f9-898e0ce317e2",
+      "coin": "SUI",
+      "at": 1792881680702,
+      "elapsedMs": 10367,
+      "success": false,
+      "code": "UPSTREAM_TIMEOUT",
+      "httpStatus": null,
+      "transportAttempted": true,
+      "network": {
+        "phase": "TLS",
+        "totalMs": 10367,
+        "available": true,
+        "connectionId": 9,
+        "family": 4,
+        "reusedConnection": false,
+        "tcpAttempts": 1,
+        "dnsMs": 3,
+        "tcpMs": 4076,
+        "phaseElapsedMs": 6286
+      }
+    },
+    {
+      "transportId": "dc310f2c-3220-484b-9fa0-1773beea6de3",
+      "layer": "HTTP",
+      "operation": "METADATA",
+      "requestId": "a52c645a-ae80-4c10-9b27-944b5ac63ab2",
+      "rpcId": "e2b9c315-4cec-4b98-a926-57d4ebf1ddb8",
+      "healthId": "b83a3b57-8b08-41d9-98f2-ddbd1e62aba4",
+      "cycleId": "0d4469ed-3969-4c80-b7f9-898e0ce317e2",
+      "coin": "USDC",
+      "at": 1792881691138,
+      "elapsedMs": 20802,
+      "success": false,
+      "code": "UPSTREAM_TIMEOUT",
+      "httpStatus": null,
+      "transportAttempted": true,
+      "network": {
+        "phase": "TLS",
+        "totalMs": 20802,
+        "available": true,
+        "connectionId": 10,
+        "family": 4,
+        "reusedConnection": false,
+        "tcpAttempts": 1,
+        "dnsMs": 120,
+        "tcpMs": 7549,
+        "phaseElapsedMs": 2688
+      }
+    }
+  ],
+  "suiApiAttempts": [
+    {
+      "kind": "api",
+      "at": 1792881272748,
+      "data": {
+        "api": "Sui gRPC",
+        "success": true,
+        "code": null,
+        "latencyMs": 544,
+        "attempt": 0,
+        "occurredAt": 1792881272748
+      }
+    },
+    {
+      "kind": "api",
+      "at": 1792881273213,
+      "data": {
+        "api": "Sui gRPC",
+        "success": true,
+        "code": null,
+        "latencyMs": 392,
+        "attempt": 0,
+        "occurredAt": 1792881273213
+      }
+    },
+    {
+      "kind": "api",
+      "at": 1792881431013,
+      "data": {
+        "api": "Sui gRPC",
+        "success": true,
+        "code": null,
+        "latencyMs": 602,
+        "attempt": 0,
+        "occurredAt": 1792881431013
+      }
+    },
+    {
+      "kind": "api",
+      "at": 1792881431495,
+      "data": {
+        "api": "Sui gRPC",
+        "success": true,
+        "code": null,
+        "latencyMs": 419,
+        "attempt": 0,
+        "occurredAt": 1792881431495
+      }
+    },
+    {
+      "kind": "api",
+      "at": 1792881620617,
+      "data": {
+        "api": "Sui gRPC",
+        "success": false,
+        "code": "UPSTREAM_TIMEOUT",
+        "latencyMs": 10001,
+        "attempt": 0,
+        "occurredAt": 1792881620377,
+        "failure": {
+          "api": "Sui gRPC",
+          "host": "fullnode.mainnet.sui.io",
+          "operation": "SUI_GRPC_READ",
+          "method": "POST",
+          "code": "UPSTREAM_TIMEOUT",
+          "causeCode": null,
+          "phase": "TLS",
+          "status": null,
+          "elapsedMs": 10001,
+          "occurredAt": 1792881620377,
+          "startedAt": 1792881610380,
+          "endedAt": 1792881620377,
+          "retryCount": 0,
+          "lastSuccessAt": 1792881431495,
+          "lastApiSuccessAt": 1792881431495,
+          "timeoutType": "TLS",
+          "transportTimings": {
+            "dnsMs": 2762,
+            "tcpMs": 6496,
+            "totalMs": 10001,
+            "reusedConnection": false
+          }
+        }
+      }
+    },
+    {
+      "kind": "api",
+      "at": 1792881630876,
+      "data": {
+        "api": "Sui gRPC",
+        "success": false,
+        "code": "UPSTREAM_TIMEOUT",
+        "latencyMs": 10002,
+        "attempt": 0,
+        "occurredAt": 1792881630699,
+        "failure": {
+          "api": "Sui gRPC",
+          "host": "fullnode.mainnet.sui.io",
+          "operation": "SUI_GRPC_READ",
+          "method": "POST",
+          "code": "UPSTREAM_TIMEOUT",
+          "causeCode": null,
+          "phase": "TLS",
+          "status": null,
+          "elapsedMs": 10002,
+          "occurredAt": 1792881630698,
+          "startedAt": 1792881620697,
+          "endedAt": 1792881630698,
+          "retryCount": 0,
+          "lastSuccessAt": 1792881431495,
+          "lastApiSuccessAt": 1792881431495,
+          "timeoutType": "TLS",
+          "transportTimings": {
+            "dnsMs": 135,
+            "tcpMs": 3237,
+            "totalMs": 20321,
+            "reusedConnection": false
+          }
+        }
+      }
+    },
+    {
+      "kind": "api",
+      "at": 1792881650448,
+      "data": {
+        "api": "Sui gRPC",
+        "success": false,
+        "code": "UPSTREAM_TIMEOUT",
+        "latencyMs": 10001,
+        "attempt": 0,
+        "occurredAt": 1792881650223,
+        "failure": {
+          "api": "Sui gRPC",
+          "host": "fullnode.mainnet.sui.io",
+          "operation": "SUI_GRPC_READ",
+          "method": "POST",
+          "code": "UPSTREAM_TIMEOUT",
+          "causeCode": null,
+          "phase": "TLS",
+          "status": null,
+          "elapsedMs": 10001,
+          "occurredAt": 1792881650223,
+          "startedAt": 1792881640228,
+          "endedAt": 1792881650223,
+          "retryCount": 0,
+          "lastSuccessAt": 1792881431495,
+          "lastApiSuccessAt": 1792881431495,
+          "timeoutType": "TLS",
+          "transportTimings": {
+            "dnsMs": 4,
+            "tcpMs": 5328,
+            "totalMs": 10000,
+            "reusedConnection": false
+          }
+        }
+      }
+    },
+    {
+      "kind": "api",
+      "at": 1792881660740,
+      "data": {
+        "api": "Sui gRPC",
+        "success": false,
+        "code": "UPSTREAM_TIMEOUT",
+        "latencyMs": 10001,
+        "attempt": 0,
+        "occurredAt": 1792881660524,
+        "failure": {
+          "api": "Sui gRPC",
+          "host": "fullnode.mainnet.sui.io",
+          "operation": "SUI_GRPC_READ",
+          "method": "POST",
+          "code": "UPSTREAM_TIMEOUT",
+          "causeCode": null,
+          "phase": "TLS",
+          "status": null,
+          "elapsedMs": 10001,
+          "occurredAt": 1792881660524,
+          "startedAt": 1792881650523,
+          "endedAt": 1792881660524,
+          "retryCount": 0,
+          "lastSuccessAt": 1792881431495,
+          "lastApiSuccessAt": 1792881431495,
+          "timeoutType": "TLS",
+          "transportTimings": {
+            "dnsMs": 5900,
+            "tcpMs": 2403,
+            "totalMs": 20300,
+            "reusedConnection": false
+          }
+        }
+      }
+    },
+    {
+      "kind": "api",
+      "at": 1792881680701,
+      "data": {
+        "api": "Sui gRPC",
+        "success": false,
+        "code": "UPSTREAM_TIMEOUT",
+        "latencyMs": 10001,
+        "attempt": 0,
+        "occurredAt": 1792881680336,
+        "failure": {
+          "api": "Sui gRPC",
+          "host": "fullnode.mainnet.sui.io",
+          "operation": "SUI_GRPC_READ",
+          "method": "POST",
+          "code": "UPSTREAM_TIMEOUT",
+          "causeCode": null,
+          "phase": "TLS",
+          "status": null,
+          "elapsedMs": 10001,
+          "occurredAt": 1792881680336,
+          "startedAt": 1792881670341,
+          "endedAt": 1792881680336,
+          "retryCount": 0,
+          "lastSuccessAt": 1792881431495,
+          "lastApiSuccessAt": 1792881431495,
+          "timeoutType": "TLS",
+          "transportTimings": {
+            "dnsMs": 3,
+            "tcpMs": 4076,
+            "totalMs": 10001,
+            "reusedConnection": false
+          }
+        }
+      }
+    },
+    {
+      "kind": "api",
+      "at": 1792881691137,
+      "data": {
+        "api": "Sui gRPC",
+        "success": false,
+        "code": "UPSTREAM_TIMEOUT",
+        "latencyMs": 10003,
+        "attempt": 0,
+        "occurredAt": 1792881690779,
+        "failure": {
+          "api": "Sui gRPC",
+          "host": "fullnode.mainnet.sui.io",
+          "operation": "SUI_GRPC_READ",
+          "method": "POST",
+          "code": "UPSTREAM_TIMEOUT",
+          "causeCode": null,
+          "phase": "TLS",
+          "status": null,
+          "elapsedMs": 10002,
+          "occurredAt": 1792881690778,
+          "startedAt": 1792881680776,
+          "endedAt": 1792881690778,
+          "retryCount": 0,
+          "lastSuccessAt": 1792881431495,
+          "lastApiSuccessAt": 1792881431495,
+          "timeoutType": "TLS",
+          "transportTimings": {
+            "dnsMs": 120,
+            "tcpMs": 7549,
+            "totalMs": 20442,
+            "reusedConnection": false
+          }
+        }
+      }
+    }
+  ],
+  "cycles": [
+    {
+      "began": 1792881272071,
+      "at": 1792881281597,
+      "durationMs": 9526,
+      "action": "WAIT",
+      "error": null,
+      "execution": {
+        "cycleId": "8664bce6-e561-4386-a984-3bd47aa11ae5",
+        "beganAt": 1792881272071,
+        "runningAtStart": false,
+        "generationAtStart": 1,
+        "connectivityAtStart": "HEALTHY",
+        "analysis": {
+          "cycleId": "8664bce6-e561-4386-a984-3bd47aa11ae5",
+          "runningAtStart": false,
+          "runningAtAnalysis": false,
+          "ordersAllowedAtAnalysis": false,
+          "generationAtStart": 1,
+          "generationAtAnalysis": 1,
+          "connectivityAtAnalysis": "HEALTHY"
+        },
+        "outcome": "SAFETY_GATE"
+      }
+    },
+    {
+      "began": 1792881310144,
+      "at": 1792881314787,
+      "durationMs": 4643,
+      "action": "WAIT",
+      "error": null,
+      "execution": {
+        "cycleId": "11deb16b-02d1-4d6b-b751-1fcba5b9e671",
+        "beganAt": 1792881310144,
+        "runningAtStart": false,
+        "generationAtStart": 1,
+        "connectivityAtStart": "HEALTHY",
+        "analysis": {
+          "cycleId": "11deb16b-02d1-4d6b-b751-1fcba5b9e671",
+          "runningAtStart": false,
+          "runningAtAnalysis": false,
+          "ordersAllowedAtAnalysis": false,
+          "generationAtStart": 1,
+          "generationAtAnalysis": 1,
+          "connectivityAtAnalysis": "HEALTHY"
+        },
+        "outcome": "SAFETY_GATE"
+      }
+    },
+    {
+      "began": 1792881370229,
+      "at": 1792881373497,
+      "durationMs": 3268,
+      "action": "WAIT",
+      "error": null,
+      "execution": {
+        "cycleId": "ba7b0437-4d9e-4419-826c-a27b224185fa",
+        "beganAt": 1792881370229,
+        "runningAtStart": false,
+        "generationAtStart": 1,
+        "connectivityAtStart": "HEALTHY",
+        "analysis": {
+          "cycleId": "ba7b0437-4d9e-4419-826c-a27b224185fa",
+          "runningAtStart": false,
+          "runningAtAnalysis": false,
+          "ordersAllowedAtAnalysis": false,
+          "generationAtStart": 1,
+          "generationAtAnalysis": 1,
+          "connectivityAtAnalysis": "HEALTHY"
+        },
+        "outcome": "SAFETY_GATE"
+      }
+    },
+    {
+      "began": 1792881430176,
+      "at": 1792881435277,
+      "durationMs": 5101,
+      "action": "WAIT",
+      "error": null,
+      "execution": {
+        "cycleId": "d38cd49a-6a29-48e6-9073-8be1f8b3c84d",
+        "beganAt": 1792881430176,
+        "runningAtStart": false,
+        "generationAtStart": 1,
+        "connectivityAtStart": "HEALTHY",
+        "analysis": {
+          "cycleId": "d38cd49a-6a29-48e6-9073-8be1f8b3c84d",
+          "runningAtStart": false,
+          "runningAtAnalysis": false,
+          "ordersAllowedAtAnalysis": false,
+          "generationAtStart": 1,
+          "generationAtAnalysis": 1,
+          "connectivityAtAnalysis": "HEALTHY"
+        },
+        "outcome": "SAFETY_GATE"
+      }
+    },
+    {
+      "began": 1792881490153,
+      "at": 1792881504835,
+      "durationMs": 14682,
+      "action": "WAIT",
+      "error": null,
+      "execution": {
+        "cycleId": "1cb5a1ff-03d4-460e-88eb-0677e572ad25",
+        "beganAt": 1792881490153,
+        "runningAtStart": false,
+        "generationAtStart": 1,
+        "connectivityAtStart": "HEALTHY",
+        "analysis": {
+          "cycleId": "1cb5a1ff-03d4-460e-88eb-0677e572ad25",
+          "runningAtStart": false,
+          "runningAtAnalysis": false,
+          "ordersAllowedAtAnalysis": false,
+          "generationAtStart": 1,
+          "generationAtAnalysis": 1,
+          "connectivityAtAnalysis": "HEALTHY"
+        },
+        "outcome": "SAFETY_GATE"
+      }
+    },
+    {
+      "began": 1792881550183,
+      "at": 1792881553834,
+      "durationMs": 3651,
+      "action": "WAIT",
+      "error": null,
+      "execution": {
+        "cycleId": "7da06b21-270d-4591-b20e-ab9f8d1ab073",
+        "beganAt": 1792881550183,
+        "runningAtStart": false,
+        "generationAtStart": 1,
+        "connectivityAtStart": "HEALTHY",
+        "analysis": {
+          "cycleId": "7da06b21-270d-4591-b20e-ab9f8d1ab073",
+          "runningAtStart": false,
+          "runningAtAnalysis": false,
+          "ordersAllowedAtAnalysis": false,
+          "generationAtStart": 1,
+          "generationAtAnalysis": 1,
+          "connectivityAtAnalysis": "HEALTHY"
+        },
+        "outcome": "SAFETY_GATE"
+      }
+    },
+    {
+      "began": 1792881610112,
+      "at": 1792881631643,
+      "durationMs": 21531,
+      "action": null,
+      "error": "SUI_READ_FAILED",
+      "execution": {
+        "cycleId": "045f888d-0123-4085-99f5-4269580a6291",
+        "beganAt": 1792881610112,
+        "runningAtStart": false,
+        "generationAtStart": 1,
+        "connectivityAtStart": "HEALTHY",
+        "analysis": null,
+        "outcome": "FAILED"
+      }
+    },
+    {
+      "began": 1792881640110,
+      "at": 1792881661541,
+      "durationMs": 21431,
+      "action": null,
+      "error": "SUI_READ_FAILED",
+      "execution": {
+        "cycleId": "4b6f0f9c-6bb9-420b-b2e8-3a30f6374f6d",
+        "beganAt": 1792881640110,
+        "runningAtStart": false,
+        "generationAtStart": 3,
+        "connectivityAtStart": "DEGRADED",
+        "analysis": null,
+        "outcome": "FAILED"
+      }
+    },
+    {
+      "began": 1792881670223,
+      "at": 1792881692447,
+      "durationMs": 22224,
+      "action": null,
+      "error": "SUI_READ_FAILED",
+      "execution": {
+        "cycleId": "0d4469ed-3969-4c80-b7f9-898e0ce317e2",
+        "beganAt": 1792881670223,
+        "runningAtStart": false,
+        "generationAtStart": 5,
+        "connectivityAtStart": "DEGRADED",
+        "analysis": null,
+        "outcome": "FAILED"
+      }
+    }
+  ],
+  "sqliteUnionMsDuringFailedRequests": [
+    87,
+    133,
+    65,
+    156,
+    50,
+    120
+  ],
+  "eventLoopSpikes": [
+    {
+      "v": 1,
+      "kind": "event-loop-spike",
+      "startedAt": 1792881280053,
+      "endedAt": 1792881281663,
+      "windowMs": 1610,
+      "maxDelayMs": 1062.207,
+      "p50Ms": 20.513,
+      "p95Ms": 89.457,
+      "p99Ms": 1062.207,
+      "thresholdMs": 500,
+      "cycleId": null,
+      "memory": {
+        "rss": 184741888,
+        "heapTotal": 108281856,
+        "heapUsed": 40538176,
+        "external": 8662121,
+        "arrayBuffers": 4244157
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event-loop-spike",
+      "startedAt": 1792881311661,
+      "endedAt": 1792881314913,
+      "windowMs": 3252,
+      "maxDelayMs": 2466.251,
+      "p50Ms": 20.333,
+      "p95Ms": 71.893,
+      "p99Ms": 2466.251,
+      "thresholdMs": 500,
+      "cycleId": null,
+      "memory": {
+        "rss": 191819776,
+        "heapTotal": 108281856,
+        "heapUsed": 56067328,
+        "external": 10245998,
+        "arrayBuffers": 5827093
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event-loop-spike",
+      "startedAt": 1792881371913,
+      "endedAt": 1792881373556,
+      "windowMs": 1643,
+      "maxDelayMs": 1044.906,
+      "p50Ms": 20.382,
+      "p95Ms": 75.235,
+      "p99Ms": 1044.906,
+      "thresholdMs": 500,
+      "cycleId": null,
+      "memory": {
+        "rss": 199421952,
+        "heapTotal": 49561600,
+        "heapUsed": 36144864,
+        "external": 9225426,
+        "arrayBuffers": 4805620
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event-loop-spike",
+      "startedAt": 1792881433988,
+      "endedAt": 1792881435336,
+      "windowMs": 1348,
+      "maxDelayMs": 1128.268,
+      "p50Ms": 20.316,
+      "p95Ms": 20.709,
+      "p99Ms": 1128.268,
+      "thresholdMs": 500,
+      "cycleId": null,
+      "memory": {
+        "rss": 155484160,
+        "heapTotal": 44056576,
+        "heapUsed": 35631408,
+        "external": 8871830,
+        "arrayBuffers": 4453225
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event-loop-spike",
+      "startedAt": 1792881489340,
+      "endedAt": 1792881490580,
+      "windowMs": 1240,
+      "maxDelayMs": 588.775,
+      "p50Ms": 20.382,
+      "p95Ms": 20.513,
+      "p99Ms": 588.775,
+      "thresholdMs": 500,
+      "cycleId": "1cb5a1ff-03d4-460e-88eb-0677e572ad25",
+      "memory": {
+        "rss": 150360064,
+        "heapTotal": 36716544,
+        "heapUsed": 33116088,
+        "external": 8421005,
+        "arrayBuffers": 4003301
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event-loop-spike",
+      "startedAt": 1792881502581,
+      "endedAt": 1792881504952,
+      "windowMs": 2371,
+      "maxDelayMs": 1794.114,
+      "p50Ms": 20.316,
+      "p95Ms": 21.119,
+      "p99Ms": 1794.114,
+      "thresholdMs": 500,
+      "cycleId": null,
+      "memory": {
+        "rss": 154292224,
+        "heapTotal": 37765120,
+        "heapUsed": 34989176,
+        "external": 8927284,
+        "arrayBuffers": 4508528
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event-loop-spike",
+      "startedAt": 1792881552094,
+      "endedAt": 1792881553909,
+      "windowMs": 1815,
+      "maxDelayMs": 1240.465,
+      "p50Ms": 20.382,
+      "p95Ms": 78.316,
+      "p99Ms": 1240.465,
+      "thresholdMs": 500,
+      "cycleId": null,
+      "memory": {
+        "rss": 157831168,
+        "heapTotal": 45629440,
+        "heapUsed": 37898448,
+        "external": 9420300,
+        "arrayBuffers": 4999155
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event-loop-spike",
+      "startedAt": 1792881629905,
+      "endedAt": 1792881631711,
+      "windowMs": 1806,
+      "maxDelayMs": 1024.983,
+      "p50Ms": 20.185,
+      "p95Ms": 20.873,
+      "p99Ms": 1024.983,
+      "thresholdMs": 500,
+      "cycleId": null,
+      "memory": {
+        "rss": 159666176,
+        "heapTotal": 38551552,
+        "heapUsed": 37370464,
+        "external": 9426148,
+        "arrayBuffers": 4999299
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event-loop-spike",
+      "startedAt": 1792881659716,
+      "endedAt": 1792881661607,
+      "windowMs": 1891,
+      "maxDelayMs": 1101.005,
+      "p50Ms": 20.251,
+      "p95Ms": 20.709,
+      "p99Ms": 1101.005,
+      "thresholdMs": 500,
+      "cycleId": null,
+      "memory": {
+        "rss": 160059392,
+        "heapTotal": 38813696,
+        "heapUsed": 37557432,
+        "external": 9419356,
+        "arrayBuffers": 4999443
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event-loop-spike",
+      "startedAt": 1792881679606,
+      "endedAt": 1792881680901,
+      "windowMs": 1295,
+      "maxDelayMs": 571.474,
+      "p50Ms": 20.529,
+      "p95Ms": 21.217,
+      "p99Ms": 571.474,
+      "thresholdMs": 500,
+      "cycleId": "0d4469ed-3969-4c80-b7f9-898e0ce317e2",
+      "memory": {
+        "rss": 160321536,
+        "heapTotal": 39075840,
+        "heapUsed": 37983112,
+        "external": 9419500,
+        "arrayBuffers": 4999843
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event-loop-spike",
+      "startedAt": 1792881689905,
+      "endedAt": 1792881692521,
+      "windowMs": 2616,
+      "maxDelayMs": 1762.656,
+      "p50Ms": 20.447,
+      "p95Ms": 21.103,
+      "p99Ms": 1762.656,
+      "thresholdMs": 500,
+      "cycleId": null,
+      "memory": {
+        "rss": 160321536,
+        "heapTotal": 39337984,
+        "heapUsed": 37884552,
+        "external": 9419500,
+        "arrayBuffers": 4999587
+      }
+    }
+  ],
+  "slowestSqlite": [
+    {
+      "v": 1,
+      "kind": "sqlite",
+      "op": "set",
+      "table": "bot_runtime_state",
+      "key": "paper_safety",
+      "rows": 1,
+      "startedAt": 1792881717477,
+      "endedAt": 1792881718050,
+      "durationMs": 573.326,
+      "jsonMs": 0.008,
+      "sqlMs": 573.312,
+      "beginMs": null,
+      "bodyMs": null,
+      "commitMs": null,
+      "rollbackMs": null,
+      "ok": true,
+      "errorCode": null,
+      "cycleId": null,
+      "cyclePhase": null,
+      "context": null
+    },
+    {
+      "v": 1,
+      "kind": "sqlite",
+      "op": "set",
+      "table": "bot_runtime_state",
+      "key": "validation_clean_shutdown",
+      "rows": 1,
+      "startedAt": 1792881718245,
+      "endedAt": 1792881718685,
+      "durationMs": 439.723,
+      "jsonMs": 0.001,
+      "sqlMs": 439.716,
+      "beginMs": null,
+      "bodyMs": null,
+      "commitMs": null,
+      "rollbackMs": null,
+      "ok": true,
+      "errorCode": null,
+      "cycleId": null,
+      "cyclePhase": null,
+      "context": null
+    },
+    {
+      "v": 1,
+      "kind": "sqlite",
+      "op": "set",
+      "table": "bot_runtime_state",
+      "key": "operation_state",
+      "rows": 1,
+      "startedAt": 1792881313105,
+      "endedAt": 1792881313528,
+      "durationMs": 423.579,
+      "jsonMs": 0.014,
+      "sqlMs": 423.557,
+      "beginMs": null,
+      "bodyMs": null,
+      "commitMs": null,
+      "rollbackMs": null,
+      "ok": true,
+      "errorCode": null,
+      "cycleId": "11deb16b-02d1-4d6b-b751-1fcba5b9e671",
+      "cyclePhase": null,
+      "context": null
+    },
+    {
+      "v": 1,
+      "kind": "sqlite",
+      "op": "set",
+      "table": "bot_runtime_state",
+      "key": "price",
+      "rows": 1,
+      "startedAt": 1792881313870,
+      "endedAt": 1792881314103,
+      "durationMs": 233.253,
+      "jsonMs": 0.006,
+      "sqlMs": 233.238,
+      "beginMs": null,
+      "bodyMs": null,
+      "commitMs": null,
+      "rollbackMs": null,
+      "ok": true,
+      "errorCode": null,
+      "cycleId": "11deb16b-02d1-4d6b-b751-1fcba5b9e671",
+      "cyclePhase": null,
+      "context": null
+    },
+    {
+      "v": 1,
+      "kind": "sqlite",
+      "op": "set",
+      "table": "bot_runtime_state",
+      "key": "operation_state",
+      "rows": 1,
+      "startedAt": 1792881301986,
+      "endedAt": 1792881302177,
+      "durationMs": 190.939,
+      "jsonMs": 0.014,
+      "sqlMs": 190.911,
+      "beginMs": null,
+      "bodyMs": null,
+      "commitMs": null,
+      "rollbackMs": null,
+      "ok": true,
+      "errorCode": null,
+      "cycleId": null,
+      "cyclePhase": null,
+      "context": null
+    },
+    {
+      "v": 1,
+      "kind": "sqlite",
+      "op": "append",
+      "table": "portfolio_snapshots",
+      "key": null,
+      "rows": 1,
+      "startedAt": 1792881314103,
+      "endedAt": 1792881314286,
+      "durationMs": 183.187,
+      "jsonMs": 0.01,
+      "sqlMs": 183.17,
+      "beginMs": null,
+      "bodyMs": null,
+      "commitMs": null,
+      "rollbackMs": null,
+      "ok": true,
+      "errorCode": null,
+      "cycleId": "11deb16b-02d1-4d6b-b751-1fcba5b9e671",
+      "cyclePhase": null,
+      "context": null
+    },
+    {
+      "v": 1,
+      "kind": "sqlite",
+      "op": "set",
+      "table": "bot_runtime_state",
+      "key": "operation_state",
+      "rows": 1,
+      "startedAt": 1792881313692,
+      "endedAt": 1792881313870,
+      "durationMs": 177.885,
+      "jsonMs": 0.009,
+      "sqlMs": 177.869,
+      "beginMs": null,
+      "bodyMs": null,
+      "commitMs": null,
+      "rollbackMs": null,
+      "ok": true,
+      "errorCode": null,
+      "cycleId": "11deb16b-02d1-4d6b-b751-1fcba5b9e671",
+      "cyclePhase": null,
+      "context": null
+    },
+    {
+      "v": 1,
+      "kind": "sqlite",
+      "op": "saveCandles",
+      "table": "market_candles",
+      "key": null,
+      "rows": 672,
+      "startedAt": 1792881434485,
+      "endedAt": 1792881434660,
+      "durationMs": 175.302,
+      "jsonMs": 3.875,
+      "sqlMs": 5.293,
+      "beginMs": null,
+      "bodyMs": null,
+      "commitMs": null,
+      "rollbackMs": null,
+      "ok": true,
+      "errorCode": null,
+      "cycleId": "d38cd49a-6a29-48e6-9073-8be1f8b3c84d",
+      "cyclePhase": null,
+      "context": "saveCandles"
+    },
+    {
+      "v": 1,
+      "kind": "sqlite",
+      "op": "transaction",
+      "table": null,
+      "key": null,
+      "rows": 0,
+      "startedAt": 1792881434485,
+      "endedAt": 1792881434660,
+      "durationMs": 175.228,
+      "jsonMs": null,
+      "sqlMs": null,
+      "beginMs": 0.041,
+      "bodyMs": 9.702,
+      "commitMs": 165.466,
+      "rollbackMs": null,
+      "ok": true,
+      "errorCode": null,
+      "cycleId": "d38cd49a-6a29-48e6-9073-8be1f8b3c84d",
+      "cyclePhase": null,
+      "context": "saveCandles"
+    },
+    {
+      "v": 1,
+      "kind": "sqlite",
+      "op": "append",
+      "table": "cycle_audits",
+      "key": null,
+      "rows": 1,
+      "startedAt": 1792881490154,
+      "endedAt": 1792881490320,
+      "durationMs": 166.518,
+      "jsonMs": 0.009,
+      "sqlMs": 166.5,
+      "beginMs": null,
+      "bodyMs": null,
+      "commitMs": null,
+      "rollbackMs": null,
+      "ok": true,
+      "errorCode": null,
+      "cycleId": "1cb5a1ff-03d4-460e-88eb-0677e572ad25",
+      "cyclePhase": "START",
+      "context": null
+    }
+  ],
+  "lastDeepBookApiAt": 1792881552733,
+  "safetyAudit": {
+    "runtime": {
+      "running": false,
+      "emergency": false,
+      "error": null,
+      "lastCandle": null
+    },
+    "connectivity": "DEGRADED",
+    "resumePending": false,
+    "counts": {
+      "cycle_audits": 18,
+      "operation_events": 13,
+      "paper_orders": 0,
+      "paper_trades": 0,
+      "paper_checks": 0,
+      "operation_candidates": 0,
+      "bot_settings": 0,
+      "strategy_decisions": 6,
+      "risk_events": 3,
+      "validation_events": 0
+    },
+    "integrity": "ok"
+  },
+  "imageSourceVerification": [
+    {
+      "path": "packages/sui-client/src/index.ts",
+      "sha256": "287e7e26d44dd9d897d9469286542143ec97338e05b595fa037675d0aff11b31",
+      "gitBlobSha256": "a7e83214224321fbcca7b49e7bb07aa0d6f642c01bc33f784b6226f136c96220",
+      "gitBlobLfSha256": "a7e83214224321fbcca7b49e7bb07aa0d6f642c01bc33f784b6226f136c96220",
+      "exactMatch": false,
+      "lfNormalizedMatch": false,
+      "gitBlobCrlfSha256": "287e7e26d44dd9d897d9469286542143ec97338e05b595fa037675d0aff11b31",
+      "crlfCheckoutMatch": true
+    },
+    {
+      "path": "packages/sui-client/src/diagnostics.ts",
+      "sha256": "85fc3dc1cc688fcb20b6b3f54fdaabe82eacaf83480f4dda2c89d42001867284",
+      "gitBlobSha256": "d5dad37fa0e66eb585fe71d3af1413f5c944ddacc3d3c7e2981e5adc1c244c1f",
+      "gitBlobLfSha256": "d5dad37fa0e66eb585fe71d3af1413f5c944ddacc3d3c7e2981e5adc1c244c1f",
+      "exactMatch": false,
+      "lfNormalizedMatch": false,
+      "gitBlobCrlfSha256": "85fc3dc1cc688fcb20b6b3f54fdaabe82eacaf83480f4dda2c89d42001867284",
+      "crlfCheckoutMatch": true
+    },
+    {
+      "path": "packages/shared/src/api.ts",
+      "sha256": "d2beb2ecb1b0dc34694f879c528472c27453bb82beb95fa202e4987009e1ffd3",
+      "gitBlobSha256": "14f12247947eca50e6826bd65b075a4214edc252d2da0523510c4d959771246f",
+      "gitBlobLfSha256": "14f12247947eca50e6826bd65b075a4214edc252d2da0523510c4d959771246f",
+      "exactMatch": false,
+      "lfNormalizedMatch": false,
+      "gitBlobCrlfSha256": "d2beb2ecb1b0dc34694f879c528472c27453bb82beb95fa202e4987009e1ffd3",
+      "crlfCheckoutMatch": true
+    },
+    {
+      "path": "packages/database/src/index.ts",
+      "sha256": "be50b57c431726f01f788033d109529efaf3d3a4102ec20e10d6d36251c9c2b3",
+      "gitBlobSha256": "5486eb63ad017e892ce1e757ea6f4bfc5b74a7a3eab56b77cd322a9994316ef7",
+      "gitBlobLfSha256": "5486eb63ad017e892ce1e757ea6f4bfc5b74a7a3eab56b77cd322a9994316ef7",
+      "exactMatch": false,
+      "lfNormalizedMatch": false,
+      "gitBlobCrlfSha256": "be50b57c431726f01f788033d109529efaf3d3a4102ec20e10d6d36251c9c2b3",
+      "crlfCheckoutMatch": true
+    },
+    {
+      "path": "apps/worker/src/operations.ts",
+      "sha256": "42e1ff4bc62acf70ae03d6328d1b4b020e45dffdae7f8b7eb33dc31f0437b0bb",
+      "gitBlobSha256": "d319812ba50be17d8e0488a420da3dd389a0bdb3c9a9f5470d88c48f44f54d6d",
+      "gitBlobLfSha256": "d319812ba50be17d8e0488a420da3dd389a0bdb3c9a9f5470d88c48f44f54d6d",
+      "exactMatch": false,
+      "lfNormalizedMatch": false,
+      "gitBlobCrlfSha256": "42e1ff4bc62acf70ae03d6328d1b4b020e45dffdae7f8b7eb33dc31f0437b0bb",
+      "crlfCheckoutMatch": true
+    },
+    {
+      "path": "apps/worker/src/engine.ts",
+      "sha256": "2ebe9e97dde1c184b761cf5949fc8f94bb3f25171a5855455be3791f018d6c67",
+      "gitBlobSha256": "54a51d5b46356910d71facdc6bd9b972b8d4506dfd426aef6b73997473e0b880",
+      "gitBlobLfSha256": "54a51d5b46356910d71facdc6bd9b972b8d4506dfd426aef6b73997473e0b880",
+      "exactMatch": false,
+      "lfNormalizedMatch": false,
+      "gitBlobCrlfSha256": "2ebe9e97dde1c184b761cf5949fc8f94bb3f25171a5855455be3791f018d6c67",
+      "crlfCheckoutMatch": true
+    }
+  ],
+  "sourceManifest": [
+    {
+      "source": "sui-ai-trading-bot/tools/windows-verification/runs/winverify-20261024T223226112Z-70ca8da/evidence/preflight-evidence.jsonl",
+      "sha256": "3a6d00bae8318e9dfe0997e1cc1694b0823335edfce0b0785a906e49da8145ce",
+      "bytes": 262680
+    },
+    {
+      "source": "sui-ai-trading-bot/tools/windows-verification/runs/winverify-20261024T223226112Z-70ca8da/evidence/sqlite-timing.jsonl",
+      "sha256": "57954e9205da8da2b2d042e05a1105950db7d00ef9a0a43efb308ca82bed7a33",
+      "bytes": 127812
+    },
+    {
+      "source": "sui-ai-trading-bot/tools/windows-verification/runs/winverify-20261024T223226112Z-70ca8da/evidence/event-loop-spikes.jsonl",
+      "sha256": "787cfd631cb4be79d7dd48ed04e2ef877f2fb298ea51aed793669308ba08674b",
+      "bytes": 62855
+    },
+    {
+      "source": "sui-ai-trading-bot/tools/windows-verification/runs/winverify-20261024T223226112Z-70ca8da/evidence/audit.json",
+      "sha256": "9ce4e34dc9e0a33dce4c7d1fa1a67521df64373dd1ed465829e8871c028019bf",
+      "bytes": 649885
+    },
+    {
+      "source": "sui-ai-trading-bot/tools/windows-verification/runs/winverify-20261024T223226112Z-70ca8da/evidence/inspection.json",
+      "sha256": "49c17921aa7adbe90e407f3560cddc7691c9a2ef1a330b8a1c22bb1a61eb061e",
+      "bytes": 1163
+    },
+    {
+      "source": "sui-ai-trading-bot/tools/windows-verification/runs/winverify-20261024T223226112Z-70ca8da/reports/report.md",
+      "sha256": "423f6a74919715c121513a03baf0ddb8ebef5d4b97bdc59e13a35d724a2e11d6",
+      "bytes": 9525
+    },
+    {
+      "source": "sui-ai-trading-bot/tools/windows-verification/runs/winverify-20261024T223226112Z-70ca8da/logs/monitor.log",
+      "sha256": "0576ba9d8a0917c5ea752fc496de4e273490ba807f062babba4635cace44a27f",
+      "bytes": 3382
+    },
+    {
+      "source": ".worktrees/windows-grpc-evidence/deepbook-paper.sqlite",
+      "sha256": "44a9a12f63e6fba2d7236da27e39ab5f81ef2ed7adc4ab5b4cc5314dd621c3f9",
+      "bytes": 1105920
+    }
+  ]
+}
