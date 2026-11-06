@@ -439,6 +439,13 @@ class StopTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 render()
             payload['diagnostics']['preflight'] = None
+            payload['diagnostics']['market'] = {'source': 'GeckoTerminal', 'lastSuccessAt': None, 'reason': 'UPSTREAM_TIMEOUT'}
+            self.assertIn('source=GeckoTerminal, lastSuccessAt=None, reason=UPSTREAM_TIMEOUT', render())
+            payload['diagnostics']['market'] = {'source': 'GeckoTerminal', 'lastSuccessAt': None, 'reason': 'free text'}
+            with self.assertRaises(SystemExit):
+                render()
+            payload['diagnostics']['market'] = None
+            payload['diagnostics']['preflight'] = None
             host = {'restart_disabled': True, 'paper': True, 'fault_marker': True,
                 'timer_active': False, 'timer_elapsed': False, 'timer_next_scheduled': False,
                 'timer_job_pending': False, 'sequence': 6, 'sha': 'a'*40,
@@ -598,6 +605,14 @@ class StopTests(unittest.TestCase):
         with patch.object(c.time, 'time', return_value=1.0), patch.object(c.time, 'sleep'):
             ctl.wait_market_fresh(cold, 10**13)
         self.assertEqual(len(calls), 2)
+        # The wait keeps the last observed market as failure evidence.
+        self.assertEqual(ctl.market, {'source': 'GeckoTerminal', 'lastSuccessAt': 1000, 'reason': None})
+        # Evidence is whitelisted: a free-text reason is dropped, a
+        # code-shaped one is kept.
+        ctl.note_market({'source': 'GeckoTerminal', 'lastSuccessAt': None, 'reason': 'fetch failed (secret)'})
+        self.assertEqual(ctl.market, {'source': 'GeckoTerminal', 'lastSuccessAt': None, 'reason': None})
+        ctl.note_market({'source': 'GeckoTerminal', 'lastSuccessAt': 500, 'reason': 'UPSTREAM_TIMEOUT'})
+        self.assertEqual(ctl.market['reason'], 'UPSTREAM_TIMEOUT')
         # Never fresh: the two-minute deadline rejects the run.
         ctl = object.__new__(c.Controller)
         ctl.api = lambda *a: {'summary': {'marketData': cold}}
