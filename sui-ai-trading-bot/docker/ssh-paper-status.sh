@@ -232,6 +232,20 @@ if details is not None:
     market = details.get("market")
     if isinstance(market, dict):
         print(f"- Market at failure: source={market['source']}, lastSuccessAt={market['lastSuccessAt']}, reason={market['reason']}")
+    stale_reset = details.get("stale_reset")
+    if isinstance(stale_reset, dict):
+        print(f"- Stale reset at readiness: sent, result={'ok' if stale_reset.get('ok') else 'failed'}")
+    evidence = details.get("evidence")
+    if isinstance(evidence, dict):
+        timing = evidence.get("timing")
+        if isinstance(timing, dict) and timing.get("dur") is not None:
+            print(f"- Last fetch in SUI database: duration={timing['dur']}ms")
+        events = evidence.get("events")
+        if isinstance(events, list) and events:
+            rendered = ", ".join(f"{e['k']}/{e['c']}" for e in events[:6]
+                                 if isinstance(e, dict) and "k" in e and "c" in e)
+            if rendered:
+                print(f"- Recent operation events (SUI, newest first): {rendered}")
     if "clean_lifecycle" in details:
         print(f"- Clean PAPER lifecycle receipt: {details['clean_lifecycle']}")
     runtime = details.get("runtime")

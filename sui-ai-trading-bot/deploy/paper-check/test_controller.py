@@ -1385,6 +1385,20 @@ class ProgramReadTests(unittest.TestCase):
         self.assertIn('read_trusted(Path(__file__), maximum=PROGRAM_READ_MAXIMUM)',
                       source.decode())
 
+    def test_diagnostics_carry_reset_outcome_and_cycle_evidence(self):
+        # The 2026-11-07 readiness failure could not be attributed:
+        # the record showed only the predecessor's persisted error,
+        # not whether the stale reset landed or what the worker's
+        # own cycles failed with. These three carriers close that
+        # gap; keep them wired together.
+        source = Path(c.__file__).read_text()
+        self.assertIn("failure['stale_reset'] = {'sent': True,", source)
+        self.assertIn('operation_events ORDER BY timestamp DESC LIMIT 10',
+                      c.DIAGNOSTIC_QUERY)
+        self.assertIn("key='operation_state'", c.DIAGNOSTIC_QUERY)
+        self.assertIn("'evidence': report['evidence'] if report is not None else None",
+                      source)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

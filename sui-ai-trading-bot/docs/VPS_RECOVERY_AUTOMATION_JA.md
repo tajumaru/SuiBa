@@ -163,6 +163,15 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   compose に無く、Indexer の足系列の欠け（実測で 5分足1000本中2本）
   が全取得を CANDLE_GAP で落とし、market-freshness で2回停止した。
   PR #89 で compose に追加した。
+- readiness 失敗の帰属計器（2026-11-07、PR #91）: 再構成フラグが
+  正しく届いた seq 10 ランも worker-readiness で停止した。停止中の
+  worker は最初の永続エラーを書き換えない設計のため、診断の
+  runtime 行だけでは「リセットが届いたか」「その後のサイクルが
+  何で失敗したか」が分からない。failure.json に stale_reset
+  （送信と成否）を失敗時も残し、診断 DB 照会に operation_events
+  直近10件と最終取得所要（operation_state）を追加した。ホストの
+  DB に前回ランのイベントが残るため、次回診断だけで前回ランの
+  内訳が読める。
 - env プロファイル完全性の preflight 化（2026-11-07、PR #90）:
   上記の付け忘れを、開始後ではなく開始前の preflight で弾くように
   した。コントローラの env 照合（preflight と診断の container
