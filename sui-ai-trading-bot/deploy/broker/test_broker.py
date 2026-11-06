@@ -115,6 +115,27 @@ class BrokerTests(unittest.TestCase):
         b.atomic(path, permit)
         return path
 
+    def paper_fixture(self, paper, permit=True):
+        # paper_deploy_permit with an explicit folder mode, so the
+        # fixture also survives a group-writable umask.
+        run_id = 'e'*32
+        folder = paper/run_id
+        folder.mkdir(mode=0o700)
+        b.atomic(paper/'run.json', {'id': run_id, 'status': 'failed_requires_review'})
+        b.atomic(folder/'stop.json', {'id': run_id, 'status': 'clean_stopped', 'errors': []})
+        b.atomic(self.state/'paper-check.json', {'status': 'in_progress'})
+        if not permit:
+            return None
+        value = {
+            'id': run_id, 'sha': SHA,
+            'approval_sha256': hashlib.sha256((self.policy/'approvals'/(SHA+'.json')).read_bytes()).hexdigest(),
+            'run_sha256': hashlib.sha256((paper/'run.json').read_bytes()).hexdigest(),
+            'stop_sha256': hashlib.sha256((folder/'stop.json').read_bytes()).hexdigest(),
+        }
+        path = self.state/('paper-deploy-'+SHA+'.json')
+        b.atomic(path, value)
+        return path
+
     def test_reviewed_deploy_is_single_use_and_keeps_failed_record(self):
         with tempfile.TemporaryDirectory(dir=self.root) as tmp, patch.object(b, 'PAPER_STATE', Path(tmp)):
             paper = Path(tmp)
@@ -178,6 +199,72 @@ class BrokerTests(unittest.TestCase):
             self.assertTrue(permit.with_suffix('.consumed.json').exists())
             with self.assertRaises(b.Rejected):
                 self.broker.check_paper_session(self.req)
+
+    def test_missing_paper_permit_rejects_with_its_own_code(self):
+        with tempfile.TemporaryDirectory(dir=self.root) as tmp, patch.object(b, 'PAPER_STATE', Path(tmp)):
+            self.paper_fixture(Path(tmp), permit=False)
+            with self.assertRaises(b.Rejected) as caught:
+                self.broker.check_paper_session(self.req)
+            self.assertEqual(caught.exception.args, ('PAPER_DEPLOY_PERMIT_MISSING',))
+            self.assertEqual(b.public_failure_code(caught.exception), 'PAPER_DEPLOY_PERMIT_MISSING')
+
+    def test_missing_permit_target_rejects_with_its_own_code(self):
+        for missing in ('run', 'stop', 'approval'):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory(dir=self.root) as tmp, patch.object(b, 'PAPER_STATE', Path(tmp)):
+                paper = Path(tmp)
+                self.paper_fixture(paper)
+                target = {'run': paper/'run.json', 'stop': paper/('e'*32)/'stop.json',
+                          'approval': self.policy/'approvals'/(SHA+'.json')}[missing]
+                target.unlink()
+                try:
+                    with self.assertRaises(b.Rejected) as caught:
+                        self.broker.check_paper_session(self.req)
+                    self.assertEqual(caught.exception.args, ('PAPER_DEPLOY_STATE_MISSING',))
+                finally:
+                    if missing == 'approval':
+                        self.save_approval()
+
+    def test_consume_race_rejects_as_already_consumed(self):
+        with tempfile.TemporaryDirectory(dir=self.root) as tmp, patch.object(b, 'PAPER_STATE', Path(tmp)):
+            permit = self.paper_fixture(Path(tmp))
+            permit.with_suffix('.consumed.json').write_bytes(b'{}\n')
+            with self.assertRaises(b.Rejected) as caught:
+                self.broker.consume_paper_deploy(permit)
+            self.assertEqual(caught.exception.args, ('PAPER_DEPLOY_ALREADY_CONSUMED',))
+            self.assertTrue(permit.exists())
+
+    def test_execute_records_a_pre_transaction_failure(self):
+        with tempfile.TemporaryDirectory(dir=self.root) as tmp, patch.object(b, 'PAPER_STATE', Path(tmp)):
+            self.paper_fixture(Path(tmp), permit=False)
+            with self.assertRaises(b.Rejected) as caught:
+                self.broker.execute(self.req, 1001)
+            self.assertEqual(caught.exception.args, ('PAPER_DEPLOY_PERMIT_MISSING',))
+            record = json.loads((self.state/'last-failure.json').read_text())
+            self.assertEqual(record['code'], 'PAPER_DEPLOY_PERMIT_MISSING')
+            self.assertEqual(record['sha'], SHA)
+            self.assertEqual(record['operation'], 'deploy')
+            self.assertFalse(self.docker.calls)
+
+    def strict_policy_modes(self):
+        # Files written by setUp inherit the process umask; the
+        # broker's trusted reads require non-group-writable modes.
+        for name in ('policy.json', 'compose.yaml'):
+            os.chmod(self.policy/name, 0o600)
+        os.chmod(self.policy/'approvals'/(SHA+'.json'), 0o600)
+
+    def test_missing_approval_file_rejects_with_its_own_code(self):
+        self.strict_policy_modes()
+        (self.policy/'approvals'/(SHA+'.json')).unlink()
+        with self.assertRaises(b.Rejected) as caught:
+            self.broker.transaction(self.req, 1001)
+        self.assertEqual(caught.exception.args, ('APPROVAL_FILE_MISSING',))
+
+    def test_missing_archive_rejects_with_its_own_code(self):
+        self.strict_policy_modes()
+        self.archive.unlink()
+        with self.assertRaises(b.Rejected) as caught:
+            self.broker.transaction(self.req, 1001)
+        self.assertEqual(caught.exception.args, ('ARCHIVE_MISSING',))
 
     def setUp(self):
         # Transaction tests isolate archive parsing; real tar tests below cover it.
