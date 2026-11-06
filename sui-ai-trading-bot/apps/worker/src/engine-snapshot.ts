@@ -4,8 +4,10 @@ import {
   type BtcInfo,
   type ChainInfo,
   type DailyCandle,
+  type Indicators,
   type TradingPair,
 } from "../../../packages/shared/src/index.ts";
+import { marketWeather } from "./market-weather.ts";
 import {
   positionOf,
   type ProfitReport,
@@ -79,7 +81,8 @@ export function buildSnapshot(
           10000,
         )
         .reverse(),
-      values = snapshots.map((x) => x.equity);
+      values = snapshots.map((x) => x.equity),
+      indicators = src.db.get<Indicators>("indicators") ?? null;
     return {
       pair: src.pair,
       chain: src.chainInfo(),
@@ -116,7 +119,12 @@ export function buildSnapshot(
         trades.flatMap((x) => (x.pnl === null ? [] : [x.pnl])),
       ),
       decision,
-      indicators: src.db.get("indicators") ?? null,
+      indicators,
+      // Display-only market weather: judged here from the
+      // stored 5-minute candles and the engine's indicators,
+      // because the light snapshot drops the candle series
+      // the dashboard would need to judge it itself.
+      weather: marketWeather(src.db.candles(300), indicators),
       settings: src.db.settings(),
       profitGuard: src.db.get<ProfitReport>("profitGuard") ?? null,
       acquisitionCostUsdc: positionOf(p).costUsdc,
