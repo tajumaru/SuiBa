@@ -1271,5 +1271,19 @@ class ProductionTests(unittest.TestCase):
             self.assertEqual(json.loads((ctl.folder(ctl.current())/'failure.json').read_bytes())['stage'], 'monitoring')
 
 
+class ProgramReadTests(unittest.TestCase):
+    def test_controller_fits_its_program_read_maximum(self):
+        # main() reads this file whole through the broker's
+        # read_trusted before dispatching anything. The 64 KiB
+        # default fits state files only; the controller passed it
+        # at the production-ops stage, after which every host
+        # entry point refused to run — while FakeBroker, which
+        # ignores the maximum, kept this suite green.
+        source = Path(c.__file__).read_bytes()
+        self.assertLess(len(source), c.PROGRAM_READ_MAXIMUM)
+        self.assertIn('read_trusted(Path(__file__), maximum=PROGRAM_READ_MAXIMUM)',
+                      source.decode())
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

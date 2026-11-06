@@ -824,7 +824,10 @@ def main():
         require(len(sys.argv) == 1 and os.geteuid() == 0, 'ENTRYPOINT')
         account = pwd.getpwnam('suiba-deploy')
         require(os.environ.get('SUDO_USER') == 'suiba-deploy' and os.environ.get('SUDO_UID') == str(account.pw_uid) and account.pw_uid != 0, 'CALLER')
-        read_trusted(Path(__file__))
+        # Same 64 KiB default trap as the controller's self-read:
+        # the explicit maximum keeps a future size increase from
+        # refusing every broker operation on the host.
+        read_trusted(Path(__file__), maximum=262144)
         for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
             signal.signal(sig, lambda *_: (_ for _ in ()).throw(Rejected('INTERRUPTED')))
         signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(Rejected('INPUT_TIMEOUT')))

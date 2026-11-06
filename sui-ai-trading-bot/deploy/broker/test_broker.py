@@ -892,5 +892,17 @@ class PublicResultTests(unittest.TestCase):
                 b.publish_public_result('failed', 'OS_ERROR', SHA)  # must not raise
 
 
+class ProgramReadTests(unittest.TestCase):
+    def test_broker_fits_its_self_read_maximum(self):
+        # main() reads this file whole through read_trusted before
+        # dispatching anything. The 64 KiB default fits state
+        # files only; the maximum is explicit so a future size
+        # increase cannot refuse every broker operation on the
+        # host the way it did for the paper-check controller.
+        source = Path(b.__file__).read_bytes()
+        self.assertLess(len(source), 262144)
+        self.assertIn('read_trusted(Path(__file__), maximum=262144)', source.decode())
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
