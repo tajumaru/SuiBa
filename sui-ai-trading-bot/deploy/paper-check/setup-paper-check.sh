@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Host update for the paper-check supervisor (validation length selection).
+# Host update for the validation and production PAPER supervisors.
 #
 # Run once on the VPS as root, after the change has landed on main:
 #   curl -fsSL https://raw.githubusercontent.com/tajumaru/SuiBa/main/sui-ai-trading-bot/deploy/paper-check/setup-paper-check.sh -o /tmp/setup-paper-check.sh
@@ -9,20 +9,23 @@
 # the systemd units from the public repository and installs each file
 # only if its sha256 matches the digest pinned below. Replaced files are
 # backed up next to the originals (.bak-<timestamp>). The script refuses
-# to run while a validation run is active, verifies that policy.json is
+# to run while either supervisor is active or has a pending job, verifies that policy.json is
 # untouched, and after installing it checks the result itself:
 # daemon-reload, systemd-analyze verify, LoadState of every unit, the
 # installed hashes, and one real status call through the sudo wrapper
 # as suiba-deploy. When any pinned file changes, update its digest here
 # in the same commit (same discipline as setup-ci-approval.sh).
+# prod-policy.json is never installed or enabled here. Production activation
+# is a separate explicit cutover operation; installing a unit never starts it.
 set -Eeuo pipefail
 umask 077
 
 BASE_URL='https://raw.githubusercontent.com/tajumaru/SuiBa/main/sui-ai-trading-bot/deploy/paper-check'
 POLICY='/etc/suiba-paper-check/policy.json'
 SERVICE='suiba-paper-check.service'
+PROD_SERVICE='suiba-prod.service'
 TIMERS='suiba-paper-check-cutoff.timer suiba-paper-check-cutoff-6h.timer suiba-paper-check-cutoff-24h.timer'
-UNITS='suiba-paper-check.service suiba-paper-check-cutoff.service suiba-paper-check-cutoff.timer suiba-paper-check-cutoff-6h.timer suiba-paper-check-cutoff-24h.timer'
+UNITS='suiba-paper-check.service suiba-prod.service suiba-paper-check-cutoff.service suiba-paper-check-cutoff.timer suiba-paper-check-cutoff-6h.timer suiba-paper-check-cutoff-24h.timer'
 
 # name|sha256|target|mode
 FILES=(
@@ -30,6 +33,7 @@ FILES=(
   'suiba-paper-check|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-check|755'
   'suiba-paper-check.sudoers|54d64fdadf0b38749008c112fc12761e03f633538e526ebe6f37eb4b1ec38607|/etc/sudoers.d/suiba-paper-check|440'
   'suiba-paper-check.service|44efe8db2b1c569fd8c2176002acc76b724d6d4c66fa1df1babb988e63f60e95|/etc/systemd/system/suiba-paper-check.service|644'
+  'suiba-prod.service|042b393fd872481faffa17d09e57fe7c7a2d57ddb931d609655f4cf29f6ddb02|/etc/systemd/system/suiba-prod.service|644'
   'suiba-paper-check-cutoff.service|8b40feb7b662796763e53eb6114083233d240d49229027ccea3104c7a628bd96|/etc/systemd/system/suiba-paper-check-cutoff.service|644'
   'suiba-paper-check-cutoff.timer|a9d92ed010eb701ec46bef03b716e973092d696e40890f2e9ddfb2a0a2c96d39|/etc/systemd/system/suiba-paper-check-cutoff.timer|644'
   'suiba-paper-check-cutoff-6h.timer|d6bf9d6194ecaeee0e728bd90ec83a5989ce8ea1e057b5a98b891baa6dbf29ff|/etc/systemd/system/suiba-paper-check-cutoff-6h.timer|644'
@@ -49,10 +53,27 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 stamp=$(date +%Y%m%d%H%M%S)
 
-echo '== 1/5 実行中の検証ランがないことを確認 =='
-if systemctl is-active --quiet "$SERVICE"; then
-  fail 'paper-check が実行中です。ランが終わってから実行してください'
-fi
+echo '== 1/5 検証・本番 supervisor が静止していることを確認 =='
+for service in "$SERVICE" "$PROD_SERVICE"; do
+  # First install may legitimately have no production unit. Other errors and
+  # activating/deactivating states fail closed before stopping any timer or
+  # fetching/replacing shared controller code.
+  if ! state=$(systemctl show "$service" -p LoadState -p ActiveState -p Job); then
+    if [[ $service != "$PROD_SERVICE" ]] || ! grep -qx 'LoadState=not-found' <<< "$state"; then
+      fail "unit 状態を確認できません: $service"
+    fi
+  fi
+  if [[ $service == "$PROD_SERVICE" ]] && grep -qx 'LoadState=not-found' <<< "$state"; then
+    if ! grep -Eq '^ActiveState=(inactive|failed)$' <<< "$state" || ! grep -Eq '^Job=(0)?$' <<< "$state"; then
+      fail "未配置 unit に未完了の状態があります: $service"
+    fi
+    continue
+  fi
+  if ! grep -qx 'LoadState=loaded' <<< "$state" ||
+      ! grep -Eq '^ActiveState=(inactive|failed)$' <<< "$state" || ! grep -Eq '^Job=(0)?$' <<< "$state"; then
+    fail "supervisor が静止していません: $service"
+  fi
+done
 for timer in $TIMERS; do
   if systemctl is-active --quiet "$timer"; then
     echo "残っている cutoff タイマーを止めます: $timer（ランは動いていません）"
@@ -126,4 +147,5 @@ fi
 
 echo
 echo '完了しました。検証ランは開始ワークフロー（START-PAPER）で 30m / 6h / 24h を選べます。'
+echo '本番 service は配置のみです。prod-policy.json は変更せず、本番運転も開始していません。'
 echo 'シロ（Muse）に「終わった」と伝えてください。'
