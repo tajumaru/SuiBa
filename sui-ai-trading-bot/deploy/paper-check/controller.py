@@ -62,6 +62,18 @@ CONTAINER_CHECKS = ('inspect', 'state', 'restart_user', 'env', 'ports', 'memory'
 MARKET_SOURCES = {'geckoterminal': 'GeckoTerminal', 'deepbook': 'DeepBook'}
 
 
+def provider_profile_ok(env):
+    # The DeepBook profile pairs the provider with verified candle
+    # reconstruction (docs/DEEPBOOK_24H_PAPER.md): without it, any
+    # hole in the indexer's candle series fails every fetch with
+    # CANDLE_GAP. Two validation runs stopped at market-freshness on
+    # 2026-11-07 before this completeness check existed; refuse the
+    # incomplete profile here instead, in seconds.
+    if env.get('MARKET_DATA_PROVIDER') == 'deepbook':
+        return env.get('DEEPBOOK_RECONSTRUCT_CANDLES') == 'verified'
+    return env.get('MARKET_DATA_PROVIDER') in MARKET_SOURCES
+
+
 def cutoff_timer(duration):
     if duration == '30m':
         return TIMER
@@ -470,7 +482,7 @@ class Controller:
                           and container['State']['ExitCode'] == 0 and not container['State']['OOMKilled']),
             'restart_user': safe(lambda: container['HostConfig']['RestartPolicy']['Name'] == 'no' and container['Config']['User'] == '1000:1000'),
             'env': safe(lambda: env.get('MODE') == 'PAPER' and env.get('TRADING_PAIR') == 'SUI_USDC'
-                        and env.get('PAPER_CHECK_MODE') == 'sui-30m' and env.get('MARKET_DATA_PROVIDER') in MARKET_SOURCES),
+                        and env.get('PAPER_CHECK_MODE') == 'sui-30m' and provider_profile_ok(env)),
             'ports': safe(lambda: container['HostConfig']['PortBindings'] == {'3100/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '3100'}]}),
             'memory': safe(lambda: container['HostConfig']['Memory'] == container['HostConfig']['MemorySwap'] == 1024**3),
             'label': safe(lambda: self.b.SHA.fullmatch(ledger['sha']) and labels.get('org.opencontainers.image.revision') == ledger['sha']),
@@ -1153,7 +1165,7 @@ class Controller:
             detail = 'env'
             env = dict(v.split('=', 1) for v in i['Config']['Env'])
             require(env.get('MODE') == 'PAPER' and env.get('TRADING_PAIR') == 'SUI_USDC' and
-                    env.get('PAPER_CHECK_MODE') == self.session_mode and env.get('MARKET_DATA_PROVIDER') in MARKET_SOURCES)
+                    env.get('PAPER_CHECK_MODE') == self.session_mode and provider_profile_ok(env))
             self.expected_source = MARKET_SOURCES[env['MARKET_DATA_PROVIDER']]
             detail = 'ports'
             require(i['HostConfig']['PortBindings'] == {'3100/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '3100'}]})
