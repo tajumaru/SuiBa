@@ -91,19 +91,24 @@ jobs:
           sudo visudo -cf deploy/paper-check/suiba-paper-check.sudoers
           systemd-analyze verify deploy/paper-check/*.service deploy/paper-check/*.timer
   # Heavy path: the Docker/packaging suites for the deploy machinery.
-  # They run in parallel with the light job; wall time is the longer
-  # of the two, not the sum. The suites below re-run only when that
+  # They run in parallel with the light job AND with each other: the
+  # suites are independent, so they live in separate jobs and the wall
+  # time is the longest single chain, not the sum (the serial layout
+  # took ~4.5 minutes, ~half of it the validation-run suite alone).
+  # Every heavy job first asks the `changes` job whether that
   # machinery (or the code it packages, or the dependency manifests,
   # or the tests themselves) changed. Anything else — a dashboard
   # change, say — cannot change their outcome. Scheduled and
   # dispatched runs always take the heavy path, and a failed
-  # comparison fails safe to heavy as well.
-  docker-suites:
+  # comparison fails safe to heavy as well. The `docker-suites` job
+  # at the end aggregates the split jobs, so the familiar single
+  # check name keeps reporting and anything watching for it (the
+  # merge habit included) sees one verdict.
+  changes:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: sui-ai-trading-bot
+    timeout-minutes: 5
+    outputs:
+      heavy: ${{ steps.changes.outputs.heavy }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -131,44 +136,137 @@ jobs:
             fi
           fi
           echo "heavy=$heavy" >> "$GITHUB_OUTPUT"
-      # The two Compose/fixture verifiers below are plain Node with
-      # no repository dependencies, so this job needs the runtime
-      # only — no Corepack, no pnpm install.
+  docker-broker:
+    needs: changes
+    if: needs.changes.outputs.heavy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: sui-ai-trading-bot
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # The Compose verifier below is plain Node with no repository
+      # dependencies, so this job needs the runtime only — no
+      # Corepack, no pnpm install.
       - uses: actions/setup-node@v7
         with:
           node-version: "24.22.1"
-      - name: Broker security and limited sudo (disposable Ubuntu, no Worker)
-        if: steps.changes.outputs.heavy == 'true'
+      # A docker-container builder is what lets the builds export
+      # their layer cache to the GitHub cache; the default docker
+      # driver can import a cache but not export one.
+      - name: Create a cache-capable builder
         run: |
-          docker build -f docker/Dockerfile.broker-test -t suiba-broker-tests .
+          docker buildx create --name suiba-cache --driver docker-container --use
+          docker buildx inspect --bootstrap
+      - name: Broker security and limited sudo (disposable Ubuntu, no Worker)
+        run: |
+          docker buildx build --load --cache-from type=gha,scope=suiba-broker-test --cache-to type=gha,mode=max,scope=suiba-broker-test -f docker/Dockerfile.broker-test -t suiba-broker-tests .
           docker run --rm --network none --memory 512m --memory-swap 512m --pids-limit 128 suiba-broker-tests
       - name: Render and verify the production Compose model
-        if: steps.changes.outputs.heavy == 'true'
         run: |
           sudo mkdir -p /opt/suiba/shared
           sudo touch /opt/suiba/shared/runtime.env /opt/suiba/shared/admin-token
           node docker/verify-vps-config.mjs
       - name: Build image without running its default command
-        if: steps.changes.outputs.heavy == 'true'
-        run: docker build --build-arg SUIBA_BUILD_SHA=${{ github.sha }} -f docker/Dockerfile -t suiba-no-worker:${{ github.sha }} .
-      - name: Isolated HTTP/SQLite/process fixtures, never Worker
-        if: steps.changes.outputs.heavy == 'true'
-        run: node docker/verify-vps-offline.mjs suiba-no-worker:${{ github.sha }}
+        run: docker buildx build --load --cache-from type=gha,scope=suiba-app --cache-to type=gha,mode=max,scope=suiba-app --build-arg SUIBA_BUILD_SHA=${{ github.sha }} -f docker/Dockerfile -t suiba-no-worker:${{ github.sha }} .
       - name: Real broker transaction with dummy HTTP and cold restore (no Worker)
-        if: steps.changes.outputs.heavy == 'true'
         run: sudo /usr/bin/python3 -I deploy/broker/verify_docker.py suiba-no-worker:${{ github.sha }}
+  docker-offline:
+    needs: changes
+    if: needs.changes.outputs.heavy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: sui-ai-trading-bot
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # The fixture verifier below is plain Node with no repository
+      # dependencies, so this job needs the runtime only.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24.22.1"
+      - name: Create a cache-capable builder
+        run: |
+          docker buildx create --name suiba-cache --driver docker-container --use
+          docker buildx inspect --bootstrap
+      - name: Build image without running its default command
+        run: docker buildx build --load --cache-from type=gha,scope=suiba-app --cache-to type=gha,mode=max,scope=suiba-app --build-arg SUIBA_BUILD_SHA=${{ github.sha }} -f docker/Dockerfile -t suiba-no-worker:${{ github.sha }} .
+      - name: Isolated HTTP/SQLite/process fixtures, never Worker
+        run: node docker/verify-vps-offline.mjs suiba-no-worker:${{ github.sha }}
+  docker-systemd:
+    needs: changes
+    if: needs.changes.outputs.heavy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: sui-ai-trading-bot
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Create a cache-capable builder
+        run: |
+          docker buildx create --name suiba-cache --driver docker-container --use
+          docker buildx inspect --bootstrap
+      - name: Build image without running its default command
+        run: docker buildx build --load --cache-from type=gha,scope=suiba-app --cache-to type=gha,mode=max,scope=suiba-app --build-arg SUIBA_BUILD_SHA=${{ github.sha }} -f docker/Dockerfile -t suiba-no-worker:${{ github.sha }} .
       - name: Independent systemd cutoff with Docker dummy (no Worker)
-        if: steps.changes.outputs.heavy == 'true'
         run: sudo /usr/bin/python3 -I deploy/paper-check/verify_timer.py suiba-no-worker:${{ github.sha }}
+      - name: Production service lifecycle with Docker dummy (no Worker)
+        run: sudo /usr/bin/python3 -I deploy/paper-check/verify_prod.py suiba-no-worker:${{ github.sha }}
+      - name: Read-only watchdog timer and journal (no Worker or recovery)
+        run: sudo /usr/bin/python3 -I deploy/paper-check/verify_watchdog.py
+  docker-run:
+    needs: changes
+    if: needs.changes.outputs.heavy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sui-ai-trading-bot
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Create a cache-capable builder
+        run: |
+          docker buildx create --name suiba-cache --driver docker-container --use
+          docker buildx inspect --bootstrap
+      - name: Build image without running its default command
+        run: docker buildx build --load --cache-from type=gha,scope=suiba-app --cache-to type=gha,mode=max,scope=suiba-app --build-arg SUIBA_BUILD_SHA=${{ github.sha }} -f docker/Dockerfile -t suiba-no-worker:${{ github.sha }} .
       - name: Validation controller crash and recovery with Docker dummy (no Worker)
-        if: steps.changes.outputs.heavy == 'true'
         run: |
           df -h /var/lib
           docker system df
           sudo /usr/bin/python3 -I deploy/paper-check/verify_run.py suiba-no-worker:${{ github.sha }}
-      - name: Production service lifecycle with Docker dummy (no Worker)
-        if: steps.changes.outputs.heavy == 'true'
-        run: sudo /usr/bin/python3 -I deploy/paper-check/verify_prod.py suiba-no-worker:${{ github.sha }}
-      - name: Read-only watchdog timer and journal (no Worker or recovery)
-        if: steps.changes.outputs.heavy == 'true'
-        run: sudo /usr/bin/python3 -I deploy/paper-check/verify_watchdog.py
+  docker-suites:
+    # Aggregator for the split heavy jobs above: keeps the single
+    # `docker-suites` check reporting one verdict. Skipped suites
+    # are fine (the changes gate said they were not needed);
+    # a failure or cancellation in any of them is not.
+    needs: [changes, docker-broker, docker-offline, docker-systemd, docker-run]
+    if: always() && needs.changes.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Aggregate the split heavy suites
+        env:
+          BROKER_RESULT: ${{ needs.docker-broker.result }}
+          OFFLINE_RESULT: ${{ needs.docker-offline.result }}
+          SYSTEMD_RESULT: ${{ needs.docker-systemd.result }}
+          RUN_RESULT: ${{ needs.docker-run.result }}
+        run: |
+          echo "Heavy suites: broker=$BROKER_RESULT offline=$OFFLINE_RESULT systemd=$SYSTEMD_RESULT run=$RUN_RESULT"
+          for result in "$BROKER_RESULT" "$OFFLINE_RESULT" "$SYSTEMD_RESULT" "$RUN_RESULT"; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "A heavy suite ended as: $result"; exit 1 ;;
+            esac
+          done
