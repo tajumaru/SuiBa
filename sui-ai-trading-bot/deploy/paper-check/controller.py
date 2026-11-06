@@ -176,7 +176,40 @@ for (const name of ["bot.sqlite.instance.sqlite", "bot.sqlite.pairs.sqlite"]) {
     }
   } finally { db.close(); }
 }
-console.log(JSON.stringify({deltas: result, runtime, selected_pair: selectedPair}));
+// Post-run cycle evidence from the SUI database only: what the
+// worker's own cycles most recently recorded (a stopped worker
+// keeps the first persisted runtime error, so the runtime row
+// alone cannot name what later cycles failed with), plus the
+// last fetch timing. Shape-sanitized here and re-validated by
+// the controller; any surprise degrades to null.
+let evidence = null;
+try {
+  const db = new DatabaseSync("/audit/after/bot.sqlite", { readOnly: true });
+  try {
+    db.exec("PRAGMA trusted_schema=OFF");
+    const shape = /^[A-Z][A-Z0-9_]{0,63}$/;
+    const events = [];
+    for (const row of db.prepare(
+        "SELECT timestamp, json FROM operation_events ORDER BY timestamp DESC LIMIT 10").all()) {
+      try {
+        const value = JSON.parse(row.json);
+        if (typeof row.timestamp === "number" && shape.test(value.kind) && shape.test(value.code))
+          events.push({t: row.timestamp, k: value.kind, c: value.code});
+      } catch {}
+    }
+    let timing = null;
+    const stateRow = db.prepare(
+      "SELECT json FROM bot_runtime_state WHERE key='operation_state'").get();
+    if (stateRow) {
+      const state = JSON.parse(stateRow.json);
+      const num = (v) => typeof v === "number" && Number.isFinite(v) ? v : null;
+      timing = {dur: num(state.lastFetchDurationMs), att: num(state.lastFetchAttemptAt),
+                suc: num(state.lastFetchSuccessAt)};
+    }
+    evidence = {events, timing};
+  } finally { db.close(); }
+} catch { evidence = null; }
+console.log(JSON.stringify({deltas: result, runtime, selected_pair: selectedPair, evidence}));
 """.replace('RUNTIME_ERROR_ALLOWLIST', json.dumps(RUNTIME_ERROR_CODES))
 
 
@@ -393,7 +426,7 @@ class Controller:
         report = self.diagnostic_backup(record, source)
         health = state.get('Health', {}).get('Log', [])
         failure_path = self.folder(record)/'failure.json'
-        stage, http, readiness, market = None, None, None, None
+        stage, http, readiness, market, stale_reset = None, None, None, None, None
         if failure_path.exists():
             failure = self.b.decode(self.b.read_trusted(failure_path))
             require(failure['id'] == record['id'] and failure['stage'] in DIAGNOSTIC_STAGES)
@@ -409,6 +442,10 @@ class Controller:
                 require(market['lastSuccessAt'] is None or type(market['lastSuccessAt']) in (int, float))
                 require(market['reason'] is None or type(market['reason']) is str and
                         re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', market['reason']))
+            stale_reset = failure.get('stale_reset')
+            if stale_reset is not None:
+                require(type(stale_reset) is dict and set(stale_reset) == {'sent', 'ok'} and
+                        stale_reset['sent'] is True and type(stale_reset['ok']) is bool)
         preflight = None
         preflight_path = self.folder(record)/'preflight.json'
         if preflight_path.exists():
@@ -428,7 +465,8 @@ class Controller:
                 'maintenance': maintenance, 'stage': stage, 'http_status': http, 'preflight': preflight,
                 'backup_verified': report is not None,
                 'deltas': report['deltas'] if report is not None else None, 'readiness': readiness,
-                'market': market,
+                'market': market, 'stale_reset': stale_reset,
+                'evidence': report['evidence'] if report is not None else None,
                 'runtime': report['runtime'] if report is not None else None,
                 'selected_pair': report['selected_pair'] if report is not None else None,
                 'clean_lifecycle': clean_lifecycle,
@@ -762,9 +800,19 @@ class Controller:
                 require(all(state[key] is None or state[key] in RUNTIME_ERROR_CODES for key in ('error', 'before_error')))
                 result[pair] = dict(zip(('starts', 'orders', 'fills'), values))
             require(audit['selected_pair'] in ('SUI_USDC', 'WAL_USDC', 'UNKNOWN'))
+            evidence = audit.get('evidence')
+            if evidence is not None:
+                require(type(evidence) is dict and set(evidence) == {'events', 'timing'})
+                require(type(evidence['events']) is list and len(evidence['events']) <= 10 and all(
+                    type(e) is dict and set(e) == {'t', 'k', 'c'} and type(e['t']) in (int, float) and
+                    re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', e['k']) and
+                    re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', e['c']) for e in evidence['events']))
+                timing = evidence['timing']
+                require(timing is None or (type(timing) is dict and set(timing) == {'dur', 'att', 'suc'} and
+                    all(timing[key] is None or type(timing[key]) in (int, float) for key in timing)))
             return {'deltas': result, 'runtime': {pair: audit['runtime'][name]
                     for pair, name in zip(('SUI_USDC', 'WAL_USDC'), DIAGNOSTIC_DATABASES)},
-                    'selected_pair': audit['selected_pair']}
+                    'selected_pair': audit['selected_pair'], 'evidence': evidence}
 
     def api(self, method, path, value=None):
         require(path in ('/api/deployment', '/api/pairs', '/api/control', '/api/paper-check/arm', '/api/dashboard/summary'))
@@ -1319,6 +1367,13 @@ class Controller:
                         failure['http_status'] = error.code
                     if stage == 'worker-readiness':
                         failure['readiness'] = getattr(self, 'readiness', {})
+                    if getattr(self, 'stale_reset_sent', False):
+                        # Record the reset's outcome on failure too:
+                        # the success path alone cannot distinguish
+                        # "reset landed, error rewritten" from
+                        # "reset never arrived" (2026-11-07).
+                        failure['stale_reset'] = {'sent': True,
+                            'ok': bool(getattr(self, 'stale_reset_ok', False))}
                     if stage in ('market-freshness', 'monitoring') and getattr(self, 'market', None) is not None:
                         failure['market'] = self.market
                     self.b.atomic(self.folder(self.current(self.run_id))/'failure.json', failure)
