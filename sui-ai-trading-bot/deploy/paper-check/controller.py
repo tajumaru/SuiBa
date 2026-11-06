@@ -10,6 +10,7 @@ issues one permission consumed by the broker before the next deployment attempt.
 """
 import contextlib
 import hashlib
+import http.client
 import importlib.util
 import json
 import os
@@ -1394,9 +1395,15 @@ class ProductionController(Controller):
         alive = not self.exited(record)
         worker = None
         if record['status'] == 'in_progress' and record['admitted'] and alive:
-            d = self.api('GET', '/api/deployment')
-            worker = {key: d[key] for key in ('running', 'maintenance', 'databaseHealthy', 'ledgerOk') if type(d.get(key)) is bool}
-            worker['paper'] = d.get('mode') == 'PAPER'
+            try:
+                d = self.api('GET', '/api/deployment')
+            except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException):
+                # Transport failures are an observation, not a status-command
+                # failure. Never expose exception messages, URLs or headers.
+                worker = {'reachable': False, 'reason': 'WORKER_UNREACHABLE'}
+            else:
+                worker = {key: d[key] for key in ('running', 'maintenance', 'databaseHealthy', 'ledgerOk') if type(d.get(key)) is bool}
+                worker['paper'] = d.get('mode') == 'PAPER'
         return {'run': run, 'controller_alive': alive, 'worker': worker,
                 'requires_review': record['status'] == 'failed_requires_review' or self.faults(record)}
 

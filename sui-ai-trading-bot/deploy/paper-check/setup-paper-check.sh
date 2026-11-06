@@ -25,15 +25,18 @@ POLICY='/etc/suiba-paper-check/policy.json'
 SERVICE='suiba-paper-check.service'
 PROD_SERVICE='suiba-prod.service'
 TIMERS='suiba-paper-check-cutoff.timer suiba-paper-check-cutoff-6h.timer suiba-paper-check-cutoff-24h.timer'
-UNITS='suiba-paper-check.service suiba-prod.service suiba-paper-check-cutoff.service suiba-paper-check-cutoff.timer suiba-paper-check-cutoff-6h.timer suiba-paper-check-cutoff-24h.timer'
+UNITS='suiba-paper-check.service suiba-prod.service suiba-prod-watchdog.service suiba-prod-watchdog.timer suiba-paper-check-cutoff.service suiba-paper-check-cutoff.timer suiba-paper-check-cutoff-6h.timer suiba-paper-check-cutoff-24h.timer'
 
 # name|sha256|target|mode
 FILES=(
-  'controller.py|e70caa643f21dcff8122fa586b95780381df545b792ab9afe728b40987e1c955|/usr/local/libexec/suiba-paper-check.py|755'
+  'controller.py|3010c269183fa8e36bc7bf4c438fdd3580d606d45675000faaf14b9639a34390|/usr/local/libexec/suiba-paper-check.py|755'
   'suiba-paper-check|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-check|755'
   'suiba-paper-check.sudoers|54d64fdadf0b38749008c112fc12761e03f633538e526ebe6f37eb4b1ec38607|/etc/sudoers.d/suiba-paper-check|440'
   'suiba-paper-check.service|44efe8db2b1c569fd8c2176002acc76b724d6d4c66fa1df1babb988e63f60e95|/etc/systemd/system/suiba-paper-check.service|644'
   'suiba-prod.service|042b393fd872481faffa17d09e57fe7c7a2d57ddb931d609655f4cf29f6ddb02|/etc/systemd/system/suiba-prod.service|644'
+  'watchdog.py|7042e7e198fa4b24a33ee61791b093ca91db0ba64129d5a988489330e5eb1822|/usr/local/libexec/suiba-prod-watchdog.py|755'
+  'suiba-prod-watchdog.service|88ac174a834219b34d23ee6864ce4c8f676e7b0a72e970ea82c12c1d125f1b0d|/etc/systemd/system/suiba-prod-watchdog.service|644'
+  'suiba-prod-watchdog.timer|43e893738a839eb12cfd0fe8fa8b464bcb25e751d2a3ee115b7558e9d70a02cf|/etc/systemd/system/suiba-prod-watchdog.timer|644'
   'suiba-paper-check-cutoff.service|8b40feb7b662796763e53eb6114083233d240d49229027ccea3104c7a628bd96|/etc/systemd/system/suiba-paper-check-cutoff.service|644'
   'suiba-paper-check-cutoff.timer|a9d92ed010eb701ec46bef03b716e973092d696e40890f2e9ddfb2a0a2c96d39|/etc/systemd/system/suiba-paper-check-cutoff.timer|644'
   'suiba-paper-check-cutoff-6h.timer|d6bf9d6194ecaeee0e728bd90ec83a5989ce8ea1e057b5a98b891baa6dbf29ff|/etc/systemd/system/suiba-paper-check-cutoff-6h.timer|644'
@@ -99,6 +102,7 @@ for entry in "${FILES[@]}"; do
   echo "取得 OK: $name"
 done
 python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/controller.py" || fail 'controller.py の構文検証に失敗'
+python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/watchdog.py" || fail 'watchdog.py の構文検証に失敗'
 visudo -cf "$tmp/suiba-paper-check.sudoers" >/dev/null || fail 'sudoers の構文検証に失敗'
 
 echo '== 3/5 配置（旧ファイルはバックアップ） =='
@@ -148,4 +152,5 @@ fi
 echo
 echo '完了しました。検証ランは開始ワークフロー（START-PAPER）で 30m / 6h / 24h を選べます。'
 echo '本番 service は配置のみです。prod-policy.json は変更せず、本番運転も開始していません。'
+echo 'watchdog timer も配置のみです。有効化は切替時に明示操作してください。'
 echo 'シロ（Muse）に「終わった」と伝えてください。'

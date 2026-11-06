@@ -79,9 +79,10 @@ jobs:
         run: |
           # Syntax-gate every deploy Python file on the light path too:
           # the verify harnesses otherwise surface only in heavy runs.
-          python3 -m py_compile deploy/paper-check/controller.py deploy/paper-check/verify_run.py deploy/paper-check/verify_prod.py deploy/paper-check/verify_timer.py deploy/paper-check/test_controller.py deploy/paper-check/test_setup.py deploy/broker/broker.py deploy/broker/verify_docker.py
+          python3 -m py_compile deploy/paper-check/controller.py deploy/paper-check/watchdog.py deploy/paper-check/verify_watchdog.py deploy/paper-check/verify_run.py deploy/paper-check/verify_prod.py deploy/paper-check/verify_timer.py deploy/paper-check/test_controller.py deploy/paper-check/test_setup.py deploy/paper-check/test_watchdog.py deploy/broker/broker.py deploy/broker/verify_docker.py
           python3 -I deploy/paper-check/test_controller.py
           python3 -I deploy/paper-check/test_setup.py
+          python3 -I deploy/paper-check/test_watchdog.py
           shellcheck deploy/paper-check/suiba-paper-check
           sudo visudo -cf deploy/paper-check/suiba-paper-check.sudoers
           systemd-analyze verify deploy/paper-check/*.service deploy/paper-check/*.timer
@@ -164,3 +165,6 @@ jobs:
       - name: Production service lifecycle with Docker dummy (no Worker)
         if: steps.changes.outputs.heavy == 'true'
         run: sudo /usr/bin/python3 -I deploy/paper-check/verify_prod.py suiba-no-worker:${{ github.sha }}
+      - name: Read-only watchdog timer and journal (no Worker or recovery)
+        if: steps.changes.outputs.heavy == 'true'
+        run: sudo /usr/bin/python3 -I deploy/paper-check/verify_watchdog.py

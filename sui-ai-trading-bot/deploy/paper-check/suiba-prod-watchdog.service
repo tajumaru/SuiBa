@@ -1,0 +1,20 @@
+[Unit]
+Description=SuiBa read-only production watchdog
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /usr/local/libexec/suiba-prod-watchdog.py
+Restart=no
+TimeoutStartSec=90s
+UMask=0077
+ProtectHome=yes
+ProtectSystem=strict
+PrivateTmp=yes
+# The fixed su -> sudo -> restricted wrapper route must regain root.
+NoNewPrivileges=no
+StateDirectory=suiba-watchdog
+StateDirectoryMode=0700
+MemoryMax=128M
+StandardOutput=journal
+StandardError=journal

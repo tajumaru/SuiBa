@@ -1096,6 +1096,49 @@ class ProductionTests(unittest.TestCase):
             self.assertTrue(status['controller_alive'])
             self.assertEqual(status['worker']['running'], False)
 
+    def test_reachable_prod_status_preserves_the_exact_existing_response(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.admit(ctl); record['admitted'] = True
+            FakeBroker.atomic(ctl.record, record)
+            ctl.exited = lambda record: False
+            self.assertEqual(ctl.prod_status(), {
+                'run': {key: record.get(key) for key in ('id', 'status', 'started', 'stopped', 'sha', 'stage', 'admitted')},
+                'controller_alive': True,
+                'worker': {'running': False, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True, 'paper': True},
+                'requires_review': False,
+            })
+
+    def test_unreachable_worker_returns_a_fixed_value_without_mutating_or_leaking(self):
+        errors = (c.urllib.error.URLError('SECRET_FIXTURE'), TimeoutError('SECRET_FIXTURE'),
+                  ConnectionRefusedError('SECRET_FIXTURE'), c.http.client.RemoteDisconnected('SECRET_FIXTURE'),
+                  c.urllib.error.HTTPError('https://SECRET_FIXTURE', 503, 'SECRET_FIXTURE', {}, None))
+        for error in errors:
+            with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                record = self.admit(ctl); record['admitted'] = True
+                FakeBroker.atomic(ctl.record, record)
+                ctl.exited = lambda record: False
+                def api(*args): raise error
+                ctl.api = api
+                before = {p: p.read_bytes() for p in Path(root).rglob('*') if p.is_file()}
+                result = ctl.prod_status()
+                self.assertEqual(result['worker'], {'reachable': False, 'reason': 'WORKER_UNREACHABLE'})
+                self.assertTrue(result['controller_alive'])
+                self.assertEqual(result['run']['status'], 'in_progress')
+                self.assertNotIn('SECRET_FIXTURE', json.dumps(result))
+                self.assertEqual(before, {p: p.read_bytes() for p in Path(root).rglob('*') if p.is_file()})
+
+    def test_prod_status_does_not_mask_invalid_local_credentials_as_transport_failure(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.admit(ctl); record['admitted'] = True
+            FakeBroker.atomic(ctl.record, record)
+            ctl.exited = lambda record: False
+            def api(*args): raise FileNotFoundError('fixture token absent')
+            ctl.api = api
+            with self.assertRaises(FileNotFoundError): ctl.prod_status()
+
     @unittest.skipIf(os.name == 'nt', 'Linux broker flock and procfs')
     def test_preparation_and_start_failures_record_stage_and_do_not_retry_mutations(self):
         from types import SimpleNamespace

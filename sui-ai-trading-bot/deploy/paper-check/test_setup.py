@@ -39,8 +39,8 @@ class UnitTests(unittest.TestCase):
     def test_setup_pins_every_distributed_file_and_verifies_every_unit(self):
         script = (HERE/'setup-paper-check.sh').read_text()
         entries = re.findall(r"'([^'|]+)\|([a-f0-9]{64})\|([^'|]+)\|([0-7]{3})'", script)
-        self.assertEqual(len(entries), 9)
-        self.assertEqual(len({name for name, *_ in entries}), 9)
+        self.assertEqual(len(entries), 12)
+        self.assertEqual(len({name for name, *_ in entries}), 12)
         for name, digest, target, mode in entries:
             self.assertEqual(hashlib.sha256((HERE/name).read_bytes().replace(b'\r\n', b'\n')).hexdigest(), digest, name)
             if name.endswith(('.service', '.timer')):
@@ -50,10 +50,34 @@ class UnitTests(unittest.TestCase):
         self.assertEqual(set(units), {name for name, *_ in entries if name.endswith(('.service', '.timer'))})
         self.assertEqual(len(units), len(set(units)))
         self.assertIn('suiba-prod.service', units)
+        self.assertIn('suiba-prod-watchdog.service', units)
+        self.assertIn('suiba-prod-watchdog.timer', units)
         self.assertFalse(any('prod-policy' in name or 'prod-policy' in target for name, _, target, _ in entries))
         # daemon-reload/verify are permitted, but installation never activates
         # a unit or boot target. The sole stop action retires old cutoff timers.
         self.assertNotRegex(script, r'(?m)^\s*systemctl\s+(?:start|restart|enable|preset)\b')
+
+    def test_watchdog_is_an_independent_observer_with_explicit_timer_activation(self):
+        service = configparser.ConfigParser(interpolation=None)
+        service.read(HERE/'suiba-prod-watchdog.service')
+        self.assertEqual(service['Service']['Type'], 'oneshot')
+        self.assertEqual(service['Service']['Restart'], 'no')
+        self.assertEqual(service['Service']['ExecStart'], '/usr/bin/python3 -I /usr/local/libexec/suiba-prod-watchdog.py')
+        self.assertEqual(service['Service']['ProtectSystem'], 'strict')
+        self.assertEqual(service['Service']['StateDirectory'], 'suiba-watchdog')
+        self.assertEqual(service['Service']['StateDirectoryMode'], '0700')
+        # su drops to the deploy user, then its existing sudo wrapper regains
+        # root; NoNewPrivileges=yes would break that read-only request route.
+        self.assertEqual(service['Service']['NoNewPrivileges'], 'no')
+        self.assertNotIn('Install', service)
+        for key in ('Requires', 'Wants', 'BindsTo', 'PartOf', 'OnFailure'):
+            self.assertNotIn(key, service['Unit'])
+        timer = configparser.ConfigParser(interpolation=None)
+        timer.read(HERE/'suiba-prod-watchdog.timer')
+        self.assertEqual(timer['Timer']['OnBootSec'], '2min')
+        self.assertEqual(timer['Timer']['OnUnitActiveSec'], '5min')
+        self.assertEqual(timer['Timer']['Unit'], 'suiba-prod-watchdog.service')
+        self.assertEqual(timer['Install']['WantedBy'], 'timers.target')
 
 
 @unittest.skipIf(os.name == 'nt', 'Bash/Linux installer gate')
