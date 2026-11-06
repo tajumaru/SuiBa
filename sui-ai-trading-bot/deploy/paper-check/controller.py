@@ -46,6 +46,11 @@ PREFLIGHT_CHECKS = ('storage', 'ledger', 'container', 'admission')
 # only check=container while every diagnose sub-check passed
 # afterwards, leaving the exact require unknown.
 CONTAINER_CHECKS = ('inspect', 'state', 'restart_user', 'env', 'ports', 'memory', 'label', 'transaction', 'image')
+# The deployed container's env chooses which deterministic market
+# provider a run validates (switching providers is a deploy-time
+# compose change). 'auto' is refused: its summary source can flip
+# mid-run, which the freshness checks cannot attribute.
+MARKET_SOURCES = {'geckoterminal': 'GeckoTerminal', 'deepbook': 'DeepBook'}
 
 
 def cutoff_timer(duration):
@@ -426,7 +431,7 @@ class Controller:
                           and container['State']['ExitCode'] == 0 and not container['State']['OOMKilled']),
             'restart_user': safe(lambda: container['HostConfig']['RestartPolicy']['Name'] == 'no' and container['Config']['User'] == '1000:1000'),
             'env': safe(lambda: env.get('MODE') == 'PAPER' and env.get('TRADING_PAIR') == 'SUI_USDC'
-                        and env.get('PAPER_CHECK_MODE') == 'sui-30m' and env.get('MARKET_DATA_PROVIDER') == 'geckoterminal'),
+                        and env.get('PAPER_CHECK_MODE') == 'sui-30m' and env.get('MARKET_DATA_PROVIDER') in MARKET_SOURCES),
             'ports': safe(lambda: container['HostConfig']['PortBindings'] == {'3100/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '3100'}]}),
             'memory': safe(lambda: container['HostConfig']['Memory'] == container['HostConfig']['MemorySwap'] == 1024**3),
             'label': safe(lambda: self.b.SHA.fullmatch(ledger['sha']) and labels.get('org.opencontainers.image.revision') == ledger['sha']),
@@ -779,7 +784,7 @@ class Controller:
         while True:
             self.note_market(market)
             last = market['lastSuccessAt']
-            if market['source'] == 'GeckoTerminal' and type(last) in (int, float) and 0 <= time.time()*1000-last <= 90000:
+            if market['source'] == getattr(self, 'expected_source', 'GeckoTerminal') and type(last) in (int, float) and 0 <= time.time()*1000-last <= 90000:
                 return
             require(time.monotonic() < deadline and time.time()*1000 < cutoff)
             time.sleep(5)
@@ -1022,7 +1027,8 @@ class Controller:
                 detail = 'env'
                 env = dict(v.split('=', 1) for v in i['Config']['Env'])
                 require(env.get('MODE') == 'PAPER' and env.get('TRADING_PAIR') == 'SUI_USDC' and
-                        env.get('PAPER_CHECK_MODE') == 'sui-30m' and env.get('MARKET_DATA_PROVIDER') == 'geckoterminal')
+                        env.get('PAPER_CHECK_MODE') == 'sui-30m' and env.get('MARKET_DATA_PROVIDER') in MARKET_SOURCES)
+                self.expected_source = MARKET_SOURCES[env['MARKET_DATA_PROVIDER']]
                 detail = 'ports'
                 require(i['HostConfig']['PortBindings'] == {'3100/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '3100'}]})
                 detail = 'memory'
@@ -1086,7 +1092,7 @@ class Controller:
                     require(self.api('GET', '/api/pairs')['selected'] == 'SUI_USDC')
                     market = self.api('GET', '/api/dashboard/summary')['summary']['marketData']
                     self.note_market(market)
-                    require(market['source'] == 'GeckoTerminal' and 0 <= time.time()*1000-market['lastSuccessAt'] <= 90000)
+                    require(market['source'] == self.expected_source and 0 <= time.time()*1000-market['lastSuccessAt'] <= 90000)
                     i = self.inspect()
                     require(i['State']['Running'] and not i['State']['OOMKilled'] and i['RestartCount'] == 0)
                     require(i['State'].get('Health', {}).get('Status') == 'healthy')

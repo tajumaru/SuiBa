@@ -135,3 +135,11 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   MARKET_DATA_PROVIDER=geckoterminal を `docker/compose.vps.yaml` に
   固定した。broker の setup（setup-ci-approval.sh）が policy の
   compose.yaml もピン検証付きで配布し、`compose_sha256` を更新する。
+- 市場プロバイダの切り替え（2026-11-06）: コントローラは
+  geckoterminal / deepbook のどちらでも検証できるようにした
+  （preflight で env から期待する summary の source を決め、鮮度・
+  監視はそれと一致するかを見る。source が途中で入れ替わり得る
+  `auto` は検証対象にしない）。切り替えは配置時：compose の
+  MARKET_DATA_PROVIDER を変える（あわせて setup-ci-approval.sh の
+  compose ピン更新）→ broker setup → 再配置、の順。既定は
+  geckoterminal のまま。
