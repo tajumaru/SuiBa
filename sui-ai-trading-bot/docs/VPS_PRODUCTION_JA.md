@@ -1,7 +1,9 @@
 # VPS 本稼働設計 — 起動・停止経路と監視
 
 これは設計書である。worker セッション一般化、controller の本番 op、
-本番 service の配布と host watchdog（§8-3(i)～(iv)）を実装している。
+本番 service の配布、host watchdog、Actions 側の通知
+（§8-3(i)～(v)）を実装している。watchdog 最終判定は prod-status に
+含めて既存 wrapper から読み取る（§5.3）。
 対象は2点に限る：(1) さくら VPS
 上で PAPER 本番を回し続けるための起動・停止経路、(3) 止まったら
 気づける監視。状態の引っ越しと更新手順は骨子のみ、閲覧経路などは
@@ -367,6 +369,38 @@ broker 配置＋素の docker start）は、restart 強制や create-only と
   失敗。いずれも既存の流儀（証拠→承認→実行）に従う。
 
 ### 5.3 通知チャネル
+
+- 第5段の Actions 側契約：`suiba-production-monitor.yml` は30分間隔と
+  手動 dispatch（CHECK-PROD-MONITOR）。main かつ repo 変数
+  `SUIBA_PROD_MONITOR_ENABLED=true` のときだけ動く。既存 sakura-vps
+  Environment と VPS_* の5 secrets を再利用し、ホストに通知用認証情報を
+  追加しない。Environment の既存承認が必要なら schedule も承認待ちに
+  なる。その設定をこの workflow が変更することはない。
+- `docker/ssh-prod-status.sh` はピン済み SSH で既存 wrapper の prod-status
+  を1回だけ呼び、その watchdog フィールドから最終判定を取得する。
+  raw 応答・SSH stderr はログに出さず、
+  型・許可済みコード・ランID・15分以内の鮮度を検証した観測だけを渡す。
+  読取失敗、不正な形、古い記録、ラン不一致を正常・回復とは扱わない。
+- 通知 job のみ built-in GITHUB_TOKEN に issues:write を付ける。専用ラベル
+  `suiba-production-alert` と管理マーカー・固定タイトルが一致する open
+  Issue だけを管理し、要注意で作成／更新、正常確認で close する。未開始は
+  作成・更新・close を行わない（過去の障害の回復とは断定しない）。他の
+  Issue や PR は変更しない。要注意は通知後に workflow も失敗扱いにする。
+  同時実行を直列化し、既存 Issue をページングして調べて重複作成を防ぐ。
+- prod-status の追加フィールドは `watchdog: {record, code}`。固定の root
+  信頼パス `/var/lib/suiba-watchdog/status.json` を上限8KiBで読み、時刻・
+  verdict・許可済み理由コード・run_id を検証する。正常な記録なら code は
+  null、記録なしは `WATCHDOG_RECORD_MISSING`、壊れた形や信頼できない
+  ファイルは `WATCHDOG_RECORD_INVALID` とし record は null。raw 内容・
+  例外・認証情報は返さない。読み取りに書き込み・状態作成は伴わない。
+- 記録なし／不正の2コードだけでは通知を発生させず、prod-status 本体の
+  controller・worker・要レビュー状態で判定する（正常なら回復close可）。
+  有効な最終記録がある場合は、その要注意理由・15分超の古さ・ラン不一致を
+  併せて判定する。本体自体の取得失敗／不正は要注意のまま。host watchdog
+  自身の判定はこの追加フィールドを参照せず、過去の判定を引き継がない。
+- 同じPRでcontrollerとsetupの配布ピンを更新する。既存sudoers・ファイル
+  権限・SSH認証情報は変更しない。controller配布には既存setup経路を使う。
+  repo変数の有効化、ホスト配布、実ホスト確認は明示切替時に行う。
 
 | 候補 | 即時性 | ホスト側の追加 | 備考 |
 |---|---|---|---|

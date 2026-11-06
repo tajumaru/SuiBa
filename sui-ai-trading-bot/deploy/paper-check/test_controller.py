@@ -910,6 +910,8 @@ class ProductionTests(unittest.TestCase):
             if args[:1] == ['stats']: return json.dumps({'MemPerc': '10%'})
             return ''
         b.Docker = lambda state: SimpleNamespace(call=docker)
+        self.patch_watchdog = patch.object(c, 'WATCHDOG_RECORD', Path(root)/'watchdog/status.json')
+        self.patch_watchdog.start(); self.addCleanup(self.patch_watchdog.stop)
         ctl = c.ProductionController(b, validation)
         ctl.prepare_state()
         ctl.identity = lambda pid: ({'pid': pid, 'start': '0', 'boot': str(uuid.UUID(int=0))}, 'S')
@@ -1076,7 +1078,7 @@ class ProductionTests(unittest.TestCase):
             ctl = self.make(root)
             self.assertEqual(ctl.prod_status()['run'], None)
             ctl.state.rmdir()
-            self.assertEqual(ctl.prod_status(), {'run': None, 'requires_review': False})
+            self.assertEqual(ctl.prod_status(), {'run': None, 'requires_review': False, 'watchdog': {'record': None, 'code': 'WATCHDOG_RECORD_MISSING'}})
             self.assertFalse(ctl.state.exists())
             ctl.prepare_state()
             record = self.admit(ctl)
@@ -1107,7 +1109,32 @@ class ProductionTests(unittest.TestCase):
                 'controller_alive': True,
                 'worker': {'running': False, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True, 'paper': True},
                 'requires_review': False,
+                'watchdog': {'record': None, 'code': 'WATCHDOG_RECORD_MISSING'},
             })
+
+    def test_optional_watchdog_record_is_validated_without_writes_or_leaks(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            missing = {'record': None, 'code': 'WATCHDOG_RECORD_MISSING'}
+            self.assertEqual(ctl.prod_status()['watchdog'], missing)
+            c.WATCHDOG_RECORD.parent.mkdir()
+            value = {'at': int(time.time()), 'verdict': 'ok', 'reasons': [], 'run_id': 'a'*32}
+            c.WATCHDOG_RECORD.write_text(json.dumps(value))
+            before = c.WATCHDOG_RECORD.read_bytes()
+            self.assertEqual(ctl.prod_status()['watchdog'], {'record': value, 'code': None})
+            self.assertEqual(c.WATCHDOG_RECORD.read_bytes(), before)
+            invalid = [json.dumps({**value, 'at': True}), json.dumps({**value, 'at': 10**50}),
+                       json.dumps({**value, 'reasons': ['SECRET_FIXTURE'], 'verdict': 'attention'}),
+                       json.dumps({**value, 'extra': 'SECRET_FIXTURE'}),
+                       json.dumps({**value, 'run_id': 'SECRET_FIXTURE'}),
+                       json.dumps({**value, 'verdict': 'attention'}),
+                       '{"at":1,"at":2}', '{"at":NaN}', 'SECRET_FIXTURE'*1000]
+            for raw in invalid:
+                c.WATCHDOG_RECORD.write_text(raw)
+                self.assertEqual(ctl.prod_status()['watchdog'], {'record': None, 'code': 'WATCHDOG_RECORD_INVALID'})
+                self.assertEqual(c.WATCHDOG_RECORD.read_text(), raw)
+            with patch.object(ctl.b, 'read_trusted', side_effect=PermissionError('SECRET_FIXTURE')):
+                self.assertEqual(ctl.watchdog_status(), {'record': None, 'code': 'WATCHDOG_RECORD_INVALID'})
 
     def test_unreachable_worker_returns_a_fixed_value_without_mutating_or_leaking(self):
         errors = (c.urllib.error.URLError('SECRET_FIXTURE'), TimeoutError('SECRET_FIXTURE'),
