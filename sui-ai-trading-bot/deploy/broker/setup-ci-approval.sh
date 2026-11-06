@@ -19,7 +19,7 @@ set -Eeuo pipefail
 umask 077
 
 BROKER_URL='https://raw.githubusercontent.com/tajumaru/SuiBa/main/sui-ai-trading-bot/deploy/broker/broker.py'
-BROKER_SHA256='bafcae2534b18d6037d1774e76e753e5ec3ada3711708e309d88cfa84144bae3'
+BROKER_SHA256='cc36c494c9bf836690ebd8ba730fd0dc563d0b23748659ba3f184476ad53b6c0'
 BROKER_TARGET='/usr/local/libexec/suiba-deploy-broker.py'
 # The policy compose is the repository's docker/compose.vps.yaml.
 # Update this pin in the same commit as any compose.vps.yaml change.

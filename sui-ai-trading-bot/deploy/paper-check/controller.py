@@ -40,6 +40,14 @@ CUTOFF = 'suiba-paper-check-cutoff.service'
 # cutoff and in the per-length cutoff timer, so a started run can never
 # be extended by the container, the Worker, or a later request.
 DURATIONS = {'30m': 1800, '6h': 21600, '24h': 86400}
+# Program files (this controller, the broker) are read whole for
+# integrity checks. The broker's read_trusted default of 64 KiB
+# is sized for state files; this controller passed it at the
+# production-ops stage (84 KiB by the monitor stage), after
+# which every entry point refused to run on the host while
+# module-level tests stayed green. Program reads pass this
+# maximum explicitly, and a test keeps the file below it.
+PROGRAM_READ_MAXIMUM = 262144
 RECONCILE_BACKUPS = Path('/root')
 PREFLIGHT_CHECKS = ('storage', 'ledger', 'container', 'admission')
 # Sub-labels for the container preflight segment, recorded as the
@@ -486,8 +494,8 @@ class Controller:
             # read_trusted default cap (64 KiB) is for state files
             # and the controller outgrew it in 2026-11, which made
             # diagnose itself fail with TRUSTED_FILE_TOO_LARGE.
-            'controller_sha256': hashlib.sha256(self.b.read_trusted(Path(__file__), maximum=262144)).hexdigest(),
-            'broker_sha256': hashlib.sha256(self.b.read_trusted(Path(self.b.__file__), maximum=262144)).hexdigest(),
+            'controller_sha256': hashlib.sha256(self.b.read_trusted(Path(__file__), maximum=PROGRAM_READ_MAXIMUM)).hexdigest(),
+            'broker_sha256': hashlib.sha256(self.b.read_trusted(Path(self.b.__file__), maximum=PROGRAM_READ_MAXIMUM)).hexdigest(),
         }
 
     def approve_deploy(self, run_id, sha):
@@ -1469,7 +1477,7 @@ def main():
         spec = importlib.util.spec_from_file_location('trusted_broker', BROKER)
         b = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(b)
-        b.read_trusted(Path(__file__))
+        b.read_trusted(Path(__file__), maximum=PROGRAM_READ_MAXIMUM)
         controller = Controller(b)
         if sys.argv[1] == 'approve-deploy':
             controller.approve_deploy(sys.argv[2], sys.argv[3])
