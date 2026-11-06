@@ -158,6 +158,11 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   コンテナ env の値を期待ソースとして採用する（どちらでも可）ため、
   切替の成否は診断の「Market at failure: source」ではなく、配置後の
   コンテナ env と実行時ソースで確認する。
+  なお DeepBook プロファイルは `DEEPBOOK_RECONSTRUCT_CANDLES=verified`
+  との併用が前提（`docs/DEEPBOOK_24H_PAPER.md`）。当初この指定が
+  compose に無く、Indexer の足系列の欠け（実測で 5分足1000本中2本）
+  が全取得を CANDLE_GAP で落とし、market-freshness で2回停止した。
+  PR #89 で compose に追加した。
   なお初回の切替配置（seq 8）は、setup の取得がマージ直後で
   raw の旧内容（ブランチ URL のキャッシュ）に当たり、旧 compose の
   まま配置される事故があった。setup 系スクリプトはコミット固定の

@@ -14,6 +14,11 @@ services:
       TRADING_PAIR: SUI_USDC
       PAPER_CHECK_MODE: sui-30m
       MARKET_DATA_PROVIDER: deepbook
+      # The DeepBook profile pairs the provider with verified candle
+      # reconstruction (docs/DEEPBOOK_24H_PAPER.md): without it, any
+      # hole in the indexer's candle series fails every fetch with
+      # CANDLE_GAP and no market success is ever recorded.
+      DEEPBOOK_RECONSTRUCT_CANDLES: verified
       HOST: 0.0.0.0
       PORT: "3100"
       DATABASE_PATH: /app/data/bot.sqlite

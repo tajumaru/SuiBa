@@ -24,7 +24,7 @@ BROKER_TARGET='/usr/local/libexec/suiba-deploy-broker.py'
 # The policy compose is the repository's docker/compose.vps.yaml.
 # Update this pin in the same commit as any compose.vps.yaml change.
 COMPOSE_URL='https://raw.githubusercontent.com/tajumaru/SuiBa/main/sui-ai-trading-bot/docker/compose.vps.yaml'
-COMPOSE_SHA256='a971a3f8df0605ff13fafd7fd3e26a23cfdcf6aa9d4fb3de4284367f4f8a3e28'
+COMPOSE_SHA256='930add4598baf4b3357c08628d1cc8082cb88014d487ff5b3226c1df643d157d'
 COMPOSE_TARGET='/etc/suiba-deploy/compose.yaml'
 POLICY='/etc/suiba-deploy/policy.json'
 SHARED='/opt/suiba/shared'
