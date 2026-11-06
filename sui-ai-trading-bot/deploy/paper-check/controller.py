@@ -574,6 +574,52 @@ class Controller:
             self.b.atomic(folder/'retry-approved.json', {'id': run['id']})
         return {'approved': run['id']}
 
+    def revoke_retry(self):
+        # Withdraw an unused retry approval so the same run can be
+        # reviewed for a deploy instead: the two approvals are
+        # exclusive (approve_deploy refuses while a retry permit
+        # exists). Only the current run's own unconsumed permit can
+        # be withdrawn; a consumed one means a start already used it
+        # and there is nothing left to withdraw.
+        record = self.current()
+        require(record['status'] == 'failed_requires_review')
+        folder = self.folder(record)
+        with self.locked('stop'), self.locked('mutation'):
+            require(self.current()['id'] == record['id'])
+            require(not os.path.lexists(folder/'retry-consumed.json'))
+            permit = folder/'retry-approved.json'
+            require(self.b.decode(self.b.read_trusted(permit)) == {'id': record['id']})
+            permit.unlink()
+        return {'revoked': record['id']}
+
+    def release_cutoff(self):
+        # A run that ends early leaves its cutoff timer armed as a
+        # backstop, and the timer then blocks every quiescent-gated
+        # approval until it fires (up to the full run length away).
+        # Once the record is terminal and the services are out, the
+        # timer has nothing left to stop, so it may be disarmed
+        # early. Refuse while anything could still be live.
+        record = self.current()
+        require(record['status'] in ('completed', 'failed_requires_review'))
+        require(self.exited(record))
+        for unit in (SERVICE, CUTOFF):
+            raw = subprocess.check_output(['/usr/bin/systemctl', 'show', unit, '-p', 'ActiveState', '-p', 'Job'],
+                                          timeout=5, env={'PATH': '/usr/bin:/bin'}, stderr=subprocess.DEVNULL).decode()
+            values = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
+            require(values.get('ActiveState') in ('inactive', 'failed') and values.get('Job') in ('', '0'))
+        released = []
+        for unit in cutoff_timers():
+            try:
+                raw = subprocess.check_output(['/usr/bin/systemctl', 'show', unit, '-p', 'ActiveState'],
+                                              timeout=5, env={'PATH': '/usr/bin:/bin'}, stderr=subprocess.DEVNULL).decode()
+            except subprocess.CalledProcessError:
+                continue  # A timer that is not installed cannot be armed.
+            values = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
+            if values.get('ActiveState') == 'active':
+                self.system('stop', unit)
+                released.append(unit)
+        return {'released': released, 'run': record['id']}
+
     def reconcile_preflight(self, mode, sha=None):
         # The reconcile-preflight.sh procedure as a controller
         # operation, so recovery runs through the approval-gated
@@ -1494,8 +1540,9 @@ def main():
             request = b.decode(sys.stdin.buffer.read(257))
             signal.alarm(0)
             require(isinstance(request, dict) and set(request) <= {'operation', 'duration', 'mode', 'sha'} and
-                    request.get('operation') in ('start', 'status', 'abort', 'diagnose', 'reconcile', 'approve-retry', 'prod-start', 'prod-stop', 'prod-status'))
-            require(request['operation'] in ('start', 'reconcile') or set(request) == {'operation'})
+                    request.get('operation') in ('start', 'status', 'abort', 'diagnose', 'reconcile', 'approve-retry', 'approve-deploy', 'revoke-retry', 'release-cutoff', 'prod-start', 'prod-stop', 'prod-status'))
+            require(request['operation'] in ('start', 'reconcile', 'approve-deploy') or set(request) == {'operation'})
+            require(request['operation'] in ('reconcile', 'approve-deploy') or 'sha' not in request)
             require(request['operation'] == 'start' or 'duration' not in request)
             duration = request.get('duration', '30m')
             require(duration in DURATIONS)
@@ -1511,6 +1558,14 @@ def main():
                 print(json.dumps(controller.reconcile_preflight(mode, request.get('sha'))))
             elif request['operation'] == 'approve-retry':
                 print(json.dumps(controller.approve_retry(controller.current()['id'])))
+            elif request['operation'] == 'approve-deploy':
+                require(type(request.get('sha')) is str)
+                controller.approve_deploy(controller.current()['id'], request['sha'])
+                print(json.dumps({'deploy_approved': request['sha']}))
+            elif request['operation'] == 'revoke-retry':
+                print(json.dumps(controller.revoke_retry()))
+            elif request['operation'] == 'release-cutoff':
+                print(json.dumps(controller.release_cutoff()))
             elif request['operation'] == 'diagnose':
                 print(json.dumps(controller.diagnose()))
             elif request['operation'] == 'status':

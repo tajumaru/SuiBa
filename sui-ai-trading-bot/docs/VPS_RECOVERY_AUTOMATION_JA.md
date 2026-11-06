@@ -130,6 +130,18 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   CI モードではコントローラが最小レコード（sha/operation/expires 1時間）
   を materialize する（配置自体の承認は GitHub Environment と ci_run の
   単調増加が担う）。
+- 監視失敗後の回復操作の Actions 化（2026-11-07）: 監視段階で失敗して
+  clean_stopped で止まったランの後始末で、root CLI でしか届かない操作が
+  3つ残っていた。`suiba-paper-recover.yml`（確認フレーズ `RECOVER-PAPER`、
+  変数 `SUIBA_PAPER_RECOVER_ENABLED`、モード選択）から承認タップで実行
+  できるようにした。`release-cutoff` は終了済みランの残り cutoff
+  タイマーを解除する（レコードが終端・本体/cutoff サービス停止が条件。
+  タイマーは早期終了時の保険だが、quiescent 前提の承認が発火まで
+  最大でラン時間分ブロックされていた）。`revoke-retry` は未消費の
+  再試行承認を取り消す（配置承認とは排他のため、方針変更時に必要）。
+  `approve-deploy` は既存メソッドをそのまま操作化したもので、
+  reconcile（preflight 死専用）では届かなかった監視失敗後の再配置が
+  Actions で完結する。
 - 配置コンテナの環境変数（2026-11-06）: paper-check の env 検査が
   要求する TRADING_PAIR=SUI_USDC / PAPER_CHECK_MODE=sui-30m /
   MARKET_DATA_PROVIDER=geckoterminal を `docker/compose.vps.yaml` に

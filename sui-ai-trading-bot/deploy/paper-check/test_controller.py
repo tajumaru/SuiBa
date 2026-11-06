@@ -409,6 +409,70 @@ class StopTests(unittest.TestCase):
             ctl, record = fixture(Path(tmp))
             with self.assertRaises(RuntimeError): ctl.approve_retry('b'*32)
 
+    def test_revoke_retry_removes_only_an_unconsumed_permit(self):
+        def fixture(root):
+            ctl = object.__new__(c.Controller)
+            ctl.b, ctl.state = FakeBroker, root
+            record = initialize(ctl)
+            record['status'] = 'failed_requires_review'
+            ctl.current = lambda: record
+            ctl.locked = lambda name: contextlib.nullcontext()
+            return ctl, record
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record = fixture(Path(tmp))
+            folder = Path(tmp)/record['id']
+            FakeBroker.atomic(folder/'retry-approved.json', {'id': record['id']})
+            self.assertEqual(ctl.revoke_retry(), {'revoked': record['id']})
+            self.assertFalse((folder/'retry-approved.json').exists())
+            # Nothing left to withdraw: a second revoke is refused.
+            with self.assertRaises(Exception): ctl.revoke_retry()
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record = fixture(Path(tmp))
+            folder = Path(tmp)/record['id']
+            FakeBroker.atomic(folder/'retry-approved.json', {'id': record['id']})
+            FakeBroker.atomic(folder/'retry-consumed.json', {'id': record['id']})
+            with self.assertRaises(RuntimeError): ctl.revoke_retry()
+            self.assertTrue((folder/'retry-approved.json').exists())
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record = fixture(Path(tmp))
+            record['status'] = 'completed'
+            with self.assertRaises(RuntimeError): ctl.revoke_retry()
+
+    def test_release_cutoff_stops_only_armed_timers_for_a_terminal_record(self):
+        def fixture(root, status='failed_requires_review'):
+            ctl = object.__new__(c.Controller)
+            ctl.b, ctl.state = FakeBroker, root
+            record = initialize(ctl)
+            record['status'] = status
+            ctl.current = lambda: record
+            calls = []
+            ctl.system = lambda *args: calls.append(args)
+            return ctl, record, calls
+        def show(states):
+            def fake(args, **kwargs):
+                unit = args[2]
+                return ('ActiveState=%s\nJob=\n' % states[unit]).encode()
+            return fake
+        states = {c.SERVICE: 'inactive', c.CUTOFF: 'inactive',
+                  c.cutoff_timer('30m'): 'active', c.cutoff_timer('6h'): 'inactive',
+                  c.cutoff_timer('24h'): 'inactive'}
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record, calls = fixture(Path(tmp))
+            with patch.object(c.subprocess, 'check_output', show(states)):
+                self.assertEqual(ctl.release_cutoff(), {'released': [c.cutoff_timer('30m')], 'run': record['id']})
+            self.assertEqual(calls, [('stop', c.cutoff_timer('30m'))])
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record, calls = fixture(Path(tmp), status='in_progress')
+            with patch.object(c.subprocess, 'check_output', show(states)):
+                with self.assertRaises(RuntimeError): ctl.release_cutoff()
+            self.assertEqual(calls, [])
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record, calls = fixture(Path(tmp))
+            live = dict(states, **{c.SERVICE: 'active'})
+            with patch.object(c.subprocess, 'check_output', show(live)):
+                with self.assertRaises(RuntimeError): ctl.release_cutoff()
+            self.assertEqual(calls, [])
+
     def test_diagnostic_summary_accepts_a_run_without_backup(self):
         import io
         script = Path(__file__).parents[2]/'docker/ssh-paper-status.sh'
