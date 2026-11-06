@@ -11,6 +11,7 @@ if($env:CI -and $env:CI -ne 'false'){throw 'Live diagnosis is forbidden in CI.'}
 if([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT){throw 'Use the Windows host runner; the isolated worker also runs in Linux Docker.'}
 . (Join-Path $tool 'windows-process.ps1')
 . (Join-Path $tool 'collectors.ps1')
+. (Join-Path $tool 'progress.ps1')
 $node=(Get-Command $NodePath -ErrorAction Stop).Source
 $nodeVersion=Invoke-DiagnosticNative -File $node -Arguments @('--version')
 if($nodeVersion.ExitCode -ne 0){throw 'Node version check failed.'}
@@ -94,18 +95,29 @@ try {
     $since=[DateTime]::Now
     Write-Host "Independent diagnosis: $runId / 30 minutes / no trading. Results: $run"
     Write-Host "Stop: create $(Join-Path $run 'STOP') or press Ctrl+C."
+    $progressCache=@{}
     while([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() -lt $endAt+60000){
+        try {Write-DiagnosticProgress -RunDirectory $run -Cache $progressCache -NowMs ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) -PlannedStart $startAt -PlannedEnd $endAt}
+        catch {Write-Host 'Progress display unavailable; diagnosis and evidence collection continue.'}
         Start-Sleep -Seconds 10
         $until=[DateTime]::Now
         Read-DiagnosticWindowsEvents -Since $since -Until $until -Emit $emit;$since=$until
         Read-DiagnosticDockerLogs -Directory $logs -Offsets $offsets -Emit $emit
         Read-DiagnosticResources -ContainerId $container -Emit $emit
         $running=@(Invoke-DiagnosticDocker @('inspect','--format','{{.State.Running}}',$container))[0].Trim()
-        if(Test-Path -LiteralPath (Join-Path $run 'STOP')){break}
-        if($hostProcess.HasExited -and $running -ne 'true'){break}
+        if(Test-Path -LiteralPath (Join-Path $run 'STOP')){Write-Host 'Stop requested; collecting final reports.';break}
         # A normally completed side must not truncate the other side's actual 30-minute window.
-        if($hostProcess.HasExited -and -not (Test-DiagnosticNormalEnd 'windows')){break}
-        if($running -ne 'true' -and -not (Test-DiagnosticNormalEnd 'docker')){break}
+        if($hostProcess.HasExited -and -not (Test-DiagnosticNormalEnd 'windows')){
+            Write-Host 'WINDOWS WORKER EXITED before normal completion. See host-stderr.log and final reports.'
+            & $emit @{kind='collector-status';collector='host-worker';status='FAILED';reason='WORKER_EXITED_WITHOUT_NORMAL_END';exitCode=$hostProcess.ExitCode}
+            break
+        }
+        if($running -ne 'true' -and -not (Test-DiagnosticNormalEnd 'docker')){
+            Write-Host 'DOCKER WORKER EXITED before normal completion. See docker-worker.log and final reports.'
+            & $emit @{kind='collector-status';collector='docker-worker';status='FAILED';reason='WORKER_EXITED_WITHOUT_NORMAL_END'}
+            break
+        }
+        if($hostProcess.HasExited -and $running -ne 'true'){Write-Host 'Both workers reached their normal end records; collecting reports.';break}
     }
 } catch { & $emit @{kind='collector-status';collector='runner';status='FAILED';reason='RUNNER_FAILURE'};throw }
 finally {
@@ -136,4 +148,8 @@ finally {
     $report=Invoke-DiagnosticNative -File $node -Arguments @((Join-Path $tool 'report.mjs'),$run)
     if($report.ExitCode -ne 0){throw 'DIAGNOSTIC_REPORT_FAILED'}
     Write-Output $report.Stdout.Trim()
+    if($progressCache){
+        try {Write-DiagnosticProgress -RunDirectory $run -Cache $progressCache -NowMs ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) -PlannedStart $startAt -PlannedEnd $endAt}
+        catch {Write-Host 'See run reports for the final result.'}
+    }
 }
