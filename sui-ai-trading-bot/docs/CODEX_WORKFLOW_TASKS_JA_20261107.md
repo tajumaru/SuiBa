@@ -65,6 +65,30 @@ GitHub Actions 経由で取得できるようにする。
 - 単体テスト：manifest 不一致の拒否、抽出範囲（対象外テーブルが
   含まれないこと）。
 
+## 作業3：admission 拒否証拠の履歴化（作業1・2 のマージ後に追加）
+
+PR #102 で入った admission 拒否の証拠記録を、最新1件だけから
+最新5件の履歴に拡張する。別種の拒否が続くと先の証拠が上書きで
+消えるため。
+
+- `admission-failure.json` は最新1件のまま残し、status／diagnose の
+  既存の `admission_failure` の形は変えない。
+- 別ファイル `admission-failures.json` に同じ形の証拠を最新5件まで
+  append-only で保持し、status／diagnose に `admission_failures`
+  として出す。
+- 履歴ファイルの破損は、当該エントリを落とすか履歴を [最新] に戻す
+  扱いにし、拒否ゲートと status を壊さないこと。
+- 例外文・パス・設定値は記録しない（作業1と同じ規則）。
+- 1件約200〜300バイトで5件なら既存の read_trusted 上限4096に
+  収まる想定だが、超えるなら上限を上げるのではなく件数を減らして
+  収めること。
+- `test_admission_evidence.py` に、異なるコード2件が順に残る・
+  6件目で最古が落ちる・履歴破損でも admission と status が
+  壊れない、の3テストを追加する。
+- controller.py を触る PR はこれ1本だけ直列で進める（作業1・2の
+  並行で競合しリベースが1往復増えた教訓）。判定条件と順序は
+  変えない。
+
 ## 共通の約束
 
 - 作業ごとに別 PR にする。push 前のローカル全回帰（typecheck／
