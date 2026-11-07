@@ -163,6 +163,17 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   compose に無く、Indexer の足系列の欠け（実測で 5分足1000本中2本）
   が全取得を CANDLE_GAP で落とし、market-freshness で2回停止した。
   PR #89 で compose に追加した。
+- cutoff 競合の第2入口（2026-11-07、PR #98）: PR #93 の委譲は
+  「通常停止が見えている場合」だけが対象で、09:13 の完走ランは
+  タイマー発火の瞬間にコントローラが監視ループを抜けた直後
+  （intent 未書）で、cutoff が先に intent を取って健全な
+  コントローラを終了させ、failed_requires_review に落ちた
+  （レシートは clean、証拠は全て健全）。対策は2点。(1) cutoff
+  の停止は、コントローラ生存中は最大60秒待って通常停止が
+  見えるのを待ち、見えたら委譲する（死んでいれば即時、詰まって
+  いれば60秒後に従来どおり強制停止する backstop のまま）。
+  (2) コントローラは監視ループを抜けたら最初に 'normal' の
+  intent を書く。verify_run の normal-cutoff 期待値は不変。
 - 開始拒否の楔の修正とヒーリング操作（2026-11-07、PR #96）:
   CYCLE 初ラン（08:49）は readiness 通過後、起動サイクルが
   STALE_CANDLES（Indexer の足遅れ）で止まって runtime error が

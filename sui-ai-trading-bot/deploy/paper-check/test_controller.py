@@ -992,6 +992,45 @@ class StopTests(unittest.TestCase):
             self.assertTrue(ctl.stop(source='cutoff'))
             self.assertEqual(ctl.current()['status'], 'failed_requires_review')
 
+    def test_cutoff_waits_for_a_live_controller_then_defers(self):
+        # Regression (2026-11-07, second entrance): the timer fired
+        # while the controller was only just leaving its monitoring
+        # loop — no 'normal' stop-request existed yet — so the
+        # PR #93 deferral never engaged and the cutoff terminated a
+        # healthy controller, demoting a completed-in-fact run.
+        # While the controller is alive the cutoff now waits for
+        # its stop to become visible, then defers as before.
+        with tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
+            ctl = object.__new__(c.Controller)
+            ctl.b, ctl.state = FakeBroker, Path(root)
+            record = initialize(ctl)
+            ctl.exited = lambda r: False
+            polls = iter([False, False, True, True])
+            ctl.defer_to_normal_completion = lambda r: next(polls)
+            ctl.accept_stop = lambda *a: self.fail('cutoff accepted a stop it should defer')
+            ctl.cleanup = lambda *a: self.fail('cutoff cleaned up a run it should defer')
+            with patch.object(c.time, 'sleep'):
+                self.assertTrue(ctl.stop(source='cutoff'))
+            self.assertEqual(ctl.current()['status'], 'in_progress')
+
+    def test_cutoff_backstops_a_live_controller_that_never_stops(self):
+        # The grace is bounded: a live controller that never begins
+        # its own stop is still force-stopped when it expires.
+        with tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
+            ctl = object.__new__(c.Controller)
+            ctl.b, ctl.state = FakeBroker, Path(root)
+            record = initialize(ctl)
+            ctl.exited = lambda r: False
+            ctl.defer_to_normal_completion = lambda r: False
+            calls = []
+            ctl.cleanup = lambda record, own, source: calls.append(source) or True
+            ctl.terminate = lambda r: True
+            ticks = iter([0, 0])
+            with patch.object(c.time, 'monotonic', side_effect=lambda: next(ticks, 61)), \
+                 patch.object(c.time, 'sleep'):
+                self.assertTrue(ctl.stop(source='cutoff'))
+            self.assertEqual(calls, ['cutoff'])
+
     @unittest.skipIf(os.name == 'nt', 'actual flock is tested in Linux CI')
     def test_stop_lock_failure_preserves_receipt_and_blocks_reentry(self):
         with tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
