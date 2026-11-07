@@ -278,13 +278,82 @@ it("pauses on a market-data stall and resumes after fresh data passes the proofs
   expect(monitor.safety().connectivity).toBe("HEALTHY");
   expect(db.runtime().running).toBe(true);
 });
-it("escalates a stall that persists past the episode deadline to a hard stop", () => {
+it("escalates a candle stale only past the 30-minute stale deadline", () => {
   const { db, monitor } = setup(),
     start = Date.now();
   monitor.market(start, start);
   monitor.watchdog(start + 361000);
   expect(monitor.safety().resumePending).toBe(true);
+  // The standard 3-minute deadline no longer applies to a pure
+  // candle-stale episode.
   monitor.watchdog(start + 361000 + 181000);
+  expect(db.runtime().error).toBeNull();
+  expect(monitor.safety().resumePending).toBe(true);
+  monitor.watchdog(start + 361000 + 1800000);
+  expect(db.runtime().error).toBe("PAPER_RECOVERY_EXHAUSTED");
+  expect(monitor.safety().resumePending).toBe(false);
+});
+it("keeps the standard deadline for a non-stale stall", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  // Closed-candle time stays fresh while fetch success goes stale,
+  // so the stall reason is FETCH_SUCCESS_STALE, not CANDLE_STALE.
+  monitor.market(start + 400000, start);
+  monitor.watchdog(start + 361000);
+  expect(monitor.safety().resumePending).toBe(true);
+  expect(Object.keys(monitor.safety().episodeTally)).toEqual([
+    "MarketData/FETCH_SUCCESS_STALE",
+  ]);
+  monitor.watchdog(start + 361000 + 181000);
+  expect(db.runtime().error).toBe("PAPER_RECOVERY_EXHAUSTED");
+  expect(monitor.safety().resumePending).toBe(false);
+});
+it("survives a ten-minute candle stale and resumes on fresh data", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  monitor.market(start, start);
+  monitor.watchdog(start + 361000);
+  monitor.watchdog(start + 361000 + 600000);
+  expect(db.runtime()).toMatchObject({ running: false, error: null });
+  expect(monitor.safety().resumePending).toBe(true);
+  monitor.market(start + 961000, start + 961000);
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 962000),
+  ).toBe(false);
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 961000 + 61000),
+  ).toBe(true);
+  expect(monitor.safety().connectivity).toBe("HEALTHY");
+  expect(db.runtime().running).toBe(true);
+});
+it("stops immediately on a 429 that arrives during a candle-stale pause", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  monitor.market(start, start);
+  monitor.watchdog(start + 361000);
+  expect(monitor.safety().resumePending).toBe(true);
+  const f = failure({
+    code: "UPSTREAM_HTTP_429",
+    phase: "HTTP",
+    status: 429,
+    timeoutType: null,
+    occurredAt: start + 362000,
+  });
+  monitor.transientFailure(f.api, f.code, f, start + 362000);
+  expect(db.runtime().error).toBe("UPSTREAM_HTTP_429");
+  expect(monitor.safety().resumePending).toBe(false);
+});
+it("restores the standard deadline when another failure joins a stale episode", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  monitor.market(start, start);
+  monitor.watchdog(start + 361000);
+  expect(monitor.safety().resumePending).toBe(true);
+  const f = failure({ occurredAt: start + 400000 });
+  monitor.transientFailure(f.api, f.code, f, start + 400000);
+  monitor.checkRecoveryDeadline(start + 361000 + 181000);
   expect(db.runtime().error).toBe("PAPER_RECOVERY_EXHAUSTED");
   expect(monitor.safety().resumePending).toBe(false);
 });

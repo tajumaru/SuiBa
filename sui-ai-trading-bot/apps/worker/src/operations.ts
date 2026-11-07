@@ -2,6 +2,7 @@ import { abortable } from "../../../packages/shared/src/read-budget.ts";
 import { botControlState } from "../../../packages/shared/src/bot-state.ts";
 import { withReadBudget } from "../../../packages/shared/src/read-budget-node.ts";
 import {
+  episodeLimits,
   episodeSummaryOf,
   initialPaperSafety,
   recoverableReadFailure,
@@ -124,11 +125,12 @@ export class OperationMonitor {
   }
   checkRecoveryDeadline(now = Date.now()) {
     const s = this.safety();
+    const limits = episodeLimits(s);
     if (
       s.resumePending &&
       ((s.episodeAt != null &&
-        now - s.episodeAt >= paperRecoveryLimits.maxEpisodeMs) ||
-        s.failures >= paperRecoveryLimits.maxFailures)
+        now - s.episodeAt >= limits.maxEpisodeMs) ||
+        s.failures >= limits.maxFailures)
     )
       this.stop("PAPER_RECOVERY_EXHAUSTED", now);
   }
@@ -746,7 +748,9 @@ export class OperationMonitor {
    * failure: trading pauses (DEGRADED, resume pending) and the
    * monitor resumes only after the usual healthy proofs; a stall
    * that persists escalates via checkRecoveryDeadline to
-   * PAPER_RECOVERY_EXHAUSTED. An existing hard stop or emergency
+   * PAPER_RECOVERY_EXHAUSTED (a pure candle-stale episode gets
+   * the longer stale deadline from episodeLimits). An existing
+   * hard stop or emergency
    * is never softened into a pause, and a manually stopped bot
    * is left alone.
    */
