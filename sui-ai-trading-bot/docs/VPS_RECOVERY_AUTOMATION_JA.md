@@ -297,3 +297,20 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
 証拠は固定コード、時刻、対象cutoff unitのActiveState/job有無、permit/inhibit有無だけ。例外メッセージ、パス、設定、秘密値は保存しない。記録はbest-effortであり、記録失敗によって開始を許可することはない。成功後も「最後の失敗」として時刻付きで保持し、現在のrunの失敗とは区別する。
 
 status/diagnoseにadmission_failureを追加し、初回のrun未作成時も確認できる。SSHスクリプトはPAPER_CHECK_REASON行の明示allowlistだけを表示し、任意のSCREAMING_CASEや生stderrは通さない。ホスト反映には既存手順でSHA固定のsetup更新が必要。
+
+
+## 公開用の開始前バックアップ抽出（2026-11-07）
+
+`SuiBa public pre-run snapshot export` はmain上の手動workflow。repository変数 `SUIBA_PAPER_EXPORT_ENABLED=true`、sakura-vps環境の承認、確認文字列 `EXPORT-PAPER-PUBLIC` が揃ったときだけ、既存の固定wrapperへ `{"operation":"export-snapshot"}` を送る。任意のパス・runId・SQL・コマンドは受け取らない。セットアップではcontrollerとexport_snapshot.pyのSHA256ピンを同時に検証して配置する。
+
+**このrepoはpublicであり、Actions artifactは誰でも取得できる前提。抽出された経済データ・判断・取引時刻・数量・費用・run識別情報が公開される。保持は1日だが、第三者が取得したコピーの消去は保証できない。** 承認者はこの公開範囲を確認してから実行する。鍵・接続先・token・任意のstderrやrawバックアップはartifactに含めない。
+
+対象は現在のrun.jsonが指す直近ランに紐づく**開始前バックアップのみ**。終了済みランに加え、オーナーの選択により稼働中/終了処理中ランも同じ開始前コピーを対象にできる。backup未記録ならEXPORT_BACKUP_MISSINGで拒否する。生の現行DBやvolumeを開かず、worker/API/systemctl/Dockerを呼ばず、停止・ラッチ・復旧操作をしない。
+
+既存の開始前保存形式はtarで、独立したmanifest.jsonではなく、root所有run.jsonのbackup欄がfileとsha256を保持している。このtrusted manifest情報のSHA256を同じFDのtar全体と照合し、不一致はEXPORT_MANIFEST_MISMATCH。元のtarは公開しない。128MiB/4096メンバー/60秒/総10万行/抽出16MiBを上限とし、超過時は部分抽出を成功扱いしない。SQLite WAL回復は一時コピー内だけで行う。
+
+新規SQLiteへ再構成する対象テーブルは strategy_decisions / technical_indicators / operation_candidates / paper_orders / paper_trades / operation_events / cycle_audits の7種類（存在するもの）。列はid/timestamp/jsonだけ。JSONも固定の数値・真偽値・enumのallowlistで再構成する。設定テーブル、runtime、認証、足、portfolio_snapshots、判断のthresholds、注文経路・HTTP headers、自由文は出さない。IDと相互参照は同じSHA256表現へ変換し、結合を維持する。未知のイベントコードはREDACTEDとする。
+
+公開manifestにはscope=PRE_RUN_BACKUP_PUBLIC_EXTRACT、runの固定項目、元tarのSHA256、生成DBのSHA256・サイズ・件数と省略範囲を記録する。runner側でもファイル名/サイズ/ハッシュ/テーブル/JSON allowlistを検証し、検証済みのSQLiteとmanifestだけをartifact化する。取得したDBは `node --import tsx scripts/ml-data-audit.ts <PAIR.sqlite> <FROM_ISO> <UNTIL_ISO>` で監査できる。対象期間はバックアップに含まれる過去の時刻を指定する。
+
+制約：開始前コピーには当該ラン中の新しい判断・約定・停止は入らない。今回の6時間ランの成績そのものを確定するデータ経路ではない。また、設定/thresholdsを意図的に省略するため監査のevidenceCompleteは完全にならず、公開抽出だけから当時の全設定や学習ラベルを復元できない。終了後DBの公開・非公開配送は本変更の対象外として未決。
