@@ -9,7 +9,7 @@
 set +x
 set -Eeuo pipefail
 umask 077
-fail() { echo 'PAPER_RECOVER_FAILED (connection or response details withheld)' >&2; exit 1; }
+fail() { python3 "$(dirname "${BASH_SOURCE[0]}")/paper-fixed-reason.py" "${errors:-/dev/null}" >&2 || true; echo 'PAPER_RECOVER_FAILED (connection or response details withheld)' >&2; exit 1; }
 [[ ${PAPER_RECOVER_CONFIRMATION:-} == RECOVER-PAPER ]] || fail
 case ${PAPER_RECOVER_MODE:-} in
   release-cutoff) request='{"operation":"release-cutoff"}' ;;

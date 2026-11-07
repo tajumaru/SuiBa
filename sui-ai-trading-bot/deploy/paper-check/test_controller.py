@@ -169,7 +169,7 @@ class StopTests(unittest.TestCase):
             def render():
                 path.write_text(json.dumps(payload))
                 output = io.StringIO()
-                with patch.object(c.sys, 'argv', ['summary', str(path), 'diagnose']), contextlib.redirect_stdout(output):
+                with patch.object(c.sys, 'argv', ['summary', str(path), 'diagnose', str(script.with_name('paper-fixed-reason.py'))]), contextlib.redirect_stdout(output):
                     exec(compile(renderer, 'summary', 'exec'), {})
                 return output.getvalue()
             self.assertIn('worker-readiness', render())
@@ -592,7 +592,7 @@ class StopTests(unittest.TestCase):
             def render():
                 path.write_text(json.dumps(payload))
                 output = io.StringIO()
-                with patch.object(c.sys, 'argv', ['summary', str(path), 'diagnose']), contextlib.redirect_stdout(output):
+                with patch.object(c.sys, 'argv', ['summary', str(path), 'diagnose', str(script.with_name('paper-fixed-reason.py'))]), contextlib.redirect_stdout(output):
                     exec(compile(renderer, 'summary', 'exec'), {})
                 return output.getvalue()
             output = render()

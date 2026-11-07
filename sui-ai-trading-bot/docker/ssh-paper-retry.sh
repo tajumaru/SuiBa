@@ -8,7 +8,7 @@
 set +x
 set -Eeuo pipefail
 umask 077
-fail() { echo 'PAPER_RETRY_FAILED (connection or response details withheld)' >&2; exit 1; }
+fail() { python3 "$(dirname "${BASH_SOURCE[0]}")/paper-fixed-reason.py" "${errors:-/dev/null}" >&2 || true; echo 'PAPER_RETRY_FAILED (connection or response details withheld)' >&2; exit 1; }
 [[ ${PAPER_RETRY_CONFIRMATION:-} == RETRY-PAPER ]] || fail
 request='{"operation":"approve-retry"}'
 [[ ${VPS_HOST:-} =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]] || fail

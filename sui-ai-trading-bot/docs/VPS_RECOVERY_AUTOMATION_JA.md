@@ -288,3 +288,12 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   MARKET_DATA_PROVIDER を変える（あわせて setup-ci-approval.sh の
   compose ピン更新）→ broker setup → 再配置、の順。既定は
   geckoterminal のまま。
+
+
+## admission の拒否証拠（2026-11-07）
+
+開始前のpolicy・start-request・abort-inhibit・quiescent・前任run・retry/freshの各関門が拒否した場合、run.jsonとは別のadmission-failure.jsonへ直近の失敗を記録する。再試行承認の未消費permit残留もRETRY_ALREADY_APPROVEDとして記録する。判定と順序は変更しない。
+
+証拠は固定コード、時刻、対象cutoff unitのActiveState/job有無、permit/inhibit有無だけ。例外メッセージ、パス、設定、秘密値は保存しない。記録はbest-effortであり、記録失敗によって開始を許可することはない。成功後も「最後の失敗」として時刻付きで保持し、現在のrunの失敗とは区別する。
+
+status/diagnoseにadmission_failureを追加し、初回のrun未作成時も確認できる。SSHスクリプトはPAPER_CHECK_REASON行の明示allowlistだけを表示し、任意のSCREAMING_CASEや生stderrは通さない。ホスト反映には既存手順でSHA固定のsetup更新が必要。

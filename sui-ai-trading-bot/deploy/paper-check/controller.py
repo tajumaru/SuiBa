@@ -126,6 +126,20 @@ def require(value):
         raise RuntimeError('PAPER_CHECK_REJECTED')
 
 
+ADMISSION_CODES = frozenset('''ADMISSION_POLICY ADMISSION_LOCK ADMISSION_START_REQUEST
+ADMISSION_ABORT_INHIBIT ADMISSION_QUIESCENT ADMISSION_PREVIOUS_RUN ADMISSION_RETRY_LATCH
+ADMISSION_RETRY_MARKER ADMISSION_RETRY_CONSUMED ADMISSION_RETRY_PERMIT ADMISSION_PREVIOUS_STATUS
+ADMISSION_PREVIOUS_EXIT ADMISSION_PREVIOUS_STOP ADMISSION_FRESH_GATE ADMISSION_RETRY_CONSUME
+ADMISSION_RECORD RETRY_REVIEW RETRY_RUN RETRY_STOP RETRY_LOCK RETRY_CURRENT RETRY_CONSUMED
+RETRY_ALREADY_APPROVED RETRY_RECORD'''.split())
+
+
+class AdmissionRejected(RuntimeError):
+    def __init__(self, code):
+        self.code = code
+        super().__init__(code)
+
+
 # Query only temporary copies inside the existing pinned, offline helper image.
 DIAGNOSTIC_QUERY = """
 const { DatabaseSync } = require("node:sqlite");
@@ -291,6 +305,57 @@ class Controller:
         with contextlib.suppress(Exception):
             self.b.atomic(self.folder(record)/'preflight.json', evidence)
 
+    def admission_step(self, code):
+        self._admission_code, self._admission_observed = code, {}
+
+    def admission_observe(self, key, value):
+        # Return the original value: recording must not change any gate result.
+        if getattr(self, '_admission_tracking', False):
+            self._admission_observed[key] = value
+        return value
+
+    @contextlib.contextmanager
+    def admission_evidence(self, operation):
+        self._admission_tracking = True
+        self.admission_step('ADMISSION_POLICY' if operation == 'admit' else 'RETRY_REVIEW')
+        try:
+            yield
+        except BaseException:
+            code = self._admission_code
+            evidence = {'version': 1, 'at': int(time.time()*1000), 'operation': operation,
+                        'code': code, 'observed': self._admission_observed}
+            # No exception text, paths, request payloads or settings are recorded.
+            with contextlib.suppress(Exception):
+                self.b.atomic(self.state/'admission-failure.json', evidence)
+            raise AdmissionRejected(code) from None
+        finally:
+            self._admission_tracking = False
+
+    def admission_failure(self):
+        path = self.state/'admission-failure.json'
+        if not path.exists(): return None
+        try:
+            value = self.b.decode(self.b.read_trusted(path, maximum=4096))
+            require(type(value) is dict and set(value) == {'version', 'at', 'operation', 'code', 'observed'})
+            require(value['version'] == 1 and type(value['at']) is int and value['at'] >= 0 and
+                    value['operation'] in ('admit', 'approve-retry') and value['code'] in ADMISSION_CODES)
+            observed = value['observed']
+            require(type(observed) is dict and set(observed) <= {'unit', 'active_state', 'job_pending', 'permit_exists', 'consumed_exists', 'inhibit_exists'})
+            for key, item in observed.items():
+                if key == 'unit': require(item in (*cutoff_timers(), CUTOFF))
+                elif key == 'active_state': require(item in ('active', 'activating', 'deactivating', 'inactive', 'failed', 'unknown'))
+                else: require(type(item) is bool)
+            return value
+        except Exception:
+            return {'code': 'ADMISSION_EVIDENCE_INVALID'}
+
+    def status(self):
+        record = self.current() if self.record.exists() else None
+        receipt = self.folder(record)/'stop.json' if record else None
+        return {'run': record, 'requires_review': self.faults(record) if record else False,
+                'stop': self.b.decode(self.b.read_trusted(receipt)) if receipt and receipt.exists() else None,
+                'admission_failure': self.admission_failure()}
+
     def fault(self, record, code):
         # Separate sticky admission fence: even a fault arriving after the last
         # completion check must never be erased by publishing "completed".
@@ -389,6 +454,10 @@ class Controller:
                     raise
                 continue
             values = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
+            self.admission_observe('unit', unit)
+            self.admission_observe('active_state', values.get('ActiveState') if values.get('ActiveState') in
+                                   ('active', 'activating', 'deactivating', 'inactive', 'failed') else 'unknown')
+            self.admission_observe('job_pending', values.get('Job') not in ('', '0'))
             require(values.get('ActiveState') in ('inactive', 'failed') and values.get('Job') in ('', '0'))
 
     def system(self, *args):
@@ -407,9 +476,14 @@ class Controller:
             import fcntl
             fcntl.flock(lock, fcntl.LOCK_EX|fcntl.LOCK_NB)
             with self.locked('stop'), self.locked('mutation'):
-                return self.diagnose_locked()
+                report = self.diagnose_locked()
+                report['admission_failure'] = self.admission_failure()
+                return report
 
     def diagnose_locked(self):
+        if not self.record.exists():
+            return {'run': None, 'stop': None, 'requires_review': False, 'diagnostics': None,
+                    'admission_failure': self.admission_failure()}
         record = self.current()
         require(record['status'] in ('completed', 'failed_requires_review') and self.exited(record))
         i = self.inspect()
@@ -473,6 +547,7 @@ class Controller:
             preflight = {'check': value['check'], 'error': value['error'], 'detail': detail}
         return {
             'run': {'id': record['id'], 'status': record['status'], 'duration': record.get('duration', '30m')},
+            'admission_failure': self.admission_failure(),
             'stop': {'id': stop['id'], 'status': stop['status'], 'errors': stop_errors},
             'requires_review': self.faults(record),
             'diagnostics': {
@@ -621,24 +696,32 @@ class Controller:
                     os.fsync(directory_fd)
 
     def approve_retry(self, run_id):
-        # The root CLI's approval, shared with the approve-retry
-        # request op: only a run that was admitted and then stopped
-        # cleanly (stop receipt clean_stopped, no fault evidence,
-        # diagnose fully readable) may be retried. Preflight deaths
-        # end in failed_state_unknown instead and stay with the
-        # reconcile path; this method refuses them through the
-        # stop-receipt check.
-        report = self.diagnose()
-        run = report['run']
-        require(run['id'] == run_id and run['status'] == 'failed_requires_review')
-        require(report['stop']['status'] == 'clean_stopped' and not report['requires_review'])
-        folder = self.folder(run)
-        with self.locked('stop'), self.locked('mutation'):
-            require(self.current()['id'] == run['id'])
-            require(not os.path.lexists(folder/'retry-consumed.json'))
-            require(not os.path.lexists(folder/'retry-approved.json'))
-            self.b.atomic(folder/'retry-approved.json', {'id': run['id']})
-        return {'approved': run['id']}
+        with self.admission_evidence('approve-retry'):
+            # The root CLI's approval, shared with the approve-retry
+            # request op: only a run that was admitted and then stopped
+            # cleanly (stop receipt clean_stopped, no fault evidence,
+            # diagnose fully readable) may be retried. Preflight deaths
+            # end in failed_state_unknown instead and stay with the
+            # reconcile path; this method refuses them through the
+            # stop-receipt check.
+            report = self.diagnose()
+            self.admission_step('RETRY_RUN')
+            run = report['run']
+            require(run['id'] == run_id and run['status'] == 'failed_requires_review')
+            self.admission_step('RETRY_STOP')
+            require(report['stop']['status'] == 'clean_stopped' and not report['requires_review'])
+            folder = self.folder(run)
+            self.admission_step('RETRY_LOCK')
+            with self.locked('stop'), self.locked('mutation'):
+                self.admission_step('RETRY_CURRENT')
+                require(self.current()['id'] == run['id'])
+                self.admission_step('RETRY_CONSUMED')
+                require(not self.admission_observe('consumed_exists', os.path.lexists(folder/'retry-consumed.json')))
+                self.admission_step('RETRY_ALREADY_APPROVED')
+                require(not self.admission_observe('permit_exists', os.path.lexists(folder/'retry-approved.json')))
+                self.admission_step('RETRY_RECORD')
+                self.b.atomic(folder/'retry-approved.json', {'id': run['id']})
+            return {'approved': run['id']}
 
     def revoke_retry(self):
         # Withdraw an unused retry approval so the same run can be
@@ -1309,48 +1392,65 @@ class Controller:
         return request['duration']
 
     def admit_session(self):
-        self.retry_admitted = False
-        config = self.b.decode(self.b.read_trusted(POLICY))
-        require(config == {'enabled': True, 'mode': 'sui-30m'})
-        with self.locked('stop'), self.locked('mutation'):
-            duration = self.take_start_request()
-            timer = cutoff_timer(duration)
-            require(not (self.state/'abort-inhibit.json').exists())
-            self.quiescent()
-            permit = None
-            if self.record.exists():
-                old = self.current()
-                if old['status'] == 'failed_requires_review':
-                    require(not os.path.lexists(self.b.STATE/'paper-check-failed.json'))
-                    marker = self.b.decode(self.b.read_trusted(self.b.STATE/'paper-check.json'))
-                    require(marker == {'status': 'in_progress'})
-                    permit = self.folder(old)/'retry-approved.json'
-                    require(not os.path.lexists(permit.with_name('retry-consumed.json')))
-                    require(self.b.decode(self.b.read_trusted(permit)) == {'id': old['id']})
+        with self.admission_evidence('admit'):
+            self.retry_admitted = False
+            config = self.b.decode(self.b.read_trusted(POLICY))
+            require(config == {'enabled': True, 'mode': 'sui-30m'})
+            self.admission_step('ADMISSION_LOCK')
+            with self.locked('stop'), self.locked('mutation'):
+                self.admission_step('ADMISSION_START_REQUEST')
+                duration = self.take_start_request()
+                timer = cutoff_timer(duration)
+                self.admission_step('ADMISSION_ABORT_INHIBIT')
+                require(not self.admission_observe('inhibit_exists', (self.state/'abort-inhibit.json').exists()))
+                self.admission_step('ADMISSION_QUIESCENT')
+                self.quiescent()
+                permit = None
+                if self.record.exists():
+                    self.admission_step('ADMISSION_PREVIOUS_RUN')
+                    old = self.current()
+                    if old['status'] == 'failed_requires_review':
+                        self.admission_step('ADMISSION_RETRY_LATCH')
+                        require(not os.path.lexists(self.b.STATE/'paper-check-failed.json'))
+                        self.admission_step('ADMISSION_RETRY_MARKER')
+                        marker = self.b.decode(self.b.read_trusted(self.b.STATE/'paper-check.json'))
+                        require(marker == {'status': 'in_progress'})
+                        permit = self.folder(old)/'retry-approved.json'
+                        self.admission_step('ADMISSION_RETRY_CONSUMED')
+                        require(not self.admission_observe('consumed_exists', os.path.lexists(permit.with_name('retry-consumed.json'))))
+                        self.admission_step('ADMISSION_RETRY_PERMIT')
+                        self.admission_observe('permit_exists', os.path.lexists(permit))
+                        require(self.b.decode(self.b.read_trusted(permit)) == {'id': old['id']})
+                    else:
+                        self.admission_step('ADMISSION_PREVIOUS_STATUS')
+                        require(old['status'] == 'completed')
+                    self.admission_step('ADMISSION_PREVIOUS_EXIT')
+                    require(self.exited(old))
+                    self.admission_step('ADMISSION_PREVIOUS_STOP')
+                    previous = self.b.decode(self.b.read_trusted(self.folder(old)/'stop.json'))
+                    require(previous['id'] == old['id'] and previous['status'] == 'clean_stopped' and not self.faults(old))
+                if permit is None:
+                    self.admission_step('ADMISSION_FRESH_GATE')
+                    self.b.Broker(state=self.b.STATE).check_paper_session()
                 else:
-                    require(old['status'] == 'completed')
-                require(self.exited(old))
-                previous = self.b.decode(self.b.read_trusted(self.folder(old)/'stop.json'))
-                require(previous['id'] == old['id'] and previous['status'] == 'clean_stopped' and not self.faults(old))
-            if permit is None:
-                self.b.Broker(state=self.b.STATE).check_paper_session()
-            else:
-                # The retry approval is the human review of the failed
-                # run; it also authorizes clearing that run's stale
-                # runtime error once at this start (see
-                # maybe_reset_stale), the same reset the owner would
-                # press on the dashboard after reviewing the failure.
-                self.retry_admitted = True
-                self.consume_retry(old, permit)
-            now = int(time.time()*1000)
-            self.run_id = uuid.uuid4().hex
-            (self.state/self.run_id).mkdir(mode=0o700)
-            identity, _ = self.identity(os.getpid())
-            record = {'status': 'in_progress', 'id': self.run_id, 'controller': identity, 'admitted': False,
-                      'started': now, 'cutoff': now+DURATIONS[duration]*1000, 'duration': duration}
-            self.b.atomic(self.b.STATE/'paper-check.json', {'status': 'in_progress'})
-            self.b.atomic(self.record, record)
-        return record, duration, timer
+                    # The retry approval is the human review of the failed
+                    # run; it also authorizes clearing that run's stale
+                    # runtime error once at this start (see
+                    # maybe_reset_stale), the same reset the owner would
+                    # press on the dashboard after reviewing the failure.
+                    self.admission_step('ADMISSION_RETRY_CONSUME')
+                    self.retry_admitted = True
+                    self.consume_retry(old, permit)
+                self.admission_step('ADMISSION_RECORD')
+                now = int(time.time()*1000)
+                self.run_id = uuid.uuid4().hex
+                (self.state/self.run_id).mkdir(mode=0o700)
+                identity, _ = self.identity(os.getpid())
+                record = {'status': 'in_progress', 'id': self.run_id, 'controller': identity, 'admitted': False,
+                          'started': now, 'cutoff': now+DURATIONS[duration]*1000, 'duration': duration}
+                self.b.atomic(self.b.STATE/'paper-check.json', {'status': 'in_progress'})
+                self.b.atomic(self.record, record)
+            return record, duration, timer
 
     def preflight(self, record):
         # A death in this pre-admission window used to leave only
@@ -1862,10 +1962,7 @@ def main():
             elif request['operation'] == 'diagnose':
                 print(json.dumps(controller.diagnose()))
             elif request['operation'] == 'status':
-                record = controller.current()
-                receipt = controller.folder(record)/'stop.json'
-                print(json.dumps({'run': record, 'requires_review': controller.faults(record),
-                                  'stop': b.decode(b.read_trusted(receipt)) if receipt.exists() else None}))
+                print(json.dumps(controller.status()))
             elif request['operation'] == 'start':
                 require(not (controller.state/'abort-inhibit.json').exists())
                 controller.note_start_request(duration)
@@ -1892,7 +1989,9 @@ def main():
         else:
             controller.run()
         return 0
-    except BaseException:
+    except BaseException as error:
+        if isinstance(error, AdmissionRejected) and error.code in ADMISSION_CODES:
+            print('PAPER_CHECK_REASON='+error.code, file=sys.stderr)
         print('PAPER_CHECK_FAILED; inspect root-owned state; no automatic restart', file=sys.stderr)
         return 1
 

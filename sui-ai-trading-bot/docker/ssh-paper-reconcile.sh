@@ -7,7 +7,7 @@
 set +x
 set -Eeuo pipefail
 umask 077
-fail() { echo 'PAPER_RECONCILE_FAILED (connection or response details withheld)' >&2; exit 1; }
+fail() { python3 "$(dirname "${BASH_SOURCE[0]}")/paper-fixed-reason.py" "${errors:-/dev/null}" >&2 || true; echo 'PAPER_RECONCILE_FAILED (connection or response details withheld)' >&2; exit 1; }
 [[ ${PAPER_RECONCILE_CONFIRMATION:-} == RECONCILE-PAPER ]] || fail
 case "${PAPER_RECONCILE_MODE:-}" in
   retry) request='{"operation":"reconcile","mode":"retry"}' ;;
