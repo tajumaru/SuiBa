@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Run one post-run recovery operation through the fixed controller
 # wrapper: disarm leftover cutoff timers (release-cutoff), withdraw
-# an unused retry approval (revoke-retry), or approve a deploy over
-# a cleanly stopped failed run (approve-deploy). The controller
-# re-checks its own evidence for each operation and refuses before
-# changing anything when the state does not match.
+# an unused retry approval (revoke-retry), approve a deploy over
+# a cleanly stopped failed run (approve-deploy), or heal a run
+# wedged by a definitively refused operation (heal-run). The
+# controller re-checks its own evidence for each operation and
+# refuses before changing anything when the state does not match.
 set +x
 set -Eeuo pipefail
 umask 077
@@ -13,6 +14,7 @@ fail() { echo 'PAPER_RECOVER_FAILED (connection or response details withheld)' >
 case ${PAPER_RECOVER_MODE:-} in
   release-cutoff) request='{"operation":"release-cutoff"}' ;;
   revoke-retry) request='{"operation":"revoke-retry"}' ;;
+  heal-run) request='{"operation":"heal-run"}' ;;
   approve-deploy)
     [[ ${PAPER_RECOVER_SHA:-} =~ ^[0-9a-f]{40}$ ]] || fail
     request="{\"operation\":\"approve-deploy\",\"sha\":\"$PAPER_RECOVER_SHA\"}" ;;
@@ -74,6 +76,13 @@ try:
         if set(payload) != {"revoked"} or not re.fullmatch(r"[0-9a-f]{32}", payload["revoked"]):
             raise ValueError()
         lines = [f"- Retry approval withdrawn for run: `{payload['revoked']}`"]
+    elif mode == "heal-run":
+        if set(payload) != {"healed", "backup"} or not re.fullmatch(r"[0-9a-f]{32}", payload["healed"]):
+            raise ValueError()
+        if not re.fullmatch(r"heal-[0-9]{14}", payload["backup"]):
+            raise ValueError()
+        lines = [f"- Healed run: `{payload['healed']}`",
+                 f"- Original evidence preserved in backup: `{payload['backup']}`"]
     else:
         if set(payload) != {"deploy_approved"} or not re.fullmatch(r"[0-9a-f]{40}", payload["deploy_approved"]):
             raise ValueError()

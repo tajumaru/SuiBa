@@ -325,7 +325,19 @@ class Controller:
             require(not (self.folder(record)/'stop-request.json').exists())
             require(time.time()*1000 < self.session_cutoff(record))
             self.b.atomic(self.folder(record)/'mutation.json', {'id': self.run_id, 'pending': operation})
-            result = action()
+            try:
+                result = action()
+            except urllib.error.HTTPError as error:
+                # A 4xx is a definitive refusal: the server evaluated
+                # the request and the operation did not take effect,
+                # so the pending marker must not survive it (a 409
+                # paper-start refusal on 2026-11-07 otherwise left
+                # OPERATION_COMPLETION_UNCONFIRMED behind for a start
+                # that never ran). 5xx and transport failures stay
+                # unconfirmed on purpose: the request may have landed.
+                if 400 <= error.code < 500:
+                    self.b.atomic(self.folder(record)/'mutation.json', {'id': self.run_id, 'pending': None})
+                raise
             self.b.atomic(self.folder(record)/'mutation.json', {'id': self.run_id, 'pending': None})
             return result
 
@@ -674,6 +686,58 @@ class Controller:
                 released.append(unit)
         return {'released': released, 'run': record['id']}
 
+    def heal_run(self):
+        # Reviewed healing for the one wedge the approval paths
+        # cannot pass: a guarded operation the server definitively
+        # refused (HTTP 4xx) left its pending marker behind (before
+        # the guard learned to clear it), so cleanup reported
+        # OPERATION_COMPLETION_UNCONFIRMED and latched a fault for
+        # an operation that never took effect — 2026-11-07, a
+        # paper-start 409 over a boot-cycle STALE_CANDLES. The stop
+        # receipt is failed_state_unknown, so approve_retry and
+        # approve_deploy both refuse. Heal only when every piece of
+        # evidence says the run is otherwise clean — the standard
+        # reconcile_preflight applies to its narrower case — and
+        # preserve the originals in a backup before touching them.
+        record = self.current()
+        require(record['status'] == 'failed_requires_review')
+        require(self.exited(record))
+        folder = self.folder(record)
+        stop = self.b.decode(self.b.read_trusted(folder/'stop.json'))
+        require(stop['id'] == record['id'] and stop['status'] == 'failed_state_unknown')
+        errors = stop.get('errors')
+        require(type(errors) is list and 'OPERATION_COMPLETION_UNCONFIRMED' in errors and
+                set(errors) <= {'OPERATION_COMPLETION_UNCONFIRMED', 'LATCHED_FAILURE'})
+        failure = self.b.decode(self.b.read_trusted(folder/'failure.json'))
+        require(failure['id'] == record['id'] and failure['stage'] in ('arm', 'paper-start') and
+                type(failure.get('http_status')) is int and 400 <= failure['http_status'] < 500)
+        mutation = self.b.decode(self.b.read_trusted(folder/'mutation.json'))
+        require(mutation['id'] == record['id'] and mutation['pending'] == failure['stage'])
+        report = self.diagnose()
+        diag = report['diagnostics']
+        require(report['run']['id'] == record['id'] and report['stop']['status'] == 'failed_state_unknown')
+        require(diag['exit_code'] == 0 and diag['oom_killed'] is False and diag['maintenance'] and
+                diag['clean_lifecycle'] and diag['backup_verified'])
+        self.quiescent()
+        broker_latch = self.b.STATE/'paper-check-failed.json'
+        require(os.path.lexists(broker_latch))
+        backup = RECONCILE_BACKUPS/('heal-' + time.strftime('%Y%m%d%H%M%S'))
+        backup.mkdir(mode=0o700)
+        shutil.copy2(self.record, backup/'run.json')
+        shutil.copy2(folder/'stop.json', backup/'stop.json')
+        if (self.state/'stop.json').exists():
+            shutil.copy2(self.state/'stop.json', backup/'stop-root.json')
+        shutil.copy2(folder/'failure.json', backup/'failure.json')
+        shutil.copy2(folder/'mutation.json', backup/'mutation.json')
+        os.replace(broker_latch, backup/'paper-check-failed.json')
+        for fault in sorted(folder.glob('fault-*.json')):
+            os.replace(fault, backup/fault.name)
+        self.b.atomic(folder/'mutation.json', {'id': record['id'], 'pending': None})
+        self.receipt(record, 'clean_stopped', [])
+        report = self.diagnose()
+        require(report['stop']['status'] == 'clean_stopped' and not report['requires_review'])
+        return {'healed': record['id'], 'backup': backup.name}
+
     def reconcile_preflight(self, mode, sha=None):
         # The reconcile-preflight.sh procedure as a controller
         # operation, so recovery runs through the approval-gated
@@ -959,12 +1023,45 @@ class Controller:
             due = False
         if not due:
             return
+        self.send_stale_reset()
+
+    def send_stale_reset(self):
         self.stale_reset_attempts = getattr(self, 'stale_reset_attempts', 0)+1
         try:
             self.api('POST', '/api/control', {'command': 'reset'})
             self.stale_reset_ok = True
         except (RuntimeError, urllib.error.URLError):
             pass
+
+    def recheck_start_blockers(self, cutoff):
+        # Boot cycles keep running between readiness and the start
+        # call, and a fresh transient failure in that window persists
+        # a new runtime error that readiness had already cleared —
+        # on 2026-11-07 a boot cycle stopped with STALE_CANDLES
+        # while the indexer lagged, the market recovered in time for
+        # the freshness check, and paper-start still refused with
+        # 409 over the persisted error. On a retry-admitted run,
+        # re-check the two start blockers the reset clears
+        # immediately before the start and clear a stale blocker the
+        # same way readiness did. A blocker that does not clear
+        # within the window still fails the run here.
+        deadline = time.monotonic()+20
+        while True:
+            d = self.api('GET', '/api/deployment')
+            checks = d.get('readiness')
+            if isinstance(checks, dict):
+                if not hasattr(self, 'readiness'):
+                    self.readiness = {}
+                self.readiness.update({key: checks[key] for key in (
+                    'connectivity', 'apiAccess', 'emergencyClear', 'runtimeClear',
+                    'suiHealthy', 'suiFresh', 'ledger') if type(checks.get(key)) is bool})
+                if getattr(self, 'stale_reset_ok', False):
+                    self.readiness['staleReset'] = True
+                if checks.get('runtimeClear') is True and checks.get('apiAccess') is True:
+                    return
+            require(time.monotonic() < deadline and time.time()*1000 < cutoff)
+            self.send_stale_reset()
+            time.sleep(1)
 
     def wait_market_fresh(self, market, cutoff):
         # The first GeckoTerminal success after a cold worker start
@@ -1375,6 +1472,8 @@ class Controller:
                 require(armed['expires'] == self.arm_expiry(record) and armed['armed'] and not armed['expired'])
                 stage = 'paper-start'
                 self.note_stage(stage)
+                if getattr(self, 'retry_admitted', False):
+                    self.recheck_start_blockers(self.session_cutoff(record))
                 started = self.guard('paper-start', lambda: self.api('POST', '/api/control', {'command': 'start'}))
                 require(started['running'] is True)
                 stage = 'monitoring'
@@ -1699,7 +1798,7 @@ def main():
             request = b.decode(sys.stdin.buffer.read(257))
             signal.alarm(0)
             require(isinstance(request, dict) and set(request) <= {'operation', 'duration', 'mode', 'sha'} and
-                    request.get('operation') in ('start', 'status', 'abort', 'diagnose', 'reconcile', 'approve-retry', 'approve-deploy', 'revoke-retry', 'release-cutoff', 'prod-start', 'prod-stop', 'prod-status'))
+                    request.get('operation') in ('start', 'status', 'abort', 'diagnose', 'reconcile', 'approve-retry', 'approve-deploy', 'revoke-retry', 'release-cutoff', 'heal-run', 'prod-start', 'prod-stop', 'prod-status'))
             require(request['operation'] in ('start', 'reconcile', 'approve-deploy') or set(request) == {'operation'})
             require(request['operation'] in ('reconcile', 'approve-deploy') or 'sha' not in request)
             require(request['operation'] == 'start' or 'duration' not in request)
@@ -1725,6 +1824,8 @@ def main():
                 print(json.dumps(controller.revoke_retry()))
             elif request['operation'] == 'release-cutoff':
                 print(json.dumps(controller.release_cutoff()))
+            elif request['operation'] == 'heal-run':
+                print(json.dumps(controller.heal_run()))
             elif request['operation'] == 'diagnose':
                 print(json.dumps(controller.diagnose()))
             elif request['operation'] == 'status':
