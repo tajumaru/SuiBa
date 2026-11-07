@@ -40,6 +40,27 @@ export const paperRecoveryLimits = {
   maxEpisodeMs: 180000,
   maxFailures: 9,
 };
+/** A candle-stale episode means the indexer fell behind on candle
+ * publication (one missing trailing candle consumes most of the
+ * staleness allowance by itself), not that a read failed, so it
+ * earns a longer deadline (decided 2026-11-07 after two validation
+ * runs hard-stopped on single missing candles). The failure count
+ * matches the stall-counting throttle (one counted failure per
+ * 30 s), so the time bound is what actually decides. Only an
+ * episode whose every counted failure is a candle stale earns
+ * these limits; any other failure joining the episode restores
+ * the standard limits above. */
+export const staleEpisodeLimits = {
+  maxEpisodeMs: 1800000,
+  maxFailures: 61,
+};
+export function episodeLimits(s: PaperSafetyState) {
+  const keys = Object.keys(s.episodeTally);
+  return keys.length > 0 &&
+    keys.every((key) => key === "MarketData/CANDLE_STALE")
+    ? staleEpisodeLimits
+    : paperRecoveryLimits;
+}
 export const initialPaperSafety = (): PaperSafetyState => ({
   connectivity: "HEALTHY",
   resumePending: false,
