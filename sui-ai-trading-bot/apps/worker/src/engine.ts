@@ -920,7 +920,10 @@ export class BotEngine {
         this.db.set("runtime", { ...this.db.runtime(), running: false });
         return;
       }
-      if (!this.monitor.transientCycleFailure(code)) {
+      if (
+        !this.monitor.transientCycleFailure(code) &&
+        !this.monitor.staleThrowToStall(code)
+      ) {
         this.monitor.failCycle(code);
         this.db.set("runtime", {
           ...this.db.runtime(),

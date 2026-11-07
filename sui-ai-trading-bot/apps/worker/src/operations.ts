@@ -123,6 +123,27 @@ export class OperationMonitor {
         (f.api === "Sui gRPC" && reason === "SUI_READ_FAILED"))
     );
   }
+  /**
+   * A STALE_CANDLES throw out of candle validation during an
+   * active tick is the same condition the watchdog reports as a
+   * CANDLE_STALE stall; which entrance fires first is a cadence
+   * race (the 2026-11-07 evening validation run hard-stopped
+   * through this entrance, before the watchdog's boundary, so
+   * the stale episode limits never applied). Route the throw
+   * into the stall machinery so both entrances share one policy.
+   * Only a running bot is routed: during recovery a stale
+   * reading is a failed proof and keeps the hard stop, and a
+   * latched error or emergency is never softened.
+   */
+  staleThrowToStall(code: string, now = Date.now()): boolean {
+    if (code !== "STALE_CANDLES") return false;
+    const r = this.db.runtime();
+    if (!r.running || r.error || r.emergency) return false;
+    const details = this.stallDetails(now);
+    if (!details || details.reasonDetail !== "CANDLE_STALE") return false;
+    this.stallFailure(details, now);
+    return true;
+  }
   checkRecoveryDeadline(now = Date.now()) {
     const s = this.safety();
     const limits = episodeLimits(s);

@@ -581,8 +581,8 @@ function fixture(database?: BotDatabase, deploymentBlocked?: () => boolean) {
     inject: (fn?: () => void) => {
       inject = fn;
     },
-    stale: () => {
-      stale = true;
+    stale: (v = true) => {
+      stale = v;
     },
     staleBook: () => {
       staleBook = true;
@@ -673,6 +673,26 @@ it.each(["candles", "book", "ledger"])(
     expect(t.db.history("paper_trades")).toHaveLength(0);
   },
 );
+it("pauses instead of hard-stopping when a running tick hits stale candles", async () => {
+  const t = fixture();
+  await t.tick();
+  expect(t.db.runtime().running).toBe(true);
+  t.stale();
+  await t.tick(400000);
+  expect(t.db.runtime()).toMatchObject({ running: false, error: null });
+  expect(t.engine.monitor.safety()).toMatchObject({
+    connectivity: "DEGRADED",
+    resumePending: true,
+  });
+  expect(Object.keys(t.engine.monitor.safety().episodeTally)).toEqual([
+    "MarketData/CANDLE_STALE",
+  ]);
+  t.stale(false);
+  await t.tick(60000);
+  await t.tick(60000);
+  expect(t.db.runtime().running).toBe(true);
+  expect(t.engine.monitor.safety().connectivity).toBe("HEALTHY");
+});
 it("does not count recovery cycles while any API is in backoff", async () => {
   const t = fixture();
   t.fault();
