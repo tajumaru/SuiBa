@@ -39,8 +39,8 @@ class UnitTests(unittest.TestCase):
     def test_setup_pins_every_distributed_file_and_verifies_every_unit(self):
         script = (HERE/'setup-paper-check.sh').read_text()
         entries = re.findall(r"'([^'|]+)\|([a-f0-9]{64})\|([^'|]+)\|([0-7]{3})'", script)
-        self.assertEqual(len(entries), 13)
-        self.assertEqual(len({name for name, *_ in entries}), 13)
+        self.assertEqual(len(entries), 15)
+        self.assertEqual(len({name for name, *_ in entries}), 15)
         for name, digest, target, mode in entries:
             self.assertEqual(hashlib.sha256((HERE/name).read_bytes().replace(b'\r\n', b'\n')).hexdigest(), digest, name)
             if name.endswith(('.service', '.timer')):
@@ -49,6 +49,9 @@ class UnitTests(unittest.TestCase):
         units = re.search(r"^UNITS='([^']+)'", script, re.M).group(1).split()
         self.assertEqual(set(units), {name for name, *_ in entries if name.endswith(('.service', '.timer'))})
         self.assertEqual(len(units), len(set(units)))
+        by_name = {name: (target, mode) for name, _, target, mode in entries}
+        self.assertEqual(by_name['suiba-paper-observe'], ('/usr/local/sbin/suiba-paper-observe', '755'))
+        self.assertEqual(by_name['suiba-paper-observe.sudoers'], ('/etc/sudoers.d/suiba-paper-observe', '440'))
         self.assertIn('suiba-prod.service', units)
         self.assertIn('suiba-prod-watchdog.service', units)
         self.assertIn('suiba-prod-watchdog.timer', units)

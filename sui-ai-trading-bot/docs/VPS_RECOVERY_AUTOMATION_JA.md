@@ -354,3 +354,12 @@ GET /api/deploymentにresetScope（pendingを含む）を追加する。再試�
 作業5（PR #106）反映後の6h再ラン（2026-11-07 20:37開始）は、20:56にSTALE_CANDLESでハードストップしfailed_requires_reviewになった。Indexerの20:50の足が欠けていた（20:45→20:55の穴）。鮮度切れの入口は2つあり、#106で直したのは監視（watchdog）が記録済みの最終確定足の経過で検知する入口だけだった。今回は取得した足そのものが古く、検証（validateCandles）がtick内で例外を投げ、エンジンの例外処理が即ハードストップした。境界（最終確定足の終値＋360秒）は両入口で同じで、どちらが先に触るかは周期のレースである。
 
 対応として、tick内でSTALE_CANDLESが投げられた場合も、監視側と同じstallの仕組みへ合流させた（OperationMonitor.staleThrowToStall）。条件は、稼働中であること、既存のエラー／emergencyがないこと、監視側の鮮度記録でもCANDLE_STALEと判定できること。全て満たさなければ従来どおりハードストップする。回復局面で古い足が読めた場合は「回復の証明の失敗」として従来どおりハードストップする（既存テストで固定）。CANDLE_GAPと429／500の扱いは不変。
+
+## 検証ランの読み取り専用モニター（2026-11-08）
+
+オーナーの要望：検証ランが動いているか／止まっていないかを、承認タップなしで定期的に知りたい。既存の production monitor は本番専用で、かつ sakura-vps 環境の必須レビューのため schedule 実行も承認待ちになる弱点があった。検証用に、読み取り専用の監視経路を新設する。
+
+- ホスト側の identity は `suiba-observe`。制限は三重：(1) authorized_keys の強制コマンド（status wrapper 固定、restrict 付き）、(2) sudoers は observe wrapper のみ、(3) controller 自身が SUDO_USER/SUDO_UID で呼び出し元を判定し、observe は `{"operation":"status"}` 以外を全て拒否する。鍵が漏れても開始・停止・診断はできない。公開鍵は setup-paper-check.sh にピン留めして配布し、setup のスモークで status の実読み＋status 以外の拒否まで検証する。オーナーの Windows ログイン（ubuntu）や CI の suiba-deploy 鍵には一切触らない（追加のみ）。
+- GitHub 側は環境 `sakura-vps-observe`（必須レビューなし、observe 専用キーの secrets のみ）に `suiba-paper-monitor.yml` を置く。cron 30分＋手動 dispatch、repo 変数 `SUIBA_PAPER_MONITOR_ENABLED=true` のときだけ動く。check ジョブが status を読み、検証済みの小さなレポートだけを notify ジョブへ渡す。notify は issues:write のみを持ち、ホスト認証情報を受け取らない。
+- 通知条件：ランが failed_requires_review（または requires_review フラグ）、稼働中なのに controller が生きていない、status が読めない／形が不正、のいずれかで専用 Issue（ラベル `suiba-paper-alert`、固定タイトル＋マーカーで一本化）を開く／更新する。正常な観測が戻れば自動で閉じる。ラン記録が無い場合は「回復の証明ではない」として何もしない（production monitor の not_started と同じ扱い）。自動復旧はしない。
+- 有効化の前提：setup-paper-check.sh の再実行（observe identity の配置）→ 環境 secrets の登録 → 変数を true にする。supervisor が稼働中の setup 再実行は従来どおり拒否されるため、ランとランの間で実行する。

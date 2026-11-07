@@ -1679,3 +1679,42 @@ class ProgramReadTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class RequestCallerScopeTests(unittest.TestCase):
+    ACCOUNTS = {'suiba-deploy': type('A', (), {'pw_name': 'suiba-deploy', 'pw_uid': 1001})(),
+                'suiba-observe': type('A', (), {'pw_name': 'suiba-observe', 'pw_uid': 1002})()}
+
+    def getpwnam(self, name):
+        return self.ACCOUNTS[name]
+
+    def test_deploy_caller_accepted(self):
+        env = {'SUDO_USER': 'suiba-deploy', 'SUDO_UID': '1001'}
+        self.assertEqual(c.request_caller(env, self.getpwnam), 'deploy')
+
+    def test_observe_caller_accepted(self):
+        env = {'SUDO_USER': 'suiba-observe', 'SUDO_UID': '1002'}
+        self.assertEqual(c.request_caller(env, self.getpwnam), 'observe')
+
+    def test_unknown_or_mismatched_caller_refused(self):
+        for env in ({'SUDO_USER': 'ubuntu', 'SUDO_UID': '1000'},
+                    {'SUDO_USER': 'suiba-observe', 'SUDO_UID': '1001'},
+                    {'SUDO_USER': 'suiba-deploy'},
+                    {}):
+            with self.assertRaises(Exception):
+                c.request_caller(env, self.getpwnam)
+
+    def test_observe_scope_is_status_only(self):
+        c.require_caller_scope('observe', {'operation': 'status'})
+        for request in ({'operation': 'start', 'duration': '30m'},
+                        {'operation': 'diagnose'},
+                        {'operation': 'prod-status'},
+                        {'operation': 'status', 'sha': 'x'},
+                        {'operation': 'status', 'duration': '30m'},
+                        {}, 'status', None):
+            with self.assertRaises(Exception):
+                c.require_caller_scope('observe', request)
+
+    def test_deploy_scope_unrestricted_by_caller_check(self):
+        c.require_caller_scope('deploy', {'operation': 'start', 'duration': '6h'})
+        c.require_caller_scope('deploy', {'operation': 'status'})
