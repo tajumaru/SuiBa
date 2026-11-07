@@ -15,7 +15,7 @@ const RUN_STATES = new Set([
   "completed",
   "failed_requires_review",
 ]);
-const DURATIONS = new Set(["30m", "6h", "24h"]);
+const DURATIONS = new Set(["30m", "2h", "6h", "24h"]);
 const MAX_REPORT_AGE = 900;
 export const LABEL = "suiba-paper-alert";
 export const TITLE = "SuiBa VPS 検証：要確認";

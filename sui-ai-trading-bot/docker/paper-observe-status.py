@@ -11,7 +11,7 @@ import sys
 import time
 
 RUN_STATES = ('in_progress', 'finishing', 'completed', 'failed_requires_review')
-DURATIONS = ('30m', '6h', '24h')
+DURATIONS = ('30m', '2h', '6h', '24h')
 
 
 def require(value):

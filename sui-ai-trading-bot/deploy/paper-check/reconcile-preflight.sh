@@ -76,7 +76,7 @@ mountpoint=$(docker volume inspect --format '{{.Mountpoint}}' "$DATA_VOLUME")
 
 # 実行中の検証ラン・残留タイマーがないこと
 systemctl is-active --quiet suiba-paper-check.service && fail '検証サービスが実行中です'
-for timer in suiba-paper-check-cutoff.timer suiba-paper-check-cutoff-6h.timer suiba-paper-check-cutoff-24h.timer; do
+for timer in suiba-paper-check-cutoff.timer suiba-paper-check-cutoff-2h.timer suiba-paper-check-cutoff-6h.timer suiba-paper-check-cutoff-24h.timer; do
   systemctl is-active --quiet "$timer" && fail "カットオフタイマーが残っています: $timer"
 done
 [[ -f $DEPLOY_STATE/paper-check-failed.json ]] || fail '障害ラッチ（paper-check-failed.json）がありません'

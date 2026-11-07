@@ -28,13 +28,13 @@ BASE_URL='https://raw.githubusercontent.com/tajumaru/SuiBa/main/sui-ai-trading-b
 POLICY='/etc/suiba-paper-check/policy.json'
 SERVICE='suiba-paper-check.service'
 PROD_SERVICE='suiba-prod.service'
-TIMERS='suiba-paper-check-cutoff.timer suiba-paper-check-cutoff-6h.timer suiba-paper-check-cutoff-24h.timer'
-UNITS='suiba-paper-check.service suiba-prod.service suiba-prod-watchdog.service suiba-prod-watchdog.timer suiba-paper-check-cutoff.service suiba-paper-check-cutoff.timer suiba-paper-check-cutoff-6h.timer suiba-paper-check-cutoff-24h.timer'
+TIMERS='suiba-paper-check-cutoff.timer suiba-paper-check-cutoff-2h.timer suiba-paper-check-cutoff-6h.timer suiba-paper-check-cutoff-24h.timer'
+UNITS='suiba-paper-check.service suiba-prod.service suiba-prod-watchdog.service suiba-prod-watchdog.timer suiba-paper-check-cutoff.service suiba-paper-check-cutoff.timer suiba-paper-check-cutoff-2h.timer suiba-paper-check-cutoff-6h.timer suiba-paper-check-cutoff-24h.timer'
 
 # name|sha256|target|mode
 FILES=(
-  'export_snapshot.py|f0b8bf8bf36f113422e5a8aea174a1575b5e95739ac663cd870c6c225c95c98f|/usr/local/libexec/suiba-paper-export.py|755'
-  'controller.py|1e083a6a49aaa0ab6a0dfe86f926f70150efd500112d7d52a289181a803692ab|/usr/local/libexec/suiba-paper-check.py|755'
+  'export_snapshot.py|fb33a346e71d107ffc3c95a1fc7cf2e7d88256b52fd858dcb393313ce2669759|/usr/local/libexec/suiba-paper-export.py|755'
+  'controller.py|dcc8afc8dcce758b3bfd640e1b1abfabfa9e21fc367e511b96e673442c5d27bc|/usr/local/libexec/suiba-paper-check.py|755'
   'suiba-paper-check|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-check|755'
   'suiba-paper-check.sudoers|54d64fdadf0b38749008c112fc12761e03f633538e526ebe6f37eb4b1ec38607|/etc/sudoers.d/suiba-paper-check|440'
   'suiba-paper-observe|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-observe|755'
@@ -46,6 +46,7 @@ FILES=(
   'suiba-prod-watchdog.timer|43e893738a839eb12cfd0fe8fa8b464bcb25e751d2a3ee115b7558e9d70a02cf|/etc/systemd/system/suiba-prod-watchdog.timer|644'
   'suiba-paper-check-cutoff.service|8b40feb7b662796763e53eb6114083233d240d49229027ccea3104c7a628bd96|/etc/systemd/system/suiba-paper-check-cutoff.service|644'
   'suiba-paper-check-cutoff.timer|a9d92ed010eb701ec46bef03b716e973092d696e40890f2e9ddfb2a0a2c96d39|/etc/systemd/system/suiba-paper-check-cutoff.timer|644'
+  'suiba-paper-check-cutoff-2h.timer|c71c94fbae4afaf9cce76829de54505f36eb970aeb2b2002bc4d4ba4ea2370c1|/etc/systemd/system/suiba-paper-check-cutoff-2h.timer|644'
   'suiba-paper-check-cutoff-6h.timer|d6bf9d6194ecaeee0e728bd90ec83a5989ce8ea1e057b5a98b891baa6dbf29ff|/etc/systemd/system/suiba-paper-check-cutoff-6h.timer|644'
   'suiba-paper-check-cutoff-24h.timer|f5646da04eb0917ea279ab7c5b497d51d75b9d8689b658643dc8d8ff3aa46570|/etc/systemd/system/suiba-paper-check-cutoff-24h.timer|644'
 )
@@ -190,7 +191,7 @@ fi
 echo 'observe scope OK: status 以外は拒否'
 
 echo
-echo '完了しました。検証ランは開始ワークフロー（START-PAPER）で 30m / 6h / 24h を選べます。'
+echo '完了しました。検証ランは開始ワークフロー（START-PAPER）で 30m / 2h / 6h / 24h を選べます。'
 echo '本番 service は配置のみです。prod-policy.json は変更せず、本番運転も開始していません。'
 echo 'watchdog timer も配置のみです。有効化は切替時に明示操作してください。'
 echo 'シロ（Muse）に「終わった」と伝えてください。'

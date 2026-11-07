@@ -68,7 +68,7 @@ try:
         if not isinstance(payload["released"], list) or len(payload["released"]) > 3:
             raise ValueError()
         for unit in payload["released"]:
-            if not re.fullmatch(r"suiba-paper-check-cutoff(-(6h|24h))?\.timer", unit):
+            if not re.fullmatch(r"suiba-paper-check-cutoff(-(2h|6h|24h))?\.timer", unit):
                 raise ValueError()
         lines = [f"- Run: `{payload['run']}`",
                  "- Released timers: " + (", ".join(f"`{u}`" for u in payload["released"]) or "none were armed")]

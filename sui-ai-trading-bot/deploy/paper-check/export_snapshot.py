@@ -129,7 +129,7 @@ def public_run(record):
           ('in_progress', 'finishing', 'completed', 'failed_requires_review'), 'EXPORT_RUN_INVALID')
     out = {'id': record['id'], 'status': record['status'], 'pair': 'SUI_USDC', 'mode': 'PAPER'}
     out.update({k: record[k] for k in ('started', 'stopped', 'cutoff') if type(record.get(k)) is int and 0 <= record[k] <= 2**53})
-    if record.get('duration') in ('30m', '6h', '24h'): out['duration'] = record['duration']
+    if record.get('duration') in ('30m', '2h', '6h', '24h'): out['duration'] = record['duration']
     if type(record.get('sha')) is str and re.fullmatch(r'[a-f0-9]{40}', record['sha']): out['sha'] = record['sha']
     return out
 

@@ -211,7 +211,7 @@ print("### SuiBa PAPER verification")
 print(f"- Run: `{state}`")
 duration = run.get("duration")
 if duration is not None:
-    if duration not in ("30m", "6h", "24h"):
+    if duration not in ("30m", "2h", "6h", "24h"):
         raise ValueError()
     print(f"- Duration: `{duration}`")
 print(f"- Stop receipt: `{status}`")
