@@ -361,7 +361,7 @@ GET /api/deploymentにresetScope（pendingを含む）を追加する。再試�
 
 - ホスト側の identity は `suiba-observe`。制限は三重：(1) authorized_keys の強制コマンド（status wrapper 固定、restrict 付き）、(2) sudoers は observe wrapper のみ、(3) controller 自身が SUDO_USER/SUDO_UID で呼び出し元を判定し、observe は `{"operation":"status"}` 以外を全て拒否する。鍵が漏れても開始・停止・診断はできない。公開鍵は setup-paper-check.sh にピン留めして配布し、setup のスモークで status の実読み＋status 以外の拒否まで検証する。オーナーの Windows ログイン（ubuntu）や CI の suiba-deploy 鍵には一切触らない（追加のみ）。
 - GitHub 側は環境 `sakura-vps-observe`（必須レビューなし、observe 専用キーの secrets のみ）に `suiba-paper-monitor.yml` を置く。cron 30分＋手動 dispatch、repo 変数 `SUIBA_PAPER_MONITOR_ENABLED=true` のときだけ動く。check ジョブが status を読み、検証済みの小さなレポートだけを notify ジョブへ渡す。notify は issues:write のみを持ち、ホスト認証情報を受け取らない。
-- 通知条件：ランが failed_requires_review（または requires_review フラグ）、稼働中なのに controller が生きていない、status が読めない／形が不正、のいずれかで専用 Issue（ラベル `suiba-paper-alert`、固定タイトル＋マーカーで一本化）を開く／更新する。正常な観測が戻れば自動で閉じる。ラン記録が無い場合は「回復の証明ではない」として何もしない（production monitor の not_started と同じ扱い）。自動復旧はしない。
+- 通知条件：ランが failed_requires_review（終端状態での requires_review フラグ残留を含む）、status が読めない／形が不正、のいずれかで専用 Issue（ラベル `suiba-paper-alert`、固定タイトル＋マーカーで一本化）を開く／更新する。正常な観測が戻れば自動で閉じる。ラン記録が無い場合は「回復の証明ではない」として何もしない（production monitor の not_started と同じ扱い）。自動復旧はしない。
 - 有効化の前提：setup-paper-check.sh の再実行（observe identity の配置）→ 環境 secrets の登録 → 変数を true にする。supervisor が稼働中の setup 再実行は従来どおり拒否されるため、ランとランの間で実行する。
 
 ## 検証ラダーに 2h を追加（2026-11-08、オーナー提案）
