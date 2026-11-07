@@ -77,7 +77,7 @@ jobs:
           sha256sum image.tar.gz > image.tar.gz.sha256
           read -r digest _ < image.tar.gz.sha256
           printf 'archive_sha256=%s\n' "$digest" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY-PAPER'
         with:
           name: vps-release

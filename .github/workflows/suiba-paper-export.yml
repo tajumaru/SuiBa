@@ -30,7 +30,7 @@ jobs:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: bash sui-ai-trading-bot/docker/ssh-paper-export.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: suiba-pre-run-public-${{ github.run_id }}
           path: ${{ runner.temp }}/suiba-public-export/
