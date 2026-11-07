@@ -111,6 +111,10 @@ try:
         else:
             raise ValueError()
         import re
+        reset_refusal = details.get('reset_refusal')
+        if reset_refusal is not None and reset_refusal not in (
+                'RESET_EMERGENCY_ACTIVE', 'RESET_SCOPE_CHANGED', 'RESET_NOT_PREDECESSOR', 'RESET_SCOPE_UNAVAILABLE'):
+            raise ValueError()
         stop_errors = stop.get("errors", [])
         if type(stop_errors) is not list or len(stop_errors) > 8 or any(
                 type(code) is not str or not re.fullmatch(r"[A-Z][A-Z_]{2,47}", code)
@@ -220,6 +224,8 @@ if details is not None:
     else:
         print("- Maintenance: enabled; backup: not taken (run ended before its backup stage)")
     print(f"- Failed stage: {details['stage'] or 'not recorded'}, HTTP status: {details['http_status']}")
+    if details.get('reset_refusal') is not None:
+        print(f"- Predecessor reset refused: {details['reset_refusal']}")
     stop_errors = stop.get("errors") or []
     if stop_errors:
         print(f"- Stop errors: {', '.join(stop_errors)}")

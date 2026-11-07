@@ -109,6 +109,9 @@ export const createChartHistory = (ctx: WorkerContext) =>
 export const createScheduler = (ctx: WorkerContext) =>
   new MarketScheduler(
     async () => {
+      // Do not turn a restored predecessor cooldown into a new boot-cycle failure.
+      // Orders remain stopped; only an explicitly scoped reset releases warmup.
+      if (ctx.predecessorReset.awaitingReset()) return;
       ctx.chartHistory.cancel();
       ctx.activeTick = ctx.engine.tick();
       try {

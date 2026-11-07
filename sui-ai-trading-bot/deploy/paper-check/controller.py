@@ -40,6 +40,8 @@ CUTOFF = 'suiba-paper-check-cutoff.service'
 # cutoff and in the per-length cutoff timer, so a started run can never
 # be extended by the container, the Worker, or a later request.
 DURATIONS = {'30m': 1800, '6h': 21600, '24h': 86400}
+RESET_REFUSAL_CODES = frozenset(('RESET_EMERGENCY_ACTIVE', 'RESET_SCOPE_CHANGED',
+                               'RESET_NOT_PREDECESSOR', 'RESET_SCOPE_UNAVAILABLE'))
 # Program files (this controller, the broker) are read whole for
 # integrity checks. The broker's read_trusted default of 64 KiB
 # is sized for state files; this controller passed it at the
@@ -563,11 +565,13 @@ class Controller:
         report = self.diagnostic_backup(record, source)
         health = state.get('Health', {}).get('Log', [])
         failure_path = self.folder(record)/'failure.json'
-        stage, http, readiness, market, stale_reset = None, None, None, None, None
+        stage, http, readiness, market, stale_reset, reset_refusal = None, None, None, None, None, None
         if failure_path.exists():
             failure = self.b.decode(self.b.read_trusted(failure_path))
             require(failure['id'] == record['id'] and failure['stage'] in DIAGNOSTIC_STAGES)
             stage = failure['stage']
+            reset_refusal = failure.get('reset_refusal')
+            require(reset_refusal is None or (type(reset_refusal) is str and reset_refusal in RESET_REFUSAL_CODES))
             readiness = failure.get('readiness')
             http = failure.get('http_status')
             require(http is None or type(http) is int and 100 <= http <= 599)
@@ -606,6 +610,7 @@ class Controller:
                 'backup_verified': report is not None,
                 'deltas': report['deltas'] if report is not None else None, 'readiness': readiness,
                 'market': market, 'stale_reset': stale_reset,
+                'reset_refusal': reset_refusal,
                 'evidence': report['evidence'] if report is not None else None,
                 'runtime': report['runtime'] if report is not None else None,
                 'selected_pair': report['selected_pair'] if report is not None else None,
@@ -1106,6 +1111,7 @@ class Controller:
             if health == 'healthy':
                 try:
                     d = self.api('GET', '/api/deployment')
+                    self.capture_reset_scope(d)
                     checks = d.get('readiness')
                     if isinstance(checks, dict):
                         self.readiness.update({key: checks[key] for key in (
@@ -1113,7 +1119,7 @@ class Controller:
                             'suiHealthy', 'suiFresh', 'ledger') if type(checks.get(key)) is bool})
                     if getattr(self, 'stale_reset_ok', False):
                         self.readiness['staleReset'] = True
-                    if d.get('startReady') is True:
+                    if d.get('startReady') is True and not getattr(self, 'reset_pending', False) and not self.reset_ack_pending():
                         return d
                     self.maybe_reset_stale()
                 except urllib.error.URLError as error:
@@ -1122,28 +1128,12 @@ class Controller:
             time.sleep(1)
 
     def maybe_reset_stale(self):
-        # A monitoring-failed run leaves its runtime error (and the
-        # API cooldowns) persisted in the worker database; only the
-        # dashboard reset clears them, so a validation start after
-        # such a failure could never pass readiness — observed twice
-        # on 2026-11-07 (stage worker-readiness, blocking checks
-        # apiAccess and runtimeClear, before-run error
-        # UPSTREAM_HTTP_429). When — and only when — this start
-        # consumed a retry approval, send that reset: at once for a
-        # persisted runtime error, or after an API block persists
-        # across several polls. The reset is idempotent state
-        # clearing (not a start/arm/order action), so a failed send
-        # is retried on the next poll until one lands: the seq-10
-        # run on 2026-11-07 lost its whole readiness window to a
-        # single-shot send that never took effect — the database
-        # error was byte-identical before and after, and the silent
-        # catch left no trace. Attempts are counted for the failure
-        # record either way. Readiness afterwards still judges live
-        # state; the reset fabricates nothing, and a start without
-        # the retry approval never sends it.
+        # Only a retry-reviewed predecessor is eligible. The worker pins its boot,
+        # error and generations; new errors or emergency never become reset targets.
+        # Busy/uncertain transport may retry the same expectation, never a new scope.
         if not getattr(self, 'retry_admitted', False) or getattr(self, 'stale_reset_ok', False):
             return
-        if self.readiness.get('runtimeClear') is False:
+        if self.reset_ack_pending() or getattr(self, 'reset_pending', False) or self.readiness.get('runtimeClear') is False:
             due = True
         elif self.readiness.get('apiAccess') is False:
             now = time.monotonic()
@@ -1157,29 +1147,66 @@ class Controller:
             return
         self.send_stale_reset()
 
+    def reset_ack_pending(self):
+        return bool(getattr(self, 'stale_reset_attempts', 0)) and not getattr(self, 'stale_reset_ok', False)
+
+    def refuse_reset(self, code):
+        self.reset_refusal = code
+        raise RuntimeError(code)
+
+    def capture_reset_scope(self, deployment):
+        if not getattr(self, 'retry_admitted', False): return
+        if type(deployment) is not dict: self.refuse_reset('RESET_SCOPE_UNAVAILABLE')
+        checks = deployment.get('readiness')
+        if type(checks) is dict and checks.get('emergencyClear') is False:
+            self.refuse_reset('RESET_EMERGENCY_ACTIVE')
+        scope = deployment.get('resetScope')
+        keys = ('version', 'bootId', 'pair', 'generation', 'expectedError')
+        if not (type(scope) is dict and set(scope) == {*keys, 'eligible', 'reason', 'pending'} and
+                type(scope['version']) is int and scope['version'] == 1 and scope['pair'] == 'SUI_USDC' and
+                type(scope['bootId']) is str and re.fullmatch(r'[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}', scope['bootId']) and
+                type(scope['generation']) is str and re.fullmatch(r'[a-f0-9]{64}', scope['generation']) and
+                (scope['expectedError'] is None or (type(scope['expectedError']) is str and re.fullmatch(r'[A-Z][A-Z0-9_]{0,99}', scope['expectedError']))) and
+                type(scope['pending']) is bool and type(scope['eligible']) is bool and (scope['reason'] is None or
+                    (type(scope['reason']) is str and scope['reason'] in RESET_REFUSAL_CODES))):
+            self.refuse_reset('RESET_SCOPE_UNAVAILABLE')
+        expected = {key: scope[key] for key in keys}
+        if hasattr(self, 'expected_reset') and self.expected_reset != expected:
+            self.refuse_reset('RESET_SCOPE_CHANGED')
+        if scope['eligible'] is not True or scope['reason'] is not None:
+            self.refuse_reset(scope['reason'] or 'RESET_SCOPE_CHANGED')
+        if not hasattr(self, 'expected_reset'):
+            self.expected_reset = expected
+        self.reset_pending = scope['pending']
+
     def send_stale_reset(self):
+        if not getattr(self, 'retry_admitted', False) or not hasattr(self, 'expected_reset'):
+            self.refuse_reset('RESET_SCOPE_UNAVAILABLE')
         self.stale_reset_attempts = getattr(self, 'stale_reset_attempts', 0)+1
         try:
-            self.api('POST', '/api/control', {'command': 'reset'})
+            self.api('POST', '/api/control', {'command': 'reset', 'expectedReset': self.expected_reset})
             self.stale_reset_ok = True
+        except urllib.error.HTTPError as error:
+            if error.code == 409:
+                code = 'RESET_SCOPE_CHANGED'
+                with contextlib.suppress(Exception):
+                    raw = error.read(1025)
+                    if len(raw) <= 1024:
+                        value = json.loads(raw)
+                        if type(value) is dict and value.get('error') in (*RESET_REFUSAL_CODES, 'RESET_BUSY'):
+                            code = value['error']
+                if code != 'RESET_BUSY': self.refuse_reset(code)
+            elif error.code in (401, 403): self.refuse_reset('RESET_SCOPE_UNAVAILABLE')
         except (RuntimeError, urllib.error.URLError):
             pass
 
     def recheck_start_blockers(self, cutoff):
-        # Boot cycles keep running between readiness and the start
-        # call, and a fresh transient failure in that window persists
-        # a new runtime error that readiness had already cleared —
-        # on 2026-11-07 a boot cycle stopped with STALE_CANDLES
-        # while the indexer lagged, the market recovered in time for
-        # the freshness check, and paper-start still refused with
-        # 409 over the persisted error. On a retry-admitted run,
-        # re-check the two start blockers the reset clears
-        # immediately before the start and clear a stale blocker the
-        # same way readiness did. A blocker that does not clear
-        # within the window still fails the run here.
+        # Recheck the original expectation immediately before start. Any new
+        # failure aborts instead of refreshing the expected generation and resetting it.
         deadline = time.monotonic()+20
         while True:
             d = self.api('GET', '/api/deployment')
+            self.capture_reset_scope(d)
             checks = d.get('readiness')
             if isinstance(checks, dict):
                 if not hasattr(self, 'readiness'):
@@ -1189,7 +1216,7 @@ class Controller:
                     'suiHealthy', 'suiFresh', 'ledger') if type(checks.get(key)) is bool})
                 if getattr(self, 'stale_reset_ok', False):
                     self.readiness['staleReset'] = True
-                if checks.get('runtimeClear') is True and checks.get('apiAccess') is True:
+                if checks.get('runtimeClear') is True and checks.get('apiAccess') is True and not getattr(self, 'reset_pending', False) and not self.reset_ack_pending():
                     return
             require(time.monotonic() < deadline and time.time()*1000 < cutoff)
             self.send_stale_reset()
@@ -1704,6 +1731,8 @@ class Controller:
                     detail = f' http_status={error.code}'
                 with contextlib.suppress(Exception):
                     failure = {'id': self.run_id, 'stage': stage}
+                    if getattr(self, 'reset_refusal', None) in RESET_REFUSAL_CODES:
+                        failure['reset_refusal'] = self.reset_refusal
                     if detail:
                         failure['http_status'] = error.code
                     if stage == 'worker-readiness':

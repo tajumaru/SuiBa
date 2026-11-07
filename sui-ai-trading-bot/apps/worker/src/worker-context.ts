@@ -15,6 +15,8 @@ import type { BookImbalanceSampler } from "./bookInfo.ts";
 import type { resolveSuiGrpcEndpoints } from "./suiEndpoints.ts";
 import type { TradingPair } from "../../../packages/shared/src/index.ts";
 import type { DisplaySamplers } from "./display-samplers.ts";
+import { PredecessorReset } from "./predecessor-reset.ts";
+import { apiAccess } from "../../../packages/shared/src/api.ts";
 
 export interface WorkerContextInit {
   browserSessions: BrowserSessions;
@@ -42,6 +44,8 @@ export interface WorkerContextInit {
  * fields are assigned during boot, before the server listens.
  */
 export class WorkerContext {
+  predecessorReset: PredecessorReset;
+  readonly resetPairs = new Set<TradingPair>();
   readonly browserSessions: BrowserSessions;
   readonly deploymentGate: DeploymentGate;
   readonly paperCheck: PaperCheckSession;
@@ -94,6 +98,13 @@ export class WorkerContext {
     this.chainTimer = init.samplers.chainTimer;
     this.pair = init.pair;
     this.db = init.db;
+    this.predecessorReset = new PredecessorReset(
+      this.db,
+      apiAccess,
+      this.bootId,
+      this.pair,
+    );
+    this.resetPairs.add(this.pair);
     this.validation = undefined;
   }
 }

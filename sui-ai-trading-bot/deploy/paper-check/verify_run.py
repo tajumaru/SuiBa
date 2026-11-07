@@ -50,7 +50,9 @@ def fixture(base, name, image, scenario, production=False):
         if path == '/api/deployment':
             return {'mode': 'PAPER', 'running': (base/'started').exists(), 'maintenance': False,
                     'databaseHealthy': True, 'ledgerOk': True, 'startReady': True,
-                    'paperCheck': {'enabled': True, 'armed': False}}
+                    'paperCheck': {'enabled': True, 'armed': False},
+                    'resetScope': {'version': 1, 'bootId': str(uuid.UUID(int=0)), 'pair': 'SUI_USDC',
+                        'generation': '0'*64, 'expectedError': None, 'eligible': True, 'reason': None, 'pending': False}}
         if path == '/api/pairs': return {'selected': 'SUI_USDC'}
         if production and path == '/api/dashboard/summary' and (base/'market-failed').exists():
             return {'summary': {'marketData': {'source': 'GeckoTerminal', 'lastSuccessAt': 0, 'reason': 'STALE_CANDLES'}}}

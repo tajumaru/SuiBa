@@ -29,6 +29,7 @@ import {
 } from "../../../packages/shared/src/index.ts";
 import { comparisonOptionsSchema } from "../../../packages/backtest-engine/src/index.ts";
 import type { WorkerContext } from "./worker-context.ts";
+import { PredecessorReset } from "./predecessor-reset.ts";
 
 /**
  * The HTTP request handler, extracted from the worker boot:
@@ -166,6 +167,7 @@ export function createRequestHandler(ctx: WorkerContext) {
         databaseHealthy: ctx.db.health().healthy,
         ledgerOk: ctx.engine.monitor.ledger().ok,
         paperCheck: ctx.paperCheck.status(),
+        resetScope: ctx.predecessorReset.status(),
         ...(() => {
           const readiness = {
             connectivity: ctx.engine.monitor.safety().connectivity === "HEALTHY",
@@ -404,6 +406,7 @@ export function createRequestHandler(ctx: WorkerContext) {
           return;
         }
         let next;
+        const nextReset = new PredecessorReset(nextDb, apiAccess, ctx.bootId, parsed, !ctx.resetPairs.has(parsed));
         try {
           next = createEngine(ctx, nextDb, parsed);
           next.engine.monitor.boot();
@@ -444,6 +447,9 @@ export function createRequestHandler(ctx: WorkerContext) {
         );
         apiAccess.clearPairState();
         apiAccess.restoreCooldowns(ctx.db.get("api_cooldowns") ?? []);
+        nextReset.activate(ctx.engine.monitor);
+        ctx.predecessorReset = nextReset;
+        ctx.resetPairs.add(parsed);
         ctx.validation = ctx.validationEnabled ? new ValidationRecorder(ctx.db) : undefined;
         ctx.engine.validation = ctx.validation;
         ctx.validation?.boot();
@@ -534,14 +540,17 @@ export function createRequestHandler(ctx: WorkerContext) {
         ctx.db.set("runtime", { ...r, running: false, emergency: true });
       else if (command === "stop") ctx.db.set("runtime", { ...r, running: false });
       else if (command === "reset") {
-        apiAccess.reset();
-        ctx.db.set("api_cooldowns", apiAccess.snapshot());
-        ctx.db.set("runtime", {
-          ...r,
-          running: false,
-          emergency: false,
-          error: null,
-        });
+        const pending = ctx.predecessorReset.needsWarmupAfterReset();
+        const refusal = ctx.predecessorReset.clear(body.expectedReset);
+        if (refusal) { send(409, { error: refusal }); return; }
+        if (pending && ctx.scheduler) {
+          // Only stopped predecessor warmup was held; do not wait another long interval.
+          ctx.scheduler.stop();
+          ctx.scheduler = createScheduler(ctx);
+          ctx.scheduler.start();
+        }
+        send(200, ctx.db.runtime());
+        return;
       } else if (command === "start") {
         if (!ctx.paperCheck.ordersAllowed(ctx.pair)) {
           send(409, { error: "PAPER_CHECK_LEASE_REQUIRED" });

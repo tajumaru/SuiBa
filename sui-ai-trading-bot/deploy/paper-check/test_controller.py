@@ -32,6 +32,11 @@ class FakeBroker:
         temp.replace(path)
 
 
+def reset_scope(error='UPSTREAM_HTTP_429', pending=True):
+    return {'version': 1, 'bootId': str(uuid.UUID(int=0)), 'pair': 'SUI_USDC',
+            'generation': '0'*64, 'expectedError': error, 'eligible': True, 'reason': None, 'pending': pending}
+
+
 def initialize(ctl):
     FakeBroker.STATE = ctl.state
     record = {'id': 'a'*32, 'status': 'in_progress', 'admitted': True,
@@ -442,9 +447,9 @@ class StopTests(unittest.TestCase):
                 mutation = json.loads((Path(root)/record['id']/'mutation.json').read_text())
                 self.assertEqual(mutation['pending'], expected)
 
-    def test_recheck_clears_a_fresh_blocker_before_paper_start(self):
-        blocked = {'readiness': {'runtimeClear': False, 'apiAccess': True}}
-        clear = {'readiness': {'runtimeClear': True, 'apiAccess': True}}
+    def test_recheck_clears_only_a_matching_predecessor_before_paper_start(self):
+        blocked = {'readiness': {'runtimeClear': False, 'apiAccess': True}, 'resetScope': reset_scope()}
+        clear = {'readiness': {'runtimeClear': True, 'apiAccess': True}, 'resetScope': reset_scope(pending=False)}
         ctl = object.__new__(c.Controller)
         ctl.retry_admitted = True
         calls = []
@@ -464,6 +469,48 @@ class StopTests(unittest.TestCase):
         ctl.api = lambda *a: blocked
         with patch.object(c.time, 'monotonic', side_effect=[0, 0, 21]), patch.object(c.time, 'sleep'):
             with self.assertRaises(RuntimeError): ctl.recheck_start_blockers(10**13)
+
+    def test_reset_scope_changes_and_emergency_abort_without_refreshing_expectation(self):
+        for patch_value, expected in (({'generation': '1'*64}, 'RESET_SCOPE_CHANGED'),
+                                      ({'eligible': False, 'reason': 'RESET_SCOPE_CHANGED'}, 'RESET_SCOPE_CHANGED'),
+                                      ({'eligible': False, 'reason': 'RESET_EMERGENCY_ACTIVE'}, 'RESET_EMERGENCY_ACTIVE')):
+            with self.subTest(expected=expected):
+                ctl = object.__new__(c.Controller)
+                ctl.retry_admitted = True
+                ctl.capture_reset_scope({'resetScope': reset_scope()})
+                before = dict(ctl.expected_reset)
+                page = {'readiness': {'runtimeClear': False, 'apiAccess': True},
+                        'resetScope': {**reset_scope(), **patch_value}}
+                calls = []
+                ctl.api = lambda *args: calls.append(args) or page
+                with self.assertRaisesRegex(RuntimeError, expected): ctl.recheck_start_blockers(10**13)
+                self.assertEqual(ctl.reset_refusal, expected)
+                self.assertEqual(ctl.expected_reset, before)
+                self.assertEqual([call[0] for call in calls], ['GET'])
+
+    def test_reset_409_is_final_and_only_busy_or_transport_can_retry(self):
+        import io
+        for code in ('RESET_SCOPE_CHANGED', 'RESET_EMERGENCY_ACTIVE', 'RESET_BUSY'):
+            ctl = object.__new__(c.Controller)
+            ctl.retry_admitted = True
+            ctl.capture_reset_scope({'resetScope': reset_scope()})
+            def api(*args):
+                raise c.urllib.error.HTTPError('http://fixture', 409, 'SECRET_FIXTURE', {},
+                    io.BytesIO(json.dumps({'error': code, 'secret': 'SECRET_FIXTURE'}).encode()))
+            ctl.api = api
+            if code == 'RESET_BUSY':
+                ctl.send_stale_reset()
+                self.assertFalse(getattr(ctl, 'stale_reset_ok', False))
+            else:
+                with self.assertRaisesRegex(RuntimeError, code): ctl.send_stale_reset()
+                self.assertEqual(ctl.reset_refusal, code)
+
+    def test_retry_reset_requires_worker_scope_and_never_falls_back_to_bare_reset(self):
+        ctl = object.__new__(c.Controller)
+        ctl.retry_admitted = True
+        with self.assertRaisesRegex(RuntimeError, 'RESET_SCOPE_UNAVAILABLE'):
+            ctl.capture_reset_scope({'startReady': True, 'readiness': {'runtimeClear': True}})
+        with self.assertRaisesRegex(RuntimeError, 'RESET_SCOPE_UNAVAILABLE'): ctl.send_stale_reset()
 
     def test_record_preflight_keeps_only_check_and_error_class(self):
         from types import SimpleNamespace
@@ -761,8 +808,8 @@ class StopTests(unittest.TestCase):
                     self.assertEqual(calls, [])
 
     def test_readiness_reset_only_for_retry_admitted_starts(self):
-        stale = {'startReady': False, 'readiness': {'apiAccess': False, 'runtimeClear': False, 'ledger': True}}
-        ready = {'startReady': True, 'readiness': {'apiAccess': True, 'runtimeClear': True, 'ledger': True}}
+        stale = {'startReady': False, 'readiness': {'apiAccess': False, 'runtimeClear': False, 'ledger': True}, 'resetScope': reset_scope()}
+        ready = {'startReady': True, 'readiness': {'apiAccess': True, 'runtimeClear': True, 'ledger': True}, 'resetScope': reset_scope(pending=False)}
         for admitted, pages, clock, expect in (
                 (True, [stale, stale, ready], [0, 0, 1, 2], 1),
                 (True, [ready], [0, 0], 0),
@@ -786,7 +833,7 @@ class StopTests(unittest.TestCase):
                 resets = [x for x in calls if x[1] == '/api/control']
                 self.assertEqual(len(resets), expect)
                 if expect:
-                    self.assertEqual(resets[0][2], {'command': 'reset'})
+                    self.assertEqual(resets[0][2], {'command': 'reset', 'expectedReset': {key: value for key, value in reset_scope().items() if key not in ('eligible', 'reason', 'pending')}})
                     self.assertTrue(ctl.readiness['staleReset'])
         # A reset send that fails is resent on the next poll until
         # one lands (the seq-10 run lost its readiness window to a
@@ -809,6 +856,27 @@ class StopTests(unittest.TestCase):
         with patch.object(c.time, 'monotonic', side_effect=[0, 0, 1, 2, 3]), patch.object(c.time, 'time', return_value=0), patch.object(c.time, 'sleep'):
             self.assertTrue(ctl.wait_ready(100000)['startReady'])
         self.assertEqual(ctl.stale_reset_attempts, 2)
+        self.assertTrue(ctl.stale_reset_ok)
+
+    def test_lost_reset_reply_is_confirmed_with_the_same_scope_even_when_readiness_is_clear(self):
+        ctl = object.__new__(c.Controller)
+        ctl.retry_admitted = True
+        ctl.inspect = lambda: {'State': {'Running': True, 'OOMKilled': False, 'Health': {'Status': 'healthy'}}, 'RestartCount': 0}
+        stale = {'startReady': False, 'readiness': {'runtimeClear': False}, 'resetScope': reset_scope()}
+        ready = {'startReady': True, 'readiness': {'runtimeClear': True, 'apiAccess': True}, 'resetScope': reset_scope(pending=False)}
+        pages = iter([stale, ready, ready])
+        sent = []
+        def api(method, path, value=None):
+            if method == 'GET': return next(pages)
+            sent.append(value)
+            if len(sent) == 1: raise RuntimeError('SECRET_FIXTURE lost reply after commit')
+            return {'running': False}
+        ctl.api = api
+        with patch.object(c.time, 'sleep'):
+            self.assertTrue(ctl.wait_ready(10**13)['startReady'])
+        self.assertEqual(len(sent), 2)
+        self.assertEqual(sent[0], sent[1])
+        self.assertIn('expectedReset', sent[0])
         self.assertTrue(ctl.stale_reset_ok)
 
     def test_market_fresh_waits_for_the_first_success(self):
