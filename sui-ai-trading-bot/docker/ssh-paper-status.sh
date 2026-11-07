@@ -3,7 +3,7 @@
 set +x
 set -Eeuo pipefail
 umask 077
-fail() { echo 'PAPER_STATUS_FAILED (connection or response details withheld)' >&2; exit 1; }
+fail() { python3 "$(dirname "${BASH_SOURCE[0]}")/paper-fixed-reason.py" "${errors:-/dev/null}" >&2 || true; echo 'PAPER_STATUS_FAILED (connection or response details withheld)' >&2; exit 1; }
 [[ ${VPS_HOST:-} =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]] || fail
 [[ ${VPS_USER:-} =~ ^[a-z_][a-z0-9_-]*$ ]] || fail
 [[ $VPS_USER == suiba-deploy ]] || fail
@@ -46,7 +46,7 @@ printf '{"operation":"%s"}\n' "$operation" |
   timeout 100s ssh "${opts[@]}" "$VPS_USER@$VPS_HOST" 'sudo -n -- /usr/local/sbin/suiba-paper-check' >"$result" 2>"$errors" || fail
 # Only the fully validated renderer output is copied to logs. Never tee raw JSON,
 # SSH stderr, environment, token, or key. Codex can read logs without screenshots.
-python3 - "$result" "$operation" <<'PYCODE' | tee -a "${GITHUB_STEP_SUMMARY:?}"
+python3 - "$result" "$operation" "$(dirname "${BASH_SOURCE[0]}")/paper-fixed-reason.py" <<'PYCODE' | tee -a "${GITHUB_STEP_SUMMARY:?}"
 import json
 import sys
 from pathlib import Path
@@ -57,7 +57,14 @@ try:
     if len(raw) > 65536:
         raise ValueError()
     payload = json.loads(raw)
+    import runpy
+    admission_lines = runpy.run_path(sys.argv[3])["admission_summary"](payload.get("admission_failure"))
     run = payload["run"]
+    if run is None:
+        if not admission_lines: raise ValueError()
+        print("### SuiBa PAPER admission")
+        print("\n".join(admission_lines))
+        raise SystemExit(0)
     state = run["status"]
     if state not in ("in_progress", "finishing", "completed", "failed_requires_review"):
         raise ValueError()
@@ -285,4 +292,6 @@ if details is not None:
             print(f"- {pair} difference: starts={delta['starts']:+d}, orders={delta['orders']:+d}, fills={delta['fills']:+d}")
     else:
         print("- Activity difference: unavailable (no pre-run backup to compare against)")
+for line in admission_lines:
+    print(line)
 PYCODE
