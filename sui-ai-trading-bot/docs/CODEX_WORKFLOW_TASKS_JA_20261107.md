@@ -191,3 +191,34 @@ approve-deploy が通らなくなる（controller 側も expires チェック
 - controller 変更になるため setup のピンを同じコミットで
   更新し、`docs/VPS_RECOVERY_AUTOMATION_JA.md` に経緯と仕様を
   追記する。PR はこれ1本。
+
+## 作業7：配置の1タップ化（2026-11-08 追加、オーナー発案）
+
+現行の配置は「release-cutoff → approve-deploy → 配置」の3回の
+dispatch＋3回の環境承認に分かれており、approve-deploy と配置の
+間に1時間の permit 窓があるため、間が空くと失効楔（作業6）を
+踏む。検証の CYCLE（PR #94）と同じ形で、配置も1ジョブに
+まとめる。
+
+要件：
+- 新規 workflow（例：suiba-paper-deploy-cycle.yml）で、環境
+  sakura-vps の承認1回の中に次を順に実行する：(1) cutoff
+  タイマーが残っていれば release-cutoff（記録が終端でない等、
+  解除が不要／不可能な場合はその理由で失敗させる。無言で
+  読み飛ばさない）、(2) approve-deploy（対象は実行時点で
+  checkout した main の sha）、(3) 配置（既存 suiba-vps.yml の
+  validate＋deploy の中身を再利用し、artifact の受け渡しを
+  ジョブ内に閉じる）。
+- 前任ランが存在しない通常配置（ラッチなし）でも同じ
+  workflow で通ること（release-cutoff と approve-deploy は
+  「不要なら成功として読み飛ばす」のではなく、状態を確認して
+  必要な場合だけ実行する分岐を workflow 内に明示する）。
+- 失敗時は CYCLE と同様、同じジョブ・同じ承認のまま診断を
+  添付する。
+- 既存の個別 workflow（recover／vps）は残す（切り分け用）。
+  README／運用ドキュメントの手順を新しい正規手順に更新し、
+  `docs/VPS_RECOVERY_AUTOMATION_JA.md` に追記する。
+- 作業6（permit 再発行）は本作業の後では優先度が下がるが、
+  個別実行時の楔として残るため、実施するかどうかは PR 本文で
+  未決として挙げること。
+- workflow のみの変更なら CI の扱いは従来どおり。PR は1本。
