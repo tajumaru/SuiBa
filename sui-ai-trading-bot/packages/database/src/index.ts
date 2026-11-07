@@ -69,6 +69,10 @@ export interface SqlitePerfRecord {
   cyclePhase: string | null;
 }
 export class BotDatabase {
+  private runtimeWriteRevision = 0;
+  runtimeRevision() {
+    return this.runtimeWriteRevision;
+  }
   private db: DatabaseSync;
   private fault: { sqliteCode: number | null } | null = null;
   /**
@@ -224,6 +228,8 @@ export class BotDatabase {
     return row ? JSON.parse(row.json) : undefined;
   }
   set(key: string, value: unknown) {
+    // Monotonic within this connection, including repeated identical errors and failed writes.
+    if (key === "runtime") this.runtimeWriteRevision++;
     if (!BotDatabase.perfSink) {
       this.prepare(
         "INSERT INTO bot_runtime_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json",

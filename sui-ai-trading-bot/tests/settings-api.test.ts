@@ -217,10 +217,13 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
     expect((await api("control", { command: "stop" })).value.running).toBe(
       false,
     );
-    expect((await api("control", { command: "reset" })).value).toMatchObject({
+    expect(await api("control", { command: "reset" })).toEqual({
+      status: 409,
+      value: { error: "RESET_EMERGENCY_ACTIVE" },
+    });
+    expect((await api("state")).value.runtime).toMatchObject({
       running: false,
-      emergency: false,
-      error: null,
+      emergency: true,
     });
     // Unhealthy connections must still prevent a start after a manual reset.
     expect((await api("control", { command: "start" })).status).toBe(409);

@@ -78,6 +78,14 @@ jobs:
         run: node scripts/render-smoke.mjs
       - name: Audited unit tests with subprocess and network guards
         run: node node_modules/vitest/vitest.mjs run --config vitest.no-worker.config.ts
+      - name: Predecessor reset integration (loopback fixture only, no Worker)
+        run: |
+          log="$RUNNER_TEMP/predecessor-reset-tests.log"
+          NO_COLOR=1 node node_modules/vitest/vitest.mjs run --config vitest.predecessor-reset.config.ts > "$log" 2>&1 || { tail -n 40 "$log"; exit 1; }
+          # Vitest may emit ANSI styling even with redirected output. Summary
+          # formatting must not turn a successful test run into a failed step.
+          sed -E 's/\x1B\[[0-9;]*m//g' "$log" > "$log.plain"
+          grep -E '^[[:space:]]*(Test Files|Tests)[[:space:]]' "$log.plain" || printf 'Predecessor reset tests passed; summary unavailable (full log: %s).\n' "$log"
       - name: Offline data helpers and mocked deployment failures (no Worker)
         run: node --import tsx --test docker/vps-data.node.mjs docker/vps-deploy.node.mjs
       - name: Shell syntax and ShellCheck

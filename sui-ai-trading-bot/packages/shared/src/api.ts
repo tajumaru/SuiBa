@@ -76,6 +76,41 @@ type Stats = {
   lastFailure: ApiFailure | null;
 };
 export class ApiAccess {
+  private failureRevision = 0;
+  resetFailureRevision() {
+    return this.failureRevision;
+  }
+  planPredecessorReset(apis: readonly string[], expectedRevision: number) {
+    if (this.failureRevision !== expectedRevision)
+      throw Error("RESET_SCOPE_CHANGED");
+    if (this.flights.size || [...this.states.values()].some((s) => s.active))
+      throw Error("API_BACKOFF");
+    const inherited = new Set(apis);
+    const cleared = {
+      exhausted: false,
+      nextRetryAt: null,
+      circuitUntil: null,
+      consecutiveFailures: 0,
+      circuitTrips: 0,
+    };
+    return {
+      snapshot: this.snapshot().map((s) =>
+        inherited.has(s.api)
+          ? {
+              ...s,
+              ...cleared,
+              circuitState: "CLOSED" as const,
+              backoff: false,
+            }
+          : s,
+      ),
+      // Called synchronously after DB commit; no observer, await, transport or safety hook.
+      apply: () => {
+        for (const [api, state] of this.states)
+          if (inherited.has(api)) Object.assign(state, cleared);
+      },
+    };
+  }
   private states = new Map<string, Stats>();
   private flights = new Map<string, Promise<unknown>>();
   private caches = new Map<string, { until: number; value: unknown }>();
@@ -322,6 +357,7 @@ export class ApiAccess {
             }
             return result;
           } catch (error) {
+            this.failureRevision++;
             s.lastLatencyMs = Math.max(
               0,
               Math.round(performance.now() - began),

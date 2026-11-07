@@ -139,6 +139,7 @@ apiAccess.onAttempt = (event) => {
 };
 ctx.validation?.sample(ctx.engine.marketStatus());
 apiAccess.restoreCooldowns(ctx.db.get("api_cooldowns") ?? []);
+ctx.predecessorReset.activate(ctx.engine.monitor);
 apiAccess.onCircuitChange = () =>
   ctx.db.set("api_cooldowns", apiAccess.snapshot());
 // Log only allowlisted metadata; never raw errors, headers, bodies or credentials.
