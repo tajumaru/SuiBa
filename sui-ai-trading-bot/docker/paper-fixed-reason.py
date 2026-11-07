@@ -32,6 +32,27 @@ def admission_summary(value):
             '- Admission observations: ' + json.dumps(observed, sort_keys=True)]
 
 
+def admission_history_summary(values):
+    if type(values) is not list: return []
+    valid = []
+    for value in values[-5:]:
+        try:
+            if type(value) is not dict or set(value) != {'version', 'at', 'operation', 'code', 'observed'}:
+                continue
+            admission_summary(value)
+            valid.append(value)
+        except Exception:
+            continue
+    while valid and len(json.dumps(valid, sort_keys=True).encode('utf-8'))+1 > 4096:
+        valid = valid[1:]
+    if not valid: return []
+    lines = ['- Admission failure history (oldest first):']
+    for value in valid:
+        lines.extend(line.replace('- Last admission failure:', '- History failure:', 1)
+                     for line in admission_summary(value))
+    return lines
+
+
 if __name__ == '__main__':
     try:
         with open(sys.argv[1], 'rb') as source:
