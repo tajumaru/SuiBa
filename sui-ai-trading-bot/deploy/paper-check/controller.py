@@ -1997,6 +1997,26 @@ class ProductionController(Controller):
                 'requires_review': record['status'] == 'failed_requires_review' or self.faults(record), 'watchdog': watchdog}
 
 
+def request_caller(environ, getpwnam):
+    """Classify the sudo caller of a `request` invocation.
+
+    `suiba-deploy` is the full CI identity. `suiba-observe` is a read-only
+    monitoring identity: the caller check is the SUDO_USER/SUDO_UID pair sudo
+    itself sets, and the scope check below is what confines it. Any other
+    caller is refused."""
+    user = environ.get('SUDO_USER')
+    require(user in ('suiba-deploy', 'suiba-observe'))
+    account = getpwnam(user)
+    require(environ.get('SUDO_UID') == str(account.pw_uid))
+    return 'observe' if user == 'suiba-observe' else 'deploy'
+
+
+def require_caller_scope(caller, request):
+    """The observe identity may only ever read paper-check status."""
+    if caller == 'observe':
+        require(request == {'operation': 'status'})
+
+
 def main():
     os.umask(0o077)
     try:
@@ -2023,12 +2043,12 @@ def main():
             print('PAPER_CHECK_RETRY_APPROVED')
         elif sys.argv[1] == 'request':
             import pwd
-            account = pwd.getpwnam('suiba-deploy')
-            require(os.environ.get('SUDO_USER') == account.pw_name and os.environ.get('SUDO_UID') == str(account.pw_uid))
+            caller = request_caller(os.environ, pwd.getpwnam)
             signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(RuntimeError()))
             signal.alarm(5)
             request = b.decode(sys.stdin.buffer.read(257))
             signal.alarm(0)
+            require_caller_scope(caller, request)
             require(isinstance(request, dict) and set(request) <= {'operation', 'duration', 'mode', 'sha'} and
                     request.get('operation') in ('start', 'status', 'abort', 'diagnose', 'reconcile', 'approve-retry', 'approve-deploy', 'revoke-retry', 'release-cutoff', 'heal-run', 'export-snapshot', 'prod-start', 'prod-stop', 'prod-status'))
             require(request['operation'] in ('start', 'reconcile', 'approve-deploy') or set(request) == {'operation'})

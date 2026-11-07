@@ -1,0 +1,2 @@
+Defaults:suiba-observe env_reset,!setenv
+suiba-observe ALL=(root) NOPASSWD: NOSETENV: /usr/local/sbin/suiba-paper-observe ""

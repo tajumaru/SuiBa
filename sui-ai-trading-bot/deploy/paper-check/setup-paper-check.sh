@@ -17,6 +17,10 @@
 # in the same commit (same discipline as setup-ci-approval.sh).
 # prod-policy.json is never installed or enabled here. Production activation
 # is a separate explicit cutover operation; installing a unit never starts it.
+# It also installs the read-only monitoring identity: user suiba-observe,
+# whose only sudo command is the observe wrapper, whose authorized_keys
+# entry forces that wrapper, and which the controller itself confines to
+# the status operation. Its key is pinned below like every other file.
 set -Eeuo pipefail
 umask 077
 
@@ -30,9 +34,11 @@ UNITS='suiba-paper-check.service suiba-prod.service suiba-prod-watchdog.service 
 # name|sha256|target|mode
 FILES=(
   'export_snapshot.py|f0b8bf8bf36f113422e5a8aea174a1575b5e95739ac663cd870c6c225c95c98f|/usr/local/libexec/suiba-paper-export.py|755'
-  'controller.py|9dab37829cbe2d2ea01dc9b449f63052bde866b91204527bfcaa809fc5b0985f|/usr/local/libexec/suiba-paper-check.py|755'
+  'controller.py|1e083a6a49aaa0ab6a0dfe86f926f70150efd500112d7d52a289181a803692ab|/usr/local/libexec/suiba-paper-check.py|755'
   'suiba-paper-check|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-check|755'
   'suiba-paper-check.sudoers|54d64fdadf0b38749008c112fc12761e03f633538e526ebe6f37eb4b1ec38607|/etc/sudoers.d/suiba-paper-check|440'
+  'suiba-paper-observe|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-observe|755'
+  'suiba-paper-observe.sudoers|6a725a0f8ab853c2f8db4fe176e30ea8a4d337112a0f9ec3f0cea337bdfaabe4|/etc/sudoers.d/suiba-paper-observe|440'
   'suiba-paper-check.service|44efe8db2b1c569fd8c2176002acc76b724d6d4c66fa1df1babb988e63f60e95|/etc/systemd/system/suiba-paper-check.service|644'
   'suiba-prod.service|042b393fd872481faffa17d09e57fe7c7a2d57ddb931d609655f4cf29f6ddb02|/etc/systemd/system/suiba-prod.service|644'
   'watchdog.py|7042e7e198fa4b24a33ee61791b093ca91db0ba64129d5a988489330e5eb1822|/usr/local/libexec/suiba-prod-watchdog.py|755'
@@ -105,6 +111,7 @@ done
 python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/controller.py" || fail 'controller.py の構文検証に失敗'
 python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/watchdog.py" || fail 'watchdog.py の構文検証に失敗'
 visudo -cf "$tmp/suiba-paper-check.sudoers" >/dev/null || fail 'sudoers の構文検証に失敗'
+visudo -cf "$tmp/suiba-paper-observe.sudoers" >/dev/null || fail 'observe sudoers の構文検証に失敗'
 
 echo '== 3/5 配置（旧ファイルはバックアップ） =='
 for entry in "${FILES[@]}"; do
@@ -116,6 +123,19 @@ for entry in "${FILES[@]}"; do
   install -o root -g root -m "$mode" "$tmp/$name" "$target"
   echo "配置: $target"
 done
+OBSERVE_KEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPkDaHF4zxvMzkdofBMBwFm0p5WKxN7K6apM6b2H0Ywg suiba-observe'
+OBSERVE_AUTHORIZED="restrict,command=\"sudo -n /usr/local/sbin/suiba-paper-observe\" $OBSERVE_KEY"
+if ! id suiba-observe >/dev/null 2>&1; then
+  useradd --create-home --shell /bin/sh suiba-observe || fail 'suiba-observe の作成に失敗'
+  echo '作成: suiba-observe ユーザー（読み取り専用モニター）'
+fi
+observe_home=$(getent passwd suiba-observe | cut -d: -f6)
+observe_group=$(id -gn suiba-observe)
+[[ -n $observe_home && -d $observe_home ]] || fail 'suiba-observe のホームを確認できません'
+install -d -o suiba-observe -g "$observe_group" -m 700 "$observe_home/.ssh" || fail 'suiba-observe の .ssh を作れません'
+printf '%s\n' "$OBSERVE_AUTHORIZED" > "$tmp/authorized_keys"
+install -o suiba-observe -g "$observe_group" -m 600 "$tmp/authorized_keys" "$observe_home/.ssh/authorized_keys" || fail 'suiba-observe の authorized_keys を配置できません'
+echo '配置: suiba-observe の authorized_keys（status 固定の強制コマンド）'
 
 echo '== 4/5 配置後の検証 =='
 for entry in "${FILES[@]}"; do
@@ -123,6 +143,8 @@ for entry in "${FILES[@]}"; do
   printf '%s  %s\n' "$sha" "$target" | sha256sum -c - >/dev/null || fail "配置後の sha256 が一致しません: $target"
 done
 echo '配置後の sha256: 全ファイル一致'
+grep -qxF "$OBSERVE_AUTHORIZED" "$observe_home/.ssh/authorized_keys" || fail 'suiba-observe の authorized_keys が想定と違います'
+echo 'suiba-observe の authorized_keys OK'
 systemctl daemon-reload || fail 'daemon-reload に失敗'
 unit_paths=()
 for unit in $UNITS; do unit_paths+=("/etc/systemd/system/$unit"); done
@@ -149,6 +171,23 @@ PYEOF
 then
   fail 'status スモークの応答が想定と違います'
 fi
+if ! su -s /bin/sh suiba-observe -c 'sudo -n /usr/local/sbin/suiba-paper-observe' \
+    < "$tmp/status-request.json" > "$tmp/observe-status.json" 2> "$tmp/observe-status.err"; then
+  fail 'suiba-observe の status スモークが失敗しました（ファイルは配置済みで、バックアップから戻せます）'
+fi
+python3 - "$tmp/observe-status.json" <<'PYEOF' || fail 'suiba-observe の status 応答が想定と違います'
+import json, sys
+with open(sys.argv[1]) as source:
+    payload = json.load(source)
+assert payload['run']['status'] in ('in_progress', 'finishing', 'completed', 'failed_requires_review')
+print('observe status スモーク OK')
+PYEOF
+printf '%s' '{"operation":"diagnose"}' > "$tmp/observe-denied.json"
+if su -s /bin/sh suiba-observe -c 'sudo -n /usr/local/sbin/suiba-paper-observe' \
+    < "$tmp/observe-denied.json" > /dev/null 2>&1; then
+  fail 'suiba-observe で status 以外の操作が通ってしまいました'
+fi
+echo 'observe scope OK: status 以外は拒否'
 
 echo
 echo '完了しました。検証ランは開始ワークフロー（START-PAPER）で 30m / 6h / 24h を選べます。'

@@ -94,7 +94,7 @@ jobs:
           # hand-picked list: the setup scripts run as root on the
           # VPS, and a quoting slip in one once shipped unnoticed
           # precisely because it was not listed here.
-          scripts=$(printf '%s\n' docker/*.sh deploy/broker/*.sh deploy/paper-check/*.sh deploy/paper-check/suiba-paper-check)
+          scripts=$(printf '%s\n' docker/*.sh deploy/broker/*.sh deploy/paper-check/*.sh deploy/paper-check/suiba-paper-check deploy/paper-check/suiba-paper-observe)
           for script in $scripts; do bash -n "$script"; done
           shellcheck $scripts
       - name: SSH preflight mock tests (no real SSH or keys)
@@ -103,6 +103,10 @@ jobs:
         run: |
           python3 -I docker/test_production_monitor.py
           node --test docker/production-notify.node.mjs
+      - name: Paper monitor observation and Issue lifecycle mocks (no SSH or GitHub writes)
+        run: |
+          python3 -I docker/test_paper_monitor.py
+          node --test docker/paper-monitor-notify.node.mjs
       - name: PAPER controller failure tests (no Worker)
         run: |
           # Syntax-gate every deploy Python file on the light path too:
