@@ -357,6 +357,42 @@ it("restores the standard deadline when another failure joins a stale episode", 
   expect(db.runtime().error).toBe("PAPER_RECOVERY_EXHAUSTED");
   expect(monitor.safety().resumePending).toBe(false);
 });
+it("routes a stale throw into the stall pause while running", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  monitor.market(start, start);
+  expect(monitor.staleThrowToStall("STALE_CANDLES", start + 361000)).toBe(
+    true,
+  );
+  expect(db.runtime()).toMatchObject({ running: false, error: null });
+  expect(monitor.safety()).toMatchObject({
+    connectivity: "DEGRADED",
+    resumePending: true,
+  });
+  expect(Object.keys(monitor.safety().episodeTally)).toEqual([
+    "MarketData/CANDLE_STALE",
+  ]);
+});
+it("does not soften a latched hard stop via a stale throw", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  monitor.market(start, start);
+  monitor.stop("CONSECUTIVE_API_ERRORS", start);
+  expect(monitor.staleThrowToStall("STALE_CANDLES", start + 361000)).toBe(
+    false,
+  );
+  expect(db.runtime().error).toBe("CONSECUTIVE_API_ERRORS");
+  expect(monitor.safety().resumePending).toBe(false);
+});
+it("ignores other codes and fresh markets in the stale-throw bridge", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  monitor.market(start, start);
+  expect(monitor.staleThrowToStall("CANDLE_GAP", start + 361000)).toBe(false);
+  expect(monitor.staleThrowToStall("STALE_CANDLES", start + 1000)).toBe(false);
+  expect(db.runtime()).toMatchObject({ running: true, error: null });
+  expect(monitor.safety().resumePending).toBe(false);
+});
 it("never softens an existing hard stop into a stall pause", () => {
   const { db, monitor } = setup(),
     start = Date.now();
