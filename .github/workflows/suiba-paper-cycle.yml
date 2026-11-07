@@ -38,7 +38,13 @@ jobs:
     # the Environment approval remains the human gate. The watch is
     # observational and capped at ~45 minutes even for 6h/24h runs:
     # early failures surface within minutes, and a long run's final
-    # state is read afterwards with the approval-free status check.
+    # state is read afterwards with the status workflow. When the
+    # retry/start steps fail or the watched run ends in
+    # failed_requires_review, the same job runs the diagnostics
+    # check immediately under this same approval (added 2026-11-07:
+    # a failed watch used to mean a second approval just to learn
+    # why). Failures after the watch window still need the status
+    # workflow, which shares this Environment and its approval.
     if: github.ref == 'refs/heads/main' && inputs.confirmation == 'CYCLE-PAPER' && vars.SUIBA_PAPER_START_ENABLED == 'true'
     environment: sakura-vps
     runs-on: ubuntu-latest
@@ -68,6 +74,7 @@ jobs:
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: bash sui-ai-trading-bot/docker/ssh-paper-start.sh
       - name: Watch PAPER status through the fixed wrapper
+        id: watch
         env:
           PAPER_STATUS_CONFIRMATION: CHECK-PAPER-STATUS
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -124,3 +131,28 @@ jobs:
             sleep $sleep_for
           done
           echo "Final PAPER run status: ${final_state}"
+          echo "final_state=${final_state}" >> "$GITHUB_OUTPUT"
+      - name: Diagnose a failed cycle through the fixed wrapper (same approval)
+        if: ${{ !cancelled() && (failure() || steps.watch.outputs.final_state == 'failed_requires_review') }}
+        env:
+          PAPER_STATUS_CONFIRMATION: CHECK-PAPER-DIAGNOSTICS
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          # Same job, same Environment approval: when the cycle fails
+          # (a step above, or the run under watch), attach the
+          # diagnostics output to this run instead of making the
+          # owner approve a separate status run just to learn why.
+          # Observational: a diagnostics failure changes nothing.
+          set +e
+          out=$(bash sui-ai-trading-bot/docker/ssh-paper-status.sh 2>&1)
+          printf '%s\n' "$out"
+          {
+            echo ""
+            echo "## Auto-diagnostics (same approval)"
+            printf '%s\n' "$out"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0

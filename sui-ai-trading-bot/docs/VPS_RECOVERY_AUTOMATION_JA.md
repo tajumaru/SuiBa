@@ -163,6 +163,17 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   compose に無く、Indexer の足系列の欠け（実測で 5分足1000本中2本）
   が全取得を CANDLE_GAP で落とし、market-freshness で2回停止した。
   PR #89 で compose に追加した。
+- CYCLE の自動診断（2026-11-07、PR #100）: オーナー要望
+  「watch が失敗を見たら診断まで自動で流してほしい」を実装。
+  CYCLE ジョブは retry/start のステップ失敗時、または watch が
+  failed_requires_review を観測したとき、同じジョブ・同じ
+  Environment 承認のまま CHECK-PAPER-DIAGNOSTICS を実行し、
+  出力を job ログとステップサマリに残す。失敗の理由を知るため
+  だけの2回目の承認が不要になる。watch 窓（最大45分）より
+  後で起きた失敗は対象外で、従来どおり status ワークフロー
+  （同じ承認が必要）が要る。読み取り専用キーで status 自体を
+  承認なしにする分離案は、この自動診断で当面の不便が解ける
+  ため保留。
 - 検証リース上限と長時間ラン（2026-11-07、PR #99）: 10:28 の
   CYCLE 30m で初めて記録上の completed を達成（30分検証は
   卒業）。続く 6h ランは arm で 409 拒否：検証セッション
