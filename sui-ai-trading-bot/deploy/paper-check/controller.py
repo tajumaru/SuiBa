@@ -1122,11 +1122,40 @@ class Controller:
             with contextlib.suppress(Exception):
                 self.docker.call(['volume', 'rm', scratch])
 
+    def await_normal_stop(self, record):
+        # The deferral in stop() covers a normal stop that is
+        # already visible, but the cutoff can still win the race
+        # one step earlier: the timer fires at the cutoff while the
+        # controller is only just leaving its monitoring loop — it
+        # exits at cutoff-5s by design, and a slow final cycle plus
+        # the stop preamble can eat that margin, so no 'normal'
+        # stop-request exists yet when the cutoff looks. That is
+        # what demoted the healthy 2026-11-07 09:13 run. The
+        # backstop's question is whether the controller failed to
+        # stop, so while the controller is alive, wait for its stop
+        # to become visible (or the record to leave in_progress)
+        # before forcing anything. A dead controller returns at
+        # once, and a live one that never begins stopping is still
+        # forced when the grace expires; the worker's session lease
+        # has already expired at the cutoff either way. No locks are
+        # held here: the controller's own stop needs them.
+        deadline = time.monotonic()+60
+        while time.monotonic() < deadline:
+            record = self.current(record['id'])
+            if record['status'] != 'in_progress': return
+            if self.defer_to_normal_completion(record): return
+            if self.exited(record): return
+            time.sleep(2)
+
     def stop(self, own=False, expected=None, source='external'):
         if not self.record.exists(): return True
         record = self.current(expected)
         if record['status'] == 'completed': return not self.faults(record)
         expected = record['id']
+        if source == 'cutoff':
+            self.await_normal_stop(record)
+            record = self.current(expected)
+            if record['status'] == 'completed': return not self.faults(record)
         try:
             with self.locked('stop', wait=60):
                 record = self.current(expected)  # stale callers may not signal/write a newer run
@@ -1484,6 +1513,10 @@ class Controller:
                     time.sleep(5)
                 stage = 'normal-stop'
                 self.note_stage(stage)
+                # Declare the normal stop before anything else can
+                # interleave: the stop-request is first-writer-wins
+                # and the cutoff backstop defers to a 'normal' one.
+                self.intent(record, 'normal')
                 require(self.stop(own=True, expected=self.run_id, source='normal'))
                 self.system('stop', timer)
                 with self.locked('stop'), self.locked('mutation'):
