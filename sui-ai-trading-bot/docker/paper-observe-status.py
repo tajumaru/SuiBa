@@ -46,10 +46,10 @@ def combine(payload, now, read_ok=True):
         result['reasons'] = ['PAPER_STATUS_UNAVAILABLE']; return result
     try:
         require(type(payload) is dict and type(payload.get('requires_review')) is bool)
-        require(type(payload.get('controller_alive')) is bool)
         run = payload.get('run')
         if run is None:
-            require(payload['requires_review'] is False)
+            if payload['requires_review']:
+                result['reasons'] = ['RUN_FAILED_REQUIRES_REVIEW']; return result
             result.update(verdict='no_run'); return result
         require(type(run) is dict and hex_id(run.get('id')))
         require(run.get('status') in RUN_STATES)
@@ -58,10 +58,14 @@ def combine(payload, now, read_ok=True):
     except Exception:
         result['reasons'] = ['PAPER_STATUS_INVALID']; return result
     reasons = set()
-    if payload['requires_review'] or run['status'] == 'failed_requires_review':
+    # requires_review is the controller's fault latch. While a run is admitted
+    # and in progress (or finishing), the latch may still describe the previous
+    # failure's reconciliation state, so the run's own status decides. A latch
+    # on a terminal run means the failure was never reconciled.
+    if run['status'] == 'failed_requires_review':
         reasons.add('RUN_FAILED_REQUIRES_REVIEW')
-    if run['status'] == 'in_progress' and not payload['controller_alive']:
-        reasons.add('CONTROLLER_NOT_RUNNING')
+    elif payload['requires_review'] and run['status'] not in ('in_progress', 'finishing'):
+        reasons.add('RUN_FAILED_REQUIRES_REVIEW')
     result.update(verdict='attention' if reasons else 'ok', reasons=sorted(reasons),
                   run_id=run['id'], run_status=run['status'], duration=duration)
     return result

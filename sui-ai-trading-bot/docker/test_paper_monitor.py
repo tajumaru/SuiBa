@@ -18,8 +18,10 @@ RUN = {'id': 'a'*32, 'status': 'in_progress', 'duration': '6h'}
 
 
 def payload(**overrides):
-    base = {'run': dict(RUN), 'controller_alive': True, 'requires_review': False,
-            'worker': None, 'watchdog': None}
+    # The real controller status() shape: full run record, fault latch,
+    # stop receipt, admission evidence. No worker/watchdog/controller fields.
+    base = {'run': dict(RUN), 'requires_review': False, 'stop': None,
+            'admission_failure': None, 'admission_failures': []}
     base.update(overrides)
     return base
 
@@ -34,23 +36,28 @@ class CombineTests(unittest.TestCase):
     def test_failed_run_and_review_flag_require_attention(self):
         failed = payload(run={**RUN, 'status': 'failed_requires_review'}, requires_review=True)
         self.assertEqual(p.combine(failed, 2000)['reasons'], ['RUN_FAILED_REQUIRES_REVIEW'])
-        flagged = payload(requires_review=True)
+        flagged = payload(run={**RUN, 'status': 'completed'}, requires_review=True)
         self.assertEqual(p.combine(flagged, 2000)['reasons'], ['RUN_FAILED_REQUIRES_REVIEW'])
 
-    def test_dead_controller_during_a_run_is_attention(self):
-        result = p.combine(payload(controller_alive=False), 2000)
-        self.assertEqual(result['reasons'], ['CONTROLLER_NOT_RUNNING'])
+    def test_latch_during_an_admitted_run_is_not_the_current_runs_fault(self):
+        self.assertEqual(p.combine(payload(requires_review=True), 2000)['verdict'], 'ok')
+        finishing = payload(run={**RUN, 'status': 'finishing'}, requires_review=True)
+        self.assertEqual(p.combine(finishing, 2000)['verdict'], 'ok')
+        completed = payload(run={**RUN, 'status': 'completed'}, requires_review=True)
+        self.assertEqual(p.combine(completed, 2000)['reasons'], ['RUN_FAILED_REQUIRES_REVIEW'])
 
-    def test_no_run_record_is_quiet(self):
-        result = p.combine(payload(run=None, controller_alive=False), 2000)
+    def test_no_run_record_is_quiet_unless_the_latch_is_set(self):
+        result = p.combine(payload(run=None), 2000)
         self.assertEqual(result['verdict'], 'no_run')
         self.assertEqual(result['reasons'], [])
+        latched = p.combine(payload(run=None, requires_review=True), 2000)
+        self.assertEqual(latched['reasons'], ['RUN_FAILED_REQUIRES_REVIEW'])
 
     def test_unread_and_invalid_payloads_are_attention_with_fixed_codes(self):
         self.assertEqual(p.combine(None, 2000, read_ok=False)['reasons'], ['PAPER_STATUS_UNAVAILABLE'])
         for bad in (payload(run={**RUN, 'id': 'x'}), payload(run={**RUN, 'status': 'bogus'}),
                     payload(requires_review='yes'), payload(run={**RUN, 'duration': '1h'}),
-                    payload(run=None, requires_review=True), 'not a dict'):
+                    'not a dict'):
             self.assertEqual(p.combine(bad, 2000)['reasons'], ['PAPER_STATUS_INVALID'], bad)
 
     def test_read_rejects_duplicates_nan_and_oversize(self):
