@@ -363,3 +363,9 @@ GET /api/deploymentにresetScope（pendingを含む）を追加する。再試�
 - GitHub 側は環境 `sakura-vps-observe`（必須レビューなし、observe 専用キーの secrets のみ）に `suiba-paper-monitor.yml` を置く。cron 30分＋手動 dispatch、repo 変数 `SUIBA_PAPER_MONITOR_ENABLED=true` のときだけ動く。check ジョブが status を読み、検証済みの小さなレポートだけを notify ジョブへ渡す。notify は issues:write のみを持ち、ホスト認証情報を受け取らない。
 - 通知条件：ランが failed_requires_review（または requires_review フラグ）、稼働中なのに controller が生きていない、status が読めない／形が不正、のいずれかで専用 Issue（ラベル `suiba-paper-alert`、固定タイトル＋マーカーで一本化）を開く／更新する。正常な観測が戻れば自動で閉じる。ラン記録が無い場合は「回復の証明ではない」として何もしない（production monitor の not_started と同じ扱い）。自動復旧はしない。
 - 有効化の前提：setup-paper-check.sh の再実行（observe identity の配置）→ 環境 secrets の登録 → 変数を true にする。supervisor が稼働中の setup 再実行は従来どおり拒否されるため、ランとランの間で実行する。
+
+## 検証ラダーに 2h を追加（2026-11-08、オーナー提案）
+
+6h は3回連続で CANDLE_STALE 系の停止になり、失敗までの時間も短い（3回目は約30分）。6h の前に 2h の段を追加し、卒業ラダーを 30m → 2h → 6h → 24h にする。2h は「30分を超えて回り続ける」ことの最初の証拠になり、失敗しても失う時間が短い。
+
+実装は duration の固定集合への追加のみ：controller の DURATIONS（7200秒）と cutoff タイマー unit（suiba-paper-check-cutoff-2h.timer、OnActiveSec=2h）、setup の配布対象（16ファイル）と TIMERS/UNITS、開始・回復・状態表示・export・モニターの duration 許可集合、CYCLE／START ワークフローの選択肢。検証セッションのリース上限（24h）や安全条件は不変。反映は setup 再実行（controller と unit の配置）が必要で、worker イメージの再配置は不要。

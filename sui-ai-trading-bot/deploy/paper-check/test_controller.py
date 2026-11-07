@@ -603,8 +603,8 @@ class StopTests(unittest.TestCase):
                 return ('ActiveState=%s\nJob=\n' % states[unit]).encode()
             return fake
         states = {c.SERVICE: 'inactive', c.CUTOFF: 'inactive',
-                  c.cutoff_timer('30m'): 'active', c.cutoff_timer('6h'): 'inactive',
-                  c.cutoff_timer('24h'): 'inactive'}
+                  c.cutoff_timer('30m'): 'active', c.cutoff_timer('2h'): 'inactive',
+                  c.cutoff_timer('6h'): 'inactive', c.cutoff_timer('24h'): 'inactive'}
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
             ctl, record, calls = fixture(Path(tmp))
             with patch.object(c.subprocess, 'check_output', show(states)):
@@ -1144,11 +1144,13 @@ class DurationTests(unittest.TestCase):
 
     def test_cutoff_timer_names_follow_the_fixed_units(self):
         self.assertEqual(c.cutoff_timer('30m'), c.TIMER)
+        self.assertEqual(c.cutoff_timer('2h'), 'suiba-paper-check-cutoff-2h.timer')
         self.assertEqual(c.cutoff_timer('6h'), 'suiba-paper-check-cutoff-6h.timer')
         self.assertEqual(c.cutoff_timer('24h'), 'suiba-paper-check-cutoff-24h.timer')
-        self.assertEqual(c.cutoff_timers(), (c.TIMER, 'suiba-paper-check-cutoff-6h.timer',
+        self.assertEqual(c.cutoff_timers(), (c.TIMER, 'suiba-paper-check-cutoff-2h.timer',
+                                             'suiba-paper-check-cutoff-6h.timer',
                                              'suiba-paper-check-cutoff-24h.timer'))
-        self.assertEqual(c.DURATIONS, {'30m': 1800, '6h': 21600, '24h': 86400})
+        self.assertEqual(c.DURATIONS, {'30m': 1800, '2h': 7200, '6h': 21600, '24h': 86400})
 
     def test_start_request_defaults_without_a_note(self):
         with tempfile.TemporaryDirectory() as root:

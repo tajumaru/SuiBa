@@ -151,7 +151,7 @@ def main():
         timer = unit.with_name(name+'-cutoff.timer')
         # The controller enumerates one cutoff timer per validation length;
         # mirror the production set so its quiescence checks see real units.
-        derived_timers = [unit.with_name(name+'-cutoff-'+suffix+'.timer') for suffix in ('6h', '24h')]
+        derived_timers = [unit.with_name(name+'-cutoff-'+suffix+'.timer') for suffix in ('2h', '6h', '24h')]
         try:
             for folder in ('broker', 'policy', 'backups', 'state'): (base/folder).mkdir(mode=0o700)
             # Keep ProtectHome=yes from the production unit: executable test code

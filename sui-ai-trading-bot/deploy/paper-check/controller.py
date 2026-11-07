@@ -39,7 +39,7 @@ CUTOFF = 'suiba-paper-check-cutoff.service'
 # family, not the length. The length lives only here, in the record's
 # cutoff and in the per-length cutoff timer, so a started run can never
 # be extended by the container, the Worker, or a later request.
-DURATIONS = {'30m': 1800, '6h': 21600, '24h': 86400}
+DURATIONS = {'30m': 1800, '2h': 7200, '6h': 21600, '24h': 86400}
 RESET_REFUSAL_CODES = frozenset(('RESET_EMERGENCY_ACTIVE', 'RESET_SCOPE_CHANGED',
                                'RESET_NOT_PREDECESSOR', 'RESET_SCOPE_UNAVAILABLE'))
 # Program files (this controller, the broker) are read whole for
