@@ -163,6 +163,26 @@ paper-check／broker の状態遷移を記録する運用メモである。今�
   compose に無く、Indexer の足系列の欠け（実測で 5分足1000本中2本）
   が全取得を CANDLE_GAP で落とし、market-freshness で2回停止した。
   PR #89 で compose に追加した。
+- 開始拒否の楔の修正とヒーリング操作（2026-11-07、PR #96）:
+  CYCLE 初ラン（08:49）は readiness 通過後、起動サイクルが
+  STALE_CANDLES（Indexer の足遅れ）で止まって runtime error が
+  残り、paper-start が 409 で拒否された。guard は「中断時は
+  pending を残す」設計のため、確実に実行されていない開始が
+  OPERATION_COMPLETION_UNCONFIRMED になり、レシートは
+  failed_state_unknown＋フォールトで、通常の RETRY ゲートが
+  通らない楔になった。修正は3点。(1) guard はサーバが明確に
+  拒否した操作（HTTP 4xx）では pending を消す（5xx・輸送失敗は
+  従来どおり未確認のまま）。(2) 再試行承認時のみ、paper-start
+  直前に readiness の開始ブロッカー（runtimeClear／apiAccess）
+  を再確認し、残っていたらリセットを再送してから開始する。
+  (3) 回復操作 heal-run を追加：停止レシートのエラーが
+  OPERATION_COMPLETION_UNCONFIRMED（＋LATCHED_FAILURE）のみで、
+  failure が arm／paper-start の 4xx 拒否、pending がその操作と
+  一致し、診断の証拠（終了コード0・保守ラッチ・ライフサイクル・
+  DB検証）が全てクリーンな run に限り、証拠を heal-* バック
+  アップへ退避してからフォールト解除＋レシートを clean_stopped
+  に直す。cutoff タイマーが残っていれば先に release-cutoff が
+  要る（quiescent ゲート）。
 - 承認回数の削減（2026-11-07、PR #94）: 検証サイクルのたびに
   RETRY／START／WATCH とステータス確認で環境承認が要り、今朝は
   数十回のタップになった。対策は2つ。新ワークフロー

@@ -368,6 +368,103 @@ class StopTests(unittest.TestCase):
             self.assertEqual(json.loads((folder/'stop.json').read_bytes())['errors'], ['SOMETHING_ELSE'])
             self.assertEqual(list(backups_root.iterdir()), [])
 
+    def make_heal_fixture(self, root):
+        ctl, record, paper, state, backups_root = self.make_reconcile_fixture(root)
+        folder = paper/record['id']
+        stop = {'id': record['id'], 'status': 'failed_state_unknown',
+                'errors': ['OPERATION_COMPLETION_UNCONFIRMED', 'LATCHED_FAILURE']}
+        FakeBroker.atomic(folder/'stop.json', stop)
+        FakeBroker.atomic(paper/'stop.json', stop)
+        FakeBroker.atomic(folder/'failure.json', {'id': record['id'], 'stage': 'paper-start', 'http_status': 409})
+        FakeBroker.atomic(folder/'mutation.json', {'id': record['id'], 'pending': 'paper-start'})
+        ctl.exited = lambda r: True
+        ctl.quiescent = lambda: None
+        wedged = {'run': {'id': record['id'], 'status': 'failed_requires_review'},
+                  'stop': {'status': 'failed_state_unknown'},
+                  'diagnostics': {'exit_code': 0, 'oom_killed': False, 'maintenance': True,
+                                  'clean_lifecycle': True, 'backup_verified': True},
+                  'requires_review': True}
+        clean = {'run': {'id': record['id'], 'status': 'failed_requires_review'},
+                 'stop': {'status': 'clean_stopped'}, 'requires_review': False}
+        reports = iter([wedged, clean])
+        ctl.diagnose = lambda: next(reports)
+        return ctl, record, paper, state, backups_root
+
+    def test_heal_run_clears_the_refused_operation_wedge(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record, paper, state, backups_root = self.make_heal_fixture(Path(tmp))
+            with patch.object(c, 'RECONCILE_BACKUPS', backups_root):
+                result = ctl.heal_run()
+            self.assertEqual(result['healed'], record['id'])
+            self.assertTrue(result['backup'].startswith('heal-'))
+            folder = paper/record['id']
+            self.assertEqual(json.loads((folder/'mutation.json').read_text())['pending'], None)
+            for stop_path in (folder/'stop.json', paper/'stop.json'):
+                healed = json.loads(stop_path.read_text())
+                self.assertEqual(healed['status'], 'clean_stopped')
+                self.assertEqual(healed['errors'], [])
+            self.assertFalse((state/'paper-check-failed.json').exists())
+            self.assertFalse((folder/'fault-fixture.json').exists())
+            backup = backups_root/result['backup']
+            self.assertTrue((backup/'failure.json').exists())
+            self.assertTrue((backup/'mutation.json').exists())
+            self.assertTrue((backup/'paper-check-failed.json').exists())
+            self.assertTrue((backup/'fault-fixture.json').exists())
+
+    def test_heal_run_refuses_on_unexpected_evidence(self):
+        for mutate in ('errors', 'http', 'pending'):
+            with self.subTest(mutate=mutate), tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+                ctl, record, paper, state, backups_root = self.make_heal_fixture(Path(tmp))
+                folder = paper/record['id']
+                if mutate == 'errors':
+                    FakeBroker.atomic(folder/'stop.json', {'id': record['id'], 'status': 'failed_state_unknown',
+                        'errors': ['OPERATION_COMPLETION_UNCONFIRMED', 'LATCHED_FAILURE', 'UNCLEAN_OR_UNKNOWN']})
+                elif mutate == 'http':
+                    FakeBroker.atomic(folder/'failure.json', {'id': record['id'], 'stage': 'paper-start', 'http_status': 500})
+                else:
+                    FakeBroker.atomic(folder/'mutation.json', {'id': record['id'], 'pending': 'arm'})
+                with patch.object(c, 'RECONCILE_BACKUPS', backups_root):
+                    with self.assertRaises(Exception): ctl.heal_run()
+                self.assertTrue((state/'paper-check-failed.json').exists())
+                self.assertEqual(list(backups_root.iterdir()), [])
+
+    def test_guard_clears_pending_only_for_a_definitive_refusal(self):
+        import urllib.error
+        for code, expected in ((409, None), (500, 'paper-start')):
+            with self.subTest(code=code), tempfile.TemporaryDirectory(prefix='paper-check-test-', dir=Path(__file__).parent) as root:
+                ctl = object.__new__(c.Controller)
+                ctl.b, ctl.state = FakeBroker, Path(root)
+                record = initialize(ctl)
+                def refuse():
+                    raise urllib.error.HTTPError('http://fixture', code, 'fixture', {}, None)
+                with self.assertRaises(urllib.error.HTTPError):
+                    ctl.guard('paper-start', refuse)
+                mutation = json.loads((Path(root)/record['id']/'mutation.json').read_text())
+                self.assertEqual(mutation['pending'], expected)
+
+    def test_recheck_clears_a_fresh_blocker_before_paper_start(self):
+        blocked = {'readiness': {'runtimeClear': False, 'apiAccess': True}}
+        clear = {'readiness': {'runtimeClear': True, 'apiAccess': True}}
+        ctl = object.__new__(c.Controller)
+        ctl.retry_admitted = True
+        calls = []
+        pages = iter([blocked, clear])
+        def api(method, path, value=None):
+            calls.append((method, path, value))
+            if path == '/api/control': return {'running': False}
+            return next(pages)
+        ctl.api = api
+        with patch.object(c.time, 'sleep'):
+            ctl.recheck_start_blockers(10**13)
+        self.assertEqual(ctl.stale_reset_attempts, 1)
+        self.assertTrue(ctl.stale_reset_ok)
+        # A blocker that never clears fails within the window.
+        ctl = object.__new__(c.Controller)
+        ctl.retry_admitted = True
+        ctl.api = lambda *a: blocked
+        with patch.object(c.time, 'monotonic', side_effect=[0, 0, 21]), patch.object(c.time, 'sleep'):
+            with self.assertRaises(RuntimeError): ctl.recheck_start_blockers(10**13)
+
     def test_record_preflight_keeps_only_check_and_error_class(self):
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
