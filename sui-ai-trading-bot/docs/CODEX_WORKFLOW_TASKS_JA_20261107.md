@@ -160,3 +160,34 @@ emergency や新規の 429 ハードストップを消しうる（実発生の�
 - 振る舞いが変わる点は `docs/VPS_RECOVERY_AUTOMATION_JA.md` に
   同じ PR で追記する。
 - 不明点は推測で埋めず、PR 本文に「未決」として列挙する。
+
+## 作業6：approve-deploy の失効楔の恒久修正（2026-11-08 追加）
+
+2026-11-08 の配置 seq 13 で踏んだ設計の楔。approve-deploy は
+CI モードの配置承認レコード（policy/approvals/<sha>.json）を
+「発行から1時間有効」で実体化するが、配置の実行がその窓を
+過ぎると broker が PAPER_DEPLOY_EXPIRED で拒否し、失効した
+レコードと未消費の permit（STATE/paper-deploy-<sha>.json）を
+消す・更新する操作がどこにもないため、同じ sha では二度と
+approve-deploy が通らなくなる（controller 側も expires チェック
+で拒否する）。当面の回避は「新しい sha の配置対象にする」
+こと（本節を追加した commit 自体がその回避を兼ねる）。
+
+恒久修正の要件：
+- approve-deploy は、既存の配置承認レコードが失効している場合
+  に限り、同じ内容（sha／deploy）で再実体化できること。再発行
+  はこの操作自体への人間の承認を前提とし、有効窓は従来どおり
+  1時間。
+- 未消費 permit が残っている場合の扱いを決めること：permit は
+  承認レコードの sha256 を束縛しているため、再発行で digest が
+  変われば古い permit は無効になる。再発行と同時に古い permit
+  を置き換える（または作り直す）設計とし、消費済み permit が
+  ある場合は従来どおり拒否すること。
+- 一度消費された配置や、失効していない承認の上書きは不可
+  （single-use の性質を変えない）。
+- テスト：失効後に approve-deploy が再発行して配置まで通る／
+  失効前の二重発行は拒否／消費済みは拒否／digest 不一致の
+  permit は broker が拒否する（従来どおり）。
+- controller 変更になるため setup のピンを同じコミットで
+  更新し、`docs/VPS_RECOVERY_AUTOMATION_JA.md` に経緯と仕様を
+  追記する。PR はこれ1本。
