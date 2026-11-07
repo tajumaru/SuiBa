@@ -48,6 +48,10 @@ DURATIONS = {'30m': 1800, '6h': 21600, '24h': 86400}
 # module-level tests stayed green. Program reads pass this
 # maximum explicitly, and a test keeps the file below it.
 PROGRAM_READ_MAXIMUM = 262144
+EXPORT_PROGRAM = Path('/usr/local/libexec/suiba-paper-export.py')
+EXPORT_CODES = frozenset(('EXPORT_BACKUP_MISSING', 'EXPORT_MANIFEST_MISMATCH', 'EXPORT_ARCHIVE_INVALID',
+    'EXPORT_LIMIT_EXCEEDED', 'EXPORT_DATABASE_INVALID', 'EXPORT_RUN_INVALID', 'EXPORT_PACKAGE_INVALID',
+    'EXPORT_PROGRAM_INVALID'))
 RECONCILE_BACKUPS = Path('/root')
 PREFLIGHT_CHECKS = ('storage', 'ledger', 'container', 'admission')
 # Sub-labels for the container preflight segment, recorded as the
@@ -135,6 +139,12 @@ RETRY_ALREADY_APPROVED RETRY_RECORD'''.split())
 
 
 class AdmissionRejected(RuntimeError):
+    def __init__(self, code):
+        self.code = code
+        super().__init__(code)
+
+
+class SnapshotExportRejected(RuntimeError):
     def __init__(self, code):
         self.code = code
         super().__init__(code)
@@ -1181,6 +1191,27 @@ class Controller:
             'reason': reason if type(reason) is str and re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', reason) else None,
         }
 
+    def export_snapshot(self):
+        # Read only the pinned pre-run archive. No service/worker/volume/maintenance operation.
+        stage = 'EXPORT_RUN_INVALID'
+        try:
+            record = self.current()
+            stage = 'EXPORT_BACKUP_MISSING'
+            backup = record.get('backup')
+            require(type(backup) is dict and type(backup.get('file')) is str and
+                    re.fullmatch(r'paper-check-[0-9a-f]{32}\.tar', backup['file']))
+            stage = 'EXPORT_PROGRAM_INVALID'
+            program = self.b.read_trusted(EXPORT_PROGRAM, maximum=PROGRAM_READ_MAXIMUM)
+            scope = {'__name__': 'trusted_snapshot_export'}
+            exec(compile(program, str(EXPORT_PROGRAM), 'exec'), scope)
+            stage = 'EXPORT_BACKUP_MISSING'
+            with self.b.regular(self.b.BACKUPS/backup['file']) as fd:
+                with os.fdopen(os.dup(fd), 'rb') as stream:
+                    return scope['build_export'](stream, record)
+        except Exception as error:
+            code = getattr(error, 'code', None)
+            raise SnapshotExportRejected(code if code in EXPORT_CODES else stage) from None
+
     def backup(self):
         helper, image = self.helper()
         helper.helper(image, 'maintenance')
@@ -1931,7 +1962,7 @@ def main():
             request = b.decode(sys.stdin.buffer.read(257))
             signal.alarm(0)
             require(isinstance(request, dict) and set(request) <= {'operation', 'duration', 'mode', 'sha'} and
-                    request.get('operation') in ('start', 'status', 'abort', 'diagnose', 'reconcile', 'approve-retry', 'approve-deploy', 'revoke-retry', 'release-cutoff', 'heal-run', 'prod-start', 'prod-stop', 'prod-status'))
+                    request.get('operation') in ('start', 'status', 'abort', 'diagnose', 'reconcile', 'approve-retry', 'approve-deploy', 'revoke-retry', 'release-cutoff', 'heal-run', 'export-snapshot', 'prod-start', 'prod-stop', 'prod-status'))
             require(request['operation'] in ('start', 'reconcile', 'approve-deploy') or set(request) == {'operation'})
             require(request['operation'] in ('reconcile', 'approve-deploy') or 'sha' not in request)
             require(request['operation'] == 'start' or 'duration' not in request)
@@ -1959,6 +1990,8 @@ def main():
                 print(json.dumps(controller.release_cutoff()))
             elif request['operation'] == 'heal-run':
                 print(json.dumps(controller.heal_run()))
+            elif request['operation'] == 'export-snapshot':
+                sys.stdout.buffer.write(controller.export_snapshot())
             elif request['operation'] == 'diagnose':
                 print(json.dumps(controller.diagnose()))
             elif request['operation'] == 'status':
@@ -1992,6 +2025,8 @@ def main():
     except BaseException as error:
         if isinstance(error, AdmissionRejected) and error.code in ADMISSION_CODES:
             print('PAPER_CHECK_REASON='+error.code, file=sys.stderr)
+        if isinstance(error, SnapshotExportRejected) and error.code in EXPORT_CODES:
+            print('PAPER_EXPORT_REASON='+error.code, file=sys.stderr)
         print('PAPER_CHECK_FAILED; inspect root-owned state; no automatic restart', file=sys.stderr)
         return 1
 

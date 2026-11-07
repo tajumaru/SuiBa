@@ -103,6 +103,7 @@ jobs:
           python3 -I deploy/paper-check/test_controller.py
           python3 -I deploy/paper-check/test_admission_evidence.py
           python3 -I deploy/paper-check/test_setup.py
+          python3 -I deploy/paper-check/test_export_snapshot.py
           python3 -I deploy/paper-check/test_watchdog.py
           shellcheck deploy/paper-check/suiba-paper-check
           sudo visudo -cf deploy/paper-check/suiba-paper-check.sudoers
