@@ -1,7 +1,17 @@
 /** Opt-in VPS session. No database, network, Worker startup or reset path.
- * sui-30m keeps its bounded test lease; sui-prod requires one explicit,
- * unbounded arm. Neither mode persists authorization across Worker boots.
+ * sui-30m keeps its bounded test lease (up to the longest validation
+ * run, 24h); sui-prod requires one explicit, unbounded arm. Neither
+ * mode persists authorization across Worker boots.
  */
+
+/** Longest validation run the controller can request. The arm lease
+ * must cover the whole run: the controller enforces the exact
+ * per-run cutoff with its own timers and monitoring, while this cap
+ * only keeps the lease finite. It was 30 minutes from the era when
+ * every validation run lasted 30 minutes; the first 6h run on
+ * 2026-11-07 was rejected at arm (HTTP 409) because its cutoff
+ * exceeded the cap. */
+const MAX_VALIDATION_LEASE_MS = 24 * 60 * 60 * 1000;
 export class PaperCheckSession {
   readonly enabled: boolean;
   private readonly production: boolean;
@@ -68,12 +78,12 @@ export class PaperCheckSession {
         ? expiresAt !== undefined
         : !Number.isSafeInteger(expiresAt) ||
           expiresAt! <= wall ||
-          expiresAt! > issuedAt + 30 * 60 * 1000)
+          expiresAt! > issuedAt + MAX_VALIDATION_LEASE_MS)
     )
       throw Error("PAPER_CHECK_ARM_REJECTED");
     if (!this.production) {
       this.deadline =
-        this.clock() + Math.min(expiresAt! - wall, 30 * 60 * 1000);
+        this.clock() + Math.min(expiresAt! - wall, MAX_VALIDATION_LEASE_MS);
       this.wallDeadline = expiresAt!;
     }
     this.armed = true;

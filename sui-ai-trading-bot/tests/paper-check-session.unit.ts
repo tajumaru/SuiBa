@@ -30,6 +30,40 @@ it("requires a single SUI-only lease and expires at exactly 30 minutes", () => {
   expect(session.ordersAllowed("SUI_USDC")).toBe(false);
 });
 
+it("accepts the 6h and 24h validation leases and rejects beyond 24h", () => {
+  // Regression (2026-11-07): the lease cap was 30 minutes from the
+  // era when every validation run lasted 30 minutes, so the first
+  // 6h run's arm — whose expiresAt is the run's own cutoff — was
+  // rejected with PAPER_CHECK_ARM_REJECTED (HTTP 409) and the run
+  // never started. The cap is the longest run the controller can
+  // request (24h); the exact cutoff stays the controller's.
+  for (const lease of [6 * 60 * 60 * 1000, 24 * 60 * 60 * 1000]) {
+    let mono = 0,
+      wall = 100000;
+    const session = new PaperCheckSession(
+      "sui-30m",
+      () => mono,
+      () => wall,
+    );
+    session.arm("SUI_USDC", wall + lease, wall);
+    expect(session.status().expires).toBe(wall + lease);
+    expect(session.ordersAllowed("SUI_USDC")).toBe(true);
+    mono += lease - 1;
+    wall += lease - 1;
+    expect(session.ordersAllowed("SUI_USDC")).toBe(true);
+    mono += 1;
+    wall += 1;
+    expect(session.ordersAllowed("SUI_USDC")).toBe(false);
+  }
+  const wall = 100000;
+  const session = new PaperCheckSession(
+    "sui-30m",
+    () => 0,
+    () => wall,
+  );
+  expect(() => session.arm("SUI_USDC", wall + 24 * 60 * 60 * 1000 + 1, wall)).toThrow();
+});
+
 it("fails closed on wall clock expiry and monotonic regression", () => {
   for (const kind of ["wall", "regression"] as const) {
     let mono = 100,
@@ -71,7 +105,7 @@ it("uses the controller cutoff without extending it for preparation or rearm", (
 it("rejects skew, expired preparation, invalid deadlines and backward wall clocks", () => {
   for (const [cutoff, issued] of [
     [100, 100],
-    [1800101, 100],
+    [86400101, 100],
     [200, 3100],
     [200, -3000],
     [NaN, 100],
