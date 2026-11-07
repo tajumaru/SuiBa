@@ -337,25 +337,62 @@ class Controller:
             # No exception text, paths, request payloads or settings are recorded.
             with contextlib.suppress(Exception):
                 self.b.atomic(self.state/'admission-failure.json', evidence)
+            with contextlib.suppress(Exception):
+                # A separate diagnostic lock never participates in admission gates.
+                with self.locked('admission-history', wait=2):
+                    history = self._read_admission_history()
+                    history.append(evidence)
+                    self.b.atomic(self.state/'admission-failures.json', self._bounded_admission_history(history))
             raise AdmissionRejected(code) from None
         finally:
             self._admission_tracking = False
+
+    @staticmethod
+    def _admission_entry(value):
+        require(type(value) is dict and set(value) == {'version', 'at', 'operation', 'code', 'observed'})
+        require(value['version'] == 1 and type(value['at']) is int and value['at'] >= 0 and
+                value['operation'] in ('admit', 'approve-retry') and value['code'] in ADMISSION_CODES)
+        observed = value['observed']
+        require(type(observed) is dict and set(observed) <= {'unit', 'active_state', 'job_pending', 'permit_exists', 'consumed_exists', 'inhibit_exists'})
+        for key, item in observed.items():
+            if key == 'unit': require(item in (*cutoff_timers(), CUTOFF))
+            elif key == 'active_state': require(item in ('active', 'activating', 'deactivating', 'inactive', 'failed', 'unknown'))
+            else: require(type(item) is bool)
+        return value
+
+    @staticmethod
+    def _bounded_admission_history(values):
+        values = values[-5:]
+        # Match broker.atomic's JSON encoding, with one byte reserved for a newline.
+        while values and len(json.dumps(values, sort_keys=True).encode('utf-8'))+1 > 4096:
+            values = values[1:]
+        return values
+
+    def _read_admission_history(self):
+        try:
+            values = self.b.decode(self.b.read_trusted(self.state/'admission-failures.json', maximum=4096))
+            require(type(values) is list)
+            valid = []
+            for value in values:
+                with contextlib.suppress(Exception):
+                    valid.append(self._admission_entry(value))
+            return self._bounded_admission_history(valid)
+        except Exception:
+            return []
+
+    def admission_failures(self):
+        history = self._read_admission_history()
+        if history: return history
+        try:
+            return self._bounded_admission_history([self._admission_entry(self.admission_failure())])
+        except Exception:
+            return []
 
     def admission_failure(self):
         path = self.state/'admission-failure.json'
         if not path.exists(): return None
         try:
-            value = self.b.decode(self.b.read_trusted(path, maximum=4096))
-            require(type(value) is dict and set(value) == {'version', 'at', 'operation', 'code', 'observed'})
-            require(value['version'] == 1 and type(value['at']) is int and value['at'] >= 0 and
-                    value['operation'] in ('admit', 'approve-retry') and value['code'] in ADMISSION_CODES)
-            observed = value['observed']
-            require(type(observed) is dict and set(observed) <= {'unit', 'active_state', 'job_pending', 'permit_exists', 'consumed_exists', 'inhibit_exists'})
-            for key, item in observed.items():
-                if key == 'unit': require(item in (*cutoff_timers(), CUTOFF))
-                elif key == 'active_state': require(item in ('active', 'activating', 'deactivating', 'inactive', 'failed', 'unknown'))
-                else: require(type(item) is bool)
-            return value
+            return self._admission_entry(self.b.decode(self.b.read_trusted(path, maximum=4096)))
         except Exception:
             return {'code': 'ADMISSION_EVIDENCE_INVALID'}
 
@@ -364,7 +401,7 @@ class Controller:
         receipt = self.folder(record)/'stop.json' if record else None
         return {'run': record, 'requires_review': self.faults(record) if record else False,
                 'stop': self.b.decode(self.b.read_trusted(receipt)) if receipt and receipt.exists() else None,
-                'admission_failure': self.admission_failure()}
+                'admission_failure': self.admission_failure(), 'admission_failures': self.admission_failures()}
 
     def fault(self, record, code):
         # Separate sticky admission fence: even a fault arriving after the last
@@ -488,12 +525,13 @@ class Controller:
             with self.locked('stop'), self.locked('mutation'):
                 report = self.diagnose_locked()
                 report['admission_failure'] = self.admission_failure()
+                report['admission_failures'] = self.admission_failures()
                 return report
 
     def diagnose_locked(self):
         if not self.record.exists():
             return {'run': None, 'stop': None, 'requires_review': False, 'diagnostics': None,
-                    'admission_failure': self.admission_failure()}
+                    'admission_failure': self.admission_failure(), 'admission_failures': self.admission_failures()}
         record = self.current()
         require(record['status'] in ('completed', 'failed_requires_review') and self.exited(record))
         i = self.inspect()
@@ -558,6 +596,7 @@ class Controller:
         return {
             'run': {'id': record['id'], 'status': record['status'], 'duration': record.get('duration', '30m')},
             'admission_failure': self.admission_failure(),
+            'admission_failures': self.admission_failures(),
             'stop': {'id': stop['id'], 'status': stop['status'], 'errors': stop_errors},
             'requires_review': self.faults(record),
             'diagnostics': {

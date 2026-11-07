@@ -58,7 +58,9 @@ try:
         raise ValueError()
     payload = json.loads(raw)
     import runpy
-    admission_lines = runpy.run_path(sys.argv[3])["admission_summary"](payload.get("admission_failure"))
+    admission_renderer = runpy.run_path(sys.argv[3])
+    admission_lines = admission_renderer["admission_summary"](payload.get("admission_failure"))
+    admission_lines += admission_renderer["admission_history_summary"](payload.get("admission_failures"))
     run = payload["run"]
     if run is None:
         if not admission_lines: raise ValueError()

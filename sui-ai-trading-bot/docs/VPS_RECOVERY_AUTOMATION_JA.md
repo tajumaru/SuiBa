@@ -314,3 +314,12 @@ status/diagnoseにadmission_failureを追加し、初回のrun未作成時も確
 公開manifestにはscope=PRE_RUN_BACKUP_PUBLIC_EXTRACT、runの固定項目、元tarのSHA256、生成DBのSHA256・サイズ・件数と省略範囲を記録する。runner側でもファイル名/サイズ/ハッシュ/テーブル/JSON allowlistを検証し、検証済みのSQLiteとmanifestだけをartifact化する。取得したDBは `node --import tsx scripts/ml-data-audit.ts <PAIR.sqlite> <FROM_ISO> <UNTIL_ISO>` で監査できる。対象期間はバックアップに含まれる過去の時刻を指定する。
 
 制約：開始前コピーには当該ラン中の新しい判断・約定・停止は入らない。今回の6時間ランの成績そのものを確定するデータ経路ではない。また、設定/thresholdsを意図的に省略するため監査のevidenceCompleteは完全にならず、公開抽出だけから当時の全設定や学習ラベルを復元できない。終了後DBの公開・非公開配送は本変更の対象外として未決。
+
+
+## admission 拒否証拠の履歴（2026-11-07）
+
+`admission-failure.json` と `admission_failure` は従来どおり最新1件の形を維持する。別ファイル `admission-failures.json` に同じ証拠を古い順で追記し、最新5件まで保持する。6件目では最古を落とす。既存エントリの内容は変更せず、更新はatomicに置き換える。
+
+status/diagnoseのJSONには `admission_failures` を追加し、SSHの要約にも古い順の履歴を表示する。旧形式で履歴が無い場合は有効な最新1件を返す。個別の不正エントリは落とし、破損JSON・型不正・4096バイト超・全件不正の場合も有効な最新1件へフォールバックする。フォールバック先の最新1件も不正なら履歴は空配列にし、既存のADMISSION_EVIDENCE_INVALID表示を維持する。読み取りはファイルを書き換えない。次の拒否時に有効な履歴と新しい証拠だけで更新する。
+
+履歴更新は専用のadmission-history診断ロック下で行う。最新1件の保存とは独立したbest-effort処理で、履歴読み書きの失敗によって拒否ゲートを変更しない。上限4096バイトは引き上げず、brokerと同じJSON表現に改行1バイトを見込んで、超過時は古いエントリから減らす。固定コード・時刻・既存allowlistの観測状態だけを保存し、例外文・パス・設定値は加えない。開始・再試行の条件と順序は変更しない。
