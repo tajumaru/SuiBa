@@ -24,7 +24,29 @@ def candles_with_close_at(marks):
         t += 300
     high = {t: c * 1.001 for t, c in close.items()}
     low = {t: c * 0.999 for t, c in close.items()}
-    return close, high, low, sorted(close)
+    ordered = sorted(close)
+    ema, value = {}, None
+    for t in ordered:
+        value = close[t] if value is None else value + (2 / 51) * (close[t] - value)
+        ema[t] = value
+    return close, high, low, ordered, ema
+
+
+def trending_candles(step):
+    """Three days of steadily moving closes for regime classification."""
+    close, t, price = {}, BASE - 3 * 86400, 1.00
+    while t <= BASE + 3600:
+        close[t] = price
+        price *= (1 + step)
+        t += 300
+    high = {t: c * 1.001 for t, c in close.items()}
+    low = {t: c * 0.999 for t, c in close.items()}
+    ordered = sorted(close)
+    ema, value = {}, None
+    for t in ordered:
+        value = close[t] if value is None else value + (2 / 51) * (close[t] - value)
+        ema[t] = value
+    return close, high, low, ordered, ema
 
 
 def decision(missing=None, price=1.00, cts=BASE):
@@ -60,6 +82,26 @@ class AnalyzeTests(unittest.TestCase):
         candles = candles_with_close_at({BASE + 3600: 1.02})
         result = rr.analyze([decision(missing=None)], candles)
         self.assertAlmostEqual(result["buckets"][3]["h"][1]["mean"], 2.0, places=6)
+
+
+class RegimeTests(unittest.TestCase):
+    def test_up_down_range_classification(self):
+        up = trending_candles(0.0004)
+        self.assertEqual(rr.regime_at(up[4], up[3], BASE), "up")
+        down = trending_candles(-0.0004)
+        self.assertEqual(rr.regime_at(down[4], down[3], BASE), "down")
+        flat = trending_candles(0.0)
+        self.assertEqual(rr.regime_at(flat[4], flat[3], BASE), "range")
+
+    def test_unknown_without_24h_of_history(self):
+        flat = trending_candles(0.0)
+        self.assertEqual(rr.regime_at(flat[4], flat[3], BASE - 3 * 86400 + 3600), "unknown")
+
+    def test_window_filter(self):
+        ds = [{"cts": 100}, {"cts": 200}, {"cts": 300}]
+        self.assertEqual([d["cts"] for d in rr.filter_window(ds, since=150)], [200, 300])
+        self.assertEqual([d["cts"] for d in rr.filter_window(ds, until=200)], [100, 200])
+        self.assertEqual([d["cts"] for d in rr.filter_window(ds, 150, 250)], [200])
 
 
 class FetchLimitTests(unittest.TestCase):

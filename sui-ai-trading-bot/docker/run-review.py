@@ -53,7 +53,39 @@ def load_candles(raw):
     for c in raw:
         t = int(c[0]) // 1000
         high[t], low[t], close[t] = float(c[2]), float(c[3]), float(c[4])
-    return close, high, low, sorted(close)
+    ordered = sorted(close)
+    # EMA50 over the close series, for the regime tag.
+    ema, value = {}, None
+    alpha = 2 / 51
+    for t in ordered:
+        value = close[t] if value is None else value + alpha * (close[t] - value)
+        ema[t] = value
+    return close, high, low, ordered, ema
+
+
+def regime_at(ema, ordered, cts):
+    """Mechanical regime tag: EMA50 slope over the trailing 24h.
+
+    up: >= +0.5%, down: <= -0.5%, otherwise range. ``unknown`` when the
+    fetched series does not reach 24h back from the decision.
+    """
+    import bisect
+    i = bisect.bisect_right(ordered, cts) - 1
+    j = bisect.bisect_right(ordered, cts - 86400) - 1
+    if i < 0 or j < 0 or ordered[j] > cts - 86400 + 900:
+        return "unknown"
+    slope = (ema[ordered[i]] / ema[ordered[j]] - 1) * 100
+    if slope >= 0.5:
+        return "up"
+    if slope <= -0.5:
+        return "down"
+    return "range"
+
+
+def filter_window(decisions, since=None, until=None):
+    return [d for d in decisions
+            if (since is None or d["cts"] >= since)
+            and (until is None or d["cts"] <= until)]
 
 
 def load_decisions(db_path):
@@ -89,7 +121,9 @@ def summarize(values):
 
 
 def analyze(decisions, candles):
-    close, high, low, ordered = candles
+    close, high, low, ordered, ema = candles
+    for d in decisions:
+        d["regime"] = regime_at(ema, ordered, d["cts"]) if d["cts"] else "unknown"
 
     def fwd(d, hours):
         if d["cts"] is None or not d["price"]:
@@ -137,13 +171,24 @@ def analyze(decisions, candles):
         flags.append({"kind": "caution",
                       "text": f"あと1つで買えた判断（n={s2['n']}）は +4h 平均 {s2['mean']:+.2f}%"
                               f" — 現行の厳しさが守っている側の証拠"})
+    regimes = {}
+    for name in ("up", "down", "range", "unknown"):
+        group = [d for d in decisions if d["regime"] == name]
+        if not group:
+            continue
+        near_g = [d for d in group if d["met"] == 2]
+        regimes[name] = {
+            "n": len(group), "met": Counter(d["met"] for d in group),
+            "near4": summarize([fwd(d, 4) for d in near_g]),
+            "all4": summarize([fwd(d, 4) for d in group]),
+        }
     prices = [d["price"] for d in decisions if d["price"]]
     span = None
     if decisions:
         span = (datetime.fromtimestamp(decisions[0]["cts"], timezone.utc),
                 datetime.fromtimestamp(decisions[-1]["cts"], timezone.utc))
     return {"buckets": buckets, "marginal": marginal, "touches": touches,
-            "flags": flags, "prices": prices, "span": span,
+            "flags": flags, "prices": prices, "span": span, "regimes": regimes,
             "actions": Counter(d["action"] for d in decisions),
             "rules": Counter(d["rule"] for d in decisions)}
 
@@ -180,6 +225,11 @@ def render(result, decisions_count, orders, trades, generated_at):
     for missing in CORE:
         mm = m[missing]
         lines.append(f"- {missing} だけ欠け: {mm['n']} 件、+4h {fmt_stat(mm['h'][4])}、+24h {fmt_stat(mm['h'][24])}")
+    lines += ["", "## 局面別の内訳（EMA50 の24h傾き：上昇 ≥+0.5%／下降 ≤−0.5%／横ばい）", ""]
+    labels = {"up": "上昇", "down": "下降", "range": "横ばい", "unknown": "不明"}
+    for name, r in result["regimes"].items():
+        lines.append(f"- {labels[name]}: {r['n']} 件（充足数内訳 {dict(sorted(r['met'].items()))}）、"
+                     f"あと1つの +4h {fmt_stat(r['near4'])}、全体の +4h {fmt_stat(r['all4'])}")
     lines += ["", "## フラグ", ""]
     if result["flags"]:
         for f in result["flags"]:
@@ -194,10 +244,18 @@ def render(result, decisions_count, orders, trades, generated_at):
     return "\n".join(lines)
 
 
+def parse_time(text):
+    """Epoch seconds, or an ISO date/datetime read as UTC."""
+    if text.isdigit():
+        return int(text)
+    return int(datetime.fromisoformat(text).replace(tzinfo=timezone.utc).timestamp())
+
+
 def main(argv):
     db = argv[1]
     candles_path = None
     out = None
+    since = until = None
     i = 2
     while i < len(argv):
         if argv[i] == "--candles":
@@ -206,9 +264,17 @@ def main(argv):
         elif argv[i] == "--out":
             out = argv[i + 1]
             i += 2
+        elif argv[i] == "--since":
+            since = parse_time(argv[i + 1])
+            i += 2
+        elif argv[i] == "--until":
+            until = parse_time(argv[i + 1])
+            i += 2
         else:
             i += 1
     decisions, orders, trades = load_decisions(db)
+    if since is not None or until is not None:
+        decisions = filter_window(decisions, since, until)
     if candles_path:
         raw = json.load(open(candles_path))["candles"]
     else:
