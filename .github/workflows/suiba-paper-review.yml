@@ -5,6 +5,11 @@ name: SuiBa run review (stage 1)
 # are a comment on the standing review Issue. No environment approval:
 # nothing privileged is involved. Token-free by design — this is plain
 # GitHub Actions machinery, replacing per-run agent analysis.
+#
+# Runs two ways: manually (workflow_dispatch with the export run id), or
+# automatically when the export workflow completes (workflow_run). On the
+# automatic path a gate-skipped export (no artifact) ends the job quietly;
+# on the manual path a missing artifact is an operator error and fails.
 
 on:
   workflow_dispatch:
@@ -17,6 +22,9 @@ on:
         description: "対象の export ワークフロー実行 ID"
         required: true
         type: string
+  workflow_run:
+    workflows: ["SuiBa public pre-run snapshot export"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -29,30 +37,53 @@ concurrency:
 
 jobs:
   review:
-    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'REVIEW-PAPER' && vars.SUIBA_PAPER_REVIEW_ENABLED == 'true'
+    if: vars.SUIBA_PAPER_REVIEW_ENABLED == 'true' && ((github.event_name == 'workflow_dispatch' && inputs.confirmation == 'REVIEW-PAPER' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
+      - name: Resolve the export run id
+        id: target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_RUN_ID: ${{ inputs.export_run_id }}
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            echo "run_id=$TRIGGER_RUN_ID" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_id=$INPUT_RUN_ID" >> "$GITHUB_OUTPUT"
+          fi
       - name: Download the export artifact
+        id: download
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPORT_RUN_ID: ${{ inputs.export_run_id }}
+          EXPORT_RUN_ID: ${{ steps.target.outputs.run_id }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          gh run download "$EXPORT_RUN_ID" --dir export-data
-          find export-data -name 'SUI_USDC.sqlite' -print -quit | grep -q . \
-            || { echo 'SUI_USDC.sqlite not found in the export artifact' >&2; exit 1; }
+          gh run download "$EXPORT_RUN_ID" --dir export-data || true
+          if find export-data -name 'SUI_USDC.sqlite' -print -quit 2>/dev/null | grep -q .; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT_NAME" = "workflow_run" ]; then
+            echo "No export artifact on the triggering run (gate-skipped export); nothing to review."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo 'SUI_USDC.sqlite not found in the export artifact' >&2
+            exit 1
+          fi
       - name: Build the review report
+        if: steps.download.outputs.found == 'true'
         run: |
           DB=$(find export-data -name 'SUI_USDC.sqlite' -print -quit)
           python3 sui-ai-trading-bot/docker/run-review.py "$DB" --out report.md
           cat report.md >> "$GITHUB_STEP_SUMMARY"
       - name: Post the report to the standing review Issue
+        if: steps.download.outputs.found == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPORT_RUN_ID: ${{ inputs.export_run_id }}
+          EXPORT_RUN_ID: ${{ steps.target.outputs.run_id }}
         run: |
           gh label create suiba-run-review --force --color 1d76db \
             --description 'SuiBa 振り返りレポート（自動）' >/dev/null 2>&1 || true
