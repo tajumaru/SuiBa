@@ -7,9 +7,12 @@ name: SuiBa run review (stage 1)
 # GitHub Actions machinery, replacing per-run agent analysis.
 #
 # Runs two ways: manually (workflow_dispatch with the export run id), or
-# automatically when the export workflow completes (workflow_run). On the
-# automatic path a gate-skipped export (no artifact) ends the job quietly;
-# on the manual path a missing artifact is an operator error and fails.
+# automatically when the export workflow OR a validation cycle completes
+# (workflow_run) — a cycle exports the previous run's snapshot right after
+# its start, under its own approval, with the same artifact shape. On the
+# automatic path a triggering run without the artifact (gate-skipped or
+# failed export) ends the job quietly; on the manual path a missing
+# artifact is an operator error and fails.
 
 on:
   workflow_dispatch:
@@ -23,7 +26,7 @@ on:
         required: true
         type: string
   workflow_run:
-    workflows: ["SuiBa public pre-run snapshot export"]
+    workflows: ["SuiBa public pre-run snapshot export", "SuiBa PAPER validation cycle"]
     types: [completed]
 
 permissions:
@@ -67,7 +70,7 @@ jobs:
           if find export-data -name 'SUI_USDC.sqlite' -print -quit 2>/dev/null | grep -q .; then
             echo "found=true" >> "$GITHUB_OUTPUT"
           elif [ "$EVENT_NAME" = "workflow_run" ]; then
-            echo "No export artifact on the triggering run (gate-skipped export); nothing to review."
+            echo "No export artifact on the triggering run (export gate-skipped or failed); nothing to review."
             echo "found=false" >> "$GITHUB_OUTPUT"
           else
             echo 'SUI_USDC.sqlite not found in the export artifact' >&2

@@ -54,6 +54,14 @@ jobs:
     # a failed watch used to mean a second approval just to learn
     # why). Failures after the watch window still need the status
     # workflow, which shares this Environment and its approval.
+    # Right after the start, the same job also exports the pre-run
+    # snapshot the start just created: that backup freezes the record
+    # through the END of the previous run, so this is the earliest
+    # moment the previous run's review data can leave the host
+    # (added 2026-11-08; it used to need a manual export dispatch
+    # after every run). The export is observational — its failure
+    # never fails the cycle — and the run-review workflow picks the
+    # artifact up when this cycle completes.
     if: github.ref == 'refs/heads/main' && inputs.confirmation == 'CYCLE-PAPER' && vars.SUIBA_PAPER_START_ENABLED == 'true'
     environment: sakura-vps
     runs-on: ubuntu-latest
@@ -83,6 +91,37 @@ jobs:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: bash sui-ai-trading-bot/docker/ssh-paper-start.sh
+      - name: Export the previous run's snapshot through the fixed wrapper (same approval)
+        id: autoexport
+        if: vars.SUIBA_PAPER_EXPORT_ENABLED == 'true'
+        continue-on-error: true
+        env:
+          PAPER_EXPORT_CONFIRMATION: EXPORT-PAPER-PUBLIC
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          # The start step has just created this run's pre-run backup,
+          # which freezes the record through the end of the PREVIOUS
+          # run. Exporting it here removes the manual export dispatch
+          # that used to follow every run. Observational only: an
+          # export failure changes nothing for the validation run,
+          # and the standalone export workflow remains available.
+          bash sui-ai-trading-bot/docker/ssh-paper-export.sh
+          {
+            echo ""
+            echo "## Auto-export (same approval)"
+            echo "The previous run's pre-run snapshot was exported from this cycle run; the run review posts it to the standing Issue when this cycle completes."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: steps.autoexport.outcome == 'success'
+        with:
+          name: suiba-pre-run-public-${{ github.run_id }}
+          path: ${{ runner.temp }}/suiba-public-export/
+          if-no-files-found: error
+          retention-days: 1
       - name: Watch PAPER status through the fixed wrapper
         id: watch
         env:
