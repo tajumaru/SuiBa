@@ -88,12 +88,31 @@ test("attention with no managed issue creates the label and the issue", async ()
   assert.equal(created.title, TITLE);
   assert.ok(created.body.startsWith(MARKER + "\n"));
   assert.ok(created.body.includes("RUN_FAILED_REQUIRES_REVIEW"));
+  assert.ok(created.body.includes("@tajumaru"));
   assert.ok(!created.body.includes("SECRET"));
 });
 
 test("attention updates an existing managed issue instead of duplicating", async () => {
   const { calls, fetch, context } = fixture([
     ["GET", "/issues?", 200, [issue(3), issue(4, { title: "other" }), issue(5, { pull_request: {} })]],
+    ["PATCH", "/issues/3", 200, {}],
+    ["POST", "/issues/3/comments", 201, {}],
+  ]);
+  const result = await syncIssues(report(), { ...context, fetch });
+  assert.deepEqual(result, { action: "updated", count: 1 });
+  assert.equal(calls.length, 3);
+  assert.ok(calls.at(-1).body.body.includes("@tajumaru"));
+  assert.ok(calls.at(-1).body.body.includes("RUN_FAILED_REQUIRES_REVIEW"));
+});
+
+test("the same ongoing failure updates silently, without a new comment", async () => {
+  const sameBody =
+    MARKER +
+    "\n\n- ラン: `" +
+    "a".repeat(32) +
+    "`\n- 理由コード: `RUN_FAILED_REQUIRES_REVIEW`";
+  const { calls, fetch, context } = fixture([
+    ["GET", "/issues?", 200, [issue(3, { body: sameBody })]],
     ["PATCH", "/issues/3", 200, {}],
   ]);
   const result = await syncIssues(report(), { ...context, fetch });

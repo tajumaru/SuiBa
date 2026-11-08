@@ -128,17 +128,31 @@ export async function syncIssues(
         item.labels.some((label) => label.name === LABEL)
       ) {
         require(Number.isSafeInteger(item.number) && item.number > 0);
-        managed.push(item.number);
+        managed.push({ number: item.number, body: item.body });
       }
     }
     if (items.length < 100) break;
   }
+  // The state key identifies one alert situation inside a managed body, so
+  // an update can tell "same failure, still ongoing" from "something new".
+  const stateKeyOf = (text) => {
+    const run = /^- ラン: `([^`]*)`$/m.exec(text ?? "")?.[1] ?? "?";
+    const reasons = /^- 理由コード: (.*)$/m.exec(text ?? "")?.[1] ?? "?";
+    return run + "|" + reasons;
+  };
+  const newKey =
+    (report.run_id ?? "unknown") +
+    "|" +
+    (report.reasons.map((code) => "`" + code + "`").join(", ") || "なし");
   const body = [
     MARKER,
     "",
     report.verdict === "ok"
       ? "正常な観測を確認したため、この通知を閉じます。"
       : "定期チェックで検証ランの要確認を検出しました。自動復旧は行っていません。",
+    // Mentioning the owner in a newly created issue body is what makes
+    // GitHub actually send a notification; later updates use comments.
+    ...(report.verdict === "ok" ? [] : ["", "@tajumaru"]),
     "",
     `- 確認時刻（UTC）: ${new Date(report.at * 1000).toISOString()}`,
     `- 検証状態: \`${report.run_status ?? "unknown"}\``,
@@ -148,7 +162,7 @@ export async function syncIssues(
     `- [チェック実行](https://github.com/${repo}/actions/runs/${runId})`,
   ].join("\n");
   if (report.verdict === "ok") {
-    for (const number of managed)
+    for (const { number } of managed)
       await api("PATCH", `/issues/${number}`, {
         body,
         state: "closed",
@@ -157,8 +171,21 @@ export async function syncIssues(
     return { action: "closed", count: managed.length };
   }
   if (managed.length) {
-    for (const number of managed)
+    for (const { number, body: oldBody } of managed) {
       await api("PATCH", `/issues/${number}`, { body });
+      // Body edits never notify anyone on GitHub, so a state change also
+      // posts a comment mentioning the owner; the same ongoing failure
+      // stays silent instead of commenting every check.
+      if (stateKeyOf(oldBody) !== newKey)
+        await api("POST", `/issues/${number}/comments`, {
+          body:
+            "@tajumaru 検証モニター：状態が変わりました。理由コード: " +
+            (report.reasons.map((code) => "`" + code + "`").join(", ") || "なし") +
+            " / ラン: `" +
+            (report.run_id ?? "unknown") +
+            "`",
+        });
+    }
     return { action: "updated", count: managed.length };
   }
   let label = await api("GET", `/labels/${LABEL}`, undefined, [404]);

@@ -377,3 +377,9 @@ GET /api/deploymentにresetScope（pendingを含む）を追加する。再試�
 根本原因：controller の監視（monitor_once）が「/api/deployment の running が true」「市場の最終成功が90秒以内」を5秒ごとに要求していた。worker が回復エピソードで一時停止すると running=false になり、最初の監視ポーリングで例外→ラン失敗として確定していた。つまり PR #106/#107 の回復機構は、監督下のランでは構造的に発動できなかった（16:10 の停止も同型だった可能性が高い）。
 
 修正（オーナーが案Aを選択）：monitor_once が「宣言された回復一時停止」を区別して許容する。判定は既存の /api/deployment の readiness を使う：running=false でも、connectivity が非HEALTHY（エピソード進行中）・runtimeClear（エラー未ラッチ）・emergencyClear が全て成り立てば一時停止として扱い、鮮度90秒ルールを止めて監視を続ける（コンテナとホストの確認は継続）。worker 側の期限（stale 30分）を過ぎれば worker がエラーをラッチして即失敗に戻る。保険として controller 側にも外側の上限40分を置く（PAUSE_OUTER_LIMIT_MS）。エラー停止・緊急停止・素の停止は従来どおり即失敗。worker の変更はなく、反映は setup 再実行（controller 配置）のみ。
+
+## モニター通知がメールに届くようにする（2026-11-08）
+
+オーナーから「Issue は立つのにメールが届かない」と報告。原因は GitHub の仕様：モニターは既存 Issue の本文を PATCH で書き換えるだけで、**本文の編集は誰にも通知されない**。新規作成時も、リポジトリを Watch していないとメールにならない。
+
+対策（paper-monitor-notify）：新規作成時は Issue 本文にオーナーへのメンション（@tajumaru）を含める（メンションは Watch 有無にかかわらず通知される）。更新時は、本文中の「ラン＋理由コード」から作る状態キーが前回と変わった場合にだけ、メンション付きコメントを1件投稿する（同じ失敗の継続ではコメントしないので、30分ごとのスパムにはならない）。正常観測でのクローズは従来どおり無言。
