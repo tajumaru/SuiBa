@@ -333,7 +333,7 @@ describe("slim two-row header (design A)", () => {
   const css = readDashboardCss().replace(/\r\n/g, "\n");
 
   it("puts the title and the PAPER badge on the top row", () => {
-    expect(rowMain).toContain("<strong>◈ Sui Paper Lab</strong>");
+    expect(rowMain).toContain("<strong>◈ Potario</strong>");
     expect(rowMain).toContain('className="badge"');
     expect(rowMain).toContain("PAPER（仮想売買）専用");
     expect(rowMain).not.toContain("緊急停止");

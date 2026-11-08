@@ -85,13 +85,13 @@ try {
     failures.push("app did not mount (#root is empty)");
   if (probe.htmlBg !== "rgb(11, 17, 27)")
     failures.push(`base.css not applied (:root background = ${probe.htmlBg})`);
-  if (!probe.brandText.includes("SUIBA"))
+  if (!probe.brandText.includes("POTARIO"))
     failures.push("login brand text missing");
   if (probe.brandColor !== "rgb(67, 223, 178)")
     failures.push(
       `login.css not applied (.login-brand color = ${probe.brandColor})`,
     );
-  if (!probe.footerText.includes("SuiBa"))
+  if (!probe.footerText.includes("Potario"))
     failures.push("version footer missing");
   if (probe.footerColor !== "rgb(143, 163, 176)")
     failures.push(

@@ -123,7 +123,7 @@ export function LoginScreen({
   return (
     <main className={`login login-gate${phase === "error" ? " shake" : ""}`}>
       <div className="login-brand" aria-hidden="true">
-        SUIBA<span className="login-brand-cursor">_</span>
+        POTARIO<span className="login-brand-cursor">_</span>
       </div>
       <div className="login-stage" aria-hidden="true">
         <span className="login-corner c1" />

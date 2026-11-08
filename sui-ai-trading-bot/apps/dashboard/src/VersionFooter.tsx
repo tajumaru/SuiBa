@@ -32,7 +32,7 @@ export function VersionFooter({
 }) {
   return (
     <footer className="version-footer">
-      SuiBa 画面 {APP_BUILD}
+      Potario 画面 {APP_BUILD}
       {workerBuild ? ` ・ Bot ${workerBuild}` : ""}
       {APP_SUBJECT ? ` ・ ${APP_SUBJECT}` : ""}
       {versionSkew(APP_BUILD, workerBuild) && (
