@@ -403,3 +403,14 @@ PR #112 反映後の 2h ラン（09:06開始）は controller の一時停止許
 ### モニターの定期実行を GitHub 内で冗長化（2026-11-08）
 
 GitHub の scheduler は best-effort で、'*/30' の枠は 2026-11-08 に5時間で1回しか発火しなかった（10:59 に遅れて1回）。外部トリガーや AI の定期チェックに頼らず、ワークフロー内にオフセットした2本の schedule（7,37分／22,52分、混雑する正時・30分を外す）を置いて15分間隔の冗長化とした。トークン節約の運用（様子見は節目に1回、監視はトークンを食わない仕組みに寄せる）の一環。
+
+### 配置の1タップ化（作業7、2026-11-08）
+
+配置の正規手順を `SuiBa PAPER deploy (one approval)`（suiba-paper-deploy-cycle.yml、確認文字列 DEPLOY-CYCLE-PAPER、ゲート変数 SUIBA_PAPER_DEPLOY_CYCLE_ENABLED）に一本化した。環境 sakura-vps の承認1回で1ジョブが順に実行する：
+
+1. 診断でホスト状態を読む。
+2. `docker/paper-deploy-cycle-plan.py` が診断文面から計画を立てる（cutoff タイマーが残っていれば release-cutoff、前任が failed_requires_review でラッチしていれば approve-deploy＝対象は checkout した main の sha）。状態が読めない・矛盾する場合は理由を出して中止し、推測で進めない。
+3. 既存の validate＋build＋package＋ブローカー配置をジョブ内で完結（artifact の受け渡しなし、ci_run はこの実行の ID で承認と結びつく）。
+4. 失敗時は同じ承認のまま診断を添付する。
+
+前任が存在しない通常配置でも同じ workflow で通る（計画が両分岐とも false になる）。個別の recover／vps ワークフローは切り分け用に残す。作業6（permit の期限切れ再発行）は個別実行時の楔として残るため未決のまま（本手順では approve-deploy と配置が同一ジョブで連続するため、窓の失効は起きにくい）。
