@@ -157,6 +157,27 @@ class RegimeTests(unittest.TestCase):
         self.assertEqual([d["cts"] for d in rr.filter_window(ds, 150, 250)], [200])
 
 
+class VolBandTests(unittest.TestCase):
+    def test_atr_bands(self):
+        candles = candles_with_close_at({})
+        hi = decision(cur={"ema20": 1.01, "ema50": 1.00, "rsi": 50.0, "atr": 0.007})
+        lo = decision(cur={"ema20": 1.01, "ema50": 1.00, "rsi": 50.0, "atr": 0.001})
+        result = rr.analyze([hi, lo], candles)
+        self.assertEqual(result["vols"]["high"]["n"], 1)
+        self.assertEqual(result["vols"]["normal"]["n"], 1)
+
+
+class WorkflowLinkTests(unittest.TestCase):
+    def test_review_workflow_autolinks_from_export(self):
+        path = os.path.join(HERE, "..", "..", ".github", "workflows",
+                            "suiba-paper-review.yml")
+        with open(path) as fh:
+            source = fh.read()
+        self.assertIn("workflow_run", source)
+        self.assertIn('"SuiBa public pre-run snapshot export"', source)
+        self.assertIn("SUIBA_PAPER_REVIEW_ENABLED", source)
+
+
 class FetchLimitTests(unittest.TestCase):
     def test_limit_covers_span_from_cts_seconds(self):
         decisions = [{"cts": BASE}, {"cts": BASE + 86400}]

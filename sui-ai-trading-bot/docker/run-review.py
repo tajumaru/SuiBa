@@ -221,6 +221,9 @@ def analyze(decisions, candles):
     for d in decisions:
         d["regime"] = regime_at(ema, ordered, d["cts"]) if d["cts"] else "unknown"
         d["gapShrink"] = gap_shrinking_at(gap, ordered, d["cts"]) if d["cts"] else False
+        atr = d["cur"].get("atr")
+        d["vol"] = "unknown" if not atr or not d["price"] else (
+            "high" if atr / d["price"] * 100 >= 0.65 else "normal")
 
     def fwd(d, hours):
         if d["cts"] is None or not d["price"]:
@@ -286,17 +289,22 @@ def analyze(decisions, candles):
             flags.append({"kind": "variant",
                           "text": f"バリアント「{v['label']}」（発火 n={s['n']}）は正味 +4h 平均 "
                                   f"{s['mean']:+.2f}%（プラス率 {s['pos']:.0f}%）— 採用候補として判断材料が揃った"})
-    regimes = {}
-    for name in ("up", "down", "range", "unknown"):
-        group = [d for d in decisions if d["regime"] == name]
-        if not group:
-            continue
-        near_g = [d for d in group if d["met"] == 2]
-        regimes[name] = {
-            "n": len(group), "met": Counter(d["met"] for d in group),
-            "near4": summarize([fwd(d, 4) for d in near_g]),
-            "all4": summarize([fwd(d, 4) for d in group]),
-        }
+    def grouped(key, order):
+        out = {}
+        for name in order:
+            group = [d for d in decisions if d.get(key) == name]
+            if not group:
+                continue
+            near_g = [d for d in group if d["met"] == 2]
+            out[name] = {
+                "n": len(group), "met": Counter(d["met"] for d in group),
+                "near4": summarize([fwd(d, 4) for d in near_g]),
+                "all4": summarize([fwd(d, 4) for d in group]),
+            }
+        return out
+
+    regimes = grouped("regime", ("up", "down", "range", "unknown"))
+    vols = grouped("vol", ("high", "normal", "unknown"))
     prices = [d["price"] for d in decisions if d["price"]]
     span = None
     if decisions:
@@ -304,7 +312,7 @@ def analyze(decisions, candles):
                 datetime.fromtimestamp(decisions[-1]["cts"], timezone.utc))
     return {"buckets": buckets, "marginal": marginal, "touches": touches,
             "flags": flags, "prices": prices, "span": span, "regimes": regimes,
-            "variants": variants,
+            "variants": variants, "vols": vols,
             "actions": Counter(d["action"] for d in decisions),
             "rules": Counter(d["rule"] for d in decisions)}
 
@@ -358,6 +366,11 @@ def render(result, decisions_count, orders, trades, generated_at):
     labels = {"up": "上昇", "down": "下降", "range": "横ばい", "unknown": "不明"}
     for name, r in result["regimes"].items():
         lines.append(f"- {labels[name]}: {r['n']} 件（充足数内訳 {dict(sorted(r['met'].items()))}）、"
+                     f"あと1つの +4h {fmt_stat(r['near4'])}、全体の +4h {fmt_stat(r['all4'])}")
+    lines += ["", "## ボラティリティ別の内訳（ATR%：高ボラ ≥0.65＝天気の“嵐”境界）", ""]
+    vlabels = {"high": "高ボラ", "normal": "通常ボラ", "unknown": "不明"}
+    for name, r in result["vols"].items():
+        lines.append(f"- {vlabels[name]}: {r['n']} 件（充足数内訳 {dict(sorted(r['met'].items()))}）、"
                      f"あと1つの +4h {fmt_stat(r['near4'])}、全体の +4h {fmt_stat(r['all4'])}")
     lines += ["", "## フラグ", ""]
     if result["flags"]:
