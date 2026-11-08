@@ -18,6 +18,7 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -114,6 +115,49 @@ DIAGNOSTIC_STAGES = (
 )
 DIAGNOSTIC_LIMIT = 128 * 1024**2
 DIAGNOSTIC_DATABASES = ('bot.sqlite', 'bot.sqlite.WAL_USDC.sqlite')
+# Fixed run presets, chosen per run through the start request like the
+# duration. 'safe' changes nothing. 'hard' swaps the SUI settings for
+# the dashboard's hard preset (applyHardPreset in
+# apps/dashboard/src/settingsPresets.ts) for that run only: the
+# controller snapshots the live settings before the worker starts and
+# restores them when the run is finalized, so a preset can never leak
+# into a later run or into production. tests/preset-parity.test.ts
+# guards this table against drifting from the dashboard's values.
+PRESETS = ('safe', 'hard')
+HARD_PRESET = {
+    "maxOrder": 5,
+    "dailyBuyLimit": 20,
+    "maxSlippage": 0.003,
+    "profitGuardEnabled": True,
+    "minNetProfitUsdc": 0.01,
+    "minNetProfitPct": 0.005,
+    "oversold": 45,
+    "emaGapShrinkEnabled": True,
+    "takeProfitPct": 0.015,
+    "stopLossPct": 0.01,
+}
+
+
+def read_current_settings(db_path):
+    with contextlib.closing(sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)) as db:
+        row = db.execute("SELECT json FROM bot_runtime_state WHERE key='settings'").fetchone()
+    require(row is not None)
+    settings = json.loads(row[0])
+    require(isinstance(settings, dict))
+    return settings
+
+
+def write_current_settings(db_path, settings, at_ms):
+    # Mirror BotDatabase.updateSettings: the live key-value row plus a
+    # bot_settings audit append, in one transaction.
+    payload = json.dumps(settings)
+    with contextlib.closing(sqlite3.connect(str(db_path), timeout=30)) as db:
+        with db:
+            db.execute("INSERT INTO bot_runtime_state(key, json) VALUES('settings', ?)"
+                       " ON CONFLICT(key) DO UPDATE SET json=excluded.json", (payload,))
+            db.execute("INSERT INTO bot_settings(id, timestamp, json) VALUES(?, ?, ?)",
+                       (f'{at_ms}:{uuid.uuid4()}', at_ms, payload))
+    require(read_current_settings(db_path) == settings)
 DIAGNOSTIC_EXTRA_DATABASES = ('bot.sqlite.instance.sqlite', 'bot.sqlite.pairs.sqlite')
 RUNTIME_ERROR_CODES = (
     'API_CANCELLED', 'CANDLE_GAP', 'STALE_CANDLES', 'INVALID_CANDLE', 'PRICE_OUTLIER',
@@ -1299,6 +1343,34 @@ class Controller:
             code = getattr(error, 'code', None)
             raise SnapshotExportRejected(code if code in EXPORT_CODES else stage) from None
 
+    def sui_db_path(self):
+        volume = self.b.decode(self.docker.call(['volume', 'inspect', self.b.DATA], timeout=10))
+        require(len(volume) == 1 and volume[0]['Name'] == self.b.DATA)
+        return Path(volume[0]['Mountpoint'])/'bot.sqlite'
+
+    def apply_preset(self, record):
+        # After the pre-run backup, before the worker starts: snapshot
+        # the live SUI settings into the run folder, then swap in the
+        # hard preset. The snapshot lands first, so a death anywhere in
+        # this method still leaves finalization able to restore.
+        db_path = self.sui_db_path()
+        current = read_current_settings(db_path)
+        self.b.atomic(self.folder(record)/'preset-snapshot.json',
+                      {'settings': current, 'at': int(time.time()*1000)})
+        write_current_settings(db_path, {**current, **HARD_PRESET}, int(time.time()*1000))
+
+    def restore_preset(self, record):
+        # Idempotent: a no-op unless a snapshot exists and no restore
+        # has been marked yet.
+        folder = self.folder(record)
+        snapshot_path = folder/'preset-snapshot.json'
+        if not os.path.lexists(snapshot_path) or os.path.lexists(folder/'preset-restored.json'):
+            return
+        snapshot = self.b.decode(self.b.read_trusted(snapshot_path))
+        require(isinstance(snapshot.get('settings'), dict))
+        write_current_settings(self.sui_db_path(), snapshot['settings'], int(time.time()*1000))
+        self.b.atomic(folder/'preset-restored.json', {'at': int(time.time()*1000)})
+
     def backup(self):
         helper, image = self.helper()
         helper.helper(image, 'maintenance')
@@ -1448,8 +1520,22 @@ class Controller:
     def cleanup(self, record, own, source):
         errors = self.stop_checks(record, own)
         if not own:
+            preset_restored = True
+            if record.get('preset') == 'hard':
+                # The worker is stopped and its databases verified by
+                # now: put the pre-run settings back before the run is
+                # finalized, so no later run or production start can
+                # inherit the preset. A failure here must not publish
+                # completion; admission heals a leftover on the next
+                # start as a backstop.
+                try:
+                    self.restore_preset(record)
+                except Exception:
+                    preset_restored = False
+                    self.fault(record, 'PRESET_RESTORE_FAILED')
+                    self.receipt(record, 'failed_state_unknown', ['PRESET_RESTORE_FAILED'])
             # Only normal completion + post-stop may release the deployment gate.
-            completed = not errors and record['status'] == 'finishing' and source == 'post-stop'
+            completed = preset_restored and not errors and record['status'] == 'finishing' and source == 'post-stop'
             if completed:
                 try: self.quiescent()
                 except Exception:
@@ -1482,17 +1568,18 @@ class Controller:
         with self.b.directory(permit.parent) as directory_fd:
             os.fsync(directory_fd)
 
-    def note_start_request(self, duration):
+    def note_start_request(self, duration, preset='safe'):
         # The fixed systemd unit cannot receive the length, so the request
         # entrypoint leaves it as a root-owned note for the next run only.
         require(duration in DURATIONS)
+        require(preset in PRESETS)
         self.b.atomic(self.state/'start-request.json',
-                      {'duration': duration, 'at': int(time.time()*1000)})
+                      {'duration': duration, 'preset': preset, 'at': int(time.time()*1000)})
 
     def take_start_request(self):
         path = self.state/'start-request.json'
         if not os.path.lexists(path):
-            return '30m'
+            return '30m', 'safe'
         # Consume before validating, under a preserved name: a stale or
         # malformed note must never leak into a later run, and the last
         # request stays on disk as evidence either way.
@@ -1501,13 +1588,14 @@ class Controller:
         with self.b.directory(self.state) as directory_fd:
             os.fsync(directory_fd)
         request = self.b.decode(self.b.read_trusted(consumed))
-        require(set(request) == {'duration', 'at'} and request['duration'] in DURATIONS and
-                type(request['at']) is int)
+        require(set(request) in ({'duration', 'at'}, {'duration', 'at', 'preset'})
+                and request['duration'] in DURATIONS and type(request['at']) is int
+                and request.get('preset', 'safe') in PRESETS)
         now = int(time.time()*1000)
         require(request['at'] <= now+60000)
         if now-request['at'] > 600000:
-            return '30m'
-        return request['duration']
+            return '30m', 'safe'
+        return request['duration'], request.get('preset', 'safe')
 
     def admit_session(self):
         with self.admission_evidence('admit'):
@@ -1517,13 +1605,15 @@ class Controller:
             self.admission_step('ADMISSION_LOCK')
             with self.locked('stop'), self.locked('mutation'):
                 self.admission_step('ADMISSION_START_REQUEST')
-                duration = self.take_start_request()
+                duration, preset = self.take_start_request()
                 timer = cutoff_timer(duration)
                 self.admission_step('ADMISSION_ABORT_INHIBIT')
                 require(not self.admission_observe('inhibit_exists', (self.state/'abort-inhibit.json').exists()))
                 self.admission_step('ADMISSION_QUIESCENT')
                 self.quiescent()
                 permit = None
+                old_record = None
+                old_preset_pending = False
                 if self.record.exists():
                     self.admission_step('ADMISSION_PREVIOUS_RUN')
                     old = self.current()
@@ -1547,6 +1637,15 @@ class Controller:
                     self.admission_step('ADMISSION_PREVIOUS_STOP')
                     previous = self.b.decode(self.b.read_trusted(self.folder(old)/'stop.json'))
                     require(previous['id'] == old['id'] and previous['status'] == 'clean_stopped' and not self.faults(old))
+                    old_record = old
+                    old_preset_pending = old.get('preset') == 'hard'
+                if old_preset_pending:
+                    # A previous preset run whose finalization could not
+                    # restore the settings (or died before it) is healed
+                    # here, while the worker is stopped, before any new
+                    # run may start. restore_preset is idempotent.
+                    self.admission_step('ADMISSION_PRESET_RESTORE')
+                    self.restore_preset(old_record)
                 if permit is None:
                     self.admission_step('ADMISSION_FRESH_GATE')
                     self.b.Broker(state=self.b.STATE).check_paper_session()
@@ -1565,7 +1664,8 @@ class Controller:
                 (self.state/self.run_id).mkdir(mode=0o700)
                 identity, _ = self.identity(os.getpid())
                 record = {'status': 'in_progress', 'id': self.run_id, 'controller': identity, 'admitted': False,
-                          'started': now, 'cutoff': now+DURATIONS[duration]*1000, 'duration': duration}
+                          'started': now, 'cutoff': now+DURATIONS[duration]*1000, 'duration': duration,
+                          'preset': preset}
                 self.b.atomic(self.b.STATE/'paper-check.json', {'status': 'in_progress'})
                 self.b.atomic(self.record, record)
             return record, duration, timer
@@ -1694,6 +1794,8 @@ class Controller:
                         not (self.folder(record)/'stop-request.json').exists())
                 record['backup'] = backup
                 self.b.atomic(self.record, record)
+            if record.get('preset') == 'hard':
+                self.guard('preset', lambda: self.apply_preset(record))
             stage = 'maintenance-release'
             self.note_stage(stage)
             try:
@@ -2128,11 +2230,12 @@ def main():
             request = b.decode(sys.stdin.buffer.read(257))
             signal.alarm(0)
             require_caller_scope(caller, request)
-            require(isinstance(request, dict) and set(request) <= {'operation', 'duration', 'mode', 'sha'} and
+            require(isinstance(request, dict) and set(request) <= {'operation', 'duration', 'mode', 'sha', 'preset'} and
                     request.get('operation') in ('start', 'status', 'abort', 'diagnose', 'reconcile', 'approve-retry', 'approve-deploy', 'revoke-retry', 'release-cutoff', 'heal-run', 'export-snapshot', 'prod-start', 'prod-stop', 'prod-status'))
             require(request['operation'] in ('start', 'reconcile', 'approve-deploy') or set(request) == {'operation'})
             require(request['operation'] in ('reconcile', 'approve-deploy') or 'sha' not in request)
             require(request['operation'] == 'start' or 'duration' not in request)
+            require(request['operation'] == 'start' or 'preset' not in request)
             duration = request.get('duration', '30m')
             require(duration in DURATIONS)
             if request['operation'] in ('prod-start', 'prod-stop', 'prod-status'):
@@ -2165,7 +2268,9 @@ def main():
                 print(json.dumps(controller.status()))
             elif request['operation'] == 'start':
                 require(not (controller.state/'abort-inhibit.json').exists())
-                controller.note_start_request(duration)
+                preset = request.get('preset', 'safe')
+                require(preset in PRESETS)
+                controller.note_start_request(duration, preset)
                 controller.system('start', '--no-block', SERVICE)
                 print('PAPER_CHECK_REQUEST_ACCEPTED')
             else:

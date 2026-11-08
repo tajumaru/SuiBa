@@ -1154,17 +1154,18 @@ class DurationTests(unittest.TestCase):
 
     def test_start_request_defaults_without_a_note(self):
         with tempfile.TemporaryDirectory() as root:
-            self.assertEqual(self.make(root).take_start_request(), '30m')
+            self.assertEqual(self.make(root).take_start_request(), ('30m', 'safe'))
 
     def test_start_request_round_trip_consumes_the_note(self):
         with tempfile.TemporaryDirectory() as root:
             ctl = self.make(root)
             ctl.note_start_request('24h')
-            self.assertEqual(ctl.take_start_request(), '24h')
+            self.assertEqual(ctl.take_start_request(), ('24h', 'safe'))
             self.assertFalse((Path(root)/'start-request.json').exists())
             consumed = json.loads((Path(root)/'start-request-consumed.json').read_text())
             self.assertEqual(consumed['duration'], '24h')
-            self.assertEqual(ctl.take_start_request(), '30m')
+            self.assertEqual(consumed['preset'], 'safe')
+            self.assertEqual(ctl.take_start_request(), ('30m', 'safe'))
 
     def test_start_request_rejects_unknown_duration(self):
         with tempfile.TemporaryDirectory() as root:
@@ -1176,7 +1177,7 @@ class DurationTests(unittest.TestCase):
             ctl = self.make(root)
             FakeBroker.atomic(Path(root)/'start-request.json',
                               {'duration': '6h', 'at': int(time.time()*1000)-660000})
-            self.assertEqual(ctl.take_start_request(), '30m')
+            self.assertEqual(ctl.take_start_request(), ('30m', 'safe'))
             self.assertTrue((Path(root)/'start-request-consumed.json').exists())
 
     def test_start_request_future_note_is_rejected(self):
@@ -1209,8 +1210,9 @@ class DurationTests(unittest.TestCase):
             result = c.subprocess.run(['/bin/bash', str(script)], env=env, text=True,
                                       capture_output=True, timeout=15)
             self.assertEqual(result.returncode, 0)
-            self.assertEqual((root/'stdin').read_text(), '{"operation":"start","duration":"6h"}\n')
+            self.assertEqual((root/'stdin').read_text(), '{"operation":"start","duration":"6h","preset":"safe"}\n')
             self.assertIn('- Duration: `6h`', result.stdout)
+            self.assertIn('- Preset: `safe`', result.stdout)
             self.assertEqual(result.stdout, (root/'summary').read_text())
             self.assertNotIn('secret-', result.stdout+result.stderr)
             self.assertEqual(list((root/'runner').iterdir()), [])
@@ -1225,6 +1227,20 @@ class DurationTests(unittest.TestCase):
                                       capture_output=True, timeout=15)
             self.assertEqual(result.returncode, 1)
             self.assertFalse((root/'stdin').exists())
+            env['PAPER_START_DURATION'] = '6h'
+            env['PAPER_START_PRESET'] = 'hard'
+            (root/'response').write_text('PAPER_CHECK_REQUEST_ACCEPTED\n')
+            result = c.subprocess.run(['/bin/bash', str(script)], env=env, text=True,
+                                      capture_output=True, timeout=15)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual((root/'stdin').read_text(), '{"operation":"start","duration":"6h","preset":"hard"}\n')
+            self.assertIn('- Preset: `hard`', result.stdout)
+            env['PAPER_START_PRESET'] = 'wild'
+            (root/'stdin').unlink()
+            result = c.subprocess.run(['/bin/bash', str(script)], env=env, text=True,
+                                      capture_output=True, timeout=15)
+            self.assertEqual(result.returncode, 1)
+            self.assertFalse((root/'stdin').exists())
 
     def test_start_request_malformed_note_is_rejected_and_consumed(self):
         with tempfile.TemporaryDirectory() as root:
@@ -1233,6 +1249,89 @@ class DurationTests(unittest.TestCase):
             with self.assertRaises(Exception):
                 ctl.take_start_request()
             self.assertFalse((Path(root)/'start-request.json').exists())
+
+    def test_start_request_preset_round_trip(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            ctl.note_start_request('6h', 'hard')
+            self.assertEqual(ctl.take_start_request(), ('6h', 'hard'))
+
+    def test_start_request_legacy_note_without_preset_is_safe(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            FakeBroker.atomic(Path(root)/'start-request.json',
+                              {'duration': '2h', 'at': int(time.time()*1000)})
+            self.assertEqual(ctl.take_start_request(), ('2h', 'safe'))
+
+    def test_start_request_rejects_unknown_preset(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            with self.assertRaises(Exception):
+                ctl.note_start_request('6h', 'wild')
+            FakeBroker.atomic(Path(root)/'start-request.json',
+                              {'duration': '6h', 'preset': 'wild', 'at': int(time.time()*1000)})
+            with self.assertRaises(Exception):
+                ctl.take_start_request()
+
+
+class PresetSettingsTests(unittest.TestCase):
+    def make(self, root):
+        ctl = object.__new__(c.Controller)
+        ctl.b, ctl.state = FakeBroker, Path(root)
+        return ctl
+
+    def seed_db(self, root, settings):
+        import sqlite3
+        db_path = Path(root)/'bot.sqlite'
+        with contextlib.closing(sqlite3.connect(str(db_path))) as db:
+            with db:
+                db.execute("CREATE TABLE bot_runtime_state(key TEXT PRIMARY KEY, json TEXT NOT NULL)")
+                db.execute("CREATE TABLE bot_settings(id TEXT PRIMARY KEY, timestamp INTEGER NOT NULL, json TEXT NOT NULL)")
+                db.execute("INSERT INTO bot_runtime_state(key, json) VALUES('settings', ?)",
+                           (json.dumps(settings),))
+        return db_path
+
+    def test_settings_round_trip_writes_kv_and_audit(self):
+        with tempfile.TemporaryDirectory() as root:
+            db_path = self.seed_db(root, {'oversold': 30, 'custom': 'keep'})
+            self.assertEqual(c.read_current_settings(db_path), {'oversold': 30, 'custom': 'keep'})
+            c.write_current_settings(db_path, {'oversold': 45, 'custom': 'keep'}, 1700000000000)
+            self.assertEqual(c.read_current_settings(db_path), {'oversold': 45, 'custom': 'keep'})
+            import sqlite3
+            with contextlib.closing(sqlite3.connect(str(db_path))) as db:
+                rows = db.execute("SELECT id, timestamp, json FROM bot_settings").fetchall()
+            self.assertEqual(len(rows), 1)
+            self.assertTrue(rows[0][0].startswith('1700000000000:'))
+            self.assertEqual(rows[0][1], 1700000000000)
+            self.assertEqual(json.loads(rows[0][2]), {'oversold': 45, 'custom': 'keep'})
+
+    def test_apply_and_restore_preset_swaps_only_the_hard_keys(self):
+        with tempfile.TemporaryDirectory() as root:
+            original = {'oversold': 30, 'maxOrder': 2, 'emaGapShrinkEnabled': False,
+                        'feeRate': 0.003, 'unrelated': [1, 2]}
+            db_path = self.seed_db(root, original)
+            ctl = self.make(root)
+            ctl.sui_db_path = lambda: db_path
+            record = {'id': 'b'*32}
+            (Path(root)/record['id']).mkdir()
+            ctl.apply_preset(record)
+            applied = c.read_current_settings(db_path)
+            for key, value in c.HARD_PRESET.items():
+                self.assertEqual(applied[key], value)
+            self.assertEqual(applied['feeRate'], 0.003)
+            self.assertEqual(applied['unrelated'], [1, 2])
+            ctl.restore_preset(record)
+            self.assertEqual(c.read_current_settings(db_path), original)
+            # A second restore is a no-op (idempotent finalization).
+            ctl.restore_preset(record)
+            self.assertEqual(c.read_current_settings(db_path), original)
+
+    def test_restore_without_snapshot_is_a_noop(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = {'id': 'c'*32}
+            (Path(root)/record['id']).mkdir()
+            ctl.restore_preset(record)
 
 
 @unittest.skipIf(os.name == 'nt', 'production host lifecycle requires Linux flock and procfs')
