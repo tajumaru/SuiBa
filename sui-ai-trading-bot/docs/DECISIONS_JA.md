@@ -106,3 +106,13 @@ export の失敗はサイクルを落とさない（continue-on-error、artifact
 - 呼び出しは読み取り専用 identity `suiba-observe` 経由とし、controller の caller scope を「status と、この固定 op のみ」へ拡張した（どちらも引数なし・読み取り専用。authorized_keys の強制コマンドと sudoers の制限は不変）。deploy identity と環境承認は使わないため、日次スケジュールが承認タップなしで回る（検証モニターと同じ形）。
 - 新ワークフロー `suiba-prod-review.yml`：毎日 00:17 JST に schedule 起動し、ゲート変数 `SUIBA_PROD_REVIEW_ENABLED` が無い間は両ジョブとも完全に不発。流れは export（observe 環境、artifact 保持1日）→ `run-review.py` を直近24時間の窓（`--since`/`--until`）で実行 → 常設 Issue #121 へ投稿。投稿先とラベルは検証レビューと共用する。
 - ホスト配布は従来どおり setup-paper-check.sh 経由（controller と export プログラムのピンを同一コミットで更新）。本番はまだ存在しないため実地検証は切替時になる：初回は手動 dispatch（REVIEW-PROD-DAILY）で export とレビュー投稿をスモーク確認してから、ゲート変数を有効化する。
+
+## 2026-11-09 板ガード系の throw をエピソード／一時停止経路へ寄せる
+
+2026-11-09 06:55（月曜早朝＝週末明けの薄い板）、24h 検証ランが DeepBook のスプレッドが一度広がっただけで `SPREAD_TOO_WIDE` により即ハード停止した（failed_requires_review、警報 Issue #133）。注文・約定はゼロ、停止処理と DB 整合性は正常だった。
+
+根本原因は入口の非対称：輸送失敗と古い足（STALE_CANDLES）はエピソード／一時停止の経路を通るのに、板ガード（SPREAD_TOO_WIDE／THIN_ORDERBOOK／STALE_ORDERBOOK／INVALID_ORDERBOOK）は通常の Error で ApiFailure が残らず（transientCycleFailure の対象外）、staleThrowToStall の対象も STALE_CANDLES だけだったため、1回の throw で failCycle→即停止していた。2026-11-07 に古い足の throw 入口を直した際、板ガードが取り残されていた形。
+
+オーナーの選択で、板ガード4コードの throw を STALE_CANDLES の先例と同じくエピソード経路へ寄せた（worker の `bookGuardThrowToEpisode` → stallFailure と共有する会計 `episodeFailure`）。一時停止（DEGRADED・resumePending）し、既存の回復証明で自動再開する。tally キーは `MarketData/<コード>`、制限は標準（180秒／9回）で、継続すれば checkRecoveryDeadline が PAPER_RECOVERY_EXHAUSTED へ格上げする。一時停止中の tick で同じ板ガードが throw しても同エピソードの継続として数える（30秒のカウント絞りも共有）。
+
+変えていないもの：MARKET_PAIR_MISMATCH／MARKET_SOURCE_CHANGED は従来どおり即停止（同一性・設定の問題）。足ガード系（INSUFFICIENT_CANDLES／INVALID_CANDLE／CANDLE_GAP／PRICE_OUTLIER）は範囲外、STALE_CANDLES は既存のまま。HTTP 429／500 の即時ハード停止、スプレッド閾値そのもの、取引ロジック・売買条件は変更しない。一時停止中は ordersAllowed のゲート（HEALTHY＋新鮮な市場データ必須）により売買は起きない。
