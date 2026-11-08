@@ -18,6 +18,8 @@ export type NarrationKind =
   | "review" // a ふりかえり look-back over the watch score so far
   | "nearMiss" // a called watch withdrawn — it came close, then slipped away
   | "watchHit" // a declared watch clicked — the smug counterpart of a near miss
+  | "reach" // a リーチ call: two of three buy conditions met, once per episode
+  | "superReach" // the reach escalated: the last condition closed to the approach distance
   | "priceLine" // the buy-run line declared — RSI's target price, called out loud
   | "priceLineReached" // the price touched the declared buy-run line
   | "sellLine" // the sell lines declared — take-profit / stop-loss prices of the open position
@@ -83,6 +85,21 @@ export interface WatchTarget {
   declaredDistance: number;
   called: boolean;
   closestDistance: number;
+}
+
+/**
+ * The reach escalation of the current two-of-three episode: the
+ * stretch of cycles where exactly two buy conditions stand met
+ * and one — `key` — is still missing. `stage` is "reach" once the
+ * episode has been called, "super" once the escalation (the last
+ * condition closing to the watch's approach distance) has been
+ * called too. Each stage is told at most once per episode; the
+ * episode ends silently when the count leaves two, or the missing
+ * condition changes.
+ */
+export interface ReachState {
+  key: EntryCondKey;
+  stage: "reach" | "super";
 }
 
 /**
@@ -157,6 +174,14 @@ export interface NarrationState {
   lastSleepTalkText: string | null;
   /** The declared watch target, or null when nothing is watched. */
   watch: WatchTarget | null;
+  /** The reach escalation of the current two-of-three episode,
+   * or null while no episode runs (see ReachState). */
+  reach: ReachState | null;
+  /** Consecutive TOLD watch hits with no miss settlement in
+   * between: the 連チャン count. A told hit grows it (the hit
+   * line carries it from the second on), any miss settlement
+   * clears it; silent settlements move it neither way. */
+  hitStreak: number;
   /** The declared buy-run line, or null: the RSI target price the
    * feed called out, whether the price has touched it yet, and
    * whether the one approaching murmur has already been told. */
@@ -329,6 +354,8 @@ export function emptyNarrationState(): NarrationState {
     lastSleepTalkAt: null,
     lastSleepTalkText: null,
     watch: null,
+    reach: null,
+    hitStreak: 0,
     watchScore: { declared: 0, hits: 0, misses: 0, unreviewed: 0 },
     watchKindStats: emptyWatchKindStats(),
     sessionStartPrice: null,

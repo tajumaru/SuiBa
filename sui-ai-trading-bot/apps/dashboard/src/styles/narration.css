@@ -777,6 +777,28 @@
   border-color: rgba(62, 207, 111, 0.55);
   color: #3ecf6f;
 }
+/* A リーチ (two of three buy conditions met) wears the gold of
+   the buy family — the setup is one piece away — on the same
+   faint warm wash as a touch. */
+.agent-feed-entry.reach {
+  border-left-color: var(--gold);
+  background: #231c0d;
+}
+.agent-feed-entry-tag.reach {
+  border-color: rgba(237, 201, 128, 0.6);
+  color: var(--gold);
+}
+/* A スーパーリーチ (the last piece closed to the approach
+   distance) runs hotter: the alert's orange-red takes over the
+   border and the tag. */
+.agent-feed-entry.superReach {
+  border-left-color: #ff7a2f;
+  background: #2a1708;
+}
+.agent-feed-entry-tag.super-reach {
+  border-color: rgba(255, 140, 50, 0.6);
+  color: #ffb27a;
+}
 /* The monthly report wears gold: a milestone entry, posted
    once when a month closes. */
 .agent-feed-entry.monthlyReport {

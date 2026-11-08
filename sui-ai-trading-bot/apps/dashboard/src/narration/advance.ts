@@ -144,6 +144,10 @@ export function advanceNarration(
    * character's voice (see voice.ts). Defaults to the white
    * character, whose voice is the templates as written. */
   character: AgentCharacter = "white",
+  /** The saved settings are the hard preset (the caller judges
+   * by presetName, like the header's hard-mode mark): the reach
+   * calls and the hit line run their hotter variants. */
+  hardMode = false,
 ): NarrationState {
   const seen = new Set(prev.seen);
   const pending = new Set(prev.pendingCandidateIds);
@@ -270,6 +274,9 @@ export function advanceNarration(
     prevTrail: prev.prevTrail,
     priceRising: prev.priceRising,
     watch: prev.watch,
+    reach: prev.reach,
+    hitStreak: prev.hitStreak,
+    hardMode,
     watchScore: prev.watchScore,
     watchKindStats: prev.watchKindStats,
     sessionStartPrice: prev.sessionStartPrice,
@@ -313,6 +320,8 @@ export function advanceNarration(
     {
       ...prev,
       watch: work.watch,
+      reach: work.reach,
+      hitStreak: work.hitStreak,
       watchScore: work.watchScore,
       watchKindStats: work.watchKindStats,
       monthly: work.monthly,

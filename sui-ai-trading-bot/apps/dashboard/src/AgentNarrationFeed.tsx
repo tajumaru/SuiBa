@@ -32,6 +32,7 @@ export function AgentNarrationFeed({
   forecasts = null,
   calibEvent = null,
   book = null,
+  hardMode = false,
   onListeningChange,
   onSpeakingChange,
 }: {
@@ -63,6 +64,10 @@ export function AgentNarrationFeed({
   chain?: { epoch: number; checkpoint: number; tps: number | null } | null;
   /** The character's user-chosen name ("" shows as キャラ). */
   agentName?: string;
+  /** The saved settings are the hard preset (presetName, the
+   * same judgement as the header's hard-mode mark): the reach
+   * calls and the hit line run their hotter variants. */
+  hardMode?: boolean;
   /** Whether the narration tab is the one on screen. The feed
    * stays mounted (hidden) on other tabs; the fixed chat bar's
    * page-level effects must only apply while it is visible. */
@@ -183,6 +188,7 @@ export function AgentNarrationFeed({
       pairLabel,
       calibEvent,
       character,
+      hardMode,
     );
     narrationRef.current = next;
     persist(next);
@@ -266,7 +272,7 @@ export function AgentNarrationFeed({
       persist(withPrompt);
       setNarration(withPrompt);
     }
-  }, [data, stale, onCelebrate, trades, btc, forecasts, book, pairLabel, calibEvent, character]);
+  }, [data, stale, onCelebrate, trades, btc, forecasts, book, pairLabel, calibEvent, character, hardMode]);
   const vital = botVital(data, stale, now, receivedAt);
   const pose = agentPose(narration, data, vital, now);
   // While a chat reply is fresh, the character turns to the user

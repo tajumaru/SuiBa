@@ -2940,3 +2940,245 @@ describe("sell line narration", () => {
     ).toBeNull();
   });
 });
+
+describe("agent narration: reach escalation and hit streaks", () => {
+  function feed(decisions: (TradingDecision | null)[], hard = false) {
+    const { db, monitor } = fixture();
+    let state = emptyNarrationState();
+    for (const dec of decisions) {
+      const d = runningSnapshot(db, monitor, dec);
+      state = advanceNarration(
+        state,
+        d,
+        "alive",
+        NOW,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "SUI",
+        undefined,
+        "white",
+        hard,
+      );
+    }
+    return state;
+  }
+  const ofKind = (state: NarrationState, kind: string) =>
+    state.entries.filter((e) => e.kind === kind);
+  // Two of three standing, MACD the one missing piece.
+  const twoOfThree = (overrides: Parameters<typeof decision>[0] = {}) =>
+    decision({
+      conditions: { emaUp: true, rsiRecovery: true },
+      ema20: 2.43,
+      ema50: 2.42,
+      previousRsi: 28,
+      rsi: 34,
+      ...overrides,
+    });
+
+  it("calls a reach once when the hunt reaches two of three, and stays quiet at one of three", () => {
+    const state = feed([
+      decision({}),
+      // One of three: no theatrics yet.
+      decision({
+        evaluatedAt: NOW - 50_000,
+        conditions: { emaUp: true },
+        ema20: 2.43,
+        ema50: 2.42,
+      }),
+      twoOfThree({ evaluatedAt: NOW - 40_000 }),
+      // The episode continues: the call is not repeated.
+      twoOfThree({ evaluatedAt: NOW - 30_000 }),
+    ]);
+    const reach = ofKind(state, "reach");
+    expect(reach).toHaveLength(1);
+    expect(reach[0].text).toBe("リーチ！あとMACDだけ。まだマイナス側だね");
+    expect(state.reach).toEqual({ key: "histogramImproving", stage: "reach" });
+  });
+
+  it("escalates to a super reach when the last piece closes to the approach distance", () => {
+    const state = feed([
+      decision({}),
+      twoOfThree({ evaluatedAt: NOW - 40_000 }),
+      // The declared MACD distance was 0.003; 0.0008 is well
+      // inside the approach threshold (half the baseline) — the
+      // same cycle also earns the watch's own approach call-out.
+      twoOfThree({ evaluatedAt: NOW - 30_000, histogram: -0.0008 }),
+      // Already escalated: no second super reach.
+      twoOfThree({ evaluatedAt: NOW - 20_000, histogram: -0.0006 }),
+    ]);
+    const superReach = ofKind(state, "superReach");
+    expect(superReach).toHaveLength(1);
+    expect(superReach[0].text).toBe(
+      "スーパーリーチ！あとMACD、今ほぼゼロ。目前まで来たよ",
+    );
+    expect(state.reach).toEqual({
+      key: "histogramImproving",
+      stage: "super",
+    });
+    expect(
+      state.entries.some((e) => e.text.includes("ゼロ手前まで戻った")),
+    ).toBe(true);
+  });
+
+  it("ends the episode silently when the count leaves two, and a return is a new episode", () => {
+    const state = feed([
+      decision({}),
+      twoOfThree({ evaluatedAt: NOW - 50_000 }),
+      // EMA breaks: back to one of three.
+      decision({
+        evaluatedAt: NOW - 40_000,
+        conditions: { rsiRecovery: true },
+        ema20: 2.38,
+        ema50: 2.42,
+        previousRsi: 28,
+        rsi: 34,
+      }),
+      twoOfThree({ evaluatedAt: NOW - 30_000 }),
+    ]);
+    expect(ofKind(state, "reach")).toHaveLength(2);
+    expect(state.reach).toEqual({ key: "histogramImproving", stage: "reach" });
+  });
+
+  it("starts a new episode when the missing piece changes", () => {
+    const state = feed([
+      decision({}),
+      twoOfThree({ evaluatedAt: NOW - 40_000 }),
+      // MACD clicks in the same cycle EMA breaks: the hunt is
+      // still two of three, but the missing piece is now EMA.
+      decision({
+        evaluatedAt: NOW - 30_000,
+        conditions: { rsiRecovery: true, histogramImproving: true },
+        ema20: 2.38,
+        ema50: 2.42,
+        previousRsi: 28,
+        rsi: 34,
+        histogram: -0.001,
+        previousHistogram: -0.002,
+      }),
+    ]);
+    const reach = ofKind(state, "reach");
+    expect(reach).toHaveLength(2);
+    expect(reach[1].text).toContain("あとEMAだけ");
+    expect(state.reach).toEqual({ key: "emaUp", stage: "reach" });
+  });
+
+  it("never calls a reach while a position is open", () => {
+    const state = feed([
+      decision({}),
+      decision({
+        evaluatedAt: NOW - 50_000,
+        conditions: { hasPosition: true, emaUp: true, rsiRecovery: true },
+        entryPrice: 2.3,
+        ema20: 2.43,
+        ema50: 2.42,
+        previousRsi: 28,
+        rsi: 34,
+      }),
+    ]);
+    expect(ofKind(state, "reach")).toHaveLength(0);
+    expect(state.reach).toBeNull();
+  });
+
+  it("runs the hot variants in hard mode, the calm ones otherwise", () => {
+    const hardReach = feed(
+      [decision({}), twoOfThree({ evaluatedAt: NOW - 40_000 })],
+      true,
+    );
+    expect(ofKind(hardReach, "reach")[0].text).toBe(
+      "リーチ！！あとMACDだけ。まだマイナス側だね。ここで決めたい！",
+    );
+    const hardHit = feed(
+      [
+        decision({}),
+        decision({
+          evaluatedAt: NOW - 40_000,
+          conditions: { histogramImproving: true },
+          histogram: -0.001,
+          previousHistogram: -0.002,
+        }),
+      ],
+      true,
+    );
+    expect(ofKind(hardHit, "watchHit")[0].text).toBe(
+      "MACD、成立した。今ほぼゼロ。ほらな、言うてたやろ！この流れ、熱い！",
+    );
+  });
+
+  it("counts consecutive told hits as a streak and breaks it on a miss settlement", () => {
+    const state = feed([
+      decision({}),
+      // Hit 1: MACD clicks.
+      decision({
+        evaluatedAt: NOW - 50_000,
+        conditions: { histogramImproving: true },
+        histogram: -0.001,
+        previousHistogram: -0.002,
+      }),
+      // Hit 2: RSI clicks — the line now carries the streak.
+      decision({
+        evaluatedAt: NOW - 40_000,
+        conditions: { histogramImproving: true, rsiRecovery: true },
+        histogram: -0.001,
+        previousHistogram: -0.002,
+        previousRsi: 28,
+        rsi: 34,
+      }),
+      // The EMA watch drifts past the withdrawal distance.
+      decision({
+        evaluatedAt: NOW - 30_000,
+        conditions: { rsiRecovery: true },
+        ema20: 2.36,
+        ema50: 2.42,
+        previousRsi: 28,
+        rsi: 34,
+        histogram: -0.006,
+        previousHistogram: -0.001,
+      }),
+      // Hit 3: MACD clicks again, but the streak was broken.
+      decision({
+        evaluatedAt: NOW - 20_000,
+        conditions: { rsiRecovery: true, histogramImproving: true },
+        previousRsi: 28,
+        rsi: 34,
+        histogram: -0.001,
+        previousHistogram: -0.002,
+      }),
+    ]);
+    const hits = ofKind(state, "watchHit");
+    expect(hits).toHaveLength(3);
+    expect(hits[0].text).not.toContain("連チャン");
+    expect(hits[1].text).toBe(
+      "RSI、上抜けた。28→34。ほらな、言うてたやろ。2連チャン！",
+    );
+    expect(hits[2].text).not.toContain("連チャン");
+    expect(state.hitStreak).toBe(1);
+  });
+
+  it("persists the reach and streak, and restores pre-feature states with the defaults", () => {
+    const state = feed([
+      decision({}),
+      twoOfThree({ evaluatedAt: NOW - 40_000 }),
+    ]);
+    const values = new Map<string, string>();
+    const saved = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        values.set(key, value);
+      },
+    };
+    persistNarration(state, saved);
+    const restored = restoreNarration(saved);
+    expect(restored.reach).toEqual({ key: "histogramImproving", stage: "reach" });
+    expect(restored.hitStreak).toBe(0);
+
+    const legacy = { ...emptyNarrationState() } as Record<string, unknown>;
+    delete legacy.reach;
+    delete legacy.hitStreak;
+    saved.setItem("suiba.narration.v1", JSON.stringify(legacy));
+    const fromLegacy = restoreNarration(saved);
+    expect(fromLegacy.reach).toBeNull();
+    expect(fromLegacy.hitStreak).toBe(0);
+  });
+});

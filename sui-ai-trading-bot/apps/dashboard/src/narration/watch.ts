@@ -1,6 +1,6 @@
 import type { DecisionTelemetry } from "../../../worker/src/operations.ts";
-import type { DecisionTrail, EntryCondKey, EntryConditionChip, EntryDraft, NarrationKind, NarrationState, WatchDisplay, WatchKindStats, WatchScoreDisplay, WatchTarget } from "./state.ts";
-import { emaGapPct, entryConditions, macdWord, metEntryConditions, rsiPoints, unmetDistance, watchDistance, watchRatio } from "./decision.ts";
+import type { DecisionTrail, EntryCondKey, EntryConditionChip, EntryDraft, NarrationKind, NarrationState, ReachState, WatchDisplay, WatchKindStats, WatchScoreDisplay, WatchTarget } from "./state.ts";
+import { emaGapPct, entryConditions, macdWord, metEntryConditions, rsiPoints, singleRemainingText, unmetDistance, watchDistance, watchRatio } from "./decision.ts";
 import { number as fmtNumber, percent as fmtPercent } from "../presentation.ts";
 import { freshDecision } from "./state.ts";
 import type { VitalState } from "../botVital.ts";
@@ -104,15 +104,57 @@ export function approachWatchText(key: EntryCondKey, dec: DecisionTelemetry): st
  * The hit line: the recorded facts stay exactly as measured, and
  * the close turns smug — the Kansai catchphrase 「ほらな、言うてた
  * やろ」, the counterpart of the near-miss line's dialect slip.
+ * In hard mode the catchphrase runs hotter; the facts in front
+ * of it never change.
  */
-export function hitWatchText(key: EntryCondKey, dec: DecisionTelemetry): string {
+export function hitWatchText(key: EntryCondKey, dec: DecisionTelemetry, hard = false): string {
+  const tail = hard
+    ? "ほらな、言うてたやろ！この流れ、熱い！"
+    : "ほらな、言うてたやろ";
   if (key === "emaUp")
     return dec.conditions.emaGapShrinking
-      ? `EMA、成立した。${fmtNumber(dec.ema20, 4)}はまだ${fmtNumber(dec.ema50, 4)}の下、差の縮小が続いての成立。ほらな、言うてたやろ`
-      : `EMA、成立した。${fmtNumber(dec.ema20, 4)}が${fmtNumber(dec.ema50, 4)}の上。ほらな、言うてたやろ`;
+      ? `EMA、成立した。${fmtNumber(dec.ema20, 4)}はまだ${fmtNumber(dec.ema50, 4)}の下、差の縮小が続いての成立。${tail}`
+      : `EMA、成立した。${fmtNumber(dec.ema20, 4)}が${fmtNumber(dec.ema50, 4)}の上。${tail}`;
   if (key === "rsiRecovery")
-    return `RSI、上抜けた。${fmtNumber(dec.previousRsi, 1)}→${fmtNumber(dec.rsi, 1)}。ほらな、言うてたやろ`;
-  return `MACD、成立した。今${macdWord(dec)}。ほらな、言うてたやろ`;
+    return `RSI、上抜けた。${fmtNumber(dec.previousRsi, 1)}→${fmtNumber(dec.rsi, 1)}。${tail}`;
+  return `MACD、成立した。今${macdWord(dec)}。${tail}`;
+}
+
+/**
+ * The reach call: two of the three buy conditions stand met and
+ * the one missing piece is named with its recorded number, in the
+ * same words the cycle narration itself uses for a single
+ * remaining condition. Hard mode doubles the shout and adds the
+ * heat; the facts stay the same.
+ */
+export function reachText(key: EntryCondKey, dec: DecisionTelemetry, hard = false): string {
+  const rest = singleRemainingText(key, dec);
+  return hard ? `リーチ！！${rest}。ここで決めたい！` : `リーチ！${rest}`;
+}
+
+/**
+ * The super-reach escalation: the last missing condition has
+ * closed to the watch's approach distance, so the call names it
+ * with its current recorded value. Hard mode runs hotter, same
+ * facts.
+ */
+export function superReachText(key: EntryCondKey, dec: DecisionTelemetry, hard = false): string {
+  const now = `あと${WATCH_NAME[key]}、${watchValue(key, dec)}`;
+  return hard
+    ? `スーパーリーチ！！${now}。激アツ、目前だ！`
+    : `スーパーリーチ！${now}。目前まで来たよ`;
+}
+
+/**
+ * The 連チャン suffix on a told hit line: from the second
+ * consecutive hit on, the streak rides at the end of the line.
+ * A line already ending in a shout takes the suffix directly,
+ * the way the price-line reach line chains its sentences.
+ */
+export function hitStreakText(text: string, streak: number): string {
+  return text.endsWith("！")
+    ? `${text}${streak}連チャン！`
+    : `${text}。${streak}連チャン！`;
 }
 
 export function withdrawWatchText(key: EntryCondKey): string {
@@ -166,6 +208,7 @@ export interface WatchOutcome {
 export function processWatch(
   current: WatchTarget | null,
   dec: DecisionTelemetry,
+  hard = false,
 ): WatchOutcome {
   const draft = (text: string, kind: NarrationKind = "cycle"): EntryDraft => ({
     at: dec.evaluatedAt,
@@ -192,7 +235,7 @@ export function processWatch(
     // next watch right away (told after the cycle's own line).
     const next = chooseWatchTarget(dec);
     return {
-      before: [draft(hitWatchText(current.key, dec), "watchHit")],
+      before: [draft(hitWatchText(current.key, dec, hard), "watchHit")],
       after: next
         ? [
             draft(
@@ -277,6 +320,64 @@ export function processWatch(
         settled: null,
         nearMiss: null,
       };
+}
+
+export interface ReachOutcome {
+  /** The reach / super-reach call told this cycle, if any. */
+  drafts: EntryDraft[];
+  /** The episode after this cycle: null while no two-of-three
+   * episode runs. */
+  reach: ReachState | null;
+}
+
+/**
+ * Advance the reach escalation by one narrated cycle. The caller
+ * has already advanced the declared watch with the same decision,
+ * so the watch handed in is the post-cycle one: while the hunt
+ * runs at two of three, that watch sits on the one missing
+ * condition, and the escalation to super reach reuses the watch's
+ * own approach judgement — the current distance at or below
+ * WATCH_APPROACH_RATIO of the declared baseline, the exact
+ * threshold the approach call-out already fires at. No new ruler
+ * is invented, and nothing is told at one of three: the theatrics
+ * start at two. An episode is the continuous stretch at two of
+ * three with the same missing condition; it ends silently when
+ * the count leaves two (the hit and trade lines tell the click,
+ * the cycle line tells the break) or the missing piece changes,
+ * and a later return to two of three is a new episode with its
+ * own calls.
+ */
+export function processReach(
+  current: ReachState | null,
+  watch: WatchTarget | null,
+  dec: DecisionTelemetry,
+  hard = false,
+): ReachOutcome {
+  const hunting = dec.action === "WAIT" && !dec.conditions.hasPosition;
+  if (!hunting || metEntryConditions(dec) !== 2)
+    return { drafts: [], reach: null };
+  const key = entryConditions(dec).find((c) => !c.met)!.key;
+  const draft = (text: string, kind: NarrationKind): EntryDraft => ({
+    at: dec.evaluatedAt,
+    kind,
+    text,
+  });
+  if (!current || current.key !== key)
+    return {
+      drafts: [draft(reachText(key, dec, hard), "reach")],
+      reach: { key, stage: "reach" },
+    };
+  if (
+    current.stage === "reach" &&
+    watch != null &&
+    watch.key === key &&
+    watchRatio(watch, dec) <= WATCH_APPROACH_RATIO
+  )
+    return {
+      drafts: [draft(superReachText(key, dec, hard), "superReach")],
+      reach: { key, stage: "super" },
+    };
+  return { drafts: [], reach: current };
 }
 
 /**

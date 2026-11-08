@@ -44,6 +44,8 @@ const schema: z.ZodType<NarrationState> = z.object({
           "recovery",
           "nearMiss",
           "watchHit",
+          "reach",
+          "superReach",
           "priceLine",
           "priceLineReached",
           "sellLine",
@@ -96,6 +98,13 @@ const schema: z.ZodType<NarrationState> = z.object({
       closestDistance: number,
     })
     .nullable(),
+  // Stored states from before the reach escalation existed parse
+  // with the defaults instead of being thrown away.
+  reach: z
+    .object({ key: condition, stage: z.enum(["reach", "super"]) })
+    .nullable()
+    .default(null),
+  hitStreak: number.default(0),
   priceLine: z
     .object({ price: number, reached: z.boolean(), murmured: z.boolean() })
     .nullable(),
