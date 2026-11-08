@@ -538,6 +538,21 @@ export function createRequestHandler(ctx: WorkerContext) {
       const r = ctx.db.runtime();
       if (command === "emergency")
         ctx.db.set("runtime", { ...r, running: false, emergency: true });
+      else if (command === "clear-emergency") {
+        // The owner's dedicated release for an owner-latched emergency
+        // (PR #105 left this path unbuilt: the scoped reset refuses
+        // emergencies by contract, and nothing else could clear one).
+        // Only the emergency flag is touched — a latched error keeps
+        // its own release path — and an explicit confirm string is
+        // required so a stray or replayed command cannot release it.
+        if (r.running) { send(409, { error: "EMERGENCY_CLEAR_RUNNING" }); return; }
+        if (!r.emergency) { send(409, { error: "EMERGENCY_NOT_ACTIVE" }); return; }
+        if (body.confirm !== "CLEAR-EMERGENCY") {
+          send(400, { error: "EMERGENCY_CLEAR_CONFIRM_REQUIRED" });
+          return;
+        }
+        ctx.db.set("runtime", { ...r, emergency: false });
+      }
       else if (command === "stop") ctx.db.set("runtime", { ...r, running: false });
       else if (command === "reset") {
         const pending = ctx.predecessorReset.needsWarmupAfterReset();
@@ -593,7 +608,9 @@ export function createRequestHandler(ctx: WorkerContext) {
             ? "MANUAL_STOP"
             : command === "emergency"
               ? "EMERGENCY_STOP"
-              : "MANUAL_RESET",
+              : command === "clear-emergency"
+                ? "EMERGENCY_CLEARED"
+                : "MANUAL_RESET",
       );
       send(200, ctx.db.runtime());
       return;

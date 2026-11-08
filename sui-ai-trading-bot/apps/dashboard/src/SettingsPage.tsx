@@ -657,31 +657,69 @@ export function StopReleaseSection({
   onReviewSettings,
 }: {
   data: State;
-  control: (c: string) => Promise<string | null>;
+  control: (
+    c: string,
+    extra?: Record<string, unknown>,
+  ) => Promise<string | null>;
   onReviewSettings?: (field: "maxOrder") => void;
 }) {
   const { emergency, error } = data.runtime;
+  // The emergency release is a two-step in-place confirmation: the
+  // first press arms it, the second sends the dedicated command.
+  // The scoped reset refuses emergencies by contract (PR #105), so
+  // this button is the only release an owner-latched emergency has.
+  const [clearArmed, setClearArmed] = useState(false);
+  useEffect(() => {
+    if (!emergency) setClearArmed(false);
+  }, [emergency]);
   if (!emergency && !error) return null;
   const advice = stopSettingAdvice(data);
   return (
     <section className="stop-release">
       <div className="stop-release-head">
         <h4>{advice?.title ?? "停止状態の解除"}</h4>
-        <button
-          type="button"
-          className="operation-icon-button release"
-          aria-label="停止解除（再開は手動）"
-          title="停止解除（再開は手動）"
-          onClick={() => void control("reset")}
-        >
-          <OperationIcon kind="release" />
-          <span className="operation-action-label">停止を解除</span>
-        </button>
+        {emergency ? (
+          <button
+            type="button"
+            className="operation-icon-button release"
+            aria-label={clearArmed ? "緊急停止の解除を確定" : "緊急停止を解除（再開は手動）"}
+            title={clearArmed ? "緊急停止の解除を確定" : "緊急停止を解除（再開は手動）"}
+            onClick={() => {
+              if (!clearArmed) {
+                setClearArmed(true);
+                return;
+              }
+              setClearArmed(false);
+              void control("clear-emergency", { confirm: "CLEAR-EMERGENCY" });
+            }}
+          >
+            <OperationIcon kind="release" />
+            <span className="operation-action-label">
+              {clearArmed ? "本当に解除する" : "緊急停止を解除"}
+            </span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="operation-icon-button release"
+            aria-label="停止解除（再開は手動）"
+            title="停止解除（再開は手動）"
+            onClick={() => void control("reset")}
+          >
+            <OperationIcon kind="release" />
+            <span className="operation-action-label">停止を解除</span>
+          </button>
+        )}
       </div>
+      {emergency && clearArmed && (
+        <p>
+          緊急停止は本人の操作でのみ解除できます。解除しても自動では再開しません。
+        </p>
+      )}
       {!advice && (
         <p>
           {emergency
-            ? "緊急停止が押され、PAPER運用を止めています。"
+            ? "緊急停止が押され、PAPER運用を止めています。緊急停止は通常の停止解除では解けません。上のボタンからのみ解除できます。"
             : `安全停止中です。停止理由：${reason(error ?? "")}`}
         </p>
       )}
@@ -713,7 +751,9 @@ export function StopReleaseSection({
         <>
           <ol>
             <li>「検証」で停止した原因を確認します。</li>
-            <li>原因を解消したら「停止を解除」を押します。</li>
+            <li>
+              原因を解消したら「{emergency ? "緊急停止を解除" : "停止を解除"}」を押します。
+            </li>
             <li>
               上の「運用開始」を押すと再開します。解除だけでは売買を始めません。
             </li>

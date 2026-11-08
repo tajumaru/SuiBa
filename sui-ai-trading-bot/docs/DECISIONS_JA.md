@@ -62,3 +62,11 @@
 
 ## 2026-11-08 回復中ティックの stale 合流（PR #107 の「failed proof」扱いを撤回）
 PR #107 で残した「回復中（running=false）の STALE_CANDLES は failed proof としてハードストップ」を撤回する。controller が一時停止を許容する（PR #112）ようになった結果、回復証明のティックが最初に stale に当たった時点で全ての candle-stale 一時停止が即死するようになっていたため。回復エピソード進行中（resumePending）に限り、ティックの STALE_CANDLES throw も stallFailure に合流させ、30分のエピソード期限に委ねる（オーナーが案Aを選択）。
+
+## 2026-11-08 emergency（緊急停止）の手動解除経路を新設（A案）
+
+PR #105 で「emergency は scoped reset では絶対に解除しない」と決めた結果、解除経路そのものが存在せず、緊急停止を一度押すと再開不能（DB 直接操作のみ）になっていた穴を塞ぐ。オーナーの選択で A案（ダッシュボードのみ）を採用：
+
+- worker の /api/control に専用コマンド `clear-emergency` を追加。停止中・emergency が立っていること・確認文字列 `CLEAR-EMERGENCY` の3条件を全て満たす場合だけ `emergency` フラグを落とす。`error`（安全停止）には触らず、そちらは従来の reset 経路のまま。解除は監査イベント EMERGENCY_CLEARED として残る。
+- ダッシュボードの停止解除セクション（戦略タブ上部）で、emergency のときはボタンを「緊急停止を解除」に切り替える（2段階確認：1回目で武装、2回目で確定）。通常の「停止を解除」（reset）は従来どおり emergency を拒否する。
+- Actions（controller 経由）の遠隔解除は入れない。キルスイッチの解除は本人の手（ダッシュボード）だけに限る。必要になれば別途 B案として検討する。

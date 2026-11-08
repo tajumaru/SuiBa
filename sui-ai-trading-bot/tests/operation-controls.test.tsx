@@ -200,21 +200,21 @@ describe("operation icon buttons", () => {
 
   it("puts the release icon button at the top of the release section", () => {
     const html = render({ emergency: true });
-    const releaseAt = html.indexOf('aria-label="停止解除（再開は手動）"');
+    const releaseAt = html.indexOf('aria-label="緊急停止を解除（再開は手動）"');
     expect(html).toContain('class="stop-release-head"');
     expect(releaseAt).toBeGreaterThan(html.indexOf('class="stop-release"'));
     // The button sits in the heading row, above the explanation
     // and the steps it acts on.
     expect(releaseAt).toBeLessThan(html.indexOf("緊急停止が押され"));
-    expect(buttonTag(html, "停止解除（再開は手動）")).toContain(
+    expect(buttonTag(html, "緊急停止を解除（再開は手動）")).toContain(
       'class="operation-icon-button release"',
     );
-    expect(buttonTag(html, "停止解除（再開は手動）")).toContain(
-      'title="停止解除（再開は手動）"',
+    expect(buttonTag(html, "緊急停止を解除（再開は手動）")).toContain(
+      'title="緊急停止を解除（再開は手動）"',
     );
     expect(html).toContain('stroke="#edc980"');
     // The steps point at the button's new position.
-    expect(html).toContain("原因を解消したら「停止を解除」を押します");
+    expect(html).toContain("原因を解消したら「緊急停止を解除」を押します");
     expect(html).not.toContain("下のボタンで停止状態を解除します");
   });
 });
@@ -226,11 +226,18 @@ describe("stop-state release section", () => {
     expect(html).not.toContain("<details");
     expect(html).not.toContain("<summary");
     expect(html).toContain("緊急停止が押され、PAPER運用を止めています。");
-    expect(html).toContain("「停止を解除」を押します");
+    expect(html).toContain("「緊急停止を解除」を押します");
     expect(html).toContain("解除だけでは売買を始めません");
-    expect(html).toContain("停止解除（再開は手動）");
+    expect(html).toContain("緊急停止を解除（再開は手動）");
     // The start area points at the release steps as well.
     expect(html).toContain("先に下の手順で停止状態を解除してください");
+  });
+
+  it("keeps the reset release button in a safety stop", () => {
+    const html = render({ error: "UPSTREAM_HTTP_504" });
+    expect(html).toContain("停止解除（再開は手動）");
+    expect(html).toContain("原因を解消したら「停止を解除」を押します");
+    expect(html).not.toContain("緊急停止を解除（再開は手動）");
   });
 
   it("shows the recorded stop reason in a safety stop", () => {
