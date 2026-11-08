@@ -33,10 +33,16 @@ FLAG_MIN_POS_4H = 50.0    # percent
 CAUTION_MAX_MEAN_4H = -0.30
 
 
+def compute_limit(decisions):
+    """Candle count covering the decision span (cts is epoch seconds)."""
+    if not decisions:
+        return 2000
+    span_s = decisions[-1]["cts"] - decisions[0]["cts"]
+    return min(10000, int(span_s / 300) + 2000)
+
+
 def fetch_candles(decisions):
-    span_s = (decisions[-1]["ts"] - decisions[0]["ts"]) / 1000 if decisions else 0
-    limit = min(10000, int(span_s / 300) + 2000)
-    url = f"{INDEXER}?interval=5m&limit={limit}"
+    url = f"{INDEXER}?interval=5m&limit={compute_limit(decisions)}"
     req = urllib.request.Request(url, headers={"User-Agent": "suiba-run-review/1"})
     with urllib.request.urlopen(req, timeout=60) as res:
         return json.load(res)["candles"]
