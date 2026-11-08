@@ -42,7 +42,7 @@ export function AppHeader({
     <>
       <header>
         <div className="header-row header-row-main">
-          <strong>◈ Sui Paper Lab</strong>
+          <strong>◈ Potario</strong>
           <span className="badge">PAPER（仮想売買）専用</span>
         </div>
         <div className="header-row header-row-sub">

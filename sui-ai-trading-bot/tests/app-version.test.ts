@@ -66,7 +66,7 @@ it("renders the banner with the new build and the footer with this build", () =>
   expect(banner).toContain("新機能");
   expect(banner).toContain("再読み込み");
   const footer = renderToStaticMarkup(React.createElement(VersionFooter));
-  expect(footer).toContain("SuiBa 画面 dev");
+  expect(footer).toContain("Potario 画面 dev");
 });
 
 it("flags a skew only between two different real build stamps", () => {

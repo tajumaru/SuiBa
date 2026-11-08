@@ -1,4 +1,4 @@
-# Sui Paper Lab — Sui AI Trading Bot v1.0
+# Potario — Sui AI Trading Bot v1.0
 
 SUI / Native USDC または WAL / Native USDC のMainnet市場データで、ルール戦略を検証する独立したPAPER専用Botです。**署名鍵の読込・署名・トランザクション構築・送信・実スワップは実装していません。** AI SDK・AI APIも使用しません。利益や24時間の安定運用は検証済みではありません。
 

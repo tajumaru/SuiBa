@@ -59,7 +59,7 @@ try {
   assert.equal(unauthorized.status, 401);
   const html = await fetch(`http://127.0.0.1:${port}/`);
   assert.equal(html.status, 200);
-  assert.match(await html.text(), /Sui Paper Lab/);
+  assert.match(await html.text(), /Potario/);
   let state = await api("state");
   assert.equal(state.mode, "PAPER");
   assert.equal(state.runtime.running, false);
