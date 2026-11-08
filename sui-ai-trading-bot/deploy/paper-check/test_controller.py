@@ -1820,3 +1820,55 @@ class MonitorPauseTests(unittest.TestCase):
             ctl.api = api
             ctl.monitor_once('timer')
             self.assertIsNone(ctl.pause_since)
+
+
+class EpisodeEvidenceTests(unittest.TestCase):
+    def test_valid_episode_shape(self):
+        good = {'s': 1794000000000, 'm': 3000, 'f': 1, 'y': {'MarketData/CANDLE_STALE': 1}}
+        self.assertTrue(c.valid_episode(good))
+        self.assertTrue(c.valid_episode({'s': 1, 'm': 0, 'f': 0, 'y': {}}))
+        self.assertFalse(c.valid_episode(None))
+        self.assertFalse(c.valid_episode({'s': 1, 'm': 2, 'f': 3}))
+        self.assertFalse(c.valid_episode({'s': 1, 'm': 2, 'f': 3, 'y': {}, 'x': 1}))
+        self.assertFalse(c.valid_episode({'s': -1, 'm': 2, 'f': 3, 'y': {}}))
+        self.assertFalse(c.valid_episode({'s': 1, 'm': 2, 'f': 3, 'y': {'bad key': 1}}))
+        self.assertFalse(c.valid_episode({'s': 1, 'm': 2, 'f': 3, 'y': {'MarketData/CANDLE_STALE': 0}}))
+        self.assertFalse(c.valid_episode({'s': 1, 'm': 2, 'f': 3, 'y': {'A/B': 1, 'C/D': 2, 'E/F': 3,
+            'G/H': 4, 'I/J': 5, 'K/L': 6, 'M/N': 7, 'O/P': 8, 'Q/R': 9}}))
+
+    def render(self, payload):
+        import io
+        script = Path(__file__).parents[2]/'docker/ssh-paper-status.sh'
+        renderer = script.read_text().split("<<'PYCODE'", 1)[1].split("\n", 1)[1].rsplit("\nPYCODE", 1)[0]
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            path = Path(tmp)/'response'
+            path.write_text(json.dumps(payload))
+            output = io.StringIO()
+            with patch.object(c.sys, 'argv', ['summary', str(path), 'diagnose', str(script.with_name('paper-fixed-reason.py'))]), contextlib.redirect_stdout(output):
+                exec(compile(renderer, 'summary', 'exec'), {})
+            return output.getvalue()
+
+    def payload(self, events):
+        return {
+            'run': {'id': 'a'*32, 'status': 'failed_requires_review'},
+            'stop': {'id': 'a'*32, 'status': 'clean_stopped'}, 'requires_review': True,
+            'diagnostics': {'stage': 'monitoring', 'maintenance': True, 'backup_verified': True,
+                'oom_killed': False, 'exit_code': 0, 'healthcheck_exit': 0, 'http_status': None,
+                'deltas': {pair: {'starts': 0, 'orders': 0, 'fills': 0} for pair in ('SUI_USDC', 'WAL_USDC')},
+                'evidence': {'events': events, 'timing': None}},
+        }
+
+    def test_renderer_shows_the_latest_episode(self):
+        events = [
+            {'t': 3, 'k': 'STOP', 'c': 'MANUAL_STOP', 'd': None,
+             'e': {'s': 1000, 'm': 3000, 'f': 1, 'y': {'MarketData/CANDLE_STALE': 1}}},
+            {'t': 2, 'k': 'STOP', 'c': 'PAPER_NETWORK_PAUSED', 'd': None},
+            {'t': 1, 'k': 'ERROR', 'c': 'MARKET_DATA_STALLED', 'd': 'CANDLE_STALE'},
+        ]
+        output = self.render(self.payload(events))
+        self.assertIn('- Latest episode: duration=3000ms, failures=1, tally=MarketData/CANDLE_STALE×1', output)
+
+    def test_renderer_without_episode_stays_quiet(self):
+        events = [{'t': 1, 'k': 'ERROR', 'c': 'MARKET_DATA_STALLED', 'd': 'CANDLE_STALE'}]
+        output = self.render(self.payload(events))
+        self.assertNotIn('Latest episode', output)

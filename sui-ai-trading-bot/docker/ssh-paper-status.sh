@@ -263,6 +263,15 @@ if details is not None:
                 for e in events[:6] if isinstance(e, dict) and "k" in e and "c" in e)
             if rendered:
                 print(f"- Recent operation events (SUI, newest first): {rendered}")
+        episode = next((e.get("e") for e in events if isinstance(e, dict)
+                        and isinstance(e.get("e"), dict)), None) if isinstance(events, list) else None
+        if isinstance(episode, dict):
+            tally = episode.get("y")
+            tally_text = ", ".join(
+                f"{key}×{count}" for key, count in tally.items()
+                if isinstance(key, str) and isinstance(count, int)) if isinstance(tally, dict) else ""
+            print(f"- Latest episode: duration={episode.get('m')}ms, "
+                  f"failures={episode.get('f')}, tally={tally_text}")
     if "clean_lifecycle" in details:
         print(f"- Clean PAPER lifecycle receipt: {details['clean_lifecycle']}")
     runtime = details.get("runtime")
