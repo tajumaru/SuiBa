@@ -1,0 +1,68 @@
+name: SuiBa run review (stage 1)
+
+# Counterfactual review of the decisions in a public export artifact.
+# Read-only with respect to the VPS (it never connects); the only writes
+# are a comment on the standing review Issue. No environment approval:
+# nothing privileged is involved. Token-free by design — this is plain
+# GitHub Actions machinery, replacing per-run agent analysis.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "REVIEW-PAPER と入力"
+        required: true
+        type: string
+      export_run_id:
+        description: "対象の export ワークフロー実行 ID"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: suiba-paper-review
+  cancel-in-progress: false
+
+jobs:
+  review:
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'REVIEW-PAPER' && vars.SUIBA_PAPER_REVIEW_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Download the export artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPORT_RUN_ID: ${{ inputs.export_run_id }}
+        run: |
+          gh run download "$EXPORT_RUN_ID" --dir export-data
+          find export-data -name 'SUI_USDC.sqlite' -print -quit | grep -q . \
+            || { echo 'SUI_USDC.sqlite not found in the export artifact' >&2; exit 1; }
+      - name: Build the review report
+        run: |
+          DB=$(find export-data -name 'SUI_USDC.sqlite' -print -quit)
+          python3 sui-ai-trading-bot/docker/run-review.py "$DB" --out report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Post the report to the standing review Issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPORT_RUN_ID: ${{ inputs.export_run_id }}
+        run: |
+          gh label create suiba-run-review --force --color 1d76db \
+            --description 'SuiBa 振り返りレポート（自動）' >/dev/null 2>&1 || true
+          { echo "対象 export: https://github.com/${{ github.repository }}/actions/runs/${EXPORT_RUN_ID}";
+            echo; cat report.md; } > comment.md
+          NUM=$(gh issue list --label suiba-run-review --state open --limit 1 \
+            --json number --jq '.[0].number // empty')
+          if [ -z "$NUM" ]; then
+            gh issue create --label suiba-run-review \
+              --title 'SuiBa 振り返りレポート（自動）' --body-file comment.md
+          else
+            gh issue comment "$NUM" --body-file comment.md
+          fi
