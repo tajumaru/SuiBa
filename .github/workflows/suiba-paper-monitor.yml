@@ -43,7 +43,12 @@ jobs:
           PAPER_MONITOR_REPORT_FILE: ${{ runner.temp }}/suiba-paper-monitor.json
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_PORT: ${{ secrets.VPS_PORT }}
+          # The port is a repository variable, not a secret: as a secret its
+          # value "22" is a masking token, and any job output containing the
+          # substring "22" (a run id, a timestamp) is silently dropped by the
+          # runner ("Skip output ... may contain secret"), which once turned
+          # healthy observations into PAPER_CHECK_FAILED fallbacks.
+          VPS_PORT: ${{ vars.SUIBA_OBSERVE_VPS_PORT }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: bash sui-ai-trading-bot/docker/ssh-paper-observe.sh
