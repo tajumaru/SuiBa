@@ -26,11 +26,17 @@ from datetime import datetime, timezone
 INDEXER = "https://deepbook-indexer.mainnet.mystenlabs.com/ohclv/SUI_USDC"
 CORE = ["emaUp", "rsiRecovery", "histogramImproving"]
 HORIZONS = (1, 4, 24)
-# Candidate-flag thresholds (v1 heuristics, see docs/RUN_REVIEW_JA.md):
+# Candidate-flag thresholds (v1 heuristics, see docs/RUN_REVIEW_JA.md).
+# Flags are judged on NET returns (after the round-trip cost below).
 FLAG_MIN_SAMPLES = 30
 FLAG_MIN_MEAN_4H = 0.30   # percent
 FLAG_MIN_POS_4H = 50.0    # percent
 CAUTION_MAX_MEAN_4H = -0.30
+# Round-trip cost: the bot's own fee setting (feeRate default 0.003 per
+# side in packages/shared). Slippage is NOT deducted, so real costs are
+# higher; exports omit the live settings, hence the default is used.
+FEE_RATE_PER_SIDE = 0.003
+ROUND_TRIP_COST_PCT = 2 * FEE_RATE_PER_SIDE * 100  # 0.6%
 
 
 def compute_limit(decisions):
@@ -60,7 +66,48 @@ def load_candles(raw):
     for t in ordered:
         value = close[t] if value is None else value + alpha * (close[t] - value)
         ema[t] = value
-    return close, high, low, ordered, ema
+    # Shared-implementation EMA20/EMA50 (SMA seed), for the gap series used
+    # by the shrink variant: gap = (ema50 - ema20) / close per candle.
+    closes = [close[t] for t in ordered]
+    e20 = shared_ema(closes, 20)
+    e50 = shared_ema(closes, 50)
+    gap = {}
+    for idx, t in enumerate(ordered):
+        gap[t] = None if e20[idx] is None or e50[idx] is None \
+            else (e50[idx] - e20[idx]) / closes[idx]
+    return close, high, low, ordered, ema, gap
+
+
+def shared_ema(values, period):
+    """packages/indicators ema(): SMA seed at period-1, then 2/(n+1)."""
+    out, value = [], 0.0
+    for i, x in enumerate(values):
+        if i < period:
+            value += x
+        if i < period - 1:
+            out.append(None)
+        elif i == period - 1:
+            value /= period
+            out.append(value)
+        else:
+            value += (x - value) * 2 / (period + 1)
+            out.append(value)
+    return out
+
+
+def gap_shrinking_at(gap, ordered, cts, count=3):
+    """strategy-engine emaGapShrinking over the candles ending at cts-300:
+    the gap strictly shrinks across the last `count` candles and the
+    latest gap is still open (> 0). Fails closed on any missing value."""
+    import bisect
+    i = bisect.bisect_right(ordered, cts - 300) - 1
+    if i < count - 1:
+        return False
+    window = [gap[ordered[i - count + 1 + k]] for k in range(count)]
+    if any(g is None for g in window):
+        return False
+    strictly = all(window[k + 1] < window[k] for k in range(count - 1))
+    return strictly and window[-1] > 0
 
 
 def regime_at(ema, ordered, cts):
@@ -88,6 +135,54 @@ def filter_window(decisions, since=None, until=None):
             and (until is None or d["cts"] <= until)]
 
 
+def vol_ok(d):
+    c = d["cond"]
+    return bool(c.get("latestVolumePositive") and c.get("previousVolumePositive")
+                and not c.get("volumeChangeExceeded"))
+
+
+def pred_base(d):
+    """The live BUY rule for a flat position (strategy-engine)."""
+    return vol_ok(d) and all(d["cond"].get(k) for k in CORE)
+
+
+def pred_novol(d):
+    """Variant: the BUY rule without the volume gate."""
+    return all(d["cond"].get(k) for k in CORE)
+
+
+def pred_rsi45(d):
+    """Variant: RSI recovery across 45 (the hard preset's line)."""
+    p, i = d["prev"].get("rsi"), d["cur"].get("rsi")
+    return (vol_ok(d) and d["cond"].get("emaUp")
+            and d["cond"].get("histogramImproving")
+            and p is not None and i is not None and p <= 45 and i > 45)
+
+
+def pred_shrink(d):
+    """Variant: EMA route via a shrinking gap (recomputed from candles,
+    independent of the live emaGapShrinkEnabled setting)."""
+    cur = d["cur"]
+    ema_above = (cur.get("ema20") is not None and cur.get("ema50") is not None
+                 and cur["ema20"] > cur["ema50"])
+    return (vol_ok(d) and d["cond"].get("rsiRecovery")
+            and d["cond"].get("histogramImproving")
+            and (ema_above or d.get("gapShrink", False)))
+
+
+VARIANTS = [
+    ("base", "現行ルール", pred_base),
+    ("novol", "出来高ゲートなし", pred_novol),
+    ("rsi45", "RSI回復ライン45（ハード相当）", pred_rsi45),
+    ("shrink", "EMA差縮小ルート（3本・再計算）", pred_shrink),
+]
+
+
+def summarize_net(values):
+    return summarize([None if v is None else v - ROUND_TRIP_COST_PCT
+                      for v in values])
+
+
 def load_decisions(db_path):
     conn = sqlite3.connect(db_path)
     try:
@@ -107,6 +202,7 @@ def load_decisions(db_path):
             "action": d.get("action"), "rule": ev.get("selectedRule"),
             "cts": ev.get("candleTimestamp"), "price": inp.get("price"),
             "cond": cond, "met": sum(1 for k in CORE if cond.get(k)),
+            "cur": inp.get("current") or {}, "prev": inp.get("previous") or {},
         })
     return decisions, orders, trades
 
@@ -121,9 +217,10 @@ def summarize(values):
 
 
 def analyze(decisions, candles):
-    close, high, low, ordered, ema = candles
+    close, high, low, ordered, ema, gap = candles
     for d in decisions:
         d["regime"] = regime_at(ema, ordered, d["cts"]) if d["cts"] else "unknown"
+        d["gapShrink"] = gap_shrinking_at(gap, ordered, d["cts"]) if d["cts"] else False
 
     def fwd(d, hours):
         if d["cts"] is None or not d["price"]:
@@ -150,27 +247,45 @@ def analyze(decisions, candles):
     for met in (3, 2, 1, 0):
         group = [d for d in decisions if d["met"] == met]
         buckets[met] = {"n": len(group),
-                        "h": {h: summarize([fwd(d, h) for d in group]) for h in HORIZONS}}
+                        "h": {h: summarize([fwd(d, h) for d in group]) for h in HORIZONS},
+                        "net": {h: summarize_net([fwd(d, h) for d in group]) for h in (4, 24)}}
     marginal = {}
     for missing in CORE:
         group = [d for d in decisions if d["met"] == 2 and not d["cond"].get(missing)]
         marginal[missing] = {"n": len(group),
-                             "h": {h: summarize([fwd(d, h) for d in group]) for h in (4, 24)}}
+                             "h": {h: summarize([fwd(d, h) for d in group]) for h in (4, 24)},
+                             "net": {h: summarize_net([fwd(d, h) for d in group]) for h in (4, 24)}}
     near = [d for d in decisions if d["met"] == 2 and d["price"]]
     touches = Counter(touch(d) for d in near)
+    variants = []
+    for vid, label, pred in VARIANTS:
+        fired = [d for d in decisions if pred(d)]
+        variants.append({
+            "id": vid, "label": label, "n": len(fired),
+            "gross1": summarize([fwd(d, 1) for d in fired]),
+            "net": {h: summarize_net([fwd(d, h) for d in fired]) for h in (4, 24)},
+            "touches": Counter(touch(d) for d in fired if d["price"]),
+        })
     flags = []
     for missing, m in marginal.items():
-        s = m["h"][4]
+        s = m["net"][4]
         if s and s["n"] >= FLAG_MIN_SAMPLES and s["mean"] >= FLAG_MIN_MEAN_4H \
                 and s["pos"] >= FLAG_MIN_POS_4H:
             flags.append({"kind": "candidate",
-                          "text": f"{missing} の単独欠け（n={s['n']}）は +4h 平均 {s['mean']:+.2f}%"
+                          "text": f"{missing} の単独欠け（n={s['n']}）は正味 +4h 平均 {s['mean']:+.2f}%"
                                   f"（プラス率 {s['pos']:.0f}%）— 緩和候補として判断材料が揃った"})
-    s2 = buckets[2]["h"][4]
+    s2 = buckets[2]["net"][4]
     if s2 and s2["n"] >= FLAG_MIN_SAMPLES and s2["mean"] <= CAUTION_MAX_MEAN_4H:
         flags.append({"kind": "caution",
-                      "text": f"あと1つで買えた判断（n={s2['n']}）は +4h 平均 {s2['mean']:+.2f}%"
+                      "text": f"あと1つで買えた判断（n={s2['n']}）は正味 +4h 平均 {s2['mean']:+.2f}%"
                               f" — 現行の厳しさが守っている側の証拠"})
+    for v in variants:
+        s = v["net"][4]
+        if v["id"] != "base" and s and s["n"] >= FLAG_MIN_SAMPLES \
+                and s["mean"] >= FLAG_MIN_MEAN_4H and s["pos"] >= FLAG_MIN_POS_4H:
+            flags.append({"kind": "variant",
+                          "text": f"バリアント「{v['label']}」（発火 n={s['n']}）は正味 +4h 平均 "
+                                  f"{s['mean']:+.2f}%（プラス率 {s['pos']:.0f}%）— 採用候補として判断材料が揃った"})
     regimes = {}
     for name in ("up", "down", "range", "unknown"):
         group = [d for d in decisions if d["regime"] == name]
@@ -189,6 +304,7 @@ def analyze(decisions, candles):
                 datetime.fromtimestamp(decisions[-1]["cts"], timezone.utc))
     return {"buckets": buckets, "marginal": marginal, "touches": touches,
             "flags": flags, "prices": prices, "span": span, "regimes": regimes,
+            "variants": variants,
             "actions": Counter(d["action"] for d in decisions),
             "rules": Counter(d["rule"] for d in decisions)}
 
@@ -225,6 +341,19 @@ def render(result, decisions_count, orders, trades, generated_at):
     for missing in CORE:
         mm = m[missing]
         lines.append(f"- {missing} だけ欠け: {mm['n']} 件、+4h {fmt_stat(mm['h'][4])}、+24h {fmt_stat(mm['h'][24])}")
+    lines += ["", f"## コスト控除後（往復 {ROUND_TRIP_COST_PCT:.1f}%＝手数料 0.3%/回、スリッページ未控除）", "",
+              f"- あと1つ全体: 正味 +4h {fmt_stat(b[2]['net'][4])}、正味 +24h {fmt_stat(b[2]['net'][24])}"]
+    for missing in CORE:
+        mm = m[missing]
+        lines.append(f"- {missing} だけ欠け: 正味 +4h {fmt_stat(mm['net'][4])}、正味 +24h {fmt_stat(mm['net'][24])}")
+    lines += ["", "## 候補バリアントの採点（発火した判断のその後）", "",
+              "| バリアント | 発火 | +1h 平均（素） | +4h 平均（正味） | +24h 平均（正味） | 利確先行/損切り先行 |",
+              "|---|---|---|---|---|---|"]
+    for v in result["variants"]:
+        t = v["touches"]
+        lines.append(f"| {v['label']} | {v['n']} | {fmt_stat(v['gross1'])} | "
+                     f"{fmt_stat(v['net'][4])} | {fmt_stat(v['net'][24])} | "
+                     f"{t.get('tp_first', 0)}/{t.get('sl_first', 0)} |")
     lines += ["", "## 局面別の内訳（EMA50 の24h傾き：上昇 ≥+0.5%／下降 ≤−0.5%／横ばい）", ""]
     labels = {"up": "上昇", "down": "下降", "range": "横ばい", "unknown": "不明"}
     for name, r in result["regimes"].items():
@@ -237,7 +366,9 @@ def render(result, decisions_count, orders, trades, generated_at):
     else:
         lines.append("- なし（候補・注意どちらも閾値未達）")
     lines += ["", "## 注意", "",
-              "- その後の価格変化は手数料・スリッページ・ProfitGuard 未考慮の素の値動き。",
+              "- 「素」の値は手数料・スリッページ・ProfitGuard 未考慮の値動き。正味の欄は手数料"
+              "（設定既定 0.3%/回、export に実設定が含まれないため既定値で代用）を控除し、"
+              "スリッページは未控除なので実際はさらに不利側。フラグ判定は正味ベース。",
               "- +24h は直近の判断ぶんが未経過のため標本が減る。",
               "- 標本が1つの相場つきに偏る間は、フラグは「判断材料が揃った」合図にすぎない。",
               ""]
