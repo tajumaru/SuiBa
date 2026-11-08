@@ -82,3 +82,9 @@ PR #105 で「emergency は scoped reset では絶対に解除しない」と決
 ## 2026-11-08 検証ランにプリセット入力（safe／hard）を追加
 
 検証ランをハードプリセットで回すには従来ダッシュボード経由の手作業（SSHトンネル＋設定保存＋終了後の手動復旧）が必要だった。オーナーの指示で、CYCLE の入力に preset（safe／hard、既定 safe）を足し、controller がそのラン限り SUI 設定を差し替える形にした：開始時（バックアップ後・worker 起動前）に現行設定をランフォルダへ snapshot し、hard プリセット（dashboard の applyHardPreset と同値。tests/preset-parity.test.ts がドリフトを検出）を DB へ書き、終了時の finalize（post-stop cleanup）で snapshot を復旧する。復旧失敗は PRESET_RESTORE_FAILED として failed_requires_review に落とし、次回 admission でも未復旧なら先に復旧する（冪等）。対象は SUI_USDC の設定のみ。24h ランは本稼働ラダーの最終段として通常設定（safe）で回す方針も同日に決定（ハード検証は 6h）。
+
+## 2026-11-08 検証サイクルが開始直後に前ランの記録を自動 export する
+
+検証ランの結果（判断記録）は、ホストの外へ出せるのが「次のランの開始時バックアップ」が作られた瞬間からで、従来はラン終了後に EXPORT ワークフローを手動 dispatch（＋承認）しないと振り返りレポートに載らなかった。オーナーの指示で、CYCLE ジョブが開始ステップ直後に、同一の環境承認の内側で export 固定操作を実行し、standalone の export と同じ名前・形の artifact を自ランに載せる形にした。レビュー側は workflow_run の対象に CYCLE を加え、サイクル完了時にその artifact からレポートを生成して常設 Issue（#121）へ投稿する。
+
+export の失敗はサイクルを落とさない（continue-on-error、artifact が無ければレビューは静かに終了）。export の有効ゲート（SUIBA_PAPER_EXPORT_ENABLED）は standalone と共用する。手動 EXPORT ワークフローは従来どおり残す（任意のタイミングの再書き出し用）。
