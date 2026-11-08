@@ -124,3 +124,11 @@ export の失敗はサイクルを落とさない（continue-on-error、artifact
 planner（docker/paper-deploy-cycle-plan.py）の前提「failed_requires_review ⇒ 障害ラッチ（STATE/paper-check-failed.json）あり」が誤りだった。ラッチは controller の fault() が「手作業の照合が必要な故障」のときだけ書く柵であり、監視中に worker のランタイムエラーで止まって clean に終了したラン（実例：同日の 24h ラン。診断は clean_stopped・整合性チェック通過・ライフサイクル領収書 True）は failed_requires_review でもラッチが付かないのが正しい状態。broker の配置拒否もラッチが存在するときだけ（PAPER_CHECK_RECONCILIATION_REQUIRED）で、ラッチが無ければ配置許可（permit）は不要。
 
 修正：failed＋ラッチなしを整合として扱い `{release_cutoff: タイマー次第, approve_deploy: false}` を返す。中止条件は live（in_progress／finishing）と「ラッチあり＋failed でない」の2つに絞り、診断が読めない場合の中止は維持。計画は順序付けだけを行い、controller／broker がサーバ側で再検証する従来の規律は不変。ホスト配布ファイルに変更は無い。
+
+## 2026-11-09 訂正：approve_deploy は failed の前任全般に必要（上の記録の一部を訂正）
+
+上の記録のうち「ラッチが無ければ配置許可（permit）は不要」とし、approve_deploy を `failed and fault_marker` に絞った部分は誤りだった。PR #135 マージ後に再 dispatch した配置サイクル（run 42530955606）で approve-deploy ステップが skip され、broker が permit 不足で配置を拒否したことで判明した。
+
+正しい意味（broker.py の check_paper_session／controller.py の approve_deploy で確認）：セッション marker（paper-check.json）が in_progress のまま前任ランが failed_requires_review のとき、配置には deploy permit（paper-deploy-<sha>.json。run.json／stop.json／承認ファイルの digest を束縛）が必須で、その permit を発行するのが controller の approve_deploy。approve_deploy の要件は record が failed_requires_review・stop が clean_stopped・**requires_review でないこと**（requires_review＝ラッチまたは fault-*.json が存在）・marker が in_progress であり、ラッチ／fault がある場合は approve_deploy 自体が拒否する（そのケースは reconcile 経路の担当）。つまり approve_deploy が要るのは「failed の前任」全般であり、ラッチのない clean な失敗こそ本命。なおラッチが存在すると broker は permit があっても PAPER_CHECK_RECONCILIATION_REQUIRED で拒否する。
+
+訂正：planner の approve_deploy を `(state == "failed_requires_review")` に戻す（ラッチの有無によらない）。failed＋ラッチなしは整合という PR #135 の修正と、中止条件（live／ラッチあり＋failed でない／診断が読めない）は維持する。planner は順序付けのみで、ラッチ／fault のあるケースはサーバ側（approve_deploy・broker）が拒否する。ホスト配布ファイルに変更は無い。
