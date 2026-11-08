@@ -131,7 +131,7 @@ describe("strategy tab segments", () => {
       expect(html).not.toContain('aria-label="PAPER運用停止"');
       // The release section stays: heading once, with its button.
       expect(operations.match(/停止状態の解除/g)).toHaveLength(1);
-      expect(operations).toContain("停止解除（再開は手動）");
+      expect(operations).toContain("緊急停止を解除（再開は手動）");
       // Neither segment panel contains the release section.
       expect(rules).not.toContain("停止状態の解除");
       expect(settings).not.toContain("停止状態の解除");

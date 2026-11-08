@@ -363,10 +363,13 @@ function App() {
   // step — so it does not also raise the global error banner; other
   // commands (stop, emergency, release) keep the banner, having no
   // local surface of their own.
-  async function control(command: string): Promise<string | null> {
+  async function control(
+    command: string,
+    extra?: Record<string, unknown>,
+  ): Promise<string | null> {
     try {
       serialRef.current++;
-      const runtime = await api("control", { command });
+      const runtime = await api("control", { command, ...extra });
       if (typeof runtime?.running === "boolean")
         setData((previous) => (previous ? { ...previous, runtime } : previous));
       await refresh();
