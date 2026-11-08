@@ -474,9 +474,16 @@ it("retains exact bid/ask and threshold from a rejected WAL book without allowin
   );
   db.set("runtime", { ...db.runtime(), running: true });
   await engine.tick();
+  // A rejected book never allows orders; the wide spread now pauses
+  // the bot into a recovery episode instead of latching an error.
   expect(db.runtime()).toMatchObject({
     running: false,
-    error: "SPREAD_TOO_WIDE",
+    error: null,
+  });
+  expect(engine.monitor.safety()).toMatchObject({
+    connectivity: "DEGRADED",
+    resumePending: true,
+    episodeTally: { "MarketData/SPREAD_TOO_WIDE": 1 },
   });
   expect(router.getQuote).not.toHaveBeenCalled();
   expect(db.history("paper_trades")).toHaveLength(0);

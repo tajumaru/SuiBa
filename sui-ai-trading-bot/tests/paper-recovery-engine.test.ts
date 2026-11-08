@@ -584,8 +584,8 @@ function fixture(database?: BotDatabase, deploymentBlocked?: () => boolean) {
     stale: (v = true) => {
       stale = v;
     },
-    staleBook: () => {
-      staleBook = true;
+    staleBook: (v = true) => {
+      staleBook = v;
     },
   };
 }
@@ -652,27 +652,42 @@ it.each(["BODY", "DNS", "CONNECT", "TLS", "gRPC"])(
     expect(t.db.runtime().running).toBe(true);
   },
 );
-it.each(["candles", "book", "ledger"])(
+it.each(["candles", "ledger"])(
   "hard-stops on invalid %s after transport recovery",
   async (kind) => {
     const t = fixture();
     t.fault();
     if (kind === "candles") t.stale();
-    if (kind === "book") t.staleBook();
     if (kind === "ledger")
       t.db.set("portfolio", { ...t.db.portfolio(), usdc: -1 });
     await t.tick(60000);
     expect(t.db.runtime().error).toBe(
-      kind === "candles"
-        ? "STALE_CANDLES"
-        : kind === "book"
-          ? "STALE_ORDERBOOK"
-          : "PAPER_RECONCILIATION_FAILED",
+      kind === "candles" ? "STALE_CANDLES" : "PAPER_RECONCILIATION_FAILED",
     );
     expect(t.engine.monitor.safety().resumePending).toBe(false);
     expect(t.db.history("paper_trades")).toHaveLength(0);
   },
 );
+it("continues the recovery episode on an invalid book after a transport failure", async () => {
+  const t = fixture();
+  t.fault();
+  t.staleBook();
+  await t.tick(60000);
+  // The recovery proof's book check throws STALE_ORDERBOOK: that is
+  // the open episode continuing, not a new hard stop.
+  expect(t.db.runtime()).toMatchObject({ running: false, error: null });
+  expect(t.engine.monitor.safety()).toMatchObject({
+    resumePending: true,
+    episodeTally: { "MarketData/STALE_ORDERBOOK": 1 },
+  });
+  expect(t.db.history("paper_trades")).toHaveLength(0);
+  // Once the book is fresh again, the usual proofs resume the bot.
+  t.staleBook(false);
+  await t.tick(30000);
+  await t.tick(60000);
+  expect(t.db.runtime().running).toBe(true);
+  expect(t.engine.monitor.safety().connectivity).toBe("HEALTHY");
+});
 it("pauses instead of hard-stopping when a running tick hits stale candles", async () => {
   const t = fixture();
   await t.tick();
@@ -912,7 +927,13 @@ it("rechecks the book immediately before execution even after successful quote v
   });
   await t.tick();
   expect(validations).toBe(3);
-  expect(t.db.runtime().error).toBe("STALE_ORDERBOOK");
+  // The recheck still refuses the fill; the stale book now pauses
+  // the bot into a recovery episode instead of latching an error.
+  expect(t.db.runtime()).toMatchObject({ running: false, error: null });
+  expect(t.engine.monitor.safety()).toMatchObject({
+    resumePending: true,
+    episodeTally: { "MarketData/STALE_ORDERBOOK": 1 },
+  });
   expect(t.db.history("paper_trades")).toHaveLength(0);
 });
 

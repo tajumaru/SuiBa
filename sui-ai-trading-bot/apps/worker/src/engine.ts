@@ -922,7 +922,8 @@ export class BotEngine {
       }
       if (
         !this.monitor.transientCycleFailure(code) &&
-        !this.monitor.staleThrowToStall(code)
+        !this.monitor.staleThrowToStall(code) &&
+        !this.monitor.bookGuardThrowToEpisode(code)
       ) {
         this.monitor.failCycle(code);
         this.db.set("runtime", {

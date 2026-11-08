@@ -440,6 +440,112 @@ it("ignores other codes and fresh markets in the stale-throw bridge", () => {
   expect(db.runtime()).toMatchObject({ running: true, error: null });
   expect(monitor.safety().resumePending).toBe(false);
 });
+it.each([
+  "SPREAD_TOO_WIDE",
+  "THIN_ORDERBOOK",
+  "STALE_ORDERBOOK",
+  "INVALID_ORDERBOOK",
+] as const)("pauses instead of stopping on a single %s book guard", (guard) => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  expect(monitor.bookGuardThrowToEpisode(guard, start)).toBe(true);
+  expect(db.runtime()).toMatchObject({ running: false, error: null });
+  expect(monitor.safety()).toMatchObject({
+    connectivity: "DEGRADED",
+    resumePending: true,
+    failures: 1,
+    episodeTally: { [`MarketData/${guard}`]: 1 },
+  });
+  expect(monitor.ordersAllowed()).toBe(false);
+});
+it("counts a book guard throw during the pause as the same episode", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  expect(monitor.bookGuardThrowToEpisode("SPREAD_TOO_WIDE", start)).toBe(
+    true,
+  );
+  // A recovery tick meeting the same bad book continues the episode
+  // (counting is throttled to one count per 30 s), never a hard stop.
+  expect(
+    monitor.bookGuardThrowToEpisode("SPREAD_TOO_WIDE", start + 1000),
+  ).toBe(true);
+  expect(monitor.safety().episodeTally).toEqual({
+    "MarketData/SPREAD_TOO_WIDE": 1,
+  });
+  expect(
+    monitor.bookGuardThrowToEpisode("THIN_ORDERBOOK", start + 31000),
+  ).toBe(true);
+  expect(db.runtime()).toMatchObject({ running: false, error: null });
+  expect(monitor.safety()).toMatchObject({
+    resumePending: true,
+    failures: 2,
+    episodeTally: {
+      "MarketData/SPREAD_TOO_WIDE": 1,
+      "MarketData/THIN_ORDERBOOK": 1,
+    },
+  });
+});
+it("exhausts a persistent book-guard episode at the standard deadline", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  expect(monitor.bookGuardThrowToEpisode("SPREAD_TOO_WIDE", start)).toBe(
+    true,
+  );
+  expect(
+    monitor.bookGuardThrowToEpisode("SPREAD_TOO_WIDE", start + 90000),
+  ).toBe(true);
+  expect(db.runtime().error).toBeNull();
+  expect(
+    monitor.bookGuardThrowToEpisode("SPREAD_TOO_WIDE", start + 181000),
+  ).toBe(true);
+  expect(db.runtime().error).toBe("PAPER_RECOVERY_EXHAUSTED");
+  expect(monitor.safety().resumePending).toBe(false);
+});
+it("resumes from a book-guard pause once the book is healthy again", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  expect(monitor.bookGuardThrowToEpisode("SPREAD_TOO_WIDE", start)).toBe(
+    true,
+  );
+  expect(db.runtime().running).toBe(false);
+  monitor.market(start + 1000, start + 1000);
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 2000),
+  ).toBe(false);
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 62000),
+  ).toBe(true);
+  expect(monitor.safety().connectivity).toBe("HEALTHY");
+  expect(db.runtime().running).toBe(true);
+});
+it("keeps identity failures and latched stops hard for book guards", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  for (const guard of [
+    "MARKET_PAIR_MISMATCH",
+    "MARKET_SOURCE_CHANGED",
+    "CANDLE_GAP",
+  ])
+    expect(monitor.bookGuardThrowToEpisode(guard, start)).toBe(false);
+  expect(db.runtime()).toMatchObject({ running: true, error: null });
+  monitor.stop("CONSECUTIVE_API_ERRORS", start);
+  expect(monitor.bookGuardThrowToEpisode("SPREAD_TOO_WIDE", start)).toBe(
+    false,
+  );
+  expect(db.runtime().error).toBe("CONSECUTIVE_API_ERRORS");
+  expect(monitor.safety().resumePending).toBe(false);
+});
+it("does not route a book guard while plainly stopped, with no resume pending", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  db.set("runtime", { ...db.runtime(), running: false });
+  expect(monitor.bookGuardThrowToEpisode("SPREAD_TOO_WIDE", start)).toBe(
+    false,
+  );
+  expect(db.runtime()).toMatchObject({ running: false, error: null });
+});
 it("never softens an existing hard stop into a stall pause", () => {
   const { db, monitor } = setup(),
     start = Date.now();

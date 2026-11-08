@@ -149,6 +149,42 @@ export class OperationMonitor {
     this.stallFailure(details, now);
     return true;
   }
+  /**
+   * A successfully read order book can fail a trading gate
+   * (spread too wide, too thin, stale, malformed). That is a
+   * property of the current book, not a transport failure, so
+   * no ApiFailure is recorded and transientCycleFailure never
+   * sees it; until now the throw fell through to failCycle and
+   * hard-stopped on a single reading (the 2026-11-09 24h
+   * validation run died on one wide spread in the thin
+   * early-morning book). Route the throw into the same recovery
+   * episode as a stall: the gate itself already prevents any
+   * trade on a bad book, so pausing loses nothing, and a book
+   * that stays bad escalates via the standard episode limits.
+   * A bot paused inside an open recovery episode is routed too:
+   * its ticks are the recovery proofs, so a bad book there is
+   * the same episode continuing, not a new failure. A plain stop
+   * without a pending resume, a latched error, and an emergency
+   * are never softened. Pair mismatch and source changes are
+   * identity problems, not transients, and keep hard-stopping,
+   * as do the candle guards.
+   */
+  bookGuardThrowToEpisode(code: string, now = Date.now()): boolean {
+    if (
+      ![
+        "SPREAD_TOO_WIDE",
+        "THIN_ORDERBOOK",
+        "STALE_ORDERBOOK",
+        "INVALID_ORDERBOOK",
+      ].includes(code)
+    )
+      return false;
+    const r = this.db.runtime();
+    if (r.error || r.emergency) return false;
+    if (!r.running && !this.safety().resumePending) return false;
+    this.episodeFailure(code, `MarketData/${code}`, now);
+    return true;
+  }
   checkRecoveryDeadline(now = Date.now()) {
     const s = this.safety();
     const limits = episodeLimits(s);
@@ -781,13 +817,35 @@ export class OperationMonitor {
    * is left alone.
    */
   stallFailure(details: MarketStallDetails, now = Date.now()) {
+    this.episodeFailure(
+      "MARKET_DATA_STALLED",
+      `MarketData/${details.reasonDetail}`,
+      now,
+      details,
+    );
+  }
+  /**
+   * The accounting shared by every transient market-data entrance
+   * (watchdog stall, stale-candle throw, order-book guard throw):
+   * count the failure into the open recovery episode (at most one
+   * count per 30 s), pause trading, and let checkRecoveryDeadline
+   * escalate a persistent episode to PAPER_RECOVERY_EXHAUSTED.
+   * An existing hard stop or emergency is never softened into a
+   * pause, and a manually stopped bot is left alone.
+   */
+  private episodeFailure(
+    eventCode: string,
+    tallyKey: string,
+    now: number,
+    details?: MarketStallDetails,
+  ) {
     const r = this.db.runtime(),
       s = this.safety();
     if (!this.cycleFailed)
-      this.event("ERROR", "MARKET_DATA_STALLED", now, false, details);
+      this.event("ERROR", eventCode, now, false, details);
     this.cycleFailed = true;
     if (r.emergency || r.error || (!r.running && !s.resumePending)) {
-      this.event("ANOMALY", "MARKET_DATA_STALLED", now, false, details);
+      this.event("ANOMALY", eventCode, now, false, details);
       return;
     }
     const entering = s.connectivity === "HEALTHY",
@@ -799,10 +857,10 @@ export class OperationMonitor {
       this.checkRecoveryDeadline(now);
       return;
     }
-    this.event("ANOMALY", "MARKET_DATA_STALLED", now, entering, details);
-    console.warn(JSON.stringify({ event: "MARKET_DATA_STALLED", ...details }));
-    const tally = { ...(s.episodeAt == null ? {} : s.episodeTally) },
-      tallyKey = `MarketData/${details.reasonDetail}`;
+    this.event("ANOMALY", eventCode, now, entering, details);
+    if (details)
+      console.warn(JSON.stringify({ event: eventCode, ...details }));
+    const tally = { ...(s.episodeAt == null ? {} : s.episodeTally) };
     tally[tallyKey] = (tally[tallyKey] ?? 0) + 1;
     this.saveSafety({
       connectivity: "DEGRADED",
