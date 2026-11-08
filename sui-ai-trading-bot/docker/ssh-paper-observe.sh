@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Runner-only read-only observation through the suiba-observe identity.
-# The host confines that identity to the status operation three times over:
-# the authorized_keys forced command, the sudoers rule, and the controller's
-# own caller scope check. No host writes or recovery commands are possible.
+# The host confines that identity three times over — the authorized_keys
+# forced command, the sudoers rule, and the controller's own caller scope
+# check — to read-only requests: this status operation, plus the fixed
+# public extract of the live production databases (daily review). No host
+# writes or recovery commands are possible.
 set +x
 set -Eeuo pipefail
 umask 077

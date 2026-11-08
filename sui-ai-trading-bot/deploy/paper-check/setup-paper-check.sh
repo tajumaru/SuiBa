@@ -20,7 +20,9 @@
 # It also installs the read-only monitoring identity: user suiba-observe,
 # whose only sudo command is the observe wrapper, whose authorized_keys
 # entry forces that wrapper, and which the controller itself confines to
-# the status operation. Its key is pinned below like every other file.
+# read-only requests (status, plus the fixed public extract of the live
+# production databases for the daily review). Its key is pinned below
+# like every other file.
 set -Eeuo pipefail
 umask 077
 
@@ -33,8 +35,8 @@ UNITS='suiba-paper-check.service suiba-prod.service suiba-prod-watchdog.service 
 
 # name|sha256|target|mode
 FILES=(
-  'export_snapshot.py|fb33a346e71d107ffc3c95a1fc7cf2e7d88256b52fd858dcb393313ce2669759|/usr/local/libexec/suiba-paper-export.py|755'
-  'controller.py|aecc7293e8ec101c90c5c02b5c0f46dfd7b934a1129bd61e201ea62950108889|/usr/local/libexec/suiba-paper-check.py|755'
+  'export_snapshot.py|2634f3d8f9d168d0e84d31e6fdb19eb140b1ddc001d41314e6303812543d6a5d|/usr/local/libexec/suiba-paper-export.py|755'
+  'controller.py|1f9a4efe5e4af05430433f8e7c1ec08de7ccf7f47d368b03f512ad4c62ee0457|/usr/local/libexec/suiba-paper-check.py|755'
   'suiba-paper-check|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-check|755'
   'suiba-paper-check.sudoers|54d64fdadf0b38749008c112fc12761e03f633538e526ebe6f37eb4b1ec38607|/etc/sudoers.d/suiba-paper-check|440'
   'suiba-paper-observe|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-observe|755'
@@ -188,7 +190,7 @@ if su -s /bin/sh suiba-observe -c 'sudo -n /usr/local/sbin/suiba-paper-observe' 
     < "$tmp/observe-denied.json" > /dev/null 2>&1; then
   fail 'suiba-observe で status 以外の操作が通ってしまいました'
 fi
-echo 'observe scope OK: status 以外は拒否'
+echo 'observe scope OK: 許可した読み取り操作以外は拒否'
 
 echo
 echo '完了しました。検証ランは開始ワークフロー（START-PAPER）で 30m / 2h / 6h / 24h を選べます。'
