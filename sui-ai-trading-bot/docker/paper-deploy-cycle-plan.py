@@ -7,13 +7,23 @@ needs:
 
 - release_cutoff: a cutoff timer from a finished run is still armed
   (active or elapsed) and would block quiescent-gated operations.
-- approve_deploy: the predecessor run latched failed_requires_review,
-  so the broker will refuse the deploy without a deploy permit.
+- approve_deploy: the predecessor run latched failed_requires_review
+  AND set the fault marker (STATE/paper-check-failed.json). The broker
+  refuses a deploy while that latch exists without a deploy permit, so
+  the permit has to be materialized first.
 
-Anything unreadable or inconsistent aborts the plan (exit 1 with the
-reason on stderr): a one-approval deploy must never guess its way past
-host state. The controller re-verifies every operation server-side;
-this plan only sequences them.
+The fault marker is a fence for failures that need manual
+reconciliation (controller.fault writes it together with a per-run
+fault-*.json). A run that stops on a worker runtime error during
+monitoring and finalizes cleanly also ends as failed_requires_review,
+but carries no latch — that is a correct, consistent state, not a
+contradiction: with no latch the broker does not refuse the deploy and
+no permit is needed (approve_deploy stays false).
+
+A fault marker without a failed state remains inconsistent and aborts,
+as does anything unreadable: a one-approval deploy must never guess its
+way past host state. The controller re-verifies every operation
+server-side; this plan only sequences them.
 
 Usage: paper-deploy-cycle-plan.py <diagnostics.txt>
 Prints {"release_cutoff": bool, "approve_deploy": bool} as JSON.
@@ -44,10 +54,12 @@ def plan(text):
     if fault_marker and not failed:
         raise ValueError("STATE_INCONSISTENT: fault marker is set but the "
                          f"run state is {state}; inspect before deploying")
-    if failed and not fault_marker:
-        raise ValueError("STATE_INCONSISTENT: run is failed_requires_review "
-                         "but no fault marker is set; inspect before deploying")
-    return {"release_cutoff": timer_armed, "approve_deploy": failed}
+    # approve_deploy is needed only when the broker would refuse the
+    # deploy, i.e. only while the reconciliation latch exists. A failed
+    # run without the latch finalized cleanly (e.g. a worker runtime
+    # error during monitoring) and deploys without a permit.
+    return {"release_cutoff": timer_armed,
+            "approve_deploy": failed and fault_marker}
 
 
 def main(argv):

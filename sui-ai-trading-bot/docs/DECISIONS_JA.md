@@ -116,3 +116,11 @@ export の失敗はサイクルを落とさない（continue-on-error、artifact
 オーナーの選択で、板ガード4コードの throw を STALE_CANDLES の先例と同じくエピソード経路へ寄せた（worker の `bookGuardThrowToEpisode` → stallFailure と共有する会計 `episodeFailure`）。一時停止（DEGRADED・resumePending）し、既存の回復証明で自動再開する。tally キーは `MarketData/<コード>`、制限は標準（180秒／9回）で、継続すれば checkRecoveryDeadline が PAPER_RECOVERY_EXHAUSTED へ格上げする。一時停止中の tick で同じ板ガードが throw しても同エピソードの継続として数える（30秒のカウント絞りも共有）。
 
 変えていないもの：MARKET_PAIR_MISMATCH／MARKET_SOURCE_CHANGED は従来どおり即停止（同一性・設定の問題）。足ガード系（INSUFFICIENT_CANDLES／INVALID_CANDLE／CANDLE_GAP／PRICE_OUTLIER）は範囲外、STALE_CANDLES は既存のまま。HTTP 429／500 の即時ハード停止、スプレッド閾値そのもの、取引ロジック・売買条件は変更しない。一時停止中は ordersAllowed のゲート（HEALTHY＋新鮮な市場データ必須）により売買は起きない。
+
+## 2026-11-09 配置サイクルの planner 前提を修正（failed＋ラッチなしは整合）
+
+配置サイクル（suiba-paper-deploy-cycle.yml、PR #125）の初回実地使用で、計画ステップが `STATE_INCONSISTENT: run is failed_requires_review but no fault marker is set` と出て安全に中止した。配置そのものは始まっておらず、ホストは無事だった。
+
+planner（docker/paper-deploy-cycle-plan.py）の前提「failed_requires_review ⇒ 障害ラッチ（STATE/paper-check-failed.json）あり」が誤りだった。ラッチは controller の fault() が「手作業の照合が必要な故障」のときだけ書く柵であり、監視中に worker のランタイムエラーで止まって clean に終了したラン（実例：同日の 24h ラン。診断は clean_stopped・整合性チェック通過・ライフサイクル領収書 True）は failed_requires_review でもラッチが付かないのが正しい状態。broker の配置拒否もラッチが存在するときだけ（PAPER_CHECK_RECONCILIATION_REQUIRED）で、ラッチが無ければ配置許可（permit）は不要。
+
+修正：failed＋ラッチなしを整合として扱い `{release_cutoff: タイマー次第, approve_deploy: false}` を返す。中止条件は live（in_progress／finishing）と「ラッチあり＋failed でない」の2つに絞り、診断が読めない場合の中止は維持。計画は順序付けだけを行い、controller／broker がサーバ側で再検証する従来の規律は不変。ホスト配布ファイルに変更は無い。
