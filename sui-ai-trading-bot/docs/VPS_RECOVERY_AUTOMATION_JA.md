@@ -395,3 +395,7 @@ GET /api/deploymentにresetScope（pendingを含む）を追加する。再試�
 PR #112 反映後の 2h ラン（09:06開始）は controller の一時停止許容が効いて前進したが、最終取得 09:45:41 の stale 一時停止ののち worker が STALE_CANDLES でハードストップした。経路：回復証明のために回るティックの取得が STALE_CANDLES を投げると、staleThrowToStall が「稼働中のみ」を条件にしていたため合流できず failCycle に落ちた。回復するにはティックを回す必要があるのに、回すと止まる矛盾で、candle-stale の一時停止は実質回復不能だった（PR #107 で「回復中の stale は failed proof」として意図的に残した部分だが、当時は controller が先に止めるため到達不能だった）。
 
 修正（オーナーが案Aを選択）：staleThrowToStall の合流条件を「稼働中」から「稼働中、または再開待ちのエピソードが開いている（resumePending）」に広げた。エラー／緊急がラッチされている場合と、再開待ちでない素の停止は従来どおり合流しない。合流先の stallFailure が30秒に1回の計数と checkRecoveryDeadline（stale 30分）で期限を管理するので、一時停止が無期限に延びることはない。売買は connectivity ゲートで一時停止中ずっと不可能なまま。
+
+## 障害バンドル：診断にエピソード集計を出す（2026-11-08）
+
+障害調査のボトルネックは推論ではなく証拠だった（2026-11-08 の3件とも、診断に無い項目を export やログから掘るのに時間を要した）。worker は停止・回復のたびに episode summary（開始・経過・失敗数・理由別 tally）をイベントへ保存しているので、診断の証拠抽出（DIAGNOSTIC_QUERY）が形を検証して運び、診断表示が「Latest episode: duration=…, failures=…, tally=…」の1行を出すようにした。抽出側（sanitizeEpisode）と controller 側（valid_episode）で同じ厳格な形を二重に検証し、想定外は証拠ごと無効化する従来の規律を維持する。ランタイムのトークン消費は無く、調査時の読み取り量を減らすための変更。反映は controller 配置（setup 再実行）のみで、worker イメージは不変。

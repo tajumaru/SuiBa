@@ -214,6 +214,22 @@ try {
   try {
     db.exec("PRAGMA trusted_schema=OFF");
     const shape = /^[A-Z][A-Z0-9_]{0,63}$/;
+    const tallyKey = /^[A-Za-z][A-Za-z0-9]{0,31}\/[A-Z][A-Z0-9_]{0,63}$/;
+    const sanitizeEpisode = (ep) => {
+      if (!ep || typeof ep !== "object" || Array.isArray(ep)) return null;
+      const num = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
+      const s = num(ep.startedAt), m = num(ep.durationMs), f = num(ep.failures);
+      if (s === null || m === null || f === null || !Number.isInteger(f)) return null;
+      if (!ep.tally || typeof ep.tally !== "object" || Array.isArray(ep.tally)) return null;
+      const tally = {};
+      for (const [key, count] of Object.entries(ep.tally)) {
+        if (!tallyKey.test(key) || !Number.isInteger(count) || count < 1 || count > 100000)
+          return null;
+        tally[key] = count;
+        if (Object.keys(tally).length > 8) return null;
+      }
+      return {s, m, f, y: tally};
+    };
     const events = [];
     for (const row of db.prepare(
         "SELECT timestamp, json FROM operation_events ORDER BY timestamp DESC LIMIT 10").all()) {
@@ -222,7 +238,9 @@ try {
         if (typeof row.timestamp === "number" && shape.test(value.kind) && shape.test(value.code)) {
           const detail = value.details && typeof value.details.reasonDetail === "string" &&
             shape.test(value.details.reasonDetail) ? value.details.reasonDetail : null;
-          events.push({t: row.timestamp, k: value.kind, c: value.code, d: detail});
+          const episode = sanitizeEpisode(value.episode);
+          events.push({t: row.timestamp, k: value.kind, c: value.code, d: detail,
+            ...(episode ? {e: episode} : {})});
         }
       } catch {}
     }
@@ -1010,10 +1028,12 @@ class Controller:
             if evidence is not None:
                 require(type(evidence) is dict and set(evidence) == {'events', 'timing'})
                 require(type(evidence['events']) is list and len(evidence['events']) <= 10 and all(
-                    type(e) is dict and set(e) == {'t', 'k', 'c', 'd'} and type(e['t']) in (int, float) and
+                    type(e) is dict and set(e) in ({'t', 'k', 'c', 'd'}, {'t', 'k', 'c', 'd', 'e'})
+                    and type(e['t']) in (int, float) and
                     re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', e['k']) and
                     re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', e['c']) and
-                    (e['d'] is None or re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', e['d']))
+                    (e['d'] is None or re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', e['d'])) and
+                    (set(e) == {'t', 'k', 'c', 'd'} or valid_episode(e['e']))
                     for e in evidence['events']))
                 timing = evidence['timing']
                 require(timing is None or (type(timing) is dict and set(timing) == {'dur', 'att', 'suc'} and
@@ -2026,6 +2046,24 @@ def request_caller(environ, getpwnam):
     account = getpwnam(user)
     require(environ.get('SUDO_UID') == str(account.pw_uid))
     return 'observe' if user == 'suiba-observe' else 'deploy'
+
+
+def valid_episode(value):
+    """Strict shape for the sanitized episode summary the diagnostic query
+    extracts from a closing operation event ({s, m, f, y} = startedAt,
+    durationMs, failures, tally). Mirrors sanitizeEpisode in
+    DIAGNOSTIC_QUERY; any surprise makes the audit evidence invalid."""
+    if type(value) is not dict or set(value) != {'s', 'm', 'f', 'y'}:
+        return False
+    if any(type(value[key]) not in (int, float) or value[key] < 0 for key in ('s', 'm', 'f')):
+        return False
+    tally = value['y']
+    if type(tally) is not dict or len(tally) > 8:
+        return False
+    return all(type(key) is str
+               and re.fullmatch(r'[A-Za-z][A-Za-z0-9]{0,31}/[A-Z][A-Z0-9_]{0,63}', key)
+               and type(count) is int and 1 <= count <= 100000
+               for key, count in tally.items())
 
 
 def require_caller_scope(caller, request):

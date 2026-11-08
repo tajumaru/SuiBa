@@ -34,7 +34,7 @@ UNITS='suiba-paper-check.service suiba-prod.service suiba-prod-watchdog.service 
 # name|sha256|target|mode
 FILES=(
   'export_snapshot.py|fb33a346e71d107ffc3c95a1fc7cf2e7d88256b52fd858dcb393313ce2669759|/usr/local/libexec/suiba-paper-export.py|755'
-  'controller.py|0f79b184d63ef494b661478ffc7b503386f85604fd6f6ebaf00b13af95ed99d1|/usr/local/libexec/suiba-paper-check.py|755'
+  'controller.py|07634da176761abf8877c110aa4f996a6cce89728e4d26b723e9d20f0341b438|/usr/local/libexec/suiba-paper-check.py|755'
   'suiba-paper-check|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-check|755'
   'suiba-paper-check.sudoers|54d64fdadf0b38749008c112fc12761e03f633538e526ebe6f37eb4b1ec38607|/etc/sudoers.d/suiba-paper-check|440'
   'suiba-paper-observe|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-observe|755'
