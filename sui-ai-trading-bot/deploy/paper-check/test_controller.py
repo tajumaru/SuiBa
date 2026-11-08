@@ -1720,3 +1720,103 @@ class RequestCallerScopeTests(unittest.TestCase):
     def test_deploy_scope_unrestricted_by_caller_check(self):
         c.require_caller_scope('deploy', {'operation': 'start', 'duration': '6h'})
         c.require_caller_scope('deploy', {'operation': 'status'})
+
+
+class DeclaredPauseTests(unittest.TestCase):
+    def deployment(self, running, connectivity, runtime_clear=True, emergency_clear=True):
+        return {'running': running,
+                'readiness': {'connectivity': connectivity, 'runtimeClear': runtime_clear,
+                              'emergencyClear': emergency_clear}}
+
+    def test_only_the_declared_recovery_pause_qualifies(self):
+        self.assertTrue(c.declared_pause(self.deployment(False, False)))
+        self.assertFalse(c.declared_pause(self.deployment(True, False)))
+        self.assertFalse(c.declared_pause(self.deployment(False, True)))
+        self.assertFalse(c.declared_pause(self.deployment(False, False, runtime_clear=False)))
+        self.assertFalse(c.declared_pause(self.deployment(False, False, emergency_clear=False)))
+        self.assertFalse(c.declared_pause({'running': False}))
+        self.assertFalse(c.declared_pause({'running': False, 'readiness': 'DEGRADED'}))
+        self.assertFalse(c.declared_pause({'running': False, 'readiness': {'connectivity': False}}))
+
+
+class MonitorPauseTests(unittest.TestCase):
+    def build(self, tmp, deployment, market_age_ms=0):
+        from types import SimpleNamespace
+        root = Path(tmp)
+        broker_state = root/'state'; broker_state.mkdir(exist_ok=True)
+        backups = root/'backups'; backups.mkdir(exist_ok=True)
+        b = SimpleNamespace(STATE=broker_state, BACKUPS=backups,
+                            decode=FakeBroker.decode, read_trusted=FakeBroker.read_trusted,
+                            atomic=FakeBroker.atomic, directory=FakeBroker.directory,
+                            Docker=lambda state: SimpleNamespace(
+                                call=lambda args, **kw: json.dumps({'MemPerc': '10%'})))
+        ctl = c.Controller(b, broker_state)
+        ctl.system = lambda *args: None
+        ctl.inspect = lambda: {'State': {'Running': True, 'OOMKilled': False,
+                                         'Health': {'Status': 'healthy'}}, 'RestartCount': 0}
+        ctl.note_market = lambda market: None
+        ctl.expected_source = 'DeepBook'
+        now_ms = int(time.time()*1000)
+        def api(method, path, body=None):
+            if path == '/api/deployment': return deployment
+            if path == '/api/pairs': return {'selected': 'SUI_USDC'}
+            if path == '/api/dashboard/summary':
+                return {'summary': {'marketData': {'source': 'DeepBook',
+                                                   'lastSuccessAt': now_ms-market_age_ms}}}
+            raise AssertionError(path)
+        ctl.api = api
+        return ctl
+
+    def deployment(self, running, connectivity, runtime_clear=True, emergency_clear=True):
+        return {'mode': 'PAPER', 'running': running, 'databaseHealthy': True, 'ledgerOk': True,
+                'readiness': {'connectivity': connectivity, 'runtimeClear': runtime_clear,
+                              'emergencyClear': emergency_clear}}
+
+    def test_running_with_fresh_market_monitors_normally(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl = self.build(tmp, self.deployment(True, True))
+            ctl.monitor_once('timer')
+            self.assertIsNone(ctl.pause_since)
+
+    def test_running_with_stale_market_still_fails(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl = self.build(tmp, self.deployment(True, True), market_age_ms=120000)
+            with self.assertRaises(Exception): ctl.monitor_once('timer')
+
+    def test_declared_pause_is_tolerated_and_tracked(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl = self.build(tmp, self.deployment(False, False), market_age_ms=3600000)
+            ctl.monitor_once('timer')
+            self.assertIsNotNone(ctl.pause_since)
+
+    def test_pause_beyond_the_outer_bound_fails(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl = self.build(tmp, self.deployment(False, False), market_age_ms=3600000)
+            ctl.pause_since = time.time()*1000 - c.PAUSE_OUTER_LIMIT_MS - 1000
+            with self.assertRaises(Exception): ctl.monitor_once('timer')
+
+    def test_stops_that_are_not_declared_pauses_still_fail(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            errored = self.build(tmp, self.deployment(False, False, runtime_clear=False))
+            with self.assertRaises(Exception): errored.monitor_once('timer')
+            plain = self.build(tmp, self.deployment(False, True))
+            with self.assertRaises(Exception): plain.monitor_once('timer')
+            emergency = self.build(tmp, self.deployment(False, False, emergency_clear=False))
+            with self.assertRaises(Exception): emergency.monitor_once('timer')
+
+    def test_resume_clears_the_pause_clock(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl = self.build(tmp, self.deployment(False, False), market_age_ms=3600000)
+            ctl.monitor_once('timer')
+            self.assertIsNotNone(ctl.pause_since)
+            paused_api = ctl.api
+            running = self.deployment(True, True)
+            now_ms = int(time.time()*1000)
+            def api(method, path, body=None):
+                if path == '/api/deployment': return running
+                if path == '/api/dashboard/summary':
+                    return {'summary': {'marketData': {'source': 'DeepBook', 'lastSuccessAt': now_ms}}}
+                return paused_api(method, path, body)
+            ctl.api = api
+            ctl.monitor_once('timer')
+            self.assertIsNone(ctl.pause_since)

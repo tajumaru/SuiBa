@@ -369,3 +369,11 @@ GET /api/deploymentにresetScope（pendingを含む）を追加する。再試�
 6h は3回連続で CANDLE_STALE 系の停止になり、失敗までの時間も短い（3回目は約30分）。6h の前に 2h の段を追加し、卒業ラダーを 30m → 2h → 6h → 24h にする。2h は「30分を超えて回り続ける」ことの最初の証拠になり、失敗しても失う時間が短い。
 
 実装は duration の固定集合への追加のみ：controller の DURATIONS（7200秒）と cutoff タイマー unit（suiba-paper-check-cutoff-2h.timer、OnActiveSec=2h）、setup の配布対象（16ファイル）と TIMERS/UNITS、開始・回復・状態表示・export・モニターの duration 許可集合、CYCLE／START ワークフローの選択肢。検証セッションのリース上限（24h）や安全条件は不変。反映は setup 再実行（controller と unit の配置）が必要で、worker イメージの再配置は不要。
+
+## 監視役が回復一時停止を許容する（2026-11-08、根本原因の確定と修正）
+
+6h 再々ラン（07:22開始）と 2h ラン（08:09開始）がどちらも CANDLE_STALE の一時停止から数分以内に failed_requires_review になった。export のイベント記録が決定的だった：一時停止 07:51:04 → MANUAL_STOP 07:51:07（3秒）。MANUAL_STOP は controller が送る停止コマンドであり、worker の回復期限（30分）ではない。
+
+根本原因：controller の監視（monitor_once）が「/api/deployment の running が true」「市場の最終成功が90秒以内」を5秒ごとに要求していた。worker が回復エピソードで一時停止すると running=false になり、最初の監視ポーリングで例外→ラン失敗として確定していた。つまり PR #106/#107 の回復機構は、監督下のランでは構造的に発動できなかった（16:10 の停止も同型だった可能性が高い）。
+
+修正（オーナーが案Aを選択）：monitor_once が「宣言された回復一時停止」を区別して許容する。判定は既存の /api/deployment の readiness を使う：running=false でも、connectivity が非HEALTHY（エピソード進行中）・runtimeClear（エラー未ラッチ）・emergencyClear が全て成り立てば一時停止として扱い、鮮度90秒ルールを止めて監視を続ける（コンテナとホストの確認は継続）。worker 側の期限（stale 30分）を過ぎれば worker がエラーをラッチして即失敗に戻る。保険として controller 側にも外側の上限40分を置く（PAUSE_OUTER_LIMIT_MS）。エラー停止・緊急停止・素の停止は従来どおり即失敗。worker の変更はなく、反映は setup 再実行（controller 配置）のみ。

@@ -259,6 +259,7 @@ class Controller:
 
     def __init__(self, broker, state=STATE):
         self.b = broker
+        self.pause_since = None
         self.state = Path(state)
         with broker.directory(self.state):
             pass
@@ -1605,11 +1606,26 @@ class Controller:
         else:
             self.system('is-active', '--quiet', timer)
         d = self.api('GET', '/api/deployment')
-        require(d['mode'] == 'PAPER' and d['running'] and d['databaseHealthy'] and d['ledgerOk'])
+        require(d['mode'] == 'PAPER' and d['databaseHealthy'] and d['ledgerOk'])
+        paused = declared_pause(d)
+        if paused:
+            # A declared recovery pause (market data stale, worker waiting
+            # for its own recovery proofs) is not a stopped run: keep
+            # monitoring the container and host, suspend the freshness
+            # window, and let the worker's episode deadline govern. Only
+            # the outer bound above ends a pause from this side.
+            if self.pause_since is None:
+                self.pause_since = time.time()*1000
+            require(time.time()*1000 - self.pause_since <= PAUSE_OUTER_LIMIT_MS)
+        else:
+            self.pause_since = None
+            require(d['running'])
         require(self.api('GET', '/api/pairs')['selected'] == 'SUI_USDC')
         market = self.api('GET', '/api/dashboard/summary')['summary']['marketData']
         self.note_market(market)
-        require(market['source'] == self.expected_source and 0 <= time.time()*1000-market['lastSuccessAt'] <= 90000)
+        require(market['source'] == self.expected_source)
+        if not paused:
+            require(0 <= time.time()*1000-market['lastSuccessAt'] <= 90000)
         i = self.inspect()
         require(i['State']['Running'] and not i['State']['OOMKilled'] and i['RestartCount'] == 0)
         require(i['State'].get('Health', {}).get('Status') == 'healthy')
@@ -1623,6 +1639,7 @@ class Controller:
         require(space.f_bavail*space.f_frsize >= 20*1024**3)
         # Evidence contains no headers/token/API bodies.
         self.b.atomic(self.state/'progress.json', {'at': int(time.time()), 'status': 'monitoring', 'pair': 'SUI_USDC',
+                                                 'paused': paused,
                                                  'memory_percent': memory_percent, 'host_available_kib': available_kib,
                                                  'market_last_success': market['lastSuccessAt']})
 
@@ -2015,6 +2032,30 @@ def require_caller_scope(caller, request):
     """The observe identity may only ever read paper-check status."""
     if caller == 'observe':
         require(request == {'operation': 'status'})
+
+
+# Outer bound for a declared recovery pause during monitoring. The worker's
+# own stale-episode deadline is 30 minutes and its resume proofs take about
+# two more; a worker that exhausts its deadline latches a runtime error,
+# which ends the pause classification below and fails the run at once. This
+# bound is only the backstop for a pause that somehow never resolves and
+# never errors (decided 2026-11-08 after two validation runs were finalized
+# by the first monitoring poll that saw running=false).
+PAUSE_OUTER_LIMIT_MS = 40 * 60 * 1000
+
+
+def declared_pause(deployment):
+    """True only for the worker's declared recovery pause: not running, but
+    connectivity is degraded (a recovery episode is open), no runtime error
+    is latched, and no emergency is active. A plain stop, a latched error,
+    and an emergency are not pauses and keep failing monitoring at once."""
+    readiness = deployment.get('readiness')
+    if type(readiness) is not dict:
+        return False
+    return (deployment.get('running') is False
+            and readiness.get('connectivity') is False
+            and readiness.get('runtimeClear') is True
+            and readiness.get('emergencyClear') is True)
 
 
 def main():
