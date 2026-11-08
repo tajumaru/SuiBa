@@ -71,7 +71,8 @@ class CombineTests(unittest.TestCase):
 class WorkflowTests(unittest.TestCase):
     def test_both_jobs_are_gated_and_notifications_never_receive_host_credentials(self):
         source = (HERE.parent.parent/'.github/workflows/suiba-paper-monitor.yml').read_text(encoding='utf-8')
-        self.assertIn("cron: '*/30 * * * *'", source)
+        self.assertIn("cron: '7,37 * * * *'", source)
+        self.assertIn("cron: '22,52 * * * *'", source)
         self.assertIn('workflow_dispatch:', source)
         self.assertIn('cancel-in-progress: false', source)
         self.assertIn('environment: sakura-vps-observe', source)
