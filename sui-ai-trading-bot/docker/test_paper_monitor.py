@@ -82,6 +82,9 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('issues: write', notify)
         self.assertNotIn('secrets.VPS_', notify)
         self.assertIn("process.env.OBSERVATION_OUTCOME === 'success'", check)
+        # The port must stay a variable: as a secret, "22" poisons job outputs.
+        self.assertIn('VPS_PORT: ${{ vars.SUIBA_OBSERVE_VPS_PORT }}', check)
+        self.assertNotIn('secrets.VPS_PORT', source)
         for block, name in ((check, 'check'), (notify, 'notify')):
             expression = re.search(r'    if: >-\n((?:      [^\n]+\n)+)', block).group(1)
             for enabled in ('true', 'false', ''):
