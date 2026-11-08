@@ -1805,11 +1805,14 @@ class RequestCallerScopeTests(unittest.TestCase):
             with self.assertRaises(Exception):
                 c.request_caller(env, self.getpwnam)
 
-    def test_observe_scope_is_status_only(self):
+    def test_observe_scope_is_status_and_prod_public_extract_only(self):
         c.require_caller_scope('observe', {'operation': 'status'})
+        c.require_caller_scope('observe', {'operation': 'export-prod-snapshot'})
         for request in ({'operation': 'start', 'duration': '30m'},
                         {'operation': 'diagnose'},
                         {'operation': 'prod-status'},
+                        {'operation': 'export-snapshot'},
+                        {'operation': 'export-prod-snapshot', 'sha': 'x'},
                         {'operation': 'status', 'sha': 'x'},
                         {'operation': 'status', 'duration': '30m'},
                         {}, 'status', None):

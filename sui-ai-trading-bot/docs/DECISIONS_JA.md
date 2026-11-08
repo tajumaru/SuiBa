@@ -96,3 +96,13 @@ export の失敗はサイクルを落とさない（continue-on-error、artifact
 - **リーチ煽り**：買い条件3つのうち2つが立った（met=2）ら、そのエピソードで一度だけ実況種別 `reach` で宣言し、不足条件を既存の「あと○○だけ」文面と実測値で名指しする。不足条件が既存の注目（watch）の接近判定（宣言距離の半分以下＝WATCH_APPROACH_RATIO）まで詰めたら `superReach` へ一度だけ格上げ。エピソードは「同じ不足条件で met=2 が続く区間」で、met が2を離れる／不足条件が変わると静かに終わる。met=1 では出さない。新しい指標は作らず、既存の充足数と距離測度だけを使う。
 - **ハード連動**：presetName === 'hard' の間だけリーチ／スーパーリーチ／的中（watchHit）の文面を熱いバリアントに切り替える。判定はヘッダーのハード表示と同じ presetName を使う。関西弁は従来どおりニアミスと的中ドヤだけに限る。
 - **連チャン**：実況された的中が連続したらカウンタ（hitStreak）を増やし、2連チャン以上で的中文の末尾に「○連チャン」を添える。外れ（miss の精算）でリセットし、無言の精算では動かさない。状態は実況状態（reach／hitStreak）として既存の保存経路に載せ、旧保存データは .default() で読み替える。
+
+## 2026-11-09 本番のライブ状態から日次レビューを出す経路を追加
+
+本稼働の最初の1週間を「集中観察週間」とする決定（同日）に伴う部品。従来の自動レビューは検証ランの pre-run バックアップ export が前提で、常時運転の本番には「次のランの開始時バックアップ」が存在しないため、本番の判断記録をレビューに載せる経路が無かった。切替前に「先に作って未使用」の形（配置サイクル PR #125 と同じ）で用意する。
+
+- controller に固定 op `export-prod-snapshot` を追加。稼働中の本番 DB（DATA ボリュームの bot.sqlite と WAL ペア DB）を sqlite の backup API で整合コピーし、メモリ上で tar 化して既存の export プログラム（許可リスト＋秘匿処理）へ通す。worker の停止・再起動・helper 起動は一切しない読み取り専用 op で、本番が in_progress でなければ `EXPORT_PROD_NOT_RUNNING` で拒否する。
+- 公開パッケージの manifest scope は `PROD_LIVE_PUBLIC_EXTRACT` とし、検証用（PRE_RUN_BACKUP_PUBLIC_EXTRACT）と区別する。run ブロックは本番セッション（id／started／sha）を指す。抽出テーブル・秘匿処理・上限は検証用と同一。
+- 呼び出しは読み取り専用 identity `suiba-observe` 経由とし、controller の caller scope を「status と、この固定 op のみ」へ拡張した（どちらも引数なし・読み取り専用。authorized_keys の強制コマンドと sudoers の制限は不変）。deploy identity と環境承認は使わないため、日次スケジュールが承認タップなしで回る（検証モニターと同じ形）。
+- 新ワークフロー `suiba-prod-review.yml`：毎日 00:17 JST に schedule 起動し、ゲート変数 `SUIBA_PROD_REVIEW_ENABLED` が無い間は両ジョブとも完全に不発。流れは export（observe 環境、artifact 保持1日）→ `run-review.py` を直近24時間の窓（`--since`/`--until`）で実行 → 常設 Issue #121 へ投稿。投稿先とラベルは検証レビューと共用する。
+- ホスト配布は従来どおり setup-paper-check.sh 経由（controller と export プログラムのピンを同一コミットで更新）。本番はまだ存在しないため実地検証は切替時になる：初回は手動 dispatch（REVIEW-PROD-DAILY）で export とレビュー投稿をスモーク確認してから、ゲート変数を有効化する。

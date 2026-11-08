@@ -1,0 +1,118 @@
+name: SuiBa production daily review
+
+# Daily counterfactual review of the LIVE production decisions, for the
+# production observation period. The validation-run review
+# (suiba-paper-review.yml) reads pre-run backup exports; production runs
+# continuously and has no next run, so this workflow takes a snapshot of
+# the live databases instead: the fixed read-only `export-prod-snapshot`
+# operation, through the reviewer-less observe identity (the same
+# confinement pattern as the paper monitor), so the schedule fires with
+# no approval tap and no agent tokens.
+#
+# The extract is the same allowlisted, sanitized public package as the
+# pre-run export (manifest scope PROD_LIVE_PUBLIC_EXTRACT). The snapshot
+# is a sqlite backup-API copy: the production worker is never stopped.
+# The review covers the trailing 24 hours via run-review.py --since /
+# --until and posts to the same standing review Issue (#121, label
+# suiba-run-review) as the validation reviews.
+#
+# Gate: repository variable SUIBA_PROD_REVIEW_ENABLED. Without it both
+# jobs are skipped and nothing runs — no SSH, no Issue writes.
+
+on:
+  schedule:
+    # 00:17 JST daily, just after the JST day turns. The window is the
+    # trailing 24 hours from the actual fire time, so a late fire still
+    # reviews its own full day.
+    - cron: '17 15 * * *'
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "REVIEW-PROD-DAILY と入力"
+        required: true
+        type: choice
+        options:
+          - REVIEW-PROD-DAILY
+
+permissions:
+  contents: read
+
+concurrency:
+  group: suiba-prod-review
+  cancel-in-progress: false
+
+jobs:
+  export:
+    if: vars.SUIBA_PROD_REVIEW_ENABLED == 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || inputs.confirmation == 'REVIEW-PROD-DAILY')
+    environment: sakura-vps-observe
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Export only the verified live production public extract
+        env:
+          PROD_EXPORT_CONFIRMATION: EXPORT-PROD-PUBLIC
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          # The port is a repository variable, not a secret: as a secret
+          # its short value becomes a masking token and silently poisons
+          # unrelated job output (the observe monitor lesson, PR #114).
+          VPS_PORT: ${{ vars.SUIBA_OBSERVE_VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-prod-export.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: suiba-prod-public-${{ github.run_id }}
+          path: ${{ runner.temp }}/suiba-prod-export/
+          if-no-files-found: error
+          retention-days: 1
+  review:
+    needs: export
+    if: vars.SUIBA_PROD_REVIEW_ENABLED == 'true' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      issues: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: suiba-prod-public-${{ github.run_id }}
+          path: export-data
+      - name: Build the daily review report for the trailing 24 hours
+        id: report
+        run: |
+          UNTIL=$(date -u +%s)
+          SINCE=$((UNTIL - 86400))
+          echo "since=$SINCE" >> "$GITHUB_OUTPUT"
+          echo "until=$UNTIL" >> "$GITHUB_OUTPUT"
+          DB=$(find export-data -name 'SUI_USDC.sqlite' -print -quit)
+          python3 sui-ai-trading-bot/docker/run-review.py "$DB" --since "$SINCE" --until "$UNTIL" --out report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Post the report to the standing review Issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SINCE: ${{ steps.report.outputs.since }}
+          UNTIL: ${{ steps.report.outputs.until }}
+        run: |
+          gh label create suiba-run-review --force --color 1d76db \
+            --description 'SuiBa 振り返りレポート（自動）' >/dev/null 2>&1 || true
+          { echo "本番日次レビュー（対象窓: $(date -u -d "@$SINCE" '+%Y-%m-%d %H:%M')〜$(date -u -d "@$UNTIL" '+%Y-%m-%d %H:%M') UTC）";
+            echo "対象 export: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}";
+            echo; cat report.md; } > comment.md
+          NUM=$(gh issue list --label suiba-run-review --state open --limit 1 \
+            --json number --jq '.[0].number // empty')
+          if [ -z "$NUM" ]; then
+            gh issue create --label suiba-run-review \
+              --title 'SuiBa 振り返りレポート（自動）' --body-file comment.md
+          else
+            gh issue comment "$NUM" --body-file comment.md
+          fi

@@ -27,10 +27,11 @@ def unpack(package, destination):
         manifest = json.loads(archive.read('manifest.json'))
         if (type(manifest) is not dict or set(manifest) != {'version', 'scope', 'public', 'run', 'sourceArchiveSha256', 'files', 'omitted'} or
                 type(manifest['version']) is not int or manifest['version'] != 1 or manifest['public'] is not True or
-                manifest['scope'] != 'PRE_RUN_BACKUP_PUBLIC_EXTRACT' or
+                manifest['scope'] not in ('PRE_RUN_BACKUP_PUBLIC_EXTRACT', 'PROD_LIVE_PUBLIC_EXTRACT') or
                 type(manifest['sourceArchiveSha256']) is not str or not re.fullmatch(r'[a-f0-9]{64}', manifest['sourceArchiveSha256'])): raise ValueError()
         if manifest['omitted'] != ['settings', 'runtime', 'auth', 'market_candles', 'portfolio_snapshots', 'thresholds', 'free_text', 'raw_ids']: raise ValueError()
-        if scope['public_run'](manifest['run']) != manifest['run']: raise ValueError()
+        run_check = scope['public_prod_run'] if manifest['scope'] == 'PROD_LIVE_PUBLIC_EXTRACT' else scope['public_run']
+        if run_check(manifest['run']) != manifest['run']: raise ValueError()
         files = manifest['files']
         if type(files) is not dict or set(files) != set(names)-{'manifest.json'} or 'SUI_USDC.sqlite' not in files: raise ValueError()
         # Work in a new sibling directory. No unverified/partially written artifact is exposed.

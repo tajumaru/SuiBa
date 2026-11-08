@@ -18,7 +18,8 @@ TABLES = ('strategy_decisions', 'technical_indicators', 'operation_candidates',
           'paper_orders', 'paper_trades', 'operation_events', 'cycle_audits')
 DATABASES = {'bot.sqlite': 'SUI_USDC.sqlite', 'bot.sqlite.WAL_USDC.sqlite': 'WAL_USDC.sqlite'}
 ERROR_CODES = frozenset(('EXPORT_BACKUP_MISSING', 'EXPORT_MANIFEST_MISMATCH', 'EXPORT_ARCHIVE_INVALID',
-    'EXPORT_LIMIT_EXCEEDED', 'EXPORT_DATABASE_INVALID', 'EXPORT_RUN_INVALID', 'EXPORT_PACKAGE_INVALID'))
+    'EXPORT_LIMIT_EXCEEDED', 'EXPORT_DATABASE_INVALID', 'EXPORT_RUN_INVALID', 'EXPORT_PACKAGE_INVALID',
+    'EXPORT_PROD_NOT_RUNNING'))
 INDICATORS = frozenset('ema20 ema50 rsi macd signal histogram atr volumeChange priceChange'.split())
 CONDITIONS = frozenset('hasPosition stopLoss takeProfit latestVolumePositive previousVolumePositive volumeChangeExceeded emaUp emaGapShrinking rsiRecovery histogramImproving emaDown rsiReversal histogramDeclining'.split())
 RULES = frozenset('NO_SIGNAL STOP_LOSS TAKE_PROFIT VOLUME_REJECT BUY_SIGNAL SELL_SIGNAL'.split())
@@ -134,6 +135,88 @@ def public_run(record):
     return out
 
 
+def public_prod_run(record):
+    # Production has no duration/cutoff and no pre-run backup: the public run
+    # block names the live production session the snapshot was taken from.
+    # Only a running session can be snapshotted, so any other status is an
+    # invalid source record here (the controller refuses it earlier with
+    # EXPORT_PROD_NOT_RUNNING).
+    check(type(record) is dict and type(record.get('id')) is str and
+          re.fullmatch(r'[a-f0-9]{32}', record['id']) and record.get('status') == 'in_progress',
+          'EXPORT_RUN_INVALID')
+    out = {'id': record['id'], 'status': 'in_progress', 'pair': 'SUI_USDC', 'mode': 'PAPER'}
+    if type(record.get('started')) is int and 0 <= record['started'] <= 2**53:
+        out['started'] = record['started']
+    if type(record.get('sha')) is str and re.fullmatch(r'[a-f0-9]{40}', record['sha']): out['sha'] = record['sha']
+    return out
+
+
+def _unpack_archive(stream, root, deadline):
+    allowed = {name+suffix for name in DATABASES for suffix in ('', '-wal')}
+    seen, size = set(), 0
+    try:
+        with tarfile.open(fileobj=stream, mode='r:') as archive:
+            for index, member in enumerate(archive):
+                check(index < 4096 and time.monotonic() < deadline, 'EXPORT_LIMIT_EXCEEDED')
+                name = member.name.removeprefix('./')
+                check(not PurePosixPath(name).is_absolute() and '..' not in PurePosixPath(name).parts, 'EXPORT_ARCHIVE_INVALID')
+                if name not in allowed: continue
+                check(member.isfile() and name not in seen, 'EXPORT_ARCHIVE_INVALID')
+                seen.add(name)
+                size += member.size
+                check(size <= ARCHIVE_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
+                with archive.extractfile(member) as src, (root/name).open('xb') as dst:
+                    while data := src.read(1024*1024): dst.write(data)
+    except (tarfile.TarError, OSError): raise ExportError('EXPORT_ARCHIVE_INVALID') from None
+    check('bot.sqlite' in seen, 'EXPORT_DATABASE_INVALID')
+    return seen
+
+
+def _package(root, seen, run, scope, source_sha256, deadline):
+    result = io.BytesIO()
+    files, total_rows = {}, 0
+    for name, target in DATABASES.items():
+        if name not in seen: continue
+        source = sqlite3.connect((root/name).as_uri()+'?mode=ro', uri=True)
+        source.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
+        destination = sqlite3.connect(root/target)
+        counts = {}
+        try:
+            source.execute('PRAGMA query_only=ON')
+            names = {r[0] for r in source.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            for table in TABLES:
+                check(time.monotonic() < deadline, 'EXPORT_LIMIT_EXCEEDED')
+                if table not in names: continue
+                destination.execute(f'CREATE TABLE {table}(id TEXT PRIMARY KEY,timestamp INTEGER NOT NULL,json TEXT NOT NULL)')
+                count = 0
+                for row_id, at, raw in source.execute(f'SELECT id,timestamp,json FROM {table} ORDER BY timestamp,id'):
+                    total_rows += 1
+                    check(total_rows <= ROW_LIMIT and time.monotonic() < deadline, 'EXPORT_LIMIT_EXCEEDED')
+                    check(type(at) is int and 0 <= at <= 2**53 and identifier(row_id) is not None, 'EXPORT_DATABASE_INVALID')
+                    value = sanitize(table, json.loads(raw))
+                    if value is None: continue
+                    destination.execute(f'INSERT INTO {table} VALUES(?,?,?)', (identifier(row_id), at, json.dumps(value, allow_nan=False, separators=(',', ':'))))
+                    count += 1
+                counts[table] = count
+            destination.commit()
+        except (sqlite3.Error, ValueError, TypeError): raise ExportError('EXPORT_DATABASE_INVALID') from None
+        finally:
+            source.close()
+            destination.close()
+        data = (root/target).read_bytes()
+        check(len(data) <= EXPORT_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
+        files[target] = {'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data), 'rows': counts}
+    manifest = {'version': 1, 'scope': scope, 'public': True,
+                'run': run, 'sourceArchiveSha256': source_sha256, 'files': files,
+                'omitted': ['settings', 'runtime', 'auth', 'market_candles', 'portfolio_snapshots', 'thresholds', 'free_text', 'raw_ids']}
+    check(sum(v['bytes'] for v in files.values()) <= EXPORT_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
+    with zipfile.ZipFile(result, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('manifest.json', json.dumps(manifest, sort_keys=True, separators=(',', ':')))
+        for name in files: archive.write(root/name, arcname=name)
+    check(result.tell() <= EXPORT_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
+    return result.getvalue()
+
+
 def build_export(stream, record):
     run = public_run(record)
     backup = record.get('backup')
@@ -145,64 +228,26 @@ def build_export(stream, record):
     check(hashlib.file_digest(stream, 'sha256').hexdigest() == backup['sha256'], 'EXPORT_MANIFEST_MISMATCH')
     stream.seek(0)
     deadline = time.monotonic()+60
-    result = io.BytesIO()
     with tempfile.TemporaryDirectory(prefix='suiba-public-export-') as tmp:
         root = Path(tmp)
-        allowed = {name+suffix for name in DATABASES for suffix in ('', '-wal')}
-        seen, size = set(), 0
-        try:
-            with tarfile.open(fileobj=stream, mode='r:') as archive:
-                for index, member in enumerate(archive):
-                    check(index < 4096 and time.monotonic() < deadline, 'EXPORT_LIMIT_EXCEEDED')
-                    name = member.name.removeprefix('./')
-                    check(not PurePosixPath(name).is_absolute() and '..' not in PurePosixPath(name).parts, 'EXPORT_ARCHIVE_INVALID')
-                    if name not in allowed: continue
-                    check(member.isfile() and name not in seen, 'EXPORT_ARCHIVE_INVALID')
-                    seen.add(name)
-                    size += member.size
-                    check(size <= ARCHIVE_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
-                    with archive.extractfile(member) as src, (root/name).open('xb') as dst:
-                        while data := src.read(1024*1024): dst.write(data)
-        except (tarfile.TarError, OSError): raise ExportError('EXPORT_ARCHIVE_INVALID') from None
-        check('bot.sqlite' in seen, 'EXPORT_DATABASE_INVALID')
-        files, total_rows = {}, 0
-        for name, target in DATABASES.items():
-            if name not in seen: continue
-            source = sqlite3.connect((root/name).as_uri()+'?mode=ro', uri=True)
-            source.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
-            destination = sqlite3.connect(root/target)
-            counts = {}
-            try:
-                source.execute('PRAGMA query_only=ON')
-                names = {r[0] for r in source.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                for table in TABLES:
-                    check(time.monotonic() < deadline, 'EXPORT_LIMIT_EXCEEDED')
-                    if table not in names: continue
-                    destination.execute(f'CREATE TABLE {table}(id TEXT PRIMARY KEY,timestamp INTEGER NOT NULL,json TEXT NOT NULL)')
-                    count = 0
-                    for row_id, at, raw in source.execute(f'SELECT id,timestamp,json FROM {table} ORDER BY timestamp,id'):
-                        total_rows += 1
-                        check(total_rows <= ROW_LIMIT and time.monotonic() < deadline, 'EXPORT_LIMIT_EXCEEDED')
-                        check(type(at) is int and 0 <= at <= 2**53 and identifier(row_id) is not None, 'EXPORT_DATABASE_INVALID')
-                        value = sanitize(table, json.loads(raw))
-                        if value is None: continue
-                        destination.execute(f'INSERT INTO {table} VALUES(?,?,?)', (identifier(row_id), at, json.dumps(value, allow_nan=False, separators=(',', ':'))))
-                        count += 1
-                    counts[table] = count
-                destination.commit()
-            except (sqlite3.Error, ValueError, TypeError): raise ExportError('EXPORT_DATABASE_INVALID') from None
-            finally:
-                source.close()
-                destination.close()
-            data = (root/target).read_bytes()
-            check(len(data) <= EXPORT_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
-            files[target] = {'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data), 'rows': counts}
-        manifest = {'version': 1, 'scope': 'PRE_RUN_BACKUP_PUBLIC_EXTRACT', 'public': True,
-                    'run': run, 'sourceArchiveSha256': backup['sha256'], 'files': files,
-                    'omitted': ['settings', 'runtime', 'auth', 'market_candles', 'portfolio_snapshots', 'thresholds', 'free_text', 'raw_ids']}
-        check(sum(v['bytes'] for v in files.values()) <= EXPORT_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
-        with zipfile.ZipFile(result, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
-            archive.writestr('manifest.json', json.dumps(manifest, sort_keys=True, separators=(',', ':')))
-            for name in files: archive.write(root/name, arcname=name)
-    check(result.tell() <= EXPORT_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
-    return result.getvalue()
+        seen = _unpack_archive(stream, root, deadline)
+        return _package(root, seen, run, 'PRE_RUN_BACKUP_PUBLIC_EXTRACT', backup['sha256'], deadline)
+
+
+def build_live_export(stream, record, source_sha256):
+    """Same allowlisted extract, from a snapshot of the LIVE production DBs.
+
+    The controller takes transactionally consistent copies of the running
+    worker's databases with the sqlite backup API and tars those copies;
+    digest is the sha256 of that exact tar stream, recorded for traceability
+    (there is no pre-run backup manifest to bind against)."""
+    run = public_prod_run(record)
+    check(type(source_sha256) is str and re.fullmatch(r'[a-f0-9]{64}', source_sha256), 'EXPORT_ARCHIVE_INVALID')
+    stream.seek(0, 2)
+    check(0 < stream.tell() <= ARCHIVE_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
+    stream.seek(0)
+    deadline = time.monotonic()+60
+    with tempfile.TemporaryDirectory(prefix='suiba-prod-export-') as tmp:
+        root = Path(tmp)
+        seen = _unpack_archive(stream, root, deadline)
+        return _package(root, seen, run, 'PROD_LIVE_PUBLIC_EXTRACT', source_sha256, deadline)

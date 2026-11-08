@@ -12,6 +12,7 @@ import contextlib
 import hashlib
 import http.client
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -54,7 +55,7 @@ PROGRAM_READ_MAXIMUM = 262144
 EXPORT_PROGRAM = Path('/usr/local/libexec/suiba-paper-export.py')
 EXPORT_CODES = frozenset(('EXPORT_BACKUP_MISSING', 'EXPORT_MANIFEST_MISMATCH', 'EXPORT_ARCHIVE_INVALID',
     'EXPORT_LIMIT_EXCEEDED', 'EXPORT_DATABASE_INVALID', 'EXPORT_RUN_INVALID', 'EXPORT_PACKAGE_INVALID',
-    'EXPORT_PROGRAM_INVALID'))
+    'EXPORT_PROGRAM_INVALID', 'EXPORT_PROD_NOT_RUNNING'))
 RECONCILE_BACKUPS = Path('/root')
 PREFLIGHT_CHECKS = ('storage', 'ledger', 'container', 'admission')
 # Sub-labels for the container preflight segment, recorded as the
@@ -1343,10 +1344,13 @@ class Controller:
             code = getattr(error, 'code', None)
             raise SnapshotExportRejected(code if code in EXPORT_CODES else stage) from None
 
-    def sui_db_path(self):
+    def data_dir(self):
         volume = self.b.decode(self.docker.call(['volume', 'inspect', self.b.DATA], timeout=10))
         require(len(volume) == 1 and volume[0]['Name'] == self.b.DATA)
-        return Path(volume[0]['Mountpoint'])/'bot.sqlite'
+        return Path(volume[0]['Mountpoint'])
+
+    def sui_db_path(self):
+        return self.data_dir()/'bot.sqlite'
 
     def apply_preset(self, record):
         # After the pre-run backup, before the worker starts: snapshot
@@ -2135,6 +2139,56 @@ class ProductionController(Controller):
         return {'run': run, 'controller_alive': alive, 'worker': worker,
                 'requires_review': record['status'] == 'failed_requires_review' or self.faults(record), 'watchdog': watchdog}
 
+    def export_prod_snapshot(self):
+        # Read-only public extract of the LIVE production databases, feeding
+        # the daily production review. The worker is never stopped, signalled
+        # or reconfigured, and no helper container runs: each database is
+        # copied with the sqlite backup API (a read transaction against the
+        # running writer, WAL content included), the copies are tarred in
+        # memory, and the pinned export program applies the same allowlist
+        # and sanitizer as the pre-run extract.
+        stage = 'EXPORT_RUN_INVALID'
+        try:
+            record = self.current()
+            stage = 'EXPORT_PROD_NOT_RUNNING'
+            require(record['status'] == 'in_progress')
+            stage = 'EXPORT_PROGRAM_INVALID'
+            program = self.b.read_trusted(EXPORT_PROGRAM, maximum=PROGRAM_READ_MAXIMUM)
+            scope = {'__name__': 'trusted_snapshot_export'}
+            exec(compile(program, str(EXPORT_PROGRAM), 'exec'), scope)
+            stage = 'EXPORT_DATABASE_INVALID'
+            root = self.data_dir()
+            stream = io.BytesIO()
+            with tempfile.TemporaryDirectory(prefix='suiba-prod-snapshot-') as tmp:
+                folder = Path(tmp)
+                names = []
+                # Mirrors DATABASES in the export program: the main database
+                # is required, the WAL pair database joins when present.
+                for name in ('bot.sqlite', 'bot.sqlite.WAL_USDC.sqlite'):
+                    source_path = root/name
+                    if not source_path.is_file():
+                        continue
+                    source = sqlite3.connect(source_path.as_uri()+'?mode=ro', uri=True)
+                    try:
+                        destination = sqlite3.connect(folder/name)
+                        try:
+                            source.backup(destination)
+                        finally:
+                            destination.close()
+                    finally:
+                        source.close()
+                    names.append(name)
+                require('bot.sqlite' in names)
+                with tarfile.open(fileobj=stream, mode='w') as archive:
+                    for name in names:
+                        archive.add(folder/name, arcname='./'+name)
+            digest = hashlib.sha256(stream.getvalue()).hexdigest()
+            stream.seek(0)
+            return scope['build_live_export'](stream, record, digest)
+        except Exception as error:
+            code = getattr(error, 'code', None)
+            raise SnapshotExportRejected(code if code in EXPORT_CODES else stage) from None
+
 
 def request_caller(environ, getpwnam):
     """Classify the sudo caller of a `request` invocation.
@@ -2169,9 +2223,13 @@ def valid_episode(value):
 
 
 def require_caller_scope(caller, request):
-    """The observe identity may only ever read paper-check status."""
+    """The observe identity may only ever read: the paper-check status, or
+    the fixed public extract of the live production databases (the same
+    allowlisted, sanitized package the export workflow publishes). Both
+    requests are exact, argument-free and read-only; anything else, and any
+    extra key, is refused."""
     if caller == 'observe':
-        require(request == {'operation': 'status'})
+        require(request in ({'operation': 'status'}, {'operation': 'export-prod-snapshot'}))
 
 
 # Outer bound for a declared recovery pause during monitoring. The worker's
@@ -2231,7 +2289,7 @@ def main():
             signal.alarm(0)
             require_caller_scope(caller, request)
             require(isinstance(request, dict) and set(request) <= {'operation', 'duration', 'mode', 'sha', 'preset'} and
-                    request.get('operation') in ('start', 'status', 'abort', 'diagnose', 'reconcile', 'approve-retry', 'approve-deploy', 'revoke-retry', 'release-cutoff', 'heal-run', 'export-snapshot', 'prod-start', 'prod-stop', 'prod-status'))
+                    request.get('operation') in ('start', 'status', 'abort', 'diagnose', 'reconcile', 'approve-retry', 'approve-deploy', 'revoke-retry', 'release-cutoff', 'heal-run', 'export-snapshot', 'export-prod-snapshot', 'prod-start', 'prod-stop', 'prod-status'))
             require(request['operation'] in ('start', 'reconcile', 'approve-deploy') or set(request) == {'operation'})
             require(request['operation'] in ('reconcile', 'approve-deploy') or 'sha' not in request)
             require(request['operation'] == 'start' or 'duration' not in request)
@@ -2262,6 +2320,8 @@ def main():
                 print(json.dumps(controller.heal_run()))
             elif request['operation'] == 'export-snapshot':
                 sys.stdout.buffer.write(controller.export_snapshot())
+            elif request['operation'] == 'export-prod-snapshot':
+                sys.stdout.buffer.write(ProductionController(b).export_prod_snapshot())
             elif request['operation'] == 'diagnose':
                 print(json.dumps(controller.diagnose()))
             elif request['operation'] == 'status':
