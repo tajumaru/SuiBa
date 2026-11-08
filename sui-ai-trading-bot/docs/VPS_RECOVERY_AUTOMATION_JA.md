@@ -389,3 +389,9 @@ GET /api/deploymentにresetScope（pendingを含む）を追加する。再試�
 検証モニターの check ジョブが、正常な観測を PAPER_CHECK_FAILED（フォールバック）に化けさせる事故が発生。ランナーログの警告「Skip output 'report' since it may contain secret」が原因：check ジョブの出力（観測レポート JSON）がジョブ内で使った secret の値を含むと、ランナーが出力を黙って捨てる。secret の VPS_PORT の値は「22」で、今回のラン ID（16進32文字）に部分文字列「22」が含まれていたため、レポートが毎回捨てられていた（前回ランは ID に「22」が無く無事だった。時刻の数字列でも起こりうる）。
 
 対策：ポートは秘密ではない（SSH の既定ポートで、接続先情報は設計書にもある）ので、環境 secret からリポジトリ変数 SUIBA_OBSERVE_VPS_PORT に移した。ワークフローの check ジョブは変数から読む。テストで「VPS_PORT を secrets から読まない」ことを固定した。教訓：短い secret（特に数字だけの値）は job output のマスク判定を誤爆させる。出力を受け渡すジョブでは短い値を secret に置かない。
+
+## 回復中ティックの STALE_CANDLES も stall に合流（2026-11-08）
+
+PR #112 反映後の 2h ラン（09:06開始）は controller の一時停止許容が効いて前進したが、最終取得 09:45:41 の stale 一時停止ののち worker が STALE_CANDLES でハードストップした。経路：回復証明のために回るティックの取得が STALE_CANDLES を投げると、staleThrowToStall が「稼働中のみ」を条件にしていたため合流できず failCycle に落ちた。回復するにはティックを回す必要があるのに、回すと止まる矛盾で、candle-stale の一時停止は実質回復不能だった（PR #107 で「回復中の stale は failed proof」として意図的に残した部分だが、当時は controller が先に止めるため到達不能だった）。
+
+修正（オーナーが案Aを選択）：staleThrowToStall の合流条件を「稼働中」から「稼働中、または再開待ちのエピソードが開いている（resumePending）」に広げた。エラー／緊急がラッチされている場合と、再開待ちでない素の停止は従来どおり合流しない。合流先の stallFailure が30秒に1回の計数と checkRecoveryDeadline（stale 30分）で期限を管理するので、一時停止が無期限に延びることはない。売買は connectivity ゲートで一時停止中ずっと不可能なまま。

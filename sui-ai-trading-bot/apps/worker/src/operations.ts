@@ -131,14 +131,19 @@ export class OperationMonitor {
    * through this entrance, before the watchdog's boundary, so
    * the stale episode limits never applied). Route the throw
    * into the stall machinery so both entrances share one policy.
-   * Only a running bot is routed: during recovery a stale
-   * reading is a failed proof and keeps the hard stop, and a
-   * latched error or emergency is never softened.
+   * A bot paused inside an open recovery episode is routed too:
+   * its ticks are the recovery proofs, so a stale reading there
+   * is the same episode continuing, not a new failure (until the
+   * controller tolerated pauses in 2026-11-08, the first recovery
+   * tick hard-stopped every candle-stale pause within seconds).
+   * A plain stop without a pending resume, a latched error, and
+   * an emergency are never softened.
    */
   staleThrowToStall(code: string, now = Date.now()): boolean {
     if (code !== "STALE_CANDLES") return false;
     const r = this.db.runtime();
-    if (!r.running || r.error || r.emergency) return false;
+    if (r.error || r.emergency) return false;
+    if (!r.running && !this.safety().resumePending) return false;
     const details = this.stallDetails(now);
     if (!details || details.reasonDetail !== "CANDLE_STALE") return false;
     this.stallFailure(details, now);

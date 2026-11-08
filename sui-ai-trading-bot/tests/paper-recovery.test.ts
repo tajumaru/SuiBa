@@ -384,6 +384,53 @@ it("does not soften a latched hard stop via a stale throw", () => {
   expect(db.runtime().error).toBe("CONSECUTIVE_API_ERRORS");
   expect(monitor.safety().resumePending).toBe(false);
 });
+it("routes a stale throw during a candle-stale pause into the same episode", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  monitor.market(start, start);
+  monitor.watchdog(start + 361000);
+  expect(monitor.safety()).toMatchObject({
+    resumePending: true,
+    episodeTally: { "MarketData/CANDLE_STALE": 1 },
+  });
+  expect(db.runtime().running).toBe(false);
+  // A recovery tick hitting the same stale candles is counted by the
+  // episode (throttled to one count per 30 s), never a hard stop.
+  expect(monitor.staleThrowToStall("STALE_CANDLES", start + 362000)).toBe(
+    true,
+  );
+  expect(monitor.staleThrowToStall("STALE_CANDLES", start + 392000)).toBe(
+    true,
+  );
+  expect(db.runtime()).toMatchObject({ running: false, error: null });
+  expect(monitor.safety()).toMatchObject({
+    resumePending: true,
+    episodeTally: { "MarketData/CANDLE_STALE": 2 },
+  });
+});
+it("still exhausts a stale episode fed only by throws during the pause", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  monitor.market(start, start);
+  monitor.watchdog(start + 361000);
+  expect(monitor.staleThrowToStall("STALE_CANDLES", start + 400000)).toBe(
+    true,
+  );
+  monitor.checkRecoveryDeadline(start + 361000 + 1800000);
+  expect(db.runtime().error).toBe("PAPER_RECOVERY_EXHAUSTED");
+  expect(monitor.safety().resumePending).toBe(false);
+});
+it("does not route a stale throw while plainly stopped, with no resume pending", () => {
+  const { db, monitor } = setup(),
+    start = Date.now();
+  monitor.market(start, start);
+  db.set("runtime", { ...db.runtime(), running: false });
+  expect(monitor.safety().resumePending).toBe(false);
+  expect(monitor.staleThrowToStall("STALE_CANDLES", start + 361000)).toBe(
+    false,
+  );
+  expect(db.runtime()).toMatchObject({ running: false, error: null });
+});
 it("ignores other codes and fresh markets in the stale-throw bridge", () => {
   const { db, monitor } = setup(),
     start = Date.now();

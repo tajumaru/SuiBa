@@ -59,3 +59,6 @@
   あり、境界は同じでレースだった）ため、tick 内の STALE_CANDLES
   例外も同じ stall の仕組みに合流させた。回復局面で古い足が読めた
   場合は従来どおりハードストップ（証明の失敗）。
+
+## 2026-11-08 回復中ティックの stale 合流（PR #107 の「failed proof」扱いを撤回）
+PR #107 で残した「回復中（running=false）の STALE_CANDLES は failed proof としてハードストップ」を撤回する。controller が一時停止を許容する（PR #112）ようになった結果、回復証明のティックが最初に stale に当たった時点で全ての candle-stale 一時停止が即死するようになっていたため。回復エピソード進行中（resumePending）に限り、ティックの STALE_CANDLES throw も stallFailure に合流させ、30分のエピソード期限に委ねる（オーナーが案Aを選択）。
