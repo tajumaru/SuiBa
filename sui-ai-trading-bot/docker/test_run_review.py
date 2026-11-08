@@ -62,6 +62,17 @@ class AnalyzeTests(unittest.TestCase):
         self.assertAlmostEqual(result["buckets"][3]["h"][1]["mean"], 2.0, places=6)
 
 
+class FetchLimitTests(unittest.TestCase):
+    def test_limit_covers_span_from_cts_seconds(self):
+        decisions = [{"cts": BASE}, {"cts": BASE + 86400}]
+        self.assertEqual(rr.compute_limit(decisions), 86400 // 300 + 2000)
+
+    def test_limit_defaults_and_caps(self):
+        self.assertEqual(rr.compute_limit([]), 2000)
+        decisions = [{"cts": BASE}, {"cts": BASE + 300 * 20000}]
+        self.assertEqual(rr.compute_limit(decisions), 10000)
+
+
 class LoadDecisionsTests(unittest.TestCase):
     def test_loads_evidence_and_counts(self):
         with tempfile.TemporaryDirectory() as tmp:
