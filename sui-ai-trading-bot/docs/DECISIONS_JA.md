@@ -78,3 +78,7 @@ PR #105 で「emergency は scoped reset では絶対に解除しない」と決
 範囲は表示名のみ：ヘッダーのブランド、ログイン画面のロゴ（POTARIO_）、ブラウザのタブタイトル、版数フッター、README の見出し。GitHub リポジトリ名 SuiBa、内部の suiba-* 命名（ワークフロー、ホスト側ファイル、環境変数）は変更しない（VPS の仕組み一式への波及を避けるため）。
 
 アプリアイコンも同日に決定した：白い雫キャラ（B 案：ローソク足を抱える姿）を土台に、雪男要素（全身の毛並み＋頭の雪）を足した「もふもふ雪男雫」を採用（試作 Y1）。favicon／apple-touch-icon として配置する。名前の由来（ぽたり×potamos）と同じく、日本のキャラ感とギリシャの語根の物語を両立させる方針の延長。
+
+## 2026-11-08 検証ランにプリセット入力（safe／hard）を追加
+
+検証ランをハードプリセットで回すには従来ダッシュボード経由の手作業（SSHトンネル＋設定保存＋終了後の手動復旧）が必要だった。オーナーの指示で、CYCLE の入力に preset（safe／hard、既定 safe）を足し、controller がそのラン限り SUI 設定を差し替える形にした：開始時（バックアップ後・worker 起動前）に現行設定をランフォルダへ snapshot し、hard プリセット（dashboard の applyHardPreset と同値。tests/preset-parity.test.ts がドリフトを検出）を DB へ書き、終了時の finalize（post-stop cleanup）で snapshot を復旧する。復旧失敗は PRESET_RESTORE_FAILED として failed_requires_review に落とし、次回 admission でも未復旧なら先に復旧する（冪等）。対象は SUI_USDC の設定のみ。24h ランは本稼働ラダーの最終段として通常設定（safe）で回す方針も同日に決定（ハード検証は 6h）。

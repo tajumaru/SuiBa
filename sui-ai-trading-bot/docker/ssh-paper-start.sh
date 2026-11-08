@@ -12,6 +12,10 @@ case "${PAPER_START_DURATION:-}" in
   30m|2h|6h|24h) duration=$PAPER_START_DURATION ;;
   *) fail ;;
 esac
+case "${PAPER_START_PRESET:-safe}" in
+  safe|hard) preset=${PAPER_START_PRESET:-safe} ;;
+  *) fail ;;
+esac
 [[ ${VPS_HOST:-} =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]] || fail
 [[ ${VPS_USER:-} =~ ^[a-z_][a-z0-9_-]*$ ]] || fail
 [[ $VPS_USER == suiba-deploy ]] || fail
@@ -44,7 +48,7 @@ opts=(-F /dev/null -i "$key" -p "$port" -T
   -o ClearAllForwardings=yes -o RequestTTY=no -o LogLevel=ERROR
   -o ConnectTimeout=10 -o ConnectionAttempts=1
   -o ServerAliveInterval=5 -o ServerAliveCountMax=2)
-printf '{"operation":"start","duration":"%s"}\n' "$duration" |
+printf '{"operation":"start","duration":"%s","preset":"%s"}\n' "$duration" "$preset" |
   timeout 60s ssh "${opts[@]}" "$VPS_USER@$VPS_HOST" 'sudo -n -- /usr/local/sbin/suiba-paper-check' >"$result" 2>"$errors" || fail
 # The controller answers with exactly one fixed line. Anything else is
 # withheld and reported as a failure, never echoed to logs.
@@ -53,4 +57,5 @@ printf '{"operation":"start","duration":"%s"}\n' "$duration" |
   echo '### SuiBa PAPER check start'
   echo "- Start: \`accepted\`"
   echo "- Duration: \`$duration\`"
+  echo "- Preset: \`$preset\`"
 } | tee -a "${GITHUB_STEP_SUMMARY:?}"
