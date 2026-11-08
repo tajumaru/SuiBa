@@ -1,0 +1,193 @@
+name: SuiBa PAPER deploy (one approval)
+
+# One-approval deploy (workflow task 7): a single job under ONE
+# sakura-vps Environment approval runs, in order —
+#   1. read the host state (CHECK-PAPER-DIAGNOSTICS),
+#   2. release-cutoff, only when the plan says a timer is still armed,
+#   3. approve-deploy for the checked-out main sha, only when the plan
+#      says the predecessor latched failed_requires_review,
+#   4. the existing validate + package + broker deploy, with the
+#      release kept inside this job (no artifact hand-off),
+#   5. on failure, the diagnostics again under the same approval.
+# The plan step aborts on unreadable or inconsistent state instead of
+# guessing. The individual recover / vps workflows remain for triage.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "DEPLOY-CYCLE-PAPER と入力"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # Same group as suiba-vps.yml's deployment dispatches, so a one-tap
+  # deploy and a classic deploy can never run at the same time.
+  group: suiba-vps-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy-cycle:
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY-CYCLE-PAPER' && vars.SUIBA_PAPER_DEPLOY_CYCLE_ENABLED == 'true' && vars.SUIBA_BROKER_ENABLED == 'true'
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Read the host state (diagnostics)
+        env:
+          PAPER_STATUS_CONFIRMATION: CHECK-PAPER-DIAGNOSTICS
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          bash sui-ai-trading-bot/docker/ssh-paper-status.sh | tee diagnostics.txt
+      - name: Plan the preparatory operations
+        id: plan
+        run: |
+          set -Eeuo pipefail
+          python3 sui-ai-trading-bot/docker/paper-deploy-cycle-plan.py diagnostics.txt > plan.json
+          cat plan.json
+          python3 - <<'PYEOF' >> "$GITHUB_OUTPUT"
+          import json
+          plan = json.load(open("plan.json"))
+          print(f"release_cutoff={str(plan['release_cutoff']).lower()}")
+          print(f"approve_deploy={str(plan['approve_deploy']).lower()}")
+          PYEOF
+          python3 - <<'PYEOF' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          plan = json.load(open("plan.json"))
+          print("### Deploy plan")
+          print(f"- release-cutoff: {str(plan['release_cutoff']).lower()}")
+          print(f"- approve-deploy: {str(plan['approve_deploy']).lower()}")
+          PYEOF
+      - name: Release a leftover cutoff timer
+        if: steps.plan.outputs.release_cutoff == 'true'
+        env:
+          PAPER_RECOVER_CONFIRMATION: RECOVER-PAPER
+          PAPER_RECOVER_MODE: release-cutoff
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-paper-recover.sh
+      - name: Approve the deploy over a failed predecessor
+        if: steps.plan.outputs.approve_deploy == 'true'
+        env:
+          PAPER_RECOVER_CONFIRMATION: RECOVER-PAPER
+          PAPER_RECOVER_MODE: approve-deploy
+          PAPER_RECOVER_SHA: ${{ github.sha }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-paper-recover.sh
+      - run: corepack enable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24.22.1"
+      - name: Resolve the pnpm store path
+        id: pnpm-store
+        working-directory: sui-ai-trading-bot
+        run: echo "path=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('sui-ai-trading-bot/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+      - run: pnpm install --frozen-lockfile && pnpm typecheck && pnpm build && node node_modules/vitest/vitest.mjs run --config vitest.no-worker.config.ts
+        working-directory: sui-ai-trading-bot
+      - name: Validate deployment shell
+        run: |
+          bash -n sui-ai-trading-bot/docker/deploy-vps.sh
+          shellcheck sui-ai-trading-bot/docker/deploy-vps.sh
+      - name: Offline data and deployment failure regression (no Worker)
+        working-directory: sui-ai-trading-bot
+        run: node --import tsx --test docker/vps-data.node.mjs docker/vps-deploy.node.mjs
+      - name: Validate rendered Compose without starting a container
+        working-directory: sui-ai-trading-bot
+        run: |
+          sudo mkdir -p /opt/suiba/shared
+          sudo touch /opt/suiba/shared/runtime.env /opt/suiba/shared/admin-token
+          node docker/verify-vps-config.mjs
+      - name: Build on runner, never on VPS
+        run: docker build --build-arg SUIBA_BUILD_SHA=${{ github.sha }} -f sui-ai-trading-bot/docker/Dockerfile -t suiba:${{ github.sha }} sui-ai-trading-bot
+      - name: Isolated Compose, UID1000, WAL restore, SIGTERM timeout and OOM (no Worker)
+        working-directory: sui-ai-trading-bot
+        run: node docker/verify-vps-offline.mjs suiba:${{ github.sha }}
+      - name: Package immutable release
+        id: package
+        run: |
+          mkdir release
+          docker save suiba:${{ github.sha }} | gzip > release/image.tar.gz
+          docker image inspect --format '{{.Id}}' suiba:${{ github.sha }} > release/image-id.txt
+          cd release
+          sha256sum image.tar.gz > image.tar.gz.sha256
+          read -r digest _ < image.tar.gz.sha256
+          printf 'archive_sha256=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+      - name: Transfer and deploy with pinned SSH host identity
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          RELEASE_SHA: ${{ github.sha }}
+          ARCHIVE_SHA256: ${{ steps.package.outputs.archive_sha256 }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          [[ $VPS_HOST =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ $VPS_USER =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ $VPS_USER == 'suiba-deploy' ]]
+          [[ $VPS_PORT =~ ^[0-9]{1,5}$ ]]
+          (( 10#$VPS_PORT >= 1 && 10#$VPS_PORT <= 65535 ))
+          [[ $ARCHIVE_SHA256 =~ ^[a-f0-9]{64}$ ]]
+          image_id=$(tr -d '[:space:]' < release/image-id.txt)
+          [[ $image_id =~ ^sha256:[a-f0-9]{64}$ ]]
+          key="$RUNNER_TEMP/vps-key"
+          hosts="$RUNNER_TEMP/vps-known-hosts"
+          trap 'rm -f "$key" "$hosts"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$hosts"
+          opts=(-F /dev/null -i "$key" -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$hosts" -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o ClearAllForwardings=yes -o ConnectTimeout=15)
+          target="$VPS_USER@$VPS_HOST"
+          ssh "${opts[@]}" -p "$VPS_PORT" "$target" "umask 077; mkdir -p /var/lib/suiba-incoming/$RELEASE_SHA"
+          scp "${opts[@]}" -P "$VPS_PORT" release/image.tar.gz "$target:/var/lib/suiba-incoming/$RELEASE_SHA/image.tar.gz"
+          # Same broker contract as suiba-vps.yml: the request carries
+          # this run's id, and this run is the one the Environment
+          # approval was granted to.
+          printf '{"operation":"deploy","sha":"%s","archive_sha256":"%s","image_id":"%s","ci_run":%s}\n' "$RELEASE_SHA" "$ARCHIVE_SHA256" "$image_id" "${{ github.run_id }}" |
+            ssh "${opts[@]}" -T -p "$VPS_PORT" "$target" 'sudo -n -- /usr/local/sbin/suiba-deploy'
+      - name: Diagnose a failed deploy (same approval)
+        if: ${{ !cancelled() && failure() }}
+        env:
+          PAPER_STATUS_CONFIRMATION: CHECK-PAPER-DIAGNOSTICS
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          # Observational: a diagnostics failure changes nothing.
+          set +e
+          out=$(bash sui-ai-trading-bot/docker/ssh-paper-status.sh 2>&1)
+          printf '%s\n' "$out"
+          {
+            echo ""
+            echo "## Auto-diagnostics (same approval)"
+            printf '%s\n' "$out"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
