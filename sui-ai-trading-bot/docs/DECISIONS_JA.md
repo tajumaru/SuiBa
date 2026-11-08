@@ -132,3 +132,9 @@ planner（docker/paper-deploy-cycle-plan.py）の前提「failed_requires_review
 正しい意味（broker.py の check_paper_session／controller.py の approve_deploy で確認）：セッション marker（paper-check.json）が in_progress のまま前任ランが failed_requires_review のとき、配置には deploy permit（paper-deploy-<sha>.json。run.json／stop.json／承認ファイルの digest を束縛）が必須で、その permit を発行するのが controller の approve_deploy。approve_deploy の要件は record が failed_requires_review・stop が clean_stopped・**requires_review でないこと**（requires_review＝ラッチまたは fault-*.json が存在）・marker が in_progress であり、ラッチ／fault がある場合は approve_deploy 自体が拒否する（そのケースは reconcile 経路の担当）。つまり approve_deploy が要るのは「failed の前任」全般であり、ラッチのない clean な失敗こそ本命。なおラッチが存在すると broker は permit があっても PAPER_CHECK_RECONCILIATION_REQUIRED で拒否する。
 
 訂正：planner の approve_deploy を `(state == "failed_requires_review")` に戻す（ラッチの有無によらない）。failed＋ラッチなしは整合という PR #135 の修正と、中止条件（live／ラッチあり＋failed でない／診断が読めない）は維持する。planner は順序付けのみで、ラッチ／fault のあるケースはサーバ側（approve_deploy・broker）が拒否する。ホスト配布ファイルに変更は無い。
+
+## 2026-11-09 訂正：開始直後の自動 export はスーパバイザのバックアップ記録と競合する
+
+PR #130 の自動 export は「start ステップが開始前バックアップを作成済み」という前提で開始直後に export していたが、この前提が誤りだった。start op は開始リクエストを記録して systemd サービスを `--no-block` で起動し、即座に `PAPER_CHECK_REQUEST_ACCEPTED` を返すだけである。バックアップ（DATA ボリュームの tar 化と sha256）はスーパバイザ側が admission→preflight→timer の後に実施し、その完了後に初めて run record へ `backup` が記録される。開始直後の export はこの記録前に走るため `EXPORT_BACKUP_MISSING` で拒否される。2026-11-09 の 24h 初回・やり直しの両サイクルで再現し、いずれも数分後の手動 EXPORT は成功した（ハード区間のレビュー未投稿の原因もこれ）。
+
+修正：サイクルに「watch 終了後の再試行」を追加する。開始したランについては、スーパバイザが worker 起動前にバックアップを記録済みであることが保証されるため、watch が終わる頃には記録が存在する。再試行は最大3回・60秒間隔、初回試行が失敗したときだけ走り、従来どおり観測専用（失敗してもサイクルは落とさない）。成功すれば同じ名前でアーティファクトをアップロードし、レビューの自動投稿に乗る。ホスト配布ファイルに変更は無い（export op 自体の意味は不変）。

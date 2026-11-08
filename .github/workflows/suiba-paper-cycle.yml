@@ -54,14 +54,19 @@ jobs:
     # a failed watch used to mean a second approval just to learn
     # why). Failures after the watch window still need the status
     # workflow, which shares this Environment and its approval.
-    # Right after the start, the same job also exports the pre-run
-    # snapshot the start just created: that backup freezes the record
-    # through the END of the previous run, so this is the earliest
+    # The same job also exports the pre-run snapshot the supervisor
+    # creates while starting: that backup freezes the record through
+    # the END of the previous run, so a cycle start is the earliest
     # moment the previous run's review data can leave the host
     # (added 2026-11-08; it used to need a manual export dispatch
-    # after every run). The export is observational — its failure
-    # never fails the cycle — and the run-review workflow picks the
-    # artifact up when this cycle completes.
+    # after every run). The start step only requests the start —
+    # the supervisor records the backup during its own startup
+    # stages — so the immediate export attempt can race that record
+    # and find no backup yet; a second attempt after the watch
+    # closes the gap (added 2026-11-09). The export is
+    # observational — its failure never fails the cycle — and the
+    # run-review workflow picks the artifact up when this cycle
+    # completes.
     if: github.ref == 'refs/heads/main' && inputs.confirmation == 'CYCLE-PAPER' && vars.SUIBA_PAPER_START_ENABLED == 'true'
     environment: sakura-vps
     runs-on: ubuntu-latest
@@ -103,12 +108,16 @@ jobs:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: |
-          # The start step has just created this run's pre-run backup,
-          # which freezes the record through the end of the PREVIOUS
-          # run. Exporting it here removes the manual export dispatch
-          # that used to follow every run. Observational only: an
-          # export failure changes nothing for the validation run,
-          # and the standalone export workflow remains available.
+          # The supervisor creates this run's pre-run backup during
+          # its startup stages (the start step only requested the
+          # start), and that backup freezes the record through the
+          # end of the PREVIOUS run. This immediate attempt can race
+          # the backup record and fail with EXPORT_BACKUP_MISSING;
+          # the retry after the watch covers that case. Exporting
+          # here removes the manual export dispatch that used to
+          # follow every run. Observational only: an export failure
+          # changes nothing for the validation run, and the
+          # standalone export workflow remains available.
           bash sui-ai-trading-bot/docker/ssh-paper-export.sh
           {
             echo ""
@@ -205,3 +214,55 @@ jobs:
             printf '%s\n' "$out"
           } >> "$GITHUB_STEP_SUMMARY"
           exit 0
+      - name: Export the previous run's snapshot again after the watch (same approval)
+        id: autoexportretry
+        if: ${{ !cancelled() && steps.autoexport.outcome == 'failure' && vars.SUIBA_PAPER_EXPORT_ENABLED == 'true' }}
+        continue-on-error: true
+        env:
+          PAPER_EXPORT_CONFIRMATION: EXPORT-PAPER-PUBLIC
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          # The immediate attempt above races the supervisor's
+          # backup stage: the start step only requests the start,
+          # and the supervisor creates and records the pre-run
+          # backup during its own startup, so the first export can
+          # find no recorded backup yet (EXPORT_BACKUP_MISSING —
+          # observed on both 2026-11-09 cycle starts; a manual
+          # export minutes later succeeds). By the end of the watch
+          # the backup is provably recorded for any run that
+          # started: the supervisor records it before starting the
+          # worker. A few bounded attempts here close the gap.
+          # Still observational: a failure changes nothing for the
+          # validation run, and the standalone export workflow
+          # remains available.
+          set +e
+          attempt=1
+          while [ $attempt -le 3 ]; do
+            bash sui-ai-trading-bot/docker/ssh-paper-export.sh
+            rc=$?
+            if [ $rc -eq 0 ]; then
+              {
+                echo ""
+                echo "## Auto-export retry (same approval)"
+                echo "The previous run's pre-run snapshot was exported on attempt ${attempt} after the watch; the run review posts it to the standing Issue when this cycle completes."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "Auto-export retry attempt ${attempt} failed (exit ${rc})."
+            attempt=$(( attempt + 1 ))
+            if [ $attempt -le 3 ]; then
+              sleep 60
+            fi
+          done
+          exit 1
+      - uses: actions/upload-artifact@v4
+        if: steps.autoexportretry.outcome == 'success'
+        with:
+          name: suiba-pre-run-public-${{ github.run_id }}
+          path: ${{ runner.temp }}/suiba-public-export/
+          if-no-files-found: error
+          retention-days: 1
