@@ -39,6 +39,8 @@ import { cycleNarrationText, decisionTrail, sellLinesOf } from "./decision.ts";
 import {
   REVIEW_BUY_MIN_SETTLED,
   REVIEW_SETTLED_THRESHOLD,
+  hitStreakText,
+  processReach,
   processWatch,
   recordWatchKind,
   reviewNarrationTexts,
@@ -181,6 +183,12 @@ export interface AdvanceWork {
   prevTrail: NarrationState["prevTrail"];
   priceRising: NarrationState["priceRising"];
   watch: NarrationState["watch"];
+  reach: NarrationState["reach"];
+  hitStreak: NarrationState["hitStreak"];
+  /** The saved settings are the hard preset: the reach calls
+   * and the hit line run their hotter variants. Judged by the
+   * caller from presetName, like the header's hard-mode mark. */
+  hardMode: boolean;
   watchScore: WatchScore;
   watchKindStats: WatchKindStats;
   sessionStartPrice: NarrationState["sessionStartPrice"];
@@ -405,7 +413,7 @@ if (dec && (work.lastDecisionAt == null || dec.evaluatedAt > work.lastDecisionAt
   ) {
     // The declared watch advances with the same cycle: its lines
     // frame the cycle's own narration (before / after).
-    const outcome = processWatch(work.watch, dec);
+    const outcome = processWatch(work.watch, dec, work.hardMode);
     // The settled watch is the one that was live at the cycle's
     // start: its kind takes the hit or miss in the per-kind record.
     if (outcome.settled != null && work.watch != null)
@@ -415,8 +423,19 @@ if (dec && (work.lastDecisionAt == null || dec.evaluatedAt > work.lastDecisionAt
         outcome.settled,
       );
     work.watch = outcome.watch;
-    if (outcome.before.some((draft) => draft.kind === "watchHit"))
+    // The 連チャン streak: a miss settlement breaks it, a TOLD
+    // hit grows it and — from the second in a row — the hit line
+    // carries the count. Silent settlements move it neither way.
+    if (outcome.settled === "miss") work.hitStreak = 0;
+    const hitDraft = outcome.before.find(
+      (draft) => draft.kind === "watchHit",
+    );
+    if (hitDraft) {
       work.lastHitAt = dec.evaluatedAt;
+      work.hitStreak += 1;
+      if (work.hitStreak >= 2)
+        hitDraft.text = hitStreakText(hitDraft.text, work.hitStreak);
+    }
     if (outcome.nearMiss) work.lastNearMiss = outcome.nearMiss;
     work.drafts.push(...outcome.before);
     work.drafts.push({
@@ -446,6 +465,17 @@ if (dec && (work.lastDecisionAt == null || dec.evaluatedAt > work.lastDecisionAt
     if (Number.isFinite(dec.price) && dec.price > 0)
       work.priceHistory = [...work.priceHistory, dec.price].slice(-ALERT_HISTORY_KEEP);
     work.drafts.push(...outcome.after);
+    // The reach escalation rides on the same cycle: the watch
+    // has just been advanced, so its approach judgement for the
+    // one missing condition is this cycle's own.
+    const reachOutcome = processReach(
+      work.reach,
+      work.watch,
+      dec,
+      work.hardMode,
+    );
+    work.reach = reachOutcome.reach;
+    work.drafts.push(...reachOutcome.drafts);
     // Score the cycle's declaration / settlement, then — only at
     // a milestone — pause for a short look-back over the record.
     const settled = outcome.settled != null;

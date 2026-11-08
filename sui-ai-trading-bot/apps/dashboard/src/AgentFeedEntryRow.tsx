@@ -98,6 +98,12 @@ export function AgentFeedEntryRow({
       {entry.kind === "watchHit" && (
         <span className="agent-feed-entry-tag hit">的中</span>
       )}
+      {entry.kind === "reach" && (
+        <span className="agent-feed-entry-tag reach">リーチ</span>
+      )}
+      {entry.kind === "superReach" && (
+        <span className="agent-feed-entry-tag super-reach">スーパーリーチ</span>
+      )}
       {entry.kind === "sleepTalk" && (
         <span className="agent-feed-entry-tag sleep">寝言</span>
       )}

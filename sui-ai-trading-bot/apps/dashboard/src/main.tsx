@@ -17,6 +17,7 @@ import { useForecastSuite } from "./useForecastSuite.ts";
 import { OverviewTab } from "./OverviewTab.tsx";
 import { AppHeader } from "./AppHeader.tsx";
 import { AgentNarrationFeed } from "./AgentNarration.tsx";
+import { presetName } from "./settingsPresets.ts";
 import { BootScreen } from "./BootScreen.tsx";
 
 import { useUpdateCheck } from "./appVersion.ts";
@@ -556,6 +557,7 @@ function App() {
                       book={data?.bookLevels ?? null}
                       forecasts={forecastInput}
                       calibEvent={calibEvent}
+                      hardMode={presetName(data?.settings) === "hard"}
                       active={activeTab === "Live"}
                       agentName={agentName}
                       onListeningChange={setVoiceListening}
