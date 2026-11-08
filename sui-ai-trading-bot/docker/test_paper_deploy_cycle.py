@@ -43,9 +43,26 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(plan_mod.plan(diagnostics(active=True)),
                          {"release_cutoff": True, "approve_deploy": False})
 
+    def test_failed_without_fault_marker_is_a_clean_failure(self):
+        # A run that stops on a worker runtime error during monitoring
+        # and finalizes cleanly is failed_requires_review with no
+        # reconciliation latch. The broker only refuses while the latch
+        # exists, so no permit is needed; only the leftover timer is.
+        self.assertEqual(
+            plan_mod.plan(diagnostics(state="failed_requires_review",
+                                      active=True)),
+            {"release_cutoff": True, "approve_deploy": False})
+        self.assertEqual(
+            plan_mod.plan(diagnostics(state="failed_requires_review")),
+            {"release_cutoff": False, "approve_deploy": False})
+
     def test_live_run_aborts(self):
         with self.assertRaises(ValueError):
             plan_mod.plan(diagnostics(state="in_progress"))
+
+    def test_finishing_run_aborts(self):
+        with self.assertRaises(ValueError):
+            plan_mod.plan(diagnostics(state="finishing"))
 
     def test_unreadable_state_aborts(self):
         with self.assertRaises(ValueError):
@@ -54,10 +71,6 @@ class PlanTests(unittest.TestCase):
     def test_fault_marker_without_failed_state_aborts(self):
         with self.assertRaises(ValueError):
             plan_mod.plan(diagnostics(fault=True))
-
-    def test_failed_without_fault_marker_aborts(self):
-        with self.assertRaises(ValueError):
-            plan_mod.plan(diagnostics(state="failed_requires_review"))
 
 
 class WorkflowShapeTests(unittest.TestCase):
