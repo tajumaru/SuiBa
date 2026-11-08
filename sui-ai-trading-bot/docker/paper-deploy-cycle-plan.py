@@ -7,18 +7,29 @@ needs:
 
 - release_cutoff: a cutoff timer from a finished run is still armed
   (active or elapsed) and would block quiescent-gated operations.
-- approve_deploy: the predecessor run latched failed_requires_review
-  AND set the fault marker (STATE/paper-check-failed.json). The broker
-  refuses a deploy while that latch exists without a deploy permit, so
-  the permit has to be materialized first.
+- approve_deploy: the predecessor run ended failed_requires_review.
+  The session marker (paper-check.json) stays in_progress over a
+  failed predecessor, and in that state the broker requires a deploy
+  permit (paper-deploy-<sha>.json, binding the digests of run.json,
+  stop.json and the approval) before it accepts a deploy.
+  approve_deploy is the controller op that materializes that permit,
+  so every failed predecessor needs it, regardless of the fault
+  marker — a clean monitoring failure with no marker is the main
+  case, not an exception.
 
-The fault marker is a fence for failures that need manual
-reconciliation (controller.fault writes it together with a per-run
-fault-*.json). A run that stops on a worker runtime error during
-monitoring and finalizes cleanly also ends as failed_requires_review,
-but carries no latch — that is a correct, consistent state, not a
-contradiction: with no latch the broker does not refuse the deploy and
-no permit is needed (approve_deploy stays false).
+A run that stops on a worker runtime error during monitoring and
+finalizes cleanly also ends as failed_requires_review but carries no
+fault marker (STATE/paper-check-failed.json) — that is a correct,
+consistent state, not a contradiction. The marker is a separate
+gate, not the permit trigger: controller.fault writes it (with a
+per-run fault-*.json) for failures that need manual reconciliation,
+and while it exists the broker refuses every deploy, permit or not
+(PAPER_CHECK_RECONCILIATION_REQUIRED). approve_deploy itself also
+refuses server-side in that case, because it requires a clean stop
+and no requires_review. A failed run carrying the marker therefore
+belongs to the reconcile path; this plan still sequences
+approve_deploy for any failed state, and the server side is what
+refuses.
 
 A fault marker without a failed state remains inconsistent and aborts,
 as does anything unreadable: a one-approval deploy must never guess its
@@ -54,12 +65,13 @@ def plan(text):
     if fault_marker and not failed:
         raise ValueError("STATE_INCONSISTENT: fault marker is set but the "
                          f"run state is {state}; inspect before deploying")
-    # approve_deploy is needed only when the broker would refuse the
-    # deploy, i.e. only while the reconciliation latch exists. A failed
-    # run without the latch finalized cleanly (e.g. a worker runtime
-    # error during monitoring) and deploys without a permit.
+    # approve_deploy covers every failed predecessor: with the session
+    # marker still in_progress, the broker demands a deploy permit
+    # before accepting a deploy, and approve_deploy materializes it.
+    # The fault marker neither adds nor removes that need; it gates
+    # reconciliation server-side instead.
     return {"release_cutoff": timer_armed,
-            "approve_deploy": failed and fault_marker}
+            "approve_deploy": failed}
 
 
 def main(argv):

@@ -46,15 +46,17 @@ class PlanTests(unittest.TestCase):
     def test_failed_without_fault_marker_is_a_clean_failure(self):
         # A run that stops on a worker runtime error during monitoring
         # and finalizes cleanly is failed_requires_review with no
-        # reconciliation latch. The broker only refuses while the latch
-        # exists, so no permit is needed; only the leftover timer is.
+        # reconciliation latch. That state is consistent (no abort),
+        # but the session marker stays in_progress over the failed
+        # predecessor, so the broker still demands a deploy permit:
+        # approve_deploy is needed for every failed predecessor.
         self.assertEqual(
             plan_mod.plan(diagnostics(state="failed_requires_review",
                                       active=True)),
-            {"release_cutoff": True, "approve_deploy": False})
+            {"release_cutoff": True, "approve_deploy": True})
         self.assertEqual(
             plan_mod.plan(diagnostics(state="failed_requires_review")),
-            {"release_cutoff": False, "approve_deploy": False})
+            {"release_cutoff": False, "approve_deploy": True})
 
     def test_live_run_aborts(self):
         with self.assertRaises(ValueError):
