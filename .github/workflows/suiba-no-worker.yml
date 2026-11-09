@@ -110,7 +110,9 @@ jobs:
       - name: Run review counterfactual tests (no network)
         run: python3 -I docker/test_run_review.py
       - name: One-approval deploy plan tests (no network)
-        run: python3 -I docker/test_paper_deploy_cycle.py
+        run: |
+          python3 -I docker/test_paper_deploy_cycle.py
+          python3 -I docker/test_broker_last_deploy.py
       - name: PAPER controller failure tests (no Worker)
         run: |
           # Syntax-gate every deploy Python file on the light path too:
