@@ -204,6 +204,14 @@ try:
                     for key, limit in (("stdout_bytes", 8*1024**3+65536), ("stderr_bytes", 1024**2+65536)):
                         if type(process[key]) is not int or not 0 <= process[key] <= limit:
                             raise ValueError()
+            last_failure = host.get("broker_last_failure")
+            if last_failure is not None:
+                if (not isinstance(last_failure, dict) or set(last_failure) != {"at", "operation", "sha", "code"}
+                    or type(last_failure["at"]) is not int or last_failure["at"] <= 0
+                    or not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", last_failure["operation"])
+                    or not re.fullmatch(r"[a-f0-9]{40}", last_failure["sha"])
+                    or not re.fullmatch(r"[A-Z][A-Z_]{2,47}", last_failure["code"])):
+                    raise ValueError()
 
 except (OSError, ValueError, KeyError, TypeError):
     sys.exit("PAPER_STATUS_INVALID")
@@ -303,6 +311,10 @@ if details is not None:
             if process is not None:
                 print(f"- Broker CLI observation: phase={process['phase']}, exit={process['exit_code']}, "
                       f"stdout bytes={process['stdout_bytes']}, stderr bytes={process['stderr_bytes']}")
+        last_failure = host.get("broker_last_failure")
+        if last_failure is not None:
+            print(f"- Last broker rejection: code={last_failure['code']}, operation={last_failure['operation']}, "
+                  f"SHA={last_failure['sha']}, at={last_failure['at']}")
     if details["deltas"] is not None:
         for pair in ("SUI_USDC", "WAL_USDC"):
             delta = details["deltas"][pair]

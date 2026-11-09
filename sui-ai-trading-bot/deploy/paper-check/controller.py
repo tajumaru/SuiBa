@@ -689,6 +689,29 @@ class Controller:
         failure = ledger.get('failure')
         if failure is not None:
             self.b.validate_failure_diagnostic(failure)
+        # The broker's pre-transaction rejection record lives
+        # outside the ledger: a deploy refused before transaction()
+        # (the paper-session gate, a missing permit or approval)
+        # writes only this public-code file, so without it the
+        # refusal is invisible outside the host. Surface it
+        # best-effort — the broker writes it best-effort too, so
+        # any read or shape problem degrades to None instead of
+        # breaking the diagnosis.
+        broker_last_failure = None
+        try:
+            candidate = self.b.decode(self.b.read_trusted(self.b.STATE/'last-failure.json'))
+            if (type(candidate) is dict and set(candidate) == {'version', 'at', 'operation', 'sha', 'code'}
+                    and type(candidate['version']) is int and candidate['version'] == 1
+                    and type(candidate['at']) is int and candidate['at'] > 0
+                    and type(candidate['operation']) is str
+                    and re.fullmatch(r'[a-z][a-z0-9-]{0,31}', candidate['operation'])
+                    and type(candidate['sha']) is str and re.fullmatch(r'[a-f0-9]{40}', candidate['sha'])
+                    and type(candidate['code']) is str
+                    and re.fullmatch(r'[A-Z][A-Z_]{2,47}', candidate['code'])):
+                broker_last_failure = {'at': candidate['at'], 'operation': candidate['operation'],
+                                       'sha': candidate['sha'], 'code': candidate['code']}
+        except Exception:
+            broker_last_failure = None
         known_states = ('in_progress', 'prepared_stopped', 'failed_stopped', 'failed_state_unknown')
         gate = self.b.decode(self.b.read_trusted(self.b.STATE/'paper-check.json'))
         timer = {'active': False, 'elapsed': False, 'next': False, 'job': False}
@@ -738,6 +761,7 @@ class Controller:
         return {
             'ledger_status': ledger['status'] if ledger['status'] in known_states else 'unknown',
             'broker_failure': failure,
+            'broker_last_failure': broker_last_failure,
             'sequence': ledger['sequence'], 'sha': ledger['sha'],
             'paper_gate': gate.get('status') if gate.get('status') in ('completed', 'in_progress') else 'unknown',
             'fault_marker': os.path.lexists(self.b.STATE/'paper-check-failed.json'),
