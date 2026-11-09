@@ -124,7 +124,7 @@ jobs:
             echo "## Auto-export (same approval)"
             echo "The previous run's pre-run snapshot was exported from this cycle run; the run review posts it to the standing Issue when this cycle completes."
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: steps.autoexport.outcome == 'success'
         with:
           name: suiba-pre-run-public-${{ github.run_id }}
@@ -259,7 +259,7 @@ jobs:
             fi
           done
           exit 1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: steps.autoexportretry.outcome == 'success'
         with:
           name: suiba-pre-run-public-${{ github.run_id }}
