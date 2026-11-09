@@ -160,7 +160,9 @@ export class OperationMonitor {
    * early-morning book). Route the throw into the same recovery
    * episode as a stall: the gate itself already prevents any
    * trade on a bad book, so pausing loses nothing, and a book
-   * that stays bad escalates via the standard episode limits.
+   * that stays bad escalates via the episode limits (a
+   * book-guard-only episode earns the long window: see
+   * slowMarketTallyKeys in paper-recovery).
    * A bot paused inside an open recovery episode is routed too:
    * its ticks are the recovery proofs, so a bad book there is
    * the same episode continuing, not a new failure. A plain stop

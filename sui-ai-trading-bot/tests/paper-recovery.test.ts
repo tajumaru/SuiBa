@@ -5,7 +5,14 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { OperationMonitor } from "../apps/worker/src/operations.ts";
-import { recoverableReadFailure } from "../packages/shared/src/paper-recovery.ts";
+import {
+  episodeLimits,
+  initialPaperSafety,
+  paperRecoveryLimits,
+  recoverableReadFailure,
+  staleEpisodeLimits,
+} from "../packages/shared/src/paper-recovery.ts";
+import type { PaperSafetyState } from "../packages/shared/src/paper-recovery.ts";
 import type { ApiFailure } from "../packages/shared/src/http-errors.ts";
 
 export const failure = (patch: Partial<ApiFailure> = {}): ApiFailure => ({
@@ -485,7 +492,7 @@ it("counts a book guard throw during the pause as the same episode", () => {
     },
   });
 });
-it("exhausts a persistent book-guard episode at the standard deadline", () => {
+it("exhausts a persistent book-guard episode at the long deadline", () => {
   const { db, monitor } = setup(),
     start = Date.now();
   expect(monitor.bookGuardThrowToEpisode("SPREAD_TOO_WIDE", start)).toBe(
@@ -495,11 +502,53 @@ it("exhausts a persistent book-guard episode at the standard deadline", () => {
     monitor.bookGuardThrowToEpisode("SPREAD_TOO_WIDE", start + 90000),
   ).toBe(true);
   expect(db.runtime().error).toBeNull();
+  // A book-guard-only episode earns the long window (decided
+  // 2026-11-10), so the standard 180 s deadline no longer stops it.
   expect(
     monitor.bookGuardThrowToEpisode("SPREAD_TOO_WIDE", start + 181000),
   ).toBe(true);
+  expect(db.runtime().error).toBeNull();
+  expect(monitor.safety().resumePending).toBe(true);
+  monitor.checkRecoveryDeadline(start + 1800000);
   expect(db.runtime().error).toBe("PAPER_RECOVERY_EXHAUSTED");
   expect(monitor.safety().resumePending).toBe(false);
+});
+const safetyWithTally = (
+  episodeTally: PaperSafetyState["episodeTally"],
+): PaperSafetyState => ({ ...initialPaperSafety(), episodeTally });
+it.each([
+  "MarketData/CANDLE_STALE",
+  "MarketData/SPREAD_TOO_WIDE",
+  "MarketData/THIN_ORDERBOOK",
+  "MarketData/STALE_ORDERBOOK",
+  "MarketData/INVALID_ORDERBOOK",
+])("earns the long episode window for a %s-only episode", (key) => {
+  expect(episodeLimits(safetyWithTally({ [key]: 1 }))).toBe(
+    staleEpisodeLimits,
+  );
+});
+it("earns the long episode window for a book-guard and candle-stale mix", () => {
+  expect(
+    episodeLimits(
+      safetyWithTally({
+        "MarketData/SPREAD_TOO_WIDE": 1,
+        "MarketData/CANDLE_STALE": 2,
+      }),
+    ),
+  ).toBe(staleEpisodeLimits);
+});
+it("restores the standard episode window when a read failure joins", () => {
+  expect(
+    episodeLimits(
+      safetyWithTally({
+        "MarketData/SPREAD_TOO_WIDE": 1,
+        "Sui gRPC/UPSTREAM_NETWORK_FAILED": 1,
+      }),
+    ),
+  ).toBe(paperRecoveryLimits);
+});
+it("uses the standard episode window for an empty tally", () => {
+  expect(episodeLimits(safetyWithTally({}))).toBe(paperRecoveryLimits);
 });
 it("resumes from a book-guard pause once the book is healthy again", () => {
   const { db, monitor } = setup(),
