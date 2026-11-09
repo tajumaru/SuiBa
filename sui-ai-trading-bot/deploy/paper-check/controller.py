@@ -56,6 +56,15 @@ EXPORT_PROGRAM = Path('/usr/local/libexec/suiba-paper-export.py')
 EXPORT_CODES = frozenset(('EXPORT_BACKUP_MISSING', 'EXPORT_MANIFEST_MISMATCH', 'EXPORT_ARCHIVE_INVALID',
     'EXPORT_LIMIT_EXCEEDED', 'EXPORT_DATABASE_INVALID', 'EXPORT_RUN_INVALID', 'EXPORT_PACKAGE_INVALID',
     'EXPORT_PROGRAM_INVALID', 'EXPORT_PROD_NOT_RUNNING'))
+# The start op returns as soon as the supervisor is launched; the
+# supervisor creates the pre-run backup during admission and only
+# then records it on the run record. An export issued immediately
+# after start (the paper cycle's start-then-export sequence) can
+# therefore arrive before the backup exists. While the same run is
+# still in_progress, export_snapshot polls the record for the
+# backup for at most this window instead of refusing at once.
+EXPORT_BACKUP_WAIT_SECONDS = 180
+EXPORT_BACKUP_POLL_SECONDS = 5
 RECONCILE_BACKUPS = Path('/root')
 PREFLIGHT_CHECKS = ('storage', 'ledger', 'container', 'admission')
 # Sub-labels for the container preflight segment, recorded as the
@@ -303,6 +312,14 @@ try {
 } catch { evidence = null; }
 console.log(JSON.stringify({deltas: result, runtime, selected_pair: selectedPair, evidence}));
 """.replace('RUNTIME_ERROR_ALLOWLIST', json.dumps(RUNTIME_ERROR_CODES))
+
+
+def export_backup_name(record):
+    backup = record.get('backup')
+    if type(backup) is dict and type(backup.get('file')) is str and \
+            re.fullmatch(r'paper-check-[0-9a-f]{32}\.tar', backup['file']):
+        return backup['file']
+    return None
 
 
 class Controller:
@@ -1347,12 +1364,34 @@ class Controller:
             'reason': reason if type(reason) is str and re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', reason) else None,
         }
 
+    def await_export_backup(self, record):
+        # Poll for the pre-run backup of the run that was current
+        # when the export arrived (see EXPORT_BACKUP_WAIT_SECONDS).
+        # Returns the latest record for that same run: the wait ends
+        # when a valid backup appears, when the run leaves
+        # in_progress, or when the window expires. A different run
+        # taking over the record also ends the wait, with the
+        # original record returned, so the caller refuses rather
+        # than exporting another run's backup.
+        deadline = time.monotonic()+EXPORT_BACKUP_WAIT_SECONDS
+        while time.monotonic() < deadline:
+            time.sleep(EXPORT_BACKUP_POLL_SECONDS)
+            polled = self.current()
+            if polled['id'] != record['id']:
+                return record
+            record = polled
+            if record.get('status') != 'in_progress' or export_backup_name(record) is not None:
+                return record
+        return record
+
     def export_snapshot(self):
         # Read only the pinned pre-run archive. No service/worker/volume/maintenance operation.
         stage = 'EXPORT_RUN_INVALID'
         try:
             record = self.current()
             stage = 'EXPORT_BACKUP_MISSING'
+            if export_backup_name(record) is None and record.get('status') == 'in_progress':
+                record = self.await_export_backup(record)
             backup = record.get('backup')
             require(type(backup) is dict and type(backup.get('file')) is str and
                     re.fullmatch(r'paper-check-[0-9a-f]{32}\.tar', backup['file']))

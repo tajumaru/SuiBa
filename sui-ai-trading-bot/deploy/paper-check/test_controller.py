@@ -1822,6 +1822,105 @@ class ProgramReadTests(unittest.TestCase):
                       source)
 
 
+class ExportBackupWaitTests(unittest.TestCase):
+    # An export issued right after start races the supervisor,
+    # which records the pre-run backup only after admission
+    # creates it. export_snapshot now waits for that record,
+    # bounded, and only while the same run is in_progress.
+    BACKUP_FILE = 'paper-check-' + 'b'*32 + '.tar'
+
+    def record(self, **overrides):
+        base = {'id': 'a'*32, 'status': 'in_progress',
+                'controller': {'pid': 99999999, 'start': '0', 'boot': str(uuid.UUID(int=0))}}
+        base.update(overrides)
+        return base
+
+    def with_backup(self, **overrides):
+        return self.record(backup={'file': self.BACKUP_FILE, 'sha256': 'c'*64}, **overrides)
+
+    def make(self, root, script):
+        from types import SimpleNamespace
+        root = Path(root)
+        backups = root/'backups'; backups.mkdir(mode=0o700)
+        (backups/self.BACKUP_FILE).write_bytes(b'fixture-archive')
+        program = root/'export_fixture.py'
+        program.write_text("def build_export(stream, record):\n"
+                           "    return b'pkg:'+stream.read()+b':'+record['id'].encode()\n")
+        @contextlib.contextmanager
+        def regular(path):
+            fd = os.open(path, os.O_RDONLY)
+            try: yield fd
+            finally: os.close(fd)
+        ctl = object.__new__(c.Controller)
+        ctl.b = SimpleNamespace(BACKUPS=backups, regular=regular,
+            decode=FakeBroker.decode, read_trusted=FakeBroker.read_trusted)
+        self.reads = 0
+        def current(expected=None):
+            self.reads += 1
+            return script[min(self.reads, len(script))-1]
+        ctl.current = current
+        self.clock = [0.0]
+        self.sleeps = []
+        def sleep(seconds):
+            self.sleeps.append(seconds)
+            self.clock[0] += seconds
+        fake_time = SimpleNamespace(monotonic=lambda: self.clock[0], sleep=sleep, time=time.time)
+        patcher = patch.object(c, 'EXPORT_PROGRAM', program)
+        patcher.start(); self.addCleanup(patcher.stop)
+        patcher = patch.object(c, 'time', fake_time)
+        patcher.start(); self.addCleanup(patcher.stop)
+        return ctl
+
+    def refused(self, ctl):
+        with self.assertRaises(c.SnapshotExportRejected) as raised:
+            ctl.export_snapshot()
+        self.assertEqual(raised.exception.code, 'EXPORT_BACKUP_MISSING')
+
+    def test_backup_already_recorded_exports_without_waiting(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root, [self.with_backup(status='completed')])
+            self.assertEqual(ctl.export_snapshot(), b'pkg:fixture-archive:' + b'a'*32)
+            self.assertEqual(self.reads, 1)
+            self.assertEqual(self.sleeps, [])
+
+    def test_backup_appearing_on_a_later_poll_exports(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root, [self.record(), self.record(), self.with_backup()])
+            self.assertEqual(ctl.export_snapshot(), b'pkg:fixture-archive:' + b'a'*32)
+            self.assertEqual(self.reads, 3)
+            self.assertEqual(self.sleeps, [c.EXPORT_BACKUP_POLL_SECONDS]*2)
+
+    def test_terminal_record_without_backup_refuses_without_polling(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root, [self.record(status='completed')])
+            self.refused(ctl)
+            self.assertEqual(self.reads, 1)
+            self.assertEqual(self.sleeps, [])
+
+    def test_run_change_during_the_wait_refuses(self):
+        with tempfile.TemporaryDirectory() as root:
+            other = self.with_backup(id='d'*32)
+            ctl = self.make(root, [self.record(), other])
+            self.refused(ctl)
+            self.assertEqual(self.reads, 2)
+            self.assertEqual(self.sleeps, [c.EXPORT_BACKUP_POLL_SECONDS])
+
+    def test_leaving_in_progress_during_the_wait_refuses(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root, [self.record(), self.record(status='finishing')])
+            self.refused(ctl)
+            self.assertEqual(self.reads, 2)
+            self.assertEqual(self.sleeps, [c.EXPORT_BACKUP_POLL_SECONDS])
+
+    def test_window_expiry_refuses(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root, [self.record()])
+            self.refused(ctl)
+            self.assertEqual(sum(self.sleeps), c.EXPORT_BACKUP_WAIT_SECONDS)
+            self.assertTrue(all(s == c.EXPORT_BACKUP_POLL_SECONDS for s in self.sleeps))
+            self.assertEqual(self.reads, 1+len(self.sleeps))
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
 
