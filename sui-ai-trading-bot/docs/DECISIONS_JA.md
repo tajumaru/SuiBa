@@ -162,3 +162,13 @@ paper 側の振り返りレビュー（Issue #121 へ自動投稿）は、export
 追加：run-review.py に `--window last-session` モードを足した。窓は DB 自身の operation_events から導出する：終了＝最後の STOP／PROCESS_SHUTDOWN、開始＝それ以前で最後の BOOT。worker はプロセス起動ごとに BOOT を、最終イベントとして STOP／PROCESS_SHUTDOWN を書き、paper-check のライフサイクルはランごとにコンテナをちょうど1回だけ起動する（restart policy は 'no'）ため、この組が1ランの稼働期間と正確に対応する。導出した窓はそのまま --since/--until と同じ内部経路に流す（集計・採点・フラグのロジックは不変）。組が見つからない、または窓内に判断記録が無い場合は、集計の代わりに「直近ランの窓を特定できませんでした」という注記だけの短い報告を出し、終了コード0で終わる（決して落とさない）。
 
 レビューワークフロー（suiba-paper-review.yml）は、窓レポートを「直近ランの窓」の見出し付きで先に、従来の累計レポートをその後に並べた1コメントを投稿する形に変更した。窓を特定できなかった場合は、その注記が窓セクションとしてそのまま載る。
+
+## 2026-11-09 export の開始直後競合を controller 側で解消する
+
+「開始直後の自動 export はスーパバイザのバックアップ記録と競合する」（同日の訂正）の根本修正。start op は開始リクエストを記録してスーパバイザを起動し即座に返るため、バックアップは admission の途中で初めて run record に記録される。PR #137 の修正はワークフロー側の回避策（watch 終了後に最大3回・60秒間隔で再試行）で、export op 自体は記録前の到着を即座に `EXPORT_BACKUP_MISSING` で拒否したままだった。
+
+修正：controller の `export_snapshot` が、現在の run record に有効な backup が無く、かつそのランが `in_progress` の場合に限り、record を5秒間隔で読み直して backup の出現を最大180秒（`EXPORT_BACKUP_WAIT_SECONDS`／`EXPORT_BACKUP_POLL_SECONDS`）待つ。待ちは「同じ run id のまま backup が記録される」「ランが `in_progress` を離れる」「別 run の record に切り替わる」「窓が満了する」のいずれかで終わり、backup が現れれば従来どおり export し、現れなければ従来どおり `EXPORT_BACKUP_MISSING` で拒否する。終端状態の record は backup を後から得ることが無いため、待ちに入らず即座に拒否する（従来挙動のまま）。別 run の backup を誤って export しないよう、待ちの対象は開始時点で現在の run に固定される。
+
+PR #137 のワークフロー側再試行は多重防御として残す。export 自体が数分で返るようになるため、開始直後の初回試行が成功するのが通常経路になる。
+
+反映のタイミング：controller.py はホスト配布ファイルのため、ホストで効くのは setup-paper-check.sh の次回再実行時（PR #132／#140／#141 の controller 変更と一緒に乗る。pin は同一コミットで更新済み）。
