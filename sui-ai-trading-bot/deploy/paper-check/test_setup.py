@@ -1,6 +1,7 @@
 """Offline unit/installer contracts; never installs files or starts a service."""
 import configparser
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -123,6 +124,38 @@ class SetupGateTests(unittest.TestCase):
                       {'LoadState': 'not-found', 'ActiveState': 'inactive', 'Job': '123', 'exit': 4}):
             states = self.states(); states['suiba-prod.service'] = value
             self.assertEqual(self.run_gate(states), 19)
+
+
+class VerifyRunCoverageTests(unittest.TestCase):
+    # The docker-run CI job runs verify_run's scenarios as parallel matrix
+    # legs. The legs together must still cover every canonical scenario
+    # exactly once, and the selection helper must keep canonical order, so
+    # a future edit cannot silently drop or duplicate a scenario.
+    def load_verify_run(self):
+        spec = importlib.util.spec_from_file_location('verify_run', HERE/'verify_run.py')
+        result = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(result)
+        return result
+
+    def test_matrix_legs_cover_every_scenario_exactly_once(self):
+        verify_run = self.load_verify_run()
+        workflow = (HERE.parents[2]/'.github/workflows/suiba-no-worker.yml').read_text()
+        job = workflow.split('  docker-run:\n', 1)[1].split('  docker-suites:\n', 1)[0]
+        self.assertIn('fail-fast: false', job)
+        self.assertIn('${{ matrix.scenarios }}', job)
+        legs = re.findall(r'scenarios: ([a-z0-9,\-]+)', job)
+        self.assertEqual(len(legs), 3)
+        covered = [name for leg in legs for name in leg.split(',')]
+        self.assertEqual(len(covered), len(verify_run.SCENARIOS))
+        self.assertEqual(sorted(covered), sorted(verify_run.SCENARIOS))
+
+    def test_selected_scenarios_keeps_canonical_order(self):
+        verify_run = self.load_verify_run()
+        self.assertEqual(verify_run.selected_scenarios(None), verify_run.SCENARIOS)
+        self.assertEqual(verify_run.selected_scenarios('crash,normal'), ('normal', 'crash'))
+        self.assertEqual(verify_run.selected_scenarios('helper,helper'), ('helper',))
+        with self.assertRaises(AssertionError):
+            verify_run.selected_scenarios('bogus')
 
 
 if __name__ == '__main__':

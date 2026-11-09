@@ -136,6 +136,23 @@ if len(sys.argv) == 7 and sys.argv[1] in ('run', 'stop', 'post-stop'):
     sys.exit(0)
 
 
+SCENARIOS = ('normal', 'crash', 'timer', 'helper', 'persistence', 'worker-abort',
+             'signal-failure', 'signal-survive', 'normal-cutoff')
+
+
+def selected_scenarios(argument):
+    # No argument runs the full canonical set, exactly as before the CI job
+    # was split into parallel legs. A comma-separated argument runs only the
+    # named scenarios, in canonical order regardless of the order given;
+    # duplicates collapse. Unknown names are a wiring error and fail here,
+    # before any fixture is built.
+    if argument is None:
+        return SCENARIOS
+    requested = argument.split(',')
+    assert all(name in SCENARIOS for name in requested), argument
+    return tuple(name for name in SCENARIOS if name in requested)
+
+
 def main():
     assert os.geteuid() == 0
     image = sys.argv[1]
@@ -143,7 +160,7 @@ def main():
     digest = identity['Id']
     sha = identity['Config']['Labels']['org.opencontainers.image.revision']
     script = Path(__file__).resolve()
-    for scenario in ('normal', 'crash', 'timer', 'helper', 'persistence', 'worker-abort', 'signal-failure', 'signal-survive', 'normal-cutoff'):
+    for scenario in selected_scenarios(sys.argv[2] if len(sys.argv) > 2 else None):
         name = 'suiba-full-run-'+uuid.uuid4().hex
         base = Path(tempfile.mkdtemp(prefix=name, dir='/var/lib'))
         unit = Path('/run/systemd/system')/(name+'.service')

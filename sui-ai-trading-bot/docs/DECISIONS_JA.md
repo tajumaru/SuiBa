@@ -201,3 +201,11 @@ PR #139 で suiba-prod-review.yml に schedule を2本化（00:17 JST＋01:17 JS
 再発行されたレコードは従来と同じ内容（sha／deploy／発行から1時間）で、同じ atomic な書き込みによる。有効窓と single-use の性質は不変で、approve-deploy の他の前提（failed_requires_review、clean stop、セッションマーカー、helper 検証、quiescence 等）は従来どおり全て効く。
 
 反映のタイミング：controller.py はホスト配布ファイルのため、ホストで効くのは setup-paper-check.sh の次回再実行時（本番切替時。pin は同一コミットで更新済み）。
+
+## 2026-11-09 docker-run の復旧シナリオを3並列の matrix に分割する
+
+CI（suiba-no-worker.yml）の壁時間は docker-run ジョブの単一ステップが決めていた。PR #149 の実測ではジョブ全体7分16秒のうち、イメージ構築は buildx のレイヤーキャッシュが効いて32秒、残り6分34秒が `verify_run.py` の9シナリオを直列に実行するステップだった（他のジョブは全て約1.7分以内に終わる）。
+
+9シナリオ（normal／crash／timer／helper／persistence／worker-abort／signal-failure／signal-survive／normal-cutoff）はそれぞれ独立したフィクスチャ（固有の名前・一時ディレクトリ・volume・unit・後片付け）で、共有する状態が無い。時間の主因は persistence／worker-abort／helper に仕込まれた sleep 120秒のフックだったため、各脚にそのシナリオを1つずつ配る3脚の matrix に分割した（crash-group: persistence,normal,crash／abort-group: worker-abort,timer,signal-failure／helper-group: helper,signal-survive,normal-cutoff）。fail-fast は無効にし、1脚の失敗が他の脚の結果を隠さないようにした。集約ジョブ docker-suites は matrix 化されても `needs.docker-run.result`（全脚成功でのみ success）の読み方が従来どおりで不変。
+
+verify_run.py は引数でシナリオの部分集合を選べるようになった（カンマ区切り、正規順で実行、未知の名前はアサーションで即失敗）。シナリオ本体・アサーション・タイミング定数は一切変更・削除しておらず、総カバレッジは同一。3脚の和集合が正規の9件とちょうど一致することは test_setup.py の契約テストで固定した。壁時間は最も遅い脚（sleep 系1件＋速い2件）まで下がる見込み。
