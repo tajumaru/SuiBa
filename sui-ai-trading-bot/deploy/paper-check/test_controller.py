@@ -2120,5 +2120,142 @@ class EpisodeEvidenceTests(unittest.TestCase):
         self.assertNotIn('Latest episode', output)
 
 
+class ApproveDeployReissueTests(unittest.TestCase):
+    # 作業6 (decision A): approve_deploy may re-materialize a CI
+    # approval record once it has expired, replacing only the stale
+    # permit bound to that expired record's digest. A live record, a
+    # consumed deploy, a foreign permit and any non-CI approval keep
+    # refusing with nothing changed.
+    SHA = 'f'*40
+
+    def build(self, root, approval_source='ci'):
+        import re
+        from types import SimpleNamespace
+        paper, state, policy = [root/name for name in ('paper', 'broker', 'policy')]
+        for folder in (paper, state, policy, policy/'approvals'):
+            folder.mkdir(mode=0o700)
+        ctl = object.__new__(c.Controller)
+        ctl.state, ctl.record = paper, paper/'run.json'
+        record = initialize(ctl)
+        record['status'] = 'failed_requires_review'
+        FakeBroker.atomic(ctl.record, record)
+        FakeBroker.atomic(state/'paper-check.json', {'status': 'in_progress'})
+        (state/'lock').touch(mode=0o600)
+        @contextlib.contextmanager
+        def regular(path):
+            fd = os.open(path, os.O_RDONLY)
+            try:
+                yield fd
+            finally:
+                os.close(fd)
+        ctl.b = SimpleNamespace(STATE=state, POLICY=policy, SHA=re.compile(r'[a-f0-9]{40}'),
+            regular=regular, decode=FakeBroker.decode, read_trusted=FakeBroker.read_trusted,
+            atomic=FakeBroker.atomic, directory=FakeBroker.directory)
+        policy_value = {'helper_image': 'fixture', 'compose_sha256': 'fixture'}
+        if approval_source is not None:
+            policy_value['approval_source'] = approval_source
+        FakeBroker.atomic(policy/'policy.json', policy_value)
+        FakeBroker.atomic(paper/record['id']/'stop.json', {'id': record['id'], 'status': 'clean_stopped'})
+        ctl.quiescent = lambda: None
+        ctl.diagnose_locked = lambda: {'stop': {'status': 'clean_stopped'}, 'requires_review': False,
+                                       'diagnostics': {'exit_code': 0, 'oom_killed': False}}
+        ctl.helper = lambda: (SimpleNamespace(helper=lambda *args: None), 'fixture')
+        ctl.verify_sui = lambda: None
+        return ctl, record, state, policy
+
+    def place_approval(self, policy, expires):
+        path = policy/'approvals'/(self.SHA+'.json')
+        FakeBroker.atomic(path, {'sha': self.SHA, 'operation': 'deploy', 'expires': expires})
+        return path
+
+    def place_permit(self, state, approval_bytes):
+        import hashlib as hl
+        path = state/('paper-deploy-'+self.SHA+'.json')
+        FakeBroker.atomic(path, {'id': 'a'*32, 'sha': self.SHA,
+                                 'approval_sha256': hl.sha256(approval_bytes).hexdigest(),
+                                 'run_sha256': '0'*64, 'stop_sha256': '0'*64})
+        return path
+
+    def test_expired_ci_approval_with_lineage_permit_is_reissued(self):
+        import hashlib as hl
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record, state, policy = self.build(Path(tmp))
+            approval_path = self.place_approval(policy, int(time.time())-60)
+            permit_path = self.place_permit(state, approval_path.read_bytes())
+            ctl.approve_deploy(record['id'], self.SHA)
+            approval = json.loads(approval_path.read_bytes())
+            self.assertEqual(approval['sha'], self.SHA)
+            self.assertEqual(approval['operation'], 'deploy')
+            self.assertTrue(int(time.time()) < approval['expires'] <= int(time.time()) + 3600)
+            permit = json.loads(permit_path.read_bytes())
+            self.assertEqual(permit['id'], record['id'])
+            self.assertEqual(permit['approval_sha256'],
+                             hl.sha256(approval_path.read_bytes()).hexdigest())
+            self.assertFalse(permit_path.with_suffix('.consumed.json').exists())
+            # Single-use preserved: over the fresh record and its live
+            # permit, a second approval refuses exactly as before.
+            with self.assertRaises(Exception):
+                ctl.approve_deploy(record['id'], self.SHA)
+
+    def test_expired_ci_approval_without_permit_is_reissued(self):
+        import hashlib as hl
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record, state, policy = self.build(Path(tmp))
+            approval_path = self.place_approval(policy, int(time.time())-60)
+            old_bytes = approval_path.read_bytes()
+            ctl.approve_deploy(record['id'], self.SHA)
+            self.assertNotEqual(approval_path.read_bytes(), old_bytes)
+            approval = json.loads(approval_path.read_bytes())
+            self.assertTrue(int(time.time()) < approval['expires'] <= int(time.time()) + 3600)
+            permit = json.loads((state/('paper-deploy-'+self.SHA+'.json')).read_bytes())
+            self.assertEqual(permit['approval_sha256'],
+                             hl.sha256(approval_path.read_bytes()).hexdigest())
+
+    def test_live_approval_with_existing_permit_refuses_as_before(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record, state, policy = self.build(Path(tmp))
+            approval_path = self.place_approval(policy, int(time.time())+600)
+            permit_path = self.place_permit(state, approval_path.read_bytes())
+            approval_before, permit_before = approval_path.read_bytes(), permit_path.read_bytes()
+            with self.assertRaises(Exception):
+                ctl.approve_deploy(record['id'], self.SHA)
+            self.assertEqual(approval_path.read_bytes(), approval_before)
+            self.assertEqual(permit_path.read_bytes(), permit_before)
+
+    def test_consumed_deploy_refuses_and_changes_nothing(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record, state, policy = self.build(Path(tmp))
+            approval_path = self.place_approval(policy, int(time.time())-60)
+            permit_path = self.place_permit(state, approval_path.read_bytes())
+            consumed = permit_path.with_suffix('.consumed.json')
+            consumed.write_bytes(permit_path.read_bytes())
+            before = {path: path.read_bytes() for path in (approval_path, permit_path, consumed)}
+            with self.assertRaises(Exception):
+                ctl.approve_deploy(record['id'], self.SHA)
+            for path, data in before.items():
+                self.assertEqual(path.read_bytes(), data)
+
+    def test_foreign_permit_refuses_and_changes_nothing(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record, state, policy = self.build(Path(tmp))
+            approval_path = self.place_approval(policy, int(time.time())-60)
+            permit_path = self.place_permit(state, b'a different approval record entirely')
+            approval_before, permit_before = approval_path.read_bytes(), permit_path.read_bytes()
+            with self.assertRaises(Exception):
+                ctl.approve_deploy(record['id'], self.SHA)
+            self.assertEqual(approval_path.read_bytes(), approval_before)
+            self.assertEqual(permit_path.read_bytes(), permit_before)
+
+    def test_non_ci_expired_approval_refuses_and_stays_untouched(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            ctl, record, state, policy = self.build(Path(tmp), approval_source='local')
+            approval_path = self.place_approval(policy, int(time.time())-60)
+            approval_before = approval_path.read_bytes()
+            with self.assertRaises(Exception):
+                ctl.approve_deploy(record['id'], self.SHA)
+            self.assertEqual(approval_path.read_bytes(), approval_before)
+            self.assertFalse((state/('paper-deploy-'+self.SHA+'.json')).exists())
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

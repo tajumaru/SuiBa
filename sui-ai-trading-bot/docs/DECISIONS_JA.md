@@ -186,3 +186,18 @@ PR #137 のワークフロー側再試行は多重防御として残す。export
 PR #139 で suiba-prod-review.yml に schedule を2本化（00:17 JST＋01:17 JST の保険）し、同日重複ガードを入れた：その JST 日付ぶんの投稿が既に Issue #121 にあれば、投稿をスキップしてジョブは緑のまま終わる。
 
 このため、切替後に手動 dispatch（REVIEW-PROD-DAILY）しても、同日ぶんの定期投稿が既にあれば投稿はスキップされる（仕様）。PR #132 の節に書いた切替スモーク（ゲート変数 SUIBA_PROD_REVIEW_ENABLED を有効化する前に手動 dispatch で確認する手順）は、定期投稿がまだ存在しない状態で行うため、このガードの影響を受けない。有効化後に手動で試す場合は「同日ぶんが既にある日は投稿されない」ことを前提に読むこと。
+
+## 2026-11-09 approve-deploy の失効楔を解消する（作業6、A案）
+
+2026-11-08 の配置 seq 13 で踏んだ楔（docs/CODEX_WORKFLOW_TASKS_JA_20261107.md 作業6）。CI モードの approve-deploy が実体化する配置承認レコード（policy/approvals/<sha>.json）は発行から1時間で失効するが、配置の実行がその窓を過ぎると broker が PAPER_DEPLOY_EXPIRED で拒否し、失効したレコードと未消費の permit（STATE/paper-deploy-<sha>.json）を消す・更新する操作がどこにもないため、同じ sha が二度と approve-deploy を通らなくなっていた。回避は「新しい sha を配置対象にする」ことだけだった。
+
+恒久修正は A案（2026-11-09 に本人が選択）：controller の approve-deploy 自身が、配置サイクルの既存の承認1回の中で失効を検知して再実体化する。ワークフローと broker は変更しない。再実体化が許されるのは次の全てを満たす場合に限る：
+
+- CI モード（policy の approval_source == 'ci'）であること。controller が実体化したのではない承認レコードは、失効していても書き換えず、従来どおり拒否する。
+- 承認レコードが存在し、sha／operation が要求と一致し、expires が既に過ぎていること。失効していないレコードは決して上書きしない。
+- 消費済みマーカー（.consumed.json）が存在しないこと。存在すれば何も変えずに拒否する。
+- 未消費 permit が残っている場合は、その approval_sha256 が失効したレコードの sha256 と一致する場合に限り（＝同じ発行の系譜）取り除き、通常の流れで新しいレコードに束縛された permit を作り直す。他の digest を束縛する permit は触らずに拒否する。
+
+再発行されたレコードは従来と同じ内容（sha／deploy／発行から1時間）で、同じ atomic な書き込みによる。有効窓と single-use の性質は不変で、approve-deploy の他の前提（failed_requires_review、clean stop、セッションマーカー、helper 検証、quiescence 等）は従来どおり全て効く。
+
+反映のタイミング：controller.py はホスト配布ファイルのため、ホストで効くのは setup-paper-check.sh の次回再実行時（本番切替時。pin は同一コミットで更新済み）。

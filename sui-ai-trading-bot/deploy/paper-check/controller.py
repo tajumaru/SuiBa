@@ -829,6 +829,38 @@ class Controller:
                 approval_bytes = self.b.read_trusted(approval_path)
                 approval = self.b.decode(approval_bytes)
                 require(approval['sha'] == sha and approval['operation'] == 'deploy')
+                if (policy.get('approval_source') == 'ci'
+                        and type(approval.get('expires')) is int and approval['expires'] <= time.time()):
+                    # Expiry-wedge re-issue (作業6, decision A): a CI
+                    # approval materialized by an earlier attempt can
+                    # expire before its deploy consumes it, after which
+                    # the expired record and the permit bound to it
+                    # wedged this sha forever. Only a record this
+                    # controller materialized (CI mode), and only once
+                    # expired, may be re-materialized with the same
+                    # content; a live record is never overwritten. The
+                    # stale permit goes only when it binds the expired
+                    # record's digest (its own lineage); a consumed
+                    # marker or a foreign permit refuses with nothing
+                    # changed, so single-use is preserved. The permit
+                    # is dropped before the record is rewritten so a
+                    # crash in between leaves the recoverable state
+                    # (expired record, no permit), never a fresh
+                    # record wedged behind a foreign permit.
+                    stale_permit = self.b.STATE/('paper-deploy-'+sha+'.json')
+                    stale_consumed = stale_permit.with_suffix('.consumed.json')
+                    require(not os.path.lexists(stale_consumed))
+                    if os.path.lexists(stale_permit):
+                        stale = self.b.decode(self.b.read_trusted(stale_permit))
+                        require(stale.get('approval_sha256') ==
+                                hashlib.sha256(approval_bytes).hexdigest())
+                        require(not os.path.lexists(stale_consumed))
+                        stale_permit.unlink()
+                    self.b.atomic(approval_path, {'sha': sha, 'operation': 'deploy',
+                                                  'expires': int(time.time()) + 3600})
+                    approval_bytes = self.b.read_trusted(approval_path)
+                    approval = self.b.decode(approval_bytes)
+                    require(approval['sha'] == sha and approval['operation'] == 'deploy')
                 require(type(approval['expires']) is int and approval['expires'] > time.time())
                 folder = self.folder(record)
                 require(not os.path.lexists(folder/'retry-approved.json'))
