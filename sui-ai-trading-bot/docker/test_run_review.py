@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Contract tests for docker/run-review.py (stage-1 run review)."""
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import sqlite3
@@ -209,6 +211,142 @@ class LoadDecisionsTests(unittest.TestCase):
             self.assertEqual(len(decisions), 1)
             self.assertEqual(decisions[0]["met"], 2)
             self.assertEqual((orders, trades), (0, 0))
+
+
+def decision_json(cts, price=1.0):
+    return {"action": "WAIT", "evidence": {
+        "selectedRule": "NO_SIGNAL", "candleTimestamp": cts,
+        "inputs": {"price": price,
+                   "current": {"ema20": 1.01, "ema50": 1.00, "rsi": 50.0},
+                   "previous": {"rsi": 40.0}},
+        "conditions": {"emaUp": True, "rsiRecovery": True,
+                       "histogramImproving": True,
+                       "latestVolumePositive": True,
+                       "previousVolumePositive": True,
+                       "volumeChangeExceeded": False}}}
+
+
+# Two sessions on the real volume: session 1 spans BASE-7200..BASE-3600,
+# session 2 spans BASE..BASE+3600; event timestamps are epoch ms.
+SESSION1_EVENTS = [((BASE - 7200) * 1000, "BOOT", "PROCESS_RESTART_STOPPED"),
+                   ((BASE - 3600) * 1000, "STOP", "PROCESS_SHUTDOWN")]
+SESSION2_EVENTS = [(BASE * 1000, "BOOT", "PROCESS_RESTART_STOPPED"),
+                   ((BASE + 3600) * 1000, "STOP", "PROCESS_SHUTDOWN")]
+
+
+def write_review_db(tmp, decision_cts, events):
+    db = os.path.join(tmp, "SUI_USDC.sqlite")
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE strategy_decisions (id TEXT, timestamp INTEGER, json TEXT)")
+    conn.execute("CREATE TABLE paper_orders (id TEXT, timestamp INTEGER, json TEXT)")
+    conn.execute("CREATE TABLE paper_trades (id TEXT, timestamp INTEGER, json TEXT)")
+    conn.execute("CREATE TABLE operation_events (id TEXT, timestamp INTEGER, json TEXT)")
+    for i, cts in enumerate(decision_cts):
+        conn.execute("INSERT INTO strategy_decisions VALUES (?, ?, ?)",
+                     (f"d{i}", cts * 1000, json.dumps(decision_json(cts))))
+    for i, (ts, kind, code) in enumerate(events):
+        conn.execute("INSERT INTO operation_events VALUES (?, ?, ?)",
+                     (f"e{i}", ts, json.dumps(
+                         {"timestamp": ts, "kind": kind, "code": code})))
+    conn.commit()
+    conn.close()
+    return db
+
+
+def write_candles_file(tmp):
+    raw = []
+    t = BASE - 10800
+    while t <= BASE + 90000:
+        raw.append([t * 1000, 1.0, 1.001, 0.999, 1.0, 1.0])
+        t += 300
+    path = os.path.join(tmp, "candles.json")
+    with open(path, "w") as fh:
+        json.dump({"candles": raw}, fh)
+    return path
+
+
+def run_main(argv):
+    with contextlib.redirect_stdout(io.StringIO()):
+        return rr.main(argv)
+
+
+class LastSessionWindowTests(unittest.TestCase):
+    def test_window_is_last_boot_to_last_shutdown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = write_review_db(tmp, [BASE - 5400, BASE + 600],
+                                 SESSION1_EVENTS + SESSION2_EVENTS)
+            self.assertEqual(rr.load_last_session_window(db), (BASE, BASE + 3600))
+            decisions, _, _ = rr.load_decisions(db)
+            windowed = rr.filter_window(decisions, *rr.load_last_session_window(db))
+            self.assertEqual([d["cts"] for d in windowed], [BASE + 600])
+
+    def test_boot_after_last_shutdown_is_ignored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            events = SESSION1_EVENTS + SESSION2_EVENTS + [
+                ((BASE + 7200) * 1000, "BOOT", "PROCESS_RESTART_STOPPED")]
+            db = write_review_db(tmp, [BASE + 600], events)
+            self.assertEqual(rr.load_last_session_window(db), (BASE, BASE + 3600))
+
+    def test_missing_shutdown_is_undetermined(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = write_review_db(tmp, [BASE], [(BASE * 1000, "BOOT", "REDACTED")])
+            self.assertIsNone(rr.load_last_session_window(db))
+
+    def test_missing_boot_is_undetermined(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = write_review_db(
+                tmp, [BASE], [((BASE + 3600) * 1000, "STOP", "PROCESS_SHUTDOWN")])
+            self.assertIsNone(rr.load_last_session_window(db))
+
+    def test_main_window_mode_aggregates_only_last_session(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = write_review_db(tmp, [BASE - 5400, BASE + 600],
+                                 SESSION1_EVENTS + SESSION2_EVENTS)
+            out = os.path.join(tmp, "windowed.md")
+            rc = run_main(["run-review.py", db, "--window", "last-session",
+                           "--candles", write_candles_file(tmp), "--out", out])
+            self.assertEqual(rc, 0)
+            with open(out) as fh:
+                text = fh.read()
+            self.assertNotIn("特定できませんでした", text)
+            self.assertIn("判断: 1 件", text)
+
+    def test_main_window_undetermined_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = write_review_db(tmp, [BASE], [(BASE * 1000, "BOOT", "REDACTED")])
+            out = os.path.join(tmp, "windowed.md")
+            rc = run_main(["run-review.py", db, "--window", "last-session",
+                           "--out", out])
+            self.assertEqual(rc, 0)
+            with open(out) as fh:
+                text = fh.read()
+            self.assertEqual(text.splitlines()[0], "直近ランの窓を特定できませんでした")
+
+    def test_main_window_without_decisions_is_undetermined(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            # The last session's window exists but holds no decisions.
+            db = write_review_db(tmp, [BASE - 5400],
+                                 SESSION1_EVENTS + SESSION2_EVENTS)
+            out = os.path.join(tmp, "windowed.md")
+            rc = run_main(["run-review.py", db, "--window", "last-session",
+                           "--out", out])
+            self.assertEqual(rc, 0)
+            with open(out) as fh:
+                text = fh.read()
+            self.assertEqual(text.splitlines()[0], "直近ランの窓を特定できませんでした")
+
+    def test_main_since_until_unchanged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = write_review_db(tmp, [BASE - 5400, BASE + 600],
+                                 SESSION1_EVENTS + SESSION2_EVENTS)
+            out = os.path.join(tmp, "report.md")
+            rc = run_main(["run-review.py", db,
+                           "--since", str(BASE - 7200), "--until", str(BASE - 3600),
+                           "--candles", write_candles_file(tmp), "--out", out])
+            self.assertEqual(rc, 0)
+            with open(out) as fh:
+                text = fh.read()
+            self.assertIn("判断: 1 件", text)
 
 
 if __name__ == "__main__":

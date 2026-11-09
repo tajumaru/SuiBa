@@ -154,3 +154,11 @@ broker がトランザクション段階の前で配置を拒否した場合（p
 これに伴い **controller の caller scope を拡張**する：suiba-observe が実行できる操作に `{'operation': 'prod-status'}` を追加した（従来は status と export-prod-snapshot のみ）。prod-status は引数なし・読み取り専用で、paper 側 status と同危険度。PR #132 の export-prod-snapshot 追加と同じ種類の scope 変更として明示する。SSH ラッパー（docker/ssh-prod-status.sh）は identity ごとにホスト側入口を切り替え（suiba-deploy→suiba-paper-check／suiba-observe→suiba-paper-observe）、それ以外のユーザーは従来どおり拒否する。
 
 反映のタイミング：controller.py はホスト配布ファイルのため、ホストで効くのは setup-paper-check.sh の次回再実行時（PR #132／#140 の controller 変更と一緒に乗る。pin は同一コミットで更新済み）。SUIBA_PROD_MONITOR_ENABLED は切替まで未設定のまま。
+
+## 2026-11-09 レビューに直近ランの窓を追加する
+
+paper 側の振り返りレビュー（Issue #121 へ自動投稿）は、export された DB の全履歴に対する累計集計しか出しておらず、個別のラン（例：ハードプリセットの6時間）だけを切り出して読むことができなかった。run-review.py には --since/--until（prod レビューが直近24時間窓で使用）があるのに、paper 側では窓を導出する手段が無かったのが原因。
+
+追加：run-review.py に `--window last-session` モードを足した。窓は DB 自身の operation_events から導出する：終了＝最後の STOP／PROCESS_SHUTDOWN、開始＝それ以前で最後の BOOT。worker はプロセス起動ごとに BOOT を、最終イベントとして STOP／PROCESS_SHUTDOWN を書き、paper-check のライフサイクルはランごとにコンテナをちょうど1回だけ起動する（restart policy は 'no'）ため、この組が1ランの稼働期間と正確に対応する。導出した窓はそのまま --since/--until と同じ内部経路に流す（集計・採点・フラグのロジックは不変）。組が見つからない、または窓内に判断記録が無い場合は、集計の代わりに「直近ランの窓を特定できませんでした」という注記だけの短い報告を出し、終了コード0で終わる（決して落とさない）。
+
+レビューワークフロー（suiba-paper-review.yml）は、窓レポートを「直近ランの窓」の見出し付きで先に、従来の累計レポートをその後に並べた1コメントを投稿する形に変更した。窓を特定できなかった場合は、その注記が窓セクションとしてそのまま載る。
