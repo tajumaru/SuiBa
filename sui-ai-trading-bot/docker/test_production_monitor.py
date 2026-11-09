@@ -113,7 +113,9 @@ class ShapeTests(unittest.TestCase):
 
     def test_both_workflow_jobs_are_gated_and_notifications_never_receive_host_credentials(self):
         source = (HERE.parent.parent/'.github/workflows/suiba-production-monitor.yml').read_text(encoding='utf-8')
-        self.assertIn("cron: '*/30 * * * *'", source)
+        self.assertIn("cron: '7,37 * * * *'", source)
+        self.assertIn("cron: '17,47 * * * *'", source)
+        self.assertIn("cron: '27,57 * * * *'", source)
         self.assertIn('workflow_dispatch:', source)
         self.assertIn('cancel-in-progress: false', source)
         self.assertIn('environment: sakura-vps-observe', source)

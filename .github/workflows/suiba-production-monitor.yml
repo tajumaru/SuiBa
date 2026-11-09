@@ -1,7 +1,14 @@
 name: SuiBa production check and Issue notification
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    # Six offset schedules, all off the congested quarter hours: GitHub's
+    # scheduler is best-effort and dropped most paper-monitor slots on
+    # 2026-11-09 (6 fires in ~13 hours). Same density fix as the paper
+    # monitor (PR #152), with minutes interleaved so the two monitors
+    # never fire in the same minute.
+    - cron: '7,37 * * * *'
+    - cron: '17,47 * * * *'
+    - cron: '27,57 * * * *'
   workflow_dispatch:
     inputs:
       confirmation:
