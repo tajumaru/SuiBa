@@ -137,6 +137,7 @@ jobs:
           read -r digest _ < image.tar.gz.sha256
           printf 'archive_sha256=%s\n' "$digest" >> "$GITHUB_OUTPUT"
       - name: Transfer and deploy with pinned SSH host identity
+        id: deploy
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -171,6 +172,33 @@ jobs:
           # approval was granted to.
           printf '{"operation":"deploy","sha":"%s","archive_sha256":"%s","image_id":"%s","ci_run":%s}\n' "$RELEASE_SHA" "$ARCHIVE_SHA256" "$image_id" "${{ github.run_id }}" |
             ssh "${opts[@]}" -T -p "$VPS_PORT" "$target" 'sudo -n -- /usr/local/sbin/suiba-deploy'
+      - name: Show the broker public result for the failed deploy (same approval)
+        if: ${{ !cancelled() && steps.deploy.outcome == 'failure' }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          # The broker publishes every deploy outcome to a public,
+          # world-readable mirror on the host; reading it here names
+          # the public result code in the same job instead of waiting
+          # for a separate diagnostics run (which also refuses while
+          # a validation run is active). Observational: this step
+          # never fails the job.
+          set +e
+          line=$(bash sui-ai-trading-bot/docker/ssh-broker-last-deploy.sh)
+          if [ -z "$line" ]; then
+            line='Broker last deploy: unavailable'
+          fi
+          printf '%s\n' "$line"
+          {
+            echo ""
+            echo "## Broker public result (same approval)"
+            printf '%s\n' "$line"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
       - name: Diagnose a failed deploy (same approval)
         if: ${{ !cancelled() && failure() }}
         env:
