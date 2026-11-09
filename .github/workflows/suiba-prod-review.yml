@@ -25,6 +25,12 @@ on:
     # trailing 24 hours from the actual fire time, so a late fire still
     # reviews its own full day.
     - cron: '17 15 * * *'
+    # Backup fire at 01:17 JST. GitHub cron occasionally drops or
+    # delays a scheduled run (observed on the paper monitor,
+    # 2026-11-08), so a second fire one hour later covers a dropped
+    # first fire. The posting step dedupes by JST date (see the marker
+    # guard there), so when both fires run, only the first one posts.
+    - cron: '17 16 * * *'
   workflow_dispatch:
     inputs:
       confirmation:
@@ -105,11 +111,29 @@ jobs:
         run: |
           gh label create suiba-run-review --force --color 1d76db \
             --description 'SuiBa 振り返りレポート（自動）' >/dev/null 2>&1 || true
-          { echo "本番日次レビュー（対象窓: $(date -u -d "@$SINCE" '+%Y-%m-%d %H:%M')〜$(date -u -d "@$UNTIL" '+%Y-%m-%d %H:%M') UTC）";
+          # Duplicate guard for the redundant schedule above: the two
+          # fires land on the same JST day and review almost the same
+          # trailing 24 hours (the window itself is anchored to each
+          # fire time, so it cannot serve as the key). Instead, each
+          # posted comment carries an invisible marker with the JST
+          # date, and before posting we look for today's marker in the
+          # standing Issue's comments. The check fails open — if it
+          # errors, post anyway (a rare duplicate is better than a
+          # silently missing day) — and skipping keeps the job green.
+          REVIEW_DATE=$(TZ=Asia/Tokyo date +%F)
+          MARKER="suiba-prod-review: $REVIEW_DATE"
+          { echo "<!-- $MARKER -->";
+            echo "本番日次レビュー（対象窓: $(date -u -d "@$SINCE" '+%Y-%m-%d %H:%M')〜$(date -u -d "@$UNTIL" '+%Y-%m-%d %H:%M') UTC）";
             echo "対象 export: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}";
             echo; cat report.md; } > comment.md
           NUM=$(gh issue list --label suiba-run-review --state open --limit 1 \
             --json number --jq '.[0].number // empty')
+          if [ -n "$NUM" ] && gh api "repos/${{ github.repository }}/issues/$NUM/comments" \
+              --paginate --jq '.[].body' 2>/dev/null | grep -qF "$MARKER"; then
+            echo "本番日次レビュー（$REVIEW_DATE）は投稿済みのためスキップします。"
+            echo "本番日次レビュー: 本日分（$REVIEW_DATE）は投稿済みのためスキップ" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           if [ -z "$NUM" ]; then
             gh issue create --label suiba-run-review \
               --title 'SuiBa 振り返りレポート（自動）' --body-file comment.md

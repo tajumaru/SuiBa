@@ -130,7 +130,7 @@ jobs:
           name: suiba-pre-run-public-${{ github.run_id }}
           path: ${{ runner.temp }}/suiba-public-export/
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
       - name: Watch PAPER status through the fixed wrapper
         id: watch
         env:
@@ -265,4 +265,4 @@ jobs:
           name: suiba-pre-run-public-${{ github.run_id }}
           path: ${{ runner.temp }}/suiba-public-export/
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
