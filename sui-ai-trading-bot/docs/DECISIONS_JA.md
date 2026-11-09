@@ -209,3 +209,9 @@ CI（suiba-no-worker.yml）の壁時間は docker-run ジョブの単一ステ�
 9シナリオ（normal／crash／timer／helper／persistence／worker-abort／signal-failure／signal-survive／normal-cutoff）はそれぞれ独立したフィクスチャ（固有の名前・一時ディレクトリ・volume・unit・後片付け）で、共有する状態が無い。時間の主因は persistence／worker-abort／helper に仕込まれた sleep 120秒のフックだったため、各脚にそのシナリオを1つずつ配る3脚の matrix に分割した（crash-group: persistence,normal,crash／abort-group: worker-abort,timer,signal-failure／helper-group: helper,signal-survive,normal-cutoff）。fail-fast は無効にし、1脚の失敗が他の脚の結果を隠さないようにした。集約ジョブ docker-suites は matrix 化されても `needs.docker-run.result`（全脚成功でのみ success）の読み方が従来どおりで不変。
 
 verify_run.py は引数でシナリオの部分集合を選べるようになった（カンマ区切り、正規順で実行、未知の名前はアサーションで即失敗）。シナリオ本体・アサーション・タイミング定数は一切変更・削除しておらず、総カバレッジは同一。3脚の和集合が正規の9件とちょうど一致することは test_setup.py の契約テストで固定した。壁時間は最も遅い脚（sleep 系1件＋速い2件）まで下がる見込み。
+
+## 2026-11-09 docker-run matrix の脚配分を実測で組み替える（PR #150 の追補）
+
+PR #150 の CI 実測で、脚の所要時間は crash-group 66秒／helper-group 3分18秒／abort-group 4分32秒と偏った（abort-group は準備約40秒＋worker-abort 約2分に timer と signal-failure が積み重なっていた）。crash-group のシナリオ群は SIGKILL で注入 sleep が中断されるため軽い。
+
+組み替え：timer と signal-failure を abort-group から crash-group へ移し、abort-group は worker-abort 単独にする。シナリオ・断言・時間定数は一切変更せず、実行する脚だけを変える（デグレ防止）。3脚の和集合＝正規9シナリオの契約テスト（test_setup.py）は不変で合格したまま。全体の壁は最遅の helper-group（約3分18秒）に張り付く見込み。
