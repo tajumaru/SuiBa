@@ -264,6 +264,21 @@ jobs:
     if: needs.changes.outputs.heavy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The nine verify_run scenarios are independent fixtures; run them as
+    # three parallel legs, each holding one of the ~120 s sleep-injected
+    # scenarios (persistence / worker-abort / helper), instead of one
+    # sequential step that alone set the CI wall time. fail-fast stays off
+    # so one leg's failure never hides the other legs' verdicts.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: crash-group
+            scenarios: persistence,normal,crash
+          - name: abort-group
+            scenarios: worker-abort,timer,signal-failure
+          - name: helper-group
+            scenarios: helper,signal-survive,normal-cutoff
     defaults:
       run:
         working-directory: sui-ai-trading-bot
@@ -281,7 +296,7 @@ jobs:
         run: |
           df -h /var/lib
           docker system df
-          sudo /usr/bin/python3 -I deploy/paper-check/verify_run.py suiba-no-worker:${{ github.sha }}
+          sudo /usr/bin/python3 -I deploy/paper-check/verify_run.py suiba-no-worker:${{ github.sha }} ${{ matrix.scenarios }}
   docker-suites:
     # Aggregator for the split heavy jobs above: keeps the single
     # `docker-suites` check reporting one verdict. Skipped suites
