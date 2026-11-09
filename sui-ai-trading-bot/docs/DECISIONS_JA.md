@@ -231,3 +231,9 @@ PR #150 の CI 実測で、脚の所要時間は crash-group 66秒／helper-grou
 24h 検証ラン3回目（CYCLE 42630076642、seq 16）が未明に failed_requires_review で終了した。診断（run 42694203919）で確定した落ち方は、SPREAD_TOO_WIDE が1回だけのエピソードが標準窓（180秒/9回）の時間切れで PAPER_RECOVERY_EXHAUSTED になったもの（エピソード実測181949ms、failures=1、tally=MarketData/SPREAD_TOO_WIDE×1、最後の市場取得は 02:40 JST の薄い板）。PR #134 で板ガードは即停止からエピソード経路へ移したが、窓は標準のままだったため、薄い時間帯に数分続く板の広がりを回復サイクル2回で越えられず枯渇した。板の広がりは stale ローソク足と同じ「ゆっくりした市場の状態」であり、読み取りの障害ではない。
 
 決定（オーナーが A 案を選択）：`episodeLimits()` が長い窓（staleEpisodeLimits、30分/61回）を返す条件を、counted failure の tally key がすべて「ゆっくりした市場の状態」の集合（MarketData/CANDLE_STALE、SPREAD_TOO_WIDE、THIN_ORDERBOOK、STALE_ORDERBOOK、INVALID_ORDERBOOK）に収まる場合へ拡張する。ネットワーク系など他の failure が1つでも混ざる混合エピソードと、tally が空の場合は標準窓（180秒/9回）のまま。制限値そのもの、429/500 の即停止、他の回復条件は変更しない。
+
+## 2026-11-10 実売買の手数料は DEEP 払い・ステーク割引なしを設計前提とする（TradeCap 設計書 §11 #2 を決定）
+
+DeepBook の手数料を公式 docs で再確認した。手数料はプール別ガバナンス値（ボラティルプールは taker 1〜10 bps／maker 0〜5 bps の範囲でエポック投票により変動）で、DEEP 払いが基準、入力トークン払いは +25%。DEEP のステークと出来高要件を満たすと taker が半額になる。実効の往復コストは 0.1〜0.25% で、現行 PAPER の前提（feeRate 0.003／回＝往復 0.6%）の約 1/3〜1/6。
+
+決定（オーナーが推し案を採用）：実売買の設計前提は「DEEP 払い・ステーク割引なし」とし、BalanceManager に手数料用の DEEP を少量常備する。コストの設計値は taker 10 bps／回（往復 0.2%）とし、実装時に `poolTradeParams` の実値で確定する。ステーク割引は少額運用では出来高要件を安定して満たせないため前提にしない。PAPER の feeRate とレビューの物差し（往復 0.6% 控除）は検証ラダーの間は変更しない。設計書 `docs/REAL_TRADING_TRADECAP_DESIGN_20261025.md` の §2.3 と §11 #2 に反映した。
