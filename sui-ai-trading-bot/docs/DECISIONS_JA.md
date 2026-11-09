@@ -225,3 +225,9 @@ PR #150 の CI 実測で、脚の所要時間は crash-group 66秒／helper-grou
 ## 2026-11-09 本番モニターの schedule を3本（約10分間隔）に増やす
 
 検証モニターと同じ間引き実測（PR #152 の記録）に基づき、本番モニター（suiba-production-monitor.yml）の schedule を */30 の1本から3本・6発火/時へ増強する。分は検証側（2,32／12,42／22,52）と重ならないよう 7,37／17,47／27,57 に交互配置し、いずれも混雑する正時・15・30・45分を回避する。ゲート変数 SUIBA_PROD_MONITOR_ENABLED は未設定のままで、本番モニターは未稼働。効くのは本稼働の切替後。当初は Codex 向け作業として切り出したが、Codex が動けないためシロが実施した。
+
+## 2026-11-10 板ガードだけのエピソードも長い窓（30分/61回）へ広げる（A案）
+
+24h 検証ラン3回目（CYCLE 42630076642、seq 16）が未明に failed_requires_review で終了した。診断（run 42694203919）で確定した落ち方は、SPREAD_TOO_WIDE が1回だけのエピソードが標準窓（180秒/9回）の時間切れで PAPER_RECOVERY_EXHAUSTED になったもの（エピソード実測181949ms、failures=1、tally=MarketData/SPREAD_TOO_WIDE×1、最後の市場取得は 02:40 JST の薄い板）。PR #134 で板ガードは即停止からエピソード経路へ移したが、窓は標準のままだったため、薄い時間帯に数分続く板の広がりを回復サイクル2回で越えられず枯渇した。板の広がりは stale ローソク足と同じ「ゆっくりした市場の状態」であり、読み取りの障害ではない。
+
+決定（オーナーが A 案を選択）：`episodeLimits()` が長い窓（staleEpisodeLimits、30分/61回）を返す条件を、counted failure の tally key がすべて「ゆっくりした市場の状態」の集合（MarketData/CANDLE_STALE、SPREAD_TOO_WIDE、THIN_ORDERBOOK、STALE_ORDERBOOK、INVALID_ORDERBOOK）に収まる場合へ拡張する。ネットワーク系など他の failure が1つでも混ざる混合エピソードと、tally が空の場合は標準窓（180秒/9回）のまま。制限値そのもの、429/500 の即停止、他の回復条件は変更しない。

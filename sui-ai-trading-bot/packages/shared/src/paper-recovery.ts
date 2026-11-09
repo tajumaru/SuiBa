@@ -49,15 +49,36 @@ export const paperRecoveryLimits = {
  * 30 s), so the time bound is what actually decides. Only an
  * episode whose every counted failure is a candle stale earns
  * these limits; any other failure joining the episode restores
- * the standard limits above. */
+ * the standard limits above.
+ *
+ * The set of keys earning these limits grew on 2026-11-10
+ * (owner's option A): an order-book guard reading (wide spread,
+ * thin, stale or malformed book) is the same kind of slow-moving
+ * market state, not a broken read — the third 24h validation run
+ * died when an episode opened by a single SPREAD_TOO_WIDE reading
+ * timed out at 182 s in the thin overnight book (failures=1), so
+ * book-guard-only episodes earn the long window too. The name is
+ * kept from the original candle-stale decision. */
 export const staleEpisodeLimits = {
   maxEpisodeMs: 1800000,
   maxFailures: 61,
 };
+/** Tally keys whose counted failures describe a slow-moving
+ * market state rather than a broken read: candle publication
+ * lagging, and the order-book guard readings that
+ * bookGuardThrowToEpisode routes into the episode. An episode
+ * tallied only with these keys earns staleEpisodeLimits; any
+ * other key joining the episode restores the standard limits. */
+export const slowMarketTallyKeys: ReadonlySet<string> = new Set([
+  "MarketData/CANDLE_STALE",
+  "MarketData/SPREAD_TOO_WIDE",
+  "MarketData/THIN_ORDERBOOK",
+  "MarketData/STALE_ORDERBOOK",
+  "MarketData/INVALID_ORDERBOOK",
+]);
 export function episodeLimits(s: PaperSafetyState) {
   const keys = Object.keys(s.episodeTally);
-  return keys.length > 0 &&
-    keys.every((key) => key === "MarketData/CANDLE_STALE")
+  return keys.length > 0 && keys.every((key) => slowMarketTallyKeys.has(key))
     ? staleEpisodeLimits
     : paperRecoveryLimits;
 }
