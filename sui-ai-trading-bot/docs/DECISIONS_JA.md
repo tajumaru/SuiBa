@@ -215,3 +215,9 @@ verify_run.py は引数でシナリオの部分集合を選べるようになっ
 PR #150 の CI 実測で、脚の所要時間は crash-group 66秒／helper-group 3分18秒／abort-group 4分32秒と偏った（abort-group は準備約40秒＋worker-abort 約2分に timer と signal-failure が積み重なっていた）。crash-group のシナリオ群は SIGKILL で注入 sleep が中断されるため軽い。
 
 組み替え：timer と signal-failure を abort-group から crash-group へ移し、abort-group は worker-abort 単独にする。シナリオ・断言・時間定数は一切変更せず、実行する脚だけを変える（デグレ防止）。3脚の和集合＝正規9シナリオの契約テスト（test_setup.py）は不変で合格したまま。全体の壁は最遅の helper-group（約3分18秒）に張り付く見込み。
+
+## 2026-11-09 検証モニターの schedule を3本（約10分間隔）に増やす
+
+2026-11-09 の実測で、モニターの schedule 実行は 05:00〜17:57 JST の約13時間に6回だけだった（15分間隔の期待は約48回、最長で約6時間の空白。24h 初回の警報 Issue #133 も発火から57分遅れ）。GitHub の scheduler は混雑時に schedule を落とす best-effort で、2本冗長化（PR #118）でも命中率が足りなかった。
+
+対策：cron を3本・6発火/時（2,32／12,42／22,52 分、いずれも混雑する正時・15・30・45分を回避）に増やし、名目約10分間隔にする。モニター本体・ゲート・concurrency（suiba-paper-monitor、cancel-in-progress: false で直列化済み）は不変。コストはゼロで、トークンを使う定期チェックは引き続き置かない（2026-11-08 のトークン削減3点運用どおり、GitHub 側の冗長化で閉じる）。本番モニター（suiba-production-monitor.yml、*/30）も同じ間引きを受けるが、ゲート変数が未設定で未稼働のため、切替時に同様の増強を検討する。

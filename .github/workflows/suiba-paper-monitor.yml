@@ -1,11 +1,13 @@
 name: SuiBa paper-check monitor and Issue notification
 on:
   schedule:
-    # Two offset schedules, both off the congested quarter hours: GitHub's
-    # scheduler is best-effort and dropped most */30 slots on 2026-11-08
-    # (one late fire in five hours). Independent entries give the 15-minute
-    # cadence redundancy without any external trigger.
-    - cron: '7,37 * * * *'
+    # Six offset schedules, all off the congested quarter hours: GitHub's
+    # scheduler is best-effort and dropped most slots again on 2026-11-09
+    # (6 fires in ~13 hours against a 15-minute cadence; longest gap ~6h).
+    # Independent entries give the ~10-minute cadence redundancy without
+    # any external trigger.
+    - cron: '2,32 * * * *'
+    - cron: '12,42 * * * *'
     - cron: '22,52 * * * *'
   workflow_dispatch:
     inputs:
