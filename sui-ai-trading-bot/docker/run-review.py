@@ -13,7 +13,10 @@ The report is evidence only: it never changes trading rules. A flag means
 human decision", nothing more.
 
 Usage: run-review.py <SUI_USDC.sqlite> [--candles candles.json] [--out report.md]
+       [--since T] [--until T] [--window last-session]
 Without --candles, candles are fetched from the public Indexer.
+--window last-session derives the --since/--until window from the DB's
+own operation events (the most recent run's BOOT..PROCESS_SHUTDOWN).
 """
 import json
 import sqlite3
@@ -133,6 +136,58 @@ def filter_window(decisions, since=None, until=None):
     return [d for d in decisions
             if (since is None or d["cts"] >= since)
             and (until is None or d["cts"] <= until)]
+
+
+# First line is the contract the review workflow renders as-is: when the
+# window cannot be derived, this note is the whole windowed section.
+UNDETERMINED_WINDOW = (
+    "直近ランの窓を特定できませんでした\n"
+    "\n"
+    "- export 内の開始（BOOT）／終了（STOP／PROCESS_SHUTDOWN）の記録の組が"
+    "見つからないか、窓の中に判断記録が無いため、この窓の集計はありません。\n")
+
+
+def load_last_session_window(db_path):
+    """Epoch-second (start, end) of the most recent run's active lifetime.
+
+    The worker writes a BOOT operation event at every process boot and
+    STOP/PROCESS_SHUTDOWN as its final event, and the paper-check
+    lifecycle starts the container exactly once per run, so the last
+    BOOT at or before the last PROCESS_SHUTDOWN brackets one run.
+    (A BOOT after the last shutdown belongs to a still-open session
+    and is ignored.) Event timestamps are epoch ms; the returned
+    window is in the epoch seconds that --since/--until and the
+    decisions' candle timestamps use. None when the pair cannot be
+    found, or the events table is absent or unreadable.
+    """
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            rows = conn.execute(
+                "SELECT timestamp, json FROM operation_events"
+                " ORDER BY timestamp").fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return None
+    events = []
+    for ts, js in rows:
+        try:
+            value = json.loads(js)
+        except (TypeError, ValueError):
+            continue
+        events.append((ts, value.get("kind"), value.get("code")))
+    end = None
+    for stamp, kind, code in reversed(events):
+        if kind == "STOP" and code == "PROCESS_SHUTDOWN":
+            end = stamp
+            break
+    if end is None:
+        return None
+    for stamp, kind, code in reversed(events):
+        if stamp <= end and kind == "BOOT":
+            return stamp // 1000, end // 1000
+    return None
 
 
 def vol_ok(d):
@@ -400,6 +455,7 @@ def main(argv):
     candles_path = None
     out = None
     since = until = None
+    window = None
     i = 2
     while i < len(argv):
         if argv[i] == "--candles":
@@ -414,11 +470,27 @@ def main(argv):
         elif argv[i] == "--until":
             until = parse_time(argv[i + 1])
             i += 2
+        elif argv[i] == "--window":
+            window = argv[i + 1]
+            i += 2
         else:
             i += 1
     decisions, orders, trades = load_decisions(db)
+    undetermined = False
+    if window == "last-session":
+        session = load_last_session_window(db)
+        if session is None:
+            undetermined = True
+        else:
+            since, until = session
     if since is not None or until is not None:
         decisions = filter_window(decisions, since, until)
+    if undetermined or (window == "last-session" and not decisions):
+        if out:
+            with open(out, "w") as fh:
+                fh.write(UNDETERMINED_WINDOW)
+        print(UNDETERMINED_WINDOW)
+        return 0
     if candles_path:
         raw = json.load(open(candles_path))["candles"]
     else:
