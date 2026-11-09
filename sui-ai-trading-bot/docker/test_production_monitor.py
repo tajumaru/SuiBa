@@ -116,12 +116,17 @@ class ShapeTests(unittest.TestCase):
         self.assertIn("cron: '*/30 * * * *'", source)
         self.assertIn('workflow_dispatch:', source)
         self.assertIn('cancel-in-progress: false', source)
+        self.assertIn('environment: sakura-vps-observe', source)
+        self.assertNotIn('environment: sakura-vps\n', source)
         check = source.split('  check:\n', 1)[1].split('  notify:\n', 1)[0]
         notify = source.split('  notify:\n', 1)[1]
         self.assertNotIn('issues: write', check)
         self.assertIn('issues: write', notify)
         self.assertNotIn('secrets.VPS_', notify)
         self.assertIn("process.env.OBSERVATION_OUTCOME === 'success'", check)
+        # The port must stay a variable: as a secret, "22" poisons job outputs.
+        self.assertIn('VPS_PORT: ${{ vars.SUIBA_OBSERVE_VPS_PORT }}', check)
+        self.assertNotIn('secrets.VPS_PORT', source)
         for block, name in ((check, 'check'), (notify, 'notify')):
             expression = re.search(r'    if: >-\n((?:      [^\n]+\n)+)', block).group(1)
             for enabled in ('true', 'false', ''):
@@ -145,7 +150,7 @@ class ShapeTests(unittest.TestCase):
 
 @unittest.skipIf(os.name == 'nt', 'mocked Bash SSH pipeline runs on Linux')
 class SshTests(unittest.TestCase):
-    def run_script(self, status, watch, prod_exit=0, watch_exit=0):
+    def run_script(self, status, watch, prod_exit=0, watch_exit=0, user='suiba-deploy', expect_failure=False):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); (root/'bin').mkdir(); (root/'runner').mkdir()
             status = {**status, 'watchdog': {'record': watch if watch_exit == 0 else None, 'code': None if watch_exit == 0 else 'WATCHDOG_RECORD_INVALID'}}
@@ -158,22 +163,26 @@ command=sys.argv[-1]
 request='' if '-n' in sys.argv else sys.stdin.read()
 with open(os.environ['MOCK_CALLS'],'a') as out: out.write(json.dumps({'command':command,'request':request,'args':sys.argv[1:]})+'\\n')
 sys.stderr.write('SECRET_FIXTURE_SSH_ERROR')
-if command=='sudo -n -- /usr/local/sbin/suiba-paper-check':
+if command in ('sudo -n -- /usr/local/sbin/suiba-paper-check', 'sudo -n -- /usr/local/sbin/suiba-paper-observe'):
     sys.stdout.write(open(os.environ['MOCK_PROD']).read()); sys.exit(int(os.environ['MOCK_PROD_EXIT']))
 sys.exit(77)
 ''')
             for command in (root/'bin').iterdir(): command.chmod(0o755)
             env = {**os.environ, 'PATH': str(root/'bin')+':'+os.environ['PATH'], 'RUNNER_TEMP': str(root/'runner'),
-                   'VPS_HOST': 'fixture.invalid', 'VPS_USER': 'suiba-deploy', 'VPS_PORT': '22',
+                   'VPS_HOST': 'fixture.invalid', 'VPS_USER': user, 'VPS_PORT': '22',
                    'VPS_SSH_KEY': 'SECRET_FIXTURE_PRIVATE_KEY', 'VPS_KNOWN_HOSTS': 'SECRET_FIXTURE_HOSTS',
                    'PRODUCTION_REPORT_FILE': str(root/'report'), 'MOCK_CALLS': str(root/'calls'),
                    'MOCK_PROD': str(root/'prod'), 'MOCK_WATCH': str(root/'watch'),
                    'MOCK_PROD_EXIT': str(prod_exit), 'MOCK_WATCH_EXIT': str(watch_exit)}
             completed = subprocess.run(['/bin/bash', str(HERE/'ssh-prod-status.sh')], env=env, capture_output=True, text=True, timeout=15)
-            self.assertEqual(completed.returncode, 0)
             self.assertNotIn('SECRET_FIXTURE', completed.stdout+completed.stderr)
             self.assertEqual(list((root/'runner').iterdir()), [])
-            return json.loads((root/'report').read_text()), [json.loads(line) for line in (root/'calls').read_text().splitlines()]
+            calls = [json.loads(line) for line in (root/'calls').read_text().splitlines() if line.strip()]
+            if expect_failure:
+                self.assertNotEqual(completed.returncode, 0)
+                return completed, calls
+            self.assertEqual(completed.returncode, 0)
+            return json.loads((root/'report').read_text()), calls
 
     def test_only_fixed_read_only_commands_with_pinned_ssh_options_are_sent(self):
         import time
@@ -186,6 +195,24 @@ sys.exit(77)
             self.assertIn('StrictHostKeyChecking=yes', call['args'])
             self.assertIn('IdentitiesOnly=yes', call['args'])
             self.assertIn('PasswordAuthentication=no', call['args'])
+
+    def test_observe_identity_uses_the_observe_entrypoint(self):
+        import time
+        status, watch = healthy(time.time())
+        result, calls = self.run_script(status, watch, user='suiba-observe')
+        self.assertEqual(result['verdict'], 'ok')
+        self.assertEqual([call['command'] for call in calls], ['sudo -n -- /usr/local/sbin/suiba-paper-observe'])
+        self.assertEqual(json.loads(calls[0]['request']), {'operation': 'prod-status'})
+        for call in calls:
+            self.assertIn('StrictHostKeyChecking=yes', call['args'])
+            self.assertIn('IdentitiesOnly=yes', call['args'])
+            self.assertIn('PasswordAuthentication=no', call['args'])
+
+    def test_unknown_user_is_refused_before_any_ssh(self):
+        import time
+        status, watch = healthy(time.time())
+        completed, calls = self.run_script(status, watch, user='ubuntu', expect_failure=True)
+        self.assertEqual(calls, [])
 
     def test_invalid_optional_record_uses_live_status_and_failed_ssh_is_attention(self):
         import time

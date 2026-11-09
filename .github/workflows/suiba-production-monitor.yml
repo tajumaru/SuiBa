@@ -18,10 +18,12 @@ concurrency:
 jobs:
   check:
     # Repository variable (not Environment variable). Missing/false means no SSH.
+    # The observe environment holds only the read-only suiba-observe key and
+    # has no required reviewers, so scheduled runs never wait for approval.
     if: >-
       github.ref == 'refs/heads/main' && vars.SUIBA_PROD_MONITOR_ENABLED == 'true' &&
       (github.event_name == 'schedule' || inputs.confirmation == 'CHECK-PROD-MONITOR')
-    environment: sakura-vps
+    environment: sakura-vps-observe
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -35,13 +37,18 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24.22.1'
-      - name: Read production status with validated watchdog verdict over pinned SSH
+      - name: Read production status through the read-only observe identity
         id: observation
         env:
           PRODUCTION_REPORT_FILE: ${{ runner.temp }}/suiba-production-monitor.json
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_PORT: ${{ secrets.VPS_PORT }}
+          # The port is a repository variable, not a secret: as a secret its
+          # value "22" is a masking token, and any job output containing the
+          # substring "22" (a run id, a timestamp) is silently dropped by the
+          # runner ("Skip output ... may contain secret"), which once turned
+          # healthy observations into PAPER_CHECK_FAILED fallbacks.
+          VPS_PORT: ${{ vars.SUIBA_OBSERVE_VPS_PORT }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: bash sui-ai-trading-bot/docker/ssh-prod-status.sh

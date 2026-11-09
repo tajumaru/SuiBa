@@ -2247,13 +2247,15 @@ def valid_episode(value):
 
 
 def require_caller_scope(caller, request):
-    """The observe identity may only ever read: the paper-check status, or
-    the fixed public extract of the live production databases (the same
-    allowlisted, sanitized package the export workflow publishes). Both
-    requests are exact, argument-free and read-only; anything else, and any
-    extra key, is refused."""
+    """The observe identity may only ever read: the paper-check status,
+    the production status, or the fixed public extract of the live
+    production databases (the same allowlisted, sanitized package the
+    export workflow publishes). All three requests are exact,
+    argument-free and read-only; anything else, and any extra key, is
+    refused."""
     if caller == 'observe':
-        require(request in ({'operation': 'status'}, {'operation': 'export-prod-snapshot'}))
+        require(request in ({'operation': 'status'}, {'operation': 'prod-status'},
+                            {'operation': 'export-prod-snapshot'}))
 
 
 # Outer bound for a declared recovery pause during monitoring. The worker's
