@@ -153,10 +153,10 @@ class ExportTests(unittest.TestCase):
             with self.assertRaises(ValueError): client.unpack(package, destination)
             self.assertFalse(destination.exists())
 
-    def test_workflow_is_gated_and_public_artifact_retention_is_one_day(self):
+    def test_workflow_is_gated_and_public_artifact_retention_is_seven_days(self):
         workflow = HERE.parents[2]/'.github/workflows/suiba-paper-export.yml'
         text = workflow.read_text()
-        for value in ("environment: sakura-vps", "vars.SUIBA_PAPER_EXPORT_ENABLED == 'true'", "github.ref == 'refs/heads/main'", "retention-days: 1", "if-no-files-found: error"):
+        for value in ("environment: sakura-vps", "vars.SUIBA_PAPER_EXPORT_ENABLED == 'true'", "github.ref == 'refs/heads/main'", "retention-days: 7", "if-no-files-found: error"):
             self.assertIn(value, text)
         self.assertNotIn('always()', text)
 
