@@ -221,3 +221,7 @@ PR #150 の CI 実測で、脚の所要時間は crash-group 66秒／helper-grou
 2026-11-09 の実測で、モニターの schedule 実行は 05:00〜17:57 JST の約13時間に6回だけだった（15分間隔の期待は約48回、最長で約6時間の空白。24h 初回の警報 Issue #133 も発火から57分遅れ）。GitHub の scheduler は混雑時に schedule を落とす best-effort で、2本冗長化（PR #118）でも命中率が足りなかった。
 
 対策：cron を3本・6発火/時（2,32／12,42／22,52 分、いずれも混雑する正時・15・30・45分を回避）に増やし、名目約10分間隔にする。モニター本体・ゲート・concurrency（suiba-paper-monitor、cancel-in-progress: false で直列化済み）は不変。コストはゼロで、トークンを使う定期チェックは引き続き置かない（2026-11-08 のトークン削減3点運用どおり、GitHub 側の冗長化で閉じる）。本番モニター（suiba-production-monitor.yml、*/30）も同じ間引きを受けるが、ゲート変数が未設定で未稼働のため、切替時に同様の増強を検討する。
+
+## 2026-11-09 docker-run matrix を5脚に細分化する（PR #151 の追補）
+
+PR #151 の CI 実測では全体約3分55秒、脚は crash（5シナリオ）3分38秒／helper（3シナリオ）3分15秒／abort（worker-abort 単独）1分52秒。壁の2脚をさらに割る：crash 脚から timer＋signal-failure を timer-group として独立させ、helper 脚から signal-survive＋normal-cutoff を cutoff-group として独立させる（計5脚）。見込みの壁は helper 単独の約2分20秒＋集約で、全体約2分40秒。シナリオ・断言・時間定数は不変で、契約テストの脚数アサーションを 3→5 に更新（和集合＝正規9シナリオの検証は不変）。これ以上の短縮は helper／worker-abort 単体の約2分（注入ハング120秒）が床で、定数を触る話になるためここまでとする。

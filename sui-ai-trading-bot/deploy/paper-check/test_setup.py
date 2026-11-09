@@ -144,7 +144,7 @@ class VerifyRunCoverageTests(unittest.TestCase):
         self.assertIn('fail-fast: false', job)
         self.assertIn('${{ matrix.scenarios }}', job)
         legs = re.findall(r'scenarios: ([a-z0-9,\-]+)', job)
-        self.assertEqual(len(legs), 3)
+        self.assertEqual(len(legs), 5)
         covered = [name for leg in legs for name in leg.split(',')]
         self.assertEqual(len(covered), len(verify_run.SCENARIOS))
         self.assertEqual(sorted(covered), sorted(verify_run.SCENARIOS))

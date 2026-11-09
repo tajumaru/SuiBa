@@ -274,11 +274,15 @@ jobs:
       matrix:
         include:
           - name: crash-group
-            scenarios: persistence,normal,crash,timer,signal-failure
+            scenarios: persistence,normal,crash
+          - name: timer-group
+            scenarios: timer,signal-failure
           - name: abort-group
             scenarios: worker-abort
           - name: helper-group
-            scenarios: helper,signal-survive,normal-cutoff
+            scenarios: helper
+          - name: cutoff-group
+            scenarios: signal-survive,normal-cutoff
     defaults:
       run:
         working-directory: sui-ai-trading-bot
