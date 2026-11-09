@@ -1921,10 +1921,6 @@ class ExportBackupWaitTests(unittest.TestCase):
             self.assertEqual(self.reads, 1+len(self.sleeps))
 
 
-if __name__ == '__main__':
-    unittest.main(verbosity=2)
-
-
 class RequestCallerScopeTests(unittest.TestCase):
     ACCOUNTS = {'suiba-deploy': type('A', (), {'pw_name': 'suiba-deploy', 'pw_uid': 1001})(),
                 'suiba-observe': type('A', (), {'pw_name': 'suiba-observe', 'pw_uid': 1002})()}
@@ -2122,3 +2118,7 @@ class EpisodeEvidenceTests(unittest.TestCase):
         events = [{'t': 1, 'k': 'ERROR', 'c': 'MARKET_DATA_STALLED', 'd': 'CANDLE_STALE'}]
         output = self.render(self.payload(events))
         self.assertNotIn('Latest episode', output)
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)
