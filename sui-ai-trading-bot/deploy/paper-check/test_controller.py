@@ -197,6 +197,13 @@ class StopTests(unittest.TestCase):
             host['broker_failure']['code'] = 'secret-fixture-do-not-log'
             with self.assertRaises(SystemExit): render()
             host['broker_failure']['code'] = 'DOCKER_OPERATION_FAILED'
+            host['broker_last_failure'] = {'at': 1794115200, 'operation': 'deploy', 'sha': 'c'*40,
+                'code': 'PAPER_DEPLOY_PERMIT_MISSING'}
+            self.assertIn('- Last broker rejection: code=PAPER_DEPLOY_PERMIT_MISSING, operation=deploy, SHA='
+                          + 'c'*40 + ', at=1794115200', render())
+            host['broker_last_failure']['code'] = 'secret-fixture-do-not-log'
+            with self.assertRaises(SystemExit): render()
+            host['broker_last_failure'] = None
             payload['diagnostics']['runtime']['SUI_USDC']['error'] = 'secret-fixture-do-not-log'
             with self.assertRaises(SystemExit) as failure:
                 render()
@@ -713,6 +720,43 @@ class StopTests(unittest.TestCase):
             self.assertFalse(result['fault_marker'])
             self.assertEqual(len(result['controller_sha256']), 64)
             self.assertIsNone(result['broker_failure'])
+
+    def test_host_diagnostic_reports_broker_last_failure(self):
+        import re
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            root = Path(tmp)
+            FakeBroker.atomic(root/'ledger.json', {'status': 'prepared_stopped', 'sequence': 5, 'sha': 'a'*40})
+            FakeBroker.atomic(root/'paper-check.json', {'status': 'in_progress'})
+            ctl = object.__new__(c.Controller)
+            ctl.b = SimpleNamespace(STATE=root, SHA=re.compile(r'[a-f0-9]{40}'), decode=json.loads,
+                read_trusted=FakeBroker.read_trusted, __file__=c.__file__)
+            container = {'State': {'Status': 'exited'}, 'HostConfig': {'RestartPolicy': {'Name': 'no'}},
+                         'Config': {'Env': ['MODE=PAPER']}}
+            response = b'ActiveState=active\nSubState=elapsed\nNextElapseUSecMonotonic=0\nNextElapseUSecRealtime=\nJob=\n'
+            def diagnose():
+                with patch.object(c.subprocess, 'check_output', return_value=response):
+                    return ctl.diagnostic_host(container)
+            # No record on the host: the field is simply absent data.
+            self.assertIsNone(diagnose()['broker_last_failure'])
+            # A well-formed record is surfaced with the version dropped.
+            FakeBroker.atomic(root/'last-failure.json', {'version': 1, 'at': 1794115200,
+                'operation': 'deploy', 'sha': 'c'*40, 'code': 'PAPER_DEPLOY_PERMIT_MISSING'})
+            self.assertEqual(diagnose()['broker_last_failure'],
+                {'at': 1794115200, 'operation': 'deploy', 'sha': 'c'*40, 'code': 'PAPER_DEPLOY_PERMIT_MISSING'})
+            # Malformed records degrade to None; the diagnosis itself
+            # still succeeds (the record is best-effort evidence).
+            for value in (
+                    {'version': 1, 'at': 1794115200, 'operation': 'deploy', 'sha': 'c'*40,
+                     'code': 'not-a-public-code'},
+                    {'version': 1, 'at': 1794115200, 'operation': 'deploy', 'sha': 'c'*40,
+                     'code': 'PAPER_DEPLOY_PERMIT_MISSING', 'extra': True},
+                    {'version': 2, 'at': 1794115200, 'operation': 'deploy', 'sha': 'c'*40,
+                     'code': 'PAPER_DEPLOY_PERMIT_MISSING'}):
+                FakeBroker.atomic(root/'last-failure.json', value)
+                result = diagnose()
+                self.assertIsNone(result['broker_last_failure'], value)
+                self.assertEqual(result['sequence'], 5)
 
     @unittest.skipUnless(os.name == 'posix', 'mocked shell pipeline runs on Linux')
     def test_actions_logs_equal_validated_summary_and_never_echo_secrets(self):

@@ -138,3 +138,11 @@ planner（docker/paper-deploy-cycle-plan.py）の前提「failed_requires_review
 PR #130 の自動 export は「start ステップが開始前バックアップを作成済み」という前提で開始直後に export していたが、この前提が誤りだった。start op は開始リクエストを記録して systemd サービスを `--no-block` で起動し、即座に `PAPER_CHECK_REQUEST_ACCEPTED` を返すだけである。バックアップ（DATA ボリュームの tar 化と sha256）はスーパバイザ側が admission→preflight→timer の後に実施し、その完了後に初めて run record へ `backup` が記録される。開始直後の export はこの記録前に走るため `EXPORT_BACKUP_MISSING` で拒否される。2026-11-09 の 24h 初回・やり直しの両サイクルで再現し、いずれも数分後の手動 EXPORT は成功した（ハード区間のレビュー未投稿の原因もこれ）。
 
 修正：サイクルに「watch 終了後の再試行」を追加する。開始したランについては、スーパバイザが worker 起動前にバックアップを記録済みであることが保証されるため、watch が終わる頃には記録が存在する。再試行は最大3回・60秒間隔、初回試行が失敗したときだけ走り、従来どおり観測専用（失敗してもサイクルは落とさない）。成功すれば同じ名前でアーティファクトをアップロードし、レビューの自動投稿に乗る。ホスト配布ファイルに変更は無い（export op 自体の意味は不変）。
+
+## 2026-11-09 診断に broker の事前拒否（last-failure）を表示する
+
+broker がトランザクション段階の前で配置を拒否した場合（paper-session ゲート、permit／承認／アーカイブの不足など）、broker は STATE/last-failure.json に公開コードだけの記録（version／at／operation／sha／code）を best-effort で残す。しかしこのファイルを読む固定 op は無く、GitHub Actions 側からは一律 `SUIBA_BROKER_REJECTED_OR_FAILED` としか見えなかった。2026-11-09 の配置サイクル（run 42530955606）では、approve-deploy が skip されて broker が permit 不足で拒否したことがこの盲点のせいで判明まで余分な往復がかかった。診断が既に表示している ledger 側の broker_failure はトランザクション内部の失敗専用で、事前拒否はそこにも残らない。
+
+修正：controller の diagnostic_host が last-failure.json を読み、厳密に検証（キーは正確に5つ、version=1、at は正の整数、operation／sha／code は broker が書く形の正規表現に全一致）を通ったものだけを `broker_last_failure` として診断に含める。検証に落ちる・読めない・ファイルが無い場合はすべて None に劣化させ、診断自体は決して壊さない（broker 側の書き込みが best-effort なのと対）。表示側（docker/ssh-paper-status.sh）は同じ形を検証し、`- Last broker rejection: code=…, operation=…, SHA=…, at=…` の1行を出す。読み取り専用の可視化のみで、broker・各 op の挙動は変えない。
+
+反映のタイミング：controller.py はホスト配布ファイルのため、この変更がホストで効くのは setup-paper-check.sh の次回再実行時（PR #132 の controller 変更と一緒に乗る。pin は同一コミットで更新済み）。
