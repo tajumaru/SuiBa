@@ -1849,14 +1849,17 @@ class RequestCallerScopeTests(unittest.TestCase):
             with self.assertRaises(Exception):
                 c.request_caller(env, self.getpwnam)
 
-    def test_observe_scope_is_status_and_prod_public_extract_only(self):
+    def test_observe_scope_is_read_only_statuses_and_prod_public_extract_only(self):
         c.require_caller_scope('observe', {'operation': 'status'})
+        c.require_caller_scope('observe', {'operation': 'prod-status'})
         c.require_caller_scope('observe', {'operation': 'export-prod-snapshot'})
         for request in ({'operation': 'start', 'duration': '30m'},
                         {'operation': 'diagnose'},
-                        {'operation': 'prod-status'},
+                        {'operation': 'prod-start'},
+                        {'operation': 'prod-stop'},
                         {'operation': 'export-snapshot'},
                         {'operation': 'export-prod-snapshot', 'sha': 'x'},
+                        {'operation': 'prod-status', 'sha': 'x'},
                         {'operation': 'status', 'sha': 'x'},
                         {'operation': 'status', 'duration': '30m'},
                         {}, 'status', None):
@@ -1866,6 +1869,8 @@ class RequestCallerScopeTests(unittest.TestCase):
     def test_deploy_scope_unrestricted_by_caller_check(self):
         c.require_caller_scope('deploy', {'operation': 'start', 'duration': '6h'})
         c.require_caller_scope('deploy', {'operation': 'status'})
+        c.require_caller_scope('deploy', {'operation': 'prod-status'})
+        c.require_caller_scope('deploy', {'operation': 'prod-start'})
 
 
 class DeclaredPauseTests(unittest.TestCase):

@@ -146,3 +146,11 @@ broker がトランザクション段階の前で配置を拒否した場合（p
 修正：controller の diagnostic_host が last-failure.json を読み、厳密に検証（キーは正確に5つ、version=1、at は正の整数、operation／sha／code は broker が書く形の正規表現に全一致）を通ったものだけを `broker_last_failure` として診断に含める。検証に落ちる・読めない・ファイルが無い場合はすべて None に劣化させ、診断自体は決して壊さない（broker 側の書き込みが best-effort なのと対）。表示側（docker/ssh-paper-status.sh）は同じ形を検証し、`- Last broker rejection: code=…, operation=…, SHA=…, at=…` の1行を出す。読み取り専用の可視化のみで、broker・各 op の挙動は変えない。
 
 反映のタイミング：controller.py はホスト配布ファイルのため、この変更がホストで効くのは setup-paper-check.sh の次回再実行時（PR #132 の controller 変更と一緒に乗る。pin は同一コミットで更新済み）。
+
+## 2026-11-09 本番モニターを読み取り専用 identity に分離する
+
+本番モニター（suiba-production-monitor.yml）は check ジョブが承認つき環境 sakura-vps＋配置用 identity（suiba-deploy）で30分間隔の定期実行になっており、切替時に SUIBA_PROD_MONITOR_ENABLED を有効化すると、定期実行のたびにオーナーの承認タップ待ちで止まって監視にならない設計だった。検証モニター（suiba-paper-monitor.yml）で実証済みの分離方式に寄せる：check ジョブを承認不要の環境 sakura-vps-observe＋読み取り専用 identity（suiba-observe）に移し、ポートはリポジトリ変数 SUIBA_OBSERVE_VPS_PORT から取る（秘密にすると "22" がマスク語になりジョブ出力を巻き込む事故の再発防止。検証モニター側の既存規律）。notify ジョブ・スケジュール・同時実行制御は不変。
+
+これに伴い **controller の caller scope を拡張**する：suiba-observe が実行できる操作に `{'operation': 'prod-status'}` を追加した（従来は status と export-prod-snapshot のみ）。prod-status は引数なし・読み取り専用で、paper 側 status と同危険度。PR #132 の export-prod-snapshot 追加と同じ種類の scope 変更として明示する。SSH ラッパー（docker/ssh-prod-status.sh）は identity ごとにホスト側入口を切り替え（suiba-deploy→suiba-paper-check／suiba-observe→suiba-paper-observe）、それ以外のユーザーは従来どおり拒否する。
+
+反映のタイミング：controller.py はホスト配布ファイルのため、ホストで効くのは setup-paper-check.sh の次回再実行時（PR #132／#140 の controller 変更と一緒に乗る。pin は同一コミットで更新済み）。SUIBA_PROD_MONITOR_ENABLED は切替まで未設定のまま。

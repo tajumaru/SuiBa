@@ -1,12 +1,22 @@
 #!/usr/bin/env bash
 # Runner-only production observation: no host writes or recovery commands.
+# Two identities may read, each through its own host entrypoint: the CI
+# identity (suiba-deploy) through suiba-paper-check, and the read-only
+# monitoring identity (suiba-observe) through suiba-paper-observe — the
+# host confines that identity with the authorized_keys forced command,
+# the sudoers rule, and the controller's caller scope check. Any other
+# user is refused.
 set +x
 set -Eeuo pipefail
 umask 077
 fail() { echo 'PRODUCTION_SSH_FAILED (connection or response details withheld)' >&2; exit 1; }
 [[ ${VPS_HOST:-} =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]] || fail
 [[ ${VPS_USER:-} =~ ^[a-z_][a-z0-9_-]*$ ]] || fail
-[[ $VPS_USER == suiba-deploy ]] || fail
+case $VPS_USER in
+  suiba-deploy) remote='sudo -n -- /usr/local/sbin/suiba-paper-check' ;;
+  suiba-observe) remote='sudo -n -- /usr/local/sbin/suiba-paper-observe' ;;
+  *) fail ;;
+esac
 [[ ${VPS_PORT:-} =~ ^[0-9]{1,5}$ ]] || fail
 port=$((10#$VPS_PORT))
 (( port >= 1 && port <= 65535 )) || fail
@@ -40,7 +50,7 @@ opts=(-F /dev/null -i "$key" -p "$port" -T
 [[ -n ${PRODUCTION_REPORT_FILE:-} ]] || fail
 prod_read=0
 if printf '%s' '{"operation":"prod-status"}' |
-    timeout 30s ssh "${opts[@]}" "$VPS_USER@$VPS_HOST" 'sudo -n -- /usr/local/sbin/suiba-paper-check' 2>"$errors" |
+    timeout 30s ssh "${opts[@]}" "$VPS_USER@$VPS_HOST" "$remote" 2>"$errors" |
     head -c 65537 >"$result"; then
   prod_read=1
 fi
