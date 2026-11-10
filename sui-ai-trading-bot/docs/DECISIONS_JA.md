@@ -285,3 +285,7 @@ GitHub scheduler の best-effort な間引きで paper モニターが 2026-11-0
 ## 2026-11-10 本番モニター watchdog の先行実装
 
 PR #168 で本番切替時に検討するとしていた watchdog を先行実装した。リポジトリ変数 SUIBA_PROD_MONITOR_ENABLED が未設定の間は復旧処理は不発となる。本番切替時に本体のゲートを有効にすると、watchdog も自動的に有効になる。
+
+## 2026-11-10 transitive の zod 3.25.76 は上流待ちとし、強制解決しない
+
+依存監査の残件として transitive の zod 3.25.76（advisory：制約付きコレクションの過大入力でメモリ枯渇、本体の zod 4.6.7 は対象外）を調査した。居場所は @cetusprotocol/aggregator-sdk 経由の @pythnetwork/hermes-client@3.1.0（最新安定版）で、zod ^3.23.8 を直接要求し、@zodios/core@10.9.6 の peer も zod ^3.x（次期 beta でも同じ）。宣言レンジ内の更新や dedupe では動かない（実測：pnpm dedupe で差分0件）。なお `^3.25.0 || ^4.0.0` の宣言は zod-validation-error@4.0.2 のもので、既に本体の 4.6.7 に解決済み。tools/ の npm lockfile には zod 3.25.76 はない（実測）。判断：pnpm overrides 等による強制解決はしない。使用箇所が Pyth 応答のパース内部で advisory の攻撃面が現実にはほぼないことと、zod 3 前提のライブラリへ 4 を強制すると価格フィード経路の互換性検証の負担が割に合わないため。再確認の契機は、hermes-client か zodios が zod 4 を許容するリリースを出したときで、その場合は通常の依存更新で拾う。
