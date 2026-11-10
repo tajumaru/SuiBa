@@ -29,7 +29,10 @@ UPSTREAM_NETWORK_FAILED UPSTREAM_DNS_FAILED UPSTREAM_HTTP_429 UPSTREAM_HTTP_502 
 UPSTREAM_HTTP_504 MARKET_DATA_STALLED STALE_CANDLES CANDLE_GAP INVALID_CANDLE INSUFFICIENT_CANDLES
 PAPER_RECOVERY_EXHAUSTED PAPER_RECONCILIATION_FAILED SUI_READ_FAILED API_BACKOFF
 CONSECUTIVE_API_ERRORS MARKET_SOURCE_CHANGED MARKET_PAIR_MISMATCH VALIDATION_RECORD_FAILED
-DATABASE_UNAVAILABLE PROCESS_RESTART_INTERRUPTED'''.split())
+DATABASE_UNAVAILABLE PROCESS_RESTART_INTERRUPTED PROCESS_RESTART_STOPPED
+PAPER_NETWORK_PAUSED PAPER_NETWORK_RECOVERED'''.split())
+EPISODE_OUTCOMES = frozenset(('RECOVERED', 'EXHAUSTED', 'STOPPED', 'INTERRUPTED'))
+TALLY_KEY = re.compile(r'[A-Za-z][A-Za-z0-9 ]{0,31}/[A-Z][A-Z0-9_]{0,63}')
 
 
 class ExportError(RuntimeError):
@@ -117,6 +120,26 @@ def sanitize(table, value, public=False):
         if value.get('kind') not in ('STOP', 'ERROR', 'ANOMALY', 'CONTROL', 'BOOT', 'WAIT'): return None
         out['kind'] = value['kind']
         out['code'] = value.get('code') if value.get('code') in EVENT_CODES else 'REDACTED'
+        # The closing record of a recovery episode (counts per
+        # api/reason, first/last failure, duration, outcome) is
+        # operational data, not free text: keep it in a strictly
+        # numeric/allowlisted shape so a later reader can name
+        # which upstream failed and for how long. A malformed
+        # episode is dropped alone; the event itself survives.
+        episode = value.get('episode')
+        if type(episode) is dict:
+            clean = numeric_fields(episode, ('startedAt', 'endedAt', 'durationMs', 'failures', 'lastFailureAt'))
+            if episode.get('outcome') in EPISODE_OUTCOMES: clean['outcome'] = episode['outcome']
+            tally = episode.get('tally')
+            if type(tally) is dict:
+                kept = {}
+                for key, count in tally.items():
+                    if type(key) is str and TALLY_KEY.fullmatch(key) and \
+                            type(count) is int and 1 <= count <= 100000:
+                        kept[key] = count
+                    if len(kept) >= 32: break
+                if kept: clean['tally'] = kept
+            if clean: out['episode'] = clean
     elif table == 'cycle_audits':
         if value.get('phase') in ('START', 'END'): out['phase'] = value['phase']
         for key in ('runningAtStart', 'runningAtEnd'):

@@ -104,6 +104,68 @@ class ExportTests(unittest.TestCase):
             self.assertEqual(manifest['scope'], 'PRE_RUN_BACKUP_PUBLIC_EXTRACT')
             self.assertEqual(manifest['sourceArchiveSha256'], record['backup']['sha256'])
 
+    def test_episode_summary_survives_sanitization(self):
+        event = {'kind': 'STOP', 'code': 'PAPER_RECOVERY_EXHAUSTED', 'fatal': False,
+                 'episode': {'startedAt': 1000, 'endedAt': 183000, 'durationMs': 182000,
+                             'failures': 3, 'lastFailureAt': 61000, 'outcome': 'EXHAUSTED',
+                             'tally': {'DeepBook Indexer/UPSTREAM_NETWORK_FAILED': 2,
+                                       'Sui gRPC/SUI_READ_FAILED': 1},
+                             'note': SECRET},
+                 'details': {'reasonDetail': SECRET}}
+        out = e.sanitize('operation_events', event)
+        self.assertEqual(out['code'], 'PAPER_RECOVERY_EXHAUSTED')
+        self.assertEqual(out['episode'], {'startedAt': 1000, 'endedAt': 183000,
+            'durationMs': 182000, 'failures': 3, 'lastFailureAt': 61000,
+            'outcome': 'EXHAUSTED', 'tally': {'DeepBook Indexer/UPSTREAM_NETWORK_FAILED': 2,
+            'Sui gRPC/SUI_READ_FAILED': 1}})
+        self.assertNotIn(SECRET, json.dumps(out))
+        for closing in ('PAPER_NETWORK_RECOVERED', 'PROCESS_RESTART_STOPPED', 'PAPER_NETWORK_PAUSED'):
+            kept = e.sanitize('operation_events', {'kind': 'CONTROL', 'code': closing})
+            self.assertEqual(kept['code'], closing)
+
+    def test_malformed_episode_is_dropped_but_the_event_survives(self):
+        event = {'kind': 'CONTROL', 'code': 'PAPER_NETWORK_RECOVERED',
+                 'episode': {'startedAt': 'soon', 'outcome': 'WEIRD',
+                             'tally': {'bad key': 1, 'MarketData/CANDLE_STALE': 'many',
+                                       'DeepBook Indexer/UPSTREAM_TIMEOUT': 2}}}
+        out = e.sanitize('operation_events', event)
+        self.assertEqual(out['kind'], 'CONTROL')
+        self.assertEqual(out['code'], 'PAPER_NETWORK_RECOVERED')
+        self.assertEqual(out.get('episode'), {'tally': {'DeepBook Indexer/UPSTREAM_TIMEOUT': 2}})
+        gone = e.sanitize('operation_events', {'kind': 'BOOT', 'code': 'PROCESS_RESTART_STOPPED',
+                                               'episode': 'not-a-dict'})
+        self.assertNotIn('episode', gone)
+
+    def test_episode_summary_reaches_the_exported_package(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root/'bot.sqlite'
+            db = sqlite3.connect(path)
+            db.execute('CREATE TABLE operation_events(id TEXT PRIMARY KEY,timestamp INTEGER,json TEXT)')
+            event = {'timestamp': 183000, 'kind': 'STOP', 'code': 'PAPER_RECOVERY_EXHAUSTED',
+                     'episode': {'startedAt': 1000, 'endedAt': 183000, 'durationMs': 182000,
+                                 'failures': 1, 'lastFailureAt': 3000, 'outcome': 'EXHAUSTED',
+                                 'tally': {'MarketData/SPREAD_TOO_WIDE': 1}}}
+            db.execute('INSERT INTO operation_events VALUES(?,?,?)', ('event-1', 183000, json.dumps(event)))
+            db.commit(); db.close()
+            stream = io.BytesIO()
+            with tarfile.open(fileobj=stream, mode='w') as archive:
+                archive.add(path, arcname='./bot.sqlite')
+            raw = stream.getvalue()
+            record = {'id': 'a'*32, 'status': 'completed', 'started': 700000, 'duration': '24h',
+                      'sha': 'b'*40, 'backup': {'file': 'paper-check-'+'c'*32+'.tar',
+                      'sha256': hashlib.sha256(raw).hexdigest()}}
+            package = e.build_export(io.BytesIO(raw), record)
+            with zipfile.ZipFile(io.BytesIO(package)) as archive:
+                out_path = root/'exported.sqlite'
+                out_path.write_bytes(archive.read('SUI_USDC.sqlite'))
+                exported = sqlite3.connect(out_path)
+                row = json.loads(exported.execute('SELECT json FROM operation_events').fetchone()[0])
+                exported.close()
+            self.assertEqual(row['episode']['outcome'], 'EXHAUSTED')
+            self.assertEqual(row['episode']['tally'], {'MarketData/SPREAD_TOO_WIDE': 1})
+            self.assertEqual(row['episode']['lastFailureAt'], 3000)
+
     def test_wal_is_recovered_only_in_the_disposable_copy(self):
         with tempfile.TemporaryDirectory() as tmp:
             raw, record = self.fixture(tmp, wal=True)

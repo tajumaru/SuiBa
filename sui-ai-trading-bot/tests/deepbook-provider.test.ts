@@ -92,6 +92,41 @@ function gecko() {
     ),
   };
 }
+it("records indexer latency samples per read class and drains them once", async () => {
+  const d = deep();
+  await d.provider.prepare();
+  await d.provider.candles(300);
+  const samples = d.provider.drainLatencySamples();
+  expect(samples.other.length).toBeGreaterThanOrEqual(1);
+  expect(samples.status.length).toBeGreaterThanOrEqual(1);
+  expect(samples.book.length).toBeGreaterThanOrEqual(1);
+  expect(samples.candles.length).toBeGreaterThanOrEqual(1);
+  for (const values of Object.values(samples))
+    expect(values.every((ms) => Number.isFinite(ms) && ms >= 0)).toBe(true);
+  expect(d.provider.drainLatencySamples()).toEqual({
+    candles: [],
+    book: [],
+    status: [],
+    other: [],
+  });
+});
+it("records a latency sample even when the indexer read fails", async () => {
+  const provider = new DeepBookMarketData(limits, async () => {
+    throw new Error("UPSTREAM_NETWORK_FAILED");
+  });
+  await expect(provider.prepare()).rejects.toThrow();
+  expect(provider.drainLatencySamples().other).toHaveLength(1);
+});
+it("forwards drained latency samples through the selection", async () => {
+  const d = deep(),
+    g = gecko(),
+    p = new MarketSelection("auto", g, d.provider);
+  await p.frames();
+  const samples = p.latencySamples();
+  expect(
+    samples.candles.length + samples.book.length + samples.status.length,
+  ).toBeGreaterThan(0);
+});
 it("reads pair, status, book and all three validated frames without credentials", async () => {
   const d = deep(),
     g = gecko(),

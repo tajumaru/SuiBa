@@ -21,7 +21,18 @@ import {
   type Timeframe,
 } from "../../shared/src/index.ts";
 import { validateCandles } from "./validation.ts";
+import type { IndexerLatencyKind } from "../../shared/src/operations.ts";
 const base = "https://deepbook-indexer.mainnet.mystenlabs.com";
+/** Read class of an indexer path, for latency telemetry. */
+function latencyKindOf(path: string): IndexerLatencyKind {
+  if (path.startsWith("/ohclv")) return "candles";
+  if (path.startsWith("/orderbook")) return "book";
+  if (path.startsWith("/status")) return "status";
+  return "other";
+}
+/** Pending samples are capped per kind even if nobody drains:
+ * telemetry must never grow memory without bound. */
+const latencyPendingCap = 512;
 const row = z.tuple([
   z.number().int().positive(),
   ...Array.from({ length: 5 }, () => z.number().finite()),
@@ -231,6 +242,20 @@ export class DeepBookMarketData {
   private indexedThrough = 0;
   private refreshAfterCandles = false;
   private indexerLagMs: number | null = null;
+  private latencyPending: Record<IndexerLatencyKind, number[]> = {
+    candles: [],
+    book: [],
+    status: [],
+    other: [],
+  };
+  /** Hand the latency samples recorded since the previous
+   * drain to the caller (the worker persists them). Recording
+   * only; draining never affects reads. */
+  drainLatencySamples(): Record<IndexerLatencyKind, number[]> {
+    const drained = this.latencyPending;
+    this.latencyPending = { candles: [], book: [], status: [], other: [] };
+    return drained;
+  }
   diagnostics() {
     // Diagnostic values must belong to the same response as bookObservation.
     // Ignore execution-only spread/depth gates, but retain structural/freshness checks.
@@ -406,9 +431,21 @@ export class DeepBookMarketData {
   private async checkedRead(path: string, ttl = 0) {
     const budget = currentReadBudget();
     budget?.signal.throwIfAborted();
-    const result = await this.read(path, ttl);
-    budget?.signal.throwIfAborted();
-    return result;
+    const began = performance.now();
+    try {
+      const result = await this.read(path, ttl);
+      budget?.signal.throwIfAborted();
+      return result;
+    } finally {
+      // Latency telemetry only: the caller-visible duration of
+      // this read (a TTL cache hit measures near zero). Recorded
+      // on success and failure alike; retries, aborts and
+      // timeouts are untouched.
+      const bucket = this.latencyPending[latencyKindOf(path)];
+      bucket.push(Math.max(0, performance.now() - began));
+      if (bucket.length > latencyPendingCap)
+        bucket.splice(0, bucket.length - latencyPendingCap);
+    }
   }
   async candles(tf: Timeframe, now = Date.now()) {
     const parent = currentReadBudget(),

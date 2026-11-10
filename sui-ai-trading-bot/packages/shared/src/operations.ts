@@ -64,6 +64,31 @@ export interface OperationEvent {
    * hard stop, or boot): what failed, how often, for how long. */
   episode?: EpisodeSummary;
 }
+/** DeepBook Indexer read classes whose caller-visible latency
+ * is accumulated as display-grade telemetry. */
+export type IndexerLatencyKind = "candles" | "book" | "status" | "other";
+export const indexerLatencyKinds: readonly IndexerLatencyKind[] = [
+  "candles",
+  "book",
+  "status",
+  "other",
+];
+export interface IndexerLatencyBucket {
+  /** Total samples recorded into this aggregate. */
+  count: number;
+  /** Largest sample ever recorded (ms). */
+  maxMs: number;
+  /** Bounded ring of the most recent samples (ms), oldest
+   * first; the median is computed from this window. */
+  recent: number[];
+}
+/** Persisted in operation_state: bounded by construction (four
+ * scalar counters plus a capped ring per kind), so it survives
+ * restarts without growing the runtime row without limit. */
+export type IndexerLatencyAggregate = Record<
+  IndexerLatencyKind,
+  IndexerLatencyBucket
+>;
 export interface OperationState {
   lastFetchAttemptAt?: number | null;
   lastFetchSuccessAt?: number | null;
@@ -73,6 +98,7 @@ export interface OperationState {
   lastFetchDurationMs?: number | null;
   nextFetchAt?: number | null;
   nextFetchReason?: string | null;
+  indexerLatency?: IndexerLatencyAggregate | null;
 
   observedSince: number;
   processStartedAt: number;

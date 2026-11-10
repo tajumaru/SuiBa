@@ -2119,6 +2119,47 @@ class EpisodeEvidenceTests(unittest.TestCase):
         output = self.render(self.payload(events))
         self.assertNotIn('Latest episode', output)
 
+    def test_valid_episode_accepts_spaced_api_names_and_outcome(self):
+        spaced = {'s': 1, 'm': 2, 'f': 3, 'y': {'DeepBook Indexer/UPSTREAM_NETWORK_FAILED': 2,
+                                                 'Sui gRPC/SUI_READ_FAILED': 1}}
+        self.assertTrue(c.valid_episode(spaced))
+        self.assertTrue(c.valid_episode({**spaced, 'o': 'EXHAUSTED', 'l': 2}))
+        self.assertFalse(c.valid_episode({**spaced, 'o': 'WEIRD'}))
+        self.assertFalse(c.valid_episode({**spaced, 'l': -1}))
+        self.assertFalse(c.valid_episode({**spaced, 'x': 1}))
+
+    def test_valid_episode_ref_and_latency_shapes(self):
+        episode = {'s': 1, 'm': 2, 'f': 3, 'y': {'MarketData/CANDLE_STALE': 1}, 'o': 'RECOVERED'}
+        self.assertTrue(c.valid_episode_ref({'t': 9, 'c': 'PAPER_NETWORK_RECOVERED', 'e': episode}))
+        self.assertFalse(c.valid_episode_ref({'t': 9, 'c': 'not a code', 'e': episode}))
+        self.assertFalse(c.valid_episode_ref({'t': 9, 'c': 'PAPER_NETWORK_RECOVERED'}))
+        self.assertTrue(c.valid_latency({'c': [10, 250, 900], 'b': None, 's': [1, None, None]}))
+        self.assertFalse(c.valid_latency({'c': [0, 250, 900], 'b': None, 's': None}))
+        self.assertFalse(c.valid_latency({'c': [10, 250], 'b': None, 's': None}))
+        self.assertFalse(c.valid_latency({'c': [10, 250, 900]}))
+
+    def test_renderer_prefers_the_episode_pointer_and_shows_outcome(self):
+        payload = self.payload([])
+        payload['diagnostics']['evidence'] = {
+            'events': [], 'timing': None,
+            'episode': {'t': 9, 'c': 'PAPER_RECOVERY_EXHAUSTED',
+                        'e': {'s': 1000, 'm': 182000, 'f': 1,
+                              'y': {'DeepBook Indexer/UPSTREAM_NETWORK_FAILED': 1},
+                              'o': 'EXHAUSTED', 'l': 3000}}}
+        output = self.render(payload)
+        self.assertIn('- Latest episode: duration=182000ms, failures=1, '
+                      'tally=DeepBook Indexer/UPSTREAM_NETWORK_FAILED×1, outcome=EXHAUSTED', output)
+
+    def test_renderer_shows_indexer_latency(self):
+        payload = self.payload([])
+        payload['diagnostics']['evidence'] = {
+            'events': [], 'episode': None,
+            'timing': {'dur': 120, 'att': 1, 'suc': 1,
+                       'lat': {'c': [10, 250, 900], 'b': [4, 40, 80], 's': None}}}
+        output = self.render(payload)
+        self.assertIn('- Indexer latency in SUI database: candles n=10 median=250ms '
+                      'max=900ms; book n=4 median=40ms max=80ms', output)
+
 
 class ApproveDeployReissueTests(unittest.TestCase):
     # 作業6 (decision A): approve_deploy may re-materialize a CI

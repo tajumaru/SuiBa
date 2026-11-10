@@ -119,21 +119,37 @@ export class BotEngine {
    * timeframe's candles, persist them, and refuse a market
    * source change mid-flight. Extracted verbatim from tick().
    */
+  /** Telemetry only: move the provider's drained indexer
+   * latency samples into the monitor's persisted aggregate.
+   * Never allowed to fail a cycle. */
+  private drainIndexerLatency() {
+    try {
+      const samples = this.market.latencySamples?.();
+      if (samples) this.monitor.recordIndexerLatencySamples(samples);
+    } catch {
+      /* Display-grade telemetry; a recording fault changes nothing. */
+    }
+  }
   private async acquireFrames(cycle: CycleEvidence, began: number, now: number) {
       const recovering = this.monitor.safety().connectivity !== "HEALTHY";
-      const frames: Record<number, Candle[]> = await this.monitor.acquisition(
-        async () => {
-          await this.monitor.request("HEALTH", () =>
-            this.sui.health(recovering),
-          );
-          if (this.market.frames) return this.market.frames(now);
-          const result: Record<number, Candle[]> = {};
-          for (const tf of [300, 900, 3600] as const)
-            result[tf] = await this.market.candles(tf, now);
-          return result;
-        },
-        cycle.cycleId,
-      );
+      let frames: Record<number, Candle[]>;
+      try {
+        frames = await this.monitor.acquisition(
+          async () => {
+            await this.monitor.request("HEALTH", () =>
+              this.sui.health(recovering),
+            );
+            if (this.market.frames) return this.market.frames(now);
+            const result: Record<number, Candle[]> = {};
+            for (const tf of [300, 900, 3600] as const)
+              result[tf] = await this.market.candles(tf, now);
+            return result;
+          },
+          cycle.cycleId,
+        );
+      } finally {
+        this.drainIndexerLatency();
+      }
       if (this.market.frames)
         for (const tf of [300, 900, 3600] as const)
           validateCandles(frames[tf], tf, Date.now());
