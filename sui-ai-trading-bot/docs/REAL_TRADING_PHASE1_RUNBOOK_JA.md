@@ -48,7 +48,7 @@
 1. [ ] **ウォレット接続**：ダッシュボードでオーナーウォレットを接続する。
 2. [ ] **BalanceManager 作成**：`createAndShareBalanceManager` をオーナー署名で実行し、生成された **BM オブジェクト ID を記録**する。
 3. [ ] **入金**：取引資金（DBUSDC、必要なら SUI）と手数料用 DEEP を BM へ `deposit` する。DEEP の量は §5.4.2 の定義（最大注文手数料の回数分）で考え、Phase 1 では較正データ採取（本書 §5）に足る量を入れる。
-4. [ ] **TradeCap 発行と Bot への移転**：`mint_trade_cap` で Cap を発行し、Bot アドレスへ移転する。tx の構成（同一 PTB で発行＋移転まで完結させるか、発行 tx → 移転 tx の 2 段にするか）は設計書 §11 #5 の判断に従う。**TradeCap のオブジェクト ID を記録**する。
+4. [ ] **TradeCap 発行と Bot への移転**：`mint_trade_cap` で Cap を発行し、Bot アドレスへ移転する。tx の構成は **1 tx（同一 PTB で発行＋移転）** と決定済み（設計書 §11 #5、2026-11-10）。**TradeCap のオブジェクト ID を記録**する。
 5. [ ] **REAL 設定への登録**：BM ID・TradeCap ID・オーナーアドレス・Bot アドレスを REAL 設定（設計書 §5.3）に登録する。`network=testnet`、`poolKey=SUI_DBUSDC`、`payWithDeep=true`（2026-11-10 決定）とし、上限（`maxOrderUsdc`／`dailyRealLimitUsdc`）はテスト用に極小に置く。`enabled` はまだ true にしない。
 6. [ ] **Worker 起動時検証の通過確認**：Worker を起動し、次がすべて通ることを確認する（1 つでも崩れていたら REAL は有効化されない＝フェイルクローズが正しい挙動）：
    - BM の `owner` が登録済みオーナーアドレスと一致する

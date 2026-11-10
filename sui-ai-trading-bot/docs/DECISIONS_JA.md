@@ -245,3 +245,9 @@ DeepBook の手数料を公式 docs で再確認した。手数料はプール�
 ## 2026-11-10 TradeCap Phase 1（testnet）の実行手順書を作成
 
 設計書 §10 Phase 1 を実行するための手順書 `docs/REAL_TRADING_PHASE1_RUNBOOK_JA.md` を新規作成し、設計書 §10 から参照を張った。要点：資産入手は公式 docs の確認済み経路に限定する（testnet SUI は faucet、DEEP と DBUSDC は token request form が本命で testnet DEEP に faucet はない。DEEP_SUI プールでの swap は当てにしない）。受け入れ 1〜10 は §10 の文言そのままにチェックリスト化し、項目ごとに残す証跡（digest 等）を対応させた。副産物として較正データ（poolTradeParams 実値、tx ごとの gasUsed、手数料の実績と見積もりの差、注文種別の約定率・スリッページ比較、DEEP フロートの消費ペース）の採取を必須化し、§5.4 の初期値を実測で置き換えるまでを Phase 1 の仕事とした。
+
+## 2026-11-10 SDK 調査：TradeCap 発行は 1 tx（§11 #5 決定）、deepbook-v3 は 2.8.0 に固定
+
+`@mysten/deepbook-v3` のソースと npm の peer 範囲を 2026-11-10 に確認した。`mintTradeCap` は Transaction を受けて move call を追加し Cap のハンドルを返す tx ビルダーであり、同一 PTB 内で発行＋`transferObjects` まで組める。よって §11 #5 は「1 tx（同一 PTB で発行＋移転）」と決定し、設計書 §4.1・§11 #5 と Phase 1 手順書 §3 に反映した。
+
+バージョン整合：deepbook-v3 の peer は `@mysten/sui` の版に連動する（2.8.0 は `^2.37.0`、2.8.2 以降は 2.38 以上、2.11.1 は `^2.39.1`）。本リポジトリの `@mysten/sui` 2.37.0 と互換な最新は 2.8.0 であり、設計が前提とする API（poolTradeParams、placeMarketOrder、cancelOrder、cancelAllOrders、checkManagerBalance、accountOpenOrders、createAndShareBalanceManager、mintTradeCap、`$extend(deepbook({ address, balanceManagers }))`）が 2.8.0 の公開型定義にすべて存在することを確認した。実装では `@mysten/deepbook-v3` を 2.8.0 に固定する（設計書 §5.5）。deepbook を上げる場合は `@mysten/sui` の更新と既存 gRPC 読み取り経路の回帰確認をセットで別途行う。
