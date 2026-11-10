@@ -82,18 +82,36 @@
    `setup-paper-check.sh` を再実行し、ホストの controller を現行
    main のピンに揃える。拒否された場合は、理由（supervisor 稼働
    等）を解消するまで先へ進まない。
-2. **配置確認**：対象リリースのイメージが `prepared_stopped` で
+2. **本番用 compose の配置**：broker の setup スクリプト
+   （`setup-ci-approval.sh`）を prod バリアント（引数 `prod`）で
+   再実行し、policy compose を本番用
+   （`docker/compose.vps-prod.yaml`、PAPER_CHECK_MODE は本番
+   トークン `sui-prod`）に差し替える。本番コントローラの
+   preflight はこのトークンを要求するため、差し替え前の配置
+   （検証用トークン `sui-30m`）では prod-start が必ず失敗する
+   （`docs/PROD_START_TOKEN_FIX_DESIGN_JA.md`）。次の配置確認は
+   この差し替えの後に行う。
+   - 注記：本番用 compose が入っている間、検証ランは preflight
+     のトークン不一致で開始できない（prod-stop 後も同じ）。
+     検証に戻すときは、setup を検証用（引数なし）で再実行して
+     policy compose を戻し、再配置する。
+   - 注記：診断（CHECK-PAPER-DIAGNOSTICS）の container env
+     チェックは検証用トークンを前提に描画する（表示のみで
+     ゲートではない）。本番構成の間は env=ng と出るのが
+     想定どおりであり、本番の正規の読みは prod-status
+     （本番モニター）である。
+3. **配置確認**：対象リリースのイメージが `prepared_stopped` で
    配置済みであることを確認する（未配置なら DEPLOY-CYCLE-PAPER の
    経路で配置する）。あわせて prod-status で本番が閉じている
    （未開始、または前回が completed）ことを確認する。
-3. **cutoff の release**：最後の検証ランの cutoff タイマーは、ラン
+4. **cutoff の release**：最後の検証ランの cutoff タイマーは、ラン
    終了後も武装したまま（active／elapsed）残る。prod-start の
    セッションゲートは全 cutoff タイマーの静止を要求するため、開始
    前に deploy-cycle の release-cutoff と同じ扱いで release する。
-4. **prod-policy の配置**：`/etc/suiba-paper-check/prod-policy.json`
+5. **prod-policy の配置**：`/etc/suiba-paper-check/prod-policy.json`
    に `{"enabled": true}` を明示操作で配置する（setup は作成も
    変更もしない）。検証の policy とは独立である。
-5. **prod-start**：§0.1 の入口から開始する。prod-start は
+6. **prod-start**：§0.1 の入口から開始する。prod-start は
    `suiba-prod.service` を起動し、runner 側で次の順に進む：
    セッションゲート（検証ランが開いていないこと＝検証レコードが
    completed かつ停止レシートが clean_stopped であること、本番が
@@ -103,7 +121,7 @@
    なし）→ paper-start → 終了時刻のない監視。prod-start の応答
    （accepted）は開始要求の受理であり、開始できたことの確認は
    次の手順で行う。
-6. **開始後確認**：次が全て取れること。
+7. **開始後確認**：次が全て取れること。
    - prod-status が `in_progress` を示す。
    - `/api/deployment` の表示で本番セッションが armed／expires=null
      である。
@@ -112,7 +130,7 @@
    - 市場データが新鮮で、最初のサイクルがエラーなく回る
      （prod-status の worker 項目で running／databaseHealthy／
      ledgerOk を確認する）。
-7. **監視の有効化と初回スモーク**：
+8. **監視の有効化と初回スモーク**：
    - repo 変数 `SUIBA_PROD_MONITOR_ENABLED=true` を設定する。本番
      モニターが prod-status の定期観測と Issue 通知を始める（手動
      確認は dispatch の確認文字列 `CHECK-PROD-MONITOR`）。
@@ -130,9 +148,9 @@
        （`suiba-prod-review: <日付>`）の重複ガードで skip され、
        ジョブは緑のまま終わる。したがってスモークは初回の定期
        投稿より先に行う（DECISIONS_JA の PR #148 補足の趣旨）。
-8. **閲覧確認**：ダッシュボードが WireGuard 経由でのみ届くことを
+9. **閲覧確認**：ダッシュボードが WireGuard 経由でのみ届くことを
    確認する（§7-2）。
-9. **Windows 側の停止**：手順 6〜8 の確認が全て取れてから、
+10. **Windows 側の停止**：手順 7〜9 の確認が全て取れてから、
    Windows 側の Bot を止める。それまでは即時復帰可能な待機に
    置く。
 
