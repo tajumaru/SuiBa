@@ -259,3 +259,7 @@ DeepBook の手数料を公式 docs で再確認した。手数料はプール�
 ## 2026-11-10 本番開始・停止の Actions 入口を新設（切替の前提部品）
 
 controller は prod-start／prod-stop を実装済みだったが、Actions から呼べるのは prod-status と export-prod-snapshot の読み取り経路だけで、開始・停止の入口が無かった。検証系と同じ型で、固定ラッパー `docker/ssh-prod-start.sh`／`docker/ssh-prod-stop.sh`（送るのは固定リクエストのみ、応答は controller の固定 JSON だけを受理）と、確認文字列 START-PROD／STOP-PROD の2ジョブを持つ `.github/workflows/suiba-production-control.yml` を新設した。caller scope の裏取り：controller の受理集合に prod-start／prod-stop が含まれ、制限を受けるのは observe identity だけで、deploy identity はホスト配布物（setup-paper-check.sh のピン済み controller／sudo ラッパー／sudoers）のまま受理できるため、ホスト側の変更は不要。ゲート変数 SUIBA_PROD_CONTROL_ENABLED は未設定のままで、切替時に有効化するまで不発。
+
+## 2026-11-10 マージ済みブランチは削除する（運用ルール）
+
+オーナーの指示で、PR をマージしたらそのブランチを削除する運用に統一した（シロ・Codex 共通）。リポジトリ設定 `delete_branch_on_merge` を有効化し、既存のマージ済みブランチ118本も削除した（残りは main、open PR のブランチ、未マージの作業ブランチのみ）。AGENTS.md の「変更の進め方」にも明記した。
