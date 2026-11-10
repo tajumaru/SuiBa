@@ -478,4 +478,6 @@ broker 配置＋素の docker start）は、restart 強制や create-only と
    既存テストと CI で確認する。
 4. **切替**：§4 の骨子に沿った手順書を作成 → 状態移行 →
    prod-start。初回は watch を付けたまま監視し、Windows は
-   即時復帰可能な待機に置く。
+   即時復帰可能な待機に置く。手順書は
+   `docs/VPS_PRODUCTION_CUTOVER_RUNBOOK_JA.md`（切替手順書）と
+   して作成済み。

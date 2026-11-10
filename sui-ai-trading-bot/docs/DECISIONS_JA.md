@@ -252,6 +252,10 @@ DeepBook の手数料を公式 docs で再確認した。手数料はプール�
 
 バージョン整合：deepbook-v3 の peer は `@mysten/sui` の版に連動する（2.8.0 は `^2.37.0`、2.8.2 以降は 2.38 以上、2.11.1 は `^2.39.1`）。本リポジトリの `@mysten/sui` 2.37.0 と互換な最新は 2.8.0 であり、設計が前提とする API（poolTradeParams、placeMarketOrder、cancelOrder、cancelAllOrders、checkManagerBalance、accountOpenOrders、createAndShareBalanceManager、mintTradeCap、`$extend(deepbook({ address, balanceManagers }))`）が 2.8.0 の公開型定義にすべて存在することを確認した。実装では `@mysten/deepbook-v3` を 2.8.0 に固定する（設計書 §5.5）。deepbook を上げる場合は `@mysten/sui` の更新と既存 gRPC 読み取り経路の回帰確認をセットで別途行う。
 
+## 2026-11-10 VPS 本稼働の切替手順書を作成
+
+設計書 §8-4 が求める切替手順書 `docs/VPS_PRODUCTION_CUTOVER_RUNBOOK_JA.md` を新規作成し、設計書 §8-4 から参照を張った。要点：切替の前提条件として、本番 START/STOP の Actions 入口（ssh ラッパー＋ワークフロー）が未実装であることを明記した（controller の prod-start／prod-stop は実装済みだが、現存する Actions 経路は prod-status と export-prod-snapshot の読み取りだけであり、当日にホストへの手打ちで代用しない）。当日の順序は setup 再実行（両 supervisor 静止時のみ可。PR #132／#140／#141／#146／#149 の controller 変更はここで入る）→ 配置確認 → cutoff release（prod-start のセッションゲートは全 cutoff タイマーの静止を要求する）→ prod-policy 配置 → prod-start → 開始後確認 → 変数有効化（SUIBA_PROD_MONITOR_ENABLED、SUIBA_PROD_REVIEW_ENABLED）と日次レビューの初回スモーク → WireGuard 閲覧確認 → Windows 停止、とした。日次レビューの初回スモークは、workflow の if 条件により変数が true でないと手動 dispatch（REVIEW-PROD-DAILY）でも skip されるため、変数を設定したうえで、その JST 日の初回定期投稿より先に dispatch する順序で書いた（重複ガードとの関係は PR #148 補足の趣旨どおり）。
+
 ## 2026-11-10 本番開始・停止の Actions 入口を新設（切替の前提部品）
 
 controller は prod-start／prod-stop を実装済みだったが、Actions から呼べるのは prod-status と export-prod-snapshot の読み取り経路だけで、開始・停止の入口が無かった。検証系と同じ型で、固定ラッパー `docker/ssh-prod-start.sh`／`docker/ssh-prod-stop.sh`（送るのは固定リクエストのみ、応答は controller の固定 JSON だけを受理）と、確認文字列 START-PROD／STOP-PROD の2ジョブを持つ `.github/workflows/suiba-production-control.yml` を新設した。caller scope の裏取り：controller の受理集合に prod-start／prod-stop が含まれ、制限を受けるのは observe identity だけで、deploy identity はホスト配布物（setup-paper-check.sh のピン済み controller／sudo ラッパー／sudoers）のまま受理できるため、ホスト側の変更は不要。ゲート変数 SUIBA_PROD_CONTROL_ENABLED は未設定のままで、切替時に有効化するまで不発。
