@@ -281,3 +281,7 @@ REAL 設計書 §5.1 を §5.4 と同じ粒度に詳細化した（§5.1.1〜§5
 ## 2026-11-10 paper モニターの scheduler 落ちに watchdog で冗長化
 
 GitHub scheduler の best-effort な間引きで paper モニターが 2026-11-09 に約5時間、2026-11-10 に約4時間45分発火せず、その間は異常検出が遅れた。対策はエージェントの定期チェックに寄せず GitHub 側で閉じる方針とし、軽量な watchdog ワークフロー（suiba-paper-monitor-watchdog.yml）を追加した。本体と分数をずらした毎時 9,29,49 分に起動し、Actions API で本体の直近実行を見て、scheduled・dispatch のどちらの時計も45分以上途絶え、実行中・キュー中もない場合に限り、本体を workflow_dispatch（CHECK-PAPER-MONITOR）で最大1回だけ再発火させる。45分の根拠：本体の名目間隔は約10分であり、通常の scheduler 遅延では45分の空白は生じない一方、観測された数時間の間引きは確実に拾える（検出遅延は最大で45分＋watchdog 間隔20分）。ゲートは本体と同じ repo 変数 SUIBA_PAPER_MONITOR_ENABLED に連動し、権限は GITHUB_TOKEN の actions: write のみで、ホスト資格情報も Issue 権限も持たない。失敗時は無言で何もしない。本番モニター（suiba-production-monitor.yml）はゲート未設定で未稼働のため今回は触らず、本稼働の切替時に同方式を検討する。
+
+## 2026-11-10 本番モニター watchdog の先行実装
+
+PR #168 で本番切替時に検討するとしていた watchdog を先行実装した。リポジトリ変数 SUIBA_PROD_MONITOR_ENABLED が未設定の間は復旧処理は不発となる。本番切替時に本体のゲートを有効にすると、watchdog も自動的に有効になる。

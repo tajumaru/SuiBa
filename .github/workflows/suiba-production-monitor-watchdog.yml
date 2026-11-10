@@ -1,0 +1,35 @@
+name: SuiBa production monitor watchdog
+on:
+  schedule:
+    - cron: '4,24,44 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: suiba-production-monitor-watchdog
+  cancel-in-progress: false
+jobs:
+  watchdog:
+    # Same repository variable as the monitor itself (not an Environment
+    # variable): missing/false disables the watchdog too, so it can never
+    # resurrect a monitor the owner turned off. The job holds no host
+    # credentials and no Issue permissions; its only write is the single
+    # workflow_dispatch of the monitor.
+    if: >-
+      github.ref == 'refs/heads/main' && vars.SUIBA_PROD_MONITOR_ENABLED == 'true' &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    permissions:
+      contents: read
+      actions: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Re-fire the production monitor if its schedule has gone silent
+        env:
+          SUIBA_PROD_MONITOR_ENABLED: ${{ vars.SUIBA_PROD_MONITOR_ENABLED }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROD_MONITOR_WATCHDOG_REPOSITORY: ${{ github.repository }}
+        run: bash sui-ai-trading-bot/docker/production-monitor-watchdog.sh
