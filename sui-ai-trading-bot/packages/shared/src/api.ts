@@ -49,6 +49,11 @@ export type ApiPolicy = {
   timeoutMs?: number;
   maxTransientRetries?: number;
   transport?: typeof fetch;
+  /** Observer only: invoked synchronously when a run is
+   * served from the TTL cache instead of fetching. Never
+   * alters the cache decision or the returned value; a
+   * throwing observer is ignored. */
+  onCacheHit?: () => void;
 };
 export type ApiAttempt = {
   api: string;
@@ -280,8 +285,15 @@ export class ApiAccess {
     }
     if ((s.nextRetryAt ?? 0) > Date.now()) throw new Error("API_BACKOFF");
     const cache = this.caches.get(id);
-    if (!budget?.fresh && cache && cache.until > Date.now())
+    if (!budget?.fresh && cache && cache.until > Date.now()) {
+      try {
+        policy.onCacheHit?.();
+      } catch {
+        // Telemetry observer; a fault here must not fail a read
+        // that the cache already answered.
+      }
       return cache.value as T;
+    }
     this.caches.delete(id);
     const task = (async () => {
       const tail = this.tails.get(api);

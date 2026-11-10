@@ -269,8 +269,11 @@ if details is not None:
             parts = []
             for label, key in (("candles", "c"), ("book", "b"), ("status", "s")):
                 bucket = lat.get(key)
-                if isinstance(bucket, list) and len(bucket) == 3:
-                    parts.append(f"{label} n={bucket[0]} median={bucket[1]}ms max={bucket[2]}ms")
+                if isinstance(bucket, list) and len(bucket) in (3, 4):
+                    part = f"{label} n={bucket[0]} median={bucket[1]}ms max={bucket[2]}ms"
+                    if len(bucket) == 4:
+                        part += f" cached={bucket[3]}"
+                    parts.append(part)
             if parts:
                 print("- Indexer latency in SUI database: " + "; ".join(parts))
         events = evidence.get("events")

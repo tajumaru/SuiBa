@@ -1,6 +1,6 @@
 import { safeFailure } from "../../shared/src/index.ts";
 import type { Timeframe } from "../../shared/src/index.ts";
-import type { IndexerLatencyKind } from "../../shared/src/operations.ts";
+import type { IndexerLatencyDrain } from "../../shared/src/operations.ts";
 import { validateCandles } from "./validation.ts";
 import type { Frames, MarketDataProvider, MarketStatus } from "./provider.ts";
 export class MarketSelection implements MarketDataProvider {
@@ -14,7 +14,7 @@ export class MarketSelection implements MarketDataProvider {
       finalize?(): Promise<void>;
       refreshForOrder?(): Promise<void>;
       diagnostics?(): MarketStatus["diagnostics"];
-      drainLatencySamples?(): Record<IndexerLatencyKind, number[]>;
+      drainLatencySamples?(): IndexerLatencyDrain;
       quality?(): Record<number, import("./reconstruction.ts").CandleQuality>;
       book?: {
         timestamp: number;
@@ -59,15 +59,13 @@ export class MarketSelection implements MarketDataProvider {
   bookLevels(now: number) {
     return this.deep.levels?.(now) ?? null;
   }
-  /** Forward the DeepBook side's drained latency samples;
-   * empty when the provider records none. */
+  /** Forward the DeepBook side's drained latency telemetry;
+   * an empty drain when the provider records none. */
   latencySamples() {
     return (
       this.deep.drainLatencySamples?.() ?? {
-        candles: [],
-        book: [],
-        status: [],
-        other: [],
+        samples: { candles: [], book: [], status: [], other: [] },
+        cached: { candles: 0, book: 0, status: 0, other: 0 },
       }
     );
   }

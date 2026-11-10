@@ -449,17 +449,23 @@ export class OperationMonitor {
       ...this.db.get<OperationState>("operation_state")!,
     };
   }
-  /** Merge drained DeepBook Indexer latency samples into the
-   * persisted aggregate in operation_state. Recording only: the
-   * aggregate is bounded (a capped recent ring per kind) and is
-   * never read by any trading or safety decision. */
-  recordIndexerLatencySamples(
-    samples: Partial<Record<IndexerLatencyKind, number[]>>,
-  ) {
+  /** Merge one drained batch of DeepBook Indexer latency
+   * telemetry into the persisted aggregate in operation_state.
+   * Network durations fold into each kind's count / max /
+   * recent ring; TTL cache hits only raise the kind's cached
+   * counter, so they never enter the distribution. Recording
+   * only: the aggregate is bounded (a capped recent ring per
+   * kind) and is never read by any trading or safety
+   * decision. */
+  recordIndexerLatencySamples(drain: {
+    samples?: Partial<Record<IndexerLatencyKind, number[]>>;
+    cached?: Partial<Record<IndexerLatencyKind, number>>;
+  }) {
     const empty = (): IndexerLatencyBucket => ({
       count: 0,
       maxMs: 0,
       recent: [],
+      cached: 0,
     });
     const current = this.state().indexerLatency;
     const next: IndexerLatencyAggregate = {
@@ -470,14 +476,15 @@ export class OperationMonitor {
     };
     let changed = false;
     for (const kind of indexerLatencyKinds) {
-      const values = samples[kind];
-      if (!values?.length) continue;
       const bucket: IndexerLatencyBucket = {
         count: next[kind].count,
         maxMs: next[kind].maxMs,
         recent: [...next[kind].recent],
+        // Aggregates persisted before the split have no
+        // cached counter; it starts at zero.
+        cached: next[kind].cached ?? 0,
       };
-      for (const ms of values) {
+      for (const ms of drain.samples?.[kind] ?? []) {
         if (!Number.isFinite(ms) || ms < 0) continue;
         bucket.count += 1;
         bucket.maxMs = Math.max(bucket.maxMs, ms);
@@ -486,17 +493,24 @@ export class OperationMonitor {
       }
       if (bucket.recent.length > 60)
         bucket.recent.splice(0, bucket.recent.length - 60);
+      const hits = drain.cached?.[kind] ?? 0;
+      if (Number.isInteger(hits) && hits > 0) {
+        bucket.cached = (bucket.cached ?? 0) + hits;
+        changed = true;
+      }
       next[kind] = bucket;
     }
     if (changed) this.update({ indexerLatency: next });
   }
   /** Display summary of the persisted indexer latency
-   * aggregate: sample count, median of the recent window and
-   * the all-time max, per read class. */
+   * aggregate: network sample count, median of the recent
+   * window, the all-time max and the TTL cache-hit count,
+   * per read class. */
   indexerLatencySummary() {
     const aggregate = this.state().indexerLatency;
     const summarize = (bucket: IndexerLatencyBucket | undefined) => {
-      if (!bucket || bucket.count <= 0) return null;
+      if (!bucket || (bucket.count <= 0 && (bucket.cached ?? 0) <= 0))
+        return null;
       const sorted = [...bucket.recent].sort((a, b) => a - b);
       return {
         count: bucket.count,
@@ -504,6 +518,7 @@ export class OperationMonitor {
           ? Math.round(sorted[Math.floor(sorted.length / 2)])
           : null,
         maxMs: Math.round(bucket.maxMs),
+        cached: bucket.cached ?? 0,
       };
     };
     return {

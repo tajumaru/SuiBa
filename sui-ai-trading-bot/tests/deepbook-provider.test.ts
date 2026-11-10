@@ -15,6 +15,7 @@ import {
   type Candle,
 } from "../packages/shared/src/index.ts";
 import { apiAccess } from "../packages/shared/src/api.ts";
+import { deepBookTransport } from "../packages/market-data/src/deepbook-transport.ts";
 afterEach(() => {
   vi.restoreAllMocks();
   apiAccess.onTransientFailure = () => {};
@@ -96,18 +97,19 @@ it("records indexer latency samples per read class and drains them once", async 
   const d = deep();
   await d.provider.prepare();
   await d.provider.candles(300);
-  const samples = d.provider.drainLatencySamples();
-  expect(samples.other.length).toBeGreaterThanOrEqual(1);
-  expect(samples.status.length).toBeGreaterThanOrEqual(1);
-  expect(samples.book.length).toBeGreaterThanOrEqual(1);
-  expect(samples.candles.length).toBeGreaterThanOrEqual(1);
-  for (const values of Object.values(samples))
+  const drain = d.provider.drainLatencySamples();
+  expect(drain.samples.other.length).toBeGreaterThanOrEqual(1);
+  expect(drain.samples.status.length).toBeGreaterThanOrEqual(1);
+  expect(drain.samples.book.length).toBeGreaterThanOrEqual(1);
+  expect(drain.samples.candles.length).toBeGreaterThanOrEqual(1);
+  for (const values of Object.values(drain.samples))
     expect(values.every((ms) => Number.isFinite(ms) && ms >= 0)).toBe(true);
+  // Injected reads never report cache hits: the read itself
+  // stands in for the fetch.
+  expect(drain.cached).toEqual({ candles: 0, book: 0, status: 0, other: 0 });
   expect(d.provider.drainLatencySamples()).toEqual({
-    candles: [],
-    book: [],
-    status: [],
-    other: [],
+    samples: { candles: [], book: [], status: [], other: [] },
+    cached: { candles: 0, book: 0, status: 0, other: 0 },
   });
 });
 it("records a latency sample even when the indexer read fails", async () => {
@@ -115,17 +117,68 @@ it("records a latency sample even when the indexer read fails", async () => {
     throw new Error("UPSTREAM_NETWORK_FAILED");
   });
   await expect(provider.prepare()).rejects.toThrow();
-  expect(provider.drainLatencySamples().other).toHaveLength(1);
+  expect(provider.drainLatencySamples().samples.other).toHaveLength(1);
 });
 it("forwards drained latency samples through the selection", async () => {
   const d = deep(),
     g = gecko(),
     p = new MarketSelection("auto", g, d.provider);
   await p.frames();
-  const samples = p.latencySamples();
+  const drain = p.latencySamples();
   expect(
-    samples.candles.length + samples.book.length + samples.status.length,
+    drain.samples.candles.length +
+      drain.samples.book.length +
+      drain.samples.status.length,
   ).toBeGreaterThan(0);
+});
+it("counts TTL cache hits apart from network latency samples", async () => {
+  const transport = vi
+    .spyOn(deepBookTransport, "fetch")
+    .mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/get_pools"))
+        return Response.json([
+          {
+            pool_name: "SUI_USDC",
+            base_asset_id: SUI,
+            quote_asset_id: USDC,
+            base_asset_decimals: 9,
+            quote_asset_decimals: 6,
+          },
+        ]);
+      if (url.includes("/status"))
+        return Response.json({
+          status: "OK",
+          current_time_ms: Date.now(),
+          max_checkpoint_lag: 1,
+          max_time_lag_seconds: 1,
+        });
+      if (url.includes("/orderbook")) return Response.json(book());
+      return Response.json(raw(300));
+    });
+  try {
+    // No injected read: the default apiFetch-backed read and
+    // the real TTL cache decide what is a hit.
+    const provider = new DeepBookMarketData(limits);
+    await provider.prepare();
+    await provider.prepare();
+    const drain = provider.drainLatencySamples();
+    // The second prepare is served from the TTL cache for
+    // /get_pools (300s) and /status (5s); the order book is
+    // read with ttl 0, so it is fetched both times.
+    expect(drain.cached).toEqual({
+      candles: 0,
+      book: 0,
+      status: 1,
+      other: 1,
+    });
+    expect(drain.samples.other).toHaveLength(1);
+    expect(drain.samples.status).toHaveLength(1);
+    expect(drain.samples.book).toHaveLength(2);
+  } finally {
+    transport.mockRestore();
+    apiAccess.clearPairState();
+  }
 });
 it("reads pair, status, book and all three validated frames without credentials", async () => {
   const d = deep(),
