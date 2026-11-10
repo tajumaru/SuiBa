@@ -264,6 +264,15 @@ if details is not None:
         timing = evidence.get("timing")
         if isinstance(timing, dict) and timing.get("dur") is not None:
             print(f"- Last fetch in SUI database: duration={timing['dur']}ms")
+        if isinstance(timing, dict) and isinstance(timing.get("lat"), dict):
+            lat = timing["lat"]
+            parts = []
+            for label, key in (("candles", "c"), ("book", "b"), ("status", "s")):
+                bucket = lat.get(key)
+                if isinstance(bucket, list) and len(bucket) == 3:
+                    parts.append(f"{label} n={bucket[0]} median={bucket[1]}ms max={bucket[2]}ms")
+            if parts:
+                print("- Indexer latency in SUI database: " + "; ".join(parts))
         events = evidence.get("events")
         if isinstance(events, list) and events:
             rendered = ", ".join(
@@ -271,15 +280,24 @@ if details is not None:
                 for e in events[:6] if isinstance(e, dict) and "k" in e and "c" in e)
             if rendered:
                 print(f"- Recent operation events (SUI, newest first): {rendered}")
-        episode = next((e.get("e") for e in events if isinstance(e, dict)
-                        and isinstance(e.get("e"), dict)), None) if isinstance(events, list) else None
+        # Prefer the dedicated latest-closed-episode pointer: the
+        # closing event falls out of the recent-events window once
+        # later cycles append their own events.
+        latest = evidence.get("episode")
+        episode = latest.get("e") if isinstance(latest, dict) and isinstance(latest.get("e"), dict) else None
+        if episode is None:
+            episode = next((e.get("e") for e in events if isinstance(e, dict)
+                            and isinstance(e.get("e"), dict)), None) if isinstance(events, list) else None
         if isinstance(episode, dict):
             tally = episode.get("y")
             tally_text = ", ".join(
                 f"{key}×{count}" for key, count in tally.items()
                 if isinstance(key, str) and isinstance(count, int)) if isinstance(tally, dict) else ""
-            print(f"- Latest episode: duration={episode.get('m')}ms, "
-                  f"failures={episode.get('f')}, tally={tally_text}")
+            line = (f"- Latest episode: duration={episode.get('m')}ms, "
+                    f"failures={episode.get('f')}, tally={tally_text}")
+            if isinstance(episode.get("o"), str):
+                line += f", outcome={episode['o']}"
+            print(line)
     if "clean_lifecycle" in details:
         print(f"- Clean PAPER lifecycle receipt: {details['clean_lifecycle']}")
     runtime = details.get("runtime")

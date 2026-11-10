@@ -268,7 +268,12 @@ try {
   try {
     db.exec("PRAGMA trusted_schema=OFF");
     const shape = /^[A-Z][A-Z0-9_]{0,63}$/;
-    const tallyKey = /^[A-Za-z][A-Za-z0-9]{0,31}\/[A-Z][A-Z0-9_]{0,63}$/;
+    // Tally keys are "<api>/<code>"; the api names are display
+    // names that contain spaces ("DeepBook Indexer", "Sui gRPC"),
+    // so the api part must allow spaces or every API-failure
+    // episode sanitizes away to nothing.
+    const tallyKey = /^[A-Za-z][A-Za-z0-9 ]{0,31}\/[A-Z][A-Z0-9_]{0,63}$/;
+    const episodeOutcomes = ["RECOVERED", "EXHAUSTED", "STOPPED", "INTERRUPTED"];
     const sanitizeEpisode = (ep) => {
       if (!ep || typeof ep !== "object" || Array.isArray(ep)) return null;
       const num = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
@@ -282,7 +287,17 @@ try {
         tally[key] = count;
         if (Object.keys(tally).length > 8) return null;
       }
-      return {s, m, f, y: tally};
+      const out = {s, m, f, y: tally};
+      if (ep.outcome !== undefined) {
+        if (!episodeOutcomes.includes(ep.outcome)) return null;
+        out.o = ep.outcome;
+      }
+      if (ep.lastFailureAt !== undefined) {
+        const l = num(ep.lastFailureAt);
+        if (l === null) return null;
+        out.l = l;
+      }
+      return out;
     };
     const events = [];
     for (const row of db.prepare(
@@ -298,6 +313,23 @@ try {
         }
       } catch {}
     }
+    // The most recent CLOSED episode, looked up directly: the
+    // closing event falls out of the 10-event window above once
+    // later cycles append their own events, but its summary is
+    // the first thing a failure diagnosis needs.
+    let episode = null;
+    const episodeRow = db.prepare(
+      "SELECT timestamp, json FROM operation_events " +
+      "WHERE json_extract(json, '$.episode') IS NOT NULL " +
+      "ORDER BY timestamp DESC LIMIT 1").get();
+    if (episodeRow) {
+      try {
+        const value = JSON.parse(episodeRow.json);
+        const clean = sanitizeEpisode(value.episode);
+        if (clean && typeof episodeRow.timestamp === "number" && shape.test(value.code))
+          episode = {t: episodeRow.timestamp, c: value.code, e: clean};
+      } catch {}
+    }
     let timing = null;
     const stateRow = db.prepare(
       "SELECT json FROM bot_runtime_state WHERE key='operation_state'").get();
@@ -306,8 +338,25 @@ try {
       const num = (v) => typeof v === "number" && Number.isFinite(v) ? v : null;
       timing = {dur: num(state.lastFetchDurationMs), att: num(state.lastFetchAttemptAt),
                 suc: num(state.lastFetchSuccessAt)};
+      // Persisted indexer latency aggregate: per read class
+      // [total samples, median of the recent window, max].
+      const agg = state.indexerLatency;
+      if (agg && typeof agg === "object" && !Array.isArray(agg)) {
+        const bucket = (b) => {
+          if (!b || typeof b !== "object" || !Number.isInteger(b.count) || b.count < 1)
+            return null;
+          const recent = (Array.isArray(b.recent) ? b.recent : [])
+            .filter((v) => typeof v === "number" && Number.isFinite(v) && v >= 0)
+            .sort((a, z) => a - z);
+          return [b.count,
+            recent.length ? Math.round(recent[Math.floor(recent.length / 2)]) : null,
+            num(b.maxMs) !== null ? Math.round(b.maxMs) : null];
+        };
+        const lat = {c: bucket(agg.candles), b: bucket(agg.book), s: bucket(agg.status)};
+        if (lat.c || lat.b || lat.s) timing.lat = lat;
+      }
     }
-    evidence = {events, timing};
+    evidence = {events, timing, episode};
   } finally { db.close(); }
 } catch { evidence = null; }
 console.log(JSON.stringify({deltas: result, runtime, selected_pair: selectedPair, evidence}));
@@ -1144,7 +1193,9 @@ class Controller:
             require(audit['selected_pair'] in ('SUI_USDC', 'WAL_USDC', 'UNKNOWN'))
             evidence = audit.get('evidence')
             if evidence is not None:
-                require(type(evidence) is dict and set(evidence) == {'events', 'timing'})
+                require(type(evidence) is dict and
+                        {'events', 'timing'} <= set(evidence) <= {'events', 'timing', 'episode'})
+                require(evidence.get('episode') is None or valid_episode_ref(evidence.get('episode')))
                 require(type(evidence['events']) is list and len(evidence['events']) <= 10 and all(
                     type(e) is dict and set(e) in ({'t', 'k', 'c', 'd'}, {'t', 'k', 'c', 'd', 'e'})
                     and type(e['t']) in (int, float) and
@@ -1154,8 +1205,11 @@ class Controller:
                     (set(e) == {'t', 'k', 'c', 'd'} or valid_episode(e['e']))
                     for e in evidence['events']))
                 timing = evidence['timing']
-                require(timing is None or (type(timing) is dict and set(timing) == {'dur', 'att', 'suc'} and
-                    all(timing[key] is None or type(timing[key]) in (int, float) for key in timing)))
+                require(timing is None or (type(timing) is dict and
+                    {'dur', 'att', 'suc'} <= set(timing) <= {'dur', 'att', 'suc', 'lat'} and
+                    all(timing[key] is None or type(timing[key]) in (int, float)
+                        for key in ('dur', 'att', 'suc')) and
+                    ('lat' not in timing or valid_latency(timing['lat']))))
             return {'deltas': result, 'runtime': {pair: audit['runtime'][name]
                     for pair, name in zip(('SUI_USDC', 'WAL_USDC'), DIAGNOSTIC_DATABASES)},
                     'selected_pair': audit['selected_pair'], 'evidence': evidence}
@@ -2302,19 +2356,54 @@ def request_caller(environ, getpwnam):
 def valid_episode(value):
     """Strict shape for the sanitized episode summary the diagnostic query
     extracts from a closing operation event ({s, m, f, y} = startedAt,
-    durationMs, failures, tally). Mirrors sanitizeEpisode in
-    DIAGNOSTIC_QUERY; any surprise makes the audit evidence invalid."""
-    if type(value) is not dict or set(value) != {'s', 'm', 'f', 'y'}:
+    durationMs, failures, tally; optional o = outcome, l = lastFailureAt).
+    Mirrors sanitizeEpisode in DIAGNOSTIC_QUERY; any surprise makes the
+    audit evidence invalid. Tally keys are "<api>/<code>" and the api
+    names contain spaces ("DeepBook Indexer", "Sui gRPC")."""
+    if type(value) is not dict or not {'s', 'm', 'f', 'y'} <= set(value) <= {'s', 'm', 'f', 'y', 'o', 'l'}:
         return False
     if any(type(value[key]) not in (int, float) or value[key] < 0 for key in ('s', 'm', 'f')):
+        return False
+    if 'o' in value and value['o'] not in ('RECOVERED', 'EXHAUSTED', 'STOPPED', 'INTERRUPTED'):
+        return False
+    if 'l' in value and (type(value['l']) not in (int, float) or value['l'] < 0):
         return False
     tally = value['y']
     if type(tally) is not dict or len(tally) > 8:
         return False
     return all(type(key) is str
-               and re.fullmatch(r'[A-Za-z][A-Za-z0-9]{0,31}/[A-Z][A-Z0-9_]{0,63}', key)
+               and re.fullmatch(r'[A-Za-z][A-Za-z0-9 ]{0,31}/[A-Z][A-Z0-9_]{0,63}', key)
                and type(count) is int and 1 <= count <= 100000
                for key, count in tally.items())
+
+
+def valid_episode_ref(value):
+    """The diagnostic query's latest-closed-episode pointer:
+    {t, c, e} = the closing event's timestamp, its code and the
+    sanitized episode summary it carries."""
+    return type(value) is dict and set(value) == {'t', 'c', 'e'} \
+        and type(value['t']) in (int, float) \
+        and type(value['c']) is str \
+        and re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', value['c']) is not None \
+        and valid_episode(value['e'])
+
+
+def valid_latency(value):
+    """The diagnostic query's compact indexer latency summary:
+    {c, b, s} for the candles/book/status read classes, each
+    either null or [total samples, median ms, max ms]."""
+    if type(value) is not dict or set(value) != {'c', 'b', 's'}:
+        return False
+    for bucket in value.values():
+        if bucket is None:
+            continue
+        if type(bucket) is not list or len(bucket) != 3:
+            return False
+        if type(bucket[0]) is not int or bucket[0] < 1:
+            return False
+        if any(item is not None and type(item) not in (int, float) for item in bucket[1:]):
+            return False
+    return True
 
 
 def require_caller_scope(caller, request):

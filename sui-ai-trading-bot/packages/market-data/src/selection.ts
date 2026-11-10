@@ -1,5 +1,6 @@
 import { safeFailure } from "../../shared/src/index.ts";
 import type { Timeframe } from "../../shared/src/index.ts";
+import type { IndexerLatencyKind } from "../../shared/src/operations.ts";
 import { validateCandles } from "./validation.ts";
 import type { Frames, MarketDataProvider, MarketStatus } from "./provider.ts";
 export class MarketSelection implements MarketDataProvider {
@@ -13,6 +14,7 @@ export class MarketSelection implements MarketDataProvider {
       finalize?(): Promise<void>;
       refreshForOrder?(): Promise<void>;
       diagnostics?(): MarketStatus["diagnostics"];
+      drainLatencySamples?(): Record<IndexerLatencyKind, number[]>;
       quality?(): Record<number, import("./reconstruction.ts").CandleQuality>;
       book?: {
         timestamp: number;
@@ -56,6 +58,18 @@ export class MarketSelection implements MarketDataProvider {
    * under the same availability rule as its imbalance. */
   bookLevels(now: number) {
     return this.deep.levels?.(now) ?? null;
+  }
+  /** Forward the DeepBook side's drained latency samples;
+   * empty when the provider records none. */
+  latencySamples() {
+    return (
+      this.deep.drainLatencySamples?.() ?? {
+        candles: [],
+        book: [],
+        status: [],
+        other: [],
+      }
+    );
   }
   async candles(tf: Timeframe, now = Date.now()) {
     return (await this.frames(now))[tf];

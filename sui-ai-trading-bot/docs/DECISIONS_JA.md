@@ -267,3 +267,7 @@ controller は prod-start／prod-stop を実装済みだったが、Actions か�
 ## 2026-11-10 §5.1 執行アダプタの詳細設計（非同期はサイクル内 await で吸収）
 
 REAL 設計書 §5.1 を §5.4 と同じ粒度に詳細化した（§5.1.1〜§5.1.8）。要点：型（ExecutionIntent／ExecutionResult／CancelResult／AdapterOnchainState）を PAPER の既存型（Fill、QuoteResult、CandidateAudit、commitFill の verification 一式）と対応づけて確定した。非同期の吸収は「execute() をサイクル内で await し、終端または UNKNOWN の確定までそのサイクルで完結させる」案を採用した（MarketScheduler が単一サイクルを await する現行構造では、サイクル内で待っても重なり・二重実行が起きず、監査の「1 サイクル＝1 候補」の帰属も保てるため）。finality 待ちには上限を設けて UNKNOWN で返し、未解決の UNKNOWN が残る間は新規送信をゲートで止める（§6.4／§7.3 の執行点）。想定内の執行結果は例外にせず ExecutionResult で返し、例外は帳簿の整合性異常に限って既存の tick 例外分類に載せる（新しい停止条件は作らない）。照合の説明できない差分による HALTED は REAL 側のラッチとし runtime.error とは別軸に置く。cancelAllOpenOrders は緊急停止のラッチ地点と Worker 終了時に呼び、PARTIAL／FAILED と残件 ID で部分失敗を表す。
+
+## 2026-11-10 エピソード内訳と Indexer 遅延の観測を追加（記録・表示のみ）
+
+24h 検証ラン attempt 2 の失敗で「どの上流 API が・何分落ちたか」が公開 export から特定できなかった反省から、観測を2件追加した。売買・安全の意味論（エピソードの数え方、制限値、停止条件、フォールバック、429/500）は一切変えていない。(1) エピソード内訳：閉じたエピソードのサマリ（API×理由の件数、最初／最後の失敗時刻、継続時間、結末 RECOVERED／EXHAUSTED／STOPPED／INTERRUPTED）はもともと終了イベントに付いて DB に残っていたが、公開 export の秘匿で落ちていた。export の許可リストに終了系コード（PAPER_NETWORK_RECOVERED、PROCESS_RESTART_STOPPED、PAPER_NETWORK_PAUSED）を加え、episode を厳密な形のまま保持するようにした。診断側は tally キーの正規表現が API 表示名の空白（"DeepBook Indexer" 等）を弾いていたのを直し、直近に閉じたエピソードを専用クエリで引いて Latest episode 行に出す（従来の直近10イベント走査だけでは終了イベントが窓外に押し出されうる）。(2) Indexer 遅延：DeepBook の全読み取りが通る checkedRead で所要時間を測り、サイクル末に回収して operation_state に有界な集計（読み取り種別ごとの総件数・最大・直近60件）として永続化する。再起動をまたいで残り、診断の Indexer latency 行と worker の timing 表示に出す。取得そのものの挙動は変えていない。

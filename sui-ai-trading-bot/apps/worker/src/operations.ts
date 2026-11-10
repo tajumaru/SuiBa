@@ -21,11 +21,15 @@ import {
   type QuoteResult,
   type TradingDecision,
 } from "../../../packages/shared/src/index.ts";
-import type {
-  CandidateAudit,
-  OperationEvent,
-  OperationState,
-  MarketStallDetails,
+import {
+  indexerLatencyKinds,
+  type CandidateAudit,
+  type IndexerLatencyAggregate,
+  type IndexerLatencyBucket,
+  type IndexerLatencyKind,
+  type OperationEvent,
+  type OperationState,
+  type MarketStallDetails,
 } from "../../../packages/shared/src/operations.ts";
 import type { AccountingCheck } from "../../../packages/paper-trading/src/reconciliation.ts";
 import type { Fill } from "../../../packages/paper-trading/src/index.ts";
@@ -309,7 +313,7 @@ export class OperationMonitor {
       !this.db.runtime().error &&
       !r.emergency &&
       this.mode === "PAPER";
-    const episode = episodeSummaryOf(s, now) ?? undefined;
+    const episode = episodeSummaryOf(s, now, "RECOVERED") ?? undefined;
     this.saveSafety({
       connectivity: "HEALTHY",
       healthyCycles: count,
@@ -441,7 +445,72 @@ export class OperationMonitor {
       lastFetchDurationMs: null,
       nextFetchAt: null,
       nextFetchReason: null,
+      indexerLatency: null,
       ...this.db.get<OperationState>("operation_state")!,
+    };
+  }
+  /** Merge drained DeepBook Indexer latency samples into the
+   * persisted aggregate in operation_state. Recording only: the
+   * aggregate is bounded (a capped recent ring per kind) and is
+   * never read by any trading or safety decision. */
+  recordIndexerLatencySamples(
+    samples: Partial<Record<IndexerLatencyKind, number[]>>,
+  ) {
+    const empty = (): IndexerLatencyBucket => ({
+      count: 0,
+      maxMs: 0,
+      recent: [],
+    });
+    const current = this.state().indexerLatency;
+    const next: IndexerLatencyAggregate = {
+      candles: current?.candles ?? empty(),
+      book: current?.book ?? empty(),
+      status: current?.status ?? empty(),
+      other: current?.other ?? empty(),
+    };
+    let changed = false;
+    for (const kind of indexerLatencyKinds) {
+      const values = samples[kind];
+      if (!values?.length) continue;
+      const bucket: IndexerLatencyBucket = {
+        count: next[kind].count,
+        maxMs: next[kind].maxMs,
+        recent: [...next[kind].recent],
+      };
+      for (const ms of values) {
+        if (!Number.isFinite(ms) || ms < 0) continue;
+        bucket.count += 1;
+        bucket.maxMs = Math.max(bucket.maxMs, ms);
+        bucket.recent.push(ms);
+        changed = true;
+      }
+      if (bucket.recent.length > 60)
+        bucket.recent.splice(0, bucket.recent.length - 60);
+      next[kind] = bucket;
+    }
+    if (changed) this.update({ indexerLatency: next });
+  }
+  /** Display summary of the persisted indexer latency
+   * aggregate: sample count, median of the recent window and
+   * the all-time max, per read class. */
+  indexerLatencySummary() {
+    const aggregate = this.state().indexerLatency;
+    const summarize = (bucket: IndexerLatencyBucket | undefined) => {
+      if (!bucket || bucket.count <= 0) return null;
+      const sorted = [...bucket.recent].sort((a, b) => a - b);
+      return {
+        count: bucket.count,
+        medianMs: sorted.length
+          ? Math.round(sorted[Math.floor(sorted.length / 2)])
+          : null,
+        maxMs: Math.round(bucket.maxMs),
+      };
+    };
+    return {
+      candles: summarize(aggregate?.candles),
+      book: summarize(aggregate?.book),
+      status: summarize(aggregate?.status),
+      other: summarize(aggregate?.other),
     };
   }
   private update(patch: Partial<OperationState>) {
@@ -487,7 +556,8 @@ export class OperationMonitor {
       nextFetchReason: null,
     });
     this.fetchMono = null;
-    const episode = episodeSummaryOf(this.safety(), now) ?? undefined;
+    const episode =
+      episodeSummaryOf(this.safety(), now, "INTERRUPTED") ?? undefined;
     this.saveSafety({
       ...initialPaperSafety(),
       generation: this.safety().generation + 1,
@@ -649,6 +719,7 @@ export class OperationMonitor {
       lastFetchDurationMs: s.lastFetchDurationMs ?? null,
       nextFetchAt: s.nextFetchAt ?? null,
       nextFetchReason: s.nextFetchReason ?? null,
+      indexerLatency: this.indexerLatencySummary(),
       candleAgeSeconds: candleAge == null ? null : candleAge / 1000,
       transportRecent:
         s.lastTransportSuccessAt != null &&
@@ -777,7 +848,12 @@ export class OperationMonitor {
   }
   stop(reason: string, now = Date.now(), details?: MarketStallDetails) {
     const r = this.db.runtime();
-    const episode = episodeSummaryOf(this.safety(), now) ?? undefined;
+    const episode =
+      episodeSummaryOf(
+        this.safety(),
+        now,
+        reason === "PAPER_RECOVERY_EXHAUSTED" ? "EXHAUSTED" : "STOPPED",
+      ) ?? undefined;
     this.saveSafety({
       resumePending: false,
       generation: this.safety().generation + 1,

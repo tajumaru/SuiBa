@@ -253,6 +253,58 @@ it("attaches the episode summary when an episode escalates to a hard stop", () =
     durationMs: 180000,
   });
 });
+it("closes episodes with an outcome and the last failure time", () => {
+  const { db, monitor } = setup();
+  const start = Date.now();
+  const f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  monitor.transientFailure(
+    f.api,
+    f.code,
+    { ...f, occurredAt: start + 2000 },
+    start + 2000,
+  );
+  monitor.market(start + 2000, start + 2000);
+  monitor.beginCycle();
+  monitor.recoveryCycle({ market: true, sui: true }, start + 3000);
+  monitor.beginCycle();
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, start + 64000),
+  ).toBe(true);
+  const recovered = db
+    .history<{
+      code: string;
+      episode?: { outcome?: string; lastFailureAt?: number };
+    }>("operation_events")
+    .find((e) => e.code === "PAPER_NETWORK_RECOVERED");
+  expect(recovered?.episode?.outcome).toBe("RECOVERED");
+  expect(recovered?.episode?.lastFailureAt).toBe(start + 2000);
+  // A hard stop while an episode is open closes it as STOPPED,
+  // and the recovery deadline closes it as EXHAUSTED.
+  const g = failure({ occurredAt: start + 70000 });
+  monitor.transientFailure(g.api, g.code, g, start + 70000);
+  monitor.checkRecoveryDeadline(start + 70000 + 180000);
+  const exhausted = db
+    .history<{ code: string; episode?: { outcome?: string } }>(
+      "operation_events",
+    )
+    .find((e) => e.code === "PAPER_RECOVERY_EXHAUSTED");
+  expect(exhausted?.episode?.outcome).toBe("EXHAUSTED");
+});
+it("closes an open episode as INTERRUPTED when the process restarts", () => {
+  const { db, monitor } = setup();
+  const start = Date.now();
+  const f = failure({ occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  monitor.boot(start + 5000);
+  const boot = db
+    .history<{ code: string; episode?: { outcome?: string; failures: number } }>(
+      "operation_events",
+    )
+    .find((e) => e.code === "PROCESS_RESTART_STOPPED");
+  expect(boot?.episode?.outcome).toBe("INTERRUPTED");
+  expect(boot?.episode?.failures).toBe(1);
+});
 it("tallies market stalls into the episode breakdown", () => {
   const { monitor } = setup();
   const start = Date.now();

@@ -98,6 +98,15 @@ export const initialPaperSafety = (): PaperSafetyState => ({
   lastStopReason: null,
 });
 
+/** How a recovery episode ended: it recovered, it exhausted
+ * its deadline into a hard stop, the bot was stopped for another
+ * reason while the episode was open, or the process went away
+ * with the episode still open. */
+export type EpisodeOutcome =
+  | "RECOVERED"
+  | "EXHAUSTED"
+  | "STOPPED"
+  | "INTERRUPTED";
 /** The closing record of one recovery episode (a pause that
  * ended by recovering, by escalating to a hard stop, or by the
  * process going away). Attached to the closing operation event
@@ -108,10 +117,17 @@ export interface EpisodeSummary {
   durationMs: number;
   failures: number;
   tally: Record<string, number>;
+  /** When the episode's most recent counted failure happened
+   * (episodeAt is the first). Lets a later reader tell how long
+   * the upstream actually stayed down, not just how long the
+   * episode stayed open. */
+  lastFailureAt?: number;
+  outcome?: EpisodeOutcome;
 }
 export function episodeSummaryOf(
   s: PaperSafetyState,
   endedAt: number,
+  outcome?: EpisodeOutcome,
 ): EpisodeSummary | null {
   if (s.episodeAt == null) return null;
   return {
@@ -120,6 +136,8 @@ export function episodeSummaryOf(
     durationMs: Math.max(0, endedAt - s.episodeAt),
     failures: s.failures,
     tally: { ...s.episodeTally },
+    lastFailureAt: s.lastFailureAt ?? s.episodeAt,
+    ...(outcome ? { outcome } : {}),
   };
 }
 
