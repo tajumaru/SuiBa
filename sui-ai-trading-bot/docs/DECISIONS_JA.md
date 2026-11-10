@@ -263,3 +263,7 @@ controller は prod-start／prod-stop を実装済みだったが、Actions か�
 ## 2026-11-10 マージ済みブランチは削除する（運用ルール）
 
 オーナーの指示で、PR をマージしたらそのブランチを削除する運用に統一した（シロ・Codex 共通）。リポジトリ設定 `delete_branch_on_merge` を有効化し、既存のマージ済みブランチ118本も削除した（残りは main、open PR のブランチ、未マージの作業ブランチのみ）。AGENTS.md の「変更の進め方」にも明記した。
+
+## 2026-11-10 §5.1 執行アダプタの詳細設計（非同期はサイクル内 await で吸収）
+
+REAL 設計書 §5.1 を §5.4 と同じ粒度に詳細化した（§5.1.1〜§5.1.8）。要点：型（ExecutionIntent／ExecutionResult／CancelResult／AdapterOnchainState）を PAPER の既存型（Fill、QuoteResult、CandidateAudit、commitFill の verification 一式）と対応づけて確定した。非同期の吸収は「execute() をサイクル内で await し、終端または UNKNOWN の確定までそのサイクルで完結させる」案を採用した（MarketScheduler が単一サイクルを await する現行構造では、サイクル内で待っても重なり・二重実行が起きず、監査の「1 サイクル＝1 候補」の帰属も保てるため）。finality 待ちには上限を設けて UNKNOWN で返し、未解決の UNKNOWN が残る間は新規送信をゲートで止める（§6.4／§7.3 の執行点）。想定内の執行結果は例外にせず ExecutionResult で返し、例外は帳簿の整合性異常に限って既存の tick 例外分類に載せる（新しい停止条件は作らない）。照合の説明できない差分による HALTED は REAL 側のラッチとし runtime.error とは別軸に置く。cancelAllOpenOrders は緊急停止のラッチ地点と Worker 終了時に呼び、PARTIAL／FAILED と残件 ID で部分失敗を表す。

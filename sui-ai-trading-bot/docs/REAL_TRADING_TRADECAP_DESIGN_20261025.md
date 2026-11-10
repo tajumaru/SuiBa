@@ -169,6 +169,128 @@ fetchOnchainState(): Promise<AdapterOnchainState>;
 - PAPER の約定後照合（`reconcileFill`、`db.commitFill`）は PaperAdapter 側に寄せ、REAL は §6 の専用ライフサイクルで照合する。
 - アダプタの選択は Worker 起動時に REAL 設定（§5.3）から決まる。**実行中の動的切替はしない**（モード変更は Worker 再起動を伴う運用手順とする）。これにより「いま走っているのが PAPER か REAL か」がプロセス単位で一意になる。
 
+#### 5.1.1 型の確定（PAPER 既存型との対応）
+
+`ExecutionIntent`（engine → アダプタ）は、`executeFill` が現在 fill 呼び出し地点で手にしている値の写しとする。アダプタが判断材料を新たに集めることはしない：
+
+| フィールド | 内容 | PAPER 側の対応 |
+|---|---|---|
+| orderId | 内部注文 id。engine が候補生成時に採番して渡す（アダプタは採番しない） | `paper:{source}:300:{candleTimestamp}:{side}`（候補生成時、engine.ts:367）。REAL は §6.2 の `real:{network}:{candleTimestamp}:{side}:{nonce}` 形式で engine が採番する |
+| candidateId | 候補の相関 id（§8.1 の「候補 id」との対応用） | `CandidateAudit.id`。orderId とは別に保持される |
+| side | `"BUY" \| "SELL"` | decision.action |
+| quote | `QuoteResult`（amountIn／minAmountOut は atomic 文字列、expiresAt、slippage、priceImpact を含む） | CetusRouter のクォートそのもの。REAL では執行価格そのものではなく、価格保護（§6.2）の基準として使う |
+| portfolio | `Portfolio`（執行直前の DB 帳簿） | fill の遷移元 `p`。REAL では上限・保有比率の評価材料として読む（実残高の正は BM 側、§7.1-4） |
+| settings | `Settings`（executeFill で確定した executionSettings のスナップショット） | 同左 |
+| costs | `Costs`（additionalFeeUsdc／gasUsdc） | `paperCosts` の出力。§5.4.4 の入力契約で確定した値。null の場合は前段で候補が棄却され、intent 自体が作られない（§5.4.5） |
+| profitGuard | `ProfitReport`（評価結果） | `commitFill` が注文レコードに保持する profit と同じもの。§8.1 の記録（評価の写し）用 |
+| markPrice | 照合の基準価格（number） | `reconcileFill` の mark 引数（そのサイクルの price） |
+| now | 執行時刻（epoch ミリ秒） | executionNow |
+
+`ExecutionResult`（アダプタ → engine）は、§6.1 の状態機械のうち execute() が責任を持つ範囲の結果とする：
+
+- `status`: `"FILLED" | "OPEN" | "REJECTED" | "UNKNOWN"`
+  - FILLED：約定が確定し、`trade` が実績で埋まっている。
+  - OPEN：tx は成功し、未約定が残る（§6.1 の OPEN）。`onchainOrderId` と配置実績を返す。
+  - REJECTED：送信前検査の不成立、またはチェーン側で失敗が確定したもの。digest があれば含む。
+  - UNKNOWN：応答喪失・finality 待ち上限超過で結果が確定しなかったもの。対応する real_orders レコードは RECONCILING に残り（§6.5）、execute() が推測で状態を確定することはない。
+- `trade`（FILLED 時必須）：§6.3／§8.1 の実績レコード。PAPER の `Fill`（orderId／side／timestamp／quantity／price／fee／pnl／slippage…）と同じ意味の項目を持ち、fee は手数料実績とガス実績（SUI 建て）の内訳を併記する。REAL 固有に digest／onchainOrderId／手数料の資産（feeAsset）を追加する。pnl は SELL 時に、確定した約定実績へ profit-guard の原価配分（`allocateCost`）を適用して算出する（PAPER が fill 内で仮想ポートフォリオに対して行う計算と同一の規則を、実績値に対して行う。REAL でも DB 側に保有・現金相当の帳簿を持つことが §6.5-4 の照合の前提である）。
+- `digests`：発注 tx（およびこの execute() 内で発生した関連 tx）の digest 一覧（§8.1 の「全 tx の digest」）。
+- `onchainOrderId`：OPEN 時、および約定イベントから得られた場合。
+- `errorCode`：REJECTED／UNKNOWN 時の理由コード（§5.1.4）。
+
+`CancelResult` は §5.1.5、`AdapterOnchainState` は §5.1.6 で定義する。
+
+#### 5.1.2 PaperAdapter の契約（等価性）
+
+- PaperAdapter.execute(intent) は、現行 executeFill の「fill 呼び出しから commit 後の照合まで」の区間をそのまま担う：`paper.fill` → `reconcileFill`（commit 前）→ `db.commitFill`（verification 一式＝audit／check／markPrice／validation つき）→ `reconcileFill`（commit 後、DB から読み直したポートフォリオでの再照合）。
+- fill より前の段（assessRisk、validateQuote、最終安全ゲート、台帳チェック、ProfitGuard の再評価、実行コンテキスト変化の検知）は engine 側に残し、PAPER／REAL で共通のまま変えない（本節冒頭の「前段ロジックには手を入れない」の具体化）。
+- 戻り値：成功時は `{ status: "FILLED", trade: fill.trade }`。engine はこれを受けて現行どおり committed の確定、`cycle.outcome = "FILLED"`、`monitor.filled` の発火を行う（これらは engine 側に残す）。
+- 例外の等価性：照合失敗時は現行どおり paper_checks へ記録してから `PAPER_RECONCILIATION_FAILED` を throw する。commitFill の `DUPLICATE_ORDER`／`BOT_STOPPED` もそのまま伝播させる。tick 側の例外分類（ハードストップ／エピソード経路への振り分け）は移行前後で変えない。
+- 等価性の定義：同じ入力（候補・クォート・ポートフォリオ・設定）に対して、paper_orders／paper_trades／paper_checks／portfolio_snapshots の内容、ポートフォリオ遷移、発生する例外コード、監査の finalAction が移行前と一致すること（§5.1.8 のテストで担保する）。
+- PaperAdapter.cancelAllOpenOrders は常に `NOTHING_OPEN` を返す no-op とする（PAPER の約定はサイクル内で完結し、未約定という状態が存在しない）。fetchOnchainState は DB のポートフォリオ・保有を AdapterOnchainState の形に写して返す（openOrders は空、BM 残高欄には仮想残高）。定期照合（§5.1.6）は PAPER では現行の台帳チェック（`monitor.ledger()`）に帰着し、挙動を変えない。
+
+#### 5.1.3 非同期の吸収（サイクルとの接続）
+
+**結論：execute() はサイクル内で await し、終端（FILLED／OPEN／REJECTED）または UNKNOWN の確定までをそのサイクルの中で完結させる。結果の回収を次サイクルに送る方式は採らない。**
+
+根拠（現行コード）：
+
+- 戦略サイクルは `MarketScheduler` が `await tick()` してから次スロットを予約する単一サイクルであり、サイクルが長引いた場合は過ぎたスロットを再生しない（scheduler.ts、`SKIPPED_OVERDUE`）。間隔は Settings の `intervalMs`（既定 60 秒、スキーマ下限 30 秒）。サイクル内で待つコストは「次の判断が遅れる」だけであり、サイクルの重なり・二重実行は構造上起きない（engine.tick の busy ガードも同方向）。
+- executeFill は既に async で、fill 直前までに validateQuote 等の await が並ぶ非同期文脈である。同期なのは fill → 照合 → commit の区間だけであり、置き換えはこの区間に閉じる。
+- 監査モデルが「1 サイクル＝1 候補＝確定した finalAction」である（tick の catch／finally が候補を SAFE_STOP 等に確定させる）。結果回収を次サイクルに送ると、候補と結果の帰属が割れる。
+
+§6.4（直列化）との整合：
+
+- 送信キューは execute() の直列実行として実現される。サイクルが単一である以上、送信は常に 1 本であり、前の tx の finality 確認が終わるまで次の送信は始まらない（§6.4 の要求そのもの）。
+- execute() 内の finality 待ちには上限を設け、超えたら UNKNOWN として返す（上限値は実装時に確定する）。サイクル自体は終了し、後続サイクルが照合（§5.1.6）を担えるようにする（「タイムアウトは失敗ではなく UNKNOWN→照合へ回す」、§12 の具体化）。
+- 未解決の UNKNOWN／RECONCILING レコードが残っている間、RealTradeCapAdapter.execute() は新規送信を行わず REJECTED（理由コード `REAL_RECONCILIATION_PENDING`）を返す（§6.4 のキュー滞留時棄却と、§7.3 の「送れたか分からない注文を抱えたまま次の注文を出さない」の執行点）。なお現行のリスク評価（assessRisk）の `pending` 引数は常に 0 であり、未約定の扱いはリスク評価ではなくこの執行ゲートで閉じる（リスク評価の意味論は変えない）。
+- 署名前チェック（§7.2）：RealTradeCapAdapter は送信直前に DB の runtime（running／emergency／error）を読み直し、executeFill の最終ゲートと同じ条件で検査する。execute() の await 中に緊急停止が立っても、送信前に止まる。
+
+#### 5.1.4 エラーの対応表
+
+原則：想定内の執行結果（チェーン側の失敗・応答喪失・残高不足等）は ExecutionResult として返し、例外にしない。例外は「帳簿の整合性が疑われる場合」に限って throw し、tick の既存の例外分類（ハードストップ／エピソード経路）にそのまま載せる。**新しい停止条件は作らない。** 本表は REAL アダプタの扱いであり、PaperAdapter は現行の throw をそのまま保持する（§5.1.2）。
+
+| 事象 | アダプタの扱い | engine／安全機構側の扱い |
+|---|---|---|
+| 送信前検査の不成立（BM 残高不足、ガス不足 §7.4、DEEP フロートの下限割れ §5.4.2、価格保護 §6.2、上限 §7.1） | execute() が REJECTED を返す（例外にしない） | 候補は棄却。real_orders に REJECTED と理由を記録し、現行の reject 経路（risk_events）にも残す。failCycle はしない（§5.4.5／§7.4 の「候補を棄却する・発注を停止する」方針） |
+| コスト見積もり不能（§5.4.5） | intent が作られないため execute() には届かない | 前段で候補棄却（現行方針のまま） |
+| tx はチェーンに届いたが失敗した／注文が拒否された | digest を記録し REJECTED を返す | 候補は不成立として終了する。ポジション・帳簿は変更しない。失敗の事実は real_orders と運用表示に残す |
+| 送信の成否自体が証明できない（応答喪失、finality 待ち上限超過） | UNKNOWN を返す。digest が分かれば記録する（「届いていないことが証明できる場合のみ REJECTED、証明できなければ UNKNOWN」が振り分けの規則） | real_orders は RECONCILING に残る。新規発注は §5.1.3 のゲートで止まる。後続サイクルの照合（§5.1.6）が解決を試みる |
+| 約定後の二重突き合わせ不一致（§6.3） | その約定を確定扱いにせず RECONCILING に入れる | 照合経路で解決を試みる。解決しなければ HALTED（次行） |
+| 照合で説明できない差分（§6.5-3） | ―（照合経路の判定） | REAL を HALTED にする。新規発注のみを止める REAL 側のラッチとし、engine の runtime.error（ハードストップ）とは別軸に置く（§7.2 の「REAL の enabled と緊急停止は別軸」と同じ考え方。ラッチの置き場は実装時に確定）。解除は手動確認のみ |
+| アダプタ内部の整合性異常（記録の破損、必須 digest の欠落等） | throw する | tick の既存分類でハードストップする（PAPER で `PAPER_RECONCILIATION_FAILED` が fill 区間の throw から failCycle するのと同じ経路）。既存の意味論の再利用であり、新しい停止条件ではない |
+| 上流 API の 429／500 | アダプタの外部読み取りも既存の apiAccess の計数に載せ、即時ハードストップを継承する（接続方法は実装時に確定） | 既存の経路（apiAccess.onRateLimit → monitor.stop）がそのまま効く |
+
+#### 5.1.5 cancelAllOpenOrders の契約
+
+- 冪等性：何度呼んでも安全とする。未約定が無ければ `NOTHING_OPEN` を成功として返す。RECONCILING 中のレコードがあっても呼べる（キャンセルはオンチェーンの未約定に対して効くものであり、UNKNOWN の解決そのものは照合の仕事として残る）。
+- 戻り値（CancelResult）：`status`（`"CANCELLED_ALL" | "PARTIAL" | "FAILED" | "NOTHING_OPEN"`）、`targets`（呼び出し時点でオンチェーンに存在した未約定件数）、`cancelled`（finality まで確認できた件数）、`digests`、`remainingOrderIds`（PARTIAL／FAILED 時の残件の onchainOrderId）、`errorCode`。
+- 部分失敗とリトライ（§6.6）：キャンセル tx の失敗はアダプタ内で bounded にリトライする（回数・間隔は実装時に確定）。それでも残る場合は成功扱いにせず PARTIAL／FAILED と残件 ID を返し、呼び出し側が監査記録と運用画面に「未約定が残っている可能性」を明示する。後続サイクルの定期照合（§5.1.6）が残件の有無を再確認する。
+- digest：キャンセル tx の digest はすべて記録し、対象注文の real_orders レコードと監査に紐づける（§8.1）。
+- 呼び出し位置：
+  1. **緊急停止時**：制御経路が runtime.emergency をラッチする地点（現行 http-routes の emergency 処理）から、engine 経由でアダプタに指示する。HTTP 応答をチェーンの finality 待ちでブロックしないため、呼び出しは非同期に発行し、完了結果は監査記録＋運用表示に反映する。あわせて次サイクルの定期照合で残件ゼロを確認する（§7.2-2 の「結果（成功／失敗／対象件数）を残す」の担保）。
+  2. **Worker 終了時**：スケジューラ停止の後段、プロセス終了前に呼ぶ（§6.6）。終了処理を無期限に止めないため finality 待ちには上限を設け、上限超過分は「残っている可能性」として記録して終了する。
+  3. PaperAdapter では no-op（§5.1.2）。
+- `reason` 引数（例：EMERGENCY_STOP、WORKER_SHUTDOWN）は監査記録にそのまま残す。
+
+#### 5.1.6 fetchOnchainState と定期照合の接続
+
+- `AdapterOnchainState` の項目：`fetchedAt`、`balanceManager` { sui, usdc, deep }（§5.5 の `checkManagerBalance` による BM 残高）、`openOrders`（`accountOpenOrders` による未約定一覧。要素は onchainOrderId を必須とし、その他の明細は SDK の返却形に従う）、`botGasSui`（Bot アドレスの SUI 残高。§7.4 の閾値判定の材料）。数値の単位（atomic／表示単位）の写像は実装時に確定する。
+- 呼び出し位置（engine）：tick の候補生成より前、現行の台帳チェック（`monitor.ledger()`）と同じ段で、REAL 時は次を行う：
+  1. 未終端 real_orders（RECONCILING を含む）の回収：§6.5 の手順（digest があれば確定状態の取得、無ければ未約定一覧と BM 残高の突き合わせ）で終端へ進める。
+  2. 定期照合（§6.5-4）：DB 帳簿の保有量・現金相当と BM 残高（SUI／USDC）を比較する。DEEP 残高は §5.4.2 のフロート監視にも使う。不一致が説明できなければ HALTED（§5.1.4）。
+  3. Bot ガス残高の確認（§7.4）。
+  
+  照合が完了するまで、そのサイクルは執行段に進まない（安全ゲートで打ち切る現行の作法に倣う）。
+- 突き合わせの独立性：PAPER の `reconcileFill` が「executor を呼ばず独立の遷移式で検算する」のと同じく、照合はアダプタの自己申告ではなく、オンチェーン状態（fetchOnchainState）と DB 記録の独立した突き合わせとして実装する。DB 側の対象は real_orders の未終端レコードと、real_trades から積み上げた保有量・現金相当の帳簿。
+- 起動時：最初のサイクルの前に同じ照合を 1 回実行し、前回プロセスの未終端レコードを回収してから執行を有効にする（§6.5-2 の復元はこの段で行う）。
+- PAPER：fetchOnchainState は DB 由来の状態を返し、定期照合は現行の台帳チェックに帰着する（§5.1.2）。なお現行の `OperationMonitor.ordersAllowed` には PAPER 前提（mode の検査）が含まれており、REAL 時の monitor の扱いは実装時に確定する。
+
+#### 5.1.7 起動時選択と自己検証
+
+- 選択の流れ：Worker 構築時（現行の BotEngine 生成地点）に DB の `real_config`（§5.3）を読む。`enabled` が true で `executionSource` が `"TRADECAP"` の場合のみ RealTradeCapAdapter を、それ以外は PaperAdapter を engine に渡す。engine は `private paper = new PaperTrading()` の直保持をやめ、コンストラクタで受け取った ExecutionAdapter を保持する。実行中の動的切替はしない（本節冒頭）。
+- REAL アダプタの起動時自己検証は、Phase 1 手順書 §3-6（設計書 §4.1-5）と 1 対 1 に対応させる：
+  1. BM の `owner` が real_config の ownerAddress と一致する。
+  2. TradeCap が Bot アドレスに存在し、その Cap が当該 BM のものである。あわせて Bot 鍵（§5.2）から導かれるアドレスが real_config の botAddress と一致する。
+  3. Cap が失効していない（proof 生成の devInspect 相当で検証）。
+  4. network と poolKey の整合（§5.3 のスキーマ前提の再確認）。
+  5. 起動時照合（§5.1.6）が完了し、説明できない差分が無い。
+  
+  項目 1〜3 のいずれかが崩れたら REAL を有効化しない（フェイルクローズ、§4.1-5）。ガス残高（§7.4）と手数料パラメータの初回読み取り（§5.4.1）は有効化の可否ではなく「新規注文の可否」として扱い、不足すれば §5.4.5 の枠組みで候補棄却側に倒れる。
+- 検証結果は Bot アドレスのみを含む形でログ・起動時表示に出す（鍵そのものは出さない、§5.2）。
+
+#### 5.1.8 テスト方針
+
+- 置き場：リポジトリ直下の `tests/`（vitest）。現行の engine テストが BotEngine に fake の market／router／sui を渡す形（例：tests/core.test.ts）を踏襲し、アダプタもコンストラクタ注入の fake で差し替えられる形にする。
+- 契約テスト（engine 側）：FakeExecutionAdapter を注入し、次を固定する：
+  - 最終ゲートを通過した候補に対して execute() が 1 回だけ呼ばれること。
+  - FILLED → commit 経路（帳簿更新・monitor.filled・cycle.outcome）が現行どおり進むこと。
+  - REJECTED → 候補棄却の経路に落ち、failCycle しないこと。
+  - UNKNOWN → commit されず、未解決ゲート（§5.1.3）が後続サイクルの執行を止めること。
+- PaperAdapter の等価性テスト：移行前の全テスト（engine・paper-trading・database 系）が無変更で通ることを回帰の正とし、加えてアダプタ単体で fill → 照合 → commit の順序と、照合失敗時の paper_checks 記録＋`PAPER_RECONCILIATION_FAILED` の伝播を固定する（§5.1.2）。
+- RealTradeCapAdapter の単体テスト：SDK 境界を fake 化し、§6.1 の状態遷移（FILLED／OPEN／REJECTED／UNKNOWN→RECONCILING）、送信の直列性（finality 確認前に次の送信が始まらないこと）、UNKNOWN 時の新規送信ゲート、cancelAllOpenOrders の冪等性と PARTIAL の表し方を固定する。実チェーンでの確認は単体テストではなく Phase 1（testnet、手順書 §4）が担う。
+- アダプタの配置パッケージは architecture テストの制約に従う。具体的な配置は実装時に確定する。
+
 ### 5.2 Bot 鍵の管理
 
 - Bot 鍵は環境変数（例：`SUIBA_BOT_PRIVATE_KEY`、`suiprivkey1…` 形式）で Worker にだけ渡す。既存の環境変数パターンに倣うが、次を必須とする：
