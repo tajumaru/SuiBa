@@ -2219,6 +2219,72 @@ class ProductionController(Controller):
             self.system('start', '--no-block', PROD_SERVICE)
         return {'status': 'accepted'}
 
+    @staticmethod
+    def started_at_epoch(value):
+        # Docker reports StartedAt as RFC3339 (UTC 'Z' or an explicit
+        # offset), with the zero time for a container that has never
+        # started. Return the instant as a float epoch, or None when
+        # the value is not a timestamp this code can prove.
+        if not isinstance(value, str):
+            return None
+        match = re.fullmatch(
+            r'(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?'
+            r'(Z|[+-]\d{2}:?\d{2})', value)
+        if not match:
+            return None
+        import calendar
+        epoch = float(calendar.timegm(
+            tuple(int(match.group(i)) for i in range(1, 7)) + (0, 0, 0)))
+        if match.group(7):
+            digits = (match.group(7) + '000000')[:6]
+            epoch += int(digits)/1e6
+        zone = match.group(8)
+        if zone not in ('Z', '+00:00', '-00:00', '+0000', '-0000'):
+            digits = zone[1:].replace(':', '')
+            offset = int(digits[:2])*3600 + int(digits[2:])*60
+            epoch -= offset if zone[0] == '+' else -offset
+        return epoch
+
+    def preflight_closeout_eligible(self, record):
+        # Fail-closed evidence check for the one production failure
+        # the normal stop path can never close: a run that died in
+        # preflight, before admission, with the worker never started.
+        # stop_checks faults such a record with PREFLIGHT_INCOMPLETE
+        # by construction, so cleanup's completion condition is
+        # unreachable and prod_start then refuses the record forever.
+        # Any doubt — unreadable evidence, an unexpected fault, a
+        # pending mutation, a container that ran at or after this
+        # session began — keeps the record in manual reconciliation.
+        try:
+            if record.get('admitted') is not False:
+                return False
+            folder = self.folder(record)
+            failure = self.b.decode(self.b.read_trusted(folder/'failure.json'))
+            if failure.get('id') != record['id'] or failure.get('stage') != 'preflight':
+                return False
+            pending = folder/'mutation.json'
+            if pending.exists() and \
+                    self.b.decode(self.b.read_trusted(pending)).get('pending') is not None:
+                return False
+            state = self.inspect()['State']
+            if state.get('Running'):
+                return False
+            started_at = state.get('StartedAt')
+            if started_at != '0001-01-01T00:00:00Z':
+                epoch = self.started_at_epoch(started_at)
+                if epoch is None or epoch >= record['started']/1000:
+                    return False
+            for fault in folder.glob('fault-*.json'):
+                if self.b.decode(self.b.read_trusted(fault)).get('error') != 'PREFLIGHT_INCOMPLETE':
+                    return False
+            latch = self.state/'failed.json'
+            if os.path.lexists(latch) and \
+                    self.b.decode(self.b.read_trusted(latch)).get('id') != record['id']:
+                return False
+            return True
+        except Exception:
+            return False
+
     def prod_stop(self):
         self.prepare_state()
         with self.locked('stop'):
@@ -2228,6 +2294,27 @@ class ProductionController(Controller):
                     self.system('stop', '--no-block', PROD_SERVICE)
                 return {'status': 'not_started'}
             record = self.current()
+            if record['status'] == 'failed_requires_review':
+                with self.locked('mutation'):
+                    if self.preflight_closeout_eligible(record):
+                        # Close the pre-admission failure out as a
+                        # clean stop: the worker never ran, so there
+                        # is nothing to stop and no state to verify
+                        # beyond the evidence just checked. Remove the
+                        # latch artifacts the failed run's own cleanup
+                        # left, so the next prod_start sees the same
+                        # clean state as after a normal stop.
+                        self.receipt(record, 'clean_stopped', [])
+                        for fault in self.folder(record).glob('fault-*.json'):
+                            fault.unlink()
+                        latch = self.state/'failed.json'
+                        if os.path.lexists(latch):
+                            latch.unlink()
+                        record['status'] = 'completed'
+                        record['stopped'] = int(time.time()*1000)
+                        record['stage'] = 'stopped'
+                        self.b.atomic(self.record, record)
+                        return {'status': 'completed'}
             if record['status'] != 'completed':
                 self.accept_stop(record, 'prod-stop')
             with contextlib.suppress(Exception):
