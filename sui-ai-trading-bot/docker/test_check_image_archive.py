@@ -6,7 +6,8 @@ pins the release image to OCI media types.
 Fixtures are synthetic docker-save tarballs: the OCI one is the
 format the broker accepts, and each mutation reproduces a rejection
 the broker would issue after transfer (the 2026-11-11 incident was
-the Docker-manifest-mediaType descriptor)."""
+an OCI-index descriptor produced by buildx attestations, confirmed
+by the pre-flight's own log output on the first retry)."""
 import hashlib
 import importlib.util
 import io
@@ -24,6 +25,7 @@ check_mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(check_mod)
 
 OCI_MANIFEST = check_mod.OCI_MANIFEST
+OCI_INDEX = 'application/vnd.oci.image.index.v1+json'
 DOCKER_MANIFEST = 'application/vnd.docker.distribution.manifest.v2+json'
 OCI_CONFIG = check_mod.OCI_CONFIG
 DOCKER_CONFIG = 'application/vnd.docker.container.image.v1+json'
@@ -134,10 +136,18 @@ class CheckArchiveTests(unittest.TestCase):
                          'sha256:' + ArchiveFixture().manifest_digest)
 
     def test_docker_manifest_media_type_is_rejected(self):
-        # The 2026-11-11 incident: oci-layout present, but the single
-        # descriptor uses the Docker manifest media type, which the
-        # broker rejects as OCI_MEDIA_TYPE after transfer.
+        # oci-layout present, but the single descriptor uses the
+        # Docker manifest media type, which the broker rejects as
+        # OCI_MEDIA_TYPE after transfer.
         self.assert_rejected(ArchiveFixture(descriptor_type=DOCKER_MANIFEST))
+
+    def test_oci_index_descriptor_is_rejected(self):
+        # The 2026-11-11 incident: buildx attestations (provenance)
+        # wrap the image in an OCI index, so the single descriptor
+        # points at the index instead of the manifest. The broker
+        # rejects it as OCI_MEDIA_TYPE; the build therefore pins
+        # --provenance=false --sbom=false.
+        self.assert_rejected(ArchiveFixture(descriptor_type=OCI_INDEX))
 
     def test_multiple_descriptors_are_rejected(self):
         self.assert_rejected(ArchiveFixture(extra_descriptor=True))
@@ -201,6 +211,8 @@ class WorkflowShapeTests(unittest.TestCase):
                 self.assertIn('docker buildx build', source)
                 self.assertIn('--output type=docker,oci-mediatypes=true',
                               source)
+                self.assertIn('--provenance=false', source)
+                self.assertIn('--sbom=false', source)
                 self.assertIn('--build-arg SUIBA_BUILD_SHA=${{ github.sha }}',
                               source)
                 self.assertIn('-f sui-ai-trading-bot/docker/Dockerfile',
