@@ -277,3 +277,7 @@ REAL 設計書 §5.1 を §5.4 と同じ粒度に詳細化した（§5.1.1〜§5
 ## 2026-11-10 Indexer 遅延の集計から TTL キャッシュヒットを分離
 
 上記の Indexer 遅延計測は TTL キャッシュに当たった読み取りも約0ms として分布に混ぜており、ネットワーク遅延が読めなかった（同エントリで明記した留意点）。キャッシュヒットを種別ごとの別カウンタ `cached` にだけ数え、総件数・最大・直近60件リング（＝中央値）には入れない形に分離した。ヒットの判定は、キャッシュを返す実在の分岐に置いた観測コールバック（ApiPolicy.onCacheHit）を ApiAccess 自身が呼ぶ方式とし、所要時間の閾値推測は使わない。キャッシュの挙動（TTL・ヒット判定・返却値）と取得のリトライ・切替・タイムアウトは現行どおり。分離前から永続化された集計（cached を持たないバケット）は 0 として読み替え、診断の Indexer latency 行には cached=N を追加する（controller は3要素・4要素の両形を受理し、旧ホストとの混在に耐える）。setup-paper-check.sh の controller ピンは同コミットで更新済み。
+
+## 2026-11-10 paper モニターの scheduler 落ちに watchdog で冗長化
+
+GitHub scheduler の best-effort な間引きで paper モニターが 2026-11-09 に約5時間、2026-11-10 に約4時間45分発火せず、その間は異常検出が遅れた。対策はエージェントの定期チェックに寄せず GitHub 側で閉じる方針とし、軽量な watchdog ワークフロー（suiba-paper-monitor-watchdog.yml）を追加した。本体と分数をずらした毎時 9,29,49 分に起動し、Actions API で本体の直近実行を見て、scheduled・dispatch のどちらの時計も45分以上途絶え、実行中・キュー中もない場合に限り、本体を workflow_dispatch（CHECK-PAPER-MONITOR）で最大1回だけ再発火させる。45分の根拠：本体の名目間隔は約10分であり、通常の scheduler 遅延では45分の空白は生じない一方、観測された数時間の間引きは確実に拾える（検出遅延は最大で45分＋watchdog 間隔20分）。ゲートは本体と同じ repo 変数 SUIBA_PAPER_MONITOR_ENABLED に連動し、権限は GITHUB_TOKEN の actions: write のみで、ホスト資格情報も Issue 権限も持たない。失敗時は無言で何もしない。本番モニター（suiba-production-monitor.yml）はゲート未設定で未稼働のため今回は触らず、本稼働の切替時に同方式を検討する。
