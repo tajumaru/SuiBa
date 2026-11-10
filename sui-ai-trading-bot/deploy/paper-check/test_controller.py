@@ -1840,6 +1840,45 @@ class ProductionTests(unittest.TestCase):
                 self.assertEqual(ctl.prod_start(), {'status': 'accepted'})
 
     @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_closes_a_preflight_failure_with_a_latched_fault(self):
+        # The live 2026-11-11 wedge after one more stop attempt:
+        # stop_checks faulted the already-latched record again, so
+        # the folder carries the derived LATCHED_FAILURE next to the
+        # original PREFLIGHT_INCOMPLETE. No new failure occurred, and
+        # the close-out still applies.
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_preflight(
+                ctl, faults=('PREFLIGHT_INCOMPLETE', 'LATCHED_FAILURE'))
+            self.with_started_at(ctl, '0001-01-01T00:00:00Z')
+            self.assertEqual(ctl.prod_stop(), {'status': 'completed'})
+            closed = ctl.current()
+            self.assertEqual(closed['status'], 'completed')
+            receipt = json.loads((ctl.folder(closed)/'stop.json').read_bytes())
+            self.assertEqual(receipt['status'], 'clean_stopped')
+            self.assertEqual(receipt['errors'], [])
+            self.assertFalse((ctl.state/'failed.json').exists())
+            self.assertEqual(list(ctl.folder(closed).glob('fault-*.json')), [])
+            self.assertFalse(ctl.faults(closed))
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_refuses_a_latched_failure_with_an_unknown_fault(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_preflight(
+                ctl, faults=('PREFLIGHT_INCOMPLETE', 'LATCHED_FAILURE',
+                             'UNCLEAN_OR_UNKNOWN'))
+            self.with_started_at(ctl, '0001-01-01T00:00:00Z')
+            with self.assertRaises(Exception): ctl.prod_stop()
+            after = ctl.current()
+            self.assertEqual(after['id'], record['id'])
+            self.assertEqual(after['status'], 'failed_requires_review')
+            self.assertTrue((ctl.state/'failed.json').exists())
+            errors = {json.loads(f.read_bytes())['error']
+                      for f in ctl.folder(after).glob('fault-*.json')}
+            self.assertIn('UNCLEAN_OR_UNKNOWN', errors)
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
     def test_prod_stop_refuses_a_preflight_failure_with_other_faults(self):
         with tempfile.TemporaryDirectory() as root:
             ctl = self.make(root)

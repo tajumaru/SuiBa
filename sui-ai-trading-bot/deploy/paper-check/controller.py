@@ -2274,8 +2274,20 @@ class ProductionController(Controller):
                 epoch = self.started_at_epoch(started_at)
                 if epoch is None or epoch >= record['started']/1000:
                     return False
+            # LATCHED_FAILURE is a derived code, not an independent
+            # failure: stop_checks appends it whenever a stop attempt
+            # observes a failure that is already latched, and faults
+            # it alongside the original code. A record that failed in
+            # preflight and then went through one more stop attempt
+            # therefore carries both codes without any new failure
+            # having occurred, so both are accepted here; the other
+            # conditions (not admitted, failure.json at the preflight
+            # stage, no pending mutation, the container never started
+            # for this session, the latch naming this record) still
+            # gate the close-out. Any other fault code refuses.
             for fault in folder.glob('fault-*.json'):
-                if self.b.decode(self.b.read_trusted(fault)).get('error') != 'PREFLIGHT_INCOMPLETE':
+                if self.b.decode(self.b.read_trusted(fault)).get('error') \
+                        not in ('PREFLIGHT_INCOMPLETE', 'LATCHED_FAILURE'):
                     return False
             latch = self.state/'failed.json'
             if os.path.lexists(latch) and \
