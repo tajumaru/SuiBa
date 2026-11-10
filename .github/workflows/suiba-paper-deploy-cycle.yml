@@ -122,7 +122,7 @@ jobs:
           sudo touch /opt/suiba/shared/runtime.env /opt/suiba/shared/admin-token
           node docker/verify-vps-config.mjs
       - name: Build on runner, never on VPS
-        run: docker build --build-arg SUIBA_BUILD_SHA=${{ github.sha }} -f sui-ai-trading-bot/docker/Dockerfile -t suiba:${{ github.sha }} sui-ai-trading-bot
+        run: docker buildx build --output type=docker,oci-mediatypes=true --build-arg SUIBA_BUILD_SHA=${{ github.sha }} -f sui-ai-trading-bot/docker/Dockerfile -t suiba:${{ github.sha }} sui-ai-trading-bot
       - name: Isolated Compose, UID1000, WAL restore, SIGTERM timeout and OOM (no Worker)
         working-directory: sui-ai-trading-bot
         run: node docker/verify-vps-offline.mjs suiba:${{ github.sha }}
@@ -131,6 +131,7 @@ jobs:
         run: |
           mkdir release
           docker save suiba:${{ github.sha }} | gzip > release/image.tar.gz
+          python3 sui-ai-trading-bot/docker/check-image-archive.py release/image.tar.gz
           docker image inspect --format '{{.Id}}' suiba:${{ github.sha }} > release/image-id.txt
           cd release
           sha256sum image.tar.gz > image.tar.gz.sha256
