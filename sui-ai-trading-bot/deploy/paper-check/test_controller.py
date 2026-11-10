@@ -1793,6 +1793,143 @@ class ProductionTests(unittest.TestCase):
             self.assertFalse(any(isinstance(x, tuple) and x[:2] == ('system', 'start') for x in self.calls))
             self.assertEqual(json.loads((ctl.folder(ctl.current())/'failure.json').read_bytes())['stage'], 'monitoring')
 
+    def wedge_preflight(self, ctl, faults=('PREFLIGHT_INCOMPLETE',)):
+        # The durable shape the 2026-11-11 production start left
+        # behind: admitted in preflight, failed there, and faulted
+        # PREFLIGHT_INCOMPLETE by its own cleanup's stop_checks.
+        record = self.admit(ctl)
+        record['status'] = 'failed_requires_review'
+        FakeBroker.atomic(ctl.record, record)
+        FakeBroker.atomic(ctl.folder(record)/'failure.json',
+                          {'id': record['id'], 'stage': 'preflight', 'error': 'RuntimeError'})
+        for code in faults:
+            ctl.fault(record, code)
+        return ctl.current()
+
+    def with_started_at(self, ctl, started_at):
+        original = ctl.inspect
+        def inspect():
+            i = original(); i['State']['StartedAt'] = started_at
+            return i
+        ctl.inspect = inspect
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_closes_a_preflight_failure(self):
+        for variant in ('never-started', 'started-before'):
+            with self.subTest(variant=variant), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                record = self.wedge_preflight(ctl)
+                if variant == 'never-started':
+                    self.with_started_at(ctl, '0001-01-01T00:00:00Z')
+                else:
+                    past = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(record['started']//1000 - 3600))
+                    self.with_started_at(ctl, past + '.123456789Z')
+                self.assertEqual(ctl.prod_stop(), {'status': 'completed'})
+                closed = ctl.current()
+                self.assertEqual(closed['status'], 'completed')
+                self.assertEqual(closed['stage'], 'stopped')
+                self.assertGreaterEqual(closed['stopped'], closed['started'])
+                receipt = json.loads((ctl.folder(closed)/'stop.json').read_bytes())
+                self.assertEqual(receipt['id'], closed['id'])
+                self.assertEqual(receipt['status'], 'clean_stopped')
+                self.assertEqual(receipt['errors'], [])
+                self.assertFalse((ctl.state/'failed.json').exists())
+                self.assertEqual(list(ctl.folder(closed).glob('fault-*.json')), [])
+                self.assertFalse(ctl.faults(closed))
+                # The wedge is gone: a fresh explicit start is admitted.
+                self.assertEqual(ctl.prod_start(), {'status': 'accepted'})
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_closes_a_preflight_failure_with_a_latched_fault(self):
+        # The live 2026-11-11 wedge after one more stop attempt:
+        # stop_checks faulted the already-latched record again, so
+        # the folder carries the derived LATCHED_FAILURE next to the
+        # original PREFLIGHT_INCOMPLETE. No new failure occurred, and
+        # the close-out still applies.
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_preflight(
+                ctl, faults=('PREFLIGHT_INCOMPLETE', 'LATCHED_FAILURE'))
+            self.with_started_at(ctl, '0001-01-01T00:00:00Z')
+            self.assertEqual(ctl.prod_stop(), {'status': 'completed'})
+            closed = ctl.current()
+            self.assertEqual(closed['status'], 'completed')
+            receipt = json.loads((ctl.folder(closed)/'stop.json').read_bytes())
+            self.assertEqual(receipt['status'], 'clean_stopped')
+            self.assertEqual(receipt['errors'], [])
+            self.assertFalse((ctl.state/'failed.json').exists())
+            self.assertEqual(list(ctl.folder(closed).glob('fault-*.json')), [])
+            self.assertFalse(ctl.faults(closed))
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_refuses_a_latched_failure_with_an_unknown_fault(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_preflight(
+                ctl, faults=('PREFLIGHT_INCOMPLETE', 'LATCHED_FAILURE',
+                             'UNCLEAN_OR_UNKNOWN'))
+            self.with_started_at(ctl, '0001-01-01T00:00:00Z')
+            with self.assertRaises(Exception): ctl.prod_stop()
+            after = ctl.current()
+            self.assertEqual(after['id'], record['id'])
+            self.assertEqual(after['status'], 'failed_requires_review')
+            self.assertTrue((ctl.state/'failed.json').exists())
+            errors = {json.loads(f.read_bytes())['error']
+                      for f in ctl.folder(after).glob('fault-*.json')}
+            self.assertIn('UNCLEAN_OR_UNKNOWN', errors)
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_refuses_a_preflight_failure_with_other_faults(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_preflight(ctl, faults=('PREFLIGHT_INCOMPLETE', 'UNCLEAN_OR_UNKNOWN'))
+            self.with_started_at(ctl, '0001-01-01T00:00:00Z')
+            with self.assertRaises(Exception): ctl.prod_stop()
+            after = ctl.current()
+            self.assertEqual(after['id'], record['id'])
+            self.assertEqual(after['status'], 'failed_requires_review')
+            self.assertTrue((ctl.state/'failed.json').exists())
+            errors = {json.loads(f.read_bytes())['error']
+                      for f in ctl.folder(after).glob('fault-*.json')}
+            self.assertIn('UNCLEAN_OR_UNKNOWN', errors)
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_still_refuses_an_admitted_failure(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_preflight(ctl)
+            record['admitted'] = True
+            FakeBroker.atomic(ctl.record, record)
+            self.with_started_at(ctl, '0001-01-01T00:00:00Z')
+            with self.assertRaises(Exception): ctl.prod_stop()
+            self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+            self.assertTrue((ctl.state/'failed.json').exists())
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_refuses_a_failure_after_preflight(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_preflight(ctl)
+            record['stage'] = 'backup'
+            FakeBroker.atomic(ctl.record, record)
+            FakeBroker.atomic(ctl.folder(record)/'failure.json',
+                              {'id': record['id'], 'stage': 'backup', 'error': 'RuntimeError'})
+            self.with_started_at(ctl, '0001-01-01T00:00:00Z')
+            with self.assertRaises(Exception): ctl.prod_stop()
+            self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+            self.assertTrue((ctl.state/'failed.json').exists())
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_refuses_when_the_container_started_with_the_session(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_preflight(ctl)
+            later = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(record['started']//1000 + 1))
+            self.with_started_at(ctl, later + '.123456789Z')
+            with self.assertRaises(Exception): ctl.prod_stop()
+            self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+            self.assertTrue((ctl.state/'failed.json').exists())
+
 
 class ProgramReadTests(unittest.TestCase):
     def test_controller_fits_its_program_read_maximum(self):
