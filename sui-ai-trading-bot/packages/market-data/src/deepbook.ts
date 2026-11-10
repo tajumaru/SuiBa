@@ -21,7 +21,10 @@ import {
   type Timeframe,
 } from "../../shared/src/index.ts";
 import { validateCandles } from "./validation.ts";
-import type { IndexerLatencyKind } from "../../shared/src/operations.ts";
+import type {
+  IndexerLatencyDrain,
+  IndexerLatencyKind,
+} from "../../shared/src/operations.ts";
 const base = "https://deepbook-indexer.mainnet.mystenlabs.com";
 /** Read class of an indexer path, for latency telemetry. */
 function latencyKindOf(path: string): IndexerLatencyKind {
@@ -248,13 +251,42 @@ export class DeepBookMarketData {
     status: [],
     other: [],
   };
-  /** Hand the latency samples recorded since the previous
-   * drain to the caller (the worker persists them). Recording
-   * only; draining never affects reads. */
-  drainLatencySamples(): Record<IndexerLatencyKind, number[]> {
-    const drained = this.latencyPending;
+  /** TTL cache hits since the previous drain, per read class.
+   * Counted apart from the latency samples: a hit performs no
+   * network fetch, so its near-zero duration must never enter
+   * the distribution. */
+  private latencyCachedPending: Record<IndexerLatencyKind, number> = {
+    candles: 0,
+    book: 0,
+    status: 0,
+    other: 0,
+  };
+  /** Cache-hit marks by path, left by the default read's
+   * onCacheHit observer and consumed by checkedRead's
+   * accounting for that same read. Injected reads never mark:
+   * for them the read itself stands in for the fetch. */
+  private cacheHitMarks = new Map<string, number>();
+  private markCacheHit(path: string) {
+    this.cacheHitMarks.set(path, (this.cacheHitMarks.get(path) ?? 0) + 1);
+  }
+  private takeCacheHitMark(path: string): boolean {
+    const marks = this.cacheHitMarks.get(path) ?? 0;
+    if (marks <= 0) return false;
+    if (marks === 1) this.cacheHitMarks.delete(path);
+    else this.cacheHitMarks.set(path, marks - 1);
+    return true;
+  }
+  /** Hand the latency telemetry recorded since the previous
+   * drain to the caller (the worker persists it): network
+   * durations per read class, plus the TTL cache hits counted
+   * apart from them. Recording only; draining never affects
+   * reads. */
+  drainLatencySamples(): IndexerLatencyDrain {
+    const samples = this.latencyPending;
+    const cached = this.latencyCachedPending;
     this.latencyPending = { candles: [], book: [], status: [], other: [] };
-    return drained;
+    this.latencyCachedPending = { candles: 0, book: 0, status: 0, other: 0 };
+    return { samples, cached };
   }
   diagnostics() {
     // Diagnostic values must belong to the same response as bookObservation.
@@ -287,25 +319,33 @@ export class DeepBookMarketData {
   quality() {
     return structuredClone(this.qualities);
   }
+  private read: ReadJson;
   constructor(
     private limits: () => { maxOrder: number; maxSlippage: number },
-    private read: ReadJson = async (path, ttl = 0) =>
-      (
-        await apiFetch(
-          "DeepBook Indexer",
-          base + path,
-          { headers: { accept: "application/json" } },
-          ttl,
-          {
-            timeoutMs: 8000,
-            maxTransientRetries: 2,
-            transport: deepBookTransport.fetch,
-          },
-        )
-      ).json(),
+    read?: ReadJson,
     private reconstruct = false,
     readonly pair: TradingPair = "SUI_USDC",
-  ) {}
+  ) {
+    this.read =
+      read ??
+      (async (path, ttl = 0) =>
+        (
+          await apiFetch(
+            "DeepBook Indexer",
+            base + path,
+            { headers: { accept: "application/json" } },
+            ttl,
+            {
+              timeoutMs: 8000,
+              maxTransientRetries: 2,
+              transport: deepBookTransport.fetch,
+              // Telemetry only: mark the read so checkedRead
+              // counts it as a cache hit, not a network sample.
+              onCacheHit: () => this.markCacheHit(path),
+            },
+          )
+        ).json());
+  }
   async prepare(_now = Date.now()) {
     const pools = z
       .array(
@@ -437,14 +477,21 @@ export class DeepBookMarketData {
       budget?.signal.throwIfAborted();
       return result;
     } finally {
-      // Latency telemetry only: the caller-visible duration of
-      // this read (a TTL cache hit measures near zero). Recorded
-      // on success and failure alike; retries, aborts and
-      // timeouts are untouched.
-      const bucket = this.latencyPending[latencyKindOf(path)];
-      bucket.push(Math.max(0, performance.now() - began));
-      if (bucket.length > latencyPendingCap)
-        bucket.splice(0, bucket.length - latencyPendingCap);
+      // Latency telemetry only. A read the TTL cache served
+      // performed no network fetch, so it is counted as a
+      // cache hit apart from the distribution; anything else
+      // records its caller-visible duration, on success and
+      // failure alike. Retries, aborts and timeouts are
+      // untouched.
+      const kind = latencyKindOf(path);
+      if (this.takeCacheHitMark(path)) {
+        this.latencyCachedPending[kind] += 1;
+      } else {
+        const bucket = this.latencyPending[kind];
+        bucket.push(Math.max(0, performance.now() - began));
+        if (bucket.length > latencyPendingCap)
+          bucket.splice(0, bucket.length - latencyPendingCap);
+      }
     }
   }
   async candles(tf: Timeframe, now = Date.now()) {

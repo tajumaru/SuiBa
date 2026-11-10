@@ -339,7 +339,8 @@ try {
       timing = {dur: num(state.lastFetchDurationMs), att: num(state.lastFetchAttemptAt),
                 suc: num(state.lastFetchSuccessAt)};
       // Persisted indexer latency aggregate: per read class
-      // [total samples, median of the recent window, max].
+      // [total network samples, median of the recent window,
+      // max, TTL cache hits counted apart from the samples].
       const agg = state.indexerLatency;
       if (agg && typeof agg === "object" && !Array.isArray(agg)) {
         const bucket = (b) => {
@@ -348,9 +349,11 @@ try {
           const recent = (Array.isArray(b.recent) ? b.recent : [])
             .filter((v) => typeof v === "number" && Number.isFinite(v) && v >= 0)
             .sort((a, z) => a - z);
+          const cached = Number.isInteger(b.cached) && b.cached >= 0 ? b.cached : 0;
           return [b.count,
             recent.length ? Math.round(recent[Math.floor(recent.length / 2)]) : null,
-            num(b.maxMs) !== null ? Math.round(b.maxMs) : null];
+            num(b.maxMs) !== null ? Math.round(b.maxMs) : null,
+            cached];
         };
         const lat = {c: bucket(agg.candles), b: bucket(agg.book), s: bucket(agg.status)};
         if (lat.c || lat.b || lat.s) timing.lat = lat;
@@ -2391,17 +2394,21 @@ def valid_episode_ref(value):
 def valid_latency(value):
     """The diagnostic query's compact indexer latency summary:
     {c, b, s} for the candles/book/status read classes, each
-    either null or [total samples, median ms, max ms]."""
+    either null or [total network samples, median ms, max ms]
+    with an optional fourth element, the TTL cache-hit count
+    counted apart from the samples."""
     if type(value) is not dict or set(value) != {'c', 'b', 's'}:
         return False
     for bucket in value.values():
         if bucket is None:
             continue
-        if type(bucket) is not list or len(bucket) != 3:
+        if type(bucket) is not list or len(bucket) not in (3, 4):
             return False
         if type(bucket[0]) is not int or bucket[0] < 1:
             return False
-        if any(item is not None and type(item) not in (int, float) for item in bucket[1:]):
+        if any(item is not None and type(item) not in (int, float) for item in bucket[1:3]):
+            return False
+        if len(bucket) == 4 and (type(bucket[3]) is not int or bucket[3] < 0):
             return False
     return True
 
