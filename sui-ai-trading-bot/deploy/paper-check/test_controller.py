@@ -2137,6 +2137,12 @@ class EpisodeEvidenceTests(unittest.TestCase):
         self.assertFalse(c.valid_latency({'c': [0, 250, 900], 'b': None, 's': None}))
         self.assertFalse(c.valid_latency({'c': [10, 250], 'b': None, 's': None}))
         self.assertFalse(c.valid_latency({'c': [10, 250, 900]}))
+        # The optional fourth element is the TTL cache-hit count
+        # kept apart from the samples: a non-negative int only.
+        self.assertTrue(c.valid_latency({'c': [10, 250, 900, 3], 'b': None, 's': [1, None, None, 0]}))
+        self.assertFalse(c.valid_latency({'c': [10, 250, 900, -1], 'b': None, 's': None}))
+        self.assertFalse(c.valid_latency({'c': [10, 250, 900, 1.5], 'b': None, 's': None}))
+        self.assertFalse(c.valid_latency({'c': [10, 250, 900, 3, 4], 'b': None, 's': None}))
 
     def test_renderer_prefers_the_episode_pointer_and_shows_outcome(self):
         payload = self.payload([])
@@ -2159,6 +2165,16 @@ class EpisodeEvidenceTests(unittest.TestCase):
         output = self.render(payload)
         self.assertIn('- Indexer latency in SUI database: candles n=10 median=250ms '
                       'max=900ms; book n=4 median=40ms max=80ms', output)
+
+    def test_renderer_shows_indexer_latency_cached_counts(self):
+        payload = self.payload([])
+        payload['diagnostics']['evidence'] = {
+            'events': [], 'episode': None,
+            'timing': {'dur': 120, 'att': 1, 'suc': 1,
+                       'lat': {'c': [10, 250, 900, 12], 'b': [4, 40, 80, 0], 's': None}}}
+        output = self.render(payload)
+        self.assertIn('- Indexer latency in SUI database: candles n=10 median=250ms '
+                      'max=900ms cached=12; book n=4 median=40ms max=80ms cached=0', output)
 
 
 class ApproveDeployReissueTests(unittest.TestCase):

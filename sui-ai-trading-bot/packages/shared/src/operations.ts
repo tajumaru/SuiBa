@@ -74,13 +74,27 @@ export const indexerLatencyKinds: readonly IndexerLatencyKind[] = [
   "other",
 ];
 export interface IndexerLatencyBucket {
-  /** Total samples recorded into this aggregate. */
+  /** Total network samples recorded into this aggregate.
+   * TTL cache hits are counted apart in `cached` and never
+   * enter this count, `maxMs` or `recent`: a hit performs no
+   * fetch, so its near-zero duration would corrupt the
+   * network latency distribution. */
   count: number;
-  /** Largest sample ever recorded (ms). */
+  /** Largest network sample ever recorded (ms). */
   maxMs: number;
-  /** Bounded ring of the most recent samples (ms), oldest
-   * first; the median is computed from this window. */
+  /** Bounded ring of the most recent network samples (ms),
+   * oldest first; the median is computed from this window. */
   recent: number[];
+  /** Reads served by the TTL cache (no network fetch).
+   * Absent in aggregates persisted before the split. */
+  cached?: number;
+}
+/** One drain of the provider's pending indexer latency
+ * telemetry: network durations to fold into the distribution,
+ * plus the TTL cache hits to count apart from it. */
+export interface IndexerLatencyDrain {
+  samples: Record<IndexerLatencyKind, number[]>;
+  cached: Record<IndexerLatencyKind, number>;
 }
 /** Persisted in operation_state: bounded by construction (four
  * scalar counters plus a capped ring per kind), so it survives

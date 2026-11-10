@@ -51,6 +51,37 @@ it("aggregates identical concurrent requests and expires short cache", async () 
   await a.run("GeckoTerminal", "x", fn, 20000);
   expect(fn).toHaveBeenCalledTimes(2);
 });
+it("reports TTL cache hits through the policy observer only", async () => {
+  const a = new ApiAccess();
+  const fn = vi.fn(async () => 42);
+  let hits = 0;
+  const policy = {
+    onCacheHit: () => {
+      hits++;
+    },
+  };
+  // The network fetch and a single-flight join are not hits.
+  expect(
+    await Promise.all([
+      a.run("DeepBook Indexer", "x", fn, 20000, policy),
+      a.run("DeepBook Indexer", "x", fn, 20000, policy),
+    ]),
+  ).toEqual([42, 42]);
+  expect(hits).toBe(0);
+  // A later run served from the TTL cache reports exactly once
+  // and does not re-run the fetch.
+  expect(await a.run("DeepBook Indexer", "x", fn, 20000, policy)).toBe(42);
+  expect(fn).toHaveBeenCalledTimes(1);
+  expect(hits).toBe(1);
+  // A throwing observer must not fail a read the cache answered.
+  const bad = {
+    onCacheHit: () => {
+      throw new Error("observer fault");
+    },
+  };
+  expect(await a.run("DeepBook Indexer", "x", fn, 20000, bad)).toBe(42);
+  expect(fn).toHaveBeenCalledTimes(1);
+});
 it("serializes different requests within one API but allows other APIs", async () => {
   const a = new ApiAccess();
   let release!: () => void;
