@@ -187,6 +187,8 @@ PR #139 で suiba-prod-review.yml に schedule を2本化（00:17 JST＋01:17 JS
 
 このため、切替後に手動 dispatch（REVIEW-PROD-DAILY）しても、同日ぶんの定期投稿が既にあれば投稿はスキップされる（仕様）。PR #132 の節に書いた切替スモーク（ゲート変数 SUIBA_PROD_REVIEW_ENABLED を有効化する前に手動 dispatch で確認する手順）は、定期投稿がまだ存在しない状態で行うため、このガードの影響を受けない。有効化後に手動で試す場合は「同日ぶんが既にある日は投稿されない」ことを前提に読むこと。
 
+**（2026-11-10 訂正）** スモークの順序について、PR #132 の節と本節の記述が workflow の実装と食い違っていた。suiba-prod-review.yml は PR #132 の時点から一貫して、手動 dispatch 時にも `SUIBA_PROD_REVIEW_ENABLED == 'true'` を両ジョブに要求するため、「有効化前の dispatch」は全ジョブ skip の無言 no-op になり、スモークにならない。正しい順序は「ゲート変数を設定する → その JST 日の初回定期投稿より先に REVIEW-PROD-DAILY を dispatch する」であり、切替手順書（VPS_PRODUCTION_CUTOVER_RUNBOOK_JA）はこの順序で書いてある。重複ガードとの関係（定期投稿が無い状態で先に行う）という本節の趣旨は変わらない。
+
 ## 2026-11-09 approve-deploy の失効楔を解消する（作業6、A案）
 
 2026-11-08 の配置 seq 13 で踏んだ楔（docs/CODEX_WORKFLOW_TASKS_JA_20261107.md 作業6）。CI モードの approve-deploy が実体化する配置承認レコード（policy/approvals/<sha>.json）は発行から1時間で失効するが、配置の実行がその窓を過ぎると broker が PAPER_DEPLOY_EXPIRED で拒否し、失効したレコードと未消費の permit（STATE/paper-deploy-<sha>.json）を消す・更新する操作がどこにもないため、同じ sha が二度と approve-deploy を通らなくなっていた。回避は「新しい sha を配置対象にする」ことだけだった。
