@@ -1,0 +1,57 @@
+name: SuiBa production control
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type START-PROD or STOP-PROD"
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: suiba-production-control
+  cancel-in-progress: false
+jobs:
+  prod-start:
+    # Repository variable, NOT an Environment variable: evaluated before job startup.
+    # Missing/false disables all SSH. Starting production changes host state, so this
+    # workflow carries its own enable variable on top of the Environment approval.
+    # Leave the variable unset until the production cutover.
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'START-PROD' && vars.SUIBA_PROD_CONTROL_ENABLED == 'true'
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Start production through the fixed wrapper
+        env:
+          PROD_START_CONFIRMATION: ${{ inputs.confirmation }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-prod-start.sh
+  prod-stop:
+    # Same gate and the same Environment approval as start: stopping
+    # production is a deliberate confirmed operation, never a side
+    # effect of another workflow.
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'STOP-PROD' && vars.SUIBA_PROD_CONTROL_ENABLED == 'true'
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Stop production through the fixed wrapper
+        env:
+          PROD_STOP_CONFIRMATION: ${{ inputs.confirmation }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-prod-stop.sh
