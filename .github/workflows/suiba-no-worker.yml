@@ -103,6 +103,8 @@ jobs:
         run: |
           python3 -I docker/test_production_monitor.py
           node --test docker/production-notify.node.mjs
+      - name: Production control workflow and wrapper contracts (no SSH)
+        run: python3 -I docker/test_production_control.py
       - name: Paper monitor observation and Issue lifecycle mocks (no SSH or GitHub writes)
         run: |
           python3 -I docker/test_paper_monitor.py

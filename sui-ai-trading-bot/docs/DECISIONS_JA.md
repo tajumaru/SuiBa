@@ -251,3 +251,7 @@ DeepBook の手数料を公式 docs で再確認した。手数料はプール�
 `@mysten/deepbook-v3` のソースと npm の peer 範囲を 2026-11-10 に確認した。`mintTradeCap` は Transaction を受けて move call を追加し Cap のハンドルを返す tx ビルダーであり、同一 PTB 内で発行＋`transferObjects` まで組める。よって §11 #5 は「1 tx（同一 PTB で発行＋移転）」と決定し、設計書 §4.1・§11 #5 と Phase 1 手順書 §3 に反映した。
 
 バージョン整合：deepbook-v3 の peer は `@mysten/sui` の版に連動する（2.8.0 は `^2.37.0`、2.8.2 以降は 2.38 以上、2.11.1 は `^2.39.1`）。本リポジトリの `@mysten/sui` 2.37.0 と互換な最新は 2.8.0 であり、設計が前提とする API（poolTradeParams、placeMarketOrder、cancelOrder、cancelAllOrders、checkManagerBalance、accountOpenOrders、createAndShareBalanceManager、mintTradeCap、`$extend(deepbook({ address, balanceManagers }))`）が 2.8.0 の公開型定義にすべて存在することを確認した。実装では `@mysten/deepbook-v3` を 2.8.0 に固定する（設計書 §5.5）。deepbook を上げる場合は `@mysten/sui` の更新と既存 gRPC 読み取り経路の回帰確認をセットで別途行う。
+
+## 2026-11-10 本番開始・停止の Actions 入口を新設（切替の前提部品）
+
+controller は prod-start／prod-stop を実装済みだったが、Actions から呼べるのは prod-status と export-prod-snapshot の読み取り経路だけで、開始・停止の入口が無かった。検証系と同じ型で、固定ラッパー `docker/ssh-prod-start.sh`／`docker/ssh-prod-stop.sh`（送るのは固定リクエストのみ、応答は controller の固定 JSON だけを受理）と、確認文字列 START-PROD／STOP-PROD の2ジョブを持つ `.github/workflows/suiba-production-control.yml` を新設した。caller scope の裏取り：controller の受理集合に prod-start／prod-stop が含まれ、制限を受けるのは observe identity だけで、deploy identity はホスト配布物（setup-paper-check.sh のピン済み controller／sudo ラッパー／sudoers）のまま受理できるため、ホスト側の変更は不要。ゲート変数 SUIBA_PROD_CONTROL_ENABLED は未設定のままで、切替時に有効化するまで不発。
