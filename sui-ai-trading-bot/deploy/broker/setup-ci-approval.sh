@@ -8,7 +8,8 @@
 #      missing (existing files are never overwritten);
 #   3. fetches docker/compose.vps.yaml from the repository, verifies
 #      its pinned sha256 and installs it as the policy compose at
-#      /etc/suiba-deploy/compose.yaml;
+#      /etc/suiba-deploy/compose.yaml (with the optional "prod"
+#      argument, docker/compose.vps-prod.yaml is installed instead);
 #   4. adds "approval_source": "ci" to /etc/suiba-deploy/policy.json
 #      and sets compose_sha256 to the installed compose's digest
 #      (helper_image is left untouched).
@@ -21,16 +22,31 @@ umask 077
 BROKER_URL='https://raw.githubusercontent.com/tajumaru/SuiBa/main/sui-ai-trading-bot/deploy/broker/broker.py'
 BROKER_SHA256='cc36c494c9bf836690ebd8ba730fd0dc563d0b23748659ba3f184476ad53b6c0'
 BROKER_TARGET='/usr/local/libexec/suiba-deploy-broker.py'
-# The policy compose is the repository's docker/compose.vps.yaml.
-# Update this pin in the same commit as any compose.vps.yaml change.
+# The policy compose is the repository's docker/compose.vps.yaml, or
+# docker/compose.vps-prod.yaml when the "prod" variant is selected.
+# Update these pins in the same commit as any compose change.
 COMPOSE_URL='https://raw.githubusercontent.com/tajumaru/SuiBa/main/sui-ai-trading-bot/docker/compose.vps.yaml'
 COMPOSE_SHA256='930add4598baf4b3357c08628d1cc8082cb88014d487ff5b3226c1df643d157d'
+COMPOSE_PROD_URL='https://raw.githubusercontent.com/tajumaru/SuiBa/main/sui-ai-trading-bot/docker/compose.vps-prod.yaml'
+COMPOSE_PROD_SHA256='8bdbf50cd8fe577c62f6186a93de040ed4c9395b1621527cb7121e2417c054ed'
 COMPOSE_TARGET='/etc/suiba-deploy/compose.yaml'
 POLICY='/etc/suiba-deploy/policy.json'
 SHARED='/opt/suiba/shared'
 GRPC_URL='https://fullnode.mainnet.sui.io:443'
 
 fail() { echo "SETUP_FAILED: $1" >&2; exit 1; }
+
+# Variant selection comes before every other check so that an
+# unknown variant is rejected for any caller, root or not.
+VARIANT="${1:-paper}"
+case "$VARIANT" in
+  paper) ;;
+  prod)
+    COMPOSE_URL="$COMPOSE_PROD_URL"
+    COMPOSE_SHA256="$COMPOSE_PROD_SHA256"
+    ;;
+  *) fail "不明なバリアントです: $VARIANT（paper か prod を指定してください）" ;;
+esac
 
 [[ $(id -u) -eq 0 ]] || fail 'rootで実行してください（sudo bash setup-ci-approval.sh）'
 [[ -f $POLICY ]] || fail "policy.json がありません: $POLICY"

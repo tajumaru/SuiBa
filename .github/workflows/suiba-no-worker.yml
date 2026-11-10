@@ -118,6 +118,7 @@ jobs:
           python3 -I docker/test_paper_deploy_cycle.py
           python3 -I docker/test_broker_last_deploy.py
           python3 -I docker/test_check_image_archive.py
+          python3 -I deploy/broker/test_setup_ci_approval.py
       - name: PAPER controller failure tests (no Worker)
         run: |
           # Syntax-gate every deploy Python file on the light path too:
