@@ -12,6 +12,6 @@
   },
   "dependencies": {
     "@mysten/sui": "2.37.0",
-    "undici": "7.30.1"
+    "undici": "8.12.4"
   }
 }
