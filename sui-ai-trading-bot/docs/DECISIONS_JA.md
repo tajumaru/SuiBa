@@ -271,3 +271,7 @@ REAL 設計書 §5.1 を §5.4 と同じ粒度に詳細化した（§5.1.1〜§5
 ## 2026-11-10 エピソード内訳と Indexer 遅延の観測を追加（記録・表示のみ）
 
 24h 検証ラン attempt 2 の失敗で「どの上流 API が・何分落ちたか」が公開 export から特定できなかった反省から、観測を2件追加した。売買・安全の意味論（エピソードの数え方、制限値、停止条件、フォールバック、429/500）は一切変えていない。(1) エピソード内訳：閉じたエピソードのサマリ（API×理由の件数、最初／最後の失敗時刻、継続時間、結末 RECOVERED／EXHAUSTED／STOPPED／INTERRUPTED）はもともと終了イベントに付いて DB に残っていたが、公開 export の秘匿で落ちていた。export の許可リストに終了系コード（PAPER_NETWORK_RECOVERED、PROCESS_RESTART_STOPPED、PAPER_NETWORK_PAUSED）を加え、episode を厳密な形のまま保持するようにした。診断側は tally キーの正規表現が API 表示名の空白（"DeepBook Indexer" 等）を弾いていたのを直し、直近に閉じたエピソードを専用クエリで引いて Latest episode 行に出す（従来の直近10イベント走査だけでは終了イベントが窓外に押し出されうる）。(2) Indexer 遅延：DeepBook の全読み取りが通る checkedRead で所要時間を測り、サイクル末に回収して operation_state に有界な集計（読み取り種別ごとの総件数・最大・直近60件）として永続化する。再起動をまたいで残り、診断の Indexer latency 行と worker の timing 表示に出す。取得そのものの挙動は変えていない。
+
+## 2026-11-10 paper モニターの scheduler 落ちに watchdog で冗長化
+
+GitHub scheduler の best-effort な間引きで paper モニターが 2026-11-09 に約5時間、2026-11-10 に約4時間45分発火せず、その間は異常検出が遅れた。対策はエージェントの定期チェックに寄せず GitHub 側で閉じる方針とし、軽量な watchdog ワークフロー（suiba-paper-monitor-watchdog.yml）を追加した。本体と分数をずらした毎時 9,29,49 分に起動し、Actions API で本体の直近実行を見て、scheduled・dispatch のどちらの時計も45分以上途絶え、実行中・キュー中もない場合に限り、本体を workflow_dispatch（CHECK-PAPER-MONITOR）で最大1回だけ再発火させる。45分の根拠：本体の名目間隔は約10分であり、通常の scheduler 遅延では45分の空白は生じない一方、観測された数時間の間引きは確実に拾える（検出遅延は最大で45分＋watchdog 間隔20分）。ゲートは本体と同じ repo 変数 SUIBA_PAPER_MONITOR_ENABLED に連動し、権限は GITHUB_TOKEN の actions: write のみで、ホスト資格情報も Issue 権限も持たない。失敗時は無言で何もしない。本番モニター（suiba-production-monitor.yml）はゲート未設定で未稼働のため今回は触らず、本稼働の切替時に同方式を検討する。

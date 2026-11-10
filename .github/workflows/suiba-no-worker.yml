@@ -108,6 +108,7 @@ jobs:
       - name: Paper monitor observation and Issue lifecycle mocks (no SSH or GitHub writes)
         run: |
           python3 -I docker/test_paper_monitor.py
+          python3 -I docker/test_paper_monitor_watchdog.py
           node --test docker/paper-monitor-notify.node.mjs
       - name: Run review counterfactual tests (no network)
         run: python3 -I docker/test_run_review.py

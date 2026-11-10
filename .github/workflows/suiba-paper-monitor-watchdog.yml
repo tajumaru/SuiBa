@@ -1,0 +1,41 @@
+name: SuiBa paper-check monitor watchdog
+on:
+  schedule:
+    # Every 20 minutes, offset from both monitors (paper fires at
+    # 2,12,22,32,42,52; production at 7,17,27,37,47,57) and off the
+    # congested quarter hours. GitHub's scheduler is best-effort and
+    # dropped the paper monitor for ~5h on 2026-11-09 and ~4h45m on
+    # 2026-11-10; this watchdog notices the silence and re-fires the
+    # monitor once by workflow_dispatch (an event GITHUB_TOKEN may
+    # trigger), so the fix stays inside GitHub with no agent polling.
+    - cron: '9,29,49 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: suiba-paper-monitor-watchdog
+  cancel-in-progress: false
+jobs:
+  watchdog:
+    # Same repository variable as the monitor itself (not an Environment
+    # variable): missing/false disables the watchdog too, so it can never
+    # resurrect a monitor the owner turned off. The job holds no host
+    # credentials and no Issue permissions; its only write is the single
+    # workflow_dispatch of the monitor.
+    if: >-
+      github.ref == 'refs/heads/main' && vars.SUIBA_PAPER_MONITOR_ENABLED == 'true' &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    permissions:
+      contents: read
+      actions: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Re-fire the paper monitor if its schedule has gone silent
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PAPER_MONITOR_WATCHDOG_REPOSITORY: ${{ github.repository }}
+        run: bash sui-ai-trading-bot/docker/paper-monitor-watchdog.sh
