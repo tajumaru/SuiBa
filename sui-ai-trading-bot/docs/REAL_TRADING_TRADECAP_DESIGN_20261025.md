@@ -129,7 +129,7 @@ BalanceManager（資金：田嶋） ── Pool SUI_USDC
 1. ウォレット接続（dapp-kit の ConnectButton 相当）。
 2. BalanceManager 作成：`createAndShareBalanceManager` をオーナー署名で実行し、生成された BM オブジェクト ID を記録する。
 3. 入金：取引資金（USDC、必要なら SUI と DEEP）を BM へ `deposit`（オーナーのみ可能）。
-4. TradeCap 発行と Bot への移転：`mint_trade_cap` で Cap を発行し、Bot アドレスへ移転する。同一 PTB 内で発行＋`transferObjects` まで完結させるのが望ましいが、SDK ヘルパー（`mintTradeCap`）の返却形によっては「発行 tx → 移転 tx」の 2 段になる。実装時に SDK の挙動を確認して決める（§11）。
+4. TradeCap 発行と Bot への移転：`mint_trade_cap` で Cap を発行し、Bot アドレスへ移転する。**2026-11-10 に SDK ソースで確認し、同一 PTB 内で発行＋`transferObjects` まで完結させる（1 tx）と決定した**（§11 #5）。SDK ヘルパー `mintTradeCap` は Transaction を受けて move call を追加し Cap のハンドルを返す tx ビルダーであり、同一 tx 内で移転まで組める。
 5. Worker 側に BM ID と TradeCap ID を登録（§5.3 の REAL 設定）。Worker は起動時にオンチェーンで次を検証し、1 つでも崩れていたら REAL を有効化しない（フェイルクローズ）：
 - BM の `owner` が登録済みオーナーアドレスと一致する
 - TradeCap が Bot アドレスに存在し、その Cap が当該 BM のものである
@@ -250,7 +250,7 @@ minBotGasSui: Decimal, // ガス不足とみなす閾値（値は要判断）
 
 ### 5.5 DeepBook SDK 依存
 
-- Worker に `@mysten/deepbook-v3` を追加する（バージョンは実装時に固定し、pnpm-lock に記録）。既存の `@mysten/sui`（2.37.0、`SuiGrpcClient`）へ `$extend(deepbook({ address: botAddress, balanceManagers: {...}}))` する構成は公式例と同一であり、既存の gRPC 読み取り経路とは別クライアントとして持つ。
+- Worker に `@mysten/deepbook-v3` を追加する。**固定するバージョンは 2.8.0 とする（2026-11-10 に npm の peer 範囲で確認）**：deepbook-v3 の peer は `@mysten/sui` の版に連動し、本リポジトリの 2.37.0 と互換な最新は 2.8.0（peer `^2.37.0`）。2.8.2 以降は sui 2.38 以上、2.11.1 は `^2.39.1` を要求するため、deepbook を上げる場合は `@mysten/sui` の更新と既存 gRPC 読み取り経路の回帰確認をセットで別途行う。本設計が前提とする API（`poolTradeParams`、`placeMarketOrder`、`cancelOrder`、`cancelAllOrders`、`checkManagerBalance`、`accountOpenOrders`、`createAndShareBalanceManager`、`mintTradeCap` と、`$extend(deepbook({ address, balanceManagers }))` の構成）は 2.8.0 の公開型定義にすべて存在することを確認済み。pnpm-lock に記録する。既存の `@mysten/sui`（2.37.0、`SuiGrpcClient`）へ `$extend(deepbook({ address: botAddress, balanceManagers: {...}}))` する構成は公式例と同一であり、既存の gRPC 読み取り経路とは別クライアントとして持つ。
 - 読み取り専用の `DeepBookMarketData`（Indexer 経由）は現行のまま市場データ用に残す。REAL の状態取得（残高・未約定）は SDK の devInspect 系（`checkManagerBalance`、`accountOpenOrders` 等）を使う。
 
 ---
@@ -469,7 +469,7 @@ Phase 1 の完了条件は上記 1〜10 の証跡（digest 一覧）が残るこ
 | 2 | 手数料の支払い方：DEEP 常備（安い）vs 入力資産払い（+25%、DEEP 不要） | **決定済み（2026-11-10）**：DEEP 常備（DEEP 払い、ステーク割引は前提にしない）。コスト設計値は taker 10 bps／回・往復 0.2%、実装時に poolTradeParams の実値で確定（§2.3） |
 | 3 | 注文種別：成行相当（placeMarketOrder）vs 価格上限付き IOC 指値 | §6.2。Phase 1 の約定・スリッページ実績で決める |
 | 4 | REAL 設定画面の置き場所（運用検証タブ配下／戦略タブの設定セグメント内） | オーナー操作と Worker 制御の画面上の距離感の判断 |
-| 5 | TradeCap 発行と移転を 1 tx にまとめるか 2 段にするか | SDK ヘルパーの挙動確認後に実装側で決められるが、UX（署名回数）が変わるため共有 |
+| 5 | TradeCap 発行と移転を 1 tx にまとめるか 2 段にするか | **決定済み（2026-11-10）**：1 tx（同一 PTB で発行＋移転）。SDK の `mintTradeCap` が tx ビルダーであり同一 tx で組めることをソースで確認（§4.1） |
 | 6 | REAL の成績集計（成績表・振り返り）への含め方 | §8.2。分離が前提だが、表示の粒度は判断が要る |
 | 7 | Phase 2 の稼働時間帯の限定有無 | 初期の安全策として |
 | 8 | Bot 鍵の生成・保管方法の最終確認（ウォレットアプリで生成し env へ、等） | §5.2 の運用手順の確定 |
