@@ -2,7 +2,7 @@ import React from "react";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import type { DecisionTelemetry } from "../../worker/src/operations.ts";
 import type { Settings } from "../../../packages/shared/src/index.ts";
-import { dateTime, label, number, percent } from "./presentation.ts";
+import { dateTime, fixed4, label, number, percent } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
 import { fields, formatSettingValue, type Field } from "./SettingsPage.tsx";
 import { ProfitGuardPanel } from "./ProfitGuardPanel.tsx";
@@ -23,32 +23,8 @@ import {
 type State = BotSnapshot;
 
 const money = (v: number | null | undefined) => number(v, 4);
-/**
- * Four-decimal rendering for the compact summary block below: prices
- * move on a 0.0001 tick, so the extra digits the worker's decimal
- * strings carry are noise here (the full panel keeps full precision).
- * Rounds digit by digit so long decimal strings stay exact, matching
- * the concern behind presentation.number's string path.
- */
-const fixed4 = (value: string): string => {
-  if (!/^-?\d+(\.\d+)?$/.test(value)) return number(value, 4);
-  const negative = value.startsWith("-"),
-    body = negative ? value.slice(1) : value,
-    [whole, fraction = ""] = body.split(".");
-  let digits = whole + (fraction + "0000").slice(0, 4);
-  if ((fraction[4] ?? "0") >= "5") {
-    const chars = digits.split("");
-    let i = chars.length - 1;
-    while (i >= 0 && chars[i] === "9") chars[i--] = "0";
-    if (i < 0) chars.unshift("1");
-    else chars[i] = `${Number(chars[i]) + 1}`;
-    digits = chars.join("");
-  }
-  const split = digits.length - 4;
-  return `${negative ? "-" : ""}${digits
-    .slice(0, split)
-    .replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${digits.slice(split)}`;
-};
+/** Four-decimal rendering (presentation.fixed4) for the compact
+    summary block below; the full panel keeps full precision. */
 const precise4 = (v: string | null | undefined) =>
   v == null ? "不明" : `${fixed4(v)} USDC`;
 const signed = (v: number, digits = 4) =>

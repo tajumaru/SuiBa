@@ -1,5 +1,12 @@
 import React from "react";
-import { dateTime, number, label, reason, errorCode } from "./presentation.ts";
+import {
+  dateTime,
+  number,
+  fixed4,
+  label,
+  reason,
+  errorCode,
+} from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
 import { BacktestReplay } from "./BacktestReplay.tsx";
 import { useEffect, useState } from "react";
@@ -11,6 +18,13 @@ import type {
 } from "../../../packages/backtest-engine/src/index.ts";
 
 const format = number;
+/** USDC amounts and prices render at four decimals (the 0.0001 tick),
+    matching the strategy tab summary; counts, percents and ratios
+    keep the shared number format. Missing values stay the em dash. */
+const amount4 = (value: number | string | null | undefined): string =>
+  value == null
+    ? "—"
+    : fixed4(typeof value === "string" ? value : String(value));
 // datetime-local represents Japan time; API epochs remain unchanged.
 const date = (s: number) =>
   new Date(s * 1000 + 9 * 3600000).toISOString().slice(0, 16);
@@ -56,7 +70,7 @@ function Lines({
       }
     >
       <text x="10" y="18" fill="#8fa7b9" fontSize="12">
-        {format(max)} {drawdown ? "%" : "USDC"}
+        {drawdown ? format(max) : amount4(max)} {drawdown ? "%" : "USDC"}
       </text>
       {values.map((v, k) => (
         <polyline
@@ -73,7 +87,8 @@ function Lines({
         />
       ))}
       <text x="10" y="216" fill="#8fa7b9" fontSize="12">
-        {format(min)} {drawdown ? "%" : "USDC"} · 左：検証開始 / 右：検証終了
+        {drawdown ? format(min) : amount4(min)} {drawdown ? "%" : "USDC"} ·
+        左：検証開始 / 右：検証終了
       </text>
     </svg>
   );
@@ -161,6 +176,7 @@ export function BacktestComparison({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [available, setAvailable] = useState("読み込み中"),
+    [dataset, setDataset] = useState(""),
     [mode, setMode] = useState<"on" | "off">("on"),
     [showAll, setShowAll] = useState(false);
   async function request(body?: ComparisonInput) {
@@ -181,6 +197,7 @@ export function BacktestComparison({
     void request()
       .then((m) => {
         if (!active) return;
+        setDataset(m.source ?? "");
         if (m.count < 63) {
           setAvailable(
             `保存済み${m.count}本。検証と61本のウォームアップ用に追加データが必要です。`,
@@ -190,7 +207,7 @@ export function BacktestComparison({
         const tf = m.timeframe ?? 300,
           split = Math.max(61, Math.floor(m.count * 0.6));
         setAvailable(
-          `${m.count}本 · ${m.source} · ${dateTime(m.first * 1000)} ～ ${dateTime(m.last * 1000)}`,
+          `${m.count}本 · ${dateTime(m.first * 1000)} ～ ${dateTime(m.last * 1000)}`,
         );
         setInput((i) => ({
           ...i,
@@ -261,13 +278,35 @@ export function BacktestComparison({
     ["realizedPnl", "実現損益 USDC"],
     ["unrealizedPnl", "未実現損益 USDC"],
   ];
+  /** Summary rows denominated in USDC: these render via amount4;
+      counts, percents and the profit factor keep format. */
+  const usdcSummaryKeys = new Set<keyof RunResult["summary"]>([
+    "initialEquity",
+    "finalEquity",
+    "netProfitUsdc",
+    "averageProfit",
+    "averageLoss",
+    "totalFees",
+    "dexFees",
+    "additionalFees",
+    "totalGas",
+    "realizedPnl",
+    "unrealizedPnl",
+  ]);
   return (
     <>
       <section>
         <h3>バックテスト比較 · PAPER（仮想売買）専用</h3>
-        <p>{available}</p>
-        <p>
-          過去価格・出来高データ（OHLCV）から生成する仮想DEX見積もりです。Cetus・DeepBookの過去の実約定価格を再現しません。利益保護の有効／無効は同じ相場・費用・次足始値条件で独立して計算します。
+        <p className="compare-meta">
+          利益保護あり／なしを、同じ過去相場で走らせて比べます。
+        </p>
+        <p className="compare-meta">{available}</p>
+        {dataset && <small>データ：{dataset}</small>}
+        <small>
+          過去の確定足から作る仮想モデルです。Cetus・DeepBookの過去の実約定価格は再現しません。利益保護あり／なしは、同じ相場・同じ費用・次足始値の条件でそれぞれ計算します。
+        </small>
+        <p className="compare-meta">
+          期間を3つ入れて、比較ボタンを押します。
         </p>
         <form
           onSubmit={async (e) => {
@@ -306,8 +345,7 @@ export function BacktestComparison({
             ))}
           </div>
           <small>
-            学習期間の終了足 &lt;
-            検証開始足。自動最適化は行いません。既に設定調整へ使用した検証期間は未使用として扱わないでください。
+            検証期間は、学習・調整期間の終了より後の期間を入れてください。自動で最適化はしません。設定の調整に使った期間は未使用とは言えないので、検証には使っていない期間を選んでください。
           </small>
           <div className="cards">
             {fields.map(([key, label, min, max, step]) => (
@@ -355,7 +393,9 @@ export function BacktestComparison({
         <>
           <section>
             <h3>比較結果 · 利益保護なしは青 / 利益保護ありは緑</h3>
-            <p>検証モデル：過去の確定足と設定した費用に基づく仮想売買</p>
+            <p className="compare-meta">
+              検証モデル：過去の確定足と設定した費用に基づく仮想売買
+            </p>
             <details>
               <summary>モデルの技術情報</summary>
               {result.model}
@@ -375,7 +415,7 @@ export function BacktestComparison({
                 )}
               </pre>
             </details>
-            <p>
+            <p className="compare-meta">
               入力期間：{dateTime(result.options.start * 1000)} ～{" "}
               {dateTime(result.options.end * 1000)}
               。フォーム変更は再実行するまで結果へ反映されません。
@@ -393,15 +433,19 @@ export function BacktestComparison({
                   {summaryFields.map(([key, label, multiplier = 1]) => (
                     <tr key={key}>
                       <td>{label}</td>
-                      {[result.off, result.on].map((r, i) => (
-                        <td key={i}>
-                          {format(
-                            typeof r.summary[key] === "number"
-                              ? (r.summary[key] as number) * multiplier
-                              : null,
-                          )}
-                        </td>
-                      ))}
+                      {[result.off, result.on].map((r, i) => {
+                        const value =
+                          typeof r.summary[key] === "number"
+                            ? (r.summary[key] as number) * multiplier
+                            : null;
+                        return (
+                          <td key={i}>
+                            {usdcSummaryKeys.has(key)
+                              ? amount4(value)
+                              : format(value)}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
                 </tbody>
@@ -434,7 +478,7 @@ export function BacktestComparison({
               <option value="on">利益保護あり</option>
               <option value="off">利益保護なし</option>
             </select>
-            <p>
+            <p className="compare-meta">
               シグナルは前足の確定後、約定候補は次足始値です。すべての見送り・拒否を含みます。
             </p>
             <label>
@@ -477,34 +521,38 @@ export function BacktestComparison({
                         </td>
                         <td>
                           {e.trade
-                            ? `${format(e.trade.quantity)} / ${format(e.trade.price)}`
+                            ? `${format(e.trade.quantity)} / ${amount4(e.trade.price)}`
                             : "—"}
                         </td>
                         <td>
-                          {format(
+                          {amount4(
                             e.trade?.acquisition?.totalCostUsdc ??
                               e.profit?.allocatedCostUsdc,
                           )}
                         </td>
                         <td>
-                          {format(e.trade?.realizedProfitUsdc)} /{" "}
-                          {format(e.profit?.netProfitUsdc)}
+                          {amount4(e.trade?.realizedProfitUsdc)} /{" "}
+                          {amount4(e.profit?.netProfitUsdc)}
                         </td>
                         <td>
-                          {format(e.quote?.dexFeeUsdc)} /{" "}
-                          {(
-                            e.trade?.costs ??
-                            (e.decision.action === "BUY"
-                              ? e.profit?.buyCosts
-                              : e.profit?.costs)
-                          )?.additionalFeeUsdc ?? "—"}{" "}
+                          {amount4(e.quote?.dexFeeUsdc)} /{" "}
+                          {amount4(
+                            (
+                              e.trade?.costs ??
+                              (e.decision.action === "BUY"
+                                ? e.profit?.buyCosts
+                                : e.profit?.costs)
+                            )?.additionalFeeUsdc,
+                          )}{" "}
                           /{" "}
-                          {(
-                            e.trade?.costs ??
-                            (e.decision.action === "BUY"
-                              ? e.profit?.buyCosts
-                              : e.profit?.costs)
-                          )?.gasUsdc ?? "—"}
+                          {amount4(
+                            (
+                              e.trade?.costs ??
+                              (e.decision.action === "BUY"
+                                ? e.profit?.buyCosts
+                                : e.profit?.costs)
+                            )?.gasUsdc,
+                          )}
                         </td>
                         <td>
                           {e.reasons.map((code, i) => (
@@ -535,7 +583,7 @@ export function BacktestComparison({
               </table>
             </div>
           </section>
-          <p>
+          <p className="compare-meta">
             モデルの結果は将来の利益を保証しません。薄い流動性・MEV・ルート変更・遅延・ガス変動は完全には再現できません。
           </p>
         </>

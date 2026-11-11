@@ -686,6 +686,13 @@
 .chart-meta {
   font-size: 13px;
 }
+/* Meta lines inside the backtest comparison tab (purpose, data
+   availability, form guidance, result prose): the same shared body
+   size as .chart-meta (13px), so no line inherits the 16px base and
+   reads like a heading next to the 12px small notes. */
+.compare-meta {
+  font-size: 13px;
+}
 .price-chart .interactive-price-chart {
   display: block;
   width: 100%;
