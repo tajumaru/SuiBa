@@ -105,6 +105,70 @@ admission 済みの失敗、未知の fault、stage 不一致は対象外で、
 ケース／admission 済みは拒否／未知 fault は拒否、の3ケースを
 追加する。
 
+### R3. prod-stop が admission 後失敗の本番レコードを閉じられるようにする（2026-11-11 追補）
+
+A と R1／R2 の反映で本番切替は完了し（seq 19）、初回本番ランは
+2026-11-11 07:38 JST に開始した。同日午前、そのランは上流の
+HTTP 500 でハードストップした（429／500 の即時停止は既定の
+安全条件どおり）。レコードは admitted=True の
+failed_requires_review となり、STOP-PROD（run 42950937586）は
+PROD_STOP_FAILED で、このレコードも閉じられなかった。
+
+原因は R1 と同じ wedge が1層深くにあったこと。admission 済みの
+失敗は R1 の対象外で通常の stop 経路に落ちるが、その経路は
+既に終了したコントローラを持つレコードを閉じられない。
+stop() は死んだコントローラの terminate に失敗すると
+`CONTROLLER_EXIT_UNCONFIRMED` を fault し、stop_checks は
+fault が既にあるレコードへ `LATCHED_FAILURE` を追加する。
+cleanup の完了条件（errors なし・fault なし）には構造的に
+到達できず、prod_start も当該レコードを永久に拒否する。
+
+修正は、prod_stop の failed_requires_review 分岐で R1 の
+判定の後段に、admission 後失敗の閉じ条件
+（admitted_closeout_eligible）を追加する。次の全部を満たす
+場合に限り、R1 と同じ確定処理（receipt clean_stopped、
+fault ファイルと state/failed.json の片付け、
+completed／stage stopped）で閉じる。failure.json は失敗の
+証拠としてフォルダに残す。
+
+- record.admitted == True
+- failure.json が存在し、その id が当該レコードと一致する
+- コンテナが未稼働で、ExitCode == 0、OOMKilled でない。
+  かつ inspect の StartedAt がこのセッションで実際に起動した
+  ことを示す（レコード開始の60秒前以降。ゼロ時刻・解釈不能は
+  拒否）——「このセッションのランが、きれいに止まった」ことの
+  証明であり、別セッションの残骸や強制終了を閉じないため
+- DB 検証が通る（stop_checks の admission 側と同一の
+  maintenance ＋ helper verify ＋ verify_sui）——台帳と DB が
+  無傷であることを、通常停止と同じ強さで確認するため
+- mutation.json に未完了の変更がない
+- 記録上のコントローラが終了している
+- 存在する fault のコードが
+  {`LATCHED_FAILURE`, `CONTROLLER_EXIT_UNCONFIRMED`,
+  `STOP_LOCK_OR_STATE_UNKNOWN`, `CLEANUP_LOCK_OR_STATE_UNKNOWN`}
+  のみ。これらはいずれも stop 機構自身が「既に死んだランを
+  閉じる」ときに生むコードで、ラン自体の独立した失敗情報を
+  持たない（ランの失敗そのものは failure.json・コンテナの
+  clean な終了・DB 検証で別途証明される）。DB やコンテナの
+  検証失敗を示すコードが1つでも混ざれば拒否する
+- state/failed.json がある場合は当該レコードを指す
+
+1つでも満たさなければ従来どおり拒否する（fail-closed）。
+クラッシュ（終了コード非0）・OOM・DB 検証失敗・未知の
+fault は対象外で、従来の手動切り分けに残る。
+
+却下した対案：(a) fault の有無を cleanup の完了条件から
+外す——検証なしにラッチを消すことになり、DB 破損や未完了
+mutation を見逃す。(b) ホスト上で fault ファイルを手作業で
+消す——R1 で採らないと決めた経路。(c) 500 を episode 扱いに
+して止まらないようにする——安全停止条件の変更であり、
+本件の範囲外（既定どおり変えない）。
+
+実装は R1 と同じ形（コントローラ変更＋ setup ピン更新を
+同じコミットに、本番系テストに閉じられるケースと拒否
+ケース群を追加）。配布は setup-paper-check.sh の再実行で、
+復帰は STOP-PROD → START-PROD の順に行う。
+
 ### 手順書と設計書の直し
 
 - 切替手順書 §2 に「本番用 compose の配置（setup の prod
