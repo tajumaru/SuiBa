@@ -198,47 +198,49 @@ export function PriceChart(props: PriceChartProps) {
           <button disabled={historyBusy} onClick={() => void loadHistory()}>
             {historyBusy ? "履歴取得中…" : "DeepBookの7日履歴を取得"}
           </button>
-          <p role="status">{historyNotice}</p>
+          <p className="chart-meta" role="status">
+            {historyNotice}
+          </p>
           <small>
             表示専用のDeepBook市場履歴です。Botの市場データ・判断は変更しません。履歴は10秒ごとに再取得しません。
           </small>
         </div>
       )}
-      <p>
+      <p className="chart-meta">
         選択期間：{hours === 168 ? "7日" : `${hours}時間`}
         {span !== hours * 3600 || anchor != null ? "（表示範囲を操作中）" : ""}
       </p>
       {c.length ? (
         <>
-          <p aria-label="実際の表示期間">
+          <p className="chart-meta" aria-label="実際の表示期間">
             表示期間：{chartTime(start)} ～ {chartTime(xFinish)}（日本時間）
           </p>
-          <p>
+          <p className="chart-meta">
             表示範囲：{number((finish - start) / 3600, 2)}時間 ／ {c.length}
             本。開始は最初の足の開始、終了は最後の足の終了です。
           </p>
         </>
       ) : (
-        <p role="status">
+        <p className="chart-meta" role="status">
           期間を取得できません。表示可能なローソク足がありません。未取得の場合は次の画面更新を待ってください。
         </p>
       )}
       {data.candles.length > 0 && available < hours * 3600 && (
-        <p className="chart-warning" role="status">
+        <p className="chart-warning chart-meta" role="status">
           データ不足：選択した期間の全データはありません。取得済みの最大
           {number(available / 3600, 2)}
           時間の範囲で表示します。追加のAPI取得は行いません。
         </p>
       )}
       {c.length > 0 && (finish - start) / tf > c.length && (
-        <p className="chart-warning">
+        <p className="chart-warning chart-meta">
           表示期間内の欠損：{Math.round((finish - start) / tf - c.length)}
           本。未取得部分を補間せず、指標の準備が不足する区間は未計測です。
         </p>
       )}
       {c.length > 0 && (
         <div aria-label="表示履歴の品質">
-          <p>
+          <p className="chart-meta">
             期待：{gapQuality.expected}本 ／ 取得済み：{gapQuality.received}本
             ／ 欠損：{gapQuality.missing}本 ／ 検証済み再構築：
             {gapQuality.reconstructed}本 ／ 原因未確定：{gapQuality.unknown}本
@@ -264,7 +266,7 @@ export function PriceChart(props: PriceChartProps) {
                 </select>
               </label>
               {selectedGap && (
-                <p role="status">
+                <p className="chart-meta" role="status">
                   対象日時：{dateTime(selectedGap.timestamp * 1000)} ／{" "}
                   {selectedGap.reason}（{selectedGap.cause}） ／{" "}
                   {selectedGap.reconstructed
@@ -433,7 +435,7 @@ export function PriceChart(props: PriceChartProps) {
           </p>
           {synchronized && (
             <>
-              <p>
+              <p className="chart-meta">
                 選択日時：{chosen ? chartTime(chosen.timestamp) : "未選択"}
                 （足の開始・日本時間）
               </p>

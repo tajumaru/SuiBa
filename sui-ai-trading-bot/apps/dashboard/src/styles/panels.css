@@ -678,6 +678,14 @@
   font-size: 13px;
   line-height: 1.7;
 }
+/* Meta lines inside the price chart card (selected period, actual
+   period/range, history notice, quality counts, status and warning
+   text): one shared size at the dashboard's standard body size
+   (13px, as .status / .chart-help), so no status line inherits the
+   16px base and reads like a heading next to the 12px notes. */
+.chart-meta {
+  font-size: 13px;
+}
 .price-chart .interactive-price-chart {
   display: block;
   width: 100%;
