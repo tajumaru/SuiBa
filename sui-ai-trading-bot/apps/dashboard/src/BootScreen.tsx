@@ -144,7 +144,7 @@ export function BootScreen({
     >
       <div className="boot-inner">
         <p className="boot-logo">
-          SUI<span>BA</span>
+          POTA<span>RIO</span>
         </p>
         <p className="boot-ver">PAPER TRADING TERMINAL</p>
         <div className="boot-lines">
