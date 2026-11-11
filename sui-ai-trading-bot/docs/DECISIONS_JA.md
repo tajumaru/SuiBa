@@ -330,3 +330,9 @@ PR #168 で本番切替時に検討するとしていた watchdog を先行実�
 本番初回ランが上流 HTTP 500 でハードストップした後、同日夜の START-PROD が2回とも worker-readiness で失敗した（run 5a8cd997／71ef9ce2）。readiness は runtimeClear・suiHealthy・suiFresh が制限時間（60秒）いっぱい false のままで、failure.json に stale_reset の記録が無い＝scoped reset が一度も送られていなかった。原因は、本番コントローラ（ProductionController）が retry_admitted を決して立てないこと：検証（paper）系は failed_requires_review＋retry 承認済みの前任に対して起動時に前任由来の runtime error を1回だけ解除する（maybe_reset_stale）が、本番の admit_session にはその分岐が無く、R3 でレコードを閉じても worker DB にラッチされたエラーが残り続け、以後どの開始も readiness を通らなかった。Sui 本体・VPS からの到達性・時計は同夜に正常を確認済みで、初回開始が通ったのは本番 DB が新規でラッチが無かったため。
 
 修正：本番の admit_session で、既存の検査を通った前任レコードについて、そのフォルダの failure.json が（trusted read で復号でき）当該レコード自身の id を指す場合に限り、その開始を retry として admit する。R3 のクローズ（承認ゲート付き STOP-PROD）が人のレビューに相当し、paper の retry permit と同じ役割を果たす。証拠が無い・読めない・別 id を指す場合は従来どおり fresh start とし、検出自体は例外を投げない（fail-closed）。実際の解除は共有の wait_ready／maybe_reset_stale／capture_reset_scope が担い、worker 側 resetScope の適格判定が安全弁として残る（emergency は解除されず、RESET_EMERGENCY_ACTIVE 等の拒否は従来どおり開始を失敗させ failure.json に reset_refusal として記録される）。安全停止条件・取引ロジック・paper 系と prod_stop（R3）の挙動は不変。監査への追加として F-10 と番号する。
+
+## 2026-11-12 画面と Bot は分離しない（C）／停止安全性を TradeCap の未決事項に追加
+
+2026-11-12 にダッシュボード（画面）と Bot の分離を調査した。現行は worker が静的画面・API・認証を同一プロセス／同一イメージで担うため、画面だけの変更でも broker 経由の停止（DB 検証・バックアップ）→停止状態での新コンテナ用意→再開が要る。結論は C：分離せず現行の単一イメージを維持し、TradeCap 設計もその前提で進める。理由：画面変更はまとめて切り替える運用で足りており、分離すると (1) 画面×Bot のバージョンずれ、(2) 管理トークンを受け取り操作 API を呼べる画面側 JavaScript が Bot と別の配布経路を持つことによる来歴保証の後退、という新しいリスクが増える。再検討の条件は「UI だけが理由の切替が、安全な窓待ちで繰り返し遅れる実績が出た場合」とし、その場合の第一候補は A（静的ファイルのみ別配信、規模 M）。B（独立コンテナ、規模 L）の追加要件は現状確認できない。将来の判断材料として、C の運用では「UI だけが理由だった切替回数・安全な窓までの待ち時間・停止から readiness までの時間」を記録する。
+
+あわせて、従来の「実売買で再起動を避ける条件はポジション保有中だけ」という整理は不十分と分かった。保有ゼロでも、未約定注文や送信結果が未確定の取引があれば、停止後に状態が変わり得る。この問題は分離案 A・B でも worker 更新時には残る。TradeCap 設計で先に決める事項として「いつ安全に止められるか」「再開前に何を照合するか」（オンチェーンの注文・約定状態とローカル DB の突合）を、設計書 `docs/REAL_TRADING_TRADECAP_DESIGN_20261025.md` の §11 要判断事項に #9 として追加した。
