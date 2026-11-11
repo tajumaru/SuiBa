@@ -82,7 +82,7 @@ it("formats an episode summary for humans and AI alike", () => {
 
 it("builds a self-describing report with the episode evidence inline", () => {
   const report = buildDiagnosticReport(snapshot(), 100000);
-  expect(report).toContain("# SuiBa 診断レポート（AI調査用）");
+  expect(report).toContain("# Potario 診断レポート（AI調査用）");
   expect(report).toContain("status: ABNORMAL_STOP");
   expect(report).toContain("Bot abc1234");
   expect(report).toContain("stopReason: PAPER_RECOVERY_EXHAUSTED");

@@ -134,7 +134,7 @@ export function buildShareCardSvg(
   );
   // Header.
   out.push(
-    `<text x="36" y="58" font-family="${MONO}" font-size="34" fill="${MINT}">SuiBa</text>`,
+    `<text x="36" y="58" font-family="${MONO}" font-size="34" fill="${MINT}">Potario</text>`,
     `<text x="172" y="56" font-family="${SANS}" font-size="24" font-weight="bold" fill="${INK}">${esc(input.pairLabel)} ・ 予測</text>`,
     `<text x="1164" y="50" text-anchor="end" font-family="${MONO}" font-size="19" fill="${DIM}">PAPER</text>`,
     `<text x="1164" y="76" text-anchor="end" font-family="${MONO}" font-size="15" fill="${DIM}">${esc(

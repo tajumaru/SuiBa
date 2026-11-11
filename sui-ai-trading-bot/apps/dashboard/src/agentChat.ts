@@ -435,7 +435,7 @@ export function agentReply(text: string, ctx: AgentChatContext): AgentReply {
   if (/誰|名前|なまえ/.test(t))
     return say(
       "greeting",
-      "SuiBaの実況担当。相場を見張って、判断をそのまま喋ってるよ。",
+      "Potarioの実況担当。相場を見張って、判断をそのまま喋ってるよ。",
     );
   let hash = 0;
   for (const ch of t) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
