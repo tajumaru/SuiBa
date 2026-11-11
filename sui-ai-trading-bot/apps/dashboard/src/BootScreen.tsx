@@ -10,6 +10,14 @@ import { usePrefersReducedMotion } from "./AgentNarration.tsx";
  * knows: the token was verified to get here, the api/pair/bot
  * lines resolve from the first snapshot and update in place
  * while the sequence runs.
+ *
+ * The full sequence plays on the first visit of a browser
+ * session. A repeat visit in the same session (marked in
+ * sessionStorage, so nothing persists across sessions) shows
+ * the logo with every line already on and finishes in a
+ * fraction of the time — the drama is for first visits, the
+ * phone re-open should be quick. Storage trouble (private
+ * mode, disabled storage) fails open to the full sequence.
  */
 
 export type BootApiState = "pending" | "ok" | "error";
@@ -84,6 +92,46 @@ const FIRST_MS = 150;
 const HOLD_MS = 550;
 const FADE_MS = 300;
 const CAP_MS = 3500;
+/** Repeat visits hold only this long before the usual fade. */
+const FAST_HOLD_MS = 250;
+
+export const BOOT_SEEN_KEY = "potario-boot-seen";
+
+type BootStorage = Pick<Storage, "getItem" | "setItem">;
+
+function defaultBootStorage(): BootStorage | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** True when this browser session has already seen a boot. */
+export function isRepeatBootVisit(
+  storage: BootStorage | null = defaultBootStorage(),
+): boolean {
+  if (!storage) return false;
+  try {
+    return storage.getItem(BOOT_SEEN_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** Record that this browser session has seen a boot. */
+export function markBootSeen(
+  storage: BootStorage | null = defaultBootStorage(),
+): void {
+  if (!storage) return;
+  try {
+    storage.setItem(BOOT_SEEN_KEY, "1");
+  } catch {
+    // Storage can refuse (private mode, quotas); the next visit
+    // then simply gets the full sequence again.
+  }
+}
 
 export function BootScreen({
   pairLabel,
@@ -100,7 +148,10 @@ export function BootScreen({
 }) {
   const lines = bootLines({ pairLabel, api, bot, agentName });
   const reducedMotion = usePrefersReducedMotion();
-  const [step, setStep] = useState(reducedMotion ? lines.length : 0);
+  const [repeat] = useState(() => isRepeatBootVisit());
+  const [step, setStep] = useState(
+    reducedMotion || repeat ? lines.length : 0,
+  );
   const [leaving, setLeaving] = useState(false);
   const doneRef = useRef(false);
 
@@ -115,9 +166,20 @@ export function BootScreen({
   finishRef.current = finish;
 
   useEffect(() => {
+    if (!repeat) markBootSeen();
     if (reducedMotion) {
       const hold = window.setTimeout(() => finishRef.current(), 500);
       return () => window.clearTimeout(hold);
+    }
+    if (repeat) {
+      // Fast path: logo and lines are already on screen; hold
+      // briefly, then finish through the normal fade. The hard
+      // cap stays so this path can never trap the user either.
+      const timers = [
+        window.setTimeout(() => finishRef.current(), FAST_HOLD_MS),
+        window.setTimeout(() => finishRef.current(), CAP_MS),
+      ];
+      return () => timers.forEach((t) => window.clearTimeout(t));
     }
     const timers: number[] = [];
     for (let i = 1; i <= lines.length; i++) {
@@ -133,7 +195,7 @@ export function BootScreen({
     timers.push(window.setTimeout(() => finishRef.current(), CAP_MS));
     return () => timers.forEach((t) => window.clearTimeout(t));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reducedMotion]);
+  }, [reducedMotion, repeat]);
 
   return (
     <div
