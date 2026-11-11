@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AgentPose } from "./agentNarration.ts";
 import { highlightLabel, type Highlight } from "./highlightStore.ts";
-import imgNormal from "./assets/agent-white-normal.jpg";
-import imgPoint from "./assets/agent-white-point.jpg";
-import imgPointSmile from "./assets/agent-white-point-smile.jpg";
-import imgBlueLine from "./assets/agent-blue-line.jpg";
-import imgPenNormal from "./assets/agent-pen-normal.jpg";
-import imgPenPoint from "./assets/agent-pen-point.jpg";
-import imgPenPointSmile from "./assets/agent-pen-point-smile.jpg";
-import imgPenBlueLine from "./assets/agent-pen-blue-line.jpg";
-import imgFizhNormal from "./assets/agent-fizh-normal.jpg";
-import imgFizhPoint from "./assets/agent-fizh-point.jpg";
-import imgFizhPointSmile from "./assets/agent-fizh-point-smile.jpg";
-import imgFizhBlueLine from "./assets/agent-fizh-blue-line.jpg";
+import imgNormal from "./assets/agent-white-normal.webp";
+import imgPoint from "./assets/agent-white-point.webp";
+import imgPointSmile from "./assets/agent-white-point-smile.webp";
+import imgBlueLine from "./assets/agent-blue-line.webp";
+import imgPenNormal from "./assets/agent-pen-normal.webp";
+import imgPenPoint from "./assets/agent-pen-point.webp";
+import imgPenPointSmile from "./assets/agent-pen-point-smile.webp";
+import imgPenBlueLine from "./assets/agent-pen-blue-line.webp";
+import imgFizhNormal from "./assets/agent-fizh-normal.webp";
+import imgFizhPoint from "./assets/agent-fizh-point.webp";
+import imgFizhPointSmile from "./assets/agent-fizh-point-smile.webp";
+import imgFizhBlueLine from "./assets/agent-fizh-blue-line.webp";
 import { useAgentCharacter } from "./agentCharacter.ts";
 
 // The replay renders the pose artwork itself rather than
