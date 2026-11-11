@@ -2125,6 +2125,7 @@ class ProductionController(Controller):
 
     def admit_session(self):
         self.enabled()
+        self.retry_admitted = False
         with self.locked('stop'), self.locked('mutation'):
             require(not os.path.lexists(self.state/'abort-inhibit.json') and not os.path.lexists(self.state/'failed.json'))
             self.quiescent()
@@ -2134,6 +2135,23 @@ class ProductionController(Controller):
                 require(old['status'] == 'completed' and self.exited(old) and not self.faults(old))
                 receipt = self.b.decode(self.b.read_trusted(self.folder(old)/'stop.json'))
                 require(receipt['id'] == old['id'] and receipt['status'] == 'clean_stopped')
+                # F-10: a predecessor that failed and was closed out
+                # by prod_stop (R3) keeps failure.json in its folder
+                # as evidence. That close-out was the human review
+                # of the failure, so — mirroring the paper retry
+                # permit — it authorizes clearing the failed
+                # session's stale runtime error once at this start
+                # (see maybe_reset_stale); without it the worker's
+                # latched error makes every later start fail at
+                # worker-readiness. Any doubt (failure evidence
+                # missing, unreadable, or naming another record)
+                # stays a fresh start: detection never raises.
+                try:
+                    failure = self.b.decode(self.b.read_trusted(self.folder(old)/'failure.json'))
+                    if type(failure) is dict and failure.get('id') == old['id']:
+                        self.retry_admitted = True
+                except Exception:
+                    pass
             # Consume the explicit request under the same stop mutex as record
             # publication. prod-stop can cancel a queued service even when an
             # older completed record exists; a delayed runner cannot restart it.

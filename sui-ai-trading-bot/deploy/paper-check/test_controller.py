@@ -2385,6 +2385,160 @@ class ProductionMatrixTests(unittest.TestCase):
             with self.assertRaises(Exception): ctl.prod_start()
 
 
+class ProductionRetryResetTests(unittest.TestCase):
+    # F-10 (2026-11-11): a production session that hard-stops
+    # leaves its runtime error latched in the worker database.
+    # The paper lineage clears that stale error once at a
+    # retry-admitted start; production never admitted a retry,
+    # so every start after the first hard stop failed at
+    # worker-readiness with runtimeClear stuck false (field runs
+    # 5a8cd997 and 71ef9ce2, whose failure.json carried no
+    # stale_reset field at all). The R3 close-out in prod_stop is
+    # the human review of the failure, so a predecessor closed
+    # that way — completed/clean_stopped with failure.json in its
+    # folder naming its own id — admits the next start as a
+    # retry, and the shared wait_ready machinery sends the
+    # worker's scoped reset exactly once.
+    def setUp(self):
+        # Same deploy-lock ownership stand-in as ProductionTests.
+        self.broker_locks = set()
+        original = os.fstat
+        def fstat(fd):
+            value = original(fd)
+            if os.readlink('/proc/self/fd/'+str(fd)) in self.broker_locks:
+                fields = list(value); fields[4] = 0
+                return os.stat_result(fields)
+            return value
+        ownership = patch.object(os, 'fstat', fstat)
+        ownership.start(); self.addCleanup(ownership.stop)
+
+    def fixture(self, root):
+        fx = ProductionTests()
+        fx.broker_locks = self.broker_locks
+        ctl = fx.make(root)
+        self.addCleanup(fx.patch_policy.stop)
+        self.addCleanup(fx.patch_watchdog.stop)
+        return fx, ctl
+
+    def closed_predecessor(self, fx, ctl, failure='same'):
+        # The durable shape after prod_stop closes a session out:
+        # the record is completed with a clean_stopped receipt,
+        # and a failed session's folder keeps failure.json as
+        # evidence. 'same' names the record itself (an R3-closed
+        # failure); the other variants must not admit a retry.
+        record = fx.admit(ctl)
+        FakeBroker.atomic(ctl.folder(record)/'stop.json',
+                          {'id': record['id'], 'status': 'clean_stopped'})
+        if failure == 'same':
+            FakeBroker.atomic(ctl.folder(record)/'failure.json',
+                              {'id': record['id'], 'stage': 'monitoring', 'error': 'RuntimeError'})
+        elif failure == 'other':
+            FakeBroker.atomic(ctl.folder(record)/'failure.json',
+                              {'id': '0'*32, 'stage': 'monitoring', 'error': 'RuntimeError'})
+        elif failure == 'garbage':
+            (ctl.folder(record)/'failure.json').write_bytes(b'\xff\xfe not json')
+        record['status'] = 'completed'
+        FakeBroker.atomic(ctl.record, record)
+        return record
+
+    def deployment(self, runtime_clear, scope):
+        return {'startReady': runtime_clear,
+                'readiness': {'connectivity': True, 'apiAccess': True, 'emergencyClear': True,
+                              'runtimeClear': runtime_clear, 'suiHealthy': runtime_clear,
+                              'suiFresh': runtime_clear, 'ledger': True},
+                'resetScope': scope}
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_start_after_closed_failure_admits_retry_and_resets_once(self):
+        with tempfile.TemporaryDirectory() as root:
+            fx, ctl = self.fixture(root)
+            self.closed_predecessor(fx, ctl)
+            ctl.note_start()
+            ctl.admit_session()
+            self.assertTrue(ctl.retry_admitted)
+            fx.running = True
+            pages = iter([self.deployment(False, reset_scope()),
+                          self.deployment(True, reset_scope(pending=False))])
+            resets = []
+            def api(method, path, value=None):
+                if path == '/api/control':
+                    resets.append(value)
+                    return {'running': False}
+                return next(pages)
+            ctl.api = api
+            with patch.object(c.time, 'sleep'):
+                self.assertTrue(ctl.wait_ready(10**13)['startReady'])
+            expected = {key: value for key, value in reset_scope().items()
+                        if key not in ('eligible', 'reason', 'pending')}
+            self.assertEqual(resets, [{'command': 'reset', 'expectedReset': expected}])
+            self.assertTrue(ctl.stale_reset_ok)
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_start_after_normal_stop_is_fresh_and_never_resets(self):
+        with tempfile.TemporaryDirectory() as root:
+            fx, ctl = self.fixture(root)
+            self.closed_predecessor(fx, ctl, failure='none')
+            ctl.note_start()
+            ctl.admit_session()
+            self.assertFalse(ctl.retry_admitted)
+            fx.running = True
+            calls = []
+            stale = self.deployment(False, reset_scope())
+            def api(method, path, value=None):
+                calls.append((method, path, value))
+                return stale
+            ctl.api = api
+            with patch.object(c.time, 'monotonic', side_effect=[0, 0, 61]), \
+                 patch.object(c.time, 'time', return_value=0), patch.object(c.time, 'sleep'):
+                with self.assertRaises(RuntimeError): ctl.wait_ready(10**13)
+            self.assertEqual([x for x in calls if x[1] == '/api/control'], [])
+            self.assertEqual(getattr(ctl, 'stale_reset_attempts', 0), 0)
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_mismatched_or_unreadable_failure_evidence_stays_fresh(self):
+        for failure in ('other', 'garbage'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as root:
+                fx, ctl = self.fixture(root)
+                self.closed_predecessor(fx, ctl, failure=failure)
+                ctl.note_start()
+                ctl.admit_session()
+                self.assertFalse(ctl.retry_admitted)
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_retry_start_still_refuses_on_emergency_or_ineligible_scope(self):
+        from types import SimpleNamespace
+        cases = []
+        emergency = self.deployment(False, reset_scope())
+        emergency['readiness']['emergencyClear'] = False
+        cases.append((emergency, 'RESET_EMERGENCY_ACTIVE'))
+        ineligible = self.deployment(False, {**reset_scope(), 'eligible': False,
+                                             'reason': 'RESET_SCOPE_CHANGED'})
+        cases.append((ineligible, 'RESET_SCOPE_CHANGED'))
+        for page, code in cases:
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as root:
+                fx, ctl = self.fixture(root)
+                self.closed_predecessor(fx, ctl)
+                original_api = ctl.api
+                def api(method, path, value=None):
+                    if path == '/api/deployment':
+                        return {'mode': 'PAPER', 'running': False, 'maintenance': False,
+                                'databaseHealthy': True, 'ledgerOk': True,
+                                'paperCheck': {'enabled': True, 'armed': False}, **page}
+                    return original_api(method, path, value)
+                ctl.api = api
+                ctl.note_start()
+                with patch.object(os, 'statvfs', return_value=SimpleNamespace(
+                        f_bavail=30*1024**3, f_frsize=1, f_favail=200000)):
+                    with self.assertRaisesRegex(RuntimeError, code): ctl.run()
+                self.assertTrue(ctl.retry_admitted)
+                record = ctl.current()
+                self.assertEqual(record['status'], 'failed_requires_review')
+                self.assertEqual(record['stage'], 'worker-readiness')
+                evidence = json.loads((ctl.folder(record)/'failure.json').read_bytes())
+                self.assertEqual(evidence['reset_refusal'], code)
+                self.assertNotIn('stale_reset', evidence)
+
+
 class ProgramReadTests(unittest.TestCase):
     def test_controller_fits_its_program_read_maximum(self):
         # main() reads this file whole through the broker's
