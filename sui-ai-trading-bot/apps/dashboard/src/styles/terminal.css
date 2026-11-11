@@ -479,16 +479,10 @@ summary {
   border-left-color: #fff;
 }
 /* The milestone prompt chip was crushed to one character per
-   line beside a long tag: prompt entries now wrap, the text
-   keeps a readable measure, and the chip drops to its own row
+   line beside a long tag. Entries now wrap as a whole (see
+   .agent-feed-entry in narration.css): the body takes a
+   full-width line of its own, and the chip drops to its own row
    right-aligned instead of squeezing. */
-.agent-feed-entry.chatPrompt {
-  flex-wrap: wrap;
-}
-.agent-feed-entry.chatPrompt p {
-  flex: 1 1 10em;
-  min-width: 8em;
-}
 .agent-feed-prompt-chip {
   flex: none;
   margin-left: auto;
