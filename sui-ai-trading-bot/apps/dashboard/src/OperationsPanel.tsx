@@ -9,6 +9,7 @@ import React, { useState } from "react";
 import type { SettingsApi } from "./settingsPresets.ts";
 import {
   dateTime,
+  fixed4,
   number as formatNumber,
   label,
   percent,
@@ -28,8 +29,24 @@ export type { OperationsSnapshot } from "./operationsTypes.ts";
 export { useOperationsFeed, type OperationsFeed } from "./operationsFeed.ts";
 const date = dateTime;
 const number = formatNumber;
+function amount(value: string | number) {
+  // Small fees can arrive in scientific notation.
+  const decimal = String(value);
+  if (/^-?\d+(\.\d+)?e[+-]?\d+$/i.test(decimal) && Number.isFinite(Number(value))) {
+    return Number(value).toLocaleString("ja-JP", {
+      minimumFractionDigits: 4,
+      maximumFractionDigits: 4,
+    });
+  }
+  return fixed4(decimal);
+}
 const usdc = (v: string | number | null) =>
-  v == null ? "不明" : `${formatNumber(v)} USDC`;
+  v == null ? "不明" : `${amount(v)} USDC`;
+function accountingValue(key: string, value: string | number | null | undefined) {
+  if (value == null || ["sui", "quantity", "quantityAtomic"].includes(key))
+    return number(value);
+  return amount(value);
+}
 export function OperationsView({
   data,
   stale = false,
@@ -58,19 +75,19 @@ export function OperationsView({
       />
       <OperationSummary data={data} stale={stale} />
       {!!data.validation?.candles?.unresolved && (
-        <p className="warning" role="alert">
+        <p className="panel-meta warning" role="alert">
           ローソク足に未解決の品質問題があります。詳細診断で確認してください。
         </p>
       )}
       {data.stopReason && (
-        <p className="error">
+        <p className="panel-meta error">
           停止理由：
           <Reason code={data.stopReason} /> 次の確認：
           {nextStep(data.stopReason)}
         </p>
       )}
       {(!ledger.ok || (latest && !latest.ok)) && (
-        <p className="error" role="alert">
+        <p className="panel-meta error" role="alert">
           残高・損益の不整合を検出しました。PAPER運用を停止し、詳細診断を確認してください。
         </p>
       )}
@@ -101,7 +118,7 @@ export function OperationsView({
               <strong>
                 {report.netPnl == null
                   ? "評価データ不足"
-                  : `${number(report.netPnl)} USDC`}
+                  : usdc(report.netPnl)}
               </strong>
               <small>
                 見送り 利益保護{report.profitGuardSkipped} · リスク
@@ -110,12 +127,12 @@ export function OperationsView({
             </article>
           </div>
         ) : (
-          <p>選択期間のレポートを取得できません。</p>
+          <p className="panel-meta">選択期間のレポートを取得できません。</p>
         )}
       </section>
       <details id="operation-diagnostics" className="operation-diagnostics">
         <summary>詳細診断 · API通信・停止理由・品質・会計・監査ログ</summary>
-        <p>
+        <p className="panel-meta">
           <button type="button" onClick={() => downloadDiagnosticReport(data)}>
             AI調査用レポートを書き出す
           </button>{" "}
@@ -124,7 +141,7 @@ export function OperationsView({
           </small>
         </p>
         {data.environment ? (
-          <p>
+          <p className="panel-meta">
             <small>
               実行環境： {data.environment.mode} / {data.environment.pair} /
               市場 {data.environment.provider ?? "不明"}
@@ -188,7 +205,7 @@ export function OperationsView({
                     {date(r.from)} 〜 {date(r.until)}
                   </small>
                   {!r.fullMonitoringCoverage && (
-                    <p>
+                    <p className="panel-meta">
                       監視記録は{date(r.observedFrom)}からの一部期間です。
                     </p>
                   )}
@@ -208,7 +225,7 @@ export function OperationsView({
                         "純損益（保有分の評価損益を含む）",
                         r.netPnl == null
                           ? "評価データ不足"
-                          : `${number(r.netPnl)} USDC`,
+                          : usdc(r.netPnl),
                       ],
                       [
                         "最大ドローダウン",
@@ -267,12 +284,12 @@ export function OperationsView({
         />
         <section>
           <h2>運用検証</h2>
-          <p>
+          <p className="panel-meta">
             監視開始：{date(data.observedSince)}
             。実資金の売買・署名・送信は行いません。
           </p>
           {data.stopReason && (
-            <p className="error">
+            <p className="panel-meta error">
               停止理由：
               <Reason code={data.stopReason} />
               次の操作：{nextStep(data.stopReason)}
@@ -280,7 +297,7 @@ export function OperationsView({
           )}
           {data.timing && (
             <div className="card" aria-label="市場データ取得タイミング">
-              <p>
+              <p className="panel-meta">
                 市場データ：
                 {
                   {
@@ -295,12 +312,12 @@ export function OperationsView({
                   ? "直近の成功あり"
                   : "直近の成功未確認"}
               </p>
-              <p>
+              <p className="panel-meta">
                 最終取得試行：{date(data.timing.lastFetchAttemptAt)} ／
                 最終取得成功：{date(data.timing.lastFetchSuccessAt)} ／
                 最終分析成功：{date(data.timing.lastAnalysisAt)}
               </p>
-              <p>
+              <p className="panel-meta">
                 取得中：{data.timing.fetching ? "はい" : "いいえ"} ／ 取得開始：
                 {date(data.timing.fetchStartedAt)} ／ 前回所要時間：
                 {number(data.timing.lastFetchDurationMs)} ms ／ 次回予定：
@@ -329,7 +346,7 @@ export function OperationsView({
             ].map(([label, value]) => (
               <div key={label}>
                 <small>{label}</small>
-                <p>{value}</p>
+                <p className="panel-meta">{value}</p>
               </div>
             ))}
           </div>
@@ -340,17 +357,17 @@ export function OperationsView({
         <section>
           <h3>外部API接続（このプロセスの集計）</h3>
           {data.stopReason === "UPSTREAM_HTTP_429" && (
-            <p className="error">
+            <p className="panel-meta error">
               APIの利用制限に達しました。安全のためPAPER取引を停止しています。再試行可能時刻を確認してください。
             </p>
           )}
-          <p>
+          <p className="panel-meta">
             再試行待機解除後も自動再開しません。異常解除とPAPER開始を個別に操作してください。
           </p>
           {(data.apis ?? []).map((a) => (
             <article key={a.api}>
               <h4>{a.api}</h4>
-              <p>
+              <p className="panel-meta">
                 連続通信障害への保護：
                 {stale
                   ? "状態不明"
@@ -367,11 +384,11 @@ export function OperationsView({
               </p>
               {a.lastFailure && (
                 <div className="warning">
-                  <p>
+                  <p className="panel-meta">
                     最終通信障害：{operationReason(a.lastFailure.code)} ／{" "}
                     {a.lastFailure.elapsedMs}ms
                   </p>
-                  <p>
+                  <p className="panel-meta">
                     処理：
                     {(
                       {
@@ -399,18 +416,18 @@ export function OperationsView({
                       }[a.lastFailure.phase]
                     }
                   </p>
-                  <p>
+                  <p className="panel-meta">
                     HTTP：{a.lastFailure.status ?? "応答前"} ／ 原因コード：
                     {a.lastFailure.causeCode ?? "不明"} ／ 発生：
                     {date(a.lastFailure.occurredAt)}
                   </p>
-                  <p style={{ overflowWrap: "anywhere" }}>
+                  <p className="panel-meta" style={{ overflowWrap: "anywhere" }}>
                     URL（秘密情報を除外）：{a.lastFailure.url}
                   </p>
                 </div>
               )}
 
-              <p>
+              <p className="panel-meta">
                 最終API応答時間：
                 {a.lastLatencyMs == null
                   ? "不明"
@@ -418,7 +435,7 @@ export function OperationsView({
                 ／ リクエスト：{a.requests}件 ／ 直近1分：{a.requestsPerMinute}
                 件 ／ 429：{a.rateLimits}件 ／ 再試行：{a.retries}回
               </p>
-              <p>
+              <p className="panel-meta">
                 接続：
                 {a.exhausted
                   ? "再試行上限・手動解除が必要"
@@ -436,7 +453,7 @@ export function OperationsView({
                   ? "遅延・未取得"
                   : "取得済み（売買時に鮮度を再検証）"}
               </p>
-              <p>
+              <p className="panel-meta">
                 次回再試行可能：{date(a.nextRetryAt)} ／ 最終正常取得：
                 {date(a.lastSuccessAt)}
               </p>
@@ -464,48 +481,48 @@ export function OperationsView({
                     )[key]
                   }
                 </small>
-                <p>{number(value)}</p>
+                <p className="panel-meta">{accountingValue(key, value)}</p>
               </div>
             ))}
           </div>
           {(!ledger.ok || (latest && !latest.ok)) && (
-            <p className="error" role="alert">
+            <p className="panel-meta error" role="alert">
               不整合を検出しました。PAPER運用を停止し、記録を確認してください。
             </p>
           )}
-          <p>
+          <p className="panel-meta">
             {latest
               ? latest.ok && ledger.ok
                 ? "直近約定の照合：一致"
                 : "直近約定の照合：不一致"
               : "約定後の照合記録はまだありません。"}
           </p>
-          <p>
+          <p className="panel-meta">
             照合済み約定：{ledger.verifiedFills}件 ／ 監視導入前の約定：
             {ledger.legacyFills}件
           </p>
-          <p>
+          <p className="panel-meta">
             累計手数料（ガス込み）：{usdc(data.accounting.totals.feesUsdc)} ／
             累計ガス代：{usdc(data.accounting.totals.gasUsdc)}
           </p>
           {data.accounting.totals.unknownGasTrades > 0 && (
-            <p>
+            <p className="panel-meta">
               ガス代不明の旧約定が{data.accounting.totals.unknownGasTrades}
               件あります。確認できたガス代の小計：
               {usdc(data.accounting.totals.knownGasUsdc)}。
             </p>
           )}
-          <p>
+          <p className="panel-meta">
             ガス照合：期待値{usdc(ledger.expectedGasUsdc)} ／ 約定記録
             {usdc(ledger.actualGasUsdc)}
           </p>
-          <p>
+          <p className="panel-meta">
             許容誤差：基軸通貨 0.000000001（9桁）、USDC
             0.000001（6桁）。資産評価額はUSDC 1最小単位＋価格×基軸通貨
             1最小単位です。
           </p>
           {ledger.reasons.map((reason) => (
-            <p className="error" key={reason}>
+            <p className="panel-meta error" key={reason}>
               <Reason code={reason} />
             </p>
           ))}
@@ -553,12 +570,12 @@ export function OperationsView({
                         <td>
                           {latest.expected[key] == null
                             ? "不明"
-                            : number(latest.expected[key])}
+                            : accountingValue(key, latest.expected[key])}
                         </td>
                         <td>
                           {latest.actual[key] == null
                             ? "不明"
-                            : number(latest.actual[key])}
+                            : accountingValue(key, latest.actual[key])}
                         </td>
                       </tr>
                     ))}
@@ -566,7 +583,7 @@ export function OperationsView({
                 </table>
               </div>
               {latest.reasons.map((r) => (
-                <p key={r}>
+                <p className="panel-meta" key={r}>
                   <Reason code={r} />
                 </p>
               ))}
@@ -576,7 +593,7 @@ export function OperationsView({
         <section>
           <h3>売買候補ごとの検証記録（直近50件）</h3>
           {data.candidates.length === 0 && (
-            <p>
+            <p className="panel-meta">
               売買候補はまだありません。候補0件だけでは正常・異常を判断できません。
             </p>
           )}
@@ -601,7 +618,7 @@ export function OperationsView({
                   [
                     "見積もり価格（最低受取額から計算）",
                     c.quotePriceUsdc
-                      ? `${number(c.quotePriceUsdc)} USDC / 基軸通貨`
+                      ? `${usdc(c.quotePriceUsdc)} / 基軸通貨`
                       : "不明",
                   ],
                   ["見積もり有効期限", date(c.quoteExpiresAt)],
@@ -629,7 +646,7 @@ export function OperationsView({
                   ["想定純利益", usdc(c.netProfitUsdc)],
                   [
                     "最低利益条件",
-                    `${number(c.minProfitUsdc)} USDC / ${percent(c.minProfitPct)}`,
+                    `${usdc(c.minProfitUsdc)} / ${percent(c.minProfitPct)}`,
                   ],
                   [
                     "利益保護判定",
@@ -655,13 +672,13 @@ export function OperationsView({
                 ))}
               </dl>
               {c.profitGuard.reason && (
-                <p>
+                <p className="panel-meta">
                   利益保護：
                   <Reason code={c.profitGuard.reason} />
                 </p>
               )}
               {c.reasons.map((reason, i) => (
-                <p key={i}>
+                <p className="panel-meta" key={i}>
                   <Reason code={reason} />
                 </p>
               ))}
@@ -671,7 +688,7 @@ export function OperationsView({
         <section>
           <h3>異常・停止などの記録（直近50件）</h3>
           {data.events.length === 0 ? (
-            <p>記録はまだありません。</p>
+            <p className="panel-meta">記録はまだありません。</p>
           ) : (
             <ul>
               {data.events.map((e, i) => (
@@ -686,7 +703,7 @@ export function OperationsView({
                   {e.apiFailure && (
                     <details>
                       <summary>API処理の詳細</summary>
-                      <p>
+                      <p className="panel-meta">
                         {e.apiFailure.operation} {e.apiFailure.timeframe ?? ""}{" "}
                         ／ 所要時間：{e.apiFailure.elapsedMs} ms ／ 再試行：
                         {e.apiFailure.retryCount ?? "不明"} ／ HTTP：
@@ -697,7 +714,7 @@ export function OperationsView({
                   {e.episode && (
                     <details>
                       <summary>一時停止期間の内訳</summary>
-                      <p>{episodeSummaryText(e.episode)}</p>
+                      <p className="panel-meta">{episodeSummaryText(e.episode)}</p>
                     </details>
                   )}
                 </li>
@@ -721,7 +738,7 @@ export function OperationsFeedView({
   return (
     <>
       {error && (
-        <p className="error" role="alert">
+        <p className="panel-meta error" role="alert">
           {error}
         </p>
       )}
@@ -734,7 +751,7 @@ export function OperationsFeedView({
           refresh={refresh}
         />
       ) : (
-        <p role="status">
+        <p className="panel-meta" role="status">
           {error
             ? "状態不明：運用状態を取得できません。"
             : "状態を確認中：運用検証データを取得しています…"}
