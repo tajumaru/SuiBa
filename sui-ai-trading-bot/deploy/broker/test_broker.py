@@ -243,7 +243,55 @@ class BrokerTests(unittest.TestCase):
             self.assertEqual(record['code'], 'PAPER_DEPLOY_PERMIT_MISSING')
             self.assertEqual(record['sha'], SHA)
             self.assertEqual(record['operation'], 'deploy')
+            self.assertNotIn('detail', record)
             self.assertFalse(self.docker.calls)
+
+    def test_execute_records_lock_os_error_with_errno_and_stage(self):
+        with patch.object(b.fcntl, 'flock', side_effect=BlockingIOError(11, 'Resource temporarily unavailable')):
+            with self.assertRaises(BlockingIOError) as caught:
+                self.broker.execute(self.req, 1001)
+        self.assertEqual(b.public_failure_code(caught.exception), 'OS_ERROR')
+        record = json.loads((self.state/'last-failure.json').read_text())
+        self.assertEqual(record['code'], 'OS_ERROR')
+        self.assertEqual(record['detail'], {'errno': 11, 'stage': 'lock'})
+
+    def test_execute_records_directories_os_error_with_errno_and_stage(self):
+        real_directory = b.directory
+
+        def flaky_directory(path, owner=0):
+            if Path(path) == self.policy:
+                raise OSError(28, 'No space left on device')
+            return real_directory(path, owner)
+
+        with patch.object(b, 'directory', side_effect=flaky_directory):
+            with self.assertRaises(OSError) as caught:
+                self.broker.execute(self.req, 1001)
+        self.assertEqual(b.public_failure_code(caught.exception), 'OS_ERROR')
+        record = json.loads((self.state/'last-failure.json').read_text())
+        self.assertEqual(record['code'], 'OS_ERROR')
+        self.assertEqual(record['detail'], {'errno': 28, 'stage': 'directories'})
+
+    def test_execute_records_paper_gate_os_error_with_errno_and_stage(self):
+        with patch.object(self.broker, 'check_paper_session', side_effect=PermissionError(13, 'Permission denied')):
+            with self.assertRaises(PermissionError) as caught:
+                self.broker.execute(self.req, 1001)
+        self.assertEqual(b.public_failure_code(caught.exception), 'OS_ERROR')
+        record = json.loads((self.state/'last-failure.json').read_text())
+        self.assertEqual(record['code'], 'OS_ERROR')
+        self.assertEqual(record['detail'], {'errno': 13, 'stage': 'paper-gate'})
+
+    def test_os_error_detail_accepts_only_tagged_whitelisted_errors(self):
+        self.assertIsNone(b.os_error_detail(OSError(11, 'untagged')))
+        self.assertIsNone(b.os_error_detail(b.Rejected('OS_ERROR')))
+        tagged = OSError(11, 'tagged')
+        tagged._broker_os_stage = 'lock'
+        self.assertEqual(b.os_error_detail(tagged), {'errno': 11, 'stage': 'lock'})
+        forged = OSError(11, 'forged')
+        forged._broker_os_stage = 'not-a-stage'
+        self.assertIsNone(b.os_error_detail(forged))
+        no_errno = OSError('plain')
+        no_errno._broker_os_stage = 'paper-gate'
+        self.assertEqual(b.os_error_detail(no_errno), {'errno': None, 'stage': 'paper-gate'})
 
     def strict_policy_modes(self):
         # Files written by setUp inherit the process umask; the
