@@ -112,7 +112,7 @@ export function StrategyTab({
         aria-labelledby="strategy-segment-settings"
         hidden={segment !== "settings"}
       >
-        <SettingsForm editor={editor} />
+        <SettingsForm editor={editor} data={data} />
       </div>
     </>
   );

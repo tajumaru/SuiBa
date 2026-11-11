@@ -73,9 +73,26 @@ describe("かんたん設定", () => {
   it("rejects invalid settings before making a request", async () => {
     const api = vi.fn();
     await expect(
-      saveSettings(api, { ...defaults, maxOrder: 6 }),
+      saveSettings(api, { ...defaults, maxOrder: 11 }),
     ).rejects.toThrow();
     expect(api).not.toHaveBeenCalled();
+  });
+  it("accepts a per-order cap up to 10 USDC and keeps stored values valid", () => {
+    // The cap was raised from 5 to 10 (owner decision, 2026-11-11);
+    // the default and every previously storable value stay valid.
+    expect(settingsSchema.safeParse(defaults).success).toBe(true);
+    expect(
+      settingsSchema.safeParse({ ...defaults, maxOrder: 5 }).success,
+    ).toBe(true);
+    expect(
+      settingsSchema.safeParse({ ...defaults, maxOrder: 10 }).success,
+    ).toBe(true);
+    expect(
+      settingsSchema.safeParse({ ...defaults, maxOrder: 10.5 }).success,
+    ).toBe(false);
+    expect(
+      settingsSchema.safeParse({ ...defaults, maxOrder: 11 }).success,
+    ).toBe(false);
   });
   it.each(["post", "read", "mismatch"])(
     "does not report success on %s failure",

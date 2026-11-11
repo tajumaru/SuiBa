@@ -261,7 +261,7 @@ describe("strategy view: parameter groups and scales", () => {
   it("reads selectable ranges from the shared schema, not copies", () => {
     expect(settingRange("oversold")).toEqual({ min: 10, max: 45 });
     expect(settingRange("overbought")).toEqual({ min: 55, max: 90 });
-    expect(settingRange("maxOrder")).toEqual({ min: 0, max: 5 });
+    expect(settingRange("maxOrder")).toEqual({ min: 0, max: 10 });
     expect(settingRange("dailyBuyLimit")).toEqual({ min: 0, max: 20 });
     expect(settingRange("dailyLossPct")).toEqual({ min: 0, max: 0.01 });
     expect(settingRange("maxSlippage")).toEqual({ min: 0, max: 0.003 });
