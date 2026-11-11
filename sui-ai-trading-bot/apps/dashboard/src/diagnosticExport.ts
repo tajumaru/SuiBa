@@ -35,9 +35,9 @@ export function buildDiagnosticReport(
 ): string {
   const s = data.safety;
   const lines: string[] = [
-    "# SuiBa 診断レポート（AI調査用）",
+    "# Potario 診断レポート（AI調査用）",
     "",
-    "これは SuiBa（SUI/USDC の PAPER 売買 Bot）の運用スナップショットです。",
+    "これは Potario（SUI/USDC の PAPER 売買 Bot）の運用スナップショットです。",
     "目的： Bot が停止・一時停止した原因を、AI がこのファイルだけで切り分けられるようにすること。",
     "読み方：",
     "- status / stopReason が現在の状態。エピソードとは通信障害による一時停止の期間のこと。",
