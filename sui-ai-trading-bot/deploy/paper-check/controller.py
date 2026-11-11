@@ -783,16 +783,23 @@ class Controller:
         broker_last_failure = None
         try:
             candidate = self.b.decode(self.b.read_trusted(self.b.STATE/'last-failure.json'))
-            if (type(candidate) is dict and set(candidate) == {'version', 'at', 'operation', 'sha', 'code'}
+            if (type(candidate) is dict and set(candidate) in ({'version', 'at', 'operation', 'sha', 'code'},
+                                                                {'version', 'at', 'operation', 'sha', 'code', 'detail'})
                     and type(candidate['version']) is int and candidate['version'] == 1
                     and type(candidate['at']) is int and candidate['at'] > 0
                     and type(candidate['operation']) is str
                     and re.fullmatch(r'[a-z][a-z0-9-]{0,31}', candidate['operation'])
                     and type(candidate['sha']) is str and re.fullmatch(r'[a-f0-9]{40}', candidate['sha'])
                     and type(candidate['code']) is str
-                    and re.fullmatch(r'[A-Z][A-Z_]{2,47}', candidate['code'])):
+                    and re.fullmatch(r'[A-Z][A-Z_]{2,47}', candidate['code'])
+                    and ('detail' not in candidate or (
+                        type(candidate['detail']) is dict and set(candidate['detail']) == {'errno', 'stage'}
+                        and (candidate['detail']['errno'] is None or type(candidate['detail']['errno']) is int)
+                        and candidate['detail']['stage'] in self.b.PRE_TRANSACTION_STAGES))):
                 broker_last_failure = {'at': candidate['at'], 'operation': candidate['operation'],
                                        'sha': candidate['sha'], 'code': candidate['code']}
+                if 'detail' in candidate:
+                    broker_last_failure['detail'] = candidate['detail']
         except Exception:
             broker_last_failure = None
         known_states = ('in_progress', 'prepared_stopped', 'failed_stopped', 'failed_state_unknown')

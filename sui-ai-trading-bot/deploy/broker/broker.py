@@ -67,6 +67,37 @@ def public_failure_code(error):
     return 'UNEXPECTED_EXCEPTION'
 
 
+PRE_TRANSACTION_STAGES = ('directories', 'lock', 'paper-gate')
+
+
+@contextlib.contextmanager
+def os_stage(stage):
+    """Tag an OSError escaping one of execute()'s pre-transaction
+    steps with the step's fixed label, so the failure record can
+    name WHERE it stopped. Observation only: the error itself,
+    and every accept/reject decision, is unchanged."""
+    try:
+        yield
+    except OSError as error:
+        with contextlib.suppress(Exception):
+            error._broker_os_stage = stage
+        raise
+
+
+def os_error_detail(error):
+    """The whitelisted diagnostic for a tagged OSError: only the
+    numeric errno and the fixed stage label. Never the exception
+    text or attributes — those carry paths. Anything untagged or
+    malformed yields None, and the record stays exactly as before."""
+    if not isinstance(error, OSError):
+        return None
+    stage = getattr(error, '_broker_os_stage', None)
+    if stage not in PRE_TRANSACTION_STAGES:
+        return None
+    errno_value = error.errno
+    return {'errno': errno_value if type(errno_value) is int else None, 'stage': stage}
+
+
 def publish_public_result(status, code, sha):
     try:
         if status not in ('prepared_stopped', 'failed'):
@@ -533,40 +564,52 @@ class Broker:
 
     def execute(self, req, uid):
         require(os.geteuid() == 0, 'ROOT_REQUIRED')
-        for path in (self.policy, self.state, self.backups, self.policy/'docker', self.policy/'approvals'):
-            with directory(path):
-                pass
-        lockfd = os.open(self.state/'lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        self.failure_recorded = False
         try:
-            s = os.fstat(lockfd)
-            require(s.st_uid == 0 and s.st_nlink == 1 and stat.S_ISREG(s.st_mode) and not (s.st_mode & 0o077), 'LOCK_FILE')
-            fcntl.flock(lockfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            # Revalidate imported callers too; CLI never accepts a path/image/config.
-            request(json.dumps(req).encode())
-            if req['operation'] == 'verify':
-                return self.verify()
-            with contextlib.ExitStack() as locks:
-                self.failure_recorded = False
-                try:
-                    permit = self.check_paper_session(req)
-                    if permit is not None:
-                        for name in ('stop', 'mutation'):
-                            fd = locks.enter_context(regular(PAPER_STATE/(name+'.lock')))
-                            fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB)
-                        permit = self.check_paper_session(req)
-                        self.consume_paper_deploy(permit)
-                    return self.transaction(req, uid)
-                except BaseException as error:
-                    if not self.failure_recorded:
-                        self.record_failure(req, error)
-                    raise
-                finally:
-                    # Only the root-created snapshot file, never incoming/DB/backup.
-                    if getattr(self, 'archive', None):
-                        self.archive.unlink(missing_ok=True)
+            with os_stage('directories'):
+                for path in (self.policy, self.state, self.backups, self.policy/'docker', self.policy/'approvals'):
+                    with directory(path):
+                        pass
+            lockfd = os.open(self.state/'lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+            try:
+                with os_stage('lock'):
+                    s = os.fstat(lockfd)
+                    require(s.st_uid == 0 and s.st_nlink == 1 and stat.S_ISREG(s.st_mode) and not (s.st_mode & 0o077), 'LOCK_FILE')
+                    fcntl.flock(lockfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                # Revalidate imported callers too; CLI never accepts a path/image/config.
+                request(json.dumps(req).encode())
+                if req['operation'] == 'verify':
+                    return self.verify()
+                with contextlib.ExitStack() as locks:
+                    try:
+                        with os_stage('paper-gate'):
+                            permit = self.check_paper_session(req)
+                            if permit is not None:
+                                for name in ('stop', 'mutation'):
+                                    fd = locks.enter_context(regular(PAPER_STATE/(name+'.lock')))
+                                    fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB)
+                                permit = self.check_paper_session(req)
+                                self.consume_paper_deploy(permit)
+                        return self.transaction(req, uid)
+                    except BaseException as error:
+                        if not self.failure_recorded:
+                            self.record_failure(req, error)
+                        raise
+                    finally:
+                        # Only the root-created snapshot file, never incoming/DB/backup.
+                        if getattr(self, 'archive', None):
+                            self.archive.unlink(missing_ok=True)
 
-        finally:
-            os.close(lockfd)
+            finally:
+                os.close(lockfd)
+        except BaseException as error:
+            # The steps above run before the inner handler exists:
+            # record those failures too, or a deploy refused there
+            # leaves no state-side record at all. Verify writes
+            # nothing, by design — its failures stay unrecorded.
+            if req['operation'] != 'verify' and not self.failure_recorded:
+                self.record_failure(req, error)
+            raise
 
     def check_paper_session(self, req=None):
         require(not os.path.lexists(self.state/'paper-check-failed.json'), 'PAPER_CHECK_RECONCILIATION_REQUIRED')
@@ -625,10 +668,21 @@ class Broker:
         # no decision ever reads this file, and a write failure
         # here changes nothing about the rejection itself.
         with contextlib.suppress(BaseException):
-            atomic(self.state/'last-failure.json', {
+            value = {
                 'version': 1, 'at': int(time.time()),
                 'operation': req['operation'], 'sha': req['sha'],
-                'code': public_failure_code(error)})
+                'code': public_failure_code(error)}
+            detail = os_error_detail(error)
+            if detail is not None:
+                # errno + fixed stage label only. The public mirror
+                # (last-deploy.json) keeps its exact shape — its
+                # reader validates the key set strictly — so this
+                # detail lives only in this root-owned record.
+                value['detail'] = detail
+            atomic(self.state/'last-failure.json', value)
+        # An attempted record is the record: execute()'s outer
+        # handler must not write a second one for the same failure.
+        self.failure_recorded = True
 
 
     def verify(self):

@@ -730,7 +730,8 @@ class StopTests(unittest.TestCase):
             FakeBroker.atomic(root/'paper-check.json', {'status': 'in_progress'})
             ctl = object.__new__(c.Controller)
             ctl.b = SimpleNamespace(STATE=root, SHA=re.compile(r'[a-f0-9]{40}'), decode=json.loads,
-                read_trusted=FakeBroker.read_trusted, __file__=c.__file__)
+                read_trusted=FakeBroker.read_trusted, __file__=c.__file__,
+                PRE_TRANSACTION_STAGES=('directories', 'lock', 'paper-gate'))
             container = {'State': {'Status': 'exited'}, 'HostConfig': {'RestartPolicy': {'Name': 'no'}},
                          'Config': {'Env': ['MODE=PAPER']}}
             response = b'ActiveState=active\nSubState=elapsed\nNextElapseUSecMonotonic=0\nNextElapseUSecRealtime=\nJob=\n'
@@ -744,6 +745,21 @@ class StopTests(unittest.TestCase):
                 'operation': 'deploy', 'sha': 'c'*40, 'code': 'PAPER_DEPLOY_PERMIT_MISSING'})
             self.assertEqual(diagnose()['broker_last_failure'],
                 {'at': 1794115200, 'operation': 'deploy', 'sha': 'c'*40, 'code': 'PAPER_DEPLOY_PERMIT_MISSING'})
+            # A whitelisted OS_ERROR detail (errno + fixed stage) is
+            # surfaced with the record; anything beyond those two
+            # fields degrades the record to None.
+            FakeBroker.atomic(root/'last-failure.json', {'version': 1, 'at': 1794115200,
+                'operation': 'deploy', 'sha': 'c'*40, 'code': 'OS_ERROR',
+                'detail': {'errno': 11, 'stage': 'lock'}})
+            self.assertEqual(diagnose()['broker_last_failure'],
+                {'at': 1794115200, 'operation': 'deploy', 'sha': 'c'*40, 'code': 'OS_ERROR',
+                 'detail': {'errno': 11, 'stage': 'lock'}})
+            for detail in ({'errno': 11, 'stage': 'somewhere-else'},
+                           {'errno': 11, 'stage': 'lock', 'message': 'do-not-log'},
+                           {'errno': '11', 'stage': 'lock'}):
+                FakeBroker.atomic(root/'last-failure.json', {'version': 1, 'at': 1794115200,
+                    'operation': 'deploy', 'sha': 'c'*40, 'code': 'OS_ERROR', 'detail': detail})
+                self.assertIsNone(diagnose()['broker_last_failure'], detail)
             # Malformed records degrade to None; the diagnosis itself
             # still succeeds (the record is best-effort evidence).
             for value in (
