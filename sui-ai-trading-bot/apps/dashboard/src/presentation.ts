@@ -39,6 +39,32 @@ export function number(value: number | string | null | undefined, digits = 6) {
     maximumFractionDigits: digits,
   }).format(Number(value));
 }
+/**
+ * Four-decimal rendering for compact amount/price displays: prices
+ * move on a 0.0001 tick, so the extra digits decimal strings carry
+ * are noise there (full-precision views keep using number). Rounds
+ * digit by digit so long decimal strings stay exact, matching the
+ * concern behind number's string path.
+ */
+export function fixed4(value: string): string {
+  if (!/^-?\d+(\.\d+)?$/.test(value)) return number(value, 4);
+  const negative = value.startsWith("-"),
+    body = negative ? value.slice(1) : value,
+    [whole, fraction = ""] = body.split(".");
+  let digits = whole + (fraction + "0000").slice(0, 4);
+  if ((fraction[4] ?? "0") >= "5") {
+    const chars = digits.split("");
+    let i = chars.length - 1;
+    while (i >= 0 && chars[i] === "9") chars[i--] = "0";
+    if (i < 0) chars.unshift("1");
+    else chars[i] = `${Number(chars[i]) + 1}`;
+    digits = chars.join("");
+  }
+  const split = digits.length - 4;
+  return `${negative ? "-" : ""}${digits
+    .slice(0, split)
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${digits.slice(split)}`;
+}
 export const percent = (value: number | string | null | undefined) =>
   value == null
     ? "—"
