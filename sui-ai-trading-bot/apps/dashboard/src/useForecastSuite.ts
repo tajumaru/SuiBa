@@ -22,7 +22,7 @@ import {
   type ForecastCalib,
 } from "./forecastCalib.ts";
 import { useAgentCharacter } from "./agentCharacter.ts";
-import { shareCardInputFor } from "./shareCard.ts";
+import { shareCardInputFor } from "./shareCardInput.ts";
 
 type State = BotSnapshot;
 

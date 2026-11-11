@@ -3,7 +3,7 @@ import type { AgentPose, NarrationEntry, NarrationState } from "./agentNarration
 import { agentDisplayName } from "./agentName.ts";
 import { greetingText } from "./narration/voice.ts";
 import { useAgentCharacter } from "./agentCharacter.ts";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { persistNarration, restoreNarration } from "./narrationStorage.ts";
 import { BUY_CELEBRATION_MS, CELEBRATION_FRESH_MS, advanceNarration, agentPose, currentConditionChips, currentWatch, currentWatchScore, findNewBuyEntry, isBuyTradeEntry, trimNarrationEntries } from "./agentNarration.ts";
 import { botVital } from "./botVital.ts";
@@ -11,7 +11,14 @@ import { appendHighlights, captureHighlights, highlightLabel, loadHighlights, sa
 import type { Highlight } from "./highlightStore.ts";
 import { proactivePrompt, proactivePromptDue } from "./agentChat.ts";
 import { epochTransition, loadLastEpoch, saveLastEpoch } from "./epochMark.ts";
-import { HighlightReplay } from "./HighlightReplay.tsx";
+/* The replay overlay opens only when the reader taps a saved
+ * highlight, so it loads on first open instead of riding in the
+ * initial bundle with the live feed itself. */
+const HighlightReplay = lazy(() =>
+  import("./HighlightReplay.tsx").then((m) => ({
+    default: m.HighlightReplay,
+  })),
+);
 import { AgentFeedEntryRow } from "./AgentFeedEntryRow.tsx";
 import { usePrefersReducedMotion } from "./usePrefersReducedMotion.ts";
 import { useFeedScroll } from "./useFeedScroll.ts";
@@ -464,7 +471,9 @@ export function AgentNarrationFeed({
         </div>
       )}
       {replay && (
-        <HighlightReplay highlight={replay} onClose={() => setReplay(null)} />
+        <Suspense fallback={null}>
+          <HighlightReplay highlight={replay} onClose={() => setReplay(null)} />
+        </Suspense>
       )}
       <AgentChatComposer
         chat={chat}

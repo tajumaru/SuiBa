@@ -22,7 +22,6 @@ import {
   chartTicks,
 } from "./chartPresentation.ts";
 import { number, dateTime, label } from "./presentation.ts";
-import { createShareCardPng } from "./shareCard.ts";
 import { usePriceChartModel, type PriceChartProps } from "./PriceChartModel.ts";
 import {
   AnswerGhostOverlay,
@@ -139,6 +138,10 @@ export function PriceChart(props: PriceChartProps) {
               setShareBusy(true);
               setShareNote("");
               try {
+                // The card builder (SVG template + PNG conversion)
+                // is used only by this tap, so it loads on demand
+                // instead of riding in the initial bundle.
+                const { createShareCardPng } = await import("./shareCard.ts");
                 await createShareCardPng(shareCard);
               } catch (e) {
                 // Closing the share sheet is not a failure.
