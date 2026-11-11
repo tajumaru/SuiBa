@@ -169,6 +169,116 @@ mutation を見逃す。(b) ホスト上で fault ファイルを手作業で
 ケース群を追加）。配布は setup-paper-check.sh の再実行で、
 復帰は STOP-PROD → START-PROD の順に行う。
 
+### R4（2026-11-11）：ライフサイクル監査フォローアップ
+
+本番ライフサイクルの状態機械を総当たりで監査した結果
+（F-1〜F-9）のうち、F-1 は R3 で閉じた。本節は残りのうち
+今回まとめて閉じる分（F-2／F-3／F-7／F-9 と F-8 の最小の
+可視化）と、常設の回帰網である状態行列テストを定める。
+F-5（クラッシュ／OOM に対する本番 reconcile op の新設）は
+本節の範囲外で、別途設計する。方針は従来どおり
+fail-closed：疑わしければ現行の拒否のままにする。
+
+**F-3（preflight 境界）**：形状——admission フラグの永続化
+（admitted=True）が先に行き、ProductionController.preflight
+の stage='backup' 書込みが失敗すると、admitted=True かつ
+stage='preflight' のレコードが残る。R1 の close-out は
+admitted=False を条件にしていたため、この形状は「作業者が
+一度も起動していない」のに閉じられなかった。修正——R1 の
+判定を admitted フラグでなく証拠側へ付け替える：
+failure.json の stage が 'preflight' であること＋コンテナが
+このセッションで起動していないこと（StartedAt ゼロ時刻、
+またはセッション開始より前）。他の条件（fault 集合
+{PREFLIGHT_INCOMPLETE, LATCHED_FAILURE}、pending mutation
+なし、ラッチが本レコードを名指ししていること、コンテナが
+Running でないこと）は不変。根拠——二つの書込みの間にある
+死に方が本物の境界であり、境界をまたぐ判別子はフラグでは
+なく「作業者が走ったかどうか」の観測可能な事実である。
+なお PREFLIGHT_INCOMPLETE は未 admission のレコードにしか
+fault されないため、境界形状は LATCHED_FAILURE のみ、あるい
+は fault ゼロでもありうる。許容集合は両形状をそのまま
+囲っている。
+
+**F-2（guard 操作の pending 残留）**：形状——guard された
+操作（backup／unlatch／worker-start／arm／paper-start）が
+4xx 以外のエラーで死ぬと、mutation.json の pending が
+残ったままになり、それを消せるのは死んだランナーだけ
+だったため、どの close-out も
+OPERATION_COMPLETION_UNCONFIRMED で拒否し続けていた。
+修正——R3 の close-out に限り、次のすべてがそろう場合に
+pending を許容する：(1) pending の値（操作名の文字列）が
+failure.json の stage に対応する操作と一致する。guard は
+操作名を記録し、失敗記録は run stage を記録するため、両者
+の対応はコントローラ内の GUARD_STAGE_OPERATIONS が持つ
+（食い違うのは maintenance-release ⇄ unlatch の一箇所
+だけ）。(2) その操作が現在効いていないことが証明できる：
+コンテナが Running でなく、backup と maintenance-release
+（＝unlatch）の段階についてはコンテナがこのセッションで
+起動していないこと（この二段階は作業者起動より前に走る）。
+worker-start 以降の段階は R3 既存の「このセッションで正常
+終了した」証明で足りる。(3) R3 の他の条件（DB 検証・
+コントローラ終了・ラッチの名指し）がすべて成立する。
+この部分ケースに限り fault コード
+OPERATION_COMPLETION_UNCONFIRMED も許容集合に加える：
+stop_checks は残留 pending を観測した停止試行のたびに
+このコードを fault するため、pending そのものが上の証拠
+で反証済みなら、このコードは pending の存在以上の情報を
+持たない（R3 の派生コード四つと同じ扱い）。stage が
+failure.json と食い違う pending、効いていないことを反証
+できない pending は従来どおり拒否する。なお「backup 自体
+は終わったが直後のレコード書込みで死んだ」形状は pending
+を持たないため本修正の対象ではなく、開始証明が立たず
+従来どおり手動照合のまま残る（F-2 の形状とは別物）。
+
+**F-7（孤児ラッチ）**：形状——ランナーがレコードを公開
+する前に死ぬと、production/state/failed.json だけが残り、
+削除する者が誰もいないため、以後の prod_start が永久に
+拒否されていた。修正——prod_stop がレコード不在を見た
+場合に、ラッチを証拠として同じ state ディレクトリへ
+failed-orphan-<id または unknown>.json に改名し（ディレ
+クトリを fsync）、従来どおり {'status': 'not_started'} を
+返す。これで後続の prod_start は孤児ラッチに阻まれない。
+読めない／壊れたラッチはその場に残す：読めない証拠は
+破棄せず、prod_start は拒否を続け、運用者は prod_status
+（レコードなし分岐は既にラッチの存在を requires_review に
+含む）でラッチを見られる。改名は証拠の保全であって削除
+ではない。
+
+**F-9（ロック競合の fault 化）**：形状——配置（デプロイ）
+が deployment ロックを保持している間に停止が確定すると、
+ProductionController.cleanup のロック取得失敗が stop() の
+fault 経路に流れ、CLEANUP_LOCK_OR_STATE_UNKNOWN の fault
+と failed.json ラッチが恒久化していた。競合は失敗の証拠
+ではない。修正——本番 cleanup は deployment_lock の取得
+失敗（BlockingIOError）を fault せず False を返すよう分け
+た（保持側の処理は _cleanup_locked として不変）。停止は
+失敗として報告されるが何もラッチされず、配置が終われば
+同じ停止が通る。ロックファイル自体の形の異常は従来どおり
+例外として上がる（競合ではなく状態の異常だから）。基底
+Controller と検証（paper）側の挙動は変えない。
+
+**F-8（abort-inhibit の可視化）**：リポジトリ内のどこも
+production/abort-inhibit.json を書かないのに、prod_start
+はその存在だけで拒否し、理由が外から見えなかった。最小の
+変更として、prod_status の requires_review に inhibit の
+存在を加えた（レコードあり分岐）。新しいフィールドは
+増やさない。inhibit の書き手や解除手順は本節の範囲外。
+
+**状態行列テスト（常設の回帰網）**：監査の最大の教訓は、
+verify_prod.py が「failed へ到達すること＋開始が拒否
+されること」までしか固定しておらず、「閉じられること」を
+誰も検証していなかった点にある。本変更で
+test_controller.py に ProductionMatrixTests を追加し、
+監査行列の各形状（通常停止／完了済み／R1／R3／F-2／F-3／
+準備完了失敗／クラッシュ／ゾンビ／孤児ラッチ／
+abort-inhibit／post-stop intent）をフェイクで構築して
+prod_stop の可否と後続の prod_start の可否を期待表で
+固定する。「閉じない」行は意図の記録であり、将来の変更が
+閉じられる形状を黙って楔化させたり、逆に手動照合である
+べき形状を黙って閉じたりしたら、ホスト上ではなく CI で
+落ちる。以後、新しい現場形状が出たら、その形状テストの
+追加を修正の一部とする。
+
 ### 手順書と設計書の直し
 
 - 切替手順書 §2 に「本番用 compose の配置（setup の prod

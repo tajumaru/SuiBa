@@ -1894,16 +1894,28 @@ class ProductionTests(unittest.TestCase):
             self.assertIn('UNCLEAN_OR_UNKNOWN', errors)
 
     @unittest.skipIf(os.name == 'nt', 'Linux flock')
-    def test_prod_stop_still_refuses_an_admitted_failure(self):
+    def test_prod_stop_closes_a_preflight_failure_after_the_admission_flip(self):
+        # Audit F-3: preflight persists the admission flip before
+        # ProductionController.preflight persists stage='backup',
+        # so a death between the two writes leaves exactly the R1
+        # wedge shape except admitted=True — the worker provably
+        # never started, so the preflight close-out (retargeted
+        # from the admitted flag to the never-started evidence)
+        # closes it. This reverses the refusal this fixture
+        # asserted before F-3.
         with tempfile.TemporaryDirectory() as root:
             ctl = self.make(root)
             record = self.wedge_preflight(ctl)
             record['admitted'] = True
             FakeBroker.atomic(ctl.record, record)
             self.with_started_at(ctl, '0001-01-01T00:00:00Z')
-            with self.assertRaises(Exception): ctl.prod_stop()
-            self.assertEqual(ctl.current()['status'], 'failed_requires_review')
-            self.assertTrue((ctl.state/'failed.json').exists())
+            self.assertEqual(ctl.prod_stop(), {'status': 'completed'})
+            closed = ctl.current()
+            self.assertEqual(closed['status'], 'completed')
+            self.assertEqual(closed['stage'], 'stopped')
+            self.assertFalse((ctl.state/'failed.json').exists())
+            self.assertEqual(list(ctl.folder(closed).glob('fault-*.json')), [])
+            self.assertEqual(ctl.prod_start(), {'status': 'accepted'})
 
     @unittest.skipIf(os.name == 'nt', 'Linux flock')
     def test_prod_stop_refuses_a_failure_after_preflight(self):
@@ -2053,6 +2065,324 @@ class ProductionTests(unittest.TestCase):
             with self.assertRaises(Exception): ctl.prod_stop()
             self.assertEqual(ctl.current()['status'], 'failed_requires_review')
             self.assertTrue((ctl.state/'failed.json').exists())
+
+    def wedge_pending(self, ctl, stage, pending, faults=('OPERATION_COMPLETION_UNCONFIRMED', 'LATCHED_FAILURE')):
+        # The durable shape a guarded operation leaves when it dies
+        # on a non-4xx error (audit F-2): admission passed, the
+        # failure record names the operation's stage, the pending
+        # marker only the dead runner could clear is still set, and
+        # the runner's own cleanup faulted the stranded pending.
+        record = self.admit(ctl)
+        record['admitted'] = True
+        record['status'] = 'failed_requires_review'
+        record['stage'] = stage
+        FakeBroker.atomic(ctl.record, record)
+        FakeBroker.atomic(ctl.folder(record)/'failure.json',
+                          {'id': record['id'], 'stage': stage, 'error': 'RuntimeError'})
+        FakeBroker.atomic(ctl.folder(record)/'mutation.json',
+                          {'id': record['id'], 'pending': pending})
+        for code in faults:
+            ctl.fault(record, code)
+        return ctl.current()
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_closes_an_admitted_failure_with_a_stranded_backup_pending(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_pending(ctl, 'backup', 'backup')
+            self.with_started_at(ctl, '0001-01-01T00:00:00Z')
+            self.assertEqual(ctl.prod_stop(), {'status': 'completed'})
+            closed = ctl.current()
+            self.assertEqual(closed['status'], 'completed')
+            self.assertFalse((ctl.state/'failed.json').exists())
+            self.assertEqual(list(ctl.folder(closed).glob('fault-*.json')), [])
+            # The stranded pending and the failure record stay in
+            # the folder as the evidence of the shape that was
+            # closed; nothing downstream reads a completed folder's
+            # mutation journal.
+            mutation = json.loads((ctl.folder(closed)/'mutation.json').read_bytes())
+            self.assertEqual(mutation['pending'], 'backup')
+            self.assertTrue((ctl.folder(closed)/'failure.json').exists())
+            self.assertEqual(ctl.prod_start(), {'status': 'accepted'})
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_closes_a_stranded_unlatch_pending_under_its_stage_name(self):
+        # The one stage whose journaled operation differs from the
+        # stage name: failure.json says 'maintenance-release',
+        # mutation.json says 'unlatch' (GUARD_STAGE_OPERATIONS).
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_pending(ctl, 'maintenance-release', 'unlatch')
+            self.with_started_at(ctl, '0001-01-01T00:00:00Z')
+            self.assertEqual(ctl.prod_stop(), {'status': 'completed'})
+            self.assertEqual(ctl.current()['status'], 'completed')
+            self.assertEqual(ctl.prod_start(), {'status': 'accepted'})
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_closes_a_stranded_arm_pending_after_the_worker_started(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_pending(ctl, 'arm', 'arm')
+            self.with_started_at(ctl, self.started_at_during(record))
+            self.assertEqual(ctl.prod_stop(), {'status': 'completed'})
+            self.assertEqual(ctl.current()['status'], 'completed')
+            self.assertEqual(ctl.prod_start(), {'status': 'accepted'})
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_refuses_a_pending_that_mismatches_the_failure_stage(self):
+        for stage, pending in (('monitoring', 'backup'), ('arm', 'paper-start'),
+                               ('backup', 'arm'), ('monitoring', 'unlatch')):
+            with self.subTest(stage=stage, pending=pending), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                record = self.wedge_pending(ctl, stage, pending)
+                self.with_started_at(ctl, self.started_at_during(record))
+                with self.assertRaises(Exception): ctl.prod_stop()
+                self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+                self.assertTrue((ctl.state/'failed.json').exists())
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_refuses_a_stranded_backup_pending_when_the_container_started(self):
+        # The backup's not-in-effect proof is the never-started
+        # evidence; a container that started with the session
+        # disproves nothing about the backup but breaks the proof,
+        # so the shape stays manual.
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_pending(ctl, 'backup', 'backup')
+            self.with_started_at(ctl, self.started_at_during(record))
+            with self.assertRaises(Exception): ctl.prod_stop()
+            self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+            self.assertTrue((ctl.state/'failed.json').exists())
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_retires_an_orphan_failed_latch(self):
+        # Audit F-7: a latch whose runner died before publishing
+        # any record blocks prod_start forever and nothing else
+        # removes it. prod_stop retires it as evidence.
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            FakeBroker.atomic(ctl.state/'failed.json',
+                              {'id': 'c'*32, 'status': 'manual_reconciliation_required'})
+            self.assertTrue(ctl.prod_status()['requires_review'])
+            with self.assertRaises(Exception): ctl.prod_start()
+            self.assertEqual(ctl.prod_stop(), {'status': 'not_started'})
+            self.assertFalse((ctl.state/'failed.json').exists())
+            retired = ctl.state/('failed-orphan-'+'c'*32+'.json')
+            self.assertEqual(json.loads(retired.read_bytes()),
+                             {'id': 'c'*32, 'status': 'manual_reconciliation_required'})
+            self.assertFalse(ctl.prod_status()['requires_review'])
+            self.assertEqual(ctl.prod_start(), {'status': 'accepted'})
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_leaves_an_unreadable_orphan_latch_in_place(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            (ctl.state/'failed.json').write_bytes(b'not-json{')
+            self.assertEqual(ctl.prod_stop(), {'status': 'not_started'})
+            self.assertTrue((ctl.state/'failed.json').exists())
+            self.assertEqual(list(ctl.state.glob('failed-orphan-*.json')), [])
+            with self.assertRaises(Exception): ctl.prod_start()
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_cleanup_lock_contention_returns_false_without_faulting(self):
+        # Audit F-9: a deployment holding the shared lock while a
+        # stop finalizes is transient contention. The production
+        # cleanup must report failure without latching a fault, so
+        # the same stop can close the run once the deployment ends.
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_admitted(ctl, faults=())
+            self.with_started_at(ctl, self.started_at_during(record))
+            validation = c.Controller(ctl.b, ctl.validation_state)
+            with validation.deployment_lock():
+                self.assertFalse(ctl.stop(expected=record['id'], source='prod-stop'))
+            self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+            self.assertFalse((ctl.state/'failed.json').exists())
+            self.assertEqual(list(ctl.folder(record).glob('fault-*.json')), [])
+            self.assertFalse((ctl.folder(record)/'stop.json').exists())
+            self.assertEqual(ctl.prod_stop(), {'status': 'completed'})
+
+    def test_prod_status_marks_an_abort_inhibit_as_requiring_review(self):
+        # Audit F-8: the inhibit blocks prod_start outright, so
+        # prod_status must surface it instead of leaving the start
+        # refusal reasonless.
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.admit(ctl)
+            self.assertFalse(ctl.prod_status()['requires_review'])
+            FakeBroker.atomic(ctl.state/'abort-inhibit.json',
+                              {'status': 'manual_reconciliation_required'})
+            self.assertTrue(ctl.prod_status()['requires_review'])
+            with self.assertRaises(Exception): ctl.prod_start()
+
+
+class ProductionMatrixTests(unittest.TestCase):
+    # The standing state-matrix net from the 2026-11-11 production
+    # lifecycle audit. Every reachable production record shape is
+    # built with the ProductionTests fakes and driven through
+    # prod_stop (and prod_start behind it) against the expectation
+    # table below. A shape marked 'refuses' is a deliberate
+    # decision — manual reconciliation — not an accident, and a
+    # shape marked 'closes' must stay closable: the table documents
+    # intent, so a controller change that silently wedges a
+    # closable shape, or silently closes one that must stay
+    # manual, fails here instead of on the host. The orphan-latch
+    # and abort-inhibit rows have their own methods because their
+    # prod_stop expectation is not a record status.
+    def setUp(self):
+        # Same deploy-lock ownership stand-in as ProductionTests.
+        self.broker_locks = set()
+        original = os.fstat
+        def fstat(fd):
+            value = original(fd)
+            if os.readlink('/proc/self/fd/'+str(fd)) in self.broker_locks:
+                fields = list(value); fields[4] = 0
+                return os.stat_result(fields)
+            return value
+        ownership = patch.object(os, 'fstat', fstat)
+        ownership.start(); self.addCleanup(ownership.stop)
+
+    def fixture(self, root):
+        fx = ProductionTests()
+        fx.broker_locks = self.broker_locks
+        ctl = fx.make(root)
+        self.addCleanup(fx.patch_policy.stop)
+        self.addCleanup(fx.patch_watchdog.stop)
+        return fx, ctl
+
+    def shape_running(self, fx, ctl, trading=True):
+        record = fx.admit(ctl)
+        record['admitted'] = True
+        FakeBroker.atomic(ctl.record, record)
+        fx.running = True
+        fx.trading = trading
+        return ctl.current()
+
+    def shape_completed(self, fx, ctl):
+        self.shape_running(fx, ctl)
+        self.assertEqual(ctl.prod_stop(), {'status': 'completed'})
+        return ctl.current()
+
+    def shape_preflight(self, fx, ctl):
+        record = fx.wedge_preflight(ctl)
+        fx.with_started_at(ctl, '0001-01-01T00:00:00Z')
+        return record
+
+    def shape_boundary(self, fx, ctl):
+        record = self.shape_preflight(fx, ctl)
+        record['admitted'] = True
+        FakeBroker.atomic(ctl.record, record)
+        return ctl.current()
+
+    def shape_admitted(self, fx, ctl):
+        record = fx.wedge_admitted(ctl)
+        fx.with_started_at(ctl, fx.started_at_during(record))
+        return record
+
+    def shape_crash(self, fx, ctl):
+        record = self.shape_admitted(fx, ctl)
+        fx.with_inspect_state(ctl, ExitCode=1)
+        return record
+
+    def shape_post_stop_intent(self, fx, ctl):
+        record = self.shape_admitted(fx, ctl)
+        FakeBroker.atomic(ctl.folder(record)/'stop-request.json',
+                          {'id': record['id'], 'source': 'post-stop'})
+        return record
+
+    def shape_failed(self, fx, ctl, stage, pending=None, faults=(), started='during'):
+        record = fx.admit(ctl)
+        record['admitted'] = True
+        record['status'] = 'failed_requires_review'
+        record['stage'] = stage
+        FakeBroker.atomic(ctl.record, record)
+        FakeBroker.atomic(ctl.folder(record)/'failure.json',
+                          {'id': record['id'], 'stage': stage, 'error': 'RuntimeError'})
+        if pending is not None:
+            FakeBroker.atomic(ctl.folder(record)/'mutation.json',
+                              {'id': record['id'], 'pending': pending})
+        for code in faults:
+            ctl.fault(record, code)
+        fx.with_started_at(ctl, '0001-01-01T00:00:00Z' if started == 'never'
+                           else fx.started_at_during(record))
+        return ctl.current()
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_state_matrix(self):
+        occ = ('OPERATION_COMPLETION_UNCONFIRMED', 'LATCHED_FAILURE')
+        rows = [
+            # (1) a healthy in_progress session, stopped by prod_stop
+            ('normal-stop', lambda fx, ctl: self.shape_running(fx, ctl), 'closes'),
+            # (2) an already completed session
+            ('completed', lambda fx, ctl: self.shape_completed(fx, ctl), 'closes'),
+            # (3) the R1 preflight wedge (PR #186/#187)
+            ('r1-preflight', lambda fx, ctl: self.shape_preflight(fx, ctl), 'closes'),
+            # (4) the R3 admitted monitoring failure (PR #189)
+            ('r3-monitoring', lambda fx, ctl: self.shape_admitted(fx, ctl), 'closes'),
+            # (5) F-2: stranded backup pending, worker never started
+            ('f2-pending-backup', lambda fx, ctl: self.shape_failed(
+                fx, ctl, 'backup', 'backup', occ, 'never'), 'closes'),
+            # (6) F-3: preflight failure after the admission flip
+            ('f3-boundary', lambda fx, ctl: self.shape_boundary(fx, ctl), 'closes'),
+            # (7) readiness failure: no faults at all, R3 closes it
+            ('readiness', lambda fx, ctl: self.shape_failed(
+                fx, ctl, 'worker-readiness'), 'closes'),
+            # (8) crash / non-zero exit: manual reconciliation, by design
+            ('crash-exit-1', lambda fx, ctl: self.shape_crash(fx, ctl), 'refuses'),
+            # (9) in_progress zombie: controller dead, worker still up
+            ('zombie', lambda fx, ctl: self.shape_running(fx, ctl, trading=False), 'closes'),
+            # (12) F-1 with the post-stop hook's intent written first
+            ('post-stop-intent', lambda fx, ctl: self.shape_post_stop_intent(fx, ctl), 'closes'),
+            # F-2 companions: the stage-name mapping row, a started
+            # operation row, and the two refusal rows (stage
+            # mismatch, and a backup whose container did start).
+            ('f2-unlatch', lambda fx, ctl: self.shape_failed(
+                fx, ctl, 'maintenance-release', 'unlatch', occ, 'never'), 'closes'),
+            ('f2-arm', lambda fx, ctl: self.shape_failed(
+                fx, ctl, 'arm', 'arm', occ, 'during'), 'closes'),
+            ('f2-mismatch', lambda fx, ctl: self.shape_failed(
+                fx, ctl, 'monitoring', 'backup', occ, 'during'), 'refuses'),
+            ('f2-backup-started', lambda fx, ctl: self.shape_failed(
+                fx, ctl, 'backup', 'backup', occ, 'during'), 'refuses'),
+        ]
+        for name, build, expected in rows:
+            with self.subTest(shape=name), tempfile.TemporaryDirectory() as root:
+                fx, ctl = self.fixture(root)
+                build(fx, ctl)
+                if expected == 'closes':
+                    self.assertEqual(ctl.prod_stop(), {'status': 'completed'})
+                    self.assertEqual(ctl.current()['status'], 'completed')
+                    self.assertEqual(ctl.prod_start(), {'status': 'accepted'})
+                else:
+                    with self.assertRaises(Exception): ctl.prod_stop()
+                    self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+                    with self.assertRaises(Exception): ctl.prod_start()
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_orphan_latch_row(self):
+        # (10) F-7: no record, only the failed.json latch.
+        with tempfile.TemporaryDirectory() as root:
+            fx, ctl = self.fixture(root)
+            FakeBroker.atomic(ctl.state/'failed.json',
+                              {'id': 'c'*32, 'status': 'manual_reconciliation_required'})
+            self.assertEqual(ctl.prod_stop(), {'status': 'not_started'})
+            self.assertFalse((ctl.state/'failed.json').exists())
+            self.assertTrue((ctl.state/('failed-orphan-'+'c'*32+'.json')).exists())
+            self.assertEqual(ctl.prod_start(), {'status': 'accepted'})
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_abort_inhibit_row(self):
+        # (11) F-8: a completed session behind an abort inhibit —
+        # prod_stop is unaffected, prod_start refuses, and
+        # prod_status surfaces the reason.
+        with tempfile.TemporaryDirectory() as root:
+            fx, ctl = self.fixture(root)
+            self.shape_completed(fx, ctl)
+            FakeBroker.atomic(ctl.state/'abort-inhibit.json',
+                              {'status': 'manual_reconciliation_required'})
+            self.assertTrue(ctl.prod_status()['requires_review'])
+            self.assertEqual(ctl.prod_stop(), {'status': 'completed'})
+            with self.assertRaises(Exception): ctl.prod_start()
 
 
 class ProgramReadTests(unittest.TestCase):

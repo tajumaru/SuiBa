@@ -312,3 +312,15 @@ PR #168 で本番切替時に検討するとしていた watchdog を先行実�
 ## 2026-11-11 prod-stop のクローズ対象を admission 後失敗にも広げる（R3）
 
 本番切替は完了し（seq 19）、初回本番ラン（2026-11-11 07:38 JST 開始）は同日午前に上流の HTTP 500 でハードストップした（429／500 の即時停止は既定どおりで、取引・台帳への影響はない）。レコードは admitted=True の failed_requires_review となり、復帰のための STOP-PROD は PROD_STOP_FAILED で閉じられなかった。原因は、通常の stop 経路が既に終了したコントローラを持つレコードを閉じる試行そのもので fault を積むこと：terminate 不能で `CONTROLLER_EXIT_UNCONFIRMED`、既存 fault への `LATCHED_FAILURE` 追加が起き、cleanup の完了条件（errors なし・fault なし）に到達できない。R1（preflight 前失敗）と同じ wedge が admission 後の層にもあった。修正は設計書 `docs/PROD_START_TOKEN_FIX_DESIGN_JA.md` の R3 とした：prod-stop の failed_requires_review 分岐に admission 後失敗の閉じ条件を追加し、failure.json の id 一致、コンテナの clean な終了（未稼働・ExitCode 0・非 OOM・StartedAt がこのセッションの開始以降）、stop_checks と同じ DB 検証の通過、未完了 mutation なし、コントローラの終了、fault が stop 機構由来の4コード {`LATCHED_FAILURE`, `CONTROLLER_EXIT_UNCONFIRMED`, `STOP_LOCK_OR_STATE_UNKNOWN`, `CLEANUP_LOCK_OR_STATE_UNKNOWN`} のみ、failed.json が当該レコードを指すこと、を全部満たす場合に限り R1 と同じ確定処理で閉じる（failure.json は証拠として残す）。1つでも欠ければ従来どおり手動切り分けに残る。安全停止条件・取引ロジック・検証系（PAPER）の挙動は不変。
+
+## 2026-11-11 ライフサイクル監査フォローアップ（R4：F-2／F-3／F-7／F-9／F-8＋状態行列テスト）
+
+本番ライフサイクルの総当たり監査（F-1〜F-9）の残件を、設計書 `docs/PROD_START_TOKEN_FIX_DESIGN_JA.md` の R4 としてまとめて直した。F-1 は R3 で閉鎖済み。F-5（クラッシュ／OOM に対する本番 reconcile op）は別途設計とし、本変更には含めない。いずれも fail-closed を維持し、疑わしい形状は従来どおり手動切り分けに残る。
+
+- F-3：R1 の preflight クローズ条件を admitted フラグから証拠側（failure.json の stage が preflight＋コンテナがこのセッションで起動していない）へ付け替えた。admission フラグの永続化と stage='backup' の書込みの間で死んだレコード（admitted=True のまま preflight）も、作業者が走っていないことが証明できれば閉じられる。旧条件で拒否を固定していたテスト1件は、対象形状そのものが F-3 であるため閉鎖側へ改めた（意図的な反転）。
+- F-2：guard された操作（backup／unlatch／worker-start／arm／paper-start）が 4xx 以外で死んで残した mutation.json の pending を、R3 のクローズ条件に限り許容した。条件は、pending の操作名が failure.json の stage と対応すること（対応表は GUARD_STAGE_OPERATIONS が持ち、食い違うのは maintenance-release ⇄ unlatch のみ）、その操作が現在効いていないことの証明（コンテナ未稼働、かつ backup と unlatch は作業者起動より前の段階なので「このセッションで起動していない」こと）、R3 の他の条件すべて。stage 不一致や反証できない pending は従来どおり拒否。この部分ケースに限り fault コード OPERATION_COMPLETION_UNCONFIRMED も許容集合に加えた（残留 pending の存在以上の情報を持たない派生コードとして扱う）。
+- F-7：レコード不在で production/state/failed.json だけが残る孤児ラッチを、prod_stop が failed-orphan-<id>.json へ改名して証拠保全し、not_started を返すようにした。読めないラッチはその場に残し、prod_start の拒否は続く（証拠を破棄しない）。
+- F-9：配置と停止が競合した際の deployment ロック取得失敗を、本番 cleanup が fault せず False を返すよう分けた。競合は失敗の証拠ではなく、ラッチを残さなければ配置完了後に同じ停止が通る。基底 Controller と検証系の挙動は不変。
+- F-8：prod_status の requires_review（レコードあり分岐）に production/abort-inhibit.json の存在を加えた。リポジトリ内の書き手が無い inhibit が prod_start を理由なく拒否し続ける状態を、状態表示から発見できるようにする最小変更。
+
+あわせて test_controller.py に状態行列テスト（ProductionMatrixTests）を常設した。監査行列の各形状について prod_stop の可否と後続の prod_start の可否を期待表で固定し、「閉じない」行も意図として記録する。以後、新しい現場形状が出たら形状テストの追加を修正の一部とする。安全停止条件・取引ロジック・DeepBook／Sui 通信経路は不変。
