@@ -110,6 +110,18 @@ export function createRequestHandler(ctx: WorkerContext) {
         return;
       }
       const data = await readFile(file);
+      // Vite fingerprints everything under /assets/ (the filename
+      // carries a content hash), so those responses can be cached
+      // forever: a new build produces new filenames. index.html, the
+      // root icons and version.json are not fingerprinted and keep
+      // the handler-wide no-store, so a deploy takes effect at once
+      // and the update check never reads a stale version file.
+      if (url.pathname.startsWith("/assets/")) {
+        res.setHeader(
+          "Cache-Control",
+          "public, max-age=31536000, immutable",
+        );
+      }
       res.writeHead(200, {
         "Content-Type":
           (
