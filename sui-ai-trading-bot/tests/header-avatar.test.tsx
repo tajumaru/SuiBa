@@ -79,13 +79,13 @@ describe("agent header avatar", () => {
     const normal = renderToStaticMarkup(
       <AgentHeaderAvatar pose="normal" hardMode />,
     );
-    expect(normal).toContain("agent-hard.jpg");
+    expect(normal).toContain("agent-hard.webp");
     expect(normal).toContain("ハードモード中");
     const laptop = renderToStaticMarkup(
       <AgentHeaderAvatar pose="laptop" hardMode />,
     );
-    expect(laptop).toContain("agent-hard-guitar.jpg");
-    expect(laptop).toContain("agent-hard-guitar-2.jpg");
+    expect(laptop).toContain("agent-hard-guitar.webp");
+    expect(laptop).toContain("agent-hard-guitar-2.webp");
     expect(laptop).toContain('class="agent-avatar-typing"');
     expect(laptop).toContain("ハードモード中");
     // The pointing poses wear hard portraits too (running time is
@@ -93,12 +93,12 @@ describe("agent header avatar", () => {
     const point = renderToStaticMarkup(
       <AgentHeaderAvatar pose="point" hardMode />,
     );
-    expect(point).toContain("agent-hard-point.jpg");
+    expect(point).toContain("agent-hard-point.webp");
     expect(point).not.toContain("ハードモード中");
     const smile = renderToStaticMarkup(
       <AgentHeaderAvatar pose="pointSmile" hardMode />,
     );
-    expect(smile).toContain("agent-hard-point-smile.jpg");
+    expect(smile).toContain("agent-hard-point-smile.webp");
     // Sleep keeps its own artwork even in hard mode.
     const sleep = renderToStaticMarkup(
       <AgentHeaderAvatar pose="sleep" hardMode />,

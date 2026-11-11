@@ -130,6 +130,8 @@ export function createRequestHandler(ctx: WorkerContext) {
               ".js": "text/javascript",
               ".css": "text/css",
               ".svg": "image/svg+xml",
+              ".webp": "image/webp",
+              ".png": "image/png",
             } as Record<string, string>
           )[extname(file)] ?? "application/octet-stream",
       });
