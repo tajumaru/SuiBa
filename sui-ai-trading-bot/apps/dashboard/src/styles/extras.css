@@ -127,6 +127,8 @@
   left: 50%;
   transform: translateX(-50%);
   width: 240px;
+  box-sizing: border-box;
+  max-width: calc(100vw - 16px);
   z-index: 60;
   background: #071018;
   border: 1px solid var(--pine);
@@ -823,31 +825,37 @@
   color: var(--faint);
 }
 
-/* Character picker in the rename panel: two thumbnail choices
-   (white character / ぺんちゃん); the current character's button
-   wears the mint ring. Picking swaps every artwork at once and
-   is saved device-locally (see agentCharacter.ts). */
+/* Character picker in the rename panel: one vertical tile per
+   character — thumbnail on top, name below on a single line. The
+   row wraps instead of squeezing, so a name never collapses into
+   one kana per line on narrow screens (the old horizontal row did
+   that once a third character joined). The current character's
+   tile wears the mint ring. Picking swaps every artwork at once
+   and is saved device-locally (see agentCharacter.ts). */
 .agent-character-picker {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
 }
 .agent-character-picker button {
-  flex: 1;
+  flex: 1 1 60px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: var(--btn-bg);
   border: 1px solid var(--pine);
   border-radius: 4px;
   color: #d7e3f2;
   font-size: 12px;
-  padding: 4px 8px 4px 4px;
+  white-space: nowrap;
+  padding: 8px 4px 6px;
   cursor: pointer;
 }
 .agent-character-picker button img {
-  width: 36px;
-  height: 36px;
+  width: 56px;
+  height: 56px;
   object-fit: cover;
   border-radius: 3px;
   display: block;
