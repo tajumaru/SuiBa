@@ -486,7 +486,9 @@ function App() {
               </p>
             )}
             {!data && activeTab === "運用検証" && (
-              <OperationsFeedView api={api} feed={operations} />
+              <Suspense fallback={tabFallback}>
+                <OperationsFeedView api={api} feed={operations} />
+              </Suspense>
             )}
             {data && (
               <>
