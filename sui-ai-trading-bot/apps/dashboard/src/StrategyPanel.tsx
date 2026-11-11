@@ -23,8 +23,34 @@ import {
 type State = BotSnapshot;
 
 const money = (v: number | null | undefined) => number(v, 4);
-const precise = (v: string | null | undefined) =>
-  v == null ? "不明" : `${number(v)} USDC`;
+/**
+ * Four-decimal rendering for the compact summary block below: prices
+ * move on a 0.0001 tick, so the extra digits the worker's decimal
+ * strings carry are noise here (the full panel keeps full precision).
+ * Rounds digit by digit so long decimal strings stay exact, matching
+ * the concern behind presentation.number's string path.
+ */
+const fixed4 = (value: string): string => {
+  if (!/^-?\d+(\.\d+)?$/.test(value)) return number(value, 4);
+  const negative = value.startsWith("-"),
+    body = negative ? value.slice(1) : value,
+    [whole, fraction = ""] = body.split(".");
+  let digits = whole + (fraction + "0000").slice(0, 4);
+  if ((fraction[4] ?? "0") >= "5") {
+    const chars = digits.split("");
+    let i = chars.length - 1;
+    while (i >= 0 && chars[i] === "9") chars[i--] = "0";
+    if (i < 0) chars.unshift("1");
+    else chars[i] = `${Number(chars[i]) + 1}`;
+    digits = chars.join("");
+  }
+  const split = digits.length - 4;
+  return `${negative ? "-" : ""}${digits
+    .slice(0, split)
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${digits.slice(split)}`;
+};
+const precise4 = (v: string | null | undefined) =>
+  v == null ? "不明" : `${fixed4(v)} USDC`;
 const signed = (v: number, digits = 4) =>
   `${v > 0 ? "+" : ""}${number(v, digits)}`;
 const signedPct = (ratio: number) => `${ratio > 0 ? "+" : ""}${percent(ratio)}`;
@@ -417,28 +443,28 @@ function ProfitGuardStatus({ data }: { data: State }) {
       {r.scope === "BUY_SCENARIO" && r.acquisitionUnitPrice != null && (
         <div className="strategy-pg-row">
           <span>費用込み想定取得単価</span>
-          <b>{number(r.acquisitionUnitPrice)} USDC / 基軸通貨</b>
+          <b>{fixed4(r.acquisitionUnitPrice)} USDC / 基軸通貨</b>
         </div>
       )}
       <div className="strategy-pg-row">
         <span>モデル損益分岐価格</span>
         <b>
           {r.breakEvenPrice
-            ? `${number(r.breakEvenPrice)} USDC / 基軸通貨`
+            ? `${fixed4(r.breakEvenPrice)} USDC / 基軸通貨`
             : "不明"}
         </b>
       </div>
       {r.scope === "BUY_SCENARIO" && r.targetPrice != null && (
         <div className="strategy-pg-row">
           <span>想定利確価格</span>
-          <b>{number(r.targetPrice)} USDC</b>
+          <b>{fixed4(r.targetPrice)} USDC</b>
         </div>
       )}
       {r.scope !== "BUY_SCENARIO" && (
         <div className="strategy-pg-row">
           <span>現在の保有分の取得原価</span>
           <b>
-            {precise(
+            {precise4(
               data.acquisitionCostUsdc ?? String(data.portfolio.costBasis),
             )}
           </b>
@@ -450,7 +476,7 @@ function ProfitGuardStatus({ data }: { data: State }) {
             ? "購入前の想定利確時純利益"
             : "最新売却見積もりの予想純利益"}
         </span>
-        <b>{precise(r.netProfitUsdc)}</b>
+        <b>{precise4(r.netProfitUsdc)}</b>
       </div>
       <div className="strategy-pg-row">
         <span>判定</span>

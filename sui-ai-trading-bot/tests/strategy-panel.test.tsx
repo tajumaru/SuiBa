@@ -5,6 +5,7 @@ import {
   defaults,
   type TradingDecision,
 } from "../packages/shared/src/index.ts";
+import type { ProfitReport } from "../packages/profit-guard/src/index.ts";
 import type { BotEngine } from "../apps/worker/src/engine.ts";
 import type { DecisionTelemetry } from "../apps/worker/src/operations.ts";
 import { StrategyPanel } from "../apps/dashboard/src/StrategyPanel.tsx";
@@ -168,6 +169,94 @@ describe("strategy panel: diagram-first layout", () => {
     const html = render(data(waitDecision), telemetry({ volumeChange: 4.5 }));
     expect(html).toContain("✗ 異常（上限超過・見送り対象）");
     expect(html).toContain('data-state="exceeded"');
+  });
+
+  // The compact profit-guard summary rounds the worker's decimal
+  // strings to four places (the pool tick); the full panel keeps the
+  // precise figures. Values mirror a real report shape.
+  const buyReport: ProfitReport = {
+    allowed: false,
+    action: "WAIT",
+    reason: "MIN_PROFIT_NOT_MET",
+    scope: "BUY_SCENARIO",
+    purpose: null,
+    asOf: Date.now(),
+    validUntil: null,
+    quantityAtomic: "1000000000",
+    allocatedCostUsdc: null,
+    purchaseInputUsdc: "5",
+    acquisitionUnitPrice: "0.840619932577",
+    netProfitUsdc: "-0.076364",
+    netProfitPct: null,
+    breakEvenPrice: "0.855851103340",
+    roundTripCostUsdc: "0.030100",
+    targetPrice: "0.843048850000",
+    targetProfitPct: "0.5",
+    costs: null,
+    buyCosts: null,
+    minProfitUsdc: "0.01",
+    minProfitPct: "0.0015",
+    quoteId: null,
+    source: "PAPER_MODEL",
+  };
+  const withGuard = (report: ProfitReport | null, cost?: string | null) =>
+    ({
+      ...data(waitDecision),
+      profitGuard: report,
+      ...(cost !== undefined ? { acquisitionCostUsdc: cost } : {}),
+    }) as State;
+  // The summary block only: the full panel in the disclosure below it
+  // deliberately keeps full precision, so absence checks scope here.
+  const summaryOf = (html: string) =>
+    html.slice(
+      html.indexOf("strategy-pg-try"),
+      html.indexOf("strategy-pg-details"),
+    );
+
+  it("rounds the profit-guard summary prices and profit to four decimals", () => {
+    const html = render(withGuard(buyReport), telemetry());
+    expect(html).toContain("費用込み想定取得単価");
+    expect(html).toContain("0.8406 USDC / 基軸通貨");
+    // 0.855851… rounds up at the fourth place.
+    expect(html).toContain("0.8559 USDC / 基軸通貨");
+    // Trailing zeros are kept, matching toFixed(4) elsewhere.
+    expect(html).toContain("0.8430 USDC");
+    expect(html).toContain("-0.0764 USDC");
+    expect(html).toContain("利益不足・見送り");
+    const summary = summaryOf(html);
+    expect(summary).not.toContain("0.840619932577");
+    expect(summary).not.toContain("0.855851103340");
+    expect(summary).not.toContain("0.076364");
+  });
+
+  it("keeps the 不明 rendering when the summary values are null", () => {
+    const html = render(
+      withGuard({ ...buyReport, breakEvenPrice: null, netProfitUsdc: null }),
+      telemetry(),
+    );
+    expect(html).toContain("モデル損益分岐価格");
+    expect(html).toContain("不明");
+    expect(html).toContain("計算不能");
+    expect(html).not.toContain("-0.0764");
+  });
+
+  it("rounds the held-position cost basis in the sell-quote summary", () => {
+    const html = render(
+      withGuard(
+        {
+          ...buyReport,
+          scope: "SELL_QUOTE",
+          allowed: true,
+          netProfitUsdc: "1.23456",
+        },
+        "12.3456789",
+      ),
+      telemetry(),
+    );
+    expect(html).toContain("現在の保有分の取得原価");
+    expect(html).toContain("12.3457 USDC");
+    expect(html).toContain("1.2346 USDC");
+    expect(summaryOf(html)).not.toContain("12.3456789");
   });
 
   it("falls back to a level view until history accumulates, then draws the series", () => {
