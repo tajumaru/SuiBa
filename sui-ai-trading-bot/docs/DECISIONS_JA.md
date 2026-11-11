@@ -324,3 +324,9 @@ PR #168 で本番切替時に検討するとしていた watchdog を先行実�
 - F-8：prod_status の requires_review（レコードあり分岐）に production/abort-inhibit.json の存在を加えた。リポジトリ内の書き手が無い inhibit が prod_start を理由なく拒否し続ける状態を、状態表示から発見できるようにする最小変更。
 
 あわせて test_controller.py に状態行列テスト（ProductionMatrixTests）を常設した。監査行列の各形状について prod_stop の可否と後続の prod_start の可否を期待表で固定し、「閉じない」行も意図として記録する。以後、新しい現場形状が出たら形状テストの追加を修正の一部とする。安全停止条件・取引ロジック・DeepBook／Sui 通信経路は不変。
+
+## 2026-11-11 本番の再起動で前任セッションの stale runtime error を解除する（F-10）
+
+本番初回ランが上流 HTTP 500 でハードストップした後、同日夜の START-PROD が2回とも worker-readiness で失敗した（run 5a8cd997／71ef9ce2）。readiness は runtimeClear・suiHealthy・suiFresh が制限時間（60秒）いっぱい false のままで、failure.json に stale_reset の記録が無い＝scoped reset が一度も送られていなかった。原因は、本番コントローラ（ProductionController）が retry_admitted を決して立てないこと：検証（paper）系は failed_requires_review＋retry 承認済みの前任に対して起動時に前任由来の runtime error を1回だけ解除する（maybe_reset_stale）が、本番の admit_session にはその分岐が無く、R3 でレコードを閉じても worker DB にラッチされたエラーが残り続け、以後どの開始も readiness を通らなかった。Sui 本体・VPS からの到達性・時計は同夜に正常を確認済みで、初回開始が通ったのは本番 DB が新規でラッチが無かったため。
+
+修正：本番の admit_session で、既存の検査を通った前任レコードについて、そのフォルダの failure.json が（trusted read で復号でき）当該レコード自身の id を指す場合に限り、その開始を retry として admit する。R3 のクローズ（承認ゲート付き STOP-PROD）が人のレビューに相当し、paper の retry permit と同じ役割を果たす。証拠が無い・読めない・別 id を指す場合は従来どおり fresh start とし、検出自体は例外を投げない（fail-closed）。実際の解除は共有の wait_ready／maybe_reset_stale／capture_reset_scope が担い、worker 側 resetScope の適格判定が安全弁として残る（emergency は解除されず、RESET_EMERGENCY_ACTIVE 等の拒否は従来どおり開始を失敗させ failure.json に reset_refusal として記録される）。安全停止条件・取引ロジック・paper 系と prod_stop（R3）の挙動は不変。監査への追加として F-10 と番号する。
