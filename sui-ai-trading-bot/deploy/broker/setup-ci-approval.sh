@@ -20,7 +20,7 @@ set -Eeuo pipefail
 umask 077
 
 BROKER_URL='https://raw.githubusercontent.com/tajumaru/SuiBa/main/sui-ai-trading-bot/deploy/broker/broker.py'
-BROKER_SHA256='ee6e2f49435edf83ca29c26836f239ddcfa3634a4b4ef047e4ba2dec846e2428'
+BROKER_SHA256='b95201b97b733c12d0c4d21c14a192c02a024379ad467217c250f93b1de2f3b5'
 BROKER_TARGET='/usr/local/libexec/suiba-deploy-broker.py'
 # The policy compose is the repository's docker/compose.vps.yaml, or
 # docker/compose.vps-prod.yaml when the "prod" variant is selected.

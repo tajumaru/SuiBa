@@ -9,6 +9,7 @@ import stat
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
 import time
 import unittest
 import unittest.mock
@@ -247,13 +248,94 @@ class BrokerTests(unittest.TestCase):
             self.assertFalse(self.docker.calls)
 
     def test_execute_records_lock_os_error_with_errno_and_stage(self):
-        with patch.object(b.fcntl, 'flock', side_effect=BlockingIOError(11, 'Resource temporarily unavailable')):
+        # The contention never clears, so acquisition must still
+        # fail — with a shortened budget so the test does not wait
+        # out the production 60s. The record is unchanged.
+        with patch.object(b, 'STATE_LOCK_WAIT_SECONDS', 0.5), \
+                patch.object(b.fcntl, 'flock', side_effect=BlockingIOError(11, 'Resource temporarily unavailable')):
             with self.assertRaises(BlockingIOError) as caught:
                 self.broker.execute(self.req, 1001)
         self.assertEqual(b.public_failure_code(caught.exception), 'OS_ERROR')
         record = json.loads((self.state/'last-failure.json').read_text())
         self.assertEqual(record['code'], 'OS_ERROR')
         self.assertEqual(record['detail'], {'errno': 11, 'stage': 'lock'})
+
+    def test_state_lock_acquisition_waits_for_a_brief_holder(self):
+        with tempfile.TemporaryDirectory(dir=self.root) as tmp:
+            path = Path(tmp)/'lock'
+            holder = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+            b.fcntl.flock(holder, b.fcntl.LOCK_EX | b.fcntl.LOCK_NB)
+
+            def release():
+                time.sleep(0.6)
+                os.close(holder)
+
+            releaser = threading.Thread(target=release)
+            contender = os.open(path, os.O_RDWR)
+            try:
+                releaser.start()
+                started = time.monotonic()
+                b.acquire_state_lock(contender)
+                self.assertGreaterEqual(time.monotonic() - started, 0.4)
+                # The lock is ours now: a third fd cannot take it.
+                third = os.open(path, os.O_RDWR)
+                try:
+                    with self.assertRaises(BlockingIOError):
+                        b.fcntl.flock(third, b.fcntl.LOCK_EX | b.fcntl.LOCK_NB)
+                finally:
+                    os.close(third)
+            finally:
+                releaser.join()
+                os.close(contender)
+
+    def test_state_lock_acquisition_gives_up_after_its_budget(self):
+        with tempfile.TemporaryDirectory(dir=self.root) as tmp:
+            path = Path(tmp)/'lock'
+            holder = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+            b.fcntl.flock(holder, b.fcntl.LOCK_EX | b.fcntl.LOCK_NB)
+            contender = os.open(path, os.O_RDWR)
+            try:
+                started = time.monotonic()
+                with self.assertRaises(BlockingIOError) as caught:
+                    b.acquire_state_lock(contender, budget=0.5)
+                elapsed = time.monotonic() - started
+                self.assertEqual(caught.exception.errno, 11)
+                self.assertGreaterEqual(elapsed, 0.4)
+                self.assertLess(elapsed, 10)
+            finally:
+                os.close(contender)
+                os.close(holder)
+
+    def test_execute_waits_out_a_brief_state_lock_holder(self):
+        with tempfile.TemporaryDirectory(dir=self.root) as tmp, patch.object(b, 'PAPER_STATE', Path(tmp)):
+            paper = Path(tmp)
+            permit = self.paper_fixture(paper)
+            for name in ('stop', 'mutation'):
+                (paper/(name+'.lock')).touch(mode=0o600)
+            # Fixture files inherit this environment's group-writable
+            # umask; the broker's trusted reads refuse those modes.
+            self.strict_policy_modes()
+            for entry in paper.rglob('*'):
+                entry.chmod(0o700 if entry.is_dir() else 0o600)
+            (self.state/'paper-check.json').chmod(0o600)
+            permit.chmod(0o600)
+            holder = os.open(self.state/'lock', os.O_CREAT | os.O_RDWR, 0o600)
+            b.fcntl.flock(holder, b.fcntl.LOCK_EX | b.fcntl.LOCK_NB)
+
+            def release():
+                time.sleep(0.75)
+                os.close(holder)
+
+            releaser = threading.Thread(target=release)
+            releaser.start()
+            try:
+                started = time.monotonic()
+                result = self.broker.execute(self.req, 1001)
+                self.assertGreaterEqual(time.monotonic() - started, 0.5)
+            finally:
+                releaser.join()
+            self.assertEqual(result['status'], 'prepared_stopped')
+            self.assertTrue(permit.with_suffix('.consumed.json').exists())
 
     def test_execute_records_directories_os_error_with_errno_and_stage(self):
         real_directory = b.directory
