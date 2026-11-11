@@ -20,6 +20,38 @@
   font-size: 13px;
   color: #c8d6e2;
 }
+/* Today's buy budget as a headline strip under the asset
+   cards: the remaining full-size buy count at summary scale,
+   the rest at the tab's 13px meta size. */
+.overview-tab .budget-strip {
+  border: 1px solid var(--steel);
+  border-left: 4px solid var(--mint);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.budget-strip-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0;
+}
+.budget-strip-label {
+  font-size: 13px;
+  color: var(--dim);
+}
+.budget-strip-count {
+  font-size: 26px;
+  line-height: 1;
+  color: var(--mint);
+  font-variant-numeric: tabular-nums;
+}
+.budget-strip-unit {
+  font-size: 13px;
+}
+.budget-strip-meta {
+  font-size: 13px;
+}
 .overview-details {
   margin-bottom: 12px;
 }

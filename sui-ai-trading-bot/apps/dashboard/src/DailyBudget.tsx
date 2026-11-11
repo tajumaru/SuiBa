@@ -108,3 +108,26 @@ export function DailyBudgetCard({ data }: { data: State }) {
     </div>
   );
 }
+
+/**
+ * The compact budget strip on the overview tab, directly under
+ * the asset cards: the same 今日の残り view model reduced to its
+ * headline — how many more full-size buys fit today, the USDC
+ * left, and what would block the next buy — so the number is
+ * visible without opening the strategy tab. Display only.
+ */
+export function DailyBudgetStrip({ data }: { data: State }) {
+  const v = dailyBudgetView(data);
+  return (
+    <section className="budget-strip" aria-label="今日の購入残り">
+      <p className="budget-strip-line">
+        <span className="budget-strip-label">今日の購入 あと</span>
+        <strong className="budget-strip-count">{v.moreBuys ?? "—"}</strong>
+        <span className="budget-strip-unit">回</span>
+        <span className="budget-strip-meta">
+          残り {number(v.remainingUsdc, 4)} USDC ・ {v.verdict}
+        </span>
+      </p>
+    </section>
+  );
+}
