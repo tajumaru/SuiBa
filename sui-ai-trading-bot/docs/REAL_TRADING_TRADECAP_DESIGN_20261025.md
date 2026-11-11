@@ -73,7 +73,7 @@
 
 | 対象 | 現状 | REAL 化での扱い |
 |---|---|---|
-| 注文執行 | `apps/worker/src/engine.ts` の `BotEngine` が `private paper = new PaperTrading()` を**直に保持**し、約定計算 `this.paper.fill(...)`（engine.ts:559）を同期的に呼ぶ。`TradingExecutor` インターフェースは `packages/paper-trading/src/index.ts` に定義（`mode: "PAPER"` リテラル、同期・純関数） | REAL は非同期・オンチェーン状態依存のため、この interface には乗らない。§5.1 の執行アダプタ抽象を新設し、PAPER は既存経路をそのままアダプタ内に包む |
+| 注文執行 | `apps/worker/src/engine.ts` の `BotEngine` が `private paper = new PaperTrading()` を**直に保持**し、約定計算 `this.paper.fill(...)`（`executeFill` 内、engine.ts:748）を同期的に呼ぶ。置換範囲は最終ゲートを含む `executeFill` 全体（engine.ts:623〜806、確定 `db.commitFill` は 770 行）とする。`TradingExecutor` インターフェースは `packages/paper-trading/src/index.ts` に定義（`mode: "PAPER"` リテラル、同期・純関数） | REAL は非同期・オンチェーン状態依存のため、この interface には乗らない。§5.1 の執行アダプタ抽象を新設し、PAPER は既存経路をそのままアダプタ内に包む |
 | 候補・監査 | 執行前に `db.putCandidate(audit)` で候補（ProfitGuard 評価・リスク評価）を記録する仕組みが既にある（engine.ts:281〜） | REAL でも同一の候補記録を前段に使う。執行段だけが変わる |
 | 安全ゲート | サイクル冒頭で `monitor.ordersAllowed()`／`runtime.running`／`runtime.emergency`／`runtime.error` を検査し `SAFETY_GATE` で打ち切る（engine.ts:255〜266） | REAL ではサイクル冒頭に加え、**署名前の最終チェック**としても同じ条件を再検査する（§7.2） |
 | クォート | `packages/dex-router/src/index.ts` の `CetusRouter`（`DexRouter`）が PAPER の価格付けに使われる。市場データ読み取りは `packages/market-data/src/deepbook.ts` の `DeepBookMarketData`（Indexer の orderbook 等） | REAL の執行価格・スリッページ保護は DeepBook プール自身の状態（板・mid・`getQuoteQuantityOut` 相当）から取る。Cetus クォートは PAPER 専用のまま |
@@ -128,7 +128,7 @@ BalanceManager（資金：田嶋） ── Pool SUI_USDC
 
 1. ウォレット接続（dapp-kit の ConnectButton 相当）。
 2. BalanceManager 作成：`createAndShareBalanceManager` をオーナー署名で実行し、生成された BM オブジェクト ID を記録する。
-3. 入金：取引資金（USDC、必要なら SUI と DEEP）を BM へ `deposit`（オーナーのみ可能）。
+3. 入金：取引資金（USDC、必要なら SUI）と手数料用 DEEP を BM へ `deposit`（オーナーのみ可能）。DEEP は手数料の DEEP 払い（§2.3、2026-11-10 決定）の原資であり、任意の入金ではない。
 4. TradeCap 発行と Bot への移転：`mint_trade_cap` で Cap を発行し、Bot アドレスへ移転する。**2026-11-10 に SDK ソースで確認し、同一 PTB 内で発行＋`transferObjects` まで完結させる（1 tx）と決定した**（§11 #5）。SDK ヘルパー `mintTradeCap` は Transaction を受けて move call を追加し Cap のハンドルを返す tx ビルダーであり、同一 tx 内で移転まで組める。
 5. Worker 側に BM ID と TradeCap ID を登録（§5.3 の REAL 設定）。Worker は起動時にオンチェーンで次を検証し、1 つでも崩れていたら REAL を有効化しない（フェイルクローズ）：
 - BM の `owner` が登録済みオーナーアドレスと一致する
@@ -315,7 +315,7 @@ botAddress: SuiAddress,
 poolKey: z.enum(["SUI_DBUSDC", "SUI_USDC"]), // network と整合させる
 maxOrderUsdc: Decimal上限つき, // REAL 専用・1回の上限（値は要判断）
 dailyRealLimitUsdc: Decimal上限つき, // REAL 専用・1日の上限（値は要判断）
-payWithDeep: z.boolean(), // 手数料の支払い資産（§2.3、2026-11-10 に DEEP 払いと決定。既定 true）
+payWithDeep: z.literal(true), // 手数料は DEEP 払い固定（§2.3、2026-11-10 決定）。Phase 1 プロファイルでは必須であり、運用者が切り替える項目ではない
 minBotGasSui: Decimal, // ガス不足とみなす閾値（値は要判断）
 }).strict()
 ```
@@ -327,14 +327,14 @@ minBotGasSui: Decimal, // ガス不足とみなす閾値（値は要判断）
 ### 5.4 コスト計算（ProfitGuard 連携）
 
 - REAL の ProfitGuard は、現行 PAPER の想定コスト（`feeRate`、`gasUsdc` の固定値）ではなく：
-- プール手数料：`poolTradeParams` の実レート × `payWithDeep` の別（入力資産払いは +25%）
+- プール手数料：`poolTradeParams` の実レート（DEEP 払い前提のため、入力資産払いの +25% は適用しない）
 - ガス：直近の実績ガス（SUI 建て）× SUI/USDC レート
 で見積もる。見積もり不能な場合は候補を棄却する（フェイルクローズ）。
 - 戦略・ProfitGuard の判定ロジック自体は PAPER と共通のものをそのまま使う。
 
 #### 5.4.1 手数料レートの取得とキャッシュ
 
-- レート源はプールの `poolTradeParams`（takerFee／makerFee／stakeRequired、1e9 分の1単位で返る）。§5.5 の SDK クライアント経由で devInspect により読む。
+- レート源はプールの `poolTradeParams`（takerFee／makerFee／stakeRequired）。単位は2層に分けて扱うこと：オンチェーンの生の整数は 1e9 スケールだが、固定 SDK（@mysten/deepbook-v3 2.8.0）の query は返却前に taker/maker を `FLOAT_SCALAR`、stake 系を `DEEP_SCALAR` で割り済みであり、**SDK の戻り値を再び 1e9 で割ってはならない**（二重割りは手数料を大幅に過小評価する）。受入例：taker 10 bps のとき SDK の戻り値は `0.001` で、想定元本 5 quote なら片道手数料は 0.005 quote 相当になる。§5.5 の SDK クライアント経由で devInspect により読む。
 - 読み取りタイミング：REAL 有効時の Worker 起動時、エポック境界（既存の chainInfo 取得でエポック変化を検知したとき）、読み取り失敗時の再試行。
 - 有効性：手数料パラメータはエポック内では不変（ガバナンス変更は次エポックに反映される）ため、キャッシュは「読み取ったエポックの中でのみ有効」とする。エポックが進んで再読み取りに失敗した場合は見積もり不能として扱う（§5.4.5）。
 - キャッシュの形：{ takerFee, makerFee, stakeRequired, epoch, readAt } を runtime 状態に保持し、運用表示に出せるようにする。値は Phase 1 の実測較正の対象でもある。
@@ -357,7 +357,7 @@ minBotGasSui: Decimal, // ガス不足とみなす閾値（値は要判断）
 
 | ProfitGuard 入力 | PAPER | REAL |
 |---|---|---|
-| additionalFeeUsdc | 想定元本 × feeRate（固定 0.003） | 想定元本 × プール実 taker レート（payWithDeep=true のため ×1.0、false の場合のみ ×1.25） |
+| additionalFeeUsdc | 想定元本 × feeRate（固定 0.003） | 想定元本 × プール実 taker レート（DEEP 払い固定のため ×1.0） |
 | gasUsdc | 固定 0.03 | 直近実績の中央値（§5.4.3） |
 | null（見積もり不能） | 候補を棄却 | 同じ（§5.4.5） |
 
