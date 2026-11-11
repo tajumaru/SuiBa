@@ -16,6 +16,7 @@ import {
   type Mode,
 } from "./settingsEditor.ts";
 import { number, errorCode, reason } from "./presentation.ts";
+import { DailyBudgetCard } from "./DailyBudget.tsx";
 import { startRejectionReason } from "./operationLabels.ts";
 import { OperationIcon } from "./operationIcons.tsx";
 import { stopSettingAdvice } from "./stopSettingAdvice.ts";
@@ -32,7 +33,7 @@ export const fields: Field[] = [
     key: "maxOrder",
     label: "1回の最大取引額",
     unit: "USDC",
-    help: "1注文で使える金額の上限。最大5 USDC。",
+    help: "1注文で使える金額の上限。最大10 USDC。",
   },
   {
     key: "dailyBuyLimit",
@@ -384,7 +385,13 @@ export function useSettingsEditor(
   };
 }
 export type SettingsEditor = ReturnType<typeof useSettingsEditor>;
-export function SettingsForm({ editor }: { editor: SettingsEditor }) {
+export function SettingsForm({
+  editor,
+  data,
+}: {
+  editor: SettingsEditor;
+  data: State;
+}) {
   const {
     saved,
     draft,
@@ -497,6 +504,7 @@ export function SettingsForm({ editor }: { editor: SettingsEditor }) {
           {error}
         </p>
       )}
+      <DailyBudgetCard data={data} />
       <div className="settings-saved" aria-label="保存済みの設定">
         <h3>保存済みの設定</h3>
         <p>
@@ -785,7 +793,7 @@ export function SettingsPage({
   const editor = useSettingsEditor(data, api, onSaved);
   return (
     <>
-      <SettingsForm editor={editor} />
+      <SettingsForm editor={editor} data={data} />
       <PaperOperationControls data={data} editor={editor} control={control} />
     </>
   );

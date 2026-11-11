@@ -346,7 +346,7 @@ export interface ChainInfo {
 }
 export const settingsSchema = z
   .object({
-    maxOrder: z.number().positive().max(5),
+    maxOrder: z.number().positive().max(10),
     dailyBuyLimit: z.number().positive().max(20),
     dailyLossPct: z.number().positive().max(0.01),
     maxSlippage: z.number().positive().max(0.003),

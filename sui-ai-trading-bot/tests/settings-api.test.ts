@@ -211,7 +211,7 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
     expect(state.settings).toEqual(safe);
     expect(state.runtime.running).toBe(false);
     expect(state.trades).toHaveLength(1);
-    expect((await api("settings", { ...safe, maxOrder: 6 })).status).toBe(400);
+    expect((await api("settings", { ...safe, maxOrder: 11 })).status).toBe(400);
     expect((await api("state")).value.settings).toEqual(safe);
     expect((await api("control", { command: "start" })).status).toBe(409);
     expect((await api("control", { command: "stop" })).value.running).toBe(

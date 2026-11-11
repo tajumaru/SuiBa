@@ -193,6 +193,13 @@
   margin: 18px 0;
   min-width: 0;
 }
+.daily-budget {
+  padding: 16px;
+  border: 1px solid var(--steel);
+  border-radius: 8px;
+  margin: 18px 0;
+  min-width: 0;
+}
 .settings-diff {
   padding: 0;
   margin: 12px 0;
@@ -401,7 +408,8 @@
     width: 100%;
   }
   .settings-review,
-  .settings-saved {
+  .settings-saved,
+  .daily-budget {
     padding: 12px;
   }
   .settings-diff li {
