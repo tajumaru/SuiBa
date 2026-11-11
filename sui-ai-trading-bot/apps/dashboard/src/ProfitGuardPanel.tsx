@@ -40,7 +40,7 @@ export function ProfitGuardSummary({ data }: { data: State }) {
   const r = data.profitGuard;
   return (
     <section aria-label="利益保護の要約">
-      <p>
+      <p className="panel-meta">
         利益保護：{data.settings.profitGuardEnabled ? "有効" : "無効"}
         {r
           ? ` · 直近の判定：${profitGuardReasonText[r.reason] ?? "利益判定の安全性を確認できません"}`
@@ -68,7 +68,7 @@ export function ProfitGuardPanel({ data }: { data: State }) {
       <div className="cards">
         <div>
           <small>現在の保有分の取得原価</small>
-          <p>
+          <p className="panel-meta">
             {precise(
               data.acquisitionCostUsdc ?? String(data.portfolio.costBasis),
             )}
@@ -76,7 +76,7 @@ export function ProfitGuardPanel({ data }: { data: State }) {
         </div>
         <div>
           <small>平均取得単価 / 現在価格</small>
-          <p>
+          <p className="panel-meta">
             {money(
               data.portfolio.sui > 0
                 ? data.portfolio.costBasis / data.portfolio.sui
@@ -85,7 +85,7 @@ export function ProfitGuardPanel({ data }: { data: State }) {
             / {money(data.price)} USDC
           </p>
           <small>見積もり対象数量</small>
-          <p>
+          <p className="panel-meta">
             {r?.quantityAtomic
               ? `${number(Number(r.quantityAtomic) / 1e9, 9)} 基軸通貨`
               : "—"}
@@ -93,11 +93,11 @@ export function ProfitGuardPanel({ data }: { data: State }) {
         </div>
         <div>
           <small>対象分の取得原価（按分）</small>
-          <p>{precise(r?.allocatedCostUsdc)}</p>
+          <p className="panel-meta">{precise(r?.allocatedCostUsdc)}</p>
         </div>
         <div>
           <small>モデル損益分岐価格</small>
-          <p>
+          <p className="panel-meta">
             {r?.breakEvenPrice
               ? `${number(r.breakEvenPrice)} USDC / 基軸通貨`
               : "不明"}
@@ -106,13 +106,13 @@ export function ProfitGuardPanel({ data }: { data: State }) {
       </div>
       {r ? (
         <>
-          <p>
+          <p className="panel-meta">
             {r.scope === "BUY_SCENARIO"
               ? "購入前の想定利確時純利益"
               : "最新売却見積もりの予想純利益"}
             ：<strong>{precise(r.netProfitUsdc)}</strong>
           </p>
-          <p>
+          <p className="panel-meta">
             利益率：
             {r.netProfitPct == null ? "不明" : percent(r.netProfitPct)} ／
             判定：
@@ -130,7 +130,7 @@ export function ProfitGuardPanel({ data }: { data: State }) {
               "利益判定の安全性を確認できません"}
             <small>コード：{r.reason}</small>
           </p>
-          <p>
+          <p className="panel-meta">
             <small>
               利益条件の通過は、ボットの開始・リスク制限の許可・実約定を意味しません。
             </small>
@@ -138,15 +138,15 @@ export function ProfitGuardPanel({ data }: { data: State }) {
           <div className="cards">
             <div>
               <small>売却追加手数料</small>
-              <p>{precise(r.costs?.additionalFeeUsdc)}</p>
+              <p className="panel-meta">{precise(r.costs?.additionalFeeUsdc)}</p>
             </div>
             <div>
               <small>売却ガス相当額</small>
-              <p>{precise(r.costs?.gasUsdc)}</p>
+              <p className="panel-meta">{precise(r.costs?.gasUsdc)}</p>
             </div>
             <div>
               <small>DEX手数料（見積もりに含む）</small>
-              <p>
+              <p className="panel-meta">
                 {r.costs?.dexFeeUsdc == null
                   ? "内訳不明・二重加算なし"
                   : precise(r.costs.dexFeeUsdc)}
@@ -154,13 +154,13 @@ export function ProfitGuardPanel({ data }: { data: State }) {
             </div>
             <div>
               <small>最低利益額 / 最低利益率</small>
-              <p>
+              <p className="panel-meta">
                 {number(r.minProfitUsdc)} USDC / {percent(r.minProfitPct)}
               </p>
             </div>
           </div>
           {r.scope === "BUY_SCENARIO" && (
-            <p>
+            <p className="panel-meta">
               購入予定：{precise(r.purchaseInputUsdc)} ／ 費用込み想定取得単価：
               {number(r.acquisitionUnitPrice)} USDC / 基軸通貨 ／
               購入追加手数料：
@@ -182,20 +182,20 @@ export function ProfitGuardPanel({ data }: { data: State }) {
           </small>
         </>
       ) : (
-        <p>
+        <p className="panel-meta">
           利益判定データはまだありません。原価や見積もりを取得できない利益目的の注文は拒否します。
         </p>
       )}
       {acquisition && (
         <details>
           <summary>直近の買いの記録（PAPER仮想約定）</summary>
-          <p>
+          <p className="panel-meta">
             数量：{number(Number(acquisition.quantityAtomic) / 1e9, 9)} 基軸通貨
             ／ 支払USDC：
             {precise(acquisition.inputUsdc)} ／ 総取得原価：
             {precise(acquisition.totalCostUsdc)}
           </p>
-          <p>
+          <p className="panel-meta">
             追加手数料：{precise(acquisition.additionalFeeUsdc)} ／ ガス：
             {precise(acquisition.gasUsdc)} ／ DEX手数料：
             {acquisition.dexFeeUsdc === null
