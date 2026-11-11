@@ -1930,6 +1930,130 @@ class ProductionTests(unittest.TestCase):
             self.assertEqual(ctl.current()['status'], 'failed_requires_review')
             self.assertTrue((ctl.state/'failed.json').exists())
 
+    def wedge_admitted(self, ctl, faults=('LATCHED_FAILURE', 'CONTROLLER_EXIT_UNCONFIRMED')):
+        # The durable shape the first production run left behind:
+        # admitted, failed mid-run (the 2026-11-11 upstream HTTP
+        # 500 hard stop), then faulted once more by the refused
+        # prod-stop attempt itself. Every fault is one the stop
+        # machinery produces against an already-dead run.
+        record = self.admit(ctl)
+        record['admitted'] = True
+        record['status'] = 'failed_requires_review'
+        record['stage'] = 'monitoring'
+        FakeBroker.atomic(ctl.record, record)
+        FakeBroker.atomic(ctl.folder(record)/'failure.json',
+                          {'id': record['id'], 'stage': 'monitoring', 'error': 'RuntimeError'})
+        for code in faults:
+            ctl.fault(record, code)
+        return ctl.current()
+
+    def with_inspect_state(self, ctl, **state):
+        original = ctl.inspect
+        def inspect():
+            i = original(); i['State'].update(state)
+            return i
+        ctl.inspect = inspect
+
+    def started_at_during(self, record, delta=30):
+        return time.strftime('%Y-%m-%dT%H:%M:%S',
+                             time.gmtime(record['started']//1000 + delta)) + 'Z'
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_closes_an_admitted_failure(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_admitted(ctl)
+            self.with_started_at(ctl, self.started_at_during(record))
+            self.assertEqual(ctl.prod_stop(), {'status': 'completed'})
+            closed = ctl.current()
+            self.assertEqual(closed['status'], 'completed')
+            self.assertEqual(closed['stage'], 'stopped')
+            self.assertGreaterEqual(closed['stopped'], closed['started'])
+            receipt = json.loads((ctl.folder(closed)/'stop.json').read_bytes())
+            self.assertEqual(receipt['id'], closed['id'])
+            self.assertEqual(receipt['status'], 'clean_stopped')
+            self.assertEqual(receipt['errors'], [])
+            self.assertFalse((ctl.state/'failed.json').exists())
+            self.assertEqual(list(ctl.folder(closed).glob('fault-*.json')), [])
+            self.assertFalse(ctl.faults(closed))
+            # failure.json stays as the evidence of why the run failed.
+            self.assertTrue((ctl.folder(closed)/'failure.json').exists())
+            # The wedge is gone: a fresh explicit start is admitted.
+            self.assertEqual(ctl.prod_start(), {'status': 'accepted'})
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_refuses_an_admitted_failure_with_an_unclean_exit(self):
+        for overrides in ({'ExitCode': 1}, {'OOMKilled': True}):
+            with self.subTest(overrides=overrides), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                record = self.wedge_admitted(ctl)
+                self.with_started_at(ctl, self.started_at_during(record))
+                self.with_inspect_state(ctl, **overrides)
+                with self.assertRaises(Exception): ctl.prod_stop()
+                self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+                self.assertTrue((ctl.state/'failed.json').exists())
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_refuses_an_admitted_failure_when_db_verification_fails(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_admitted(ctl)
+            self.with_started_at(ctl, self.started_at_during(record))
+            def verify_sui():
+                raise RuntimeError('fixture verification failure')
+            ctl.verify_sui = verify_sui
+            with self.assertRaises(Exception): ctl.prod_stop()
+            self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+            self.assertTrue((ctl.state/'failed.json').exists())
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_refuses_an_admitted_failure_with_an_unknown_fault(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_admitted(
+                ctl, faults=('LATCHED_FAILURE', 'DB_OR_MAINTENANCE_UNCONFIRMED'))
+            self.with_started_at(ctl, self.started_at_during(record))
+            with self.assertRaises(Exception): ctl.prod_stop()
+            after = ctl.current()
+            self.assertEqual(after['status'], 'failed_requires_review')
+            self.assertTrue((ctl.state/'failed.json').exists())
+            errors = {json.loads(f.read_bytes())['error']
+                      for f in ctl.folder(after).glob('fault-*.json')}
+            self.assertIn('DB_OR_MAINTENANCE_UNCONFIRMED', errors)
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_refuses_an_admitted_failure_with_a_pending_mutation(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_admitted(ctl)
+            self.with_started_at(ctl, self.started_at_during(record))
+            FakeBroker.atomic(ctl.folder(record)/'mutation.json',
+                              {'pending': {'operation': 'fixture'}})
+            with self.assertRaises(Exception): ctl.prod_stop()
+            self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+            self.assertTrue((ctl.state/'failed.json').exists())
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_refuses_an_admitted_failure_while_the_container_runs(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_admitted(ctl)
+            self.with_started_at(ctl, self.started_at_during(record))
+            self.running = True
+            with self.assertRaises(Exception): ctl.prod_stop()
+            self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+            self.assertTrue((ctl.state/'failed.json').exists())
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_refuses_an_admitted_failure_when_the_container_never_started(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_admitted(ctl)
+            self.with_started_at(ctl, '0001-01-01T00:00:00Z')
+            with self.assertRaises(Exception): ctl.prod_stop()
+            self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+            self.assertTrue((ctl.state/'failed.json').exists())
+
 
 class ProgramReadTests(unittest.TestCase):
     def test_controller_fits_its_program_read_maximum(self):

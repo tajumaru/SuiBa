@@ -2297,6 +2297,79 @@ class ProductionController(Controller):
         except Exception:
             return False
 
+    def admitted_closeout_eligible(self, record):
+        # Fail-closed evidence check for the production failure the
+        # preflight close-out cannot reach: a run that was admitted,
+        # ran, and then failed (the first production run's upstream
+        # HTTP 500 hard stop is the field case). The normal stop
+        # path can never close it either: stop() faults the record
+        # while closing a run whose controller is already gone —
+        # CONTROLLER_EXIT_UNCONFIRMED when it cannot terminate the
+        # dead controller, LATCHED_FAILURE from stop_checks whenever
+        # a fault is already latched — so cleanup's completion
+        # condition (no errors, no faults) stays unreachable and
+        # prod_start refuses the record forever. Eligibility
+        # therefore re-verifies everything the normal path would
+        # have proven — the run's own failure record, a clean
+        # container exit for this session, the same database
+        # verification stop_checks runs, no pending mutation, a
+        # dead controller — and accepts only the faults the stop
+        # machinery itself produces. Any doubt — unreadable
+        # evidence, an unclean exit, a failed verification, an
+        # unexpected fault — keeps the record in manual
+        # reconciliation.
+        try:
+            if record.get('admitted') is not True:
+                return False
+            folder = self.folder(record)
+            failure = self.b.decode(self.b.read_trusted(folder/'failure.json'))
+            if failure.get('id') != record['id']:
+                return False
+            state = self.inspect()['State']
+            if state.get('Running') or state.get('ExitCode') != 0 or state.get('OOMKilled'):
+                return False
+            epoch = self.started_at_epoch(state.get('StartedAt'))
+            if epoch is None or epoch < record['started']/1000 - 60:
+                return False
+            self.maintenance(True)
+            helper, image = self.helper()
+            helper.helper(image, 'verify')
+            self.verify_sui()
+            pending = folder/'mutation.json'
+            if pending.exists() and \
+                    self.b.decode(self.b.read_trusted(pending)).get('pending') is not None:
+                return False
+            if not self.exited(record):
+                return False
+            # The four accepted codes are produced by the stop
+            # machinery itself when it closes a run whose controller
+            # is already gone, and none of them records an
+            # independent failure of the run: stop() faults
+            # CONTROLLER_EXIT_UNCONFIRMED when it cannot terminate
+            # the dead controller, STOP_LOCK_OR_STATE_UNKNOWN and
+            # CLEANUP_LOCK_OR_STATE_UNKNOWN when its own lock or
+            # cleanup step cannot complete against the dead run,
+            # and stop_checks appends the derived LATCHED_FAILURE
+            # whenever a stop attempt observes an already-latched
+            # failure. The run's actual failure is proven by the
+            # evidence above (failure.json naming this record, the
+            # container's clean exit, the database verification),
+            # so these codes add no failure information of their
+            # own; any other fault code refuses.
+            for fault in folder.glob('fault-*.json'):
+                if self.b.decode(self.b.read_trusted(fault)).get('error') \
+                        not in ('LATCHED_FAILURE', 'CONTROLLER_EXIT_UNCONFIRMED',
+                                'STOP_LOCK_OR_STATE_UNKNOWN',
+                                'CLEANUP_LOCK_OR_STATE_UNKNOWN'):
+                    return False
+            latch = self.state/'failed.json'
+            if os.path.lexists(latch) and \
+                    self.b.decode(self.b.read_trusted(latch)).get('id') != record['id']:
+                return False
+            return True
+        except Exception:
+            return False
+
     def prod_stop(self):
         self.prepare_state()
         with self.locked('stop'):
@@ -2316,6 +2389,28 @@ class ProductionController(Controller):
                         # latch artifacts the failed run's own cleanup
                         # left, so the next prod_start sees the same
                         # clean state as after a normal stop.
+                        self.receipt(record, 'clean_stopped', [])
+                        for fault in self.folder(record).glob('fault-*.json'):
+                            fault.unlink()
+                        latch = self.state/'failed.json'
+                        if os.path.lexists(latch):
+                            latch.unlink()
+                        record['status'] = 'completed'
+                        record['stopped'] = int(time.time()*1000)
+                        record['stage'] = 'stopped'
+                        self.b.atomic(self.record, record)
+                        return {'status': 'completed'}
+                    if self.admitted_closeout_eligible(record):
+                        # Close the post-admission failure out as a
+                        # clean stop: the worker already stopped on
+                        # its own failure and the eligibility check
+                        # re-verified the container exit and the
+                        # databases, so there is nothing left to
+                        # stop. Remove the latch artifacts the stop
+                        # attempts left, so the next prod_start sees
+                        # the same clean state as after a normal
+                        # stop. failure.json stays in the folder as
+                        # the record of why the run failed.
                         self.receipt(record, 'clean_stopped', [])
                         for fault in self.folder(record).glob('fault-*.json'):
                             fault.unlink()
