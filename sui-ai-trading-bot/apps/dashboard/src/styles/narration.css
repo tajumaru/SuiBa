@@ -691,8 +691,15 @@
   font-size: 14px;
   color: #9aafbf;
 }
+/* The row wraps: time and the kind tag form a header line, and
+   the body (the p rule below, flex-basis 100%) always drops to
+   its own full-width line under it. In a single row the body's
+   measure depended on the tag's length — a long tag crushed the
+   text into a narrow column that broke mid-word — so every
+   entry now gives its body the same full width. */
 .agent-feed-entry {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: flex-start;
   margin: 0;
@@ -708,6 +715,7 @@
   font-variant-numeric: tabular-nums;
 }
 .agent-feed-entry p {
+  flex: 1 1 100%;
   margin: 0;
   font-size: 14px;
   color: var(--text);
