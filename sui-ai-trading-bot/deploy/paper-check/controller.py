@@ -123,6 +123,20 @@ DIAGNOSTIC_STAGES = (
     'pair-selection', 'market-summary', 'market-freshness', 'arm', 'paper-start',
     'monitoring', 'normal-stop',
 )
+# The run stage each guarded operation belongs to, mapped to the
+# operation name guard() journals as mutation.json's pending. The
+# two vocabularies differ only for the maintenance release: the
+# stage is 'maintenance-release' while the journaled operation is
+# 'unlatch'. Production reaches only these guarded operations (the
+# timer and preset guards are validation-only), so a stranded
+# production pending always names one of these stages.
+GUARD_STAGE_OPERATIONS = {
+    'backup': 'backup',
+    'maintenance-release': 'unlatch',
+    'worker-start': 'worker-start',
+    'arm': 'arm',
+    'paper-start': 'paper-start',
+}
 DIAGNOSTIC_LIMIT = 128 * 1024**2
 DIAGNOSTIC_DATABASES = ('bot.sqlite', 'bot.sqlite.WAL_USDC.sqlite')
 # Fixed run presets, chosen per run through the start request like the
@@ -2171,20 +2185,37 @@ class ProductionController(Controller):
                     -2000 <= int(time.time()*1000)-request['at'] <= 600000)
 
     def cleanup(self, record, own, source):
-        lock = contextlib.nullcontext() if getattr(self, '_deployment_locked', False) else self.deployment_lock()
-        with lock:
-            errors = self.stop_checks(record, own)
-            intent = self.b.decode(self.b.read_trusted(self.folder(record)/'stop-request.json'))
-            # Only explicit prod-stop can complete a production session. A crash,
-            # post-stop hook, readiness failure or monitor failure never counts.
-            completed = not own and not errors and not self.faults(record) and intent['source'] == 'prod-stop'
-            record['status'] = 'completed' if completed else 'failed_requires_review'
-            if not own:
-                record['stopped'] = int(time.time()*1000)
-            if completed:
-                record['stage'] = 'stopped'
-            self.b.atomic(self.record, record)
-            return not errors and not self.faults(record)
+        if getattr(self, '_deployment_locked', False):
+            return self._cleanup_locked(record, own, source)
+        try:
+            with self.deployment_lock():
+                return self._cleanup_locked(record, own, source)
+        except BlockingIOError:
+            # The deployment lock is held by a deployment in flight:
+            # pure contention, not failure evidence (audit F-9).
+            # stop() faults any exception escaping cleanup as
+            # CLEANUP_LOCK_OR_STATE_UNKNOWN, which would latch a
+            # permanent fault — and the failed.json fence — for a
+            # transient race. Return False instead: the stop reports
+            # failure, nothing is latched, and a later attempt can
+            # proceed once the deployment finishes. A lock-file
+            # shape failure still raises: a malformed lock is real
+            # state trouble, not contention.
+            return False
+
+    def _cleanup_locked(self, record, own, source):
+        errors = self.stop_checks(record, own)
+        intent = self.b.decode(self.b.read_trusted(self.folder(record)/'stop-request.json'))
+        # Only explicit prod-stop can complete a production session. A crash,
+        # post-stop hook, readiness failure or monitor failure never counts.
+        completed = not own and not errors and not self.faults(record) and intent['source'] == 'prod-stop'
+        record['status'] = 'completed' if completed else 'failed_requires_review'
+        if not own:
+            record['stopped'] = int(time.time()*1000)
+        if completed:
+            record['stage'] = 'stopped'
+        self.b.atomic(self.record, record)
+        return not errors and not self.faults(record)
 
     def run(self):
         self.prepare_state()
@@ -2248,16 +2279,25 @@ class ProductionController(Controller):
     def preflight_closeout_eligible(self, record):
         # Fail-closed evidence check for the one production failure
         # the normal stop path can never close: a run that died in
-        # preflight, before admission, with the worker never started.
-        # stop_checks faults such a record with PREFLIGHT_INCOMPLETE
-        # by construction, so cleanup's completion condition is
-        # unreachable and prod_start then refuses the record forever.
-        # Any doubt — unreadable evidence, an unexpected fault, a
-        # pending mutation, a container that ran at or after this
-        # session began — keeps the record in manual reconciliation.
+        # preflight, with the worker never started. stop_checks
+        # faults a not-admitted record with PREFLIGHT_INCOMPLETE by
+        # construction, so cleanup's completion condition is
+        # unreachable and prod_start then refuses the record
+        # forever. The admitted flag cannot be the discriminator
+        # (audit F-3): preflight persists the admission flip before
+        # ProductionController.preflight persists stage='backup',
+        # so a death between the two writes leaves admitted=True at
+        # stage 'preflight', with the worker never started — and
+        # the boundary shape is wedged behind the stop intent its
+        # own failure cleanup wrote first instead (cleanup completes
+        # only for a 'prod-stop' intent). The evidence that
+        # separates both shapes is failure.json at the preflight
+        # stage plus the container never having started for this
+        # session. Any doubt — unreadable evidence, an unexpected
+        # fault, a pending mutation, a container that ran at or
+        # after this session began — keeps the record in manual
+        # reconciliation.
         try:
-            if record.get('admitted') is not False:
-                return False
             folder = self.folder(record)
             failure = self.b.decode(self.b.read_trusted(folder/'failure.json'))
             if failure.get('id') != record['id'] or failure.get('stage') != 'preflight':
@@ -2281,10 +2321,14 @@ class ProductionController(Controller):
             # preflight and then went through one more stop attempt
             # therefore carries both codes without any new failure
             # having occurred, so both are accepted here; the other
-            # conditions (not admitted, failure.json at the preflight
-            # stage, no pending mutation, the container never started
-            # for this session, the latch naming this record) still
-            # gate the close-out. Any other fault code refuses.
+            # conditions (failure.json at the preflight stage, no
+            # pending mutation, the container never started for this
+            # session, the latch naming this record) still gate the
+            # close-out. PREFLIGHT_INCOMPLETE is only ever faulted
+            # for a not-admitted record, so the F-3 boundary shape
+            # may carry just LATCHED_FAILURE or no fault at all; the
+            # accepted set bounds both shapes either way. Any other
+            # fault code refuses.
             for fault in folder.glob('fault-*.json'):
                 if self.b.decode(self.b.read_trusted(fault)).get('error') \
                         not in ('PREFLIGHT_INCOMPLETE', 'LATCHED_FAILURE'):
@@ -2312,12 +2356,13 @@ class ProductionController(Controller):
         # therefore re-verifies everything the normal path would
         # have proven — the run's own failure record, a clean
         # container exit for this session, the same database
-        # verification stop_checks runs, no pending mutation, a
-        # dead controller — and accepts only the faults the stop
-        # machinery itself produces. Any doubt — unreadable
-        # evidence, an unclean exit, a failed verification, an
-        # unexpected fault — keeps the record in manual
-        # reconciliation.
+        # verification stop_checks runs, a dead controller, and no
+        # pending mutation beyond a stranded guard operation proven
+        # not in effect (audit F-2, below) — and accepts only the
+        # faults the stop machinery itself produces. Any doubt —
+        # unreadable evidence, an unclean exit, a failed
+        # verification, an unexpected fault — keeps the record in
+        # manual reconciliation.
         try:
             if record.get('admitted') is not True:
                 return False
@@ -2325,20 +2370,55 @@ class ProductionController(Controller):
             failure = self.b.decode(self.b.read_trusted(folder/'failure.json'))
             if failure.get('id') != record['id']:
                 return False
+            # A guarded operation that dies on a non-4xx error
+            # leaves its pending marker in mutation.json (guard
+            # clears it only on success or a definitive 4xx
+            # refusal), and only the dead runner could ever clear
+            # it, so a stranded pending is judged here instead of
+            # refused outright (audit F-2). It is acceptable only
+            # when it names exactly the operation of the stage
+            # failure.json records — guard() journals the operation
+            # name while the failure record carries the run stage;
+            # GUARD_STAGE_OPERATIONS maps the two — and the
+            # operation is then proven not in effect by the
+            # container and database evidence below. A pending
+            # whose stage mismatches the failure record, or that
+            # names no guarded stage at all, still refuses.
+            pending = None
+            mutation = folder/'mutation.json'
+            if mutation.exists():
+                pending = self.b.decode(
+                    self.b.read_trusted(mutation)).get('pending')
+            pending_closeout = False
+            if pending is not None:
+                if type(pending) is not str or \
+                        GUARD_STAGE_OPERATIONS.get(failure.get('stage')) != pending:
+                    return False
+                pending_closeout = True
             state = self.inspect()['State']
             if state.get('Running') or state.get('ExitCode') != 0 or state.get('OOMKilled'):
                 return False
-            epoch = self.started_at_epoch(state.get('StartedAt'))
-            if epoch is None or epoch < record['started']/1000 - 60:
-                return False
+            if pending_closeout and failure.get('stage') in ('backup', 'maintenance-release'):
+                # Both stages run before the worker starts, so the
+                # not-in-effect proof is the preflight one: the
+                # container never started for this session. (A
+                # backup stranded without its pending — the record
+                # write after the backup itself — keeps the started
+                # proof below and stays refused; it is a different
+                # shape from F-2's.)
+                started_at = state.get('StartedAt')
+                if started_at != '0001-01-01T00:00:00Z':
+                    epoch = self.started_at_epoch(started_at)
+                    if epoch is None or epoch >= record['started']/1000:
+                        return False
+            else:
+                epoch = self.started_at_epoch(state.get('StartedAt'))
+                if epoch is None or epoch < record['started']/1000 - 60:
+                    return False
             self.maintenance(True)
             helper, image = self.helper()
             helper.helper(image, 'verify')
             self.verify_sui()
-            pending = folder/'mutation.json'
-            if pending.exists() and \
-                    self.b.decode(self.b.read_trusted(pending)).get('pending') is not None:
-                return False
             if not self.exited(record):
                 return False
             # The four accepted codes are produced by the stop
@@ -2356,11 +2436,24 @@ class ProductionController(Controller):
             # container's clean exit, the database verification),
             # so these codes add no failure information of their
             # own; any other fault code refuses.
+            accepted = ('LATCHED_FAILURE', 'CONTROLLER_EXIT_UNCONFIRMED',
+                        'STOP_LOCK_OR_STATE_UNKNOWN',
+                        'CLEANUP_LOCK_OR_STATE_UNKNOWN')
+            if pending_closeout:
+                # OPERATION_COMPLETION_UNCONFIRMED is faulted by
+                # stop_checks whenever a stop attempt observes the
+                # stranded pending. In this branch the pending
+                # itself has just been proven — stage match, the
+                # operation not in effect, the databases verified —
+                # so the code records the pending's existence and
+                # nothing else, exactly like the derived codes
+                # above. Without the pending proof (no pending, or
+                # a pending that did not match) it keeps refusing,
+                # as does any other code.
+                accepted += ('OPERATION_COMPLETION_UNCONFIRMED',)
             for fault in folder.glob('fault-*.json'):
                 if self.b.decode(self.b.read_trusted(fault)).get('error') \
-                        not in ('LATCHED_FAILURE', 'CONTROLLER_EXIT_UNCONFIRMED',
-                                'STOP_LOCK_OR_STATE_UNKNOWN',
-                                'CLEANUP_LOCK_OR_STATE_UNKNOWN'):
+                        not in accepted:
                     return False
             latch = self.state/'failed.json'
             if os.path.lexists(latch) and \
@@ -2370,11 +2463,41 @@ class ProductionController(Controller):
         except Exception:
             return False
 
+    def retire_orphan_latch(self):
+        # Audit F-7: a production failed.json with no record at
+        # all is an orphan — run() writes the latch for a runner
+        # that died before it could publish its record — and
+        # nothing else ever removes it, so prod_start would refuse
+        # forever behind a latch that names no record. Retire it
+        # as evidence (never delete it) so a later start is no
+        # longer blocked by it. A latch that cannot be decoded
+        # stays exactly where it is: unreadable evidence is not
+        # destroyed, prod_start keeps refusing, and the operator
+        # sees the latch in prod_status.
+        latch = self.state/'failed.json'
+        if not os.path.lexists(latch):
+            return
+        try:
+            value = self.b.decode(self.b.read_trusted(latch))
+            require(type(value) is dict)
+        except Exception:
+            return
+        run_id = value.get('id')
+        name = run_id if type(run_id) is str and \
+            re.fullmatch(r'[a-f0-9]{32}', run_id) else 'unknown'
+        target = self.state/('failed-orphan-'+name+'.json')
+        if os.path.lexists(target):
+            target = self.state/('failed-orphan-'+name+'-'+str(int(time.time()))+'.json')
+        os.replace(latch, target)
+        with self.b.directory(self.state) as directory_fd:
+            os.fsync(directory_fd)
+
     def prod_stop(self):
         self.prepare_state()
         with self.locked('stop'):
             self.consume_start(cancelled=True)
             if not self.record.exists():
+                self.retire_orphan_latch()
                 with contextlib.suppress(Exception):
                     self.system('stop', '--no-block', PROD_SERVICE)
                 return {'status': 'not_started'}
@@ -2482,8 +2605,15 @@ class ProductionController(Controller):
             else:
                 worker = {key: d[key] for key in ('running', 'maintenance', 'databaseHealthy', 'ledgerOk') if type(d.get(key)) is bool}
                 worker['paper'] = d.get('mode') == 'PAPER'
+        # The abort inhibit joins requires_review: nothing in the
+        # repo writes production/abort-inhibit.json, yet prod_start
+        # refuses while one exists, so its presence must be
+        # discoverable here instead of surfacing only as a
+        # reasonless start refusal (audit F-8).
         return {'run': run, 'controller_alive': alive, 'worker': worker,
-                'requires_review': record['status'] == 'failed_requires_review' or self.faults(record), 'watchdog': watchdog}
+                'requires_review': record['status'] == 'failed_requires_review' or self.faults(record)
+                                   or os.path.lexists(self.state/'abort-inhibit.json'),
+                'watchdog': watchdog}
 
     def export_prod_snapshot(self):
         # Read-only public extract of the LIVE production databases, feeding
