@@ -47,6 +47,17 @@ PAPER_STATE = Path('/var/lib/suiba-paper-check')
 PUBLIC_RESULT = Path('/opt/suiba/last-deploy.json')
 GIT_SHA = re.compile(r"[a-f0-9]{40}\Z")
 
+# The state lock serializes broker invocations. A peer broker
+# (a verify, or a controller-driven check) normally holds it for
+# seconds at most, so acquisition retries within a bounded budget
+# instead of failing the operation on the first contention —
+# four deploys were lost to a momentary holder in 2026-11. The
+# wait retries the same non-blocking flock, never a blocking one:
+# a genuinely stuck holder still surfaces, as the same error,
+# once the budget is spent.
+STATE_LOCK_WAIT_SECONDS = 60.0
+STATE_LOCK_RETRY_SECONDS = 0.25
+
 
 CODE_SHAPE = re.compile(r"[A-Z][A-Z_]{2,47}\Z")
 
@@ -96,6 +107,29 @@ def os_error_detail(error):
         return None
     errno_value = error.errno
     return {'errno': errno_value if type(errno_value) is int else None, 'stage': stage}
+
+
+def acquire_state_lock(lockfd, budget=None):
+    """flock(lockfd, LOCK_EX) with a bounded wait: retry the
+    non-blocking flock until the budget (default
+    STATE_LOCK_WAIT_SECONDS) is spent, then let the final
+    BlockingIOError propagate unchanged — the caller's
+    os_stage('lock') tags it exactly like an instant failure.
+    Exclusivity is unchanged: the lock is still held for the
+    whole transaction; only the acquisition tolerates the
+    short contention of a peer broker finishing its own run."""
+    if budget is None:
+        budget = STATE_LOCK_WAIT_SECONDS
+    deadline = time.monotonic() + budget
+    while True:
+        try:
+            fcntl.flock(lockfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise
+            time.sleep(min(STATE_LOCK_RETRY_SECONDS, remaining))
 
 
 def publish_public_result(status, code, sha):
@@ -575,7 +609,7 @@ class Broker:
                 with os_stage('lock'):
                     s = os.fstat(lockfd)
                     require(s.st_uid == 0 and s.st_nlink == 1 and stat.S_ISREG(s.st_mode) and not (s.st_mode & 0o077), 'LOCK_FILE')
-                    fcntl.flock(lockfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    acquire_state_lock(lockfd)
                 # Revalidate imported callers too; CLI never accepts a path/image/config.
                 request(json.dumps(req).encode())
                 if req['operation'] == 'verify':
