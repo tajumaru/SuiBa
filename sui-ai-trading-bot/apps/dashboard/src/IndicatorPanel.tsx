@@ -49,10 +49,10 @@ export function IndicatorPanel({
       <h3>
         {kind} · {candles[0]?.timeframe / 60}分足
       </h3>
-      <p aria-label={`${kind}表示期間`}>
+      <p className="chart-meta" aria-label={`${kind}表示期間`}>
         表示期間：{chartTime(start)} ～ {chartTime(end)}（日本時間）
       </p>
-      <p>
+      <p className="chart-meta">
         選択日時：{selected == null ? "未選択" : chartTime(selected)}
         （足の開始・日本時間）
       </p>
@@ -106,19 +106,23 @@ export function IndicatorPanel({
           </text>
         ))}
       </svg>
-      <p>
-        {names
-          .map(
-            (name, j) =>
-              `${name}：${index < 0 || sets[j][index] == null ? "未計測" : number(sets[j][index], 6)}`,
-          )
-          .join(" ／ ")}
+      <p className="chart-meta">
+        {names.map((name, j) => (
+          <React.Fragment key={name}>
+            {j > 0 && " ／ "}
+            <span className="indicator-value">
+              {`${name}：${index < 0 || sets[j][index] == null ? "未計測" : number(sets[j][index], 6)}`}
+            </span>
+          </React.Fragment>
+        ))}
       </p>
       {(end - start) / candles[0].timeframe > candles.length && (
-        <p className="chart-warning">データ不足：表示期間に欠損があります。</p>
+        <p className="chart-warning chart-meta">
+          データ不足：表示期間に欠損があります。
+        </p>
       )}
       {!valid.length && (
-        <p className="chart-warning">
+        <p className="chart-warning chart-meta">
           データ不足：連続する確定足が60本揃うまで未計測です。
         </p>
       )}
