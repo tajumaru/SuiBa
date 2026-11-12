@@ -229,8 +229,7 @@ export function latestAnswerCheck(
   const closeAt = new Map(candles.map((c) => [c.timestamp, c.close]));
   for (let i = records.length - 1; i >= 0; i--) {
     const r = records[i];
-    if (!r.mid || r.mid.length !== r.up.length || r.up.length === 0)
-      continue;
+    if (!r.mid || r.mid.length !== r.up.length || r.up.length === 0) continue;
     if (r.origin - timeframe < latest.timestamp - 47 * timeframe) continue;
     const points: ForecastAnswerCheck["points"] = [];
     const actuals: ForecastAnswerCheck["actuals"] = [];
@@ -274,16 +273,16 @@ export function latestAnswerCheck(
   return null;
 }
 
-const priceText = (v: number) =>
-  `$${v >= 10 ? v.toFixed(2) : v.toFixed(4)}`;
+const priceText = (v: number) => `$${v >= 10 ? v.toFixed(2) : v.toFixed(4)}`;
 const pctText = (frac: number) =>
   `${frac >= 0 ? "+" : ""}${(frac * 100).toFixed(1)}%`;
 
 export function answerCheckText(check: ForecastAnswerCheck): string {
-  const head = "答え合わせ（2時間前の予測）：";
-  if (check.directionHit == null)
-    return `${head}方向は名乗らず ／ コーン収まり ${check.coveragePct}%`;
-  return `${head}方向 ${check.directionHit ? "的中" : "外れ"}（予測 ${pctText(check.driftPct)} → 実際 ${pctText(check.actualPct)}）／ コーン収まり ${check.coveragePct}%`;
+  const direction =
+    check.directionHit == null
+      ? "横ばいの予測だったため、上がる・下がるの正解判定はしていません。"
+      : `${check.dir === "up" ? "上がる" : "下がる"}という予測は${check.directionHit ? "当たりました" : "外れました"}（予測 ${pctText(check.driftPct)} → 実際 ${pctText(check.actualPct)}）。`;
+  return `前の予測との比較：${direction} 各足の終値の${check.coveragePct}%が、予測した価格の範囲内でした。`;
 }
 
 /** The projected drift of a recorded forecast, as a fraction;
@@ -401,8 +400,7 @@ export function forecastTouchStateOf(
   candles: readonly Candle[],
   timeframe = 300,
 ): ForecastTouchState | null {
-  if (!rec.touch || rec.dir === "flat" || rec.up.length === 0)
-    return null;
+  if (!rec.touch || rec.dir === "flat" || rec.up.length === 0) return null;
   const line = rec.touch.line;
   const lastStep = rec.origin + (rec.up.length - 1) * timeframe;
   let best: number | null = null;
@@ -419,8 +417,7 @@ export function forecastTouchStateOf(
     lastClose = c.close;
   }
   const touched =
-    best !== null &&
-    (rec.dir === "up" ? best >= line : best <= line);
+    best !== null && (rec.dir === "up" ? best >= line : best <= line);
   const latest = candles.at(-1);
   const closed = latest != null && latest.timestamp > lastStep;
   return {
@@ -460,10 +457,7 @@ export function forecastTouchNearText(t: ForecastTouchState): string {
 export function touchStatusText(t: ForecastTouchState, now: number): string {
   if (t.phase === "touched")
     return `タッチ予測：${priceText(t.line)} にタッチ済み`;
-  const remainMin = Math.max(
-    0,
-    Math.round((t.endsAt - now) / 60000),
-  );
+  const remainMin = Math.max(0, Math.round((t.endsAt - now) / 60000));
   const remain =
     remainMin >= 60
       ? `${Math.floor(remainMin / 60)}:${String(remainMin % 60).padStart(2, "0")}`

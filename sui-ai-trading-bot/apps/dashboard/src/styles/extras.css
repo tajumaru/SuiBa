@@ -224,6 +224,40 @@
   font-size: 12px;
 }
 
+.price-chart .chart-forecast-details {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.chart-forecast-details > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  min-width: 0;
+}
+.chart-forecast-details dt {
+  color: var(--dim);
+}
+.price-chart .chart-forecast-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.chart-detail-swatch {
+  display: inline-block;
+  width: 18px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-top: 2px dashed var(--mint);
+}
+.chart-detail-swatch.touch {
+  border-color: var(--gold);
+}
+
 /* Grass streak line */
 .activity-grass-head {
   display: flex;

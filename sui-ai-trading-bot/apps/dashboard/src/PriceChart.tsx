@@ -1,7 +1,4 @@
-import {
-  forecastPalette,
-  FORECAST_BARS,
-} from "./chartForecast.ts";
+import { forecastPalette, FORECAST_BARS } from "./chartForecast.ts";
 
 // Kept as a re-export: the palette's home is chartForecast.ts
 // (shared with the share card), and existing imports name this
@@ -16,16 +13,13 @@ import { answerCheckText } from "./forecastLog.ts";
 import { IndicatorPanel } from "./IndicatorPanel.tsx";
 import { lineSegments } from "./chartIndicators.ts";
 import React from "react";
-import {
-  chartPeriods,
-  chartTime,
-  chartTicks,
-} from "./chartPresentation.ts";
+import { chartPeriods, chartTime, chartTicks } from "./chartPresentation.ts";
 import { number, dateTime, label } from "./presentation.ts";
 import { usePriceChartModel, type PriceChartProps } from "./PriceChartModel.ts";
 import {
   AnswerGhostOverlay,
   ForecastOverlay,
+  ForecastDetails,
   HoverReadout,
 } from "./PriceChartOverlays.tsx";
 
@@ -118,8 +112,7 @@ export function PriceChart(props: PriceChartProps) {
           %。トレンドと値幅（ATR）から伸ばしたもので、実際の価格ではありません。
           {fc.bookTiltPct !== 0 &&
             `板の偏り（${fc.bookTiltPct > 0 ? "買い優勢" : "売り優勢"}）も少し反映しています。`}
-          {fc.touch &&
-            `タッチラインの確率は、同じような予測の実測です。`}
+          {fc.touch && `タッチラインの確率は、同じような予測の実測です。`}
         </p>
       )}
       {fc && tf === 300 && forecastScoreText && (
@@ -165,7 +158,7 @@ export function PriceChart(props: PriceChartProps) {
             aria-pressed={answerOn}
             onClick={() => setAnswerOn((v) => !v)}
           >
-            答え合わせ
+            前の予測と実際を比較
           </button>
           {answerOn && (
             <p
@@ -178,6 +171,8 @@ export function PriceChart(props: PriceChartProps) {
               }`}
             >
               {answerCheckText(answerCheck)}
+              <br />
+              各足の終値は、5分ごとなどの区切りでの最後の価格です。範囲内の割合は、価格がぴったり当たった割合ではありません。
             </p>
           )}
         </div>
@@ -396,11 +391,18 @@ export function PriceChart(props: PriceChartProps) {
               );
             })}
             {fc && fcCone && fcMid && (
-              <ForecastOverlay fc={fc} fcCone={fcCone} fcMid={fcMid} fcPalette={fcPalette!} fcLabel={fcLabel} crossingMarks={crossingMarks} x={x} y={y} latestEnd={latestEnd} tf={tf} left={left} right={right} />
+              <ForecastOverlay
+                fc={fc}
+                fcCone={fcCone}
+                fcMid={fcMid}
+                fcPalette={fcPalette!}
+                crossingMarks={crossingMarks}
+                x={x}
+                y={y}
+                latestEnd={latestEnd}
+              />
             )}
-            {ghost && (
-              <AnswerGhostOverlay ghost={ghost} />
-            )}
+            {ghost && <AnswerGhostOverlay ghost={ghost} />}
             {chosen && (
               <line
                 x1={x(chosen.timestamp + tf / 2)}
@@ -412,7 +414,16 @@ export function PriceChart(props: PriceChartProps) {
               />
             )}
             {hoverLines && chosen && (
-              <HoverReadout hoverLines={hoverLines} chosen={chosen} hoverCx={hoverCx} hoverBoxW={hoverBoxW} hoverBoxX={hoverBoxX} y={y} left={left} right={right} />
+              <HoverReadout
+                hoverLines={hoverLines}
+                chosen={chosen}
+                hoverCx={hoverCx}
+                hoverBoxW={hoverBoxW}
+                hoverBoxX={hoverBoxX}
+                y={y}
+                left={left}
+                right={right}
+              />
             )}
             {chartTicks(c, plot).map((t, i, ticks) => (
               <text
@@ -429,6 +440,13 @@ export function PriceChart(props: PriceChartProps) {
               </text>
             ))}
           </svg>
+          {fc && fcCone && fcMid && (
+            <ForecastDetails
+              fc={fc}
+              label={fcLabel}
+              crossingMarks={crossingMarks}
+            />
+          )}
           <p className="chart-help">
             EMA20（青）／ EMA50（黄）／ ◇ 再構築足、○
             未確定足。データのない時間帯は空白で表示します。
@@ -448,6 +466,7 @@ export function PriceChart(props: PriceChartProps) {
                 width={w}
                 start={start}
                 end={xFinish}
+                dataEnd={finish}
                 selected={chosen?.timestamp ?? null}
               />
               <IndicatorPanel
@@ -463,6 +482,7 @@ export function PriceChart(props: PriceChartProps) {
                 width={w}
                 start={start}
                 end={xFinish}
+                dataEnd={finish}
                 selected={chosen?.timestamp ?? null}
               />
             </>
