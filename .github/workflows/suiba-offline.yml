@@ -31,7 +31,7 @@ permissions:
 # matters. A manually dispatched Worker CI run is never
 # cancelled out from under its operator.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' && github.event_name != 'schedule' }}
 jobs:
   without-worker:
