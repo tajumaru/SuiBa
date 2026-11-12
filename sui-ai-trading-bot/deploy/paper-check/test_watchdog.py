@@ -213,5 +213,104 @@ class WatchdogTests(unittest.TestCase):
             with self.assertRaises(ValueError): w.read_json(good, owner=os.geteuid(), maximum=2)
 
 
+class JournalVerificationTests(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location('verify_watchdog', Path(__file__).with_name('verify_watchdog.py'))
+        self.verify = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.verify)
+        self.expected = 'SUIBA_WATCHDOG_ATTENTION WORKER_UNREACHABLE'
+        self.clock = 0.0
+        self.delays = []
+
+    def sleep(self, seconds):
+        self.delays.append(seconds)
+        self.clock += seconds
+
+    def polling(self):
+        stack = contextlib.ExitStack()
+        stack.enter_context(patch.object(self.verify.time, 'monotonic', side_effect=lambda: self.clock))
+        stack.enter_context(patch.object(self.verify.time, 'sleep', side_effect=self.sleep))
+        return stack
+
+    def test_immediately_visible_line_does_not_sleep_or_dump(self):
+        with self.polling(), patch.object(self.verify.subprocess, 'check_output', return_value=self.expected.encode()) as command, \
+             patch.object(self.verify, 'dump_journal_timeout') as dump:
+            self.verify.wait_journal('fixture', Path('status.json'), self.expected)
+        self.assertEqual(self.delays, [])
+        command.assert_called_once_with(
+            ['journalctl', '-u', 'fixture.service', '--no-pager', '-o', 'cat'],
+            stderr=subprocess.STDOUT, timeout=10)
+        dump.assert_not_called()
+
+    def test_waits_for_delayed_exact_expected_line(self):
+        with self.polling(), patch.object(self.verify.subprocess, 'check_output', side_effect=[
+                b'', b'SUIBA_WATCHDOG_ATTENTION STATUS_UNAVAILABLE', self.expected.encode()]), \
+             patch.object(self.verify, 'dump_journal_timeout') as dump:
+            self.verify.wait_journal('fixture', Path('status.json'), self.expected)
+        self.assertEqual(self.delays, [.2, .2])
+        dump.assert_not_called()
+
+    def test_transient_journal_error_can_recover(self):
+        with self.polling(), patch.object(self.verify.subprocess, 'check_output', side_effect=[
+                subprocess.CalledProcessError(1, 'journalctl'), self.expected.encode()]):
+            self.verify.wait_journal('fixture', Path('status.json'), self.expected)
+        self.assertEqual(self.delays, [.2])
+
+    def test_missing_line_times_out_at_30_seconds_and_dumps(self):
+        record = Path('status.json')
+        with self.polling(), patch.object(self.verify.subprocess, 'check_output', return_value=b'') as command, \
+             patch.object(self.verify, 'dump_journal_timeout') as dump:
+            with self.assertRaisesRegex(AssertionError, 'WATCHDOG_FIXTURE_JOURNAL_DID_NOT_REPORT'):
+                self.verify.wait_journal('fixture', record, self.expected)
+        self.assertAlmostEqual(self.clock, 30)
+        self.assertTrue(all(0 < delay <= .2 for delay in self.delays))
+        self.assertLess(command.call_args.kwargs['timeout'], .21)
+        dump.assert_called_once_with('fixture', record, self.expected, None)
+
+    def test_hung_journal_reads_use_only_the_remaining_budget(self):
+        timeouts = []
+        def hung(command, *, stderr, timeout):
+            timeouts.append(timeout)
+            self.clock += timeout
+            raise subprocess.TimeoutExpired(command, timeout)
+        with self.polling(), patch.object(self.verify.subprocess, 'check_output', side_effect=hung), \
+             patch.object(self.verify, 'dump_journal_timeout') as dump:
+            with self.assertRaises(AssertionError):
+                self.verify.wait_journal('fixture', Path('status.json'), self.expected)
+        self.assertAlmostEqual(self.clock, 30)
+        self.assertEqual(len(timeouts), 3)
+        self.assertLess(timeouts[-1], 10)
+        self.assertIsInstance(dump.call_args.args[-1], subprocess.TimeoutExpired)
+
+    def test_timeout_diagnostics_include_record_state_and_precise_journal(self):
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as folder:
+            record = Path(folder)/'status.json'
+            record.write_text('{"verdict":"attention","reasons":["WORKER_UNREACHABLE"]}')
+            with patch.object(self.verify.subprocess, 'check_output', side_effect=[
+                    b'ActiveState=inactive\nSubState=dead\nResult=success\nExecMainStatus=0\n',
+                    b'2026-11-13T06:40:13.123456+0900 fixture SUIBA_WATCHDOG_OK\n']) as command, \
+                 contextlib.redirect_stdout(output):
+                self.verify.dump_journal_timeout('fixture', record, self.expected, None)
+        text = output.getvalue()
+        for expected in ('WATCHDOG_JOURNAL_TIMEOUT', 'mtime_ns=', '"verdict":"attention"',
+                         'SERVICE_STATE', 'ActiveState=inactive', 'JOURNAL_RECENT', '.123456+0900'):
+            self.assertIn(expected, text)
+        self.assertIn('short-iso-precise', command.call_args.args[0])
+        self.assertTrue(all(call.kwargs['timeout'] == 5 for call in command.call_args_list))
+
+    def test_unavailable_diagnostics_do_not_hide_remaining_evidence(self):
+        output = io.StringIO()
+        with patch.object(Path, 'stat', side_effect=FileNotFoundError('missing')), \
+             patch.object(self.verify.subprocess, 'check_output', side_effect=[
+                 subprocess.TimeoutExpired('systemctl', 5), b'precise journal evidence']), \
+             contextlib.redirect_stdout(output):
+            self.verify.dump_journal_timeout('fixture', Path('missing'), self.expected, OSError('journal unavailable'))
+        text = output.getvalue()
+        for expected in ('RESULT_FILE_UNAVAILABLE', 'JOURNAL_LAST_ERROR',
+                         'SERVICE_STATE_UNAVAILABLE', 'precise journal evidence'):
+            self.assertIn(expected, text)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
