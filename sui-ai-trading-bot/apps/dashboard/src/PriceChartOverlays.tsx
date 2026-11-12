@@ -239,19 +239,35 @@ export function AnswerDetails({
 
 export function HoverReadout({
   hoverLines,
+}: {
+  hoverLines: { main: string; sub: string } | null;
+}) {
+  return (
+    <div
+      className="chart-selected-readout"
+      role="group"
+      aria-label="選択した足の情報"
+      data-empty={hoverLines == null}
+    >
+      {hoverLines && (
+        <>
+          <p>{hoverLines.main}</p>
+          <p>{hoverLines.sub}</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+export function HoverMarker({
   chosen,
   hoverCx,
-  hoverBoxW,
-  hoverBoxX,
   y,
   left,
   right,
 }: {
-  hoverLines: { main: string; sub: string };
   chosen: Candle;
   hoverCx: number;
-  hoverBoxW: number;
-  hoverBoxX: number;
   y: Scale;
   left: number;
   right: number;
@@ -275,32 +291,6 @@ export function HoverReadout({
         stroke="#d7e3ea"
         strokeWidth="1.4"
       />
-      <rect
-        x={hoverBoxX}
-        y="30"
-        width={hoverBoxW}
-        height="37"
-        fill="rgba(4,10,16,0.87)"
-        stroke="#1b2836"
-      />
-      <text
-        x={hoverBoxX + 8}
-        y="46"
-        fill="#d7e3ea"
-        fontSize="11.5"
-        fontFamily="ui-monospace, Menlo, monospace"
-      >
-        {hoverLines.main}
-      </text>
-      <text
-        x={hoverBoxX + 8}
-        y="61"
-        fill="#9fb8ad"
-        fontSize="11.5"
-        fontFamily="ui-monospace, Menlo, monospace"
-      >
-        {hoverLines.sub}
-      </text>
     </g>
   );
 }

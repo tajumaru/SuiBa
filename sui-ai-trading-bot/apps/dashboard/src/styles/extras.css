@@ -224,6 +224,28 @@
   font-size: 12px;
 }
 
+.chart-selected-readout {
+  min-height: 3em;
+  margin: 8px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.chart-selected-readout p {
+  margin: 0;
+}
+.chart-selected-readout[data-empty="true"] {
+  border-color: transparent;
+  background: transparent;
+}
+
 .price-chart .chart-forecast-details {
   display: grid;
   gap: 8px;
