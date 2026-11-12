@@ -10,10 +10,7 @@ import { PriceChart } from "../apps/dashboard/src/PriceChart.tsx";
 import type { Candle } from "../packages/shared/src/index.ts";
 
 const T0 = 1_700_000_000;
-function points(
-  mids: number[],
-  halfWidth = 0.002,
-): ForecastPoint[] {
+function points(mids: number[], halfWidth = 0.002): ForecastPoint[] {
   return mids.map((mid, i) => ({
     timestamp: T0 + i * 300,
     mid,
@@ -91,5 +88,18 @@ describe("PriceChart forecast crossing marks", () => {
     expect(html).toContain("chart-forecast-crossing");
     expect(html).toContain("利確ライン");
     expect(html).not.toContain("損切りライン");
+    const plot = html.slice(html.indexOf("<svg"), html.indexOf("</svg>"));
+    expect(plot).toContain("chart-forecast-crossing");
+    expect(plot).not.toContain("利確ライン");
+    expect(plot).not.toContain("タッチライン $");
+    const details = html.slice(html.indexOf('class="chart-forecast-details"'));
+    expect(details).toContain("予測の詳細（模式）");
+    expect(details).toContain("利確ラインまで");
+    expect(details).toContain("あと");
+    if (fc!.touch) {
+      expect(details).toContain("タッチライン");
+      expect(details).toContain("到達確率");
+      expect(details).toContain(`${Math.round(fc!.touch.prob * 100)}%`);
+    }
   });
 });
