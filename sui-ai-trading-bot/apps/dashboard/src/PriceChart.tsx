@@ -18,6 +18,7 @@ import { number, dateTime, label } from "./presentation.ts";
 import { usePriceChartModel, type PriceChartProps } from "./PriceChartModel.ts";
 import {
   AnswerGhostOverlay,
+  AnswerDetails,
   ForecastOverlay,
   ForecastDetails,
   HoverReadout,
@@ -440,6 +441,9 @@ export function PriceChart(props: PriceChartProps) {
               </text>
             ))}
           </svg>
+          {ghost && answerCheck && (
+            <AnswerDetails check={answerCheck} ghost={ghost} />
+          )}
           {fc && fcCone && fcMid && (
             <ForecastDetails
               fc={fc}
