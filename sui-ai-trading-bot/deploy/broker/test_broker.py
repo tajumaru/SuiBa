@@ -304,8 +304,15 @@ class BrokerTests(unittest.TestCase):
     def test_lock_holder_plausibility_gate(self):
         lock = self.state/'lock'
         fd = os.open(lock, os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW, 0o600)
+        # The plausible holder is a spawned child, never this process:
+        # a child always has pid > 1 (pid 1 is the namespace init and
+        # the gate never trusts a record naming it), while this test
+        # process itself IS pid 1 inside the broker-test container,
+        # whose entrypoint is this suite.
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
         try:
-            identity = b.process_identity(os.getpid())
+            identity = b.process_identity(child.pid)
+            self.assertGreater(identity['pid'], 1)
             info = os.fstat(fd)
             base = {'version': 1, 'role': 'controller', 'operation': 'prod-run',
                     'pid': identity['pid'], 'start': identity['start'], 'boot': identity['boot'],
@@ -313,9 +320,17 @@ class BrokerTests(unittest.TestCase):
             b.atomic(self.state/b.LOCK_HOLDER_FILE, base)
             self.assertEqual(b.lock_holder(self.state),
                              {'role': 'controller', 'operation': 'prod-run',
-                              'pid': os.getpid(), 'at': base['at']})
-            # A record naming a dead process is a leftover, not a holder.
-            b.atomic(self.state/b.LOCK_HOLDER_FILE, {**base, 'pid': 4194304})
+                              'pid': child.pid, 'at': base['at']})
+            # A record naming a process that cannot exist is a
+            # leftover, not a holder: the kernel never assigns
+            # pid_max itself (live pids are strictly below it).
+            dead = int(Path('/proc/sys/kernel/pid_max').read_text())
+            b.atomic(self.state/b.LOCK_HOLDER_FILE, {**base, 'pid': dead})
+            self.assertIsNone(b.lock_holder(self.state))
+            # A record whose start ticks are not the named process's
+            # own does not identify it (a recycled pid never matches).
+            b.atomic(self.state/b.LOCK_HOLDER_FILE,
+                     {**base, 'start': str(int(base['start'])+1)})
             self.assertIsNone(b.lock_holder(self.state))
             # A record naming a different inode is not this lock.
             b.atomic(self.state/b.LOCK_HOLDER_FILE, {**base, 'inode': info.st_ino+1})
@@ -327,14 +342,19 @@ class BrokerTests(unittest.TestCase):
             # Corruption degrades to no holder, never an exception.
             (self.state/b.LOCK_HOLDER_FILE).write_bytes(b'{')
             self.assertIsNone(b.lock_holder(self.state))
-            # Clearing removes only the caller's own record.
-            b.atomic(self.state/b.LOCK_HOLDER_FILE, {**base, 'pid': 4194304})
+            # Clearing removes only the caller's own record: the
+            # child's record stays, the caller's own (written through
+            # write_lock_holder, whatever the caller's pid) is removed.
+            b.atomic(self.state/b.LOCK_HOLDER_FILE, base)
             b.clear_lock_holder(self.state)
             self.assertTrue((self.state/b.LOCK_HOLDER_FILE).exists())
-            b.atomic(self.state/b.LOCK_HOLDER_FILE, base)
+            b.write_lock_holder(self.state, 'broker', 'deploy', fd)
+            self.assertTrue((self.state/b.LOCK_HOLDER_FILE).exists())
             b.clear_lock_holder(self.state)
             self.assertFalse((self.state/b.LOCK_HOLDER_FILE).exists())
         finally:
+            child.kill()
+            child.wait()
             os.close(fd)
 
     def test_state_lock_acquisition_waits_for_a_brief_holder(self):
