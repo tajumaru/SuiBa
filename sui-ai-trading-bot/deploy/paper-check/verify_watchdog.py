@@ -33,6 +33,51 @@ def wait_record(path, predicate):
     raise AssertionError('WATCHDOG_FIXTURE_DID_NOT_REPORT')
 
 
+def dump_journal_timeout(name, record, expected, last_error):
+    print('WATCHDOG_JOURNAL_TIMEOUT expected='+repr(expected), flush=True)
+    try:
+        info = record.stat()
+        print('RESULT_FILE path='+str(record)+' mtime_ns='+str(info.st_mtime_ns), flush=True)
+        print(record.read_text(), flush=True)
+    except OSError as error:
+        print('RESULT_FILE_UNAVAILABLE '+repr(error), flush=True)
+    if last_error is not None:
+        print('JOURNAL_LAST_ERROR '+repr(last_error), flush=True)
+    for label, command in (
+        ('SERVICE_STATE', ['/usr/bin/systemctl', 'show', name+'.service',
+                           '-p', 'ActiveState', '-p', 'SubState', '-p', 'Result',
+                           '-p', 'ExecMainStatus', '-p', 'InvocationID']),
+        ('JOURNAL_RECENT', ['journalctl', '-u', name+'.service', '--no-pager',
+                            '-n', '60', '-o', 'short-iso-precise']),
+    ):
+        print(label, flush=True)
+        try:
+            print(subprocess.check_output(command, stderr=subprocess.STDOUT, timeout=5).decode(), flush=True)
+        except (OSError, subprocess.SubprocessError) as error:
+            print(label+'_UNAVAILABLE '+repr(error), flush=True)
+
+
+def wait_journal(name, record, expected):
+    # Match wait_record's 30s budget / 200ms cadence, but bound each command
+    # by the remaining budget too. A saved result is not a journal barrier.
+    deadline = time.monotonic()+30
+    last_error = None
+    while (remaining := deadline-time.monotonic()) > 0:
+        try:
+            output = subprocess.check_output(
+                ['journalctl', '-u', name+'.service', '--no-pager', '-o', 'cat'],
+                stderr=subprocess.STDOUT, timeout=min(10, remaining)).decode()
+            if expected in output:
+                return
+        except (OSError, subprocess.SubprocessError) as error:
+            last_error = error
+        remaining = deadline-time.monotonic()
+        if remaining > 0:
+            time.sleep(min(.2, remaining))
+    dump_journal_timeout(name, record, expected, last_error)
+    raise AssertionError('WATCHDOG_FIXTURE_JOURNAL_DID_NOT_REPORT '+expected)
+
+
 if len(sys.argv) == 5 and sys.argv[1] == 'check':
     base, output = Path(sys.argv[2]), Path(sys.argv[3])
     assert sys.argv[4] == 'DUMMY-ONLY' and base.parent == output.parent == Path('/var/lib')
@@ -110,7 +155,7 @@ def main():
         status['worker'] = {'reachable': False, 'reason': 'WORKER_UNREACHABLE'}
         response(status)
         wait_record(record, lambda v: v['verdict'] == 'attention' and v['reasons'] == ['WORKER_UNREACHABLE'])
-        assert 'SUIBA_WATCHDOG_ATTENTION WORKER_UNREACHABLE' in journal()
+        wait_journal(name, record, 'SUIBA_WATCHDOG_ATTENTION WORKER_UNREACHABLE')
         # Invalid wrapper output cannot leak into either record or journal.
         (base/'response.json').write_text('SECRET_FIXTURE_RESPONSE')
         wait_record(record, lambda v: v['reasons'] == ['STATUS_UNAVAILABLE'])
