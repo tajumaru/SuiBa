@@ -5,11 +5,8 @@ import { defaults, type Settings } from "../packages/shared/src/index.ts";
 import type { BotEngine } from "../apps/worker/src/engine.ts";
 import {
   DailyBudgetCard,
-  DailyBudgetStrip,
   dailyBudgetView,
 } from "../apps/dashboard/src/DailyBudget.tsx";
-import { OverviewTab } from "../apps/dashboard/src/OverviewTab.tsx";
-import type { SettingsApi } from "../apps/dashboard/src/settingsPresets.ts";
 
 type State = ReturnType<BotEngine["snapshot"]>;
 
@@ -129,83 +126,5 @@ describe("今日の残り (daily budget view)", () => {
     expect(view.remainingUsdc).toBe(10);
     expect(view.moreBuys).toBe(1);
     expect(view.verdict).toBe("買える（シグナル待ち）");
-  });
-});
-
-describe("概要の購入残りストリップ (overview budget strip)", () => {
-  const renderStrip = (state: State) =>
-    renderToStaticMarkup(<DailyBudgetStrip data={state} />);
-
-  it("headlines the remaining buy count, USDC and status", () => {
-    // Same first-day values as the card: used 5 of 20 USDC at a
-    // 5 USDC order size leaves 15 USDC, i.e. 3 more buys.
-    const html = renderStrip(data({ dailyBought: 5, dailyPnl: -0.1377 }));
-    expect(html).toContain("今日の購入 あと");
-    expect(html).toContain(">3</strong>");
-    expect(html).toContain("残り 15 USDC ・ 買える（シグナル待ち）");
-  });
-
-  it("shows zero and the blocker once the daily budget is spent", () => {
-    const html = renderStrip(data({ dailyBought: 20 }));
-    expect(html).toContain(">0</strong>");
-    expect(html).toContain("残り 0 USDC ・ 購入上限に到達");
-  });
-
-  it("shows the stopped status before any limit", () => {
-    const html = renderStrip(data({ running: false }));
-    expect(html).toContain("停止中・運用外");
-  });
-
-  it("shows a dash instead of a number when the count is unknown", () => {
-    const state = data({});
-    (state.portfolio as { dailyBought: unknown }).dailyBought = null;
-    const html = renderStrip(state);
-    expect(dailyBudgetView(state).moreBuys).toBeNull();
-    expect(html).toContain(">—</strong>");
-    expect(html).toContain("残り — USDC");
-  });
-
-  it("appears on the overview tab under the asset cards", () => {
-    const state = {
-      ...data({ dailyBought: 5, dailyPnl: -0.1377 }),
-      pair: "SUI_USDC",
-      pnl: 0,
-      todayTrades: 1,
-      unrealized: 0,
-      metrics: {},
-      equityCurve: [],
-      orders: [],
-      trades: [],
-      weather: null,
-      candlesByTimeframe: { 300: [], 900: [], 3600: [] },
-      longTermDaily: [],
-      bookImbalance: null,
-    } as unknown as State;
-    const html = renderToStaticMarkup(
-      <OverviewTab
-        data={state}
-        timeframe={300}
-        setTimeframe={() => {}}
-        api={null as unknown as SettingsApi}
-        forecastScoreLine={null}
-        forecastTouchLine={null}
-        forecastBandScale={1}
-        forecastAnswer={null}
-        shareCard={null}
-        sellLines={null}
-      />,
-    );
-    expect(html).toContain("budget-strip");
-    expect(html).toContain("今日の購入 あと");
-    expect(html).toContain(">3</strong>");
-    expect(html).toContain("残り 15 USDC ・ 買える（シグナル待ち）");
-    // The strip sits in the summary zone: after the asset cards,
-    // before the portfolio mix.
-    expect(html.indexOf("budget-strip")).toBeGreaterThan(
-      html.indexOf("本日の取引"),
-    );
-    expect(html.indexOf("budget-strip")).toBeLessThan(
-      html.indexOf("portfolio-mix"),
-    );
   });
 });

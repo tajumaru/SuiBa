@@ -1,6 +1,5 @@
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { number, percent, label } from "./presentation.ts";
-import { DailyBudgetStrip } from "./DailyBudget.tsx";
 import { PortfolioMix } from "./PortfolioMix.tsx";
 import { EquityCurve } from "./EquityCurve.tsx";
 import { ActivityGrass } from "./ActivityGrass.tsx";
@@ -17,7 +16,6 @@ const money = (v: number | null | undefined) => number(v, 4);
 
 /**
  * The overview tab, extracted from App: asset cards, the
- * today's-buy-budget strip under them, the
  * portfolio mix, the equity curve, the activity grass,
  * monthly report and market weather, the synchronized
  * price/RSI/MACD chart with
@@ -77,7 +75,6 @@ export function OverviewTab({
                         </p>
                       </section>
                     </div>
-                    <DailyBudgetStrip data={data} />
                     <PortfolioMix
                       usdc={data.portfolio.usdc}
                       baseQty={data.portfolio.sui}
