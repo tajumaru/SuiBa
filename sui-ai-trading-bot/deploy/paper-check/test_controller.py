@@ -774,6 +774,46 @@ class StopTests(unittest.TestCase):
                 self.assertIsNone(result['broker_last_failure'], value)
                 self.assertEqual(result['sequence'], 5)
 
+    def test_host_diagnostic_reports_broker_lock_holder_detail(self):
+        import re
+        from types import SimpleNamespace
+        broker_spec = importlib.util.spec_from_file_location(
+            'broker', Path(__file__).parents[1]/'broker'/'broker.py')
+        broker = importlib.util.module_from_spec(broker_spec)
+        broker_spec.loader.exec_module(broker)
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            root = Path(tmp)
+            FakeBroker.atomic(root/'ledger.json', {'status': 'prepared_stopped', 'sequence': 5, 'sha': 'a'*40})
+            FakeBroker.atomic(root/'paper-check.json', {'status': 'in_progress'})
+            ctl = object.__new__(c.Controller)
+            ctl.b = SimpleNamespace(STATE=root, SHA=re.compile(r'[a-f0-9]{40}'), decode=json.loads,
+                read_trusted=FakeBroker.read_trusted, __file__=c.__file__,
+                PRE_TRANSACTION_STAGES=broker.PRE_TRANSACTION_STAGES,
+                valid_lock_holder=broker.valid_lock_holder)
+            container = {'State': {'Status': 'exited'}, 'HostConfig': {'RestartPolicy': {'Name': 'no'}},
+                         'Config': {'Env': ['MODE=PAPER']}}
+            response = b'ActiveState=active\nSubState=elapsed\nNextElapseUSecMonotonic=0\nNextElapseUSecRealtime=\nJob=\n'
+            def diagnose():
+                with patch.object(c.subprocess, 'check_output', return_value=response):
+                    return ctl.diagnostic_host(container)
+            base = {'version': 1, 'at': 1794115200, 'operation': 'deploy', 'sha': 'c'*40, 'code': 'OS_ERROR'}
+            # A lock-contention detail naming its holder — or the
+            # explicit unknown — is surfaced with the record.
+            for holder in ({'role': 'controller', 'operation': 'prod-run', 'pid': 4242, 'at': 1794115200},
+                           'unknown'):
+                FakeBroker.atomic(root/'last-failure.json',
+                                  {**base, 'detail': {'errno': 11, 'stage': 'lock', 'holder': holder}})
+                self.assertEqual(diagnose()['broker_last_failure']['detail']['holder'], holder)
+            # A holder on any other stage/errno, or a malformed one,
+            # is beyond the whitelist: the record degrades to None.
+            for detail in ({'errno': 11, 'stage': 'directories', 'holder': 'unknown'},
+                           {'errno': 13, 'stage': 'lock', 'holder': 'unknown'},
+                           {'errno': 11, 'stage': 'lock',
+                            'holder': {'role': 'nobody', 'operation': 'prod-run', 'pid': 4242, 'at': 1794115200}},
+                           {'errno': 11, 'stage': 'lock', 'holder': 'a-process-name'}):
+                FakeBroker.atomic(root/'last-failure.json', {**base, 'detail': detail})
+                self.assertIsNone(diagnose()['broker_last_failure'], detail)
+
     @unittest.skipUnless(os.name == 'posix', 'mocked shell pipeline runs on Linux')
     def test_actions_logs_equal_validated_summary_and_never_echo_secrets(self):
         script = Path(__file__).parents[2]/'docker/ssh-paper-status.sh'
@@ -1650,6 +1690,98 @@ class ProductionTests(unittest.TestCase):
                 'requires_review': False,
                 'watchdog': {'record': None, 'code': 'WATCHDOG_RECORD_MISSING'},
             })
+
+    def test_prod_status_reports_the_failure_summary_for_a_failed_run(self):
+        # The diagnosis the owner otherwise needs a root terminal
+        # for: the failed run's stage, its recorded fault code, the
+        # HTTP status when the failure recorded one, and whether
+        # the run's backup is confirmed — all from the read-only
+        # status, as an additive key only.
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.admit(ctl); record['admitted'] = True
+            record['status'] = 'failed_requires_review'; record['stage'] = 'backup'
+            FakeBroker.atomic(ctl.record, record)
+            ctl.exited = lambda record: True
+            folder = ctl.folder(record)
+            FakeBroker.atomic(folder/'failure.json', {'id': record['id'], 'stage': 'worker-readiness', 'http_status': 503})
+            FakeBroker.atomic(folder/'fault-1.json', {'id': record['id'], 'error': 'BACKUP_UNCONFIRMED'})
+            status = ctl.prod_status()
+            self.assertEqual(status['failure'], {'status': 'failed_requires_review', 'stage': 'worker-readiness',
+                                                 'code': 'BACKUP_UNCONFIRMED', 'http_status': 503,
+                                                 'backup': 'unconfirmed'})
+            self.assertTrue(status['requires_review'])
+
+    def test_prod_status_backup_confirmation_states(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.admit(ctl); record['admitted'] = True
+            record['status'] = 'failed_requires_review'; record['stage'] = 'backup'
+            FakeBroker.atomic(ctl.folder(record)/'failure.json', {'id': record['id'], 'stage': 'backup'})
+            ctl.exited = lambda record: True
+            # A malformed backup entry degrades to unknown.
+            record['backup'] = {'file': 'paper-check-nope.tar', 'sha256': 'b'*64}
+            FakeBroker.atomic(ctl.record, record)
+            self.assertEqual(ctl.prod_status()['failure']['backup'], 'unknown')
+            # A well-formed entry whose archive is present with the
+            # watchdog's expected shape is confirmed; the lstat is
+            # faked so the verdict does not depend on the test
+            # runner's uid.
+            name = 'paper-check-' + 'a'*32 + '.tar'
+            record['backup'] = {'file': name, 'sha256': 'b'*64}
+            FakeBroker.atomic(ctl.record, record)
+            archive = ctl.b.BACKUPS/name
+            archive.write_bytes(b'fixture')
+            real_lstat = Path.lstat
+            def lstat(path, *args, **kwargs):
+                if Path(path) == archive:
+                    return SimpleNamespace(st_mode=0o100600, st_uid=0, st_nlink=1)
+                return real_lstat(path, *args, **kwargs)
+            with patch.object(Path, 'lstat', lstat):
+                self.assertEqual(ctl.prod_status()['failure']['backup'], 'confirmed')
+            # A well-formed entry with no archive on disk is
+            # unconfirmed — the BACKUP_UNCONFIRMED case.
+            archive.unlink()
+            self.assertEqual(ctl.prod_status()['failure']['backup'], 'unconfirmed')
+
+    def test_prod_status_failure_summary_degrades_on_corrupt_evidence(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.admit(ctl); record['admitted'] = True
+            record['status'] = 'failed_requires_review'; record['stage'] = 'monitoring'
+            FakeBroker.atomic(ctl.record, record)
+            ctl.exited = lambda record: True
+            folder = ctl.folder(record)
+            (folder/'failure.json').write_bytes(b'{corrupt')
+            # No exception; the record's own stage stands in and the
+            # rest degrades to unknown (None).
+            self.assertEqual(ctl.prod_status()['failure'],
+                             {'status': 'failed_requires_review', 'stage': 'monitoring',
+                              'code': None, 'http_status': None, 'backup': 'unconfirmed'})
+            # A preflight record still names its error class.
+            (folder/'failure.json').unlink()
+            FakeBroker.atomic(folder/'preflight.json', {'id': record['id'], 'check': 'storage', 'error': 'PermissionError'})
+            summary = ctl.prod_status()['failure']
+            self.assertEqual(summary['code'], 'PermissionError')
+            self.assertEqual(summary['stage'], 'preflight')
+
+    def test_prod_status_answers_while_the_deployment_lock_is_held(self):
+        # The status path never takes the deployment lock: while a
+        # supervisor holds it — exactly when the owner needs the
+        # diagnosis — the failure summary must still be readable.
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.admit(ctl); record['admitted'] = True
+            record['status'] = 'failed_requires_review'; record['stage'] = 'backup'
+            FakeBroker.atomic(ctl.record, record)
+            ctl.exited = lambda record: True
+            FakeBroker.atomic(ctl.folder(record)/'failure.json', {'id': record['id'], 'stage': 'backup'})
+            validation = c.Controller(ctl.b, ctl.validation_state)
+            with validation.deployment_lock():
+                status = ctl.prod_status()
+            self.assertEqual(status['failure'], {'status': 'failed_requires_review', 'stage': 'backup',
+                                                 'code': None, 'http_status': None, 'backup': 'unconfirmed'})
 
     def test_optional_watchdog_record_is_validated_without_writes_or_leaks(self):
         with tempfile.TemporaryDirectory() as root:

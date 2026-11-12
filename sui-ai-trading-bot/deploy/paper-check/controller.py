@@ -671,11 +671,17 @@ class Controller:
         with self.b.regular(self.b.STATE/'lock') as lock:
             import fcntl
             fcntl.flock(lock, fcntl.LOCK_EX|fcntl.LOCK_NB)
-            with self.locked('stop'), self.locked('mutation'):
-                report = self.diagnose_locked()
-                report['admission_failure'] = self.admission_failure()
-                report['admission_failures'] = self.admission_failures()
-                return report
+            with contextlib.suppress(Exception):
+                self.b.write_lock_holder(self.b.STATE, 'controller', 'diagnose', lock)
+            try:
+                with self.locked('stop'), self.locked('mutation'):
+                    report = self.diagnose_locked()
+                    report['admission_failure'] = self.admission_failure()
+                    report['admission_failures'] = self.admission_failures()
+                    return report
+            finally:
+                with contextlib.suppress(Exception):
+                    self.b.clear_lock_holder(self.b.STATE)
 
     def diagnose_locked(self):
         if not self.record.exists():
@@ -793,9 +799,13 @@ class Controller:
                     and type(candidate['code']) is str
                     and re.fullmatch(r'[A-Z][A-Z_]{2,47}', candidate['code'])
                     and ('detail' not in candidate or (
-                        type(candidate['detail']) is dict and set(candidate['detail']) == {'errno', 'stage'}
+                        type(candidate['detail']) is dict and set(candidate['detail']) in ({'errno', 'stage'}, {'errno', 'stage', 'holder'})
                         and (candidate['detail']['errno'] is None or type(candidate['detail']['errno']) is int)
-                        and candidate['detail']['stage'] in self.b.PRE_TRANSACTION_STAGES))):
+                        and candidate['detail']['stage'] in self.b.PRE_TRANSACTION_STAGES
+                        and ('holder' not in candidate['detail'] or (
+                            candidate['detail']['stage'] == 'lock' and
+                            candidate['detail']['errno'] == 11 and
+                            self.b.valid_lock_holder(candidate['detail']['holder'])))))):
                 broker_last_failure = {'at': candidate['at'], 'operation': candidate['operation'],
                                        'sha': candidate['sha'], 'code': candidate['code']}
                 if 'detail' in candidate:
@@ -1941,7 +1951,7 @@ class Controller:
                                                  'market_last_success': market['lastSuccessAt']})
 
     @contextlib.contextmanager
-    def deployment_lock(self):
+    def deployment_lock(self, operation=None):
         import fcntl
         # Same lock inode as deployment. Never unlink it.
         with self.b.directory(self.b.STATE):
@@ -1953,9 +1963,21 @@ class Controller:
             require(stat.S_ISREG(s.st_mode) and s.st_uid == 0 and s.st_nlink == 1 and not s.st_mode & 0o077)
             fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB)
             self._deployment_locked = True
+            # Name this holder beside the lock, so a contending
+            # broker failure can say WHO holds it — a running
+            # supervisor is the normal case — instead of leaving a
+            # bare OS_ERROR. The broker's holder record is written
+            # and cleared by the same helpers on its own path.
+            # Observation only: any failure here is suppressed and
+            # changes nothing about the lock itself.
+            with contextlib.suppress(Exception):
+                self.b.write_lock_holder(self.b.STATE, 'controller',
+                                         operation or ('prod-run' if self.session_mode == 'sui-prod' else 'run'), fd)
             yield
         finally:
             self._deployment_locked = False
+            with contextlib.suppress(Exception):
+                self.b.clear_lock_holder(self.b.STATE)
             os.close(fd)
 
     def run(self):
@@ -2213,7 +2235,7 @@ class ProductionController(Controller):
         if getattr(self, '_deployment_locked', False):
             return self._cleanup_locked(record, own, source)
         try:
-            with self.deployment_lock():
+            with self.deployment_lock('prod-cleanup'):
                 return self._cleanup_locked(record, own, source)
         except BlockingIOError:
             # The deployment lock is held by a deployment in flight:
@@ -2607,6 +2629,96 @@ class ProductionController(Controller):
         except Exception:
             return {'record': None, 'code': 'WATCHDOG_RECORD_INVALID'}
 
+    def backup_state(self, record):
+        """The watchdog's backup confirmation, as a state: the run
+        record names the archive, and the archive is on disk with
+        the expected owner and shape. Integrity (the hash) stays
+        with start/stop, exactly as in the watchdog."""
+        backup = record.get('backup')
+        if backup is None:
+            return 'unconfirmed'
+        if not (type(backup) is dict and set(backup) == {'file', 'sha256'} and
+                type(backup['file']) is str and
+                re.fullmatch(r'paper-check-[0-9a-f]{32}\.tar', backup['file']) and
+                type(backup['sha256']) is str and re.fullmatch(r'[0-9a-f]{64}', backup['sha256'])):
+            return 'unknown'
+        try:
+            info = (self.b.BACKUPS/backup['file']).lstat()
+        except Exception:
+            return 'unconfirmed'
+        return 'confirmed' if (stat.S_ISREG(info.st_mode) and info.st_uid == 0 and
+                                info.st_nlink == 1) else 'unconfirmed'
+
+    def fault_code(self, record):
+        """The first recorded fault code for the run, strictly
+        shaped, or None. Fault files are the run's own sticky
+        evidence ({id, error}); anything malformed is skipped."""
+        try:
+            paths = sorted((self.state/record['id']).glob('fault-*.json'))[:4]
+        except Exception:
+            return None
+        for path in paths:
+            try:
+                value = self.b.decode(self.b.read_trusted(path))
+            except Exception:
+                continue
+            if (type(value) is dict and value.get('id') == record['id'] and
+                    type(value.get('error')) is str and
+                    re.fullmatch(r'[A-Z][A-Z_]{2,47}', value['error'])):
+                return value['error']
+        return None
+
+    def failure_summary(self, record):
+        """Bounded, lock-free read of the run's failure evidence for
+        the read-only status — the diagnosis the owner otherwise
+        needs a root terminal to see. Fixed keys, validated values
+        only (the same shapes diagnose() gates on); each field
+        degrades to unknown on its own when its evidence is missing
+        or malformed, and nothing here raises or writes. None when
+        the run carries no failure evidence at all, so a healthy
+        response keeps its exact existing shape. No gate reads
+        this; it is observation only."""
+        folder = self.state/record['id']
+        failed = record['status'] == 'failed_requires_review'
+        if not (failed or os.path.lexists(folder/'failure.json') or
+                os.path.lexists(folder/'preflight.json') or self.faults(record)):
+            return None
+        summary = {'status': record['status'], 'stage': None, 'code': None,
+                   'http_status': None, 'backup': self.backup_state(record)}
+        try:
+            value = self.b.decode(self.b.read_trusted(folder/'failure.json'))
+            require(type(value) is dict and value.get('id') == record['id'] and
+                    value.get('stage') in ('preflight', 'backup', 'stopped', *DIAGNOSTIC_STAGES))
+            summary['stage'] = value['stage']
+            refusal = value.get('reset_refusal')
+            if type(refusal) is str and refusal in RESET_REFUSAL_CODES:
+                summary['code'] = refusal
+            http = value.get('http_status')
+            if type(http) is int and 100 <= http <= 599:
+                summary['http_status'] = http
+        except Exception:
+            pass
+        if summary['code'] is None:
+            summary['code'] = self.fault_code(record)
+        if summary['stage'] is None or summary['code'] is None:
+            try:
+                value = self.b.decode(self.b.read_trusted(folder/'preflight.json'))
+                require(type(value) is dict and value.get('id') == record['id'] and
+                        value.get('check') in PREFLIGHT_CHECKS and
+                        type(value.get('error')) is str and
+                        re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', value['error']))
+                if summary['code'] is None:
+                    summary['code'] = value['error']
+                if summary['stage'] is None:
+                    # A preflight record exists only when preflight
+                    # itself failed, so it names the stage exactly.
+                    summary['stage'] = 'preflight'
+            except Exception:
+                pass
+        if summary['stage'] is None and failed:
+            summary['stage'] = record['stage']
+        return summary
+
     def prod_status(self):
         # Read-only even before first use: no mkdir, locks, helpers or writes.
         watchdog = self.watchdog_status()
@@ -2635,10 +2747,14 @@ class ProductionController(Controller):
         # refuses while one exists, so its presence must be
         # discoverable here instead of surfacing only as a
         # reasonless start refusal (audit F-8).
-        return {'run': run, 'controller_alive': alive, 'worker': worker,
-                'requires_review': record['status'] == 'failed_requires_review' or self.faults(record)
-                                   or os.path.lexists(self.state/'abort-inhibit.json'),
-                'watchdog': watchdog}
+        result = {'run': run, 'controller_alive': alive, 'worker': worker,
+                  'requires_review': record['status'] == 'failed_requires_review' or self.faults(record)
+                                     or os.path.lexists(self.state/'abort-inhibit.json'),
+                  'watchdog': watchdog}
+        failure = self.failure_summary(record)
+        if failure is not None:
+            result['failure'] = failure
+        return result
 
     def export_prod_snapshot(self):
         # Read-only public extract of the LIVE production databases, feeding

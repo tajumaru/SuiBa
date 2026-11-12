@@ -85,6 +85,41 @@ class ShapeTests(unittest.TestCase):
         status['run']['status'] = 'failed_requires_review'; status['requires_review'] = True
         self.assertTrue({'REVIEW_REQUIRED', 'RUN_FAILED'} <= set(combine(status, watch, 2000)['reasons']))
 
+    def test_failure_summary_is_projected_into_the_report(self):
+        status, watch = healthy()
+        status['run'].update(status='failed_requires_review', stage='backup')
+        status.update(controller_alive=False, worker=None, requires_review=True)
+        failure = {'status': 'failed_requires_review', 'stage': 'worker-readiness',
+                   'code': 'BACKUP_UNCONFIRMED', 'http_status': 503, 'backup': 'unconfirmed'}
+        status['failure'] = failure
+        result = combine(status, watch, 2000)
+        self.assertEqual(result['verdict'], 'attention')
+        self.assertTrue({'REVIEW_REQUIRED', 'RUN_FAILED'} <= set(result['reasons']))
+        self.assertEqual(result['failure'], failure)
+
+    def test_malformed_failure_summary_is_invalid(self):
+        status, watch = healthy()
+        status['run'].update(status='failed_requires_review', stage='backup')
+        status.update(controller_alive=False, worker=None, requires_review=True)
+        good = {'status': 'failed_requires_review', 'stage': 'worker-readiness',
+                'code': 'BACKUP_UNCONFIRMED', 'http_status': 503, 'backup': 'unconfirmed'}
+        for mutate in (lambda f: f.update(extra='SECRET_FIXTURE'),
+                       lambda f: f.update(status='completed'),
+                       lambda f: f.update(stage='SECRET_FIXTURE'),
+                       lambda f: f.update(code='not a code'),
+                       lambda f: f.update(http_status=99),
+                       lambda f: f.update(http_status='503'),
+                       lambda f: f.update(backup='SECRET_FIXTURE'),
+                       lambda f: f.pop('code')):
+            bad = copy.deepcopy(status); bad['failure'] = copy.deepcopy(good); mutate(bad['failure'])
+            result = combine(bad, watch, 2000)
+            self.assertEqual(result['reasons'], ['PROD_STATUS_INVALID'])
+            self.assertNotIn('SECRET_FIXTURE', json.dumps(result))
+            self.assertNotIn('failure', result)
+        # The summary belongs to a run; without one it is invalid too.
+        result = combine({'run': None, 'requires_review': False, 'failure': good}, watch, 2000)
+        self.assertEqual(result['reasons'], ['PROD_STATUS_INVALID'])
+
     def test_missing_or_invalid_optional_record_uses_live_production_state(self):
         status, _ = healthy()
         for code in ('WATCHDOG_RECORD_MISSING', 'WATCHDOG_RECORD_INVALID'):

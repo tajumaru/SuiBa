@@ -22,12 +22,46 @@ const hexId = (value) =>
   typeof value === "string" && /^[a-f0-9]{32}$/.test(value);
 const integer = (value) => Number.isSafeInteger(value) && value >= 0;
 
+const failureShape = (value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (
+    Object.keys(value).sort().join(",") !==
+    "backup,code,http_status,stage,status"
+  )
+    return false;
+  if (
+    !["in_progress", "completed", "failed_requires_review"].includes(
+      value.status,
+    )
+  )
+    return false;
+  if (value.stage !== null && !contract.stages.includes(value.stage))
+    return false;
+  if (
+    value.code !== null &&
+    (typeof value.code !== "string" ||
+      !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(value.code))
+  )
+    return false;
+  if (
+    value.http_status !== null &&
+    (!Number.isSafeInteger(value.http_status) ||
+      value.http_status < 100 ||
+      value.http_status > 599)
+  )
+    return false;
+  return ["confirmed", "unconfirmed", "unknown"].includes(value.backup);
+};
+
 export function validateReport(value, now = Date.now() / 1000) {
   require(value && typeof value === "object" && !Array.isArray(value));
   require(
-    Object.keys(value).sort().join(",") ===
+    [
       "at,prod_state,reasons,run_id,verdict,watchdog_at",
+      "at,failure,prod_state,reasons,run_id,verdict,watchdog_at",
+    ].includes(Object.keys(value).sort().join(",")),
   );
+  if (value.failure !== undefined) require(failureShape(value.failure));
   require(integer(value.at) && value.at <= now + 60);
   require(["ok", "attention", "not_started"].includes(value.verdict));
   require(contract.prod_states.includes(value.prod_state));
@@ -150,6 +184,16 @@ export async function syncIssues(
     `- ラン: \`${report.run_id ?? "unknown"}\``,
     `- watchdog記録（UTC）: ${report.watchdog_at === null ? "未取得" : new Date(report.watchdog_at * 1000).toISOString()}`,
     `- 理由コード: ${report.reasons.map((code) => "\`" + code + "\`").join(", ") || "なし"}`,
+    ...(report.verdict === "attention" && report.failure
+      ? [
+          `- 失敗段階: \`${report.failure.stage ?? "unknown"}\``,
+          `- 失敗コード: \`${report.failure.code ?? "unknown"}\``,
+          ...(report.failure.http_status !== null
+            ? [`- HTTP状態: \`${report.failure.http_status}\``]
+            : []),
+          `- バックアップ: ${report.failure.backup === "confirmed" ? "確認済み" : report.failure.backup === "unconfirmed" ? "未確認" : "不明"}`,
+        ]
+      : []),
     `- [チェック実行](https://github.com/${repo}/actions/runs/${runId})`,
   ].join("\n");
   if (report.verdict === "ok") {
