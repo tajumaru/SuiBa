@@ -188,13 +188,30 @@ describe("PriceChart answer-check view", () => {
     const off = render();
     expect(off).toContain("chart-answer-toggle");
     expect(off).not.toContain('class="chart-answer"');
+    expect(off).not.toContain('class="chart-answer-details"');
     const on = render({ answerDefaultOn: true });
     expect(on).toContain('class="chart-answer"');
     expect(on).toContain('stroke="#ffffff"');
-    expect(on).toContain("2時間前の予測 → 実際");
+    expect(on).not.toContain("2時間前の予測 → 実際");
     expect(on).toContain("予測 +1.0%");
     expect(on).toContain("実際 +2.8%");
     expect(on).toContain("上がるという予測は当たりました");
+    const plot = on.slice(on.indexOf("<svg"), on.indexOf("</svg>"));
+    const comparison =
+      plot.match(/<g class="chart-answer"[\s\S]*?<\/g>/)?.[0] ?? "";
+    expect(comparison).toContain("<polyline");
+    expect(comparison).not.toContain("<text");
+    const details =
+      on.match(
+        /<section class="chart-answer-details"[\s\S]*?<\/section>/,
+      )?.[0] ?? "";
+    expect(details).toContain("当時の予測（破線）");
+    expect(details).toContain("実際の値動き（実線）");
+    expect(details).toContain("+1.0%");
+    expect(details).toContain("+2.8%");
+    expect(on.indexOf('class="chart-answer-details"')).toBeGreaterThan(
+      on.indexOf("</svg>"),
+    );
   });
 
   it("offers no toggle without a checkable forecast", () => {

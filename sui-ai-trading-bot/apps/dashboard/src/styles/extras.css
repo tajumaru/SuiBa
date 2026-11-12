@@ -257,6 +257,14 @@
 .chart-detail-swatch.touch {
   border-color: var(--gold);
 }
+.chart-answer-details h4 {
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+.chart-detail-swatch.answer-actual {
+  border-color: var(--text);
+  border-top-style: solid;
+}
 
 /* Grass streak line */
 .activity-grass-head {

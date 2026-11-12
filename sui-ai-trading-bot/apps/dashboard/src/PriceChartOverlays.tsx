@@ -1,6 +1,7 @@
 import type { Candle } from "../../../packages/shared/src/index.ts";
 import type { ChartForecast } from "./chartForecast.ts";
 import { forecastPalette } from "./chartForecast.ts";
+import type { ForecastAnswerCheck } from "./forecastLog.ts";
 import type { AnswerGhost, CrossingMark } from "./chartOverlayGeometry.ts";
 
 /**
@@ -163,9 +164,6 @@ export function AnswerGhostOverlay({ ghost }: { ghost: AnswerGhost }) {
         strokeDasharray="2 4"
         opacity="0.6"
       />
-      <text x={ghost.dividerX + 6} y="42" fill="#8fa3b0" fontSize="10">
-        2時間前の予測 → 実際
-      </text>
       <polygon points={ghost.cone} fill={ghost.palette.fill} />
       <polyline
         points={ghost.upper}
@@ -196,25 +194,46 @@ export function AnswerGhostOverlay({ ghost }: { ghost: AnswerGhost }) {
         strokeWidth="1.8"
         strokeLinejoin="round"
       />
-      <text
-        x={ghost.endX}
-        y={ghost.midAbove ? ghost.midEndY - 6 : ghost.midEndY + 13}
-        textAnchor="end"
-        fill={ghost.palette.stroke}
-        fontSize="10.5"
-      >
-        {ghost.forecastTag}
-      </text>
-      <text
-        x={ghost.endX}
-        y={ghost.midAbove ? ghost.actualEndY + 13 : ghost.actualEndY - 6}
-        textAnchor="end"
-        fill="#ffffff"
-        fontSize="10.5"
-      >
-        {ghost.actualTag}
-      </text>
     </g>
+  );
+}
+
+export function AnswerDetails({
+  check,
+  ghost,
+}: {
+  check: ForecastAnswerCheck;
+  ghost: AnswerGhost;
+}) {
+  const pct = (value: number) =>
+    `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
+  return (
+    <section className="chart-answer-details" aria-label="前の予測と実際の詳細">
+      <h4>前の予測と実際</h4>
+      <dl className="chart-forecast-details">
+        <div>
+          <dt>
+            <span
+              className="chart-detail-swatch"
+              style={{ borderColor: ghost.palette.stroke }}
+              aria-hidden="true"
+            />
+            当時の予測（破線）
+          </dt>
+          <dd>{pct(check.driftPct)}</dd>
+        </div>
+        <div>
+          <dt>
+            <span
+              className="chart-detail-swatch answer-actual"
+              aria-hidden="true"
+            />
+            実際の値動き（実線）
+          </dt>
+          <dd>{pct(check.actualPct)}</dd>
+        </div>
+      </dl>
+    </section>
   );
 }
 
