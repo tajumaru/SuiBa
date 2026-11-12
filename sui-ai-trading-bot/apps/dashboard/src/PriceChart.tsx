@@ -22,6 +22,7 @@ import {
   ForecastOverlay,
   ForecastDetails,
   HoverReadout,
+  HoverMarker,
 } from "./PriceChartOverlays.tsx";
 
 export function PriceChart(props: PriceChartProps) {
@@ -77,8 +78,6 @@ export function PriceChart(props: PriceChartProps) {
     chosen,
     hoverLines,
     hoverCx,
-    hoverBoxW,
-    hoverBoxX,
     zoom,
     move,
     loadHistory,
@@ -312,6 +311,7 @@ export function PriceChart(props: PriceChartProps) {
           <p className="chart-help">
             横ドラッグで移動、Ctrl＋ホイールで拡大・縮小。キーボードではグラフにフォーカスし、左右キーで移動、＋／−で拡大・縮小、Homeで最新へ。時刻は日本時間です。
           </p>
+          <HoverReadout hoverLines={hoverLines} />
           <svg
             ref={svg}
             className="interactive-price-chart"
@@ -415,12 +415,9 @@ export function PriceChart(props: PriceChartProps) {
               />
             )}
             {hoverLines && chosen && (
-              <HoverReadout
-                hoverLines={hoverLines}
+              <HoverMarker
                 chosen={chosen}
                 hoverCx={hoverCx}
-                hoverBoxW={hoverBoxW}
-                hoverBoxX={hoverBoxX}
                 y={y}
                 left={left}
                 right={right}

@@ -1,15 +1,12 @@
 import { chartGapQuality } from "../../../packages/shared/src/chart-gap-quality.ts";
-import { candleHoverLines, hoverLineWidth } from "./chartHover.ts";
+import { candleHoverLines } from "./chartHover.ts";
 import {
   answerGhost,
   crossingMarksFor,
   forecastGeometry,
 } from "./chartOverlayGeometry.ts";
 import { candleGeometry } from "./candleGeometry.ts";
-import {
-  chartForecast,
-  FORECAST_BARS,
-} from "./chartForecast.ts";
+import { chartForecast, FORECAST_BARS } from "./chartForecast.ts";
 import type { ForecastAnswerCheck } from "./forecastLog.ts";
 import { chartSeries } from "./chartIndicators.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
@@ -216,27 +213,12 @@ export function usePriceChartModel({
     [visible, w, min, max, tf],
   );
   const chosen = c.find((b) => b.timestamp === selected) ?? c.at(-1);
-  // In-chart readout for the hovered/tapped candle. Only while
+  // Above-chart readout for the hovered/tapped candle. Only while
   // a candle is actually selected — the default "latest" state
   // keeps the chart clean.
   const hoverLines =
     selected != null && chosen ? candleHoverLines(chosen) : null;
   const hoverCx = chosen ? x(chosen.timestamp + tf / 2) : 0;
-  const hoverBoxW = hoverLines
-    ? Math.max(hoverLineWidth(hoverLines.main), hoverLineWidth(hoverLines.sub)) +
-      16
-    : 0;
-  const hoverBoxX = hoverLines
-    ? Math.min(
-        Math.max(
-          left,
-          hoverCx + 10 + hoverBoxW <= right
-            ? hoverCx + 10
-            : hoverCx - 10 - hoverBoxW,
-        ),
-        Math.max(left, right - hoverBoxW),
-      )
-    : 0;
   const pick = (clientX: number) => {
     if (!svg.current || !c.length) return;
     const rect = svg.current.getBoundingClientRect(),
@@ -395,8 +377,6 @@ export function usePriceChartModel({
     chosen,
     hoverLines,
     hoverCx,
-    hoverBoxW,
-    hoverBoxX,
     zoom,
     move,
     loadHistory,
