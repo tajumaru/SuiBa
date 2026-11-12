@@ -8,6 +8,7 @@ import os
 import stat
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -258,7 +259,83 @@ class BrokerTests(unittest.TestCase):
         self.assertEqual(b.public_failure_code(caught.exception), 'OS_ERROR')
         record = json.loads((self.state/'last-failure.json').read_text())
         self.assertEqual(record['code'], 'OS_ERROR')
-        self.assertEqual(record['detail'], {'errno': 11, 'stage': 'lock'})
+        # No holder metadata exists in this fixture, so the holder
+        # is reported as unknown — never omitted, never invented.
+        self.assertEqual(record['detail'], {'errno': 11, 'stage': 'lock', 'holder': 'unknown'})
+
+    def test_execute_records_lock_holder_when_metadata_is_plausible(self):
+        # A live supervisor process holds the state lock and has
+        # named itself beside it; the contending deploy's failure
+        # record must name that holder instead of a bare OS_ERROR.
+        script = (
+            'import fcntl, importlib.util, os, sys, time\n'
+            'from pathlib import Path\n'
+            'spec = importlib.util.spec_from_file_location("broker", sys.argv[1])\n'
+            'b = importlib.util.module_from_spec(spec); spec.loader.exec_module(b)\n'
+            'state = Path(sys.argv[2])\n'
+            'fd = os.open(state/"lock", os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW, 0o600)\n'
+            'fcntl.flock(fd, fcntl.LOCK_EX)\n'
+            'b.write_lock_holder(state, "controller", "prod-run", fd)\n'
+            'print("ready", flush=True)\n'
+            'time.sleep(60)\n')
+        holder = subprocess.Popen(
+            [sys.executable, '-I', '-c', script,
+             str(Path(__file__).with_name('broker.py')), str(self.state)],
+            stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(holder.stdout.readline().strip(), 'ready')
+            with patch.object(b, 'STATE_LOCK_WAIT_SECONDS', 0.5):
+                with self.assertRaises(BlockingIOError):
+                    self.broker.execute(self.req, 1001)
+            record = json.loads((self.state/'last-failure.json').read_text())
+            self.assertEqual(record['detail']['errno'], 11)
+            self.assertEqual(record['detail']['stage'], 'lock')
+            summary = record['detail']['holder']
+            self.assertEqual(summary['role'], 'controller')
+            self.assertEqual(summary['operation'], 'prod-run')
+            self.assertEqual(summary['pid'], holder.pid)
+            self.assertIs(type(summary['at']), int)
+            # The contender must not clear another holder's record.
+            self.assertTrue((self.state/b.LOCK_HOLDER_FILE).exists())
+        finally:
+            holder.terminate()
+            holder.wait(timeout=10)
+
+    def test_lock_holder_plausibility_gate(self):
+        lock = self.state/'lock'
+        fd = os.open(lock, os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW, 0o600)
+        try:
+            identity = b.process_identity(os.getpid())
+            info = os.fstat(fd)
+            base = {'version': 1, 'role': 'controller', 'operation': 'prod-run',
+                    'pid': identity['pid'], 'start': identity['start'], 'boot': identity['boot'],
+                    'device': info.st_dev, 'inode': info.st_ino, 'at': int(time.time())}
+            b.atomic(self.state/b.LOCK_HOLDER_FILE, base)
+            self.assertEqual(b.lock_holder(self.state),
+                             {'role': 'controller', 'operation': 'prod-run',
+                              'pid': os.getpid(), 'at': base['at']})
+            # A record naming a dead process is a leftover, not a holder.
+            b.atomic(self.state/b.LOCK_HOLDER_FILE, {**base, 'pid': 4194304})
+            self.assertIsNone(b.lock_holder(self.state))
+            # A record naming a different inode is not this lock.
+            b.atomic(self.state/b.LOCK_HOLDER_FILE, {**base, 'inode': info.st_ino+1})
+            self.assertIsNone(b.lock_holder(self.state))
+            # A record from before a reboot is not this boot's holder.
+            b.atomic(self.state/b.LOCK_HOLDER_FILE,
+                     {**base, 'boot': '00000000-0000-0000-0000-000000000000'})
+            self.assertIsNone(b.lock_holder(self.state))
+            # Corruption degrades to no holder, never an exception.
+            (self.state/b.LOCK_HOLDER_FILE).write_bytes(b'{')
+            self.assertIsNone(b.lock_holder(self.state))
+            # Clearing removes only the caller's own record.
+            b.atomic(self.state/b.LOCK_HOLDER_FILE, {**base, 'pid': 4194304})
+            b.clear_lock_holder(self.state)
+            self.assertTrue((self.state/b.LOCK_HOLDER_FILE).exists())
+            b.atomic(self.state/b.LOCK_HOLDER_FILE, base)
+            b.clear_lock_holder(self.state)
+            self.assertFalse((self.state/b.LOCK_HOLDER_FILE).exists())
+        finally:
+            os.close(fd)
 
     def test_state_lock_acquisition_waits_for_a_brief_holder(self):
         with tempfile.TemporaryDirectory(dir=self.root) as tmp:
@@ -929,6 +1006,23 @@ class VerifyTests(unittest.TestCase):
                                   'checks': {'policy': True, 'compose_digest': True,
                                              'runtime_env': True, 'admin_token': True,
                                              'volumes': True, 'helper_image': True}})
+
+    def test_execute_names_itself_as_lock_holder_and_clears_on_release(self):
+        seen = {}
+        real_write = b.write_lock_holder
+        def spy(state, role, operation, lockfd):
+            real_write(state, role, operation, lockfd)
+            seen['value'] = json.loads((Path(state)/b.LOCK_HOLDER_FILE).read_text())
+        with patch.object(b, 'write_lock_holder', spy):
+            self.assertEqual(self.broker.execute(self.req, 1001)['status'], 'verified')
+        value = seen['value']
+        self.assertEqual(value['role'], 'broker')
+        self.assertEqual(value['operation'], 'verify')
+        self.assertEqual(value['pid'], os.getpid())
+        self.assertEqual(value['version'], 1)
+        # Released with the lock: no metadata is left behind.
+        self.assertFalse((self.state/b.LOCK_HOLDER_FILE).exists())
+        self.assertIsNone(b.lock_holder(self.state))
 
     def test_verify_fails_on_missing_volume_with_deploy_code(self):
         original = self.docker.call

@@ -76,6 +76,95 @@ test("attention creates one dedicated label/issue and includes only safe observa
   assert.ok(!body.body.includes("fixture-only"));
 });
 
+test("attention with a failure summary names the stage, code and backup state", async () => {
+  const f = fixture([
+    ["GET", "/issues?", 200, []],
+    ["GET", "/labels/", 404, {}],
+    ["POST", "/labels", 201, { name: LABEL }],
+    ["POST", "/issues", 201, { number: 5 }],
+  ]);
+  const value = {
+    ...report(),
+    reasons: ["REVIEW_REQUIRED", "RUN_FAILED"],
+    prod_state: "failed_requires_review",
+    failure: {
+      status: "failed_requires_review",
+      stage: "worker-readiness",
+      code: "BACKUP_UNCONFIRMED",
+      http_status: 503,
+      backup: "unconfirmed",
+    },
+  };
+  assert.deepEqual(validateReport(value, 2000), value);
+  assert.deepEqual(await syncIssues(value, f.context), {
+    action: "created",
+    count: 1,
+  });
+  const body = f.calls.at(-1).body.body;
+  assert.ok(body.includes("- 失敗段階: `worker-readiness`"));
+  assert.ok(body.includes("- 失敗コード: `BACKUP_UNCONFIRMED`"));
+  assert.ok(body.includes("- HTTP状態: `503`"));
+  assert.ok(body.includes("- バックアップ: 未確認"));
+  // The failure lines sit with the other diagnosis fields, before
+  // the run link.
+  assert.ok(body.indexOf("- 理由コード:") < body.indexOf("- 失敗段階:"));
+  assert.ok(body.indexOf("- バックアップ:") < body.indexOf("- [チェック実行]"));
+});
+
+test("failure summary without an HTTP status omits that line only", async () => {
+  const f = fixture([
+    ["GET", "/issues?", 200, []],
+    ["GET", "/labels/", 404, {}],
+    ["POST", "/labels", 201, { name: LABEL }],
+    ["POST", "/issues", 201, { number: 5 }],
+  ]);
+  const value = {
+    ...report(),
+    failure: {
+      status: "failed_requires_review",
+      stage: null,
+      code: null,
+      http_status: null,
+      backup: "confirmed",
+    },
+  };
+  await syncIssues(value, f.context);
+  const body = f.calls.at(-1).body.body;
+  assert.ok(body.includes("- 失敗段階: `unknown`"));
+  assert.ok(body.includes("- 失敗コード: `unknown`"));
+  assert.ok(!body.includes("HTTP状態"));
+  assert.ok(body.includes("- バックアップ: 確認済み"));
+});
+
+test("malformed failure summaries cannot be rendered", () => {
+  const good = {
+    status: "failed_requires_review",
+    stage: "backup",
+    code: null,
+    http_status: null,
+    backup: "unknown",
+  };
+  for (const failure of [
+    { ...good, extra: "SECRET_FIXTURE" },
+    { ...good, stage: "SECRET_FIXTURE" },
+    { ...good, code: "not a code" },
+    { ...good, http_status: 99 },
+    { ...good, http_status: "503" },
+    { ...good, backup: "SECRET_FIXTURE" },
+    { ...good, status: "SECRET_FIXTURE" },
+    "SECRET_FIXTURE",
+  ]) {
+    assert.throws(() => validateReport({ ...report(), failure }, 2000));
+    assert.deepEqual(
+      notificationReport(
+        JSON.stringify({ ...report(), failure }),
+        2000,
+      ).reasons,
+      ["CHECK_FAILED"],
+    );
+  }
+});
+
 test("existing managed alerts are updated without new issues or comments", async () => {
   const f = fixture([
     ["GET", "/issues?", 200, [issue(3), issue(4)]],

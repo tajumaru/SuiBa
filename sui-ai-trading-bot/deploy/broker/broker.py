@@ -132,6 +132,94 @@ def acquire_state_lock(lockfd, budget=None):
             time.sleep(min(STATE_LOCK_RETRY_SECONDS, remaining))
 
 
+LOCK_HOLDER_FILE = 'lock-holder.json'
+LOCK_HOLDER_ROLES = ('broker', 'controller')
+LOCK_HOLDER_OPERATIONS = ('deploy', 'rollback', 'verify', 'run', 'prod-run', 'prod-cleanup', 'diagnose')
+
+
+def process_identity(pid):
+    """The (pid, start ticks, boot id) identity triple — the same
+    shape the controller records for its own processes, so a
+    recorded holder can be checked against the live process table:
+    a recycled PID never matches on start ticks."""
+    value = Path('/proc/'+str(pid)+'/stat').read_text().split(') ', 1)[1].split()
+    return {'pid': pid, 'start': value[19],
+            'boot': Path('/proc/sys/kernel/random/boot_id').read_text().strip()}
+
+
+def write_lock_holder(state, role, operation, lockfd):
+    """Best-effort holder metadata BESIDE the state lock — never in
+    the lock file itself, whose inode is the exclusion, and never
+    by renaming it. Written only while the caller holds the flock,
+    so a reader that finds the named process alive with this
+    identity is looking at the current holder. Observation only: a
+    failure here changes no decision."""
+    with contextlib.suppress(Exception):
+        require(role in LOCK_HOLDER_ROLES and operation in LOCK_HOLDER_OPERATIONS, 'LOCK_HOLDER')
+        s = os.fstat(lockfd)
+        identity = process_identity(os.getpid())
+        atomic(Path(state)/LOCK_HOLDER_FILE, {
+            'version': 1, 'role': role, 'operation': operation,
+            'pid': identity['pid'], 'start': identity['start'], 'boot': identity['boot'],
+            'device': s.st_dev, 'inode': s.st_ino, 'at': int(time.time())})
+
+
+def clear_lock_holder(state):
+    """Remove our own holder metadata, if it is still ours, before
+    the flock is released. A successor's record is never removed."""
+    with contextlib.suppress(Exception):
+        path = Path(state)/LOCK_HOLDER_FILE
+        value = decode(read_trusted(path, maximum=4096))
+        identity = process_identity(os.getpid())
+        if (type(value) is dict and value.get('pid') == identity['pid'] and
+                value.get('start') == identity['start'] and value.get('boot') == identity['boot']):
+            path.unlink()
+            with directory(Path(state)) as parent:
+                os.fsync(parent)
+
+
+def lock_holder(state):
+    """The plausible current holder of the state lock, or None.
+    Plausible means: strict shape, the metadata names THIS lock
+    inode, and the named process is still alive with the recorded
+    identity (same boot, same start ticks). Anything else — a
+    leftover from a dead holder, a recycled PID, a corrupt file —
+    is not evidence and yields None."""
+    try:
+        value = decode(read_trusted(Path(state)/LOCK_HOLDER_FILE, maximum=4096))
+        require(type(value) is dict and set(value) ==
+                {'version', 'role', 'operation', 'pid', 'start', 'boot', 'device', 'inode', 'at'}, 'LOCK_HOLDER')
+        require(value['version'] == 1 and value['role'] in LOCK_HOLDER_ROLES and
+                value['operation'] in LOCK_HOLDER_OPERATIONS, 'LOCK_HOLDER')
+        require(type(value['pid']) is int and value['pid'] > 1 and
+                type(value['start']) is str and value['start'].isdecimal() and
+                type(value['boot']) is str and str(uuid.UUID(value['boot'])) == value['boot'], 'LOCK_HOLDER')
+        require(type(value['device']) is int and type(value['inode']) is int and
+                type(value['at']) is int and 0 < value['at'] <= int(time.time())+60, 'LOCK_HOLDER')
+        with regular(Path(state)/'lock') as fd:
+            s = os.fstat(fd)
+        require((value['device'], value['inode']) == (s.st_dev, s.st_ino), 'LOCK_HOLDER')
+        identity = process_identity(value['pid'])
+        require(identity['start'] == value['start'] and identity['boot'] == value['boot'], 'LOCK_HOLDER')
+        return {'role': value['role'], 'operation': value['operation'],
+                'pid': value['pid'], 'at': value['at']}
+    except Exception:
+        return None
+
+
+def valid_lock_holder(value):
+    """Shape gate for the holder summary inside a failure detail:
+    the fixed summary dict, or the literal 'unknown' when no
+    plausible metadata existed. The controller's diagnosis applies
+    the same gate to the records it surfaces."""
+    if value == 'unknown':
+        return True
+    return (type(value) is dict and set(value) == {'role', 'operation', 'pid', 'at'} and
+            value['role'] in LOCK_HOLDER_ROLES and value['operation'] in LOCK_HOLDER_OPERATIONS and
+            type(value['pid']) is int and value['pid'] > 1 and
+            type(value['at']) is int and value['at'] > 0)
+
+
 def publish_public_result(status, code, sha):
     try:
         if status not in ('prepared_stopped', 'failed'):
@@ -610,6 +698,7 @@ class Broker:
                     s = os.fstat(lockfd)
                     require(s.st_uid == 0 and s.st_nlink == 1 and stat.S_ISREG(s.st_mode) and not (s.st_mode & 0o077), 'LOCK_FILE')
                     acquire_state_lock(lockfd)
+                write_lock_holder(self.state, 'broker', req.get('operation'), lockfd)
                 # Revalidate imported callers too; CLI never accepts a path/image/config.
                 request(json.dumps(req).encode())
                 if req['operation'] == 'verify':
@@ -635,6 +724,7 @@ class Broker:
                             self.archive.unlink(missing_ok=True)
 
             finally:
+                clear_lock_holder(self.state)
                 os.close(lockfd)
         except BaseException as error:
             # The steps above run before the inner handler exists:
@@ -712,6 +802,13 @@ class Broker:
                 # (last-deploy.json) keeps its exact shape — its
                 # reader validates the key set strictly — so this
                 # detail lives only in this root-owned record.
+                if detail['stage'] == 'lock' and detail['errno'] == 11:
+                    # Name who holds the state lock, when the holder
+                    # metadata beside it is plausible; 'unknown' when
+                    # it is not. A contention record without a holder
+                    # was the blind spot that hid a running
+                    # supervisor behind a bare OS_ERROR.
+                    detail['holder'] = lock_holder(self.state) or 'unknown'
                 value['detail'] = detail
             atomic(self.state/'last-failure.json', value)
         # An attempted record is the record: execute()'s outer

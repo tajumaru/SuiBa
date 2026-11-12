@@ -22,6 +22,17 @@ def unreachable(worker):
             worker['reachable'] is False and worker['reason'] == 'WORKER_UNREACHABLE')
 
 
+def failure_summary(value, run):
+    require(type(value) is dict and set(value) == {'status', 'stage', 'code', 'http_status', 'backup'})
+    require(value['status'] == run['status'] and value['status'] in ('in_progress', 'completed', 'failed_requires_review'))
+    require(value['stage'] is None or value['stage'] in CONTRACT['stages'])
+    require(value['code'] is None or type(value['code']) is str and
+            re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', value['code']))
+    require(value['http_status'] is None or type(value['http_status']) is int and 100 <= value['http_status'] <= 599)
+    require(value['backup'] in ('confirmed', 'unconfirmed', 'unknown'))
+    return value
+
+
 def production(value, now):
     require(type(value) is dict and type(value.get('requires_review')) is bool and 'run' in value)
     optional = value.get('watchdog')
@@ -35,9 +46,12 @@ def production(value, now):
     if run is None:
         require(set(value) == {'run', 'requires_review', 'watchdog'})
         return value
-    require(set(value) == {'run', 'requires_review', 'worker', 'controller_alive', 'watchdog'} and
+    require({'run', 'requires_review', 'worker', 'controller_alive', 'watchdog'} <= set(value) <=
+            {'run', 'requires_review', 'worker', 'controller_alive', 'watchdog', 'failure'} and
             type(value['controller_alive']) is bool and type(run) is dict and
             set(run) == {'id', 'status', 'started', 'stopped', 'sha', 'stage', 'admitted'})
+    if 'failure' in value:
+        failure_summary(value['failure'], run)
     require(hex_id(run['id']) and run['status'] in CONTRACT['prod_states'][2:] and
             type(run['started']) is int and 0 <= run['started'] <= (now+60)*1000 and
             type(run['admitted']) is bool and run['stage'] in CONTRACT['stages'])
@@ -104,6 +118,10 @@ def combine(prod, now, prod_read=True):
         if watch['run_id'] != result['run_id']: reasons.add('WATCHDOG_RUN_MISMATCH')
         if watch['verdict'] == 'not_started' and run is not None: reasons.add('STATUS_INCONSISTENT')
         reasons.update(watch['reasons'])
+    if prod.get('failure') is not None:
+        # Validated above; carried through so the alert can name the
+        # stage and code instead of only that the run failed.
+        result['failure'] = prod['failure']
     result.update(verdict='attention' if reasons else 'ok', reasons=sorted(reasons))
     return result
 
