@@ -1,0 +1,241 @@
+name: SuiBa production release
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type RELEASE-PROD to validate, package, then stop, deploy and start production with one approval"
+        required: true
+        type: string
+permissions:
+  contents: read
+# Same group name as the production control workflow. GitHub
+# concurrency groups are scoped to a single workflow file, so this
+# serializes release runs against each other; serialization against
+# the standalone control/deployment workflows is provided on the host
+# by the broker/controller state lock, not by this group.
+concurrency:
+  group: suiba-production-control
+  cancel-in-progress: false
+jobs:
+  # Phase A: build and verify while production keeps running. No
+  # Environment approval is requested for these jobs, and a failure
+  # here leaves production untouched.
+  validate:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE-PROD'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # The pnpm version comes from package.json's
+      # packageManager pin, via Corepack.
+      - run: corepack enable
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "24.22.1"
+      # Hand-rolled store cache, resolved inside the app
+      # directory (see suiba-no-worker.yml for why setup-node's
+      # own pnpm cache cannot be used in this repository).
+      - name: Resolve the pnpm store path
+        id: pnpm-store
+        working-directory: sui-ai-trading-bot
+        run: echo "path=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('sui-ai-trading-bot/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+      - run: pnpm install --frozen-lockfile && pnpm typecheck && pnpm build && node node_modules/vitest/vitest.mjs run --config vitest.no-worker.config.ts
+        working-directory: sui-ai-trading-bot
+      - name: Validate deployment shell
+        run: |
+          bash -n sui-ai-trading-bot/docker/deploy-vps.sh
+          shellcheck sui-ai-trading-bot/docker/deploy-vps.sh
+      - name: Offline data and deployment failure regression (no Worker)
+        working-directory: sui-ai-trading-bot
+        run: node --import tsx --test docker/vps-data.node.mjs docker/vps-deploy.node.mjs
+      - name: Validate rendered Compose without starting a container
+        working-directory: sui-ai-trading-bot
+        run: |
+          # Some Compose versions still stat env_file with --no-env-resolution.
+          # Empty runner-local fixtures only; no production configuration or token.
+          sudo mkdir -p /opt/suiba/shared
+          sudo touch /opt/suiba/shared/runtime.env /opt/suiba/shared/admin-token
+          node docker/verify-vps-config.mjs
+  package-image:
+    outputs:
+      archive_sha256: ${{ steps.package.outputs.archive_sha256 }}
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE-PROD'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build on runner, never on VPS
+        run: docker buildx build --provenance=false --sbom=false --output type=docker,oci-mediatypes=true --build-arg SUIBA_BUILD_SHA=${{ github.sha }} -f sui-ai-trading-bot/docker/Dockerfile -t suiba:${{ github.sha }} sui-ai-trading-bot
+      - name: Isolated Compose, UID1000, WAL restore, SIGTERM timeout and OOM (no Worker)
+        working-directory: sui-ai-trading-bot
+        run: node docker/verify-vps-offline.mjs suiba:${{ github.sha }}
+      - name: Package immutable release
+        id: package
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE-PROD'
+        run: |
+          mkdir release
+          docker save suiba:${{ github.sha }} | gzip > release/image.tar.gz
+          python3 sui-ai-trading-bot/docker/check-image-archive.py release/image.tar.gz
+          docker image inspect --format '{{.Id}}' suiba:${{ github.sha }} > release/image-id.txt
+          cd release
+          sha256sum image.tar.gz > image.tar.gz.sha256
+          read -r digest _ < image.tar.gz.sha256
+          printf 'archive_sha256=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE-PROD'
+        with:
+          name: vps-release
+          path: release/
+          compression-level: 0
+          retention-days: 3
+  # Phase B: the single approval for the whole release. This is the
+  # only job in this workflow that declares the sakura-vps
+  # Environment; the state-changing jobs below inherit the decision
+  # through needs: and never prompt again. If any earlier job failed
+  # or was skipped, this job is skipped and no approval is requested.
+  release-approval:
+    needs: [validate, package-image]
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE-PROD'
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record what this approval releases
+        env:
+          ARCHIVE_SHA256: ${{ needs.package-image.outputs.archive_sha256 }}
+        run: |
+          printf 'Release commit: %s\n' "${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Release archive sha256: %s\n' "$ARCHIVE_SHA256" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Approving this job stops production, deploys the release above and starts production again. Any failure halts the chain with production left stopped; nothing restarts the previous release automatically.\n' >> "$GITHUB_STEP_SUMMARY"
+  # Phase C: stop, deploy, start, strictly in that order. A failure
+  # in any of them skips the rest (default needs: semantics), leaving
+  # production stopped for a deliberate, separately approved action.
+  prod-stop:
+    needs: release-approval
+    # Same repository-variable enable gate as the standalone control
+    # workflow; missing/false disables all SSH in this job.
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE-PROD' && vars.SUIBA_PROD_CONTROL_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Stop production through the fixed wrapper
+        id: stop
+        env:
+          # The wrapper only accepts its own fixed confirmation word;
+          # the release confirmation was checked by this job's gate.
+          PROD_STOP_CONFIRMATION: STOP-PROD
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-prod-stop.sh
+      # When the stop closed a record that had failed, print that
+      # record's failure summary here as well; a healthy stop (and a
+      # no-op stop, which never reaches this step) prints nothing.
+      - name: Follow-up status read (failure detail only)
+        if: steps.stop.outputs.outcome == 'completed'
+        env:
+          PROD_FOLLOWUP_MODE: stop
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: python3 sui-ai-trading-bot/docker/production-followup.py
+  deploy:
+    needs: [prod-stop, package-image]
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE-PROD' && vars.SUIBA_BROKER_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: vps-release
+          path: release
+      - name: Transfer and deploy with pinned SSH host identity
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          RELEASE_SHA: ${{ github.sha }}
+          ARCHIVE_SHA256: ${{ needs.package-image.outputs.archive_sha256 }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          [[ $VPS_HOST =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ $VPS_USER =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ $VPS_USER == 'suiba-deploy' ]]
+          [[ $VPS_PORT =~ ^[0-9]{1,5}$ ]]
+          (( 10#$VPS_PORT >= 1 && 10#$VPS_PORT <= 65535 ))
+          [[ $ARCHIVE_SHA256 =~ ^[a-f0-9]{64}$ ]]
+          image_id=$(tr -d '[:space:]' < release/image-id.txt)
+          [[ $image_id =~ ^sha256:[a-f0-9]{64}$ ]]
+          key="$RUNNER_TEMP/vps-key"
+          hosts="$RUNNER_TEMP/vps-known-hosts"
+          trap 'rm -f "$key" "$hosts"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$hosts"
+          opts=(-F /dev/null -i "$key" -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$hosts" -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o ClearAllForwardings=yes -o ConnectTimeout=15)
+          target="$VPS_USER@$VPS_HOST"
+          # Unprivileged upload only. No candidate script, Compose or env is executed.
+          ssh "${opts[@]}" -p "$VPS_PORT" "$target" "umask 077; mkdir -p /var/lib/suiba-incoming/$RELEASE_SHA"
+          scp "${opts[@]}" -P "$VPS_PORT" release/image.tar.gz "$target:/var/lib/suiba-incoming/$RELEASE_SHA/image.tar.gz"
+          # The broker's administrator-owned policy selects the approval
+          # source: a pre-committed root-owned approval file ("file"), or
+          # this run's digests ("ci") — in ci mode the request below
+          # carries the archive/image digests the package job produced
+          # for the run the Environment approval was granted to, and the
+          # broker re-verifies them against the transferred bytes and
+          # the loaded image. Broker has no CLI arguments and only
+          # creates a STOPPED container.
+          printf '{"operation":"deploy","sha":"%s","archive_sha256":"%s","image_id":"%s","ci_run":%s}\n' "$RELEASE_SHA" "$ARCHIVE_SHA256" "$image_id" "${{ github.run_id }}" |
+            ssh "${opts[@]}" -T -p "$VPS_PORT" "$target" 'sudo -n -- /usr/local/sbin/suiba-deploy'
+  prod-start:
+    needs: deploy
+    # Same repository-variable enable gate as the standalone control
+    # workflow; missing/false disables all SSH in this job.
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE-PROD' && vars.SUIBA_PROD_CONTROL_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Start production through the fixed wrapper
+        env:
+          # The wrapper only accepts its own fixed confirmation word;
+          # the release confirmation was checked by this job's gate.
+          PROD_START_CONFIRMATION: START-PROD
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-prod-start.sh
+      # Accepted is only the admission request: a start can still die
+      # in preflight/backup minutes later. This read-only follow-up
+      # reuses the monitor's status path and prints the failure
+      # summary into this run's log when the new session failed;
+      # a healthy start prints nothing extra.
+      - name: Follow-up status read (failure detail only)
+        env:
+          PROD_FOLLOWUP_MODE: start
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: python3 sui-ai-trading-bot/docker/production-followup.py
