@@ -72,7 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
       - name: Approve retry of the previous failed run through the fixed wrapper
@@ -124,7 +124,7 @@ jobs:
             echo "## Auto-export (same approval)"
             echo "The previous run's pre-run snapshot was exported from this cycle run; the run review posts it to the standing Issue when this cycle completes."
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: steps.autoexport.outcome == 'success'
         with:
           name: suiba-pre-run-public-${{ github.run_id }}
@@ -259,7 +259,7 @@ jobs:
             fi
           done
           exit 1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: steps.autoexportretry.outcome == 'success'
         with:
           name: suiba-pre-run-public-${{ github.run_id }}
