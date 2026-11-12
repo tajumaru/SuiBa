@@ -461,6 +461,7 @@ export function PriceChart(props: PriceChartProps) {
                 width={w}
                 start={start}
                 end={xFinish}
+                dataEnd={finish}
                 selected={chosen?.timestamp ?? null}
               />
               <IndicatorPanel
@@ -476,6 +477,7 @@ export function PriceChart(props: PriceChartProps) {
                 width={w}
                 start={start}
                 end={xFinish}
+                dataEnd={finish}
                 selected={chosen?.timestamp ?? null}
               />
             </>
