@@ -20,7 +20,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && inputs.confirmation == 'START-PROD' && vars.SUIBA_PROD_CONTROL_ENABLED == 'true'
     environment: sakura-vps
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -34,6 +34,20 @@ jobs:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: bash sui-ai-trading-bot/docker/ssh-prod-start.sh
+      # Accepted is only the admission request: a start can still die
+      # in preflight/backup minutes later. This read-only follow-up
+      # reuses the monitor's status path and prints the failure
+      # summary into this run's log when the new session failed;
+      # a healthy start prints nothing extra.
+      - name: Follow-up status read (failure detail only)
+        env:
+          PROD_FOLLOWUP_MODE: start
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: python3 sui-ai-trading-bot/docker/production-followup.py
   prod-stop:
     # Same gate and the same Environment approval as start: stopping
     # production is a deliberate confirmed operation, never a side
@@ -47,6 +61,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Stop production through the fixed wrapper
+        id: stop
         env:
           PROD_STOP_CONFIRMATION: ${{ inputs.confirmation }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -55,3 +70,16 @@ jobs:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: bash sui-ai-trading-bot/docker/ssh-prod-stop.sh
+      # When the stop closed a record that had failed, print that
+      # record's failure summary here as well; a healthy stop (and a
+      # no-op stop, which never reaches this step) prints nothing.
+      - name: Follow-up status read (failure detail only)
+        if: steps.stop.outputs.outcome == 'completed'
+        env:
+          PROD_FOLLOWUP_MODE: stop
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: python3 sui-ai-trading-bot/docker/production-followup.py

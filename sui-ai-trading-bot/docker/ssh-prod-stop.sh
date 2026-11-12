@@ -51,6 +51,10 @@ case "$response" in
   '{"status": "not_started"}') outcome=not_started ;;
   *) fail ;;
 esac
+# Runner-side bookkeeping only, never printed: the workflow's follow-up
+# status read runs only when this stop actually closed a record, so a
+# no-op stop cannot resurrect an older record's failure detail.
+if [[ -n ${GITHUB_OUTPUT:-} ]]; then echo "outcome=$outcome" >> "$GITHUB_OUTPUT"; fi
 {
   echo '### SuiBa production stop'
   echo "- Stop: \`$outcome\`"

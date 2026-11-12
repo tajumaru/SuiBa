@@ -58,6 +58,20 @@ class WorkflowTests(unittest.TestCase):
                         expected = enabled == 'true' and ref == 'refs/heads/main' and confirmation == word
                         self.assertEqual(actual, expected, (name, enabled, ref, confirmation))
 
+    def test_followup_steps_surface_failure_detail(self):
+        start = job_block(self.source, 'prod-start')
+        self.assertIn('timeout-minutes: 8', start)
+        self.assertIn('PROD_FOLLOWUP_MODE: start', start)
+        self.assertIn('run: python3 sui-ai-trading-bot/docker/production-followup.py', start)
+        stop = job_block(self.source, 'prod-stop')
+        self.assertIn('id: stop', stop)
+        self.assertIn("if: steps.stop.outputs.outcome == 'completed'", stop)
+        self.assertIn('PROD_FOLLOWUP_MODE: stop', stop)
+        self.assertIn('run: python3 sui-ai-trading-bot/docker/production-followup.py', stop)
+        for block in (start, stop):
+            for secret in ('VPS_HOST', 'VPS_USER', 'VPS_PORT', 'VPS_SSH_KEY', 'VPS_KNOWN_HOSTS'):
+                self.assertIn(f'{secret}: ${{{{ secrets.{secret} }}}}', block)
+
 
 class WrapperStaticTests(unittest.TestCase):
     def check_common(self, name, confirmation_env, word):
@@ -86,11 +100,12 @@ class WrapperStaticTests(unittest.TestCase):
         self.assertIn("""'{"status": "not_started"}') outcome=not_started ;;""", source)
         self.assertIn('PROD_STOP_FAILED (connection or response details withheld)', source)
         self.assertIn('timeout 300s ssh', source)
+        self.assertIn('echo "outcome=$outcome" >> "$GITHUB_OUTPUT"', source)
 
 
 @unittest.skipIf(os.name == 'nt', 'mocked Bash SSH pipeline runs on Linux')
 class SshTests(unittest.TestCase):
-    def run_script(self, script, env_extra, response=None, ssh_exit=0, expect_failure=False):
+    def run_script(self, script, env_extra, response=None, ssh_exit=0, expect_failure=False, github_output=False):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); (root/'bin').mkdir(); (root/'runner').mkdir()
             (root/'calls').write_text('')
@@ -112,6 +127,7 @@ sys.exit(int(os.environ['MOCK_SSH_EXIT']))
                    'VPS_SSH_KEY': 'SECRET_FIXTURE_PRIVATE_KEY', 'VPS_KNOWN_HOSTS': 'SECRET_FIXTURE_HOSTS',
                    'GITHUB_STEP_SUMMARY': str(root/'summary'), 'MOCK_CALLS': str(root/'calls'),
                    'MOCK_RESPONSE': str(root/'response'), 'MOCK_SSH_EXIT': str(ssh_exit), **env_extra}
+            if github_output: env['GITHUB_OUTPUT'] = str(root/'gh-output')
             completed = subprocess.run(['/bin/bash', str(HERE/script)], env=env, capture_output=True, text=True, timeout=20)
             self.assertNotIn('SECRET_FIXTURE', completed.stdout+completed.stderr)
             self.assertEqual(list((root/'runner').iterdir()), [])
@@ -122,6 +138,9 @@ sys.exit(int(os.environ['MOCK_SSH_EXIT']))
                 self.assertNotEqual(completed.returncode, 0)
             else:
                 self.assertEqual(completed.returncode, 0, completed.stderr)
+            if github_output:
+                output = (root/'gh-output').read_text() if (root/'gh-output').exists() else ''
+                return completed, calls, summary, output
             return completed, calls, summary
 
     def test_start_sends_only_the_fixed_request_and_accepts_accepted(self):
@@ -159,6 +178,14 @@ sys.exit(int(os.environ['MOCK_SSH_EXIT']))
                                                 response=response)
             self.assertEqual([call['command'] for call in calls], ['sudo -n -- /usr/local/sbin/suiba-paper-check'])
             self.assertEqual(json.loads(calls[0]['request']), {'operation': 'prod-stop'})
+            self.assertIn(f'- Stop: `{outcome}`', summary)
+
+    def test_stop_reports_outcome_for_the_followup_step(self):
+        for response, outcome in (('{"status": "completed"}\n', 'completed'),
+                                  ('{"status": "not_started"}\n', 'not_started')):
+            _, _, summary, output = self.run_script('ssh-prod-stop.sh', {'PROD_STOP_CONFIRMATION': 'STOP-PROD'},
+                                                    response=response, github_output=True)
+            self.assertEqual(output, f'outcome={outcome}\n')
             self.assertIn(f'- Stop: `{outcome}`', summary)
 
     def test_stop_refuses_wrong_confirmation_response_and_ssh_failure(self):
