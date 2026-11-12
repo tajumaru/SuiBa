@@ -97,8 +97,10 @@ describe("latestAnswerCheck", () => {
     expect(check.coveragePct).toBe(100);
     expect(check.points).toHaveLength(24);
     expect(check.actuals.at(-1)!.close).toBeCloseTo(2.13);
-    expect(answerCheckText(check)).toContain("方向 的中");
-    expect(answerCheckText(check)).toContain("コーン収まり 100%");
+    expect(answerCheckText(check)).toContain("上がるという予測は当たりました");
+    expect(answerCheckText(check)).toContain(
+      "各足の終値の100%が、予測した価格の範囲内でした。",
+    );
   });
 
   it("calls a miss a miss, with the realised coverage", () => {
@@ -112,14 +114,16 @@ describe("latestAnswerCheck", () => {
     expect(check.directionHit).toBe(false);
     expect(check.actualPct).toBeLessThan(0);
     expect(check.coveragePct).toBeLessThan(100);
-    expect(answerCheckText(check)).toContain("方向 外れ");
+    expect(answerCheckText(check)).toContain("上がるという予測は外れました");
   });
 
   it("makes no direction claim for a flat forecast", () => {
     const rec = record(risingOutcome, 40, "flat", 0.001, 0.02);
     const check = latestAnswerCheck([rec], risingOutcome)!;
     expect(check.directionHit).toBeNull();
-    expect(answerCheckText(check)).toContain("方向は名乗らず");
+    expect(answerCheckText(check)).toContain(
+      "横ばいの予測だったため、上がる・下がるの正解判定はしていません。",
+    );
   });
 
   it("skips records without a centre line, unfinished ones and antiques", () => {
@@ -190,7 +194,7 @@ describe("PriceChart answer-check view", () => {
     expect(on).toContain("2時間前の予測 → 実際");
     expect(on).toContain("予測 +1.0%");
     expect(on).toContain("実際 +2.8%");
-    expect(on).toContain("方向 的中");
+    expect(on).toContain("上がるという予測は当たりました");
   });
 
   it("offers no toggle without a checkable forecast", () => {

@@ -155,7 +155,7 @@ export function PriceChart(props: PriceChartProps) {
             aria-pressed={answerOn}
             onClick={() => setAnswerOn((v) => !v)}
           >
-            答え合わせ
+            前の予測と実際を比較
           </button>
           {answerOn && (
             <p
@@ -168,6 +168,8 @@ export function PriceChart(props: PriceChartProps) {
               }`}
             >
               {answerCheckText(answerCheck)}
+              <br />
+              各足の終値は、5分ごとなどの区切りでの最後の価格です。範囲内の割合は、価格がぴったり当たった割合ではありません。
             </p>
           )}
         </div>
