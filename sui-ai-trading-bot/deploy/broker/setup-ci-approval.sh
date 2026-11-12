@@ -16,6 +16,15 @@
 # Backups of replaced files are kept next to the originals.
 # The script is idempotent: a second run reports "already present"
 # for everything it created the first time.
+#
+# Variant guard: when a policy compose is already installed, the
+# setup refuses to replace it with a compose whose PAPER_CHECK_MODE
+# differs. A bare re-run on the production host would otherwise
+# silently downgrade the production compose (sui-prod) to the
+# validation one (sui-30m) and re-pin it, after which every
+# production start fails the controller's preflight env check.
+# Set SUIBA_SETUP_ALLOW_MODE_CHANGE=1 to allow an intentional
+# mode change.
 set -Eeuo pipefail
 umask 077
 
@@ -35,6 +44,12 @@ SHARED='/opt/suiba/shared'
 GRPC_URL='https://fullnode.mainnet.sui.io:443'
 
 fail() { echo "SETUP_FAILED: $1" >&2; exit 1; }
+
+# Print the PAPER_CHECK_MODE value carried by a compose file
+# (empty when the file has no such line).
+compose_mode() {
+  awk '/^[[:space:]]*PAPER_CHECK_MODE:/ { sub(/^[[:space:]]*PAPER_CHECK_MODE:[[:space:]]*/, ""); print $1; exit }' "$1"
+}
 
 # Variant selection comes before every other check so that an
 # unknown variant is rejected for any caller, root or not.
@@ -64,6 +79,21 @@ python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/broker.p
 curl -fsSL "$COMPOSE_URL" -o "$tmp/compose.yaml" || fail 'compose.yaml の取得に失敗'
 printf '%s  %s\n' "$COMPOSE_SHA256" "$tmp/compose.yaml" | sha256sum -c - >/dev/null || fail 'compose.yaml の sha256 が一致しません'
 
+# Mode-change guard: never silently swap the session mode of an
+# already-installed policy compose (see the header note). Checked
+# here, before anything is installed, so a refusal changes nothing.
+if [[ -e $COMPOSE_TARGET ]]; then
+  current_mode=$(compose_mode "$COMPOSE_TARGET")
+  candidate_mode=$(compose_mode "$tmp/compose.yaml")
+  if [[ $current_mode != "$candidate_mode" ]]; then
+    if [[ ${SUIBA_SETUP_ALLOW_MODE_CHANGE:-} == 1 ]]; then
+      echo "警告: PAPER_CHECK_MODE を $current_mode から $candidate_mode へ変更します（SUIBA_SETUP_ALLOW_MODE_CHANGE=1 が指定されています）"
+    else
+      fail "compose の PAPER_CHECK_MODE が変わります（設置済み: $current_mode / 候補: $candidate_mode）。本番と検証の取り違え防止のため中止しました。意図した変更なら SUIBA_SETUP_ALLOW_MODE_CHANGE=1 を付けて再実行してください"
+    fi
+  fi
+fi
+
 echo '== 2/4 broker.py と compose.yaml を配置 =='
 if [[ -e $BROKER_TARGET ]]; then
   cp -a "$BROKER_TARGET" "$BROKER_TARGET.bak-$stamp"
@@ -79,6 +109,7 @@ fi
 install -o root -g root -m 644 "$tmp/compose.yaml" "$COMPOSE_TARGET"
 printf 'compose.yaml 配置後の sha256: '
 sha256sum "$COMPOSE_TARGET" | awk '{print $1}'
+echo "compose.yaml の実効 PAPER_CHECK_MODE: $(compose_mode "$COMPOSE_TARGET")"
 
 echo '== 3/4 runtime.env と admin-token =='
 if [[ -e $SHARED/runtime.env ]]; then
