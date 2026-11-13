@@ -839,6 +839,24 @@
 .equity-curve-delta.neg {
   color: var(--pink);
 }
+.equity-curve-breakdown {
+  margin-top: 6px;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.equity-curve-breakdown p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 16px;
+  margin: 0;
+}
+.equity-curve-breakdown span {
+  white-space: nowrap;
+}
+.equity-curve-breakdown small {
+  font: inherit;
+}
 .equity-curve-tabs {
   display: flex;
   gap: 4px;
