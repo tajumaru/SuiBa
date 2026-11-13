@@ -209,5 +209,14 @@
 - 新版の readiness が通らなければ prod-start を中止する。旧版への
   戻しは、配置がコンテナを作り替えているため再配置＋（必要なら
   配置時 backup からの DB 復元）で、判断は §4 の戻し条件に準じる。
+- 旧版への戻しは ROLLBACK-PROD でも行える（`suiba-production-control`、
+  `target_sha` に対象リリースの完全な SHA を指定。対象は main の
+  祖先だけ）。prepare が対象コミットから archive を再作成し、
+  broker の rollback が現 DB の backup を取って旧版コンテナを
+  未起動（prepared_stopped）で作成する。順序は prod-stop →
+  ROLLBACK-PROD → prod-start で、開始可否の判断は従来どおり人が
+  行う。DB の自動巻き戻しはしない。rollback は
+  `/opt/suiba/last-deploy.json` を更新しない（deploy 結果専用の
+  ミラー）ため、戻した事実は broker 台帳と Actions の実行記録で追う。
 - 証跡：prod レコードに sha と開始・停止時刻を残し、
   `/opt/suiba/last-deploy.json`（配置結果）と対で追えるようにする。
