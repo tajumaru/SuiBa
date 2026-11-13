@@ -346,3 +346,12 @@ PR #168 で本番切替時に検討するとしていた watchdog を先行実�
 修正：本番コントローラのクローズアウト（_cleanup_locked が failed_requires_review で確定した直後）に、稼働中失敗の理由を failure.json へ永続化する処理（note_run_failure）を追加した。対象は stage='monitoring' のクローズアウトのみ（readiness を通過して実際に稼働したセッションに限る：wait_ready は worker の runtime row がクリアな場合にだけ startReady を返すため、monitoring 到達時点でラッチされた worker のエラーは当該セッション自身のものと分かる）。理由の取得順は (1) worker の DB（bot_runtime_state の runtime 行）のラッチ済み error（emergency 時は EMERGENCY_STOP を優先＝worker 自身の snapshot と同じ規則。想定外の形は OTHER_RUNTIME_ERROR へ劣化）、(2) failure.json 既存の market スナップショットの reason、(3) stop 機構の最初の fault コード。既存の証拠は壊さず code が欠けている場合だけ埋め、読めない failure.json には触らない。failure_summary は failure.json の code を（reset_refusal の次に）読むようになっただけで、サマリの形（キー集合・検証）は不変。監視・通知・フォローアップの消費者側は無変更で、stage は既存語彙の 'monitoring' を使う（新しい stage 値を足すと監視コントラクトと diagnose の許容集合を広げる必要があり、'monitoring' の方が「数時間稼働した末の死」を正確に表す）。
 
 副次効果として、failure.json が無かった稼働中失敗のレコードはクローズアウトで証拠を持つようになるため、R3 の admission 後クローズ条件（failure.json の存在が前提）の対象になり得る。他の条件（コンテナの clean な終了・DB 検証・コントローラ終了・fault の許容集合・mutation の規則）はすべて従来どおりで、1つでも欠ければ手動切り分けに残る。安全停止条件・取引ロジック・検証系（PAPER）の挙動は不変。ホストへの反映は次の setup 再実行（停止窓の中）で行い、配置自体はオーナーの別判断とする。
+
+
+## 2026-11-13：表示用予測の正本を worker に移す
+
+端末ローカルだった予測を Bot 本体へ移し、ブラウザを閉じても既存の worker 取得サイクルで24時間回る構成にする。コーン計算・記録・採点・答え合わせ・幅の自己校正の正本はペア別の bot.sqlite。ダッシュボードは API から描画する。売買・戦略・安全停止・Sui/DeepBook の通信経路には使わない。
+
+数式、30件からの評価・10件刻み・目標80%・±3pt不感帯・誤差半分の歩幅・[0.7,1.5] clamp・0.01丸めを維持。現行採点の「途中の足も収まり率に含む」「直近288件を対象」「scoredAt が窓上限に達すると追加の校正評価が進まない」も互換性のため変更しない。ホライズン終了の結果は別の永続履歴に記録する。計算式の改良は今回に含めない。
+
+既存 localStorage は消さず、各端末の初回接続で取り込む。最初の非空移行で実際に保存されている倍率と評価件数を採用し（1.16 を固定値として埋め込まない）、後続端末の異なる倍率は正本を上書きせず原データごと移行履歴へ保存する。本番で有効な状態を持つ端末を最初に接続することが移行の前提。未接続端末や既に削除された localStorage は worker から取得できない。詳細は `docs/FORECAST_WORKER_MIGRATION_JA.md`。

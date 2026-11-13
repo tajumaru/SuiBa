@@ -80,6 +80,7 @@ describe("PriceChart forecast crossing marks", () => {
     const tp = fc!.points[8].mid;
     const html = renderToStaticMarkup(
       React.createElement(PriceChart, {
+        forecast: fc,
         candles: cs,
         trades: [],
         sellLines: { tp, sl: 0.5 },

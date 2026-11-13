@@ -124,6 +124,7 @@ export function OverviewTab({
                         historyApi={api}
                         forecastScoreText={forecastScoreLine}
                         forecastTouchText={forecastTouchLine}
+                        forecast={data.forecast?.cones[timeframe]}
                         forecastBandScale={forecastBandScale}
                         answerCheck={forecastAnswer}
                         shareCard={shareCard}

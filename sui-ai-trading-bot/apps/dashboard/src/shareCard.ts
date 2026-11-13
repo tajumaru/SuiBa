@@ -2,10 +2,10 @@
  * The forecast share card: a 1200×675 image for posting (X and
  * friends), rendered from the LIVE forecast — the last 48 real
  * candles, the current cone in its direction colour, the selected
- * character, and the recorded forecast score from this device.
+ * character, and the recorded forecast score from the worker.
  * The honesty notes travel with the card: the forecast is marked
  * 模式 (a schematic EMA+ATR projection) and the score is labelled
- * as this device's own record.
+ * as the worker's record (including migrated records).
  *
  * The SVG builder is pure (string in, string out) so it is
  * unit-testable; only createShareCardPng touches the DOM, turning
@@ -153,7 +153,7 @@ export function buildShareCardSvg(
         : "2時間は 横ばい";
   out.push(
     `<text x="856" y="440" font-family="${SANS}" font-size="31" font-weight="bold" fill="${palette.stroke}">${directionLine}</text>`,
-    `<text x="856" y="482" font-family="${SANS}" font-size="17" fill="${DIM}">予測の成績（この端末の記録）</text>`,
+    `<text x="856" y="482" font-family="${SANS}" font-size="17" fill="${DIM}">予測の成績（Botの記録・移行分を含む）</text>`,
   );
   if (score.scoredRecords >= MIN_SCORED_RECORDS && score.coveragePct != null) {
     out.push(

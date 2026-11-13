@@ -13,6 +13,7 @@ import { label, errorCode } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
 import type { StrategySegment } from "./StrategyTab.tsx";
 import { useOperationsFeed } from "./operationsFeed.ts";
+import { useForecastMigration } from "./useForecastMigration.ts";
 import { useForecastSuite } from "./useForecastSuite.ts";
 import { OverviewTab } from "./OverviewTab.tsx";
 import { AppHeader } from "./AppHeader.tsx";
@@ -262,6 +263,7 @@ function App() {
     },
     [token],
   );
+  useForecastMigration(data?.pair, api);
   // One shared operations feed for the narration tab and the
   // overview and history tabs (see useOperationsFeed). It polls only while
   // logged in.

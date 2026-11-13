@@ -18,6 +18,10 @@ import { initialPortfolio, type Fill } from "../../paper-trading/src/index.ts";
 import type { CandidateAudit } from "../../shared/src/operations.ts";
 import type { AccountingCheck } from "../../paper-trading/src/reconciliation.ts";
 const eventTables = [
+  "forecast_records",
+  "forecast_answers",
+  "forecast_calibrations",
+  "forecast_imports",
   "technical_indicators",
   "strategy_decisions",
   "paper_orders",

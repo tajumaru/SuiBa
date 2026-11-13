@@ -1,3 +1,4 @@
+import { importForecast } from "./forecast.ts";
 import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { resolve, extname } from "node:path";
@@ -343,7 +344,7 @@ export function createRequestHandler(ctx: WorkerContext) {
     let text = "";
     for await (const chunk of req) {
       text += chunk;
-      if (text.length > 16384) {
+      if (text.length > (url.pathname === "/api/forecast/import" ? 600000 : 16384)) {
         send(413, {});
         return;
       }
@@ -357,6 +358,16 @@ export function createRequestHandler(ctx: WorkerContext) {
         send(409, { error: "DEPLOYMENT_MAINTENANCE" });
         return;
       }
+    }
+    if (url.pathname === "/api/forecast/import") {
+      try {
+        send(200, importForecast(ctx.db, ctx.pair, body, Date.now()));
+      } catch (error) {
+        if (error instanceof Error && error.message === "INVALID_FORECAST_MIGRATION")
+          send(400, { error: error.message });
+        else throw error;
+      }
+      return;
     }
     if (url.pathname === "/api/paper-check/arm") {
       if (

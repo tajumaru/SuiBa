@@ -130,7 +130,7 @@ describe("forecast log", () => {
     }
     const text = forecastScoreText(scoreForecasts(recs, future), recs.length);
     expect(text).toContain("コーン収まり 100%");
-    expect(text).toContain("アプリを開いていた間");
+    expect(text).toContain("Botの記録（移行分を含む）を集計");
   });
 
   it("round-trips through storage per pair and rejects junk", () => {

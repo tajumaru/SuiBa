@@ -118,7 +118,7 @@ describe("chartForecast", () => {
 describe("PriceChart forecast overlay", () => {
   const render = (cs: Candle[]) =>
     renderToStaticMarkup(
-      React.createElement(PriceChart, { candles: cs, trades: [] }),
+      React.createElement(PriceChart, { candles: cs, trades: [], forecast: chartForecast(cs) }),
     );
 
   it("draws the cone and the model caption in the latest view", () => {
@@ -127,6 +127,11 @@ describe("PriceChart forecast overlay", () => {
     expect(html).toContain("予測（模式）");
     expect(html).toContain("上向き気味");
     expect(html).toContain("実際の価格ではありません");
+  });
+
+  it("never generates a forecast in the browser when the worker supplies none", () => {
+    const html = renderToStaticMarkup(React.createElement(PriceChart, { candles: rising, trades: [] }));
+    expect(html).not.toContain("chart-forecast");
   });
 
   it("omits the forecast when the data cannot carry one", () => {
@@ -172,6 +177,7 @@ describe("PriceChart forecast overlay", () => {
       React.createElement(PriceChart, {
         candles: rising,
         trades: [],
+        forecast: chartForecast(rising),
         forecastScoreText: "予測の成績：コーン収まり 82%（判定 46 件）",
       }),
     );

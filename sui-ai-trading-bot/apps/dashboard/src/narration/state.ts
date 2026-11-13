@@ -261,6 +261,7 @@ export interface NarrationState {
   /** Scored-record count of the newest cone calibration the
    * feed has taken in (told or quietly adopted). */
   lastCalibScoredAt: number;
+  forecastCalibEventIds: string[];
 }
 
 /** One JST month of feed-side tallies for the monthly report.
@@ -383,6 +384,7 @@ export function emptyNarrationState(): NarrationState {
     forecastTouchSettled: {},
     lastForecastCallAt: null,
     lastCalibScoredAt: 0,
+    forecastCalibEventIds: [],
   };
 }
 
@@ -471,4 +473,4 @@ export interface SpikeAlert {
   text: string;
 }
 
-export type EntryDraft = Omit<NarrationEntry, "id">;
+export type EntryDraft = Omit<NarrationEntry, "id"> & { id?: string };

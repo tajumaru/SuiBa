@@ -210,6 +210,7 @@ export interface AdvanceWork {
   forecastTouchSettled: NarrationState["forecastTouchSettled"];
   lastForecastCallAt: NarrationState["lastForecastCallAt"];
   lastCalibScoredAt: NarrationState["lastCalibScoredAt"];
+  forecastCalibEventIds: string[];
 }
 
 function bumpMonthly(
@@ -801,6 +802,12 @@ export function stageCalibration(
   calib: CalibEvent | null | undefined,
   now: number,
 ) {
+  if (calib?.id) {
+    if (work.forecastCalibEventIds.includes(calib.id)) return;
+    work.forecastCalibEventIds = [...work.forecastCalibEventIds, calib.id];
+    work.drafts.push({ id: calib.id, at: calib.at, kind: "forecastCalib", text: calibText(calib) });
+    return;
+  }
   if (!calib || calib.scored <= work.lastCalibScoredAt) return;
   work.lastCalibScoredAt = calib.scored;
   if (now - calib.at > CALIB_TELL_FRESH_MS) return;
