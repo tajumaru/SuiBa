@@ -489,7 +489,10 @@ export function PriceChart(props: PriceChartProps) {
             </>
           )}
           {chosen && (
-            <div className="candle-detail" aria-label="選択したローソク足">
+            <div
+              className="candle-detail chart-meta"
+              aria-label="選択したローソク足"
+            >
               <label>
                 ローソク足を選択
                 <input
@@ -532,9 +535,22 @@ export function PriceChart(props: PriceChartProps) {
                   </React.Fragment>
                 ))}
               </dl>
-              <p>取得元：{chosen.source || "未取得"}</p>
+              <p className="candle-note">
+                取得元：
+                {(chosen.source || "未取得")
+                  .split(":")
+                  .map((part, i, parts) => (
+                    <React.Fragment key={i}>
+                      <span className="candle-source-part">
+                        {part}
+                        {i < parts.length - 1 ? ":" : ""}
+                      </span>
+                      {i < parts.length - 1 && <wbr />}
+                    </React.Fragment>
+                  ))}
+              </p>
               {chosen.provenance && (
-                <p>
+                <p className="candle-note">
                   取得時刻：{dateTime(chosen.provenance.fetchedAt)} ／ 根拠：
                   {chosen.provenance.evidence.join("、") || "記録なし"}
                 </p>

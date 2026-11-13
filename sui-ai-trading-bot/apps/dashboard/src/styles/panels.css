@@ -727,6 +727,19 @@
   min-height: 44px;
   accent-color: var(--mint);
 }
+.candle-detail h4 {
+  font-size: 16px;
+}
+.candle-detail .candle-note {
+  font-size: 12px;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+.candle-detail .candle-source-part {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+}
 .candle-detail dl {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
