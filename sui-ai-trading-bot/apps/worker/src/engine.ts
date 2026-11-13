@@ -1,3 +1,4 @@
+import { advanceForecast } from "./forecast.ts";
 import { quoteBookReason } from "../../../packages/market-data/src/quote-book.ts";
 import type { MarketDataProvider } from "../../../packages/market-data/src/provider.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
@@ -840,6 +841,19 @@ export class BotEngine {
         last = c.at(-1)!,
         price = last.close;
       validateCandles(c, 300, Date.now());
+      // Forecast failures must never change trading or safety decisions.
+      try {
+        advanceForecast(
+          this.db, this.pair, c,
+          this.market.bookImbalance?.(now) ?? this.bookImbalanceSource(),
+          now, frames,
+        );
+        this.db.set("forecast_error", null);
+      } catch {
+        try {
+          this.db.set("forecast_error", { at: now, code: "FORECAST_UPDATE_FAILED" });
+        } catch {}
+      }
       this.monitor.market((last.timestamp + 300) * 1000);
       if (this.db.runtime().running && !this.monitor.ledger().ok)
         throw new Error("PAPER_RECONCILIATION_FAILED");

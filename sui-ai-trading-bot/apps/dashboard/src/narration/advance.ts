@@ -139,7 +139,7 @@ export function advanceNarration(
   pairLabel = "SUI",
   /** The newest cone-calibration change (display-only), told
    * once when it is fresh. */
-  calib?: CalibEvent | null,
+  calib?: CalibEvent | CalibEvent[] | null,
   /** Who is speaking: new entries are laid down in that
    * character's voice (see voice.ts). Defaults to the white
    * character, whose voice is the templates as written. */
@@ -304,6 +304,7 @@ export function advanceNarration(
     forecastTouchSettled: prev.forecastTouchSettled,
     lastForecastCallAt: prev.lastForecastCallAt,
     lastCalibScoredAt: prev.lastCalibScoredAt,
+    forecastCalibEventIds: prev.forecastCalibEventIds,
   };
   stageEvents(work, prev, d);
   stageCandidates(work, prev, d);
@@ -313,7 +314,7 @@ export function advanceNarration(
   stageBtc(work, btc, now);
   stageBook(work, book, pairLabel, now);
   stageForecasts(work, forecasts, d.decision, now);
-  stageCalibration(work, calib, now);
+  for (const event of Array.isArray(calib) ? calib : [calib]) stageCalibration(work, event, now);
   stageMonthly(work, fills, now);
 
   return finish(
@@ -337,6 +338,7 @@ export function advanceNarration(
       forecastTouchSettled: work.forecastTouchSettled,
       lastForecastCallAt: work.lastForecastCallAt,
       lastCalibScoredAt: work.lastCalibScoredAt,
+      forecastCalibEventIds: work.forecastCalibEventIds,
       sessionStartPrice: work.sessionStartPrice,
       priceHistory: work.priceHistory,
       alertCooldown: work.alertCooldown,
@@ -396,7 +398,7 @@ export function finish(
       continue;
     entries.push({
       ...draft,
-      id: `narration:${nextEntryId++}`,
+      id: draft.id ?? `narration:${nextEntryId++}`,
     });
   }
   return {

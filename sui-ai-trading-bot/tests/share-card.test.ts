@@ -157,7 +157,7 @@ describe("share card input assembly", () => {
   const args = {
     pair: "SUI_USDC",
     candles: candles(80),
-    bookImbalance: null,
+    forecast: forecast("up", 0.013),
     score: SCORED,
     character: "pen" as const,
     agentName: "",

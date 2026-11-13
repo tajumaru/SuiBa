@@ -1,3 +1,4 @@
+import { readForecast } from "./forecast.ts";
 import {
   dayKey,
   type BookLevels,
@@ -85,6 +86,8 @@ export function buildSnapshot(
       indicators = src.db.get<Indicators>("indicators") ?? null;
     return {
       pair: src.pair,
+      forecast: readForecast(src.db, src.pair),
+      forecastError: src.db.get("forecast_error") ?? null,
       chain: src.chainInfo(),
       btc: src.btcInfo(),
       // Display-only book imbalance for the model outlook:

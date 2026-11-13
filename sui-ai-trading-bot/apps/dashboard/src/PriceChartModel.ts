@@ -6,7 +6,7 @@ import {
   forecastGeometry,
 } from "./chartOverlayGeometry.ts";
 import { candleGeometry } from "./candleGeometry.ts";
-import { chartForecast, FORECAST_BARS } from "./chartForecast.ts";
+import { type ChartForecast, FORECAST_BARS } from "./chartForecast.ts";
 import type { ForecastAnswerCheck } from "./forecastLog.ts";
 import { chartSeries } from "./chartIndicators.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
@@ -30,6 +30,7 @@ export interface PriceChartProps {
   /** Learned cone-width scale (forecastCalib); the drawn cone
    * and the recorded one must use the same scale. */
   forecastBandScale?: number;
+  forecast?: ChartForecast | null;
   bookImbalance?: number | null;
   /** The open position's real sell lines (same prices the
    * ticker counts down to), for forecast crossing marks. */
@@ -52,8 +53,7 @@ export function usePriceChartModel({
   historyApi,
   forecastScoreText,
   forecastTouchText,
-  forecastBandScale = 1,
-  bookImbalance,
+  forecast,
   sellLines,
   answerCheck,
   answerDefaultOn = false,
@@ -122,16 +122,8 @@ export function usePriceChartModel({
   // latest view; panning into the past hides it. Display only:
   // it never feeds the bot or the indicators.
   const fc = useMemo(
-    () =>
-      anchor == null
-        ? chartForecast(
-            data.candles,
-            FORECAST_BARS,
-            bookImbalance ?? null,
-            forecastBandScale,
-          )
-        : null,
-    [data, anchor, bookImbalance, forecastBandScale],
+    () => anchor == null ? forecast ?? null : null,
+    [anchor, forecast],
   );
   const first = data.candles[0]?.timestamp ?? 0,
     available = latestEnd - first,

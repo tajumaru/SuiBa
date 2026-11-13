@@ -61,7 +61,7 @@ export function AgentNarrationFeed({
   } | null;
   /** The newest cone-calibration change (display-only), told
    * once by the feed when it is fresh. */
-  calibEvent?: import("./forecastCalib.ts").CalibEvent | null;
+  calibEvent?: import("./forecastCalib.ts").CalibEvent | import("./forecastCalib.ts").CalibEvent[] | null;
   /** The engine's newest fills, threaded to the narration
    * advance so a finished month's report can be priced and
    * posted. Display/record only. */
