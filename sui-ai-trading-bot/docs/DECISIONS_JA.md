@@ -368,3 +368,14 @@ PR #168 で本番切替時に検討するとしていた watchdog を先行実�
 - 順序は STOP-PROD → ROLLBACK-PROD → START-PROD とし、開始は束ねない。稼働中セッションが broker の state lock を実行全体にわたり保持する間は deploy と同じく lock で拒否されるため、ロールバックも停止が前提になる。検証セッション稼働中も paper ゲートで拒否される（deploy の permit 経路は rollback には開かれていない）。
 - 旧 archive の保持は新設しない。incoming の upload は一時的（cleanup が1時間以上触られていない entry を削除する）で、broker は transaction 終了時に自前の snapshot を消し、公開ミラー `last-deploy.json` には status／code／sha しか残らない（archive_sha256・image_id が無い）ため、仮に archive が残っていても CI からは address できない。ホストに残る旧イメージも、broker が archive の bytes から identity を再導出する契約上は使えない。archive は deploy と同様に CI が作るのがこの構成の正本であり、対象 SHA からの再作成が最も小さい完結形になる。broker は転送された bytes に対して digest と image identity を再検証するので、再作成でも信頼の前提は変わらない。GitHub artifact（保持3日）からの取得は、期限切れと別 run の artifact を引く権限・同定の複雑さから採らない。
 - rollback は `last-deploy.json` を更新しない（broker の公開ミラーは deploy の結果専用）。ロールバック後の配置の正本は broker 台帳（root 所有）であり、前回 deploy の表示が残る点は誤読しないこと。取引ロジック・安全停止条件・broker の rollback 意味論は不変。
+
+
+## 2026-11-13 AI 影運用 S1（記録基盤、既定 OFF）
+
+設計正本 `AI_SHADOW_MODE_DESIGN_JA.md` に沿い、フラット時の入力凍結・トリガー・検証・専用記録・公開 export sanitize のみを実装する。S2 のレビュー・画面・実況・保有中出口判断は対象外。注文・保有・設定・安全停止・エピソード制限の意味論は変更しない。cadence（最大15分／最小5分／JST日200回）とタイムアウト30秒は仮置きのまま。
+
+プロバイダ／モデル（§11-1）と月額予算（§11-6）は未決。差し替え可能なアダプタ境界のみを用意し、実プロバイダ接続は実装しない。フェイクで検証し、`SUIBA_SHADOW_ENABLED` は既定 OFF。OFF またはアダプタ未設定では凍結・呼び出し・影レコード追記を行わない。有効化前にオーナーの決定が必要で、卒業しても権限は自動で広がらない。
+
+オーナー確認（2026-11-13）：`model` はローカル記録のみで公開 export から除外する。`promptVersion` は実装で定義した `shadow-s1-v1` のみ列挙許可する。プロバイダ決定（§11-1）の際に `model` の export を列挙許可リストとして再判断する。自由文・プロンプト・設定値・生の足・APIキーは公開しない。
+
+日次呼び出し予約はペア切替でも共通の selection DB 内の影専用 `shadow_daily_budget` に永続化し、判断記録のトランザクションから独立させる。予約後のクラッシュでも回数を戻さない。影レコードは既存 `db.append` で追記する。

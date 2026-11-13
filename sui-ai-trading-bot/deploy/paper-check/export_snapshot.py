@@ -14,7 +14,7 @@ import zipfile
 ARCHIVE_LIMIT = 128 * 1024**2
 EXPORT_LIMIT = 16 * 1024**2
 ROW_LIMIT = 100000
-TABLES = ('strategy_decisions', 'technical_indicators', 'operation_candidates',
+TABLES = ('shadow_decisions', 'strategy_decisions', 'technical_indicators', 'operation_candidates',
           'paper_orders', 'paper_trades', 'operation_events', 'cycle_audits')
 DATABASES = {'bot.sqlite': 'SUI_USDC.sqlite', 'bot.sqlite.WAL_USDC.sqlite': 'WAL_USDC.sqlite'}
 ERROR_CODES = frozenset(('EXPORT_BACKUP_MISSING', 'EXPORT_MANIFEST_MISMATCH', 'EXPORT_ARCHIVE_INVALID',
@@ -98,6 +98,36 @@ def sanitize(table, value, public=False):
         if type(ctx) is dict:
             out['analysisContext'] = {k: ctx[k] for k in ('runningAtStart', 'runningAtAnalysis', 'ordersAllowedAtAnalysis') if type(ctx.get(k)) is bool}
             if ref(ctx.get('cycleId')) is not None: out['analysisContext']['cycleId'] = ref(ctx['cycleId'])
+    elif table == 'shadow_decisions':
+        out.update(numeric_fields(value, ('candleTimestamp', 'conditionCount', 'confidence', 'latencyMs', 'calledAt')))
+        if value.get('status') in ('OK', 'ERROR', 'SKIPPED_BUDGET', 'SKIPPED_DISABLED'): out['status'] = value['status']
+        if value.get('action') in ('BUY', 'WAIT'): out['action'] = value['action']
+        if value.get('ruleAction') in ('BUY', 'SELL', 'WAIT'): out['ruleAction'] = value['ruleAction']
+        if value.get('selectedRule') in RULES: out['selectedRule'] = value['selectedRule']
+        if value.get('promptVersion') == 'shadow-s1-v1': out['promptVersion'] = value['promptVersion']
+        if value.get('reasonCode') in ('INVALID_JSON', 'INVALID_SCHEMA', 'INVALID_REFERENCE', 'TIMEOUT', 'CREDENTIAL_IN_OUTPUT', 'ADAPTER_FAILED'): out['reasonCode'] = value['reasonCode']
+        out['usage'] = numeric_fields(value.get('usage'), ('inputTokens', 'outputTokens', 'cost'))
+        snapshot = value.get('snapshot')
+        if type(snapshot) is dict:
+            e = snapshot.get('evidence')
+            if type(e) is dict: out.update(numeric_fields(e.get('inputs'), ('price',)))
+        elif number(value.get('price')): out['price'] = value['price']
+        keys = {
+            'indicator': INDICATORS,
+            'condition': CONDITIONS,
+            'candle': frozenset('open high low close volume timestamp periodHigh periodLow changePct'.split()),
+            'book': frozenset('bid ask spread fetchedAt'.split()),
+            'portfolio': frozenset('hasPosition entryPrice dailyBought'.split()),
+        }
+        rationale = value.get('rationale')
+        refs = rationale.get('refs') if type(rationale) is dict else None
+        if type(refs) is list:
+            out['rationale'] = {'refs': [
+                {k: r[k] for k in ('type', 'key', 'value')}
+                for r in refs[:5] if type(r) is dict and type(r.get('type')) is str
+                and r['type'] in keys and type(r.get('key')) is str
+                and r['key'] in keys[r['type']] and number(r.get('value'))]}
+        # model is local-only until provider/model allowlist is explicitly decided.
     elif table == 'operation_candidates':
         if value.get('side') in ('BUY', 'SELL'): out['side'] = value['side']
         if value.get('finalAction') in ('PENDING', 'BUY', 'SELL', 'WAIT', 'SAFE_STOP'): out['finalAction'] = value['finalAction']
