@@ -2325,6 +2325,51 @@ class ProductionTests(unittest.TestCase):
             self.assertEqual(ctl.prod_start(), {'status': 'accepted'})
 
     @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_closes_a_monitoring_failure_whose_record_the_closeout_created(self):
+        # The verify_prod explicit-stop sequence at unit level, for
+        # the one state this change adds: a monitoring-stage session
+        # is first finalized failed_requires_review by a stop that is
+        # not prod-stop (its own failure stop / the post-stop hook),
+        # and that close-out — not a run() handler — creates
+        # failure.json, carrying the worker's stop reason as its
+        # code. A later lawful prod_stop must close the record
+        # through the same admitted close-out as a handler-written
+        # record: the persisted code is evidence for the status,
+        # never a blocker. An unaccepted fault still refuses.
+        for faults, closes in (
+                ((), True),
+                (('LATCHED_FAILURE', 'CONTROLLER_EXIT_UNCONFIRMED'), True),
+                (('DB_OR_MAINTENANCE_UNCONFIRMED',), False)):
+            with self.subTest(faults=faults), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                record = self.monitoring_record(ctl)
+                ctl.sui_db_path = lambda: self.worker_db(root, {
+                    'running': False, 'emergency': False,
+                    'error': 'UPSTREAM_HTTP_500', 'lastCandle': None})
+                self.assertTrue(ctl.stop(expected=record['id'], source='failure'))
+                self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+                folder = ctl.folder(record)
+                self.assertEqual(json.loads((folder/'failure.json').read_bytes()),
+                                 {'id': record['id'], 'stage': 'monitoring',
+                                  'code': 'UPSTREAM_HTTP_500'})
+                for code in faults:
+                    ctl.fault(record, code)
+                self.running = False
+                self.with_started_at(ctl, self.started_at_during(record))
+                if closes:
+                    self.assertEqual(ctl.prod_stop(), {'status': 'completed'})
+                    self.assertEqual(ctl.current()['status'], 'completed')
+                    # The close-out's record of why the run failed
+                    # stays in the folder, code included.
+                    self.assertEqual(json.loads((folder/'failure.json').read_bytes()),
+                                     {'id': record['id'], 'stage': 'monitoring',
+                                      'code': 'UPSTREAM_HTTP_500'})
+                else:
+                    with self.assertRaises(Exception):
+                        ctl.prod_stop()
+                    self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
     def test_prod_stop_refuses_an_admitted_failure_with_an_unclean_exit(self):
         for overrides in ({'ExitCode': 1}, {'OOMKilled': True}):
             with self.subTest(overrides=overrides), tempfile.TemporaryDirectory() as root:
