@@ -81,6 +81,12 @@ const messageSchema = z.object({
   status: z.literal("completed").optional(),
   content: z.array(z.object({ type: z.string(), text: z.string().optional() })),
 });
+function rejectCredentialEcho(text: string, key: string) {
+  for (let at = 0; at <= Math.max(0, key.length - 8); at++) {
+    if (text.includes(key.slice(at, at + 8)))
+      throw new ShadowAdapterError("CREDENTIAL_IN_OUTPUT");
+  }
+}
 /** Native HTTP only: no shared ApiAccess, trading dispatcher, retries or logging.
  * The injected transport is for offline contracts; credentials are read only
  * from SUIBA_SHADOW_API_KEY at invocation and never retained as object state. */
@@ -191,16 +197,16 @@ export class OpenAIShadowAdapter implements ShadowAdapter {
       if (texts.length !== 1)
         throw new ShadowAdapterError("OPENAI_INVALID_RESPONSE");
       // Reject rather than redact/repair an echo of a key or meaningful fragment.
-      for (let at = 0; at <= Math.max(0, key.length - 8); at++) {
-        if (texts[0].includes(key.slice(at, at + 8)))
-          throw new ShadowAdapterError("CREDENTIAL_IN_OUTPUT");
-      }
+      rejectCredentialEcho(texts[0], key);
       let decision: unknown;
       try {
         decision = JSON.parse(texts[0]);
       } catch {
         throw new ShadowAdapterError("INVALID_JSON");
       }
+      // Decode JSON escapes before the second check: a partial credential
+      // encoded as \uXXXX must be rejected before it can reach a local record.
+      rejectCredentialEcho(JSON.stringify(decision), key);
       const checked = shadowDecisionSchema.safeParse(decision);
       if (!checked.success) throw new ShadowAdapterError("INVALID_SCHEMA");
       const output = {

@@ -551,3 +551,41 @@ it("accepts boolean portfolio facts as well as numeric observations, matching S1
     },
   });
 });
+
+it("rejects JSON-escaped credential fragments before recording the decoded text", async () => {
+  const { db, input } = await fixture();
+  const fragment = KEY.slice(5, 20);
+  const escaped = Array.from(
+    fragment,
+    (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"),
+  ).join("");
+  const text = JSON.stringify({
+    ...decision(),
+    rationale: { refs: [], text: fragment },
+  }).replace(fragment, escaped);
+  const http = mockHTTP(
+    response({
+      output: [
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text }],
+        },
+      ],
+    }),
+  );
+  new ShadowRecorder(db, new OpenAIShadowAdapter(http), () => true).offer(
+    () => input,
+  );
+  await turn();
+  await turn();
+  expect(db.history("shadow_decisions")).toEqual([
+    expect.objectContaining({
+      status: "ERROR",
+      reasonCode: "CREDENTIAL_IN_OUTPUT",
+    }),
+  ]);
+  expect(JSON.stringify(db.history("shadow_decisions"))).not.toContain(
+    fragment,
+  );
+});
