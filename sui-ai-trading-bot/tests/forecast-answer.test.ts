@@ -6,6 +6,7 @@ import { chartForecast } from "../apps/dashboard/src/chartForecast.ts";
 import {
   answerCheckText,
   forecastRecordFrom,
+  forecastVerdictText,
   latestAnswerCheck,
   loadForecastLog,
   saveForecastLog,
@@ -193,8 +194,8 @@ describe("PriceChart answer-check view", () => {
     expect(on).toContain('class="chart-answer"');
     expect(on).toContain('stroke="#ffffff"');
     expect(on).not.toContain("2時間前の予測 → 実際");
-    expect(on).toContain("予測 +1.0%");
-    expect(on).toContain("実際 +2.8%");
+    expect(on).toContain("予測 +1.00%");
+    expect(on).toContain("実際 +2.80%");
     expect(on).toContain("上がるという予測は当たりました");
     const plot = on.slice(on.indexOf("<svg"), on.indexOf("</svg>"));
     const comparison =
@@ -207,12 +208,42 @@ describe("PriceChart answer-check view", () => {
       )?.[0] ?? "";
     expect(details).toContain("当時の予測（破線）");
     expect(details).toContain("実際の値動き（実線）");
-    expect(details).toContain("+1.0%");
-    expect(details).toContain("+2.8%");
+    expect(details).toContain("+1.00%");
+    expect(details).toContain("+2.80%");
     expect(on.indexOf('class="chart-answer-details"')).toBeGreaterThan(
       on.indexOf("</svg>"),
     );
   });
+
+  it.each([
+    [0.0011, 0.0014, "+0.11%", "+0.14%"],
+    [-0.0011, -0.0014, "-0.11%", "-0.14%"],
+    [0, 0, "+0.00%", "+0.00%"],
+  ] as const)(
+    "preserves small differences in comparison text and details (%s, %s)",
+    (driftPct, actualPct, predicted, actual) => {
+      const comparison = { ...check, driftPct, actualPct };
+      const html = render({ answerCheck: comparison, answerDefaultOn: true });
+      expect(html).toContain(`予測 ${predicted} → 実際 ${actual}`);
+      const details =
+        html.match(
+          /<section class="chart-answer-details"[\s\S]*?<\/section>/,
+        )?.[0] ?? "";
+      expect(details).toContain(`<dd>${predicted}</dd>`);
+      expect(details).toContain(`<dd>${actual}</dd>`);
+      // Narration keeps the existing single-decimal format.
+      const narration = forecastVerdictText({
+        origin: check.origin,
+        dir: "up",
+        driftPct,
+        actualPct,
+        hit: true,
+        completedAt: 0,
+      });
+      expect(narration).toContain(`${(driftPct * 100).toFixed(1)}%`);
+      expect(narration).not.toContain(predicted);
+    },
+  );
 
   it("offers no toggle without a checkable forecast", () => {
     const html = renderToStaticMarkup(

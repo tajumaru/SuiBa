@@ -209,7 +209,7 @@ export function AnswerDetails({
   ghost: AnswerGhost;
 }) {
   const pct = (value: number) =>
-    `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
+    `${value >= 0 ? "+" : ""}${(value * 100).toFixed(2)}%`;
   return (
     <section className="chart-answer-details" aria-label="前の予測と実際の詳細">
       <h4>前の予測と実際</h4>

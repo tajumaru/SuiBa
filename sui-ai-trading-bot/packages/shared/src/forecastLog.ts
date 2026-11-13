@@ -274,14 +274,14 @@ export function latestAnswerCheck(
 }
 
 const priceText = (v: number) => `$${v >= 10 ? v.toFixed(2) : v.toFixed(4)}`;
-const pctText = (frac: number) =>
-  `${frac >= 0 ? "+" : ""}${(frac * 100).toFixed(1)}%`;
+const pctText = (frac: number, digits = 1) =>
+  `${frac >= 0 ? "+" : ""}${(frac * 100).toFixed(digits)}%`;
 
 export function answerCheckText(check: ForecastAnswerCheck): string {
   const direction =
     check.directionHit == null
       ? "横ばいの予測だったため、上がる・下がるの正解判定はしていません。"
-      : `${check.dir === "up" ? "上がる" : "下がる"}という予測は${check.directionHit ? "当たりました" : "外れました"}（予測 ${pctText(check.driftPct)} → 実際 ${pctText(check.actualPct)}）。`;
+      : `${check.dir === "up" ? "上がる" : "下がる"}という予測は${check.directionHit ? "当たりました" : "外れました"}（予測 ${pctText(check.driftPct, 2)} → 実際 ${pctText(check.actualPct, 2)}）。`;
   return `前の予測との比較：${direction} 各足の終値の${check.coveragePct}%が、予測した価格の範囲内でした。`;
 }
 
