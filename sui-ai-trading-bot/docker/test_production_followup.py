@@ -164,6 +164,19 @@ class RunStopTests(unittest.TestCase):
         self.assertEqual((result, reads, sleeps), (0, 1, []))
         self.assertEqual(blocks, [FOLLOWUP.failure_lines(failure(status='completed'))])
 
+    def test_closed_midrun_failure_prints_its_stop_reason(self):
+        # The shape the mid-run close-out persists, once the stop
+        # has closed the record: the STOP output names the stage
+        # and the worker's own stop reason, no host terminal.
+        midrun = failure(status='completed', stage='monitoring', code='UPSTREAM_HTTP_500')
+        result, reads, sleeps, blocks = self.drive(report('completed', midrun))
+        self.assertEqual((result, reads, sleeps), (0, 1, []))
+        self.assertEqual(blocks, [[
+            '- 失敗段階: `monitoring`',
+            '- 失敗コード: `UPSTREAM_HTTP_500`',
+            '- バックアップ: 未確認',
+        ]])
+
     def test_healthy_closed_record_and_unclosed_record_stay_silent(self):
         for value in (report('completed'),
                       report('failed_requires_review', failure()),

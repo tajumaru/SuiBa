@@ -2262,6 +2262,13 @@ class ProductionController(Controller):
         if completed:
             record['stage'] = 'stopped'
         self.b.atomic(self.record, record)
+        if not completed:
+            # Observation only, after the failed status is durable:
+            # persist the mid-run failure's concrete reason while
+            # the worker's final state still exists to read. Never
+            # allowed to change the close-out's outcome.
+            with contextlib.suppress(Exception):
+                self.note_run_failure(record)
         return not errors and not self.faults(record)
 
     def run(self):
@@ -2668,6 +2675,92 @@ class ProductionController(Controller):
                 return value['error']
         return None
 
+    def worker_stop_code(self):
+        """The worker's own latched stop reason, read from its
+        runtime row, or None. Read-only and best-effort: close-out
+        runs after stop_checks stopped the container, so the row
+        is quiet — the preset snapshot reads the same file the
+        same way after a stop, and the backup audit reads the
+        same row from the archives. Only this session's reason
+        can be present: wait_ready() returned only once the
+        deployment reported startReady, which requires a clear
+        runtime row, so an error latched at a monitoring-stage
+        close-out was latched by this session. The value is
+        sanitized to the code shape the failure summary carries
+        (the worker's own vocabulary is upper-snake, capped at
+        the summary's length); anything unexpected degrades to
+        the generic code the audit program maps unknowns to."""
+        try:
+            with contextlib.closing(sqlite3.connect(
+                    f'file:{self.sui_db_path()}?mode=ro', uri=True)) as db:
+                row = db.execute(
+                    "SELECT json FROM bot_runtime_state WHERE key='runtime'").fetchone()
+            state = json.loads(row[0]) if row is not None else None
+            if type(state) is not dict:
+                return None
+            if state.get('emergency') is True:
+                # The worker's own snapshot names an emergency
+                # stop ahead of any latched error.
+                return 'EMERGENCY_STOP'
+            error = state.get('error')
+            if error is None:
+                return None
+            if type(error) is str and re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', error):
+                return error
+            return 'OTHER_RUNTIME_ERROR'
+        except Exception:
+            return None
+
+    def note_run_failure(self, record):
+        """Persist a mid-run failure's concrete reason into the
+        run's failure record, so the read-only status — and with
+        it the monitor Issue and the STOP follow-up — can name
+        WHY a session that ran for hours closed as
+        failed_requires_review, not only THAT it did. Before
+        this, failure.json was written only by the run()
+        exception handlers: a controller that died mid-run left
+        no failure record at all, and one that caught the
+        failure recorded the stage and at most an HTTP status or
+        a market snapshot — never the worker's stop reason.
+
+        Monitoring-stage close-outs only: the stage proves the
+        session passed readiness and actually ran (see
+        worker_stop_code for why the reason is this session's).
+        Existing failure evidence is preserved; only a missing
+        code is filled, from the first source that knows one:
+        the worker's latched stop reason, the market snapshot
+        already on the failure record, then the stop machinery's
+        first fault. Unreadable evidence is left untouched."""
+        if record.get('stage') != 'monitoring':
+            return
+        path = self.folder(record)/'failure.json'
+        failure = None
+        if path.exists():
+            try:
+                value = self.b.decode(self.b.read_trusted(path))
+                require(type(value) is dict and value.get('id') == record['id'] and
+                        value.get('stage') in DIAGNOSTIC_STAGES)
+                failure = value
+            except Exception:
+                return
+            if failure.get('code') or failure.get('reset_refusal'):
+                return
+        code = self.worker_stop_code()
+        if code is None and failure is not None:
+            market = failure.get('market')
+            if type(market) is dict:
+                reason = market.get('reason')
+                if type(reason) is str and \
+                        re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', reason):
+                    code = reason
+        if code is None:
+            code = self.fault_code(record)
+        if failure is None:
+            failure = {'id': record['id'], 'stage': 'monitoring'}
+        if code is not None:
+            failure['code'] = code
+        self.b.atomic(path, failure)
+
     def failure_summary(self, record):
         """Bounded, lock-free read of the run's failure evidence for
         the read-only status — the diagnosis the owner otherwise
@@ -2693,6 +2786,14 @@ class ProductionController(Controller):
             refusal = value.get('reset_refusal')
             if type(refusal) is str and refusal in RESET_REFUSAL_CODES:
                 summary['code'] = refusal
+            recorded = value.get('code')
+            if summary['code'] is None and type(recorded) is str and \
+                    re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', recorded):
+                # A code the close-out itself persisted for a
+                # mid-run failure (see note_run_failure): the
+                # worker's own stop reason, captured while the
+                # evidence still existed to read.
+                summary['code'] = recorded
             http = value.get('http_status')
             if type(http) is int and 100 <= http <= 599:
                 summary['http_status'] = http

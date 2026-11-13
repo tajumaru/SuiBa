@@ -97,6 +97,22 @@ class ShapeTests(unittest.TestCase):
         self.assertTrue({'REVIEW_REQUIRED', 'RUN_FAILED'} <= set(result['reasons']))
         self.assertEqual(result['failure'], failure)
 
+    def test_midrun_failure_summary_is_projected_into_the_report(self):
+        # The mid-run shape the close-out now persists: stage
+        # monitoring (the session ran for hours), the worker's
+        # own stop reason as the code, no HTTP status. It passes
+        # the same strict projection unchanged.
+        status, watch = healthy()
+        status['run'].update(status='failed_requires_review', stage='monitoring')
+        status.update(controller_alive=False, worker=None, requires_review=True)
+        failure = {'status': 'failed_requires_review', 'stage': 'monitoring',
+                   'code': 'UPSTREAM_HTTP_500', 'http_status': None, 'backup': 'unconfirmed'}
+        status['failure'] = failure
+        result = combine(status, watch, 2000)
+        self.assertEqual(result['verdict'], 'attention')
+        self.assertTrue({'REVIEW_REQUIRED', 'RUN_FAILED'} <= set(result['reasons']))
+        self.assertEqual(result['failure'], failure)
+
     def test_malformed_failure_summary_is_invalid(self):
         status, watch = healthy()
         status['run'].update(status='failed_requires_review', stage='backup')
