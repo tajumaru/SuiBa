@@ -355,3 +355,15 @@ PR #168 で本番切替時に検討するとしていた watchdog を先行実�
 数式、30件からの評価・10件刻み・目標80%・±3pt不感帯・誤差半分の歩幅・[0.7,1.5] clamp・0.01丸めを維持。現行採点の「途中の足も収まり率に含む」「直近288件を対象」は維持する。オーナーの追加指示により、窓の飽和で自己校正が止まる問題も同じPRで修正する。評価間隔の件数だけを、初めて実績足を得た予測originの累積件数へ変更し、閾値・数式・歩幅・clampは変えない。実況の件数と収まり率は同じ直近窓を示し、累積件数は別フィールドに記録する。ホライズン終了の結果は別の永続履歴に記録する。計算式の改良は今回に含めない。
 
 既存 localStorage は消さず、各端末の初回接続で取り込む。最初の非空移行で実際に保存されている倍率と評価件数を採用し（1.16 を固定値として埋め込まない）、後続端末の異なる倍率は正本を上書きせず原データごと移行履歴へ保存する。本番で有効な状態を持つ端末を最初に接続することが移行の前提。未接続端末や既に削除された localStorage は worker から取得できない。詳細は `docs/FORECAST_WORKER_MIGRATION_JA.md`。
+
+
+## 2026-11-13 本番ロールバックの GitHub 経路（ROLLBACK-PROD）を追加する
+
+2026-11-12 の障害レビューの未実装項目「ロールバックの GitHub 経路＋旧 archive の保持」のうち、経路を実装した。broker の rollback 演算は既存で deploy と同一の transaction を通る（現 DB の cold backup を取り、旧イメージのコンテナを未起動で作成して prepared_stopped で台帳に記録する。DB の巻き戻しはしない。deploy の承認の流用はできず、rollback 専用の承認が要る）ため、不足していたのは承認付きの入口だけだった。当日（2026-11-13）の本番障害でも、旧版へ戻す承認経路がないことが復旧の選択肢を狭めた。
+
+設計判断：
+
+- 入口は `suiba-production-control.yml` の第3の confirmation `ROLLBACK-PROD` とし、対象は `target_sha` 入力で明示する（broker は「前版」を知らず、呼び出し側が旧 main SHA を名指す契約）。prepare ジョブ（Environment 承認なし・secrets なし）が対象コミットから DEPLOY-PAPER と同じ package 経路で archive を再作成し、prod-rollback ジョブ（sakura-vps 承認＋`SUIBA_PROD_CONTROL_ENABLED`＋`SUIBA_BROKER_ENABLED`）が固定 wrapper `docker/ssh-prod-rollback.sh` で転送と broker 要求を行う。対象は main の祖先であるコミットだけに限定し（prepare で merge-base 検証）、未マージ・外部のコミットは build の前に拒否する。
+- 順序は STOP-PROD → ROLLBACK-PROD → START-PROD とし、開始は束ねない。稼働中セッションが broker の state lock を実行全体にわたり保持する間は deploy と同じく lock で拒否されるため、ロールバックも停止が前提になる。検証セッション稼働中も paper ゲートで拒否される（deploy の permit 経路は rollback には開かれていない）。
+- 旧 archive の保持は新設しない。incoming の upload は一時的（cleanup が1時間以上触られていない entry を削除する）で、broker は transaction 終了時に自前の snapshot を消し、公開ミラー `last-deploy.json` には status／code／sha しか残らない（archive_sha256・image_id が無い）ため、仮に archive が残っていても CI からは address できない。ホストに残る旧イメージも、broker が archive の bytes から identity を再導出する契約上は使えない。archive は deploy と同様に CI が作るのがこの構成の正本であり、対象 SHA からの再作成が最も小さい完結形になる。broker は転送された bytes に対して digest と image identity を再検証するので、再作成でも信頼の前提は変わらない。GitHub artifact（保持3日）からの取得は、期限切れと別 run の artifact を引く権限・同定の複雑さから採らない。
+- rollback は `last-deploy.json` を更新しない（broker の公開ミラーは deploy の結果専用）。ロールバック後の配置の正本は broker 台帳（root 所有）であり、前回 deploy の表示が残る点は誤読しないこと。取引ロジック・安全停止条件・broker の rollback 意味論は不変。

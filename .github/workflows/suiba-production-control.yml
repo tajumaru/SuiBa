@@ -3,9 +3,14 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: "Type START-PROD or STOP-PROD"
+        description: "Type START-PROD, STOP-PROD or ROLLBACK-PROD"
         required: true
         type: string
+      target_sha:
+        description: "ROLLBACK-PROD only: the previous release's full commit SHA to roll back to"
+        required: false
+        type: string
+        default: ''
 permissions:
   contents: read
 concurrency:
@@ -75,6 +80,112 @@ jobs:
       # no-op stop, which never reaches this step) prints nothing.
       - name: Follow-up status read (failure detail only)
         if: steps.stop.outputs.outcome == 'completed'
+        env:
+          PROD_FOLLOWUP_MODE: stop
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: python3 sui-ai-trading-bot/docker/production-followup.py
+  rollback-prepare:
+    # Phase A of the rollback: rebuild the target release's image
+    # from its own commit and package it exactly as DEPLOY-PAPER
+    # does. No Environment approval and no secrets: a failure here
+    # changes nothing on the host. The broker keeps no usable copy
+    # of a previous release (incoming uploads are transient and the
+    # digests exist only in the deploying run), so the archive is
+    # re-created from source; the broker re-verifies every digest
+    # against the transferred bytes anyway.
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'ROLLBACK-PROD' && vars.SUIBA_PROD_CONTROL_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      archive_sha256: ${{ steps.package.outputs.archive_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.target_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate the rollback target
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ $TARGET_SHA =~ ^[0-9a-f]{40}$ ]]
+          git rev-parse --verify "${TARGET_SHA}^{commit}" >/dev/null
+          git fetch origin main
+          # Only a release that is part of main's history may be
+          # rolled back to: an unmerged or foreign commit is refused
+          # here, before anything is built.
+          git merge-base --is-ancestor "$TARGET_SHA" FETCH_HEAD
+      - name: Build on runner, never on VPS
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: docker buildx build --provenance=false --sbom=false --output type=docker,oci-mediatypes=true --build-arg SUIBA_BUILD_SHA=$TARGET_SHA -f sui-ai-trading-bot/docker/Dockerfile -t suiba:$TARGET_SHA sui-ai-trading-bot
+      - name: Isolated Compose, UID1000, WAL restore, SIGTERM timeout and OOM (no Worker)
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+        working-directory: sui-ai-trading-bot
+        run: node docker/verify-vps-offline.mjs suiba:$TARGET_SHA
+      - name: Package immutable release
+        id: package
+        run: |
+          mkdir release
+          docker save suiba:${{ inputs.target_sha }} | gzip > release/image.tar.gz
+          python3 sui-ai-trading-bot/docker/check-image-archive.py release/image.tar.gz
+          docker image inspect --format '{{.Id}}' suiba:${{ inputs.target_sha }} > release/image-id.txt
+          cd release
+          sha256sum image.tar.gz > image.tar.gz.sha256
+          read -r digest _ < image.tar.gz.sha256
+          printf 'archive_sha256=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vps-rollback
+          path: release/
+          compression-level: 0
+          retention-days: 3
+  prod-rollback:
+    # Same gates and the same Environment approval as start/stop,
+    # plus the broker gate: the rollback speaks to the deploy broker,
+    # like DEPLOY-PAPER. Production must already be stopped
+    # (STOP-PROD): a running session holds the broker state lock for
+    # its whole run, so the broker refuses before any mutation while
+    # one is up. The rollback only prepares the old release stopped;
+    # starting it stays with START-PROD.
+    needs: rollback-prepare
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'ROLLBACK-PROD' && vars.SUIBA_PROD_CONTROL_ENABLED == 'true' && vars.SUIBA_BROKER_ENABLED == 'true'
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: vps-rollback
+          path: release
+      - name: Roll back through the fixed wrapper
+        env:
+          PROD_ROLLBACK_CONFIRMATION: ${{ inputs.confirmation }}
+          ROLLBACK_SHA: ${{ inputs.target_sha }}
+          ARCHIVE_SHA256: ${{ needs.rollback-prepare.outputs.archive_sha256 }}
+          ROLLBACK_CI_RUN: ${{ github.run_id }}
+          ROLLBACK_ARCHIVE_FILE: release/image.tar.gz
+          ROLLBACK_IMAGE_FILE: release/image-id.txt
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-prod-rollback.sh
+      # Print the closed record's failure summary when there is one,
+      # exactly as after a stop: the usual reason to roll back is a
+      # release whose session just failed, and its detail belongs in
+      # this run's log too. A healthy record prints nothing.
+      - name: Follow-up status read (failure detail only)
         env:
           PROD_FOLLOWUP_MODE: stop
           VPS_HOST: ${{ secrets.VPS_HOST }}
