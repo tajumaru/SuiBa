@@ -1,0 +1,2 @@
+Defaults:suiba-deploy env_reset,!setenv
+suiba-deploy ALL=(root) NOPASSWD: NOSETENV: NOLOG_INPUT: NOLOG_OUTPUT: /usr/local/sbin/suiba-shadow-runtime ""

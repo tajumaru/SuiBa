@@ -35,8 +35,15 @@ PROD_SERVICE='suiba-prod.service'
 TIMERS='suiba-paper-check-cutoff.timer suiba-paper-check-cutoff-2h.timer suiba-paper-check-cutoff-6h.timer suiba-paper-check-cutoff-24h.timer'
 UNITS='suiba-paper-check.service suiba-prod.service suiba-prod-watchdog.service suiba-prod-watchdog.timer suiba-paper-check-cutoff.service suiba-paper-check-cutoff.timer suiba-paper-check-cutoff-2h.timer suiba-paper-check-cutoff-6h.timer suiba-paper-check-cutoff-24h.timer'
 
+# Cross-setup integrity pin, checked by test_setup.py (not installed here).
+# shellcheck disable=SC2034 # Consumed by the cross-setup integrity test.
+SETUP_CI_APPROVAL_SHA256='e2511ae343a1f9369cabebe676eddcfce1ff35339ad2063db67e7e4ae48c63b2'
+
 # name|sha256|target|mode
 FILES=(
+  'shadow-runtime.py|b01865234bff5f271b163c97e4023fb3cd1a2582511806a5b8606f4c9d301c8b|/usr/local/libexec/suiba-shadow-runtime.py|755'
+  'suiba-shadow-runtime|4a058c1f881c028ebdb573890e540175a0d10ed5cc534b1c5ff2d48c3cdae201|/usr/local/sbin/suiba-shadow-runtime|755'
+  'suiba-shadow-runtime.sudoers|86fd75b753fd850bff9cd8cfcdd597e049b4314cc9b88bca458e1d383e550b1d|/etc/sudoers.d/suiba-shadow-runtime|440'
   'export_snapshot.py|b48c50f116a19d13c8a892c4335ccd1ace905854f654648503ecb01be2dd51c9|/usr/local/libexec/suiba-paper-export.py|755'
   'controller.py|fe7cb92cb9bd1222eb372e128aa258207d90fd7348f6bfa0673bf97bcb539647|/usr/local/libexec/suiba-paper-check.py|755'
   'suiba-paper-check|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-check|755'
@@ -118,6 +125,9 @@ python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/controll
 python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/watchdog.py" || fail 'watchdog.py の構文検証に失敗'
 visudo -cf "$tmp/suiba-paper-check.sudoers" >/dev/null || fail 'sudoers の構文検証に失敗'
 visudo -cf "$tmp/suiba-paper-observe.sudoers" >/dev/null || fail 'observe sudoers の構文検証に失敗'
+
+visudo -cf "$tmp/suiba-shadow-runtime.sudoers" >/dev/null || fail 'shadow sudoers の構文検証に失敗'
+python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/shadow-runtime.py" || fail 'shadow helper の構文検証に失敗'
 
 echo '== 3/5 配置（旧ファイルはバックアップ） =='
 install -d -o root -g root -m 755 /etc/needrestart/conf.d || fail 'needrestart 設定ディレクトリを作れません'
