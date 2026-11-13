@@ -62,7 +62,10 @@ describe("retired validation tab", () => {
     const html = renderToStaticMarkup(
       <HistoryTab operations={data} orders={[]} trades={[]} candles={[]} />,
     );
-    expect(html).toContain("過去の停止理由（現在は解除済み）");
+    expect(html).toContain("直近の停止理由");
+    expect(html).toContain("解除済み");
+    expect(html).toContain("<time dateTime=");
+    expect(html).toContain("stop-history-period");
     expect(html).toContain("照合");
     expect(html).toContain("注文 / 拒否理由");
     expect(data.reports.find((r) => r.hours === 168)!.stopReasons).toHaveLength(

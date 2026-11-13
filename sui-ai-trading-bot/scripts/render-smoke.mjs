@@ -122,6 +122,14 @@ try {
       { encoding: "utf8" },
     ),
   );
+  fixture.operations.safety.lastStopReason = "UPSTREAM_HTTP_500";
+  fixture.operations.reports.find(
+    (report) => report.hours === 168,
+  ).stopReasons = [
+    { timestamp: Date.now() - 90000, reason: "PROCESS_RESTART_STOPPED" },
+    { timestamp: Date.now() - 60000, reason: "UPSTREAM_HTTP_429" },
+    { timestamp: Date.now() - 30000, reason: "UPSTREAM_HTTP_500" },
+  ];
   const commands = [];
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -188,6 +196,25 @@ try {
     await page.screenshot({ path: `render-smoke-overview-${width}.png` });
     await page.getByRole("button", { name: "取引履歴", exact: true }).click();
     await page.getByRole("region", { name: "過去の停止理由" }).waitFor();
+    /* eslint-disable no-undef -- computed styles run inside Chromium */
+    const historyType = await page
+      .locator(".stop-history")
+      .evaluate((card) => ({
+        heading: getComputedStyle(card.querySelector("h3")).fontSize,
+        timestamp: getComputedStyle(card.querySelector("time")).fontSize,
+        reason: getComputedStyle(card.querySelector("li strong")).fontSize,
+        weight: getComputedStyle(card.querySelector("li strong")).fontWeight,
+        fits: card.scrollWidth <= card.clientWidth,
+      }));
+    /* eslint-enable no-undef */
+    if (
+      historyType.heading !== "15px" ||
+      historyType.timestamp !== "12px" ||
+      historyType.reason !== "13px" ||
+      Number(historyType.weight) < 600 ||
+      !historyType.fits
+    )
+      failures.push(`${width}px: stop history hierarchy regressed`);
     await page.screenshot({ path: `render-smoke-history-${width}.png` });
     /* eslint-disable no-undef -- runs inside Chromium */
     if (
