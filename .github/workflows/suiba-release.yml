@@ -94,39 +94,48 @@ jobs:
           path: release/
           compression-level: 0
           retention-days: 3
-  # Phase B: the single approval for the whole release. This is the
-  # only job in this workflow that declares the sakura-vps
-  # Environment; the state-changing jobs below inherit the decision
-  # through needs: and never prompt again. If any earlier job failed
-  # or was skipped, this job is skipped and no approval is requested.
-  release-approval:
+
+  # Phase C: stop, deploy, start, strictly in that order, inside a
+  # single job. The sakura-vps Environment sits on THIS job, the one
+  # that runs the SSH steps: in GitHub an Environment approval and
+  # its secrets are both scoped to the job that declares the
+  # environment. The first version of this workflow (PR #228) put the
+  # environment on a separate no-op gate job that the state-changing
+  # jobs needed; those jobs then ran with every VPS_* secret empty
+  # and the stop failed before contacting the host (run 43328855984,
+  # 2026-11-13; production was never touched). One approval is still
+  # all the release asks for: this job is the only Environment
+  # deployment in the run. A failed step halts the job (no step runs
+  # after a failure), leaving production in the state the completed
+  # steps reached; nothing restarts the previous release
+  # automatically.
+  prod-release:
     needs: [validate, package-image]
-    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE-PROD'
+    # Both repository-variable enable gates live on this one job now:
+    # the control gate (stop/start) and the broker gate (deploy).
+    # Missing/false on either disables all SSH in this job.
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE-PROD' && vars.SUIBA_PROD_CONTROL_ENABLED == 'true' && vars.SUIBA_BROKER_ENABLED == 'true'
     environment: sakura-vps
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # One runner now carries what the separate stop (8), deploy (15)
+    # and start (8) jobs had as individual budgets; 30 minutes keeps
+    # roughly the same total envelope for the whole chain.
+    timeout-minutes: 30
     steps:
-      - name: Record what this approval releases
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Record what this release deploys
         env:
           ARCHIVE_SHA256: ${{ needs.package-image.outputs.archive_sha256 }}
         run: |
           printf 'Release commit: %s\n' "${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
           printf 'Release archive sha256: %s\n' "$ARCHIVE_SHA256" >> "$GITHUB_STEP_SUMMARY"
-          printf 'Approving this job stops production, deploys the release above and starts production again. Any failure halts the chain with production left stopped; nothing restarts the previous release automatically.\n' >> "$GITHUB_STEP_SUMMARY"
-  # Phase C: stop, deploy, start, strictly in that order. A failure
-  # in any of them skips the rest (default needs: semantics), leaving
-  # production stopped for a deliberate, separately approved action.
-  prod-stop:
-    needs: release-approval
-    # Same repository-variable enable gate as the standalone control
-    # workflow; missing/false disables all SSH in this job.
-    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE-PROD' && vars.SUIBA_PROD_CONTROL_ENABLED == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 8
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+          printf 'This job stops production, deploys the release above and starts production again. Any failure halts the chain with production left in the state the completed steps reached; nothing restarts the previous release automatically.\n' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          persist-credentials: false
+          name: vps-release
+          path: release
       - name: Stop production through the fixed wrapper
         id: stop
         env:
@@ -152,16 +161,6 @@ jobs:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: python3 sui-ai-trading-bot/docker/production-followup.py
-  deploy:
-    needs: [prod-stop, package-image]
-    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE-PROD' && vars.SUIBA_BROKER_ENABLED == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: vps-release
-          path: release
       - name: Transfer and deploy with pinned SSH host identity
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -203,17 +202,6 @@ jobs:
           # creates a STOPPED container.
           printf '{"operation":"deploy","sha":"%s","archive_sha256":"%s","image_id":"%s","ci_run":%s}\n' "$RELEASE_SHA" "$ARCHIVE_SHA256" "$image_id" "${{ github.run_id }}" |
             ssh "${opts[@]}" -T -p "$VPS_PORT" "$target" 'sudo -n -- /usr/local/sbin/suiba-deploy'
-  prod-start:
-    needs: deploy
-    # Same repository-variable enable gate as the standalone control
-    # workflow; missing/false disables all SSH in this job.
-    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE-PROD' && vars.SUIBA_PROD_CONTROL_ENABLED == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 8
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
       - name: Start production through the fixed wrapper
         env:
           # The wrapper only accepts its own fixed confirmation word;

@@ -1,10 +1,15 @@
 """Offline workflow contracts for the single-approval production release.
 
-The release workflow chains validate, package, one Environment
-approval, stop, deploy and start in a single run. These tests pin
-that shape: exactly one sakura-vps Environment (the gate job), the
-needs: ordering, the repository-variable enable gates, and the reuse
-of the fixed SSH wrappers and broker path. Never contacts a VPS.
+The release workflow chains validate, package and one executing job
+(stop, deploy, start as sequential steps) in a single run. These
+tests pin that shape: exactly one sakura-vps Environment and it sits
+on the job that runs the SSH steps (GitHub scopes Environment
+secrets to the declaring job — the PR #228 gate-job shape left the
+executing jobs with empty VPS_* secrets and the first live run
+failed before contacting the host), the needs: ordering, the step
+order inside the executing job, the repository-variable enable
+gates, and the reuse of the fixed SSH wrappers and broker path.
+Never contacts a VPS.
 """
 import ast
 from pathlib import Path
@@ -17,7 +22,7 @@ WORKFLOW = WORKFLOWS/'suiba-release.yml'
 CONTROL = WORKFLOWS/'suiba-production-control.yml'
 VPS = WORKFLOWS/'suiba-vps.yml'
 
-JOBS = ('validate', 'package-image', 'release-approval', 'prod-stop', 'deploy', 'prod-start')
+JOBS = ('validate', 'package-image', 'prod-release')
 SECRETS = ('VPS_HOST', 'VPS_USER', 'VPS_PORT', 'VPS_SSH_KEY', 'VPS_KNOWN_HOSTS')
 
 
@@ -62,38 +67,44 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('Type RELEASE-PROD', self.source)
         self.assertEqual(self.source.count('inputs:'), 1)
 
-    def test_exactly_one_environment_and_it_is_the_gate_job(self):
+    def test_exactly_one_environment_on_the_executing_job(self):
+        # Regression test for run 43328855984 (2026-11-13): the
+        # environment sat on a no-op gate job, so the jobs running
+        # the SSH steps received no Environment secrets and the stop
+        # failed with every VPS_* value empty. Any job whose steps
+        # reference the VPS_* secrets must be the one declaring the
+        # environment.
         self.assertEqual(self.source.count('environment: sakura-vps'), 1)
         self.assertNotIn('sakura-vps-observe', self.source)
-        self.assertIn('environment: sakura-vps', self.blocks['release-approval'])
-        for name in JOBS:
-            if name != 'release-approval':
-                self.assertNotIn('environment:', self.blocks[name], name)
+        self.assertIn('environment: sakura-vps', self.blocks['prod-release'])
+        for name in ('validate', 'package-image'):
+            self.assertNotIn('environment:', self.blocks[name], name)
+        jobs_using_secrets = {name for name in JOBS
+                              if 'secrets.VPS_' in self.blocks[name]}
+        self.assertEqual(jobs_using_secrets, {'prod-release'})
 
-    def test_jobs_are_defined_and_chained_in_release_order(self):
+    def test_jobs_are_defined_in_release_order(self):
         positions = [self.source.index(f'  {name}:\n') for name in JOBS]
         self.assertEqual(positions, sorted(positions))
         self.assertEqual(needs_of(self.blocks['validate']), [])
         self.assertEqual(needs_of(self.blocks['package-image']), [])
-        self.assertEqual(set(needs_of(self.blocks['release-approval'])),
+        self.assertEqual(set(needs_of(self.blocks['prod-release'])),
                          {'validate', 'package-image'})
-        self.assertEqual(needs_of(self.blocks['prod-stop']), ['release-approval'])
-        self.assertEqual(set(needs_of(self.blocks['deploy'])),
-                         {'prod-stop', 'package-image'})
-        self.assertEqual(needs_of(self.blocks['prod-start']), ['deploy'])
 
     def test_serialized_with_the_control_group_and_never_cancelled(self):
         self.assertIn('group: suiba-production-control', self.source)
         self.assertIn('cancel-in-progress: false', self.source)
 
     def test_no_always_and_no_second_start_path(self):
-        # A failure must halt the chain with production left stopped:
-        # no state-changing job may run unconditionally, and the start
-        # wrapper may appear only in the final job (no auto-restart of
-        # the previous release hidden elsewhere).
+        # A failure must halt the chain with production left in the
+        # state the completed steps reached: no step may run
+        # unconditionally, and each fixed wrapper may appear only
+        # once (no auto-restart of the previous release hidden
+        # elsewhere).
         self.assertNotIn('if: always()', self.source)
         self.assertEqual(self.source.count('ssh-prod-start.sh'), 1)
         self.assertEqual(self.source.count('ssh-prod-stop.sh'), 1)
+        self.assertEqual(self.source.count('production-followup.py'), 2)
 
     def test_phase_a_gates_require_dispatch_main_and_release_confirmation(self):
         for name in ('validate', 'package-image'):
@@ -108,39 +119,21 @@ class WorkflowTests(unittest.TestCase):
                                     and confirmation == 'RELEASE-PROD')
                         self.assertEqual(actual, expected, (name, event, ref, confirmation))
 
-    def test_approval_gate_requires_main_and_release_confirmation(self):
-        expression = gate_expression(self.blocks['release-approval'])
-        for ref in ('refs/heads/main', 'refs/heads/feature'):
-            for confirmation in ('RELEASE-PROD', 'wrong', ''):
-                actual = evaluate(expression, {'github.ref': ref,
-                                               'inputs.confirmation': confirmation})
-                expected = ref == 'refs/heads/main' and confirmation == 'RELEASE-PROD'
-                self.assertEqual(actual, expected, (ref, confirmation))
-
-    def test_stop_and_start_gates_carry_the_control_enable_variable(self):
-        for name in ('prod-stop', 'prod-start'):
-            expression = gate_expression(self.blocks[name])
-            for enabled in ('true', 'false', ''):
+    def test_release_gate_requires_both_enable_variables(self):
+        expression = gate_expression(self.blocks['prod-release'])
+        for control in ('true', 'false', ''):
+            for broker in ('true', 'false', ''):
                 for ref in ('refs/heads/main', 'refs/heads/feature'):
-                    for confirmation in ('RELEASE-PROD', 'STOP-PROD', 'wrong', ''):
+                    for confirmation in ('RELEASE-PROD', 'wrong', ''):
                         actual = evaluate(expression, {
-                            'vars.SUIBA_PROD_CONTROL_ENABLED': enabled, 'github.ref': ref,
-                            'inputs.confirmation': confirmation})
-                        expected = (enabled == 'true' and ref == 'refs/heads/main'
+                            'vars.SUIBA_PROD_CONTROL_ENABLED': control,
+                            'vars.SUIBA_BROKER_ENABLED': broker,
+                            'github.ref': ref, 'inputs.confirmation': confirmation})
+                        expected = (control == 'true' and broker == 'true'
+                                    and ref == 'refs/heads/main'
                                     and confirmation == 'RELEASE-PROD')
-                        self.assertEqual(actual, expected, (name, enabled, ref, confirmation))
-
-    def test_deploy_gate_carries_the_broker_enable_variable(self):
-        expression = gate_expression(self.blocks['deploy'])
-        for enabled in ('true', 'false', ''):
-            for ref in ('refs/heads/main', 'refs/heads/feature'):
-                for confirmation in ('RELEASE-PROD', 'DEPLOY-PAPER', 'wrong', ''):
-                    actual = evaluate(expression, {
-                        'vars.SUIBA_BROKER_ENABLED': enabled, 'github.ref': ref,
-                        'inputs.confirmation': confirmation})
-                    expected = (enabled == 'true' and ref == 'refs/heads/main'
-                                and confirmation == 'RELEASE-PROD')
-                    self.assertEqual(actual, expected, (enabled, ref, confirmation))
+                        self.assertEqual(actual, expected,
+                                         (control, broker, ref, confirmation))
 
     def test_phase_a_reuses_the_deploy_validation_and_packaging(self):
         validate = self.blocks['validate']
@@ -150,37 +143,53 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('archive_sha256: ${{ steps.package.outputs.archive_sha256 }}', package)
         self.assertIn('name: vps-release', package)
         self.assertIn("ARCHIVE_SHA256: ${{ needs.package-image.outputs.archive_sha256 }}",
-                      self.blocks['release-approval'] + self.blocks['deploy'])
+                      self.blocks['prod-release'])
 
-    def test_stop_and_start_reuse_the_fixed_wrappers_and_followup(self):
-        stop = self.blocks['prod-stop']
-        self.assertIn('timeout-minutes: 8', stop)
-        self.assertIn('id: stop', stop)
-        self.assertIn('run: bash sui-ai-trading-bot/docker/ssh-prod-stop.sh', stop)
-        # The wrapper accepts only its own fixed word; the release
+    def test_release_steps_run_in_stop_deploy_start_order(self):
+        block = self.blocks['prod-release']
+        markers = [
+            'Record what this release deploys',
+            'actions/download-artifact@',
+            'ssh-prod-stop.sh',
+            'PROD_FOLLOWUP_MODE: stop',
+            'Transfer and deploy with pinned SSH host identity',
+            'ssh-prod-start.sh',
+            'PROD_FOLLOWUP_MODE: start',
+        ]
+        positions = [block.index(marker) for marker in markers]
+        self.assertEqual(positions, sorted(positions))
+
+    def test_release_job_reuses_wrappers_followup_and_broker_path(self):
+        release = self.blocks['prod-release']
+        self.assertIn('timeout-minutes: 30', release)
+        # The released commit and archive digest are summarized for
+        # the record before anything state-changing runs.
+        self.assertIn('Release archive sha256', release)
+        self.assertIn('$GITHUB_STEP_SUMMARY', release)
+        # Stop through the fixed wrapper, then its follow-up read.
+        self.assertIn('id: stop', release)
+        self.assertIn('run: bash sui-ai-trading-bot/docker/ssh-prod-stop.sh', release)
+        # The wrappers accept only their own fixed words; the release
         # confirmation itself is enforced by the job gate above.
-        self.assertIn('PROD_STOP_CONFIRMATION: STOP-PROD', stop)
-        self.assertIn("if: steps.stop.outputs.outcome == 'completed'", stop)
-        self.assertIn('PROD_FOLLOWUP_MODE: stop', stop)
-        self.assertIn('run: python3 sui-ai-trading-bot/docker/production-followup.py', stop)
-        start = self.blocks['prod-start']
-        self.assertIn('timeout-minutes: 8', start)
-        self.assertIn('run: bash sui-ai-trading-bot/docker/ssh-prod-start.sh', start)
-        self.assertIn('PROD_START_CONFIRMATION: START-PROD', start)
-        self.assertIn('PROD_FOLLOWUP_MODE: start', start)
-        self.assertIn('run: python3 sui-ai-trading-bot/docker/production-followup.py', start)
-        for block in (stop, start):
-            for secret in SECRETS:
-                self.assertIn(f'{secret}: ${{{{ secrets.{secret} }}}}', block)
-
-    def test_deploy_reuses_the_broker_path_and_the_packaged_artifact(self):
-        deploy = self.blocks['deploy']
-        self.assertIn('timeout-minutes: 15', deploy)
-        self.assertIn('actions/download-artifact@', deploy)
-        self.assertIn('name: vps-release', deploy)
-        self.assertIn("'sudo -n -- /usr/local/sbin/suiba-deploy'", deploy)
-        self.assertIn('"operation":"deploy"', deploy)
-        self.assertIn('RELEASE_SHA: ${{ github.sha }}', deploy)
+        self.assertIn('PROD_STOP_CONFIRMATION: STOP-PROD', release)
+        self.assertIn("if: steps.stop.outputs.outcome == 'completed'", release)
+        self.assertIn('PROD_FOLLOWUP_MODE: stop', release)
+        # Deploy through the broker with the packaged artifact.
+        self.assertIn('actions/download-artifact@', release)
+        self.assertIn('name: vps-release', release)
+        self.assertIn("'sudo -n -- /usr/local/sbin/suiba-deploy'", release)
+        self.assertIn('"operation":"deploy"', release)
+        self.assertIn('RELEASE_SHA: ${{ github.sha }}', release)
+        self.assertIn('SSH_KEY: ${{ secrets.VPS_SSH_KEY }}', release)
+        self.assertIn('KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}', release)
+        # Start through the fixed wrapper, then its follow-up read.
+        self.assertIn('run: bash sui-ai-trading-bot/docker/ssh-prod-start.sh', release)
+        self.assertIn('PROD_START_CONFIRMATION: START-PROD', release)
+        self.assertIn('PROD_FOLLOWUP_MODE: start', release)
+        self.assertEqual(
+            release.count('run: python3 sui-ai-trading-bot/docker/production-followup.py'), 2)
+        for secret in SECRETS:
+            self.assertIn(f'{secret}: ${{{{ secrets.{secret} }}}}', release)
 
 
 class LegacyWorkflowTests(unittest.TestCase):
