@@ -92,6 +92,7 @@ export function PriceChart(props: PriceChartProps) {
     anchor,
     plot,
   } = usePriceChartModel(props);
+  const markerRows = new Map<string, number>();
   return (
     <div
       className="price-chart"
@@ -374,11 +375,19 @@ export function PriceChart(props: PriceChartProps) {
                   t.timestamp / 1000 >= b.timestamp &&
                   t.timestamp / 1000 < b.timestamp + tf,
               );
-              return !b ? null : (
+              if (!b) return null;
+              const markerKey = `${b.timestamp}:${t.side}`;
+              const row = markerRows.get(markerKey) ?? 0;
+              markerRows.set(markerKey, row + 1);
+              const buying = t.side === "BUY";
+              return (
                 <text
                   key={t.orderId}
                   x={x(b.timestamp + tf / 2)}
-                  y={y(b.close) - 10}
+                  y={
+                    buying ? y(b.low) + 18 + row * 14 : y(b.high) - 8 - row * 14
+                  }
+                  textAnchor="middle"
                   fill={t.side === "BUY" ? "#43dfb2" : "#f77d8f"}
                   fontSize="12"
                 >
