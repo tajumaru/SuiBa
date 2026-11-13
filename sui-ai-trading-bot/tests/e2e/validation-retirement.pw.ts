@@ -39,7 +39,7 @@ test("five tabs retain freshness, stop history and shared header start/stop", as
   await page.getByRole("button", { name: "取引履歴", exact: true }).click();
   await expect(
     page.getByRole("region", { name: "過去の停止理由" }),
-  ).toContainText("現在は解除済み");
+  ).toContainText("解除済み");
   await expect(
     page.getByRole("region", { name: "過去の停止理由" }),
   ).toContainText("直近7日間");

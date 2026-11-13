@@ -21,11 +21,13 @@ export function HistoryTab({
   candles: Candle[];
 }) {
   return (
-    <section>
+    <div className="history-tab">
       <StopHistory data={operations ?? null} error={operationsError} />
-      <h3>注文 / 拒否理由</h3>
-      <OrderHistory orders={orders} />
-      <FillAnalysisCard trades={trades} candles={candles} />
-    </section>
+      <section>
+        <h3>注文 / 拒否理由</h3>
+        <OrderHistory orders={orders} />
+        <FillAnalysisCard trades={trades} candles={candles} />
+      </section>
+    </div>
   );
 }
