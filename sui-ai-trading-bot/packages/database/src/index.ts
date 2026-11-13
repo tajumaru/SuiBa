@@ -410,6 +410,15 @@ export class BotDatabase {
       ).all(limit) as { json: string }[]
     ).map((r) => JSON.parse(r.json));
   }
+  /** Display-only order history: the SQL column retains the recorded event time
+   * even when the order JSON (notably FILLED orders) has no timestamp. */
+  orderHistory(limit = 200): Record<string, unknown>[] {
+    return (
+      this.prepare(
+        "SELECT timestamp,json FROM paper_orders ORDER BY timestamp DESC,id DESC LIMIT ?",
+      ).all(limit) as { timestamp: number; json: string }[]
+    ).map((row) => ({ ...JSON.parse(row.json), timestamp: row.timestamp }));
+  }
   hasOrder(id: string) {
     return !!this.prepare("SELECT id FROM paper_orders WHERE id=?").get(id);
   }
