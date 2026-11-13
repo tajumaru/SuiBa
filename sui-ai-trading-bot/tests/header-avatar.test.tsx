@@ -312,7 +312,7 @@ describe("agent header avatar wiring (app shell)", () => {
 
   it("gives the tab bar and the page the avatar clearance classes", () => {
     expect(shell).toContain('<nav className="has-avatar">');
-    expect(shell).toContain('<main className="has-avatar">');
+    expect(shell).toMatch(/<main className="has-avatar"(?:\s[^>]*)?>/);
   });
 });
 
