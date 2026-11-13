@@ -1,3 +1,4 @@
+import { ShadowAdapterError } from "./shadow-errors.ts";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
@@ -11,7 +12,7 @@ import {
 import type { MarketStatus } from "../../../packages/market-data/src/provider.ts";
 import type { BotDatabase } from "../../../packages/database/src/index.ts";
 
-export const SHADOW_PROMPT_VERSION = "shadow-s1-v1";
+export const SHADOW_PROMPT_VERSION = "shadow-openai-nano-v1";
 const indicators = [
   "ema20",
   "ema50",
@@ -92,6 +93,11 @@ const responseSchema = z
       .strict(),
   })
   .strict();
+export const shadowDecisionSchema = responseSchema.pick({
+  action: true,
+  confidence: true,
+  rationale: true,
+});
 export interface ShadowInput {
   cycleId: string;
   pair: TradingPair;
@@ -197,19 +203,14 @@ export function shadowPrompt(snapshot: Readonly<Snapshot>): string {
         refs: "at most 5 {type,key,value} entries",
         text: "at most 200 Unicode characters",
       },
-      model: "response model id",
-      promptVersion: SHADOW_PROMPT_VERSION,
-      usage: {
-        inputTokens: "nonnegative integer",
-        outputTokens: "nonnegative integer",
-        cost: "nonnegative number; provider adapter supplies metering",
-      },
     },
     referenceKeys: refKeys,
     snapshot,
   });
 }
 export interface ShadowAdapter {
+  /** Configuration check only; no network, key values or budget consumption. */
+  readiness?(): "SHADOW_API_KEY_MISSING" | null;
   /** No engine, database, network client or credentials in the request. */
   complete(request: {
     snapshot: Readonly<Snapshot>;
@@ -246,16 +247,21 @@ export function validateShadowOutput(raw: unknown, s: Snapshot) {
   }
   return result.data;
 }
-/** Opt-in recorder. Provider selection is deliberately absent in S1.
+/** Opt-in recorder. Provider metadata and metering belong to the adapter.
  * offer() only freezes eligible inputs; invocation and all persistence run in
  * a later event-loop turn, outside the tick promise and analysis transaction. */
 export type ShadowBudget = Pick<
   BotDatabase,
   "reserveShadowCall" | "shadowLastCall"
 >;
-const flights = new WeakMap<ShadowBudget, { busy: boolean; active: boolean }>();
+type Flight = {
+  busy: boolean;
+  active: boolean;
+  configurationStopped?: boolean;
+};
+const flights = new WeakMap<ShadowBudget, Flight>();
 export class ShadowRecorder {
-  private flight: { busy: boolean; active: boolean };
+  private flight: Flight;
   private previousCount: number | undefined;
   private previousRegime: string | undefined;
   constructor(
@@ -277,7 +283,8 @@ export class ShadowRecorder {
         !this.enabled() ||
         !this.adapter ||
         this.flight.busy ||
-        this.flight.active
+        this.flight.active ||
+        this.flight.configurationStopped
       )
         return;
       const i = input();
@@ -332,6 +339,17 @@ export class ShadowRecorder {
     const controller = new AbortController();
     try {
       if (!this.enabled()) return;
+      const configurationError = this.adapter?.readiness?.();
+      if (configurationError) {
+        this.flight.configurationStopped = true;
+        this.db.append(
+          "shadow_decisions",
+          s.cycleId,
+          { ...base, status: "ERROR", reasonCode: configurationError },
+          now,
+        );
+        return;
+      }
       if (!this.budget.reserveShadowCall(dayKey(now), now)) {
         this.db.append(
           "shadow_decisions",
@@ -393,9 +411,11 @@ export class ShadowRecorder {
           ...base,
           status: "ERROR",
           reasonCode:
-            error instanceof Error && allowed.includes(error.message)
-              ? error.message
-              : "ADAPTER_FAILED",
+            error instanceof ShadowAdapterError
+              ? error.code
+              : error instanceof Error && allowed.includes(error.message)
+                ? error.message
+                : "ADAPTER_FAILED",
           calledAt,
           latencyMs: performance.now() - began,
         };

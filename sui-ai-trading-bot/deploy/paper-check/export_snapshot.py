@@ -104,8 +104,8 @@ def sanitize(table, value, public=False):
         if value.get('action') in ('BUY', 'WAIT'): out['action'] = value['action']
         if value.get('ruleAction') in ('BUY', 'SELL', 'WAIT'): out['ruleAction'] = value['ruleAction']
         if value.get('selectedRule') in RULES: out['selectedRule'] = value['selectedRule']
-        if value.get('promptVersion') == 'shadow-s1-v1': out['promptVersion'] = value['promptVersion']
-        if value.get('reasonCode') in ('INVALID_JSON', 'INVALID_SCHEMA', 'INVALID_REFERENCE', 'TIMEOUT', 'CREDENTIAL_IN_OUTPUT', 'ADAPTER_FAILED'): out['reasonCode'] = value['reasonCode']
+        if value.get('promptVersion') in ('shadow-s1-v1', 'shadow-openai-nano-v1'): out['promptVersion'] = value['promptVersion']
+        if value.get('reasonCode') in ('INVALID_JSON', 'INVALID_SCHEMA', 'INVALID_REFERENCE', 'TIMEOUT', 'CREDENTIAL_IN_OUTPUT', 'ADAPTER_FAILED', 'SHADOW_API_KEY_MISSING', 'OPENAI_AUTH_FAILED', 'OPENAI_RATE_LIMITED', 'OPENAI_HTTP_ERROR', 'OPENAI_NETWORK_FAILED', 'OPENAI_REFUSAL', 'OPENAI_INCOMPLETE', 'OPENAI_RESPONSE_FAILED', 'OPENAI_INVALID_RESPONSE'): out['reasonCode'] = value['reasonCode']
         out['usage'] = numeric_fields(value.get('usage'), ('inputTokens', 'outputTokens', 'cost'))
         snapshot = value.get('snapshot')
         if type(snapshot) is dict:
@@ -127,7 +127,8 @@ def sanitize(table, value, public=False):
                 for r in refs[:5] if type(r) is dict and type(r.get('type')) is str
                 and r['type'] in keys and type(r.get('key')) is str
                 and r['key'] in keys[r['type']] and number(r.get('value'))]}
-        # model is local-only until provider/model allowlist is explicitly decided.
+        if value.get('model') == 'gpt-5.4-nano': out['model'] = value['model']
+        # Only the owner-approved model enum is public; arbitrary strings remain private.
     elif table == 'operation_candidates':
         if value.get('side') in ('BUY', 'SELL'): out['side'] = value['side']
         if value.get('finalAction') in ('PENDING', 'BUY', 'SELL', 'WAIT', 'SAFE_STOP'): out['finalAction'] = value['finalAction']

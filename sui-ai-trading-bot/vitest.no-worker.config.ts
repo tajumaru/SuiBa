@@ -97,6 +97,8 @@ export default defineConfig({
       "tests/sdk-deadline.test.ts",
       "tests/settings-editor.test.ts",
       "tests/settings-ui.test.ts",
+      "tests/shadow.test.ts",
+      "tests/shadow-openai.test.ts",
       "tests/sqlite-lock.test.ts",
       "tests/stop-setting-advice.test.tsx",
       "tests/strategy-evidence.test.ts",
