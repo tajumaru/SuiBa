@@ -67,7 +67,8 @@ export function attributeEquityHistory(
       };
     }
     if (f.side !== "SELL" || !Number.isFinite(f.pnl)) throw Error("history");
-    // pnl is exactly the net close used by the daily review and monthly report.
+    // Use the monthly report's Fill.pnl, including allocated entry and exit
+    // costs. The daily review measures hypothetical returns, not realized P&L.
     const cost = new Decimal(
       f.allocatedCostUsdc ?? notional.minus(f.fee).minus(f.pnl!),
     );

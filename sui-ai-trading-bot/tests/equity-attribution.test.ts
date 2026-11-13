@@ -46,7 +46,7 @@ function model(
   fills: Fill[],
   portfolio = initialPortfolio(NOW, 100),
 ) {
-  return equityCurveModel(
+  const result = equityCurveModel(
     downsampleEquityCurve(
       attributeEquityHistory(points, fills, portfolio),
       NOW,
@@ -54,6 +54,13 @@ function model(
     "24h",
     NOW,
   )!;
+  if (result.breakdown) {
+    expect(result.breakdown.realized + result.breakdown.holding).toBeCloseTo(
+      result.delta,
+      5,
+    );
+  }
+  return result;
 }
 const cash = {
   ...initialPortfolio(NOW, 100),
@@ -143,6 +150,29 @@ describe("equity attribution from existing records", () => {
     expect(m.breakdown?.realized).toBeCloseTo(0);
     expect(m.breakdown?.holding).toBeCloseTo(0);
     expect(m.partialPeriod).toBe(true);
+  });
+  it("measures only the mark change when a pre-period position remains open", () => {
+    const m = model(
+      [
+        { timestamp: start, equity: 99.9 },
+        { timestamp: NOW, equity: 97.9 },
+      ],
+      [{ ...buy, timestamp: start - HOUR }],
+      holding,
+    );
+    expect(m.breakdown?.realized).toBe(0);
+    expect(m.breakdown?.holding).toBeCloseTo(-2);
+  });
+  it("does not include a close after the curve's last valuation", () => {
+    const m = model(
+      [
+        { timestamp: start, equity: 100 },
+        { timestamp: sell.timestamp - 1, equity: 97.9 },
+      ],
+      [buy, sell],
+      cash,
+    );
+    expect(m.breakdown).toEqual({ realized: 0, holding: -2.1 });
   });
   it("distinguishes pre-fill analysis and post-fill valuation at the same timestamp", () => {
     const attributed = attributeEquityHistory(
