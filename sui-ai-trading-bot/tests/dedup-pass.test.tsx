@@ -21,11 +21,6 @@ const operationOverview = readFileSync(
   resolve("apps/dashboard/src/OperationOverview.tsx"),
   "utf8",
 );
-const operationsPanel = readFileSync(
-  resolve("apps/dashboard/src/OperationsPanel.tsx"),
-  "utf8",
-);
-
 describe("dashboard dedup: SUI price lives only in the ticker", () => {
   it("drops the SUI価格 card from the overview cards and merges the holdings into one card", () => {
     expect(overview).not.toContain("SUI価格");
@@ -70,32 +65,6 @@ describe("dashboard dedup: operation state lives in the operation bar", () => {
     );
     expect(html).toContain(">PAPER運用</h3>");
     expect(html).not.toContain("PAPER運用：");
-  });
-});
-
-describe("dashboard dedup: period totals live in the operations reports", () => {
-  it("summarises the period in the KPI cards and keeps the full metric grid in the diagnostics report", () => {
-    const kpiStart = operationsPanel.indexOf('aria-label="主要KPI"');
-    const kpiEnd = operationsPanel.indexOf("<OperationGuidance");
-    expect(kpiStart).toBeGreaterThan(-1);
-    expect(kpiEnd).toBeGreaterThan(kpiStart);
-    const kpi = operationsPanel.slice(kpiStart, kpiEnd);
-    // The always-visible layer is four summary cards: freshness,
-    // uptime, and the period's trade count / net PnL headlines.
-    expect(kpi).toContain("<h3>データ正常性</h3>");
-    expect(kpi).toContain("<h3>稼働（監視開始以降）</h3>");
-    expect(kpi).toContain("取引（{hours === 24 ?");
-    expect(kpi).toContain("純損益（{hours === 24 ?");
-    // The full 24h / 7d report lives inside the diagnostics
-    // details and remains the home of the remaining metrics.
-    const diag = operationsPanel.indexOf('id="operation-diagnostics"');
-    const reportAt = operationsPanel.indexOf("24時間・7日間の検証レポート");
-    expect(reportAt).toBeGreaterThan(diag);
-    const report = operationsPanel.slice(reportAt);
-    expect(report).toContain("取引回数");
-    expect(report).toContain("純損益（保有分の評価損益を含む）");
-    expect(report).toContain("勝率（売却単位）");
-    expect(report).toContain("最大ドローダウン");
   });
 });
 

@@ -16,13 +16,13 @@ type State = ReturnType<BotEngine["snapshot"]>;
 const shell = readAppShell();
 
 describe("strategy / settings tab merge (app shell wiring)", () => {
-  it("has exactly six nav tabs and no settings tab", () => {
+  it("has exactly five nav tabs and no settings tab", () => {
     const block = shell.slice(
       shell.indexOf("const NAV_TABS = ["),
       shell.indexOf("];", shell.indexOf("const NAV_TABS = [")),
     );
     const entries = block.match(/"[^"]+"|運用検証|バックテスト比較/g) ?? [];
-    expect(entries).toHaveLength(6);
+    expect(entries).toHaveLength(5);
     expect(block).not.toContain('"Settings"');
     expect(shell).not.toContain('activeTab === "Settings"');
   });
@@ -52,7 +52,7 @@ describe("strategy / settings tab merge (app shell wiring)", () => {
   });
 
   it("drops the settings entry from the mobile tab bar metadata", () => {
-    expect(Object.keys(NAV_SHORT_LABELS)).toHaveLength(6);
+    expect(Object.keys(NAV_SHORT_LABELS)).toHaveLength(5);
     expect(NAV_SHORT_LABELS).not.toHaveProperty("Settings");
     expect(renderToStaticMarkup(<NavTabIcon tab="Settings" />)).toBe("");
   });

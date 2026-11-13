@@ -9,14 +9,13 @@ export type OperationsFeed = ReturnType<typeof useOperationsFeed>;
 /**
  * The single operations polling loop (operations snapshot + control
  * state every 10 seconds). It lives at the App level so the agent
- * narration tab and the operations tab share one feed: the narration
+ * narration, overview and history tabs share one feed: the narration
  * history, which is accumulated from snapshot diffs, keeps advancing
  * no matter which tab is on screen, and the endpoints are never
  * polled twice.
  *
- * Extracted from OperationsPanel so the app shell can hold the feed
- * without statically loading the operations tab's panels; the view
- * side loads lazily with its tab.
+ * Kept at the app shell after retiring the validation tab; consumers
+ * share the same recorded operations and control snapshots.
  */
 export function useOperationsFeed(api: SettingsApi, active: boolean) {
   const [data, setData] = useState<OperationsSnapshot | null>(null),
@@ -54,7 +53,7 @@ export function useOperationsFeed(api: SettingsApi, active: boolean) {
       } catch (e) {
         if (alive && request === generation)
           setError(
-            "運用検証データを取得できません。表示済みの情報は最新とは限りません。接続状態を確認してください。コード：" +
+            "運用データを取得できません。表示済みの情報は最新とは限りません。接続状態を確認してください。コード：" +
               errorCode(e),
           );
         throw e;

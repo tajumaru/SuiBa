@@ -50,11 +50,6 @@ const BacktestComparison = lazy(() =>
     default: m.BacktestComparison,
   })),
 );
-const OperationsFeedView = lazy(() =>
-  import("./OperationsPanel.tsx").then((m) => ({
-    default: m.OperationsFeedView,
-  })),
-);
 const tabFallback = (
   <p className="tab-loading" role="status">
     読み込み中…
@@ -67,7 +62,6 @@ const NAV_TABS = [
   "Overview",
   "Strategy",
   "Trading History",
-  "運用検証",
   "バックテスト比較",
 ];
 function App() {
@@ -116,7 +110,6 @@ function App() {
   const [receivedAt, setReceivedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [checking, setChecking] = useState(false);
-  const [openDiagnostics, setOpenDiagnostics] = useState(false);
   useEffect(() => {
     const update = () => setNow(Date.now());
     const timer = window.setInterval(update, 1000);
@@ -140,7 +133,7 @@ function App() {
   // restored "Settings" opens the strategy tab on its 設定
   // segment, and any other unknown value (for example a restored
   // "Chart" from before the chart tab was merged into the
-  // dashboard) opens the dashboard.
+  // dashboard, or the retired "運用検証") opens the dashboard.
   const activeTab =
     tab === "Settings" ? "Strategy" : NAV_TABS.includes(tab) ? tab : "Overview";
   // The strategy tab's segment: ルール by default, or 設定 when
@@ -270,20 +263,9 @@ function App() {
     [token],
   );
   // One shared operations feed for the narration tab and the
-  // operations tab (see useOperationsFeed). It polls only while
+  // overview and history tabs (see useOperationsFeed). It polls only while
   // logged in.
   const operations = useOperationsFeed(api, token !== "");
-  useEffect(() => {
-    if (!openDiagnostics || activeTab !== "運用検証") return;
-    const details = document.getElementById(
-      "operation-diagnostics",
-    ) as HTMLDetailsElement | null;
-    if (!details) return;
-    details.open = true;
-    details.querySelector("summary")?.focus({ preventScroll: true });
-    details.scrollIntoView({ block: "start" });
-    setOpenDiagnostics(false);
-  }, [openDiagnostics, activeTab, operations.data, data]);
   async function refreshStatus() {
     if (checking) return;
     setChecking(true);
@@ -291,8 +273,7 @@ function App() {
     setChecking(false);
   }
   function diagnose() {
-    setTab("運用検証");
-    setOpenDiagnostics(true);
+    setTab("Overview");
     void refreshStatus();
   }
   // Short indicator history for the strategy tab's mini charts,
@@ -411,7 +392,7 @@ function App() {
           code === "PAIR_POSITION_OPEN"
             ? "未決済ポジションまたは未精算の原価が残っています。対象ペアで決済・会計確認を完了してから切り替えてください。"
             : code === "PAIR_PENDING_WORK" || code === "PAIR_INVALID_LEDGER"
-              ? "未処理注文または会計の確認が必要です。運用検証で対象ペアを確認してください。"
+              ? "未処理注文または会計の確認が必要です。履歴で停止理由と対象ペアを確認してください。"
               : code === "STOP_AND_WAIT_BEFORE_PAIR_SWITCH"
                 ? "切り替えの準備が整いませんでした。市場データの取得が落ち着いてから、もう一度タップしてください。"
                 : "ペアを切り替えられません。売買を停止し、市場データ取得の完了後に再試行してください。",
@@ -484,11 +465,6 @@ function App() {
                 <Reason code={bannerError} />
                 操作を完了できませんでした。最新状態と通信診断を確認してください。
               </p>
-            )}
-            {!data && activeTab === "運用検証" && (
-              <Suspense fallback={tabFallback}>
-                <OperationsFeedView api={api} feed={operations} />
-              </Suspense>
             )}
             {data && (
               <>
@@ -575,6 +551,8 @@ function App() {
                 </div>
                 {activeTab === "Overview" && (
                   <OverviewTab
+                    operations={operations.data}
+                    operationsStale={!!operations.error}
                     data={data}
                     timeframe={timeframe}
                     setTimeframe={setTimeframe}
@@ -609,6 +587,8 @@ function App() {
                 {activeTab === "Trading History" && (
                   <Suspense fallback={tabFallback}>
                     <HistoryTab
+                      operations={operations.data}
+                      operationsError={operations.error}
                       orders={data.orders}
                       trades={data.trades}
                       candles={data.candlesByTimeframe[300]}
@@ -621,11 +601,6 @@ function App() {
                       token={token}
                       settings={data.settings}
                     />
-                  </Suspense>
-                )}
-                {activeTab === "運用検証" && (
-                  <Suspense fallback={tabFallback}>
-                    <OperationsFeedView api={api} feed={operations} />
                   </Suspense>
                 )}
               </>
