@@ -5,7 +5,14 @@ import { PriceTicker } from "./PriceTicker.tsx";
 import { LoginScreen } from "./LoginScreen.tsx";
 import { loginSession, SESSION } from "./browserSession.ts";
 import { DashboardClient } from "./dashboardClient.ts";
-import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  lazy,
+  Suspense,
+} from "react";
 import { createRoot } from "react-dom/client";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import "./style.css";
@@ -20,6 +27,12 @@ import { AppHeader } from "./AppHeader.tsx";
 import { AgentNarrationFeed } from "./AgentNarration.tsx";
 import { presetName } from "./settingsPresets.ts";
 import { BootScreen } from "./BootScreen.tsx";
+import { ConnectionNotice } from "./ConnectionNotice.tsx";
+import {
+  ConnectionRecovery,
+  ConnectionUnavailable,
+  isConnectionFailure,
+} from "./connectionRecovery.ts";
 
 import { useUpdateCheck } from "./appVersion.ts";
 import { UpdateBanner, VersionFooter } from "./VersionFooter.tsx";
@@ -109,6 +122,8 @@ function App() {
     // the tab closes, so the bar never starts past an open editor.
     [startBlocked, setStartBlocked] = useState<string[]>([]);
   const [receivedAt, setReceivedAt] = useState<number | null>(null);
+  const [disconnected, setDisconnected] = useState(false);
+  const [connection] = useState(() => new ConnectionRecovery(setDisconnected));
   const [now, setNow] = useState(() => Date.now());
   const [checking, setChecking] = useState(false);
   useEffect(() => {
@@ -123,6 +138,7 @@ function App() {
     };
   }, []);
   const stateStale =
+    disconnected ||
     !!error ||
     (data !== null &&
       (receivedAt === null ||
@@ -230,44 +246,57 @@ function App() {
   const pairRef = useRef<State["pair"] | undefined>(undefined);
   pairRef.current = data?.pair;
   const api = useCallback(
-    async (path: string, body?: unknown) => {
-      const r = await fetch("/api/" + path, {
-        signal: body ? undefined : AbortSignal.timeout(8000),
-        headers: {
-          ...(token !== SESSION ? { Authorization: "Bearer " + token } : {}),
-          "X-SuiBa-Request": "1",
-          ...(pairRef.current ? { "X-SuiBa-Pair": pairRef.current } : {}),
-          ...(body ? { "Content-Type": "application/json" } : {}),
-        },
-        method: body ? "POST" : "GET",
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      if (!r.ok) {
-        if (r.status === 401) {
-          setToken("");
-          setData(null);
+    async (path: string, body?: unknown, primary = false) => {
+      if (!body && !primary && !connection.canReadAuxiliary)
+        throw new ConnectionUnavailable();
+      try {
+        const r = await fetch("/api/" + path, {
+          cache: "no-store",
+          signal: body ? undefined : AbortSignal.timeout(8000),
+          headers: {
+            ...(token !== SESSION ? { Authorization: "Bearer " + token } : {}),
+            "X-SuiBa-Request": "1",
+            ...(pairRef.current ? { "X-SuiBa-Pair": pairRef.current } : {}),
+            ...(body ? { "Content-Type": "application/json" } : {}),
+          },
+          method: body ? "POST" : "GET",
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        if (!r.ok) {
+          if ([502, 503, 504].includes(r.status)) connection.fail();
+          if (r.status === 401) {
+            setToken("");
+            setData(null);
+          }
+          const body = await r.json().catch(() => ({}));
+          if (body.error === "PAIR_CHANGED") window.location.reload();
+          throw new Error(
+            typeof body.error === "string" ? body.error : `HTTP_${r.status}`,
+          );
         }
-        const body = await r.json().catch(() => ({}));
-        if (body.error === "PAIR_CHANGED") window.location.reload();
-        throw new Error(
-          typeof body.error === "string" ? body.error : `HTTP_${r.status}`,
-        );
+        const value = await r.json();
+        const responsePair = value.summary?.pair ?? value.pair;
+        if (
+          pairRef.current &&
+          responsePair &&
+          responsePair !== pairRef.current
+        ) {
+          window.location.reload();
+          throw Error("PAIR_CHANGED");
+        }
+        return value;
+      } catch (e) {
+        if (isConnectionFailure(e)) connection.fail();
+        throw e;
       }
-      const value = await r.json();
-      const responsePair = value.summary?.pair ?? value.pair;
-      if (pairRef.current && responsePair && responsePair !== pairRef.current) {
-        window.location.reload();
-        throw Error("PAIR_CHANGED");
-      }
-      return value;
     },
-    [token],
+    [token, connection],
   );
   useForecastMigration(data?.pair, api);
   // One shared operations feed for the narration tab and the
   // overview and history tabs (see useOperationsFeed). It polls only while
   // logged in.
-  const operations = useOperationsFeed(api, token !== "");
+  const operations = useOperationsFeed(api, token !== "", disconnected);
   async function refreshStatus() {
     if (checking) return;
     setChecking(true);
@@ -283,14 +312,15 @@ function App() {
   const indicatorHistory = useIndicatorHistory(
     operations.data?.decision ?? null,
   );
-  async function refresh() {
+  const refreshingRef = useRef<Promise<void> | null>(null);
+  const refreshSnapshot = useCallback(async () => {
     const feed = feedRef.current;
     if (!feed) return;
     const serial = ++serialRef.current;
     const view = viewRef.current;
     try {
       const result = await feed.poll(
-        api,
+        (path, body) => api(path, body, true),
         view.tab === "Overview" ? view.timeframe : null,
         ["Overview", "Trading History"].includes(view.tab),
         (state) => {
@@ -300,6 +330,7 @@ function App() {
             setNow(Date.now());
             setError("");
             setBannerError("");
+            connection.recovered();
           }
         },
       );
@@ -315,30 +346,47 @@ function App() {
         setBannerError(errorCode(e));
       }
     }
-  }
+  }, [api, connection]);
+  const refresh = useCallback((): Promise<void> => {
+    if (refreshingRef.current) return refreshingRef.current;
+    if (!connection.canPoll) return Promise.resolve();
+    const pending = refreshSnapshot().finally(() => {
+      if (refreshingRef.current === pending) refreshingRef.current = null;
+    });
+    refreshingRef.current = pending;
+    return pending;
+  }, [connection, refreshSnapshot]);
   useEffect(() => {
     if (!token) return;
     feedRef.current = new DashboardClient();
     setData(null);
     setReceivedAt(null);
-    void refresh();
-    const id = setInterval(() => void refresh(), 10000);
-    return () => {
-      clearInterval(id);
-      serialRef.current++;
-      feedRef.current = null;
+    let alive = true;
+    const serial = serialRef;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      await refresh();
+      if (alive) timer = setTimeout(() => void poll(), connection.pollDelay);
     };
-  }, [token]);
+    void poll();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      serial.current++;
+      feedRef.current = null;
+      refreshingRef.current = null;
+    };
+  }, [token, connection, refresh]);
   useEffect(() => {
     // Catch acquisition completion promptly. One follow-up per received
     // snapshot avoids stacking requests when the local API itself is slow.
     if (!token || stateStale || data?.safety?.marketUpdating !== true) return;
     const timer = window.setTimeout(() => void refresh(), 1000);
     return () => window.clearTimeout(timer);
-  }, [token, receivedAt, data?.safety?.marketUpdating, stateStale]);
+  }, [token, receivedAt, data?.safety?.marketUpdating, stateStale, refresh]);
   useEffect(() => {
     if (token) void refresh();
-  }, [tab, timeframe]);
+  }, [tab, timeframe, token, refresh]);
   // Resolves to null on success, or to the server's machine-readable
   // error code on failure, so the surface that issued the command
   // (for example the PAPER operation controls) can show the reason
@@ -432,6 +480,7 @@ function App() {
         />
       ) : (
         <>
+          {disconnected && <ConnectionNotice receivedAt={receivedAt} />}
           <nav className="has-avatar">
             {NAV_TABS.map((t) => {
               const formal = label(t) === "未確認" ? t : label(t);
@@ -456,7 +505,7 @@ function App() {
               ログアウト
             </button>
           </nav>
-          <main className="has-avatar">
+          <main className="has-avatar" data-connection-stale={disconnected}>
             {channelError && (
               <p role="alert" className="error">
                 {channelError}
@@ -527,7 +576,7 @@ function App() {
                   {operations.data ? (
                     <AgentNarrationFeed
                       data={operations.data}
-                      stale={!!operations.error}
+                      stale={operations.stale}
                       onPoseChange={setAgentPose}
                       onCelebrate={handleBuyCelebration}
                       pairLabel={data?.pair === "WAL_USDC" ? "WAL" : "SUI"}
@@ -554,7 +603,7 @@ function App() {
                 {activeTab === "Overview" && (
                   <OverviewTab
                     operations={operations.data}
-                    operationsStale={!!operations.error}
+                    operationsStale={operations.stale}
                     data={data}
                     timeframe={timeframe}
                     setTimeframe={setTimeframe}

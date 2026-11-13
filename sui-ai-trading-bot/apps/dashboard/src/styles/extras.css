@@ -1108,3 +1108,23 @@
 .version-skew {
   color: var(--gold);
 }
+/* The browser cannot infer why the worker is unreachable. Keep the outage
+   separate from Bot safety, and label retained values even while scrolled. */
+.connection-notice {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: grid;
+  gap: 4px;
+  padding: 12px 16px;
+  border: 1px solid var(--gold);
+  background: var(--panel);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.connection-notice strong {
+  color: var(--gold);
+}
+main[data-connection-stale="true"] .price-ticker {
+  filter: grayscale(1);
+}
