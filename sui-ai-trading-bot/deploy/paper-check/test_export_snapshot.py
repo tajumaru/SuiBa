@@ -34,6 +34,11 @@ SECRET = 'SECRET_FIXTURE_TOKEN_DO_NOT_EXPORT'
 
 
 class ExportTests(unittest.TestCase):
+    def test_host_stop_codes_survive_the_public_event_export(self):
+        for code in ('EXTERNAL_STOP', 'WORKER_OOM', 'WORKER_EXITED', 'WORKER_EXITED_CLEAN', 'UNKNOWN'):
+            with self.subTest(code=code):
+                self.assertEqual(e.sanitize('operation_events', {'kind': 'STOP', 'code': code})['code'], code)
+
     def test_shadow_sanitize(self):
         raw = {'cycleId': 'private-cycle', 'status': 'OK', 'action': 'BUY',
                'confidence': .8, 'model': SECRET, 'promptVersion': 'shadow-s1-v1',

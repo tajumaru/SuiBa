@@ -576,7 +576,7 @@ export class OperationMonitor {
     this.saveSafety({
       ...initialPaperSafety(),
       generation: this.safety().generation + 1,
-      lastStopReason: this.safety().lastStopReason,
+      // A previous process's stop reason remains in operation_events only.
     });
     this.db.set("runtime", { ...this.db.runtime(), running: false });
     this.db.interruptPending(now);
@@ -613,6 +613,8 @@ export class OperationMonitor {
         firstHealthyAt: null,
         lastHealthyCycleAt: null,
         recoveredAt: null,
+        // Starting another run must not display its predecessor's stop reason.
+        ...(reason === "MANUAL_START" ? { lastStopReason: null } : {}),
       });
     const s = this.state(),
       active = this.db.runtime().running;

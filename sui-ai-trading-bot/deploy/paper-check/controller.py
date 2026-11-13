@@ -9,11 +9,13 @@ cutoff and an existing independent release approval. Preserves failed history;
 issues one permission consumed by the broker before the next deployment attempt.
 """
 import contextlib
+import datetime
 import hashlib
 import http.client
 import importlib.util
 import io
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -2711,6 +2713,68 @@ class ProductionController(Controller):
         except Exception:
             return None
 
+    def host_stop_reason(self):
+        """Best-effort facts only, through the existing inspect and read-only DB paths.
+
+        Missing or malformed evidence never proves an external stop. Times in
+        operation_state are epoch milliseconds; Docker FinishedAt is UTC.
+        """
+        detail = dict(containerStatus=None, exitCode=None, oomKilled=None,
+                      containerFinishedAt=None, lastAnalysisAt=None,
+                      lastFetchSuccessAt=None, lastHealthyAt=None, gapSeconds=None)
+        runtime_clear = False
+        try:
+            state = self.inspect()['State']
+            if state.get('Status') in ('created', 'running', 'paused', 'restarting', 'removing', 'exited', 'dead'):
+                detail['containerStatus'] = state['Status']
+            if type(state.get('ExitCode')) is int:
+                detail['exitCode'] = state['ExitCode']
+            if type(state.get('OOMKilled')) is bool:
+                detail['oomKilled'] = state['OOMKilled']
+            finished = state.get('FinishedAt')
+            if type(finished) is str and re.fullmatch(
+                    r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z', finished):
+                parsed = datetime.datetime.fromisoformat(finished.replace('Z', '+00:00'))
+                if parsed.year > 1970:
+                    detail['containerFinishedAt'] = finished
+        except Exception:
+            pass
+        try:
+            with contextlib.closing(sqlite3.connect(
+                    f'file:{self.sui_db_path()}?mode=ro', uri=True)) as db:
+                rows = dict(db.execute("SELECT key, json FROM bot_runtime_state "
+                                       "WHERE key IN ('runtime', 'operation_state')"))
+            runtime = json.loads(rows.get('runtime', 'null'))
+            runtime_clear = (type(runtime) is dict and 'error' in runtime and
+                             runtime['error'] is None and runtime.get('emergency') is not True)
+            timing = json.loads(rows.get('operation_state', 'null'))
+            if type(timing) is dict:
+                for key in ('lastAnalysisAt', 'lastFetchSuccessAt'):
+                    value = timing.get(key)
+                    if type(value) in (int, float) and math.isfinite(value) and 0 < value <= 2**53:
+                        detail[key] = value
+        except Exception:
+            pass
+        healthy = [detail[key] for key in ('lastAnalysisAt', 'lastFetchSuccessAt')
+                   if detail[key] is not None]
+        if healthy:
+            detail['lastHealthyAt'] = max(healthy)
+        if detail['containerFinishedAt'] is not None and healthy:
+            detail['gapSeconds'] = parsed.timestamp() - detail['lastHealthyAt']/1000
+        code = 'UNKNOWN'
+        if detail['oomKilled'] is True:
+            code = 'WORKER_OOM'
+        elif detail['containerStatus'] in ('exited', 'dead'):
+            if detail['exitCode'] is not None and detail['exitCode'] != 0:
+                code = 'WORKER_EXITED'
+            elif detail['exitCode'] == 0 and runtime_clear and detail['gapSeconds'] is not None:
+                gap = detail['gapSeconds']
+                if gap <= 300:
+                    code = 'EXTERNAL_STOP'
+                elif gap > 300:
+                    code = 'WORKER_EXITED_CLEAN'
+        return code, detail
+
     def note_run_failure(self, record):
         """Persist a mid-run failure's concrete reason into the
         run's failure record, so the read-only status — and with
@@ -2730,7 +2794,9 @@ class ProductionController(Controller):
         code is filled, from the first source that knows one:
         the worker's latched stop reason, the market snapshot
         already on the failure record, then the stop machinery's
-        first fault. Unreadable evidence is left untouched."""
+        first fault, then host/container and DB timing facts (UNKNOWN
+        if those cannot explain the exit). Unreadable evidence is
+        left untouched."""
         if record.get('stage') != 'monitoring':
             return
         path = self.folder(record)/'failure.json'
@@ -2757,8 +2823,9 @@ class ProductionController(Controller):
             code = self.fault_code(record)
         if failure is None:
             failure = {'id': record['id'], 'stage': 'monitoring'}
-        if code is not None:
-            failure['code'] = code
+        if code is None:
+            code, failure['detail'] = self.host_stop_reason()
+        failure['code'] = code
         self.b.atomic(path, failure)
 
     def failure_summary(self, record):
