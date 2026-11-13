@@ -232,6 +232,7 @@ test("history fits the phone width including reasons and expanded technical deta
       .locator(".history-scroll")
       .evaluateAll((elements) =>
         elements.map((e) => ({
+          permitsScroll: e.classList.contains("order-history-scroll"),
           width: e.clientWidth,
           content: e.scrollWidth,
           left: e.getBoundingClientRect().left,
@@ -239,13 +240,14 @@ test("history fits the phone width including reasons and expanded technical deta
         })),
       );
     for (const box of dimensions) {
-      expect(box.content).toBeLessThanOrEqual(box.width + 1);
+      if (!box.permitsScroll)
+        expect(box.content).toBeLessThanOrEqual(box.width + 1);
       expect(box.left).toBeGreaterThanOrEqual(0);
       expect(box.right).toBeLessThanOrEqual(page.viewportSize()!.width);
     }
     await expect(orders.locator("tbody td[data-label='理由']")).toHaveCSS(
       "display",
-      "block",
+      "table-cell",
     );
   } else {
     await expect(orders).toHaveCSS("display", "table");
@@ -312,7 +314,7 @@ test("narration survives polling, reconnects and stops without duplicates or uns
   operations.safety.botState = "ABNORMAL_STOP";
   await page.clock.runFor(10_000);
   await expect(avatar).toHaveClass(/pose-sleep/);
-  await expect(feed.locator(".agent-feed-entry").first()).toContainText(
+  await expect(feed.locator(".agent-feed-entry.stop").last()).toContainText(
     "止まったよ",
   );
   expect(

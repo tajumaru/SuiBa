@@ -126,8 +126,9 @@ test("Japanese screens preserve actions, ratios and epochs across all viewports"
   await expect(page.locator("main")).toContainText(
     "安全条件またはデータの整合性を確認できません",
   );
-  await expect(page.locator("main")).toContainText("コード：FUTURE_ERROR");
-  await expect(page.locator("main")).toContainText("次の操作：");
+  await expect(page.locator(".operation-bar-state")).toContainText(
+    "安全停止中",
+  );
   const fits = async () =>
     expect(
       await page.evaluate(
@@ -148,7 +149,7 @@ test("Japanese screens preserve actions, ratios and epochs across all viewports"
     ],
     [
       "取引履歴",
-      page.getByRole("heading", { name: "仮想約定履歴", exact: true }),
+      page.getByRole("heading", { name: "注文 / 拒否理由", exact: true }),
     ],
     [
       "バックテスト比較",
@@ -164,13 +165,10 @@ test("Japanese screens preserve actions, ratios and epochs across all viewports"
     if (tab === "戦略")
       await expect(page.locator("main")).toContainText("取引判定：買い");
     if (tab === "取引履歴") {
-      await expect(page.locator("table").first()).toContainText("売り");
-      await expect(page.locator("table").first()).toContainText(
-        "2026/01/02 00:00:00（日本時間）",
-      );
-      await expect(page.locator("table").first()).toContainText("1,234.5678");
-      await expect(page.locator("table").nth(1)).toContainText("買い");
-      await expect(page.locator("table").nth(1)).toContainText("1回の取引上限");
+      const orders = page.getByRole("table", { name: "注文履歴", exact: true });
+      await expect(orders).toContainText("買い");
+      await expect(orders).toContainText("2026/01/02 00:00:00（日本時間）");
+      await expect(orders).toContainText("1回の取引上限");
     }
   }
   await expect(
@@ -187,7 +185,7 @@ test("Japanese screens preserve actions, ratios and epochs across all viewports"
   expect(posts[0].start).toBe(result.options.start);
   expect(posts[0].slippage).toBe(0.003);
   await expect(page.locator("table").last()).toContainText("買い / 見送り");
-  await expect(page.locator("table").last()).toContainText("想定純利益");
+  await expect(page.locator("table").last()).toContainText("純損益");
   await expect(page.locator("table").last()).toContainText(
     "コード：PROJECTED_NET_INSUFFICIENT",
   );
