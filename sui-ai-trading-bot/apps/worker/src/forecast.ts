@@ -36,6 +36,9 @@ const key = (pair: string) => `forecast.v1:${pair}`;
 export interface ForecastState {
   records: ForecastRecord[];
   calib: ForecastCalib;
+  /** Unique origins that have acquired at least one scored step. */
+  scoredTotal: number;
+  counterBootstrap: boolean;
   latest: ReturnType<typeof chartForecast>;
   cones: Record<number, ReturnType<typeof chartForecast>>;
   score: ReturnType<typeof scoreForecasts>;
@@ -51,6 +54,8 @@ export function readForecast(db: BotDatabase, pair: string): ForecastState {
     db.get<ForecastState>(key(pair)) ?? {
       records: [],
       calib: emptyCalib(),
+      scoredTotal: 0,
+      counterBootstrap: false,
       latest: null,
       cones: {},
       score: scoreForecasts([], []),
@@ -86,16 +91,33 @@ export function advanceForecast(
       forecastRecordFrom(latest, candles.at(-1)!.close),
     );
   const score = scoreForecasts(records, candles);
-  const step = calibrationStep(score, before.calib);
+  const closeAt = new Set(candles.map((c) => c.timestamp));
+  const eligible = records.filter((rec) =>
+    rec.up.some((_, j) => closeAt.has(rec.origin + j * 300)),
+  );
+  const fresh = eligible.filter(
+    (rec) => !db.get<boolean>(`forecast.scored:${pair}:${rec.origin}`),
+  );
+  // Coverage keeps its legacy rolling window; only the batching clock is cumulative.
+  // Imported local history has no lifetime counter. Adopt its first observed window
+  // as a baseline, rather than counting the legacy sample twice.
+  const scoredTotal = before.counterBootstrap
+    ? Math.max(before.scoredTotal, before.calib.scoredAt, eligible.length)
+    : before.scoredTotal + fresh.length;
+  const step = calibrationStep(
+    { ...score, scoredRecords: scoredTotal },
+    before.calib,
+  );
   const events = [...before.events];
   const event: CalibEvent | null =
     step.changed && score.coveragePct != null
       ? {
-          id: `forecast-calib:${pair}:${now}:${score.scoredRecords}`,
+          id: `forecast-calib:${pair}:${now}:${scoredTotal}`,
           at: now,
           previousScale: before.calib.scale,
           scale: step.calib.scale,
           scored: score.scoredRecords,
+          totalScored: scoredTotal,
           coveragePct: score.coveragePct,
           widened: step.calib.scale > before.calib.scale,
         }
@@ -109,6 +131,8 @@ export function advanceForecast(
     ...before,
     records,
     calib: step.calib,
+    scoredTotal,
+    counterBootstrap: false,
     latest: step.changed
       ? chartForecast(candles, FORECAST_BARS, imbalance, step.calib.scale)
       : latest,
@@ -134,6 +158,8 @@ export function advanceForecast(
     updatedAt: now,
   };
   db.transaction(() => {
+    for (const rec of fresh)
+      db.set(`forecast.scored:${pair}:${rec.origin}`, true);
     for (const rec of records) {
       const id = `${pair}:${rec.origin}`;
       // Append-only archive: active scoring retains the original 288-record window.
@@ -141,18 +167,21 @@ export function advanceForecast(
         db.append("forecast_records", id, { pair, ...rec }, now);
         db.set(`forecast.archived:${id}`, true);
       }
-      const verdict = forecastVerdictOf(rec, candles);
       const completed =
         (candles.at(-1)?.timestamp ?? 0) >= rec.origin + rec.up.length * 300;
       if (
         completed &&
-        scoreForecasts([rec], candles).steps === rec.up.length &&
-        !db.get<boolean>(`forecast.answered:${id}`)
+        !db.get<boolean>(`forecast.answered:${id}`) &&
+        scoreForecasts([rec], candles).steps === rec.up.length
       ) {
         db.append(
           "forecast_answers",
           id,
-          { pair, verdict, score: scoreForecasts([rec], candles) },
+          {
+            pair,
+            verdict: forecastVerdictOf(rec, candles),
+            score: scoreForecasts([rec], candles),
+          },
           now,
         );
         db.set(`forecast.answered:${id}`, true);
@@ -217,6 +246,11 @@ export function importForecast(
         .sort((a, b) => a.origin - b.origin)
         .slice(-288),
       calib: adopt ? payload.calib : before.calib,
+      scoredTotal: Math.max(
+        before.scoredTotal,
+        adopt ? payload.calib.scoredAt : 0,
+      ),
+      counterBootstrap: before.counterBootstrap || adopt,
       migrationAdopted: before.migrationAdopted || adopt,
       // Never display a cone computed using a superseded scale.
       latest: adopt ? null : before.latest,

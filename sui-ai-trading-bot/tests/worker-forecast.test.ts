@@ -97,6 +97,84 @@ describe("worker forecasts", () => {
     }
   }, 30000);
 
+  it("continues ten-sample evaluations beyond the 288-record window without counting polls or restart twice", () => {
+    const dir = mkdtempSync(join(tmpdir(), "suiba-forecast-counter-"));
+    const path = join(dir, "bot.sqlite");
+    let db = new BotDatabase(path);
+    try {
+      const series = Array.from({ length: 701 }, (_, i) => ({
+        ...candles[i % 120],
+        timestamp: candles[0].timestamp + i * 300,
+      }));
+      const evaluations: number[] = [];
+      for (let i = 60; i <= 700; i++) {
+        const visible = series.slice(Math.max(0, i - 1000), i);
+        const previous = readForecast(db, "SUI_USDC");
+        const state = advanceForecast(
+          db,
+          "SUI_USDC",
+          visible,
+          null,
+          i * 300000,
+        );
+        expect(state.scoredTotal).toBe(i - 60);
+        expect(state.score.scoredRecords).toBe(Math.min(i - 60, 287));
+        if (state.calib.scoredAt !== previous.calib.scoredAt)
+          evaluations.push(state.calib.scoredAt);
+        if (i === 400) {
+          db.close();
+          db = new BotDatabase(path);
+          const repeated = advanceForecast(
+            db,
+            "SUI_USDC",
+            visible,
+            null,
+            i * 300000 + 1,
+          );
+          expect(repeated.scoredTotal).toBe(state.scoredTotal);
+          expect(repeated.calib).toEqual(state.calib);
+        }
+      }
+      expect(evaluations).toEqual(
+        Array.from({ length: 62 }, (_, i) => 30 + i * 10),
+      );
+      const state = readForecast(db, "SUI_USDC");
+      expect(state.calib.scoredAt).toBe(640);
+      expect(state.records).toHaveLength(288);
+      for (const e of state.events) {
+        expect(e.scored).toBeLessThanOrEqual(287);
+        expect(e.totalScored! % 10).toBe(0);
+      }
+    } finally {
+      db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30000);
+
+  it("bootstraps an imported counter from existing samples once and preserves its batch position", () => {
+    const db = new BotDatabase(":memory:");
+    try {
+      const f = golden.fixtures[1];
+      importForecast(
+        db,
+        "SUI_USDC",
+        {
+          records: f.records.slice(0, 30),
+          calib: { scale: 1.16, scoredAt: 30 },
+        },
+        1,
+      );
+      const first = advanceForecast(db, "SUI_USDC", f.candles, null, 2);
+      expect(first.scoredTotal).toBe(30);
+      expect(first.calib).toEqual({ scale: 1.16, scoredAt: 30 });
+      expect(
+        advanceForecast(db, "SUI_USDC", f.candles, null, 3).scoredTotal,
+      ).toBe(30);
+    } finally {
+      db.close();
+    }
+  });
+
   it("imports the actual legacy multiplier once, preserves conflicting devices and retries", () => {
     const db = new BotDatabase(":memory:");
     try {

@@ -36,6 +36,8 @@ export interface CalibEvent {
   /** Stable worker event identity (legacy events have none). */
   id?: string;
   previousScale?: number;
+  /** Cumulative batching clock; scored/coveragePct describe the rolling window. */
+  totalScored?: number;
   scale: number;
   scored: number;
   coveragePct: number;
