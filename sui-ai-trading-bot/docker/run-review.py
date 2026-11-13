@@ -19,6 +19,7 @@ Without --candles, candles are fetched from the public Indexer.
 own operation events (the most recent run's BOOT..PROCESS_SHUTDOWN).
 """
 import json
+import math
 import sqlite3
 import statistics
 import sys
@@ -242,18 +243,19 @@ def load_decisions(db_path):
     conn = sqlite3.connect(db_path)
     try:
         rows = conn.execute(
-            "SELECT json FROM strategy_decisions ORDER BY timestamp").fetchall()
+            "SELECT id, json FROM strategy_decisions ORDER BY timestamp").fetchall()
         orders = conn.execute("SELECT COUNT(*) FROM paper_orders").fetchone()[0]
         trades = conn.execute("SELECT COUNT(*) FROM paper_trades").fetchone()[0]
     finally:
         conn.close()
     decisions = []
-    for (js,) in rows:
+    for cycle_id, js in rows:
         d = json.loads(js)
         ev = d.get("evidence") or {}
         cond = ev.get("conditions") or {}
         inp = ev.get("inputs") or {}
         decisions.append({
+            "cycleId": cycle_id,
             "action": d.get("action"), "rule": ev.get("selectedRule"),
             "cts": ev.get("candleTimestamp"), "price": inp.get("price"),
             "cond": cond, "met": sum(1 for k in CORE if cond.get(k)),
@@ -271,6 +273,31 @@ def summarize(values):
             "pos": sum(1 for v in values if v > 0) / len(values) * 100}
 
 
+def forward_return(d, hours, candles):
+    close = candles[0]
+    if d["cts"] is None or not d["price"]:
+        return None
+    p = close.get(d["cts"] + hours * 3600)
+    return None if p is None else (p / d["price"] - 1) * 100
+
+
+def virtual_touch(d, candles, hours=24):
+    _, high, low, ordered, _, _ = candles
+    up, dn = d["price"] * 1.015, d["price"] * 0.99
+    for t in ordered:
+        if t <= d["cts"]:
+            continue
+        if t > d["cts"] + hours * 3600:
+            break
+        if low[t] <= dn and high[t] >= up:
+            return "both_same_bar"
+        if high[t] >= up:
+            return "tp_first"
+        if low[t] <= dn:
+            return "sl_first"
+    return "neither"
+
+
 def analyze(decisions, candles):
     close, high, low, ordered, ema, gap = candles
     for d in decisions:
@@ -281,25 +308,10 @@ def analyze(decisions, candles):
             "high" if atr / d["price"] * 100 >= 0.65 else "normal")
 
     def fwd(d, hours):
-        if d["cts"] is None or not d["price"]:
-            return None
-        p = close.get(d["cts"] + hours * 3600)
-        return None if p is None else (p / d["price"] - 1) * 100
+        return forward_return(d, hours, candles)
 
     def touch(d, hours=24):
-        up, dn = d["price"] * 1.015, d["price"] * 0.99
-        for t in ordered:
-            if t <= d["cts"]:
-                continue
-            if t > d["cts"] + hours * 3600:
-                break
-            if low[t] <= dn and high[t] >= up:
-                return "both_same_bar"
-            if high[t] >= up:
-                return "tp_first"
-            if low[t] <= dn:
-                return "sl_first"
-        return "neither"
+        return virtual_touch(d, candles, hours)
 
     buckets = {}
     for met in (3, 2, 1, 0):
@@ -372,11 +384,153 @@ def analyze(decisions, candles):
             "rules": Counter(d["rule"] for d in decisions)}
 
 
+def load_shadow_decisions(db_path):
+    """Read only public export fields. Older exports may omit the table."""
+    conn = sqlite3.connect(db_path)
+    try:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='shadow_decisions'").fetchone():
+            return []
+        rows = conn.execute("SELECT id, json FROM shadow_decisions ORDER BY timestamp").fetchall()
+    finally:
+        conn.close()
+    out = []
+    for cycle_id, js in rows:
+        row = json.loads(js)
+        out.append({"cycleId": cycle_id, "cts": row.get("candleTimestamp"),
+                    "price": row.get("price"), "status": row.get("status"),
+                    "action": row.get("action"), "promptVersion": row.get("promptVersion")})
+    return out
+
+
+def score_shadow(group, candles):
+    return {"n": len(group),
+            "h": {h: summarize([forward_return(d, h, candles) for d in group]) for h in HORIZONS},
+            "net": {h: summarize_net([forward_return(d, h, candles) for d in group]) for h in HORIZONS},
+            "touches": Counter(virtual_touch(d, candles) for d in group if d["price"])}
+
+
+def analyze_shadow(rows, decisions, candles):
+    """Independent, version-separated evidence. Never mutates rule results.
+
+    Four-way comparison uses the registered base predicate, not action or
+    the copied ruleAction. Same-period base includes every rule decision
+    inside this version's valid joined OK span (not only triggered cycles).
+    """
+    by_id = {d["cycleId"]: d for d in decisions if "cycleId" in d}
+    result = {"n": len(rows), "statuses": Counter(r["status"] for r in rows), "versions": {}}
+    for version in sorted({r["promptVersion"] for r in rows if r["promptVersion"]}):
+        source = [r for r in rows if r["promptVersion"] == version]
+        joined, invalid = [], 0
+        for r in source:
+            if r["status"] != "OK":
+                continue
+            rule = by_id.get(r["cycleId"])
+            price = r["price"]
+            if (rule is None or type(r["cts"]) is not int or r["cts"] != rule["cts"]
+                    or r["action"] not in ("BUY", "WAIT")
+                    or type(price) not in (int, float) or not math.isfinite(price) or price <= 0):
+                invalid += 1
+                continue
+            atr = rule["cur"].get("atr")
+            joined.append({**r, "ruleBuy": pred_base(rule),
+                           "regime": regime_at(candles[4], candles[3], r["cts"]),
+                           "vol": "unknown" if not atr else ("high" if atr / price * 100 >= 0.65 else "normal")})
+        buys = [d for d in joined if d["action"] == "BUY"]
+        groups = {
+            "ai_only": [d for d in joined if d["action"] == "BUY" and not d["ruleBuy"]],
+            "rule_only": [d for d in joined if d["action"] == "WAIT" and d["ruleBuy"]],
+            "both_buy": [d for d in joined if d["action"] == "BUY" and d["ruleBuy"]],
+            "both_wait": [d for d in joined if d["action"] == "WAIT" and not d["ruleBuy"]],
+        }
+        comparisons = {k: score_shadow(g, candles) for k, g in groups.items()}
+        ai = comparisons["ai_only"]["net"][4]
+        regimes = {d["regime"] for d in groups["ai_only"]
+                   if d["regime"] != "unknown" and forward_return(d, 4, candles) is not None}
+        span = (min(d["cts"] for d in joined), max(d["cts"] for d in joined)) if joined else None
+        base = score_shadow([d for d in decisions if span and span[0] <= d["cts"] <= span[1] and pred_base(d)], candles)
+        base4 = base["net"][4]
+        checks = {
+            "samples": bool(ai and ai["n"] >= FLAG_MIN_SAMPLES),
+            "mean": bool(ai and ai["mean"] >= FLAG_MIN_MEAN_4H),
+            "positive": bool(ai and ai["pos"] >= FLAG_MIN_POS_4H),
+            "regimes": len(regimes) >= 2,
+            "base": bool(ai and base4 and ai["mean"] >= base4["mean"]),
+        }
+        result["versions"][version] = {
+            "statuses": Counter(r["status"] for r in source), "invalid": invalid,
+            "buy": score_shadow(buys, candles), "comparisons": comparisons,
+            "regimes": {k: score_shadow([d for d in buys if d["regime"] == k], candles)
+                        for k in ("up", "down", "range", "unknown")},
+            "vols": {k: score_shadow([d for d in buys if d["vol"] == k], candles)
+                     for k in ("high", "normal", "unknown")},
+            "base": base, "span": span, "regimeCount": len(regimes), "checks": checks,
+        }
+    return result
+
+
+def fmt_shadow_stat(s):
+    return "—（採点可能な標本なし）" if s is None else (
+        f"平均 {s['mean']:+.2f}% / 中央値 {s['median']:+.2f}% / プラス率 {s['pos']:.0f}% / n={s['n']}")
+
+
+def render_shadow(shadow):
+    lines = ["", "## AI 影運用（記録専用・証拠のみ）", ""]
+    if not shadow["n"]:
+        return "\n".join(lines + ["記録なし（影運用は未有効化）", ""])
+    counts = shadow["statuses"]
+    lines += [f"記録 {shadow['n']} 件：OK {counts.get('OK', 0)} / ERROR {counts.get('ERROR', 0)} / "
+              f"SKIPPED_BUDGET {counts.get('SKIPPED_BUDGET', 0)} / SKIPPED_DISABLED {counts.get('SKIPPED_DISABLED', 0)}。"
+              "ERROR／SKIPPED は件数のみで採点に含めない。",
+              "", "影 BUY はスリッページ・不約定・ProfitGuard 棄却という約定の現実を通らない近似で、"
+              "既存のニアミス採点と同じ限界がある。正味は往復0.6%の手数料のみ控除し、実弾ではさらに不利側。",
+              "+24h 等の未経過・足欠損はリターンの標本から除外。仮想タッチは既存採点と同様、取得済み24h以内の足で判定する。",
+              "cycleId で結合し、ルールBUYは事前登録 base 候補として判定。コピーされた ruleAction は使わない。"]
+    for version, group in shadow["versions"].items():
+        lines += ["", f"### promptVersion: {version}", "",
+                  f"状態別件数: {dict(group['statuses'])}。OK の結合不可／入力不整合 {group['invalid']} 件は採点除外。",
+                  "", f"影 BUY 候補: {group['buy']['n']} 件（版を混ぜず集計）", "",
+                  "| 期間 | 素 | 正味（往復0.6%控除） |", "|---|---|---|"]
+        for h in HORIZONS:
+            lines.append(f"| +{h}h | {fmt_shadow_stat(group['buy']['h'][h])} | {fmt_shadow_stat(group['buy']['net'][h])} |")
+        t = group["buy"]["touches"]
+        lines += ["", "仮想タッチ（24h以内、利確 +1.5%／損切り −1.0%）: "
+                  f"利確先行 {t.get('tp_first', 0)} / 損切り先行 {t.get('sl_first', 0)} / "
+                  f"同足 {t.get('both_same_bar', 0)} / どちらもなし {t.get('neither', 0)}", "",
+                  "| 一致／不一致 | 件数 | 正味 +4h |", "|---|---|---|"]
+        for key, label in (("ai_only", "AI のみ BUY"), ("rule_only", "ルールのみ BUY"),
+                           ("both_buy", "両者 BUY"), ("both_wait", "両者 WAIT")):
+            g = group["comparisons"][key]
+            lines.append(f"| {label} | {g['n']} | {fmt_shadow_stat(g['net'][4])} |")
+        for name, labels in (("regimes", {"up": "上昇", "down": "下降", "range": "横ばい", "unknown": "不明"}),
+                             ("vols", {"high": "高ボラ", "normal": "通常ボラ", "unknown": "不明"})):
+            lines += ["", "局面別（EMA50の24h傾き ±0.5%）" if name == "regimes" else "ボラ帯別（ATR% ≥0.65が高ボラ、同サイクルのルール指標を参照）", "",
+                      "| 帯 | 影BUY件数 | 素 +4h | 正味 +4h |", "|---|---|---|---|"]
+            for key, label in labels.items():
+                g = group[name][key]
+                lines.append(f"| {label} | {g['n']} | {fmt_shadow_stat(g['h'][4])} | {fmt_shadow_stat(g['net'][4])} |")
+        ai = group["comparisons"]["ai_only"]["net"][4]
+        lines += ["", "卒業条件チェックリスト（事前登録・仮置き、表示のみ）", "",
+                  "AIのみBUYのうち正味+4hが採点可能な標本で判定。不明局面は局面数に数えない。",
+                  f"同期間 base: {group['span']}（candleTimestamp、epoch秒）、正味 +4h {fmt_shadow_stat(group['base']['net'][4])}"]
+        labels = {
+            "samples": f"AI のみ BUY: n ≥ {FLAG_MIN_SAMPLES}（採点可能 n={ai['n'] if ai else 0}）",
+            "mean": f"正味 +4h 平均 ≥ +{FLAG_MIN_MEAN_4H:.2f}%（{fmt_shadow_stat(ai)}）",
+            "positive": f"正味 +4h プラス率 ≥ {FLAG_MIN_POS_4H:.0f}%",
+            "regimes": f"2局面以上に分散（{group['regimeCount']}局面）",
+            "base": "同期間ルール base の正味 +4h 平均以上（比較不能は未充足）",
+        }
+        for key, label in labels.items():
+            lines.append(f"- [{'x' if group['checks'][key] else ' '}] {label}")
+        lines += ["", "全条件充足" if all(group["checks"].values()) else "未充足",
+                  "卒業は判断材料の表示のみ。注文・設定・パラメータ・安全系・権限は何も自動で変えない。"]
+    return "\n".join(lines + [""])
+
+
 def fmt_stat(s):
     return "—" if s is None else f"{s['mean']:+.2f}%（プラス {s['pos']:.0f}%、n={s['n']}）"
 
 
-def render(result, decisions_count, orders, trades, generated_at):
+def render(result, decisions_count, orders, trades, generated_at, shadow=None):
     b, m = result["buckets"], result["marginal"]
     prices = result["prices"]
     lines = ["# SuiBa 振り返りレポート（段階1）", ""]
@@ -417,6 +571,13 @@ def render(result, decisions_count, orders, trades, generated_at):
         lines.append(f"| {v['label']} | {v['n']} | {fmt_stat(v['gross1'])} | "
                      f"{fmt_stat(v['net'][4])} | {fmt_stat(v['net'][24])} | "
                      f"{t.get('tp_first', 0)}/{t.get('sl_first', 0)} |")
+    if shadow:
+        for version, group in shadow["versions"].items():
+            v = group["buy"]
+            t = v["touches"]
+            lines.append(f"| 影BUY（{version}） | {v['n']} | {fmt_stat(v['h'][1])} | "
+                         f"{fmt_stat(v['net'][4])} | {fmt_stat(v['net'][24])} | "
+                         f"{t.get('tp_first', 0)}/{t.get('sl_first', 0)} |")
     lines += ["", "## 局面別の内訳（EMA50 の24h傾き：上昇 ≥+0.5%／下降 ≤−0.5%／横ばい）", ""]
     labels = {"up": "上昇", "down": "下降", "range": "横ばい", "unknown": "不明"}
     for name, r in result["regimes"].items():
@@ -440,7 +601,8 @@ def render(result, decisions_count, orders, trades, generated_at):
               "- +24h は直近の判断ぶんが未経過のため標本が減る。",
               "- 標本が1つの相場つきに偏る間は、フラグは「判断材料が揃った」合図にすぎない。",
               ""]
-    return "\n".join(lines)
+    text = "\n".join(lines)
+    return text if shadow is None else text + render_shadow(shadow)
 
 
 def parse_time(text):
@@ -495,8 +657,11 @@ def main(argv):
         raw = json.load(open(candles_path))["candles"]
     else:
         raw = fetch_candles(decisions)
-    result = analyze(decisions, load_candles(raw))
-    text = render(result, len(decisions), orders, trades, datetime.now(timezone.utc))
+    candles = load_candles(raw)
+    result = analyze(decisions, candles)
+    shadow_rows = filter_window(load_shadow_decisions(db), since, until)
+    shadow = analyze_shadow(shadow_rows, decisions, candles)
+    text = render(result, len(decisions), orders, trades, datetime.now(timezone.utc), shadow)
     if out:
         with open(out, "w") as fh:
             fh.write(text)

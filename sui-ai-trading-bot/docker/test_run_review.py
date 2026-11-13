@@ -349,5 +349,228 @@ class LastSessionWindowTests(unittest.TestCase):
             self.assertIn("判断: 1 件", text)
 
 
+class ShadowReviewTests(unittest.TestCase):
+    def public_db(self, tmp, rules, shadows=None):
+        path = os.path.join(tmp, "SUI_USDC.sqlite")
+        conn = sqlite3.connect(path)
+        for table in ("strategy_decisions", "paper_orders", "paper_trades"):
+            conn.execute(f"CREATE TABLE {table}(id TEXT PRIMARY KEY,timestamp INTEGER,json TEXT)")
+        for i, d in enumerate(rules):
+            # Same flat, allowlisted shape as S1's public export. IDs are
+            # anonymized joining keys; action deliberately differs from base.
+            cid = d.get("cycleId", f"h:{i:064x}")
+            ev = {"candleTimestamp": d["cts"], "selectedRule": d["rule"],
+                  "inputs": {"price": d["price"], "current": d["cur"], "previous": d["prev"]},
+                  "conditions": d["cond"]}
+            conn.execute("INSERT INTO strategy_decisions VALUES(?,?,?)", (cid, d["cts"]*1000,
+                         json.dumps({"action": d["action"], "evidence": ev})))
+        if shadows is not None:
+            conn.execute("CREATE TABLE shadow_decisions(id TEXT PRIMARY KEY,timestamp INTEGER,json TEXT)")
+            for i, row in enumerate(shadows):
+                cid = row.get("cycleId", f"h:{i:064x}")
+                conn.execute("INSERT INTO shadow_decisions VALUES(?,?,?)", (cid, row["candleTimestamp"]*1000, json.dumps(row)))
+        conn.commit()
+        conn.close()
+        return path
+
+    def shadow(self, i=0, action="BUY", status="OK", version="shadow-s1-v1", cts=BASE, price=1):
+        return {"cycleId": f"h:{i:064x}", "candleTimestamp": cts, "status": status,
+                "action": action, "ruleAction": "BUY", "selectedRule": "BUY_SIGNAL",
+                "conditionCount": 3, "confidence": .9, "promptVersion": version,
+                "usage": {"inputTokens": 10, "outputTokens": 5, "cost": 0},
+                "price": price, "rationale": {"refs": [{"type": "book", "key": "bid", "value": 1}]}}
+
+    def review(self, db, candles):
+        rules, orders, trades = rr.load_decisions(db)
+        result = rr.analyze(rules, candles)
+        rows = rr.load_shadow_decisions(db)
+        shadow = rr.analyze_shadow(rows, rules, candles)
+        from datetime import datetime, timezone
+        at = datetime(2026, 11, 14, tzinfo=timezone.utc)
+        text = rr.render(result, len(rules), orders, trades, at, shadow)
+        return shadow, text, result, rules
+
+    def test_missing_or_empty_shadow_table_is_only_no_records_note(self):
+        for shadows in (None, []):
+            with self.subTest(shadows=shadows), tempfile.TemporaryDirectory() as tmp:
+                db = self.public_db(tmp, [decision()], shadows)
+                shadow, text, _, _ = self.review(db, candles_with_close_at({}))
+                self.assertEqual(shadow["n"], 0)
+                self.assertEqual(text.split("## AI 影運用", 1)[1].split("\n\n", 1)[1],
+                                 "記録なし（影運用は未有効化）\n")
+
+    def test_only_ok_is_scored_and_all_non_ok_statuses_are_counted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = [self.shadow(i, status=status) for i, status in enumerate(
+                ("OK", "ERROR", "SKIPPED_BUDGET", "SKIPPED_DISABLED"))]
+            db = self.public_db(tmp, [decision(missing="emaUp") for _ in rows], rows)
+            shadow, text, _, _ = self.review(db, candles_with_close_at({BASE+3600: 1.02, BASE+14400: 1.03, BASE+86400: 1.04}))
+            group = shadow["versions"]["shadow-s1-v1"]
+            self.assertEqual(group["buy"]["n"], 1)
+            for h, gross in ((1, 2), (4, 3), (24, 4)):
+                stat = group["buy"]["h"][h]
+                self.assertAlmostEqual(stat["mean"], gross)
+                self.assertAlmostEqual(stat["median"], gross)
+                self.assertEqual(stat["pos"], 100)
+                self.assertAlmostEqual(group["buy"]["net"][h]["mean"], gross-.6)
+            self.assertEqual(group["buy"]["touches"], {"tp_first": 1})
+            for status in ("ERROR", "SKIPPED_BUDGET", "SKIPPED_DISABLED"):
+                self.assertEqual(shadow["statuses"][status], 1)
+                self.assertIn(status, text)
+            self.assertIn("スリッページ・不約定・ProfitGuard", text)
+
+    def test_four_way_join_uses_cycle_id_and_base_not_copied_action(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            # Same timestamps and intentionally misleading ruleAction. Row
+            # order cannot establish the join; only anonymized cycle IDs can.
+            rules = [decision(missing="emaUp"), decision(), decision(), decision(missing="emaUp")]
+            rows = [self.shadow(2), self.shadow(0), self.shadow(3, "WAIT"), self.shadow(1, "WAIT")]
+            db = self.public_db(tmp, rules, rows)
+            shadow, text, _, _ = self.review(db, candles_with_close_at({BASE+14400:1.02}))
+            groups = shadow["versions"]["shadow-s1-v1"]["comparisons"]
+            for key in ("ai_only", "rule_only", "both_buy", "both_wait"):
+                self.assertEqual(groups[key]["n"], 1)
+                self.assertAlmostEqual(groups[key]["net"][4]["mean"], 1.4)
+            self.assertIn("| 影BUY（shadow-s1-v1） | 2 |", text)
+
+    def test_versions_are_not_pooled_even_if_together_they_reach_30(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = [self.shadow(i, version="shadow-s1-v1" if i<15 else "shadow-s1-v2") for i in range(30)]
+            db = self.public_db(tmp, [decision(missing="emaUp") for _ in rows], rows)
+            shadow, text, _, _ = self.review(db, candles_with_close_at({BASE+14400:1.02}))
+            self.assertEqual(len(shadow["versions"]), 2)
+            for group in shadow["versions"].values():
+                self.assertEqual(group["buy"]["n"], 15)
+                self.assertFalse(group["checks"]["samples"])
+            self.assertEqual(text.count("### promptVersion:"), 2)
+            self.assertEqual(text.count("| 影BUY（"), 2)
+
+    def test_graduation_all_checks_and_same_period_base_includes_untriggered_cycles(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c1, c2 = BASE, BASE+86400
+            rules = [decision(missing="emaUp", cts=c1 if i<15 else c2) for i in range(30)]
+            # One untriggered base inside the version span, one outside it.
+            rules += [decision(cts=c1+300), decision(cts=c1-300, price=.01)]
+            rows = [self.shadow(i, cts=c1 if i<15 else c2) for i in range(30)]
+            db = self.public_db(tmp, rules, rows)
+            candles = candles_with_close_at({c1+14400:1.02})
+            close, high, low, ordered, ema, _ = candles
+            # Sufficient history for two real mechanical regime tags; the
+            # second candidate group is sideways, the first is upward.
+            earlier = c1-86400
+            close[earlier]=1; high[earlier]=1; low[earlier]=1; ema[earlier]=1
+            ordered.insert(0, earlier)
+            ema[c1]=1.02; ema[c2]=1.02
+            close[c2+14400]=1.02; high[c2+14400]=1.02; low[c2+14400]=1.02
+            ordered.append(c2+14400)
+            shadow, text, _, _ = self.review(db, candles)
+            group = shadow["versions"]["shadow-s1-v1"]
+            self.assertTrue(all(group["checks"].values()), group["checks"])
+            self.assertEqual(group["base"]["n"], 1)
+            self.assertEqual(group["regimeCount"], 2)
+            self.assertEqual(text.count("- [x]"), 5)
+            self.assertIn("全条件充足", text)
+            self.assertIn("何も自動で変えない", text)
+
+    def test_unmatured_and_unknown_regimes_cannot_satisfy_graduation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = [self.shadow(i) for i in range(30)]
+            db = self.public_db(tmp, [decision(missing="emaUp") for _ in rows], rows)
+            shadow, text, _, _ = self.review(db, candles_with_close_at({}))
+            group=shadow["versions"]["shadow-s1-v1"]
+            self.assertTrue(group["checks"]["samples"])
+            self.assertFalse(group["checks"]["positive"])
+            self.assertFalse(group["checks"]["mean"])
+            self.assertFalse(group["checks"]["regimes"])
+            self.assertFalse(group["checks"]["base"])
+            self.assertIn("未充足", text)
+            # Remove the +4h candle: sample count also fails, never zero-fills.
+            candles=candles_with_close_at({}); del candles[0][BASE+14400]
+            shadow, _, _, _=self.review(db,candles)
+            self.assertFalse(shadow["versions"]["shadow-s1-v1"]["checks"]["samples"])
+
+    def test_same_cycle_atr_bands_and_missing_join_are_explicit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rules=[decision(cur={"atr":.0065}),decision(cur={"atr":.00649}),decision(cur={"rsi":40})]
+            rows=[self.shadow(i) for i in range(4)]
+            db=self.public_db(tmp,rules,rows)
+            shadow, text, _, _=self.review(db,candles_with_close_at({}))
+            group=shadow["versions"]["shadow-s1-v1"]
+            self.assertEqual([group["vols"][v]["n"] for v in ("high","normal","unknown")],[1,1,1])
+            self.assertEqual(group["invalid"],1)
+            self.assertIn("結合不可／入力不整合 1",text)
+
+    def test_touch_paths_share_exact_existing_implementation(self):
+        for kind in ("tp_first","sl_first","both_same_bar","neither"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
+                candles=candles_with_close_at({})
+                if kind in ("tp_first","both_same_bar"): candles[1][BASE+300]=1.02
+                if kind in ("sl_first","both_same_bar"): candles[2][BASE+300]=.98
+                db=self.public_db(tmp,[decision(missing="emaUp")],[self.shadow()])
+                shadow, _, existing, _=self.review(db,candles)
+                self.assertEqual(shadow["versions"]["shadow-s1-v1"]["buy"]["touches"],{kind:1})
+                self.assertEqual(existing["touches"],{kind:1})
+
+    def test_existing_output_and_results_are_identical_with_or_without_shadow(self):
+        from datetime import datetime,timezone
+        import hashlib
+        at=datetime(2026,11,14,tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as tmp:
+            db=self.public_db(tmp,[decision(missing="emaUp"),decision()],[self.shadow()])
+            shadow,text,result,rules=self.review(db,candles_with_close_at({BASE+14400:1.02}))
+            legacy=rr.render(result,len(rules),0,0,at)
+            existing=text.split("\n## AI 影運用",1)[0]
+            existing="\n".join(line for line in existing.split("\n") if not line.startswith("| 影BUY（"))
+            self.assertEqual(existing,legacy)
+            conn=sqlite3.connect(db); conn.execute("DELETE FROM shadow_decisions"); conn.commit(); conn.close()
+            _,empty_text,empty_result,_=self.review(db,candles_with_close_at({BASE+14400:1.02}))
+            self.assertEqual(result,empty_result)
+            self.assertEqual(empty_text.split("\n## AI 影運用",1)[0],legacy)
+            # SHA of original main's render/analyze, frozen before S2 changes.
+            self.assertEqual(hashlib.sha256(legacy.encode()).hexdigest(), "5e7f04bed245679f8d025ae5caa2985115458ca08d1eab4300fd00105d14e38e")
+
+    def test_real_s1_sanitize_and_indexer_path_feed_shadow_without_changing_existing_fetch(self):
+        from unittest.mock import patch
+        export_spec=importlib.util.spec_from_file_location("shadow_export",os.path.join(HERE,"../deploy/paper-check/export_snapshot.py"))
+        export=importlib.util.module_from_spec(export_spec); export_spec.loader.exec_module(export)
+        with tempfile.TemporaryDirectory() as tmp:
+            raw=self.shadow(); raw.update({"cycleId":"same-cycle","model":"SECRET_MODEL", "prompt":"SECRET_PROMPT",
+                "rationale":{"text":"SECRET_TEXT","refs":[]},
+                "snapshot":{"evidence":{"inputs":{"price":1}},"settings":{"secret":"SECRET_KEY"},"candles":["SECRET_CANDLES"]}})
+            public=export.sanitize("shadow_decisions",raw)
+            rule=decision(missing="emaUp"); rule["cycleId"]=export.identifier("same-cycle")
+            db=self.public_db(tmp,[rule],[public])
+            path=write_candles_file(tmp)
+            with open(path,encoding="utf-8") as fh: candles=json.load(fh)
+            with patch.object(rr,"fetch_candles",return_value=candles["candles"]) as fetch, contextlib.redirect_stdout(io.StringIO()) as captured:
+                self.assertEqual(rr.main(["run-review.py",db]),0)
+            fetch.assert_called_once()
+            self.assertEqual(len(fetch.call_args.args[0]),1)  # original rule inputs only
+            text=captured.getvalue()
+            self.assertIn("| AI のみ BUY | 1 |",text)
+            self.assertNotIn("SECRET_",text)
+
+    def test_same_period_base_can_block_graduation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rules=[decision(missing="emaUp") for _ in range(30)]+[decision(price=.98)]
+            rows=[self.shadow(i) for i in range(30)]
+            db=self.public_db(tmp,rules,rows)
+            shadow,_,_,_=self.review(db,candles_with_close_at({BASE+14400:1.02}))
+            g=shadow["versions"]["shadow-s1-v1"]
+            self.assertTrue(g["checks"]["mean"])
+            self.assertFalse(g["checks"]["base"])
+            self.assertGreater(g["base"]["net"][4]["mean"],g["comparisons"]["ai_only"]["net"][4]["mean"])
+
+    def test_cli_applies_time_window_to_shadow_and_preserves_no_record_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db=self.public_db(tmp,[decision(cts=BASE),decision(cts=BASE+3600)],
+                              [self.shadow(0,cts=BASE),self.shadow(1,cts=BASE+3600,status="ERROR")])
+            path=write_candles_file(tmp)
+            out=os.path.join(tmp,"report.md")
+            self.assertEqual(run_main(["run-review.py",db,"--candles",path,"--since",str(BASE+3600),"--until",str(BASE+3600),"--out",out]),0)
+            with open(out,encoding="utf-8") as fh: text=fh.read()
+            self.assertIn("記録 1 件：OK 0 / ERROR 1",text)
+
+
 if __name__ == "__main__":
     unittest.main()
