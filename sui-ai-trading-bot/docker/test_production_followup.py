@@ -42,6 +42,12 @@ def failure(status='failed_requires_review', stage='preflight', code='RuntimeErr
 
 
 class FailureLinesTests(unittest.TestCase):
+    def test_host_stop_codes_are_rendered(self):
+        for code in ('EXTERNAL_STOP', 'WORKER_OOM', 'WORKER_EXITED', 'WORKER_EXITED_CLEAN', 'UNKNOWN'):
+            value = failure(stage='monitoring', code=code)
+            self.assertIsNotNone(FOLLOWUP.parse_report(report('failed_requires_review', value)))
+            self.assertIn(f'- 失敗コード: `{code}`', FOLLOWUP.failure_lines(value))
+
     def test_lines_match_the_alert_issue_wording(self):
         self.assertEqual(FOLLOWUP.failure_lines(failure()), [
             '- 失敗段階: `preflight`',

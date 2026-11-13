@@ -142,6 +142,38 @@ test("attention with a mid-run failure summary names the monitoring stage and th
   assert.ok(body.includes("- バックアップ: 未確認"));
 });
 
+for (const code of [
+  "EXTERNAL_STOP",
+  "WORKER_OOM",
+  "WORKER_EXITED",
+  "WORKER_EXITED_CLEAN",
+  "UNKNOWN",
+]) {
+  test(`host stop code ${code} reaches the alert Issue`, async () => {
+    const f = fixture([
+      ["GET", "/issues?", 200, []],
+      ["GET", "/labels/", 404, {}],
+      ["POST", "/labels", 201, { name: LABEL }],
+      ["POST", "/issues", 201, { number: 5 }],
+    ]);
+    const value = {
+      ...report(),
+      reasons: ["REVIEW_REQUIRED", "RUN_FAILED"],
+      prod_state: "failed_requires_review",
+      failure: {
+        status: "failed_requires_review",
+        stage: "monitoring",
+        code,
+        http_status: null,
+        backup: "unconfirmed",
+      },
+    };
+    assert.deepEqual(validateReport(value, 2000), value);
+    await syncIssues(value, f.context);
+    assert.ok(f.calls.at(-1).body.body.includes(`- 失敗コード: \`${code}\``));
+  });
+}
+
 test("failure summary without an HTTP status omits that line only", async () => {
   const f = fixture([
     ["GET", "/issues?", 200, []],

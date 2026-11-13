@@ -1904,10 +1904,9 @@ class ProductionTests(unittest.TestCase):
             failure = json.loads((folder/'failure.json').read_bytes())
             self.assertEqual(failure['code'], 'CONSECUTIVE_API_ERRORS')
 
-    def test_note_run_failure_without_a_source_records_the_stage_only(self):
+    def test_note_run_failure_without_a_source_records_unknown(self):
         # The worker DB is unreadable and nothing else knows a
-        # reason: the failure record still names the stage, and
-        # the summary's code honestly degrades to unknown.
+        # reason: the failure record and summary explicitly name UNKNOWN.
         with tempfile.TemporaryDirectory() as root:
             ctl = self.make(root)
             record = self.monitoring_record(ctl)
@@ -1915,11 +1914,96 @@ class ProductionTests(unittest.TestCase):
             FakeBroker.atomic(ctl.record, record)
             ctl.sui_db_path = lambda: Path(root)/'absent.sqlite'
             ctl.note_run_failure(record)
-            self.assertEqual(json.loads((ctl.folder(record)/'failure.json').read_bytes()),
-                             {'id': record['id'], 'stage': 'monitoring'})
+            failure = json.loads((ctl.folder(record)/'failure.json').read_bytes())
+            self.assertEqual(failure['code'], 'UNKNOWN')
+            self.assertIsNone(failure['detail']['lastHealthyAt'])
             self.assertEqual(ctl.prod_status()['failure'],
                              {'status': 'failed_requires_review', 'stage': 'monitoring',
-                              'code': None, 'http_status': None, 'backup': 'unconfirmed'})
+                              'code': 'UNKNOWN', 'http_status': None, 'backup': 'unconfirmed'})
+
+    def test_host_stop_reason_branches_and_timestamp_boundaries(self):
+        import sqlite3
+        finished = '2026-11-14T00:00:00.000000000Z'
+        finished_ms = 1794614400000
+        cases = [
+            (0, False, 24, None, 'EXTERNAL_STOP'),
+            (0, False, 300, None, 'EXTERNAL_STOP'),
+            (0, False, 300.001, None, 'WORKER_EXITED_CLEAN'),
+            (0, False, -1, None, 'EXTERNAL_STOP'),
+            (0, False, None, None, 'UNKNOWN'),
+            (137, True, 24, None, 'WORKER_OOM'),
+            (42, False, 24, None, 'WORKER_EXITED'),
+            (0, False, 24, 'UPSTREAM_HTTP_500', 'UPSTREAM_HTTP_500'),
+        ]
+        for exit_code, oom, gap, error, expected in cases:
+            with self.subTest(expected=expected, gap=gap), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                record = self.monitoring_record(ctl)
+                record['status'] = 'failed_requires_review'
+                FakeBroker.atomic(ctl.record, record)
+                path = self.worker_db(root, {'error': error, 'emergency': False})
+                timing = {'lastAnalysisAt': finished_ms-gap*1000 if gap is not None else None,
+                          'lastFetchSuccessAt': finished_ms-600000, 'secret': 'SECRET_FIXTURE'}
+                if gap is None:
+                    timing['lastFetchSuccessAt'] = None
+                with contextlib.closing(sqlite3.connect(str(path))) as db:
+                    with db:
+                        db.execute("INSERT INTO bot_runtime_state VALUES('operation_state', ?)",
+                                   (json.dumps(timing),))
+                ctl.sui_db_path = lambda: path
+                ctl.inspect = lambda: {'State': {'Status': 'exited', 'ExitCode': exit_code,
+                                                'OOMKilled': oom, 'FinishedAt': finished,
+                                                'Env': ['SECRET_FIXTURE']}}
+                ctl.note_run_failure(record)
+                raw = (ctl.folder(record)/'failure.json').read_text()
+                failure = json.loads(raw)
+                self.assertEqual(failure['code'], expected)
+                self.assertEqual(ctl.prod_status()['failure']['code'], expected)
+                self.assertNotIn('SECRET_FIXTURE', raw)
+                if error is None:
+                    detail = failure['detail']
+                    self.assertEqual(detail['exitCode'], exit_code)
+                    self.assertEqual(detail['oomKilled'], oom)
+                    self.assertEqual(detail['containerFinishedAt'], finished)
+                    if gap is not None:
+                        self.assertAlmostEqual(detail['gapSeconds'], gap, places=5)
+                        self.assertEqual(detail['lastHealthyAt'], timing['lastAnalysisAt'])
+                else:
+                    self.assertNotIn('detail', failure)
+
+    def test_missing_container_is_unknown_and_fault_precedes_host_fallback(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            ctl.inspect = lambda: (_ for _ in ()).throw(RuntimeError('SECRET_FIXTURE'))
+            ctl.sui_db_path = lambda: Path(root)/'absent.sqlite'
+            ctl.note_run_failure(record)
+            path = ctl.folder(record)/'failure.json'
+            self.assertEqual(json.loads(path.read_text())['code'], 'UNKNOWN')
+            self.assertNotIn('SECRET_FIXTURE', path.read_text())
+            path.unlink()
+            FakeBroker.atomic(ctl.folder(record)/'fault-first.json',
+                              {'id': record['id'], 'error': 'STOP_FAILED'})
+            ctl.note_run_failure(record)
+            self.assertEqual(json.loads(path.read_text())['code'], 'STOP_FAILED')
+
+    def test_host_stop_reason_uses_the_latest_healthy_timestamp(self):
+        import sqlite3
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            path = self.worker_db(root, {'error': None, 'emergency': False})
+            with contextlib.closing(sqlite3.connect(str(path))) as db:
+                with db:
+                    db.execute("INSERT INTO bot_runtime_state VALUES('operation_state', ?)",
+                               (json.dumps({'lastAnalysisAt': 1794613800000,
+                                            'lastFetchSuccessAt': 1794614376000}),))
+            ctl.sui_db_path = lambda: path
+            ctl.inspect = lambda: {'State': {'Status': 'exited', 'ExitCode': 0,
+                'OOMKilled': False, 'FinishedAt': '2026-11-14T00:00:00Z'}}
+            code, detail = ctl.host_stop_reason()
+            self.assertEqual(code, 'EXTERNAL_STOP')
+            self.assertEqual(detail['lastHealthyAt'], 1794614376000)
+            self.assertEqual(detail['gapSeconds'], 24)
 
     def test_note_run_failure_ignores_non_monitoring_stages(self):
         # A start-stage failure keeps today's evidence exactly:

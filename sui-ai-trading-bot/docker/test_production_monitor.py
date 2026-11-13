@@ -32,6 +32,16 @@ def healthy(now=2000):
 
 
 class ShapeTests(unittest.TestCase):
+    def test_host_stop_codes_pass_through_the_monitor(self):
+        for code in ('EXTERNAL_STOP', 'WORKER_OOM', 'WORKER_EXITED', 'WORKER_EXITED_CLEAN', 'UNKNOWN'):
+            with self.subTest(code=code):
+                status, watch = healthy()
+                status['run'].update(status='failed_requires_review', stage='monitoring')
+                status.update(controller_alive=False, worker=None, requires_review=True)
+                status['failure'] = {'status': 'failed_requires_review', 'stage': 'monitoring',
+                                     'code': code, 'http_status': None, 'backup': 'unconfirmed'}
+                self.assertEqual(combine(status, watch, 2000)['failure'], status['failure'])
+
     def test_current_consistent_observations_are_normal(self):
         status, watch = healthy()
         result = combine(status, watch, 2000)

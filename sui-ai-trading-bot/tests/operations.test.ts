@@ -312,6 +312,22 @@ describe("PAPER operation monitor", () => {
       db.close();
     },
   );
+  it("clears a previous run's stop reason on boot and manual start", () => {
+    const db = new BotDatabase(":memory:");
+    const m = new OperationMonitor(db);
+    db.set("runtime", { ...db.runtime(), running: true });
+    m.failCycle("THIN_ORDERBOOK");
+    expect(m.safetySnapshot().lastStopReason).toBe("THIN_ORDERBOOK");
+    m.boot();
+    expect(m.safetySnapshot().lastStopReason).toBeNull();
+    db.set("runtime", { ...db.runtime(), running: true, error: null });
+    m.failCycle("SPREAD_TOO_WIDE");
+    expect(m.safetySnapshot().lastStopReason).toBe("SPREAD_TOO_WIDE");
+    db.set("runtime", { ...db.runtime(), running: true, error: null });
+    m.transition("MANUAL_START");
+    expect(m.safetySnapshot().lastStopReason).toBeNull();
+    db.close();
+  });
   it("retains the initiating stop reason while recording later failed monitoring", () => {
     const db = new BotDatabase(":memory:");
     db.set("runtime", { ...db.runtime(), running: true });
