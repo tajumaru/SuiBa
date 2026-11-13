@@ -48,7 +48,10 @@ export function IndicatorPanel({
   const index = candles.findIndex((c) => c.timestamp === selected),
     names = kind === "RSI" ? ["RSI14"] : ["MACD", "シグナル", "ヒストグラム"];
   return (
-    <section className="linked-indicator" aria-label={`${kind}連動チャート`}>
+    <section
+      className="linked-indicator chart-meta"
+      aria-label={`${kind}連動チャート`}
+    >
       <h3>
         {kind} · {candles[0]?.timeframe / 60}分足
       </h3>
