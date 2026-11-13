@@ -51,16 +51,20 @@ export function WorkerFreshness({
         <dt>Workerの心拍</dt>
         <dd>
           {data ? dateTime(data.lastHeartbeatAt) : "未取得"}
-          {vital?.heartbeatSecondsAgo != null
-            ? `（${vital.heartbeatSecondsAgo}秒前）`
-            : ""}
+          {vital?.heartbeatSecondsAgo != null && (
+            <span className="worker-freshness-age">
+              （{vital.heartbeatSecondsAgo}秒前）
+            </span>
+          )}
         </dd>
         <dt>最終分析成功</dt>
         <dd>
           {data ? dateTime(data.timing.lastAnalysisAt) : "未取得"}
-          {vital?.lastAnalysisSecondsAgo != null
-            ? `（${vital.lastAnalysisSecondsAgo}秒前）`
-            : ""}
+          {vital?.lastAnalysisSecondsAgo != null && (
+            <span className="worker-freshness-age">
+              （{vital.lastAnalysisSecondsAgo}秒前）
+            </span>
+          )}
         </dd>
       </dl>
     </section>

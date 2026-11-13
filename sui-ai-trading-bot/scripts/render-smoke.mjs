@@ -168,6 +168,23 @@ try {
       ).includes("最終分析成功")
     )
       failures.push("analysis evidence missing");
+    /* eslint-disable no-undef -- computed typography runs inside Chromium */
+    const workerType = await page
+      .locator(".worker-freshness")
+      .evaluate((card) => ({
+        heading: getComputedStyle(card.querySelector("h3")).fontSize,
+        body: getComputedStyle(card.querySelector("dd")).fontSize,
+        status: getComputedStyle(card.querySelector("p")).fontSize,
+      }));
+    /* eslint-enable no-undef */
+    if (
+      workerType.heading !== "15px" ||
+      workerType.body !== "13px" ||
+      workerType.status !== "13px"
+    )
+      failures.push(
+        `${width}px: Worker typography differs from the overview scale`,
+      );
     await page.screenshot({ path: `render-smoke-overview-${width}.png` });
     await page.getByRole("button", { name: "取引履歴", exact: true }).click();
     await page.getByRole("region", { name: "過去の停止理由" }).waitFor();
