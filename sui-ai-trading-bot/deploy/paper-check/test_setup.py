@@ -157,6 +157,9 @@ class VerifyRunCoverageTests(unittest.TestCase):
         job = workflow.split('  docker-run:\n', 1)[1].split('  docker-suites:\n', 1)[0]
         self.assertIn('fail-fast: false', job)
         self.assertIn('${{ matrix.scenarios }}', job)
+        self.assertNotRegex(job, r"(?m)^    if: needs\.changes\.outputs\.heavy == 'true'$")
+        self.assertEqual(job.count("        if: needs.changes.outputs.heavy == 'true'"), 4)
+        self.assertIn("        if: needs.changes.outputs.heavy != 'true'", job)
         legs = re.findall(r'scenarios: ([a-z0-9,\-]+)', job)
         self.assertEqual(len(legs), 3)
         covered = [name for leg in legs for name in leg.split(',')]

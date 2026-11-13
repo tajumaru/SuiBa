@@ -144,7 +144,10 @@ jobs:
   # or the tests themselves) changed. Anything else — a dashboard
   # change, say — cannot change their outcome. Scheduled and
   # dispatched runs always take the heavy path, and a failed
-  # comparison fails safe to heavy as well. The `docker-suites` job
+  # comparison fails safe to heavy as well. The `docker-run` matrix
+  # itself always expands so all three required check contexts report;
+  # on the light path its expensive steps are skipped inside each leg.
+  # The `docker-suites` job
   # at the end aggregates the split jobs, so the familiar single
   # check name keeps reporting and anything watching for it (the
   # merge habit included) sees one verdict.
@@ -269,7 +272,6 @@ jobs:
         run: sudo /usr/bin/python3 -I deploy/paper-check/verify_watchdog.py
   docker-run:
     needs: changes
-    if: needs.changes.outputs.heavy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # The nine verify_run scenarios are independent fixtures; run them as
@@ -292,19 +294,26 @@ jobs:
         working-directory: sui-ai-trading-bot
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: needs.changes.outputs.heavy == 'true'
         with:
           persist-credentials: false
       - name: Create a cache-capable builder
+        if: needs.changes.outputs.heavy == 'true'
         run: |
           docker buildx create --name suiba-cache --driver docker-container --use
           docker buildx inspect --bootstrap
       - name: Build image without running its default command
+        if: needs.changes.outputs.heavy == 'true'
         run: docker buildx build --load --cache-from type=gha,scope=suiba-app --cache-to type=gha,mode=max,scope=suiba-app --build-arg SUIBA_BUILD_SHA=${{ github.sha }} -f docker/Dockerfile -t suiba-no-worker:${{ github.sha }} .
       - name: Validation controller crash and recovery with Docker dummy (no Worker)
+        if: needs.changes.outputs.heavy == 'true'
         run: |
           df -h /var/lib
           docker system df
           sudo /usr/bin/python3 -I deploy/paper-check/verify_run.py suiba-no-worker:${{ github.sha }} ${{ matrix.scenarios }}
+      - name: Report that this matrix leg is not needed
+        if: needs.changes.outputs.heavy != 'true'
+        run: echo "No heavy-suite inputs changed; ${{ matrix.name }} reports success without running Docker."
   docker-suites:
     # Aggregator for the split heavy jobs above: keeps the single
     # `docker-suites` check reporting one verdict. Skipped suites
