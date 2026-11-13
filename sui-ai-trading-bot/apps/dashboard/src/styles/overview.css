@@ -323,10 +323,25 @@
 .validation-control dialog::backdrop {
   background: rgb(0 0 0 / 75%);
 }
+.worker-freshness {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.worker-freshness p {
+  margin: 0 0 8px;
+}
 .worker-freshness dl {
+  margin: 0;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 8px 16px;
+}
+.worker-freshness-age {
+  display: inline-block;
+  white-space: nowrap;
+}
+.worker-freshness dt {
+  color: var(--dim);
 }
 .worker-freshness dd {
   margin: 0;
