@@ -195,6 +195,47 @@ try {
     .waitFor();
   if (commands.join(",") !== "start,stop")
     failures.push("header control commands changed");
+  // Populated monthly report: the longest labels must remain on one line.
+  fixture.state.trades = [0.17, -0.24].map((pnl, i) => ({
+    orderId: `monthly-smoke-${i}`,
+    side: "SELL",
+    timestamp: Date.now(),
+    quantity: 1,
+    price: 2,
+    fee: 0.01,
+    pnl,
+    slippage: 0,
+    priceImpact: 0,
+  }));
+  await page.reload();
+  await page.locator(".boot-screen").waitFor({ state: "hidden" });
+  await page
+    .getByRole("button", { name: "ダッシュボード", exact: true })
+    .click();
+  for (const width of [320, 375, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    const monthly = page.getByRole("region", { name: "月報", exact: true });
+    await monthly.scrollIntoViewIfNeeded();
+    await monthly.getByText("一番の勝ち", { exact: true }).waitFor();
+    /* eslint-disable no-undef -- runs inside Chromium */
+    const layout = await monthly.evaluate((card) => ({
+      labelsFit: [...card.querySelectorAll("dt")].every((label) => {
+        const text = document.createRange();
+        text.selectNodeContents(label);
+        return text.getClientRects().length === 1;
+      }),
+      fits: card.scrollWidth <= card.clientWidth,
+      rowLineHeight: getComputedStyle(
+        card.querySelector(".monthly-report-rows"),
+      ).lineHeight,
+    }));
+    /* eslint-enable no-undef */
+    if (!layout.labelsFit || !layout.fits || layout.rowLineHeight !== "20px")
+      failures.push(
+        `${width}px: monthly report layout ${JSON.stringify(layout)}`,
+      );
+    await page.screenshot({ path: `render-smoke-monthly-${width}.png` });
+  }
   console.log(
     `five-tab render: 320/375/1280px, header start/stop passed on loopback port ${port}`,
   );
