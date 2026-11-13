@@ -115,12 +115,12 @@ echo '== 3/4 runtime.env と admin-token =='
 if [[ -e $SHARED/runtime.env ]]; then
   echo 'runtime.env: 既にあるため変更しません（キー構成だけ確認します。値は出しません）'
   keys=$(cut -d= -f1 "$SHARED/runtime.env")
-  for want in MARKET_DATA_PROVIDER DEEPBOOK_RECONSTRUCT_CANDLES SUI_GRPC_URL; do
+  for want in MARKET_DATA_PROVIDER DEEPBOOK_RECONSTRUCT_CANDLES SUI_GRPC_URL SUIBA_SHADOW_ENABLED SUIBA_SHADOW_API_KEY; do
     grep -qx "$want" <<< "$keys" || echo "  警告: runtime.env に $want がありません"
   done
   while IFS= read -r key; do
     case $key in
-      ''|MARKET_DATA_PROVIDER|DEEPBOOK_RECONSTRUCT_CANDLES|SUI_GRPC_URL) ;;
+      ''|MARKET_DATA_PROVIDER|DEEPBOOK_RECONSTRUCT_CANDLES|SUI_GRPC_URL|SUIBA_SHADOW_ENABLED|SUIBA_SHADOW_API_KEY) ;;
       *) echo "  警告: runtime.env に想定外のキー $key があります" ;;
     esac
   done <<< "$keys"

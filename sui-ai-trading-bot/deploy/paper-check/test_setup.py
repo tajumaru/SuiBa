@@ -40,13 +40,15 @@ class UnitTests(unittest.TestCase):
     def test_setup_pins_every_distributed_file_and_verifies_every_unit(self):
         script = (HERE/'setup-paper-check.sh').read_text()
         entries = re.findall(r"'([^'|]+)\|([a-f0-9]{64})\|([^'|]+)\|([0-7]{3})'", script)
-        self.assertEqual(len(entries), 17)
-        self.assertEqual(len({name for name, *_ in entries}), 17)
+        self.assertEqual(len(entries), 20)
+        self.assertEqual(len({name for name, *_ in entries}), 20)
         for name, digest, target, mode in entries:
             self.assertEqual(hashlib.sha256((HERE/name).read_bytes().replace(b'\r\n', b'\n')).hexdigest(), digest, name)
             if name.endswith(('.service', '.timer')):
                 self.assertEqual(target, '/etc/systemd/system/'+name)
                 self.assertEqual(mode, '644')
+        pin = re.search(r"^SETUP_CI_APPROVAL_SHA256='([a-f0-9]{64})'", script, re.M).group(1)
+        self.assertEqual(pin, hashlib.sha256((HERE.parent/'broker/setup-ci-approval.sh').read_bytes()).hexdigest())
         units = re.search(r"^UNITS='([^']+)'", script, re.M).group(1).split()
         self.assertEqual(set(units), {name for name, *_ in entries if name.endswith(('.service', '.timer'))})
         self.assertEqual(len(units), len(set(units)))
