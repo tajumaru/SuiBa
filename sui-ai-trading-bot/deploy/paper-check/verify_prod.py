@@ -145,6 +145,17 @@ def main():
         except BaseException:
             with contextlib.suppress(Exception):
                 subprocess.run(['journalctl', '-u', name+'.service', '--no-pager', '-n', '60'], check=False)
+            # DIAGNOSTIC (scratch branch only): dump the run-folder state
+            # that decided the stop outcome, before the finally removes it.
+            with contextlib.suppress(Exception):
+                state = base/'state/production'
+                print('DIAG scenario:', scenario, flush=True)
+                for path in sorted(state.rglob('*')):
+                    if path.is_file() and path.suffix == '.json':
+                        print('DIAG FILE', path.relative_to(base), path.read_bytes()[:600], flush=True)
+                history = base/'cleanup-history'
+                if history.exists():
+                    print('DIAG cleanup-history:', history.read_bytes(), flush=True)
             raise
         finally:
             subprocess.run(['systemctl', 'stop', name+'.service', name+'-cutoff.service'], check=False)
