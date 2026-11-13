@@ -15,6 +15,8 @@
 # installed hashes, and one real status call through the sudo wrapper
 # as suiba-deploy. When any pinned file changes, update its digest here
 # in the same commit (same discipline as setup-ci-approval.sh).
+# The needrestart drop-in is also pinned. It is installed when absent,
+# left untouched when identical, and rejected if an existing copy differs.
 # prod-policy.json is never installed or enabled here. Production activation
 # is a separate explicit cutover operation; installing a unit never starts it.
 # It also installs the read-only monitoring identity: user suiba-observe,
@@ -41,6 +43,7 @@ FILES=(
   'suiba-paper-check.sudoers|54d64fdadf0b38749008c112fc12761e03f633538e526ebe6f37eb4b1ec38607|/etc/sudoers.d/suiba-paper-check|440'
   'suiba-paper-observe|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-observe|755'
   'suiba-paper-observe.sudoers|6a725a0f8ab853c2f8db4fe176e30ea8a4d337112a0f9ec3f0cea337bdfaabe4|/etc/sudoers.d/suiba-paper-observe|440'
+  'suiba-needrestart.conf|0d0ff8114a4c713321cd6082c98a663a02785fcfdf0ebd13fb54d97722de1cc6|/etc/needrestart/conf.d/suiba.conf|644'
   'suiba-paper-check.service|44efe8db2b1c569fd8c2176002acc76b724d6d4c66fa1df1babb988e63f60e95|/etc/systemd/system/suiba-paper-check.service|644'
   'suiba-prod.service|042b393fd872481faffa17d09e57fe7c7a2d57ddb931d609655f4cf29f6ddb02|/etc/systemd/system/suiba-prod.service|644'
   'watchdog.py|7042e7e198fa4b24a33ee61791b093ca91db0ba64129d5a988489330e5eb1822|/usr/local/libexec/suiba-prod-watchdog.py|755'
@@ -117,8 +120,15 @@ visudo -cf "$tmp/suiba-paper-check.sudoers" >/dev/null || fail 'sudoers の構�
 visudo -cf "$tmp/suiba-paper-observe.sudoers" >/dev/null || fail 'observe sudoers の構文検証に失敗'
 
 echo '== 3/5 配置（旧ファイルはバックアップ） =='
+install -d -o root -g root -m 755 /etc/needrestart/conf.d || fail 'needrestart 設定ディレクトリを作れません'
 for entry in "${FILES[@]}"; do
   IFS='|' read -r name sha target mode <<< "$entry"
+  if [[ $name == suiba-needrestart.conf && -e $target ]]; then
+    printf '%s  %s\n' "$sha" "$target" | sha256sum -c - >/dev/null ||
+      fail "既存の needrestart 設定が想定と違います: $target"
+    echo "変更なし: $target"
+    continue
+  fi
   if [[ -e $target ]]; then
     cp -a "$target" "$target.bak-$stamp"
     echo "バックアップ: $target.bak-$stamp"
