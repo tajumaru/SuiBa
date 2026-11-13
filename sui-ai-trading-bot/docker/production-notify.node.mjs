@@ -111,6 +111,37 @@ test("attention with a failure summary names the stage, code and backup state", 
   assert.ok(body.indexOf("- バックアップ:") < body.indexOf("- [チェック実行]"));
 });
 
+test("attention with a mid-run failure summary names the monitoring stage and the worker's stop reason", async () => {
+  const f = fixture([
+    ["GET", "/issues?", 200, []],
+    ["GET", "/labels/", 404, {}],
+    ["POST", "/labels", 201, { name: LABEL }],
+    ["POST", "/issues", 201, { number: 5 }],
+  ]);
+  const value = {
+    ...report(),
+    reasons: ["REVIEW_REQUIRED", "RUN_FAILED"],
+    prod_state: "failed_requires_review",
+    failure: {
+      status: "failed_requires_review",
+      stage: "monitoring",
+      code: "UPSTREAM_HTTP_500",
+      http_status: null,
+      backup: "unconfirmed",
+    },
+  };
+  assert.deepEqual(validateReport(value, 2000), value);
+  assert.deepEqual(await syncIssues(value, f.context), {
+    action: "created",
+    count: 1,
+  });
+  const body = f.calls.at(-1).body.body;
+  assert.ok(body.includes("- 失敗段階: `monitoring`"));
+  assert.ok(body.includes("- 失敗コード: `UPSTREAM_HTTP_500`"));
+  assert.ok(!body.includes("HTTP状態"));
+  assert.ok(body.includes("- バックアップ: 未確認"));
+});
+
 test("failure summary without an HTTP status omits that line only", async () => {
   const f = fixture([
     ["GET", "/issues?", 200, []],

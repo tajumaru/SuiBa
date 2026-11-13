@@ -1766,6 +1766,189 @@ class ProductionTests(unittest.TestCase):
             self.assertEqual(summary['code'], 'PermissionError')
             self.assertEqual(summary['stage'], 'preflight')
 
+    def worker_db(self, root, runtime):
+        import sqlite3
+        path = Path(root)/'worker-bot.sqlite'
+        with contextlib.closing(sqlite3.connect(str(path))) as db:
+            with db:
+                db.execute("CREATE TABLE bot_runtime_state(key TEXT PRIMARY KEY, json TEXT NOT NULL)")
+                db.execute("INSERT INTO bot_runtime_state(key, json) VALUES('runtime', ?)",
+                           (json.dumps(runtime),))
+        return path
+
+    def monitoring_record(self, ctl):
+        record = self.admit(ctl); record['admitted'] = True
+        record['stage'] = 'monitoring'
+        FakeBroker.atomic(ctl.record, record)
+        self.running = self.trading = True
+        return record
+
+    def test_midrun_closeout_persists_the_workers_stop_reason(self):
+        # A session that reached monitoring and died there: the
+        # run() handler recorded only the stage. Close-out fills
+        # the worker's own latched stop reason into the failure
+        # record, and the read-only status surfaces it — the
+        # diagnosis the owner otherwise needs a host terminal for.
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            folder = ctl.folder(record)
+            FakeBroker.atomic(folder/'failure.json', {'id': record['id'], 'stage': 'monitoring'})
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': False,
+                'error': 'UPSTREAM_HTTP_500', 'lastCandle': None})
+            self.assertTrue(ctl.stop(expected=record['id'], source='failure'))
+            self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+            self.assertEqual(json.loads((folder/'failure.json').read_bytes()),
+                             {'id': record['id'], 'stage': 'monitoring',
+                              'code': 'UPSTREAM_HTTP_500'})
+            self.assertEqual(ctl.prod_status()['failure'],
+                             {'status': 'failed_requires_review', 'stage': 'monitoring',
+                              'code': 'UPSTREAM_HTTP_500', 'http_status': None,
+                              'backup': 'unconfirmed'})
+
+    def test_midrun_closeout_creates_the_failure_record_when_none_exists(self):
+        # The supervisor died with the session: no run() handler
+        # ever wrote failure.json. The post-stop close-out creates
+        # it with the worker's latched reason, so the run carries
+        # diagnosable evidence instead of only REVIEW_REQUIRED.
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            folder = ctl.folder(record)
+            self.assertFalse((folder/'failure.json').exists())
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': False,
+                'error': 'PAPER_RECOVERY_EXHAUSTED', 'lastCandle': None})
+            self.assertTrue(ctl.stop(expected=record['id'], source='post-stop'))
+            self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+            self.assertEqual(json.loads((folder/'failure.json').read_bytes()),
+                             {'id': record['id'], 'stage': 'monitoring',
+                              'code': 'PAPER_RECOVERY_EXHAUSTED'})
+            self.assertEqual(ctl.prod_status()['failure']['code'], 'PAPER_RECOVERY_EXHAUSTED')
+
+    def test_clean_prod_stop_close_writes_no_failure_record(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': False, 'error': None, 'lastCandle': None})
+            self.assertTrue(ctl.stop(expected=record['id'], source='prod-stop'))
+            self.assertEqual(ctl.current()['status'], 'completed')
+            self.assertFalse((ctl.folder(record)/'failure.json').exists())
+            self.assertNotIn('failure', ctl.prod_status())
+
+    def test_note_run_failure_falls_back_to_the_market_reason(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            record['status'] = 'failed_requires_review'
+            FakeBroker.atomic(ctl.record, record)
+            folder = ctl.folder(record)
+            market = {'source': 'DeepBook', 'lastSuccessAt': 1, 'reason': 'MARKET_DATA_STALLED'}
+            FakeBroker.atomic(folder/'failure.json',
+                              {'id': record['id'], 'stage': 'monitoring', 'market': market})
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': False, 'error': None, 'lastCandle': None})
+            ctl.note_run_failure(record)
+            self.assertEqual(json.loads((folder/'failure.json').read_bytes()),
+                             {'id': record['id'], 'stage': 'monitoring', 'market': market,
+                              'code': 'MARKET_DATA_STALLED'})
+
+    def test_note_run_failure_names_an_emergency_stop(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': True, 'error': None, 'lastCandle': None})
+            ctl.note_run_failure(record)
+            failure = json.loads((ctl.folder(record)/'failure.json').read_bytes())
+            self.assertEqual(failure['code'], 'EMERGENCY_STOP')
+
+    def test_note_run_failure_sanitizes_an_unknown_worker_error(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': False,
+                'error': 'a free-form failure the worker should never persist',
+                'lastCandle': None})
+            ctl.note_run_failure(record)
+            failure = json.loads((ctl.folder(record)/'failure.json').read_bytes())
+            self.assertEqual(failure['code'], 'OTHER_RUNTIME_ERROR')
+
+    def test_note_run_failure_leaves_unreadable_evidence_untouched(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            path = ctl.folder(record)/'failure.json'
+            path.write_bytes(b'{corrupt')
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': False,
+                'error': 'UPSTREAM_HTTP_500', 'lastCandle': None})
+            ctl.note_run_failure(record)
+            self.assertEqual(path.read_bytes(), b'{corrupt')
+
+    def test_note_run_failure_preserves_an_existing_code(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            folder = ctl.folder(record)
+            FakeBroker.atomic(folder/'failure.json',
+                              {'id': record['id'], 'stage': 'monitoring',
+                               'code': 'CONSECUTIVE_API_ERRORS'})
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': False,
+                'error': 'UPSTREAM_HTTP_500', 'lastCandle': None})
+            ctl.note_run_failure(record)
+            failure = json.loads((folder/'failure.json').read_bytes())
+            self.assertEqual(failure['code'], 'CONSECUTIVE_API_ERRORS')
+
+    def test_note_run_failure_without_a_source_records_the_stage_only(self):
+        # The worker DB is unreadable and nothing else knows a
+        # reason: the failure record still names the stage, and
+        # the summary's code honestly degrades to unknown.
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            record['status'] = 'failed_requires_review'
+            FakeBroker.atomic(ctl.record, record)
+            ctl.sui_db_path = lambda: Path(root)/'absent.sqlite'
+            ctl.note_run_failure(record)
+            self.assertEqual(json.loads((ctl.folder(record)/'failure.json').read_bytes()),
+                             {'id': record['id'], 'stage': 'monitoring'})
+            self.assertEqual(ctl.prod_status()['failure'],
+                             {'status': 'failed_requires_review', 'stage': 'monitoring',
+                              'code': None, 'http_status': None, 'backup': 'unconfirmed'})
+
+    def test_note_run_failure_ignores_non_monitoring_stages(self):
+        # A start-stage failure keeps today's evidence exactly:
+        # the worker DB may still hold a predecessor's error, so
+        # it is never consulted before monitoring.
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.admit(ctl); record['admitted'] = True
+            record['stage'] = 'worker-readiness'
+            FakeBroker.atomic(ctl.record, record)
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': False,
+                'error': 'UPSTREAM_HTTP_500', 'lastCandle': None})
+            ctl.note_run_failure(record)
+            self.assertFalse((ctl.folder(record)/'failure.json').exists())
+
+    def test_failure_summary_prefers_the_reset_refusal_over_a_recorded_code(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.admit(ctl); record['admitted'] = True
+            record['status'] = 'failed_requires_review'; record['stage'] = 'monitoring'
+            FakeBroker.atomic(ctl.record, record)
+            ctl.exited = lambda record: True
+            FakeBroker.atomic(ctl.folder(record)/'failure.json',
+                              {'id': record['id'], 'stage': 'monitoring',
+                               'reset_refusal': 'RESET_SCOPE_CHANGED',
+                               'code': 'UPSTREAM_HTTP_500'})
+            self.assertEqual(ctl.prod_status()['failure']['code'], 'RESET_SCOPE_CHANGED')
+
     def test_prod_status_answers_while_the_deployment_lock_is_held(self):
         # The status path never takes the deployment lock: while a
         # supervisor holds it — exactly when the owner needs the

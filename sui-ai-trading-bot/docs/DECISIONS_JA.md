@@ -338,3 +338,11 @@ PR #168 で本番切替時に検討するとしていた watchdog を先行実�
 あわせて、従来の「実売買で再起動を避ける条件はポジション保有中だけ」という整理は不十分と分かった。保有ゼロでも、未約定注文や送信結果が未確定の取引があれば、停止後に状態が変わり得る。この問題は分離案 A・B でも worker 更新時には残る。TradeCap 設計で先に決める事項として「いつ安全に止められるか」「再開前に何を照合するか」（オンチェーンの注文・約定状態とローカル DB の突合）を、設計書 `docs/REAL_TRADING_TRADECAP_DESIGN_20261025.md` の §11 要判断事項に #9 として追加した。
 
 - 2026-11-13：検証ラダー完了に伴い検証タブを廃止し、心拍は概要・停止理由は履歴へ移設。開始・停止 API、停止記録、paper-check／検証ラン、/status の項目は維持する。
+
+## 2026-11-13 稼働中セッションの失敗理由をクローズアウトで永続化する
+
+2026-11-13 の本番セッション seq 25（12:09 JST 開始）が稼働数時間後に failed_requires_review で閉じたが、監視 Issue には REVIEW_REQUIRED／RUN_FAILED しか出ず、STOP のフォローアップ（PR #221）も何も印字しなかった。PR #215 の failure サマリ（prod_status の failure フィールド）は開始失敗の証拠を前提にしており、稼働中の死に方には届いていなかった：コントローラ自身が例外を捕まえた場合は failure.json に stage（monitoring）しか残らず、コントローラごと死んだ場合は failure.json 自体が存在しない。理由の特定にホストのターミナル出力が要る状態が残っていた。
+
+修正：本番コントローラのクローズアウト（_cleanup_locked が failed_requires_review で確定した直後）に、稼働中失敗の理由を failure.json へ永続化する処理（note_run_failure）を追加した。対象は stage='monitoring' のクローズアウトのみ（readiness を通過して実際に稼働したセッションに限る：wait_ready は worker の runtime row がクリアな場合にだけ startReady を返すため、monitoring 到達時点でラッチされた worker のエラーは当該セッション自身のものと分かる）。理由の取得順は (1) worker の DB（bot_runtime_state の runtime 行）のラッチ済み error（emergency 時は EMERGENCY_STOP を優先＝worker 自身の snapshot と同じ規則。想定外の形は OTHER_RUNTIME_ERROR へ劣化）、(2) failure.json 既存の market スナップショットの reason、(3) stop 機構の最初の fault コード。既存の証拠は壊さず code が欠けている場合だけ埋め、読めない failure.json には触らない。failure_summary は failure.json の code を（reset_refusal の次に）読むようになっただけで、サマリの形（キー集合・検証）は不変。監視・通知・フォローアップの消費者側は無変更で、stage は既存語彙の 'monitoring' を使う（新しい stage 値を足すと監視コントラクトと diagnose の許容集合を広げる必要があり、'monitoring' の方が「数時間稼働した末の死」を正確に表す）。
+
+副次効果として、failure.json が無かった稼働中失敗のレコードはクローズアウトで証拠を持つようになるため、R3 の admission 後クローズ条件（failure.json の存在が前提）の対象になり得る。他の条件（コンテナの clean な終了・DB 検証・コントローラ終了・fault の許容集合・mutation の規則）はすべて従来どおりで、1つでも欠ければ手動切り分けに残る。安全停止条件・取引ロジック・検証系（PAPER）の挙動は不変。ホストへの反映は次の setup 再実行（停止窓の中）で行い、配置自体はオーナーの別判断とする。
