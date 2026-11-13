@@ -655,19 +655,23 @@
 .monthly-report-rows {
   margin: 8px 0 0;
   font-size: 12.5px;
-  line-height: 1.9;
+  line-height: 1.6;
 }
 .monthly-report-rows > div {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 .monthly-report-rows dt {
   color: var(--faint);
   flex: none;
-  width: 4.5em;
+  width: 5em;
+  white-space: nowrap;
 }
 .monthly-report-rows dd {
   margin: 0;
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
 }
 .monthly-report-rows .pos {
   color: var(--mint);
