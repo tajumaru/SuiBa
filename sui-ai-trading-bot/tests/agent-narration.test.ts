@@ -678,6 +678,31 @@ describe("agent narration: trades and rejections from candidate audits", () => {
     expect(agentPose(state, d2, vital, NOW + 1000)).toBe("pointSmile");
   });
 
+  it("rounds recorded trade quantities and prices for narration", () => {
+    const { db, monitor } = fixture();
+    const d1 = runningSnapshot(db, monitor, decision({}));
+    let state = advanceNarration(emptyNarrationState(), d1, "alive", NOW);
+    const d2 = runningSnapshot(
+      db,
+      monitor,
+      decision({ evaluatedAt: NOW, action: "SELL", selectedRule: "SELL_SIGNAL" }),
+    );
+    d2.candidates = [
+      candidate({
+        id: "cand-precision",
+        finalAction: "SELL",
+        quantityAtomic: "12326538895",
+        quotePriceUsdc: "0.81125773302482245565",
+        timestamp: NOW + 1000,
+        createdAt: NOW + 1000,
+      }),
+    ];
+    state = advanceNarration(state, d2, "alive", NOW + 1000);
+    expect(state.entries.at(-1)?.text).toContain(
+      "12.3265 基軸通貨・見積もり価格 0.8113 USDC",
+    );
+  });
+
   it("a gate rejection narrates the recorded reason in Japanese", () => {
     const { db, monitor } = fixture();
     const d1 = runningSnapshot(db, monitor, decision({}));

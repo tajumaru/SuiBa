@@ -354,11 +354,11 @@ for (const c of candidates) {
   work.seen.add(key);
   const qty =
     c.quantityAtomic != null && Number.isFinite(Number(c.quantityAtomic))
-      ? `${fmtNumber(Number(c.quantityAtomic) / 1e9, 9)} 基軸通貨`
+      ? `${fmtNumber(Number(c.quantityAtomic) / 1e9, 4)} 基軸通貨`
       : null;
   const quote =
-    c.quotePriceUsdc != null
-      ? `${fmtNumber(c.quotePriceUsdc, 4)} USDC`
+    c.quotePriceUsdc != null && Number.isFinite(Number(c.quotePriceUsdc))
+      ? `${fmtNumber(Number(c.quotePriceUsdc), 4)} USDC`
       : null;
   const fill = [qty, quote ? `見積もり価格 ${quote}` : null]
     .filter(Boolean)
