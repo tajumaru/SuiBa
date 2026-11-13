@@ -117,7 +117,7 @@ try {
         "tsx",
         "--input-type=module",
         "-e",
-        'import { dashboardPreviewFixture } from "./scripts/dashboard-preview-fixture.ts"; process.stdout.write(JSON.stringify(dashboardPreviewFixture()));',
+        'import { dashboardPreviewFixture } from "./scripts/dashboard-preview-fixture.ts"; process.stdout.write(JSON.stringify(dashboardPreviewFixture({ equityRoundTrip: true })));',
       ],
       { encoding: "utf8" },
     ),
@@ -170,6 +170,19 @@ try {
       .getByRole("button", { name: "ダッシュボード", exact: true })
       .click();
     await page.getByRole("region", { name: "Workerの状態" }).waitFor();
+    const curve = page.getByRole("region", { name: "資産の推移" });
+    for (const range of ["24時間", "7日", "30日"]) {
+      await curve.getByRole("button", { name: range, exact: true }).click();
+      const text = await curve.textContent();
+      if (
+        !text.includes("取引（確定） -0.81 USDC") ||
+        !text.includes("保有中の値動き 0.00 USDC")
+      )
+        failures.push(
+          `${width}px/${range}: cash-only round-trip attribution missing`,
+        );
+    }
+    await curve.getByRole("button", { name: "7日", exact: true }).click();
     if (
       !(
         await page.getByRole("region", { name: "Workerの状態" }).textContent()

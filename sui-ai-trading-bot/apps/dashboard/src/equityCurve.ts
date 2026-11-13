@@ -9,6 +9,9 @@
 export interface EquityPoint {
   t: number;
   equity: number;
+  attribution?:
+    | { realized: number; unrealized: number }
+    | { issue: "history" | "reconciliation" };
 }
 
 export type EquityRangeKey = "24h" | "7d" | "30d";
@@ -31,6 +34,9 @@ export interface EquityCurveModel {
   last: number;
   delta: number;
   deltaPct: number | null;
+  breakdown: { realized: number; holding: number } | null;
+  breakdownIssue: "history" | "reconciliation" | null;
+  partialPeriod: boolean;
 }
 
 export function equityCurveModel(
@@ -47,6 +53,26 @@ export function equityCurveModel(
   const first = values[0];
   const last = values[values.length - 1];
   const delta = last - first;
+  const start = pts[0].attribution,
+    end = pts.at(-1)!.attribution;
+  let breakdown: EquityCurveModel["breakdown"] = null;
+  let breakdownIssue: EquityCurveModel["breakdownIssue"] = "history";
+  if (start && end && !("issue" in start) && !("issue" in end)) {
+    const realized = end.realized - start.realized;
+    const holding = end.unrealized - start.unrealized;
+    if (
+      [realized, holding].every(Number.isFinite) &&
+      Math.abs(realized + holding - delta) <= 0.00001
+    ) {
+      breakdown = { realized, holding };
+      breakdownIssue = null;
+    } else breakdownIssue = "reconciliation";
+  } else if (
+    (start && "issue" in start && start.issue === "reconciliation") ||
+    (end && "issue" in end && end.issue === "reconciliation")
+  ) {
+    breakdownIssue = "reconciliation";
+  }
   return {
     points: pts,
     min: Math.min(...values),
@@ -55,6 +81,10 @@ export function equityCurveModel(
     last,
     delta,
     deltaPct: first !== 0 ? (delta / first) * 100 : null,
+    breakdown,
+    breakdownIssue,
+    // Hourly sampling normally starts within one hour of the requested edge.
+    partialPeriod: pts[0].t > now - ms + 3600000,
   };
 }
 
