@@ -62,6 +62,8 @@ export function createEngine(
         () => ctx.bookSamplers[selected].currentLevels(),
         () => (selected === "SUI_USDC" ? ctx.longTermSampler.current() : null),
         () => ctx.paperCheck.ordersAllowed(selected),
+        undefined, // S1 deliberately has no real provider adapter.
+        ctx.selectionDb, // Worker-wide JST budget survives pair switches.
       ),
     };
   } catch (error) {

@@ -34,12 +34,40 @@ SECRET = 'SECRET_FIXTURE_TOKEN_DO_NOT_EXPORT'
 
 
 class ExportTests(unittest.TestCase):
+    def test_shadow_sanitize(self):
+        raw = {'cycleId': 'private-cycle', 'status': 'OK', 'action': 'BUY',
+               'confidence': .8, 'model': SECRET, 'promptVersion': 'shadow-s1-v1',
+               'ruleAction': 'WAIT', 'selectedRule': 'NO_SIGNAL', 'conditionCount': 2,
+               'candleTimestamp': 300, 'calledAt': 600000, 'latencyMs': 10,
+               'usage': {'inputTokens': 10, 'outputTokens': 5, 'cost': 0, 'secret': SECRET},
+               'snapshot': {'evidence': {'inputs': {'price': 2}, 'thresholds': {'oversold': 30}},
+                            'candles': [SECRET], 'settings': {'key': SECRET}},
+               'prompt': SECRET, 'apiKey': SECRET,
+               'rationale': {'text': SECRET, 'refs': [
+                   {'type': 'book', 'key': 'bid', 'value': 1.99},
+                   {'type': 'condition', 'key': 'emaUp', 'value': True},
+                   {'type': 'book', 'key': SECRET, 'value': 1},
+                   {'type': SECRET, 'key': 'bid', 'value': 1},
+                   {'type': 'book', 'key': 'ask', 'value': SECRET}]}}
+        out = e.sanitize('shadow_decisions', raw)
+        self.assertNotIn(SECRET, json.dumps(out))
+        for key in ('model', 'snapshot', 'settings', 'prompt', 'apiKey'):
+            self.assertNotIn(key, out)
+        self.assertEqual(out['promptVersion'], 'shadow-s1-v1')
+        self.assertEqual(out['price'], 2)
+        self.assertEqual(out['rationale'], {'refs': [{'type': 'book', 'key': 'bid', 'value': 1.99}]})
+        self.assertEqual(e.sanitize('shadow_decisions', out, public=True), out)
+        raw['promptVersion'] = SECRET
+        self.assertNotIn('promptVersion', e.sanitize('shadow_decisions', raw))
+        self.assertIn('shadow_decisions', e.TABLES)
+
     def fixture(self, root, wal=False):
         root = Path(root)
         path = root/'bot.sqlite'
         db = sqlite3.connect(path)
         if wal: db.execute('PRAGMA journal_mode=WAL')
         records = {
+            'shadow_decisions': {'cycleId': 'cycle', 'status': 'OK', 'action': 'BUY', 'model': SECRET, 'promptVersion': 'shadow-s1-v1', 'rationale': {'text': SECRET, 'refs': []}},
             'strategy_decisions': {'action': 'BUY', 'reason': SECRET, 'apiKey': SECRET, 'stopLossPct': 0.12345,
                 'analysisContext': {'cycleId': 'cycle', 'runningAtAnalysis': True},
                 'evidence': {'version': 1, 'candleTimestamp': 300, 'evaluatedAt': 600000, 'selectedRule': 'BUY_SIGNAL',
@@ -55,7 +83,7 @@ class ExportTests(unittest.TestCase):
         }
         for table, value in records.items():
             db.execute(f'CREATE TABLE {table}(id TEXT PRIMARY KEY,timestamp INTEGER,json TEXT)')
-            row_id = {'strategy_decisions': 'cycle', 'technical_indicators': 'cycle', 'operation_candidates': 'candidate', 'paper_orders': 'order-'+SECRET, 'paper_trades': 'order-'+SECRET}.get(table, table)
+            row_id = {'shadow_decisions': 'cycle', 'strategy_decisions': 'cycle', 'technical_indicators': 'cycle', 'operation_candidates': 'candidate', 'paper_orders': 'order-'+SECRET, 'paper_trades': 'order-'+SECRET}.get(table, table)
             db.execute(f'INSERT INTO {table} VALUES(?,?,?)', (row_id, 600000, json.dumps(value)))
         db.commit()
         if not wal: db.close()
@@ -93,6 +121,7 @@ class ExportTests(unittest.TestCase):
                 self.assertEqual({r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}, set(e.TABLES))
                 decision_id, decision = db.execute('SELECT id,json FROM strategy_decisions').fetchone()
                 self.assertEqual(decision_id, db.execute('SELECT id FROM technical_indicators').fetchone()[0])
+                self.assertEqual(decision_id, db.execute('SELECT id FROM shadow_decisions').fetchone()[0])
                 self.assertNotIn('thresholds', json.loads(decision)['evidence'])
                 self.assertNotIn('stopLossPct', json.loads(decision))
                 candidate = json.loads(db.execute('SELECT json FROM operation_candidates').fetchone()[0])

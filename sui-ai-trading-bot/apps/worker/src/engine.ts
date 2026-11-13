@@ -1,3 +1,4 @@
+import { ShadowRecorder, type ShadowAdapter, type ShadowBudget } from "./shadow.ts";
 import { advanceForecast } from "./forecast.ts";
 import { quoteBookReason } from "../../../packages/market-data/src/quote-book.ts";
 import type { MarketDataProvider } from "../../../packages/market-data/src/provider.ts";
@@ -59,6 +60,7 @@ export type BotSnapshot = ReturnType<BotEngine["snapshot"]>;
 
 export class BotEngine {
   validation?: ValidationRecorder;
+  private readonly shadow: ShadowRecorder;
   marketStatus() {
     return this.market.status?.() ?? null;
   }
@@ -80,7 +82,10 @@ export class BotEngine {
      * (see longTerm.ts); null for pairs without a series. */
     private readonly longTermSource: () => DailyCandle[] | null = () => null,
     private readonly sessionOrdersAllowed: () => boolean = () => true,
+    shadowAdapter?: ShadowAdapter,
+    shadowBudget?: ShadowBudget,
   ) {
+    this.shadow = new ShadowRecorder(db, shadowAdapter, undefined, shadowBudget);
     const portfolio = db.portfolio();
     const baseCoin = tradingPairs[pair].base;
     if (portfolio.baseCoin && portfolio.baseCoin !== baseCoin)
@@ -261,6 +266,12 @@ export class BotEngine {
       decision.analysisContext = cycle.analysis;
       cycle.outcome = "ANALYZED";
       this.db.recordAnalysis(cycle.cycleId, decision, current, now);
+      this.shadow.offer(() => ({
+        cycleId: cycle.cycleId, pair: this.pair, now, candles: c,
+        decision, portfolio: p, settings: s, market: this.marketStatus(),
+        healthy: !recoveryTransition && this.monitor.safety().connectivity === "HEALTHY"
+          && this.marketStatus()?.healthy === true,
+      }));
       this.monitor.analysis();
       this.db.set("price", price);
       this.db.append(

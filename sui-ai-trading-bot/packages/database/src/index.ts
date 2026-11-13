@@ -24,6 +24,7 @@ const eventTables = [
   "forecast_imports",
   "technical_indicators",
   "strategy_decisions",
+  "shadow_decisions",
   "paper_orders",
   "paper_trades",
   "portfolio_snapshots",
@@ -195,6 +196,9 @@ export class BotDatabase {
     );
     this.db.exec(
       `CREATE TABLE IF NOT EXISTS market_candles(timeframe INTEGER NOT NULL,timestamp INTEGER NOT NULL,source TEXT NOT NULL,json TEXT NOT NULL,PRIMARY KEY(timeframe,timestamp,source));CREATE TABLE IF NOT EXISTS bot_runtime_state(key TEXT PRIMARY KEY,json TEXT NOT NULL);`,
+    );
+    this.db.exec(
+      "CREATE TABLE IF NOT EXISTS shadow_daily_budget(day TEXT PRIMARY KEY, calls INTEGER NOT NULL, lastAt INTEGER NOT NULL);",
     );
     for (const t of eventTables)
       this.db.exec(
@@ -406,6 +410,22 @@ export class BotDatabase {
       throw error;
     }
     this.perfFinish(draft, t0);
+  }
+  /** Shadow-only durable reservation, before invocation; crashes consume budget.
+   * No strategy/portfolio/runtime rows or analysis transaction are touched. */
+  reserveShadowCall(day: string, now: number): boolean {
+    const row = this.prepare(
+      `INSERT INTO shadow_daily_budget(day,calls,lastAt) VALUES(?,1,?)
+      ON CONFLICT(day) DO UPDATE SET calls=calls+1,lastAt=excluded.lastAt
+      WHERE calls<200 AND excluded.lastAt-lastAt>=300000 RETURNING calls`,
+    ).get(day, now);
+    return row !== undefined;
+  }
+  shadowLastCall(): number | null {
+    const row = this.prepare(
+      "SELECT MAX(lastAt) AS at FROM shadow_daily_budget",
+    ).get() as { at: number | null };
+    return row.at;
   }
   history<T = Record<string, unknown>>(table: EventTable, limit = 200): T[] {
     return (
