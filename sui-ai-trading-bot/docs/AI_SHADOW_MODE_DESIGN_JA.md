@@ -1,7 +1,7 @@
 # AI 影運用（シャドーモード）設計書 ― 記録専用の AI 判断とルール戦略の答え合わせ
 
 - 作成日：2026-11-11
-- ステータス：設計のみ（未実装）。本書はオーナーの「AIエージェントに取引を任せたい」表明と、進め方として影運用を選んだ決定（2026-11-11、`docs/DECISIONS_JA.md` 参照）に基づく
+- ステータス：S1/S2実装済み、OpenAI実アダプタは未有効化。本書はオーナーの「AIエージェントに取引を任せたい」表明と、進め方として影運用を選んだ決定（2026-11-11、`docs/DECISIONS_JA.md` 参照）に基づく
 - 対象：`sui-ai-trading-bot`（Worker、SQLite、レビュー `docker/run-review.py`、公開 export `deploy/paper-check/export_snapshot.py`）
 
 ---
@@ -177,7 +177,7 @@ AI には構造化出力（JSON）を要求し、スキーマ検証を通った�
 
 ### 7.3 公開 export への含有
 
-- `export_snapshot.py` の TABLES に `shadow_decisions` を加え、専用の sanitize を書く。保持するのは数値・列挙のみ：action、confidence、status、model、promptVersion、latencyMs、usage（トークン数・コスト）、スナップショットからは price・candleTimestamp・条件充足数・ルール側 action／selectedRule、そして rationale.refs（type／key は列挙照合、value は数値のみ）。
+- `export_snapshot.py` の TABLES に `shadow_decisions` を加え、専用の sanitize を書く。保持するのは数値・列挙のみ（2026-11-14：modelは `gpt-5.4-nano` のみ許可、詳細はDECISIONS_JA）：action、confidence、status、model、promptVersion、latencyMs、usage（トークン数・コスト）、スナップショットからは price・candleTimestamp・条件充足数・ルール側 action／selectedRule、そして rationale.refs（type／key は列挙照合、value は数値のみ）。
 - **出さないもの**：rationale.text（自由文）、プロンプト本文、設定の値（thresholds 等）、生のローソク列、API キー（そもそも行に保存しない）。
 - 根拠の自由文を将来 export に含めるかどうかは未決事項 §11-4（現方針は既存の free_text 除外に倣い出さない）。
 
@@ -240,16 +240,16 @@ TradeCap Phase 1（testnet）との関係：影は PAPER 本番の記録系、Ph
 
 ---
 
-## 11. 未決事項（オーナーの決定が必要）
+## 11. 決定状況（未決事項はオーナーの決定が必要）
 
 | # | 事項 | 備考 |
 |---|---|---|
-| 1 | LLM プロバイダとモデル | コスト・遅延・構造化出力の安定性・根拠文の質で選ぶ。判断サンプルが貯まる前に高価格モデルを使う理由は薄い |
+| 1 | LLM プロバイダとモデル（2026-11-14 決定） | OpenAI `gpt-5.4-nano`。ERROR率が高い場合の `gpt-5.4-mini` への格上げは実測後にオーナーが判断する。モデル変更時はコード変更＋promptVersion版上げ |
 | 2 | cadence の確定値 | トリガーの細部、最大間隔（仮置き15分）、最小間隔（同5分）、1日上限（同200回）。S1 の実測で寄せる |
 | 3 | 卒業閾値の確定値 | 候補数（仮置き n ≥ 30）、正味 +4h 平均（同 +0.30%）、プラス率（同 50%）、必要局面数（同 2局面以上） |
 | 4 | 根拠の自由文（rationale.text）の export 可否 | 現方針は出さない（既存の free_text 除外方針に倣う）。出す場合は長さ制限とサニタイズ方式を別途決める |
 | 5 | 出口判断（保有中の SELL 判断）へ影を広げるか | 現設計はフラット時の入口判断のみ。出口は利確・損切りという安全側のルールと競合するため慎重に |
-| 6 | 月額コスト上限（予算） | 1日上限回数とは別に、金額ベースの月次上限を設けるか。プロバイダ決定（#1）とセット |
+| 6 | 月額予算（2026-11-14 決定） | 3,000円を目安。実効の歯止めは既存200回／日とし、金額ベースの自動停止は今回入れない |
 
 ---
 

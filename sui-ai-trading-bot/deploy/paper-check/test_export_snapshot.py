@@ -61,6 +61,16 @@ class ExportTests(unittest.TestCase):
         self.assertNotIn('promptVersion', e.sanitize('shadow_decisions', raw))
         self.assertIn('shadow_decisions', e.TABLES)
 
+    def test_shadow_owner_approved_model_and_prompt_version_allowlists(self):
+        for model in ('gpt-5.4-nano', 'gpt-5.4-mini', 'arbitrary-secret-model'):
+            out = e.sanitize('shadow_decisions', {'status': 'OK', 'model': model, 'promptVersion': 'shadow-openai-nano-v1'})
+            self.assertEqual(out.get('model'), model if model == 'gpt-5.4-nano' else None)
+            self.assertEqual(out['promptVersion'], 'shadow-openai-nano-v1')
+            self.assertEqual(e.sanitize('shadow_decisions', out, public=True), out)
+        self.assertNotIn('promptVersion', e.sanitize('shadow_decisions', {'promptVersion': 'unknown'}))
+        for code in ('SHADOW_API_KEY_MISSING', 'OPENAI_REFUSAL', 'OPENAI_RATE_LIMITED'):
+            self.assertEqual(e.sanitize('shadow_decisions', {'status': 'ERROR', 'reasonCode': code})['reasonCode'], code)
+
     def fixture(self, root, wal=False):
         root = Path(root)
         path = root/'bot.sqlite'

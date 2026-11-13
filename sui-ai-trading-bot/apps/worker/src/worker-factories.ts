@@ -1,3 +1,4 @@
+import { OpenAIShadowAdapter } from "./shadow-openai.ts";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { BotEngine } from "./engine.ts";
@@ -62,7 +63,7 @@ export function createEngine(
         () => ctx.bookSamplers[selected].currentLevels(),
         () => (selected === "SUI_USDC" ? ctx.longTermSampler.current() : null),
         () => ctx.paperCheck.ordersAllowed(selected),
-        undefined, // S1 deliberately has no real provider adapter.
+        new OpenAIShadowAdapter(), // OFF is still enforced by ShadowRecorder.
         ctx.selectionDb, // Worker-wide JST budget survives pair switches.
       ),
     };
