@@ -3,6 +3,7 @@ import type { ChartForecast } from "./chartForecast.ts";
 import { forecastPalette } from "./chartForecast.ts";
 import type { ForecastAnswerCheck } from "./forecastLog.ts";
 import type { AnswerGhost, CrossingMark } from "./chartOverlayGeometry.ts";
+import { number } from "./presentation.ts";
 
 /**
  * The price chart's SVG overlay groups, extracted from
@@ -97,10 +98,12 @@ export function ForecastOverlay({
 /** Keep forecast text outside the plot so nearby prices cannot overlap labels. */
 export function ForecastDetails({
   fc,
+  horizonHours,
   label,
   crossingMarks,
 }: {
   fc: NonNullable<ChartForecast>;
+  horizonHours: number;
   label: string | null;
   crossingMarks: CrossingMark[];
 }) {
@@ -109,9 +112,9 @@ export function ForecastDetails({
       <div>
         <dt>
           <span className="chart-detail-swatch forecast" aria-hidden="true" />
-          予測（模式）
+          これから{number(horizonHours, 1)}時間の予測
         </dt>
-        <dd>{label}</dd>
+        <dd>{label}（模式）</dd>
       </div>
       {fc.touch && (
         <>

@@ -1,4 +1,4 @@
-import { forecastPalette, FORECAST_BARS } from "./chartForecast.ts";
+import { forecastPalette } from "./chartForecast.ts";
 
 // Kept as a re-export: the palette's home is chartForecast.ts
 // (shared with the share card), and existing imports name this
@@ -105,11 +105,9 @@ export function PriceChart(props: PriceChartProps) {
       </p>
       {fc && (
         <p className="chart-forecast-note">
-          予測（模式）：この先{FORECAST_BARS}本（
-          {number((FORECAST_BARS * tf) / 3600, 1)}
-          時間）の見通しは{fc.directionWord}、振れ幅 ±
-          {number(fc.bandPct * 100, 1)}
-          %。トレンドと値幅（ATR）から伸ばしたもので、実際の価格ではありません。
+          これから{number((fc.points.length * tf) / 3600, 1)}時間の予測：
+          見通しは{fc.directionWord}、振れ幅 ±{number(fc.bandPct * 100, 1)}
+          %。模式の見通しです。トレンドと値幅（ATR）から伸ばしたもので、実際の価格ではありません。
           {fc.bookTiltPct !== 0 &&
             `板の偏り（${fc.bookTiltPct > 0 ? "買い優勢" : "売り優勢"}）も少し反映しています。`}
           {fc.touch && `タッチラインの確率は、同じような予測の実測です。`}
@@ -444,6 +442,7 @@ export function PriceChart(props: PriceChartProps) {
           {fc && fcCone && fcMid && (
             <ForecastDetails
               fc={fc}
+              horizonHours={(fc.points.length * tf) / 3600}
               label={fcLabel}
               crossingMarks={crossingMarks}
             />
