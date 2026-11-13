@@ -767,3 +767,59 @@
   background: transparent;
   margin: 20px 0;
 }
+/* Orders stay one compact table row at every width. The disclosure keeps
+   all raw fields available; narrow screens can scroll the table. */
+.order-history-scroll {
+  overflow-x: auto;
+}
+.order-history-table {
+  display: table;
+  width: 100%;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.order-history-table thead {
+  position: static;
+  display: table-header-group;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+}
+.order-history-table tbody {
+  white-space: nowrap;
+  display: table-row-group;
+}
+.order-history-table tbody tr {
+  display: table-row;
+}
+.order-history-table td {
+  display: table-cell;
+  padding: 8px;
+  vertical-align: top;
+  overflow-wrap: normal;
+}
+.order-history-table td::before {
+  content: none;
+}
+.order-history-table td p {
+  display: inline;
+  margin: 0;
+}
+.order-history-table td p + p::before {
+  content: " ／ ";
+}
+.order-history-table details {
+  display: inline-block;
+  margin-left: 8px;
+  vertical-align: top;
+}
+.order-history-table pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: min(70vw, 600px);
+}
+
+.order-history-table summary {
+  white-space: nowrap;
+}

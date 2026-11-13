@@ -131,7 +131,7 @@ export function buildSnapshot(
       acquisitionFees:
         trades.find((t) => t.side === "BUY")?.acquisition ?? null,
       trades: options.light ? [] : trades.slice(0, 200),
-      orders: options.light ? [] : src.db.history("paper_orders"),
+      orders: options.light ? [] : src.db.orderHistory(),
       riskEvents: options.light ? [] : src.db.history("risk_events"),
       candles: options.light ? [] : src.db.candles(),
       candlesByTimeframe: {
