@@ -19,8 +19,9 @@ compose は変更せず、既存の `env_file: /opt/suiba/shared/runtime.env` �
    helper は2キー以外・重複・不正値を拒否し、既存の他の行を保持して原子的に更新する。
    root:root / 0600 を検証し保持する。symlink・hardlink・書込可能な親ディレクトリを拒否する。
    broker と共通のロックを非待機で取得するため、稼働中・配置中なら失敗する。
-   出力は固定の成功／拒否のみ。sudoers はこの操作の入出力記録を明示的に禁止し、
-   runner は remote の stdout/stderr を破棄する。
+   出力は固定の成功／拒否のみ。runner は remote の stdout/stderr を破棄する。
+   キーは SSH stdin で渡し、コマンド引数には含めない。sudo-rs 互換性のため
+   sudoers に NOLOG_INPUT / NOLOG_OUTPUT タグは指定しない。
 5. 有効化は別ステップ。停止中のホストへ明示的にキーと `true` を渡した後、
    STOP → DEPLOY-PAPER → START-PROD の各承認フローでリリースする。
    env の更新だけでは既存コンテナの環境は変わらないため、START だけでなく DEPLOY が必要。
