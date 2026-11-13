@@ -15,6 +15,7 @@
  * Run after `pnpm build`:  node scripts/render-smoke.mjs
  * (CI installs the browser first: playwright install --with-deps chromium)
  */
+import { execFileSync } from "node:child_process";
 import { chromium } from "playwright";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -48,7 +49,13 @@ const server = createServer(async (req, res) => {
   res.writeHead(200, { "content-type": type });
   res.end(body);
 });
-await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+await new Promise((resolve) =>
+  server.listen(
+    Number(process.env.RENDER_SMOKE_PORT ?? 0),
+    "127.0.0.1",
+    resolve,
+  ),
+);
 const port = server.address().port;
 
 const failures = [];
@@ -98,10 +105,99 @@ try {
     failures.push(
       `extras.css not applied (.version-footer color = ${probe.footerColor})`,
     );
-  await page
-    .screenshot({ path: "render-smoke.png" })
-    .catch(() => undefined);
+  await page.screenshot({ path: "render-smoke.png" }).catch(() => undefined);
   console.log("render smoke probe:", JSON.stringify(probe));
+  // Offline authenticated shell: exercise the five-tab navigation and relocated
+  // evidence without contacting any worker or writing a production database.
+  const fixture = JSON.parse(
+    execFileSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "-e",
+        'import { dashboardPreviewFixture } from "./scripts/dashboard-preview-fixture.ts"; process.stdout.write(JSON.stringify(dashboardPreviewFixture()));',
+      ],
+      { encoding: "utf8" },
+    ),
+  );
+  const commands = [];
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/auth/session")
+      return route.fulfill({ json: { authenticated: true } });
+    if (path === "/api/state") return route.fulfill({ json: fixture.state });
+    if (path === "/api/operations")
+      return route.fulfill({ json: fixture.operations });
+    if (path === "/api/control") {
+      const { command } = route.request().postDataJSON();
+      commands.push(command);
+      fixture.state.runtime.running = command === "start";
+      return route.fulfill({ json: fixture.state.runtime });
+    }
+    return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
+  });
+  await page.reload();
+  await page.locator(".boot-screen").waitFor({ state: "hidden" });
+  for (const width of [320, 375, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    const buttons = page.locator("nav button[aria-label]");
+    if ((await buttons.count()) !== 5)
+      failures.push(`${width}px: expected five tabs`);
+    for (const name of [
+      "実況",
+      "ダッシュボード",
+      "戦略",
+      "取引履歴",
+      "バックテスト比較",
+    ]) {
+      await page.getByRole("button", { name, exact: true }).click();
+      await page
+        .getByRole("button", { name, exact: true })
+        .and(page.locator(".active"))
+        .waitFor();
+    }
+    await page
+      .getByRole("button", { name: "ダッシュボード", exact: true })
+      .click();
+    await page.getByRole("region", { name: "Workerの状態" }).waitFor();
+    if (
+      !(
+        await page.getByRole("region", { name: "Workerの状態" }).textContent()
+      ).includes("最終分析成功")
+    )
+      failures.push("analysis evidence missing");
+    await page.screenshot({ path: `render-smoke-overview-${width}.png` });
+    await page.getByRole("button", { name: "取引履歴", exact: true }).click();
+    await page.getByRole("region", { name: "過去の停止理由" }).waitFor();
+    await page.screenshot({ path: `render-smoke-history-${width}.png` });
+    /* eslint-disable no-undef -- runs inside Chromium */
+    if (
+      !(await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ))
+    )
+      failures.push(`${width}px: horizontal overflow`);
+    /* eslint-enable no-undef */
+  }
+  await page
+    .getByRole("button", { name: "PAPER運用開始", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "PAPER運用停止", exact: true })
+    .waitFor();
+  await page
+    .getByRole("button", { name: "PAPER運用停止", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "PAPER運用開始", exact: true })
+    .waitFor();
+  if (commands.join(",") !== "start,stop")
+    failures.push("header control commands changed");
+  console.log(
+    `five-tab render: 320/375/1280px, header start/stop passed on loopback port ${port}`,
+  );
 } catch (e) {
   failures.push(`smoke crashed: ${e instanceof Error ? e.message : e}`);
 } finally {

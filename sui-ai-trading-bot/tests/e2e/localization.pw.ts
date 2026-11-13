@@ -85,10 +85,18 @@ test("Japanese screens preserve actions, ratios and epochs across all viewports"
     },
   );
   const posts: Record<string, number>[] = [];
+  let authenticated = false;
   await page.route("**/api/**", async (route) => {
     if (new URL(route.request().url()).pathname === "/api/dashboard/summary")
       return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
     const path = new URL(route.request().url()).pathname;
+    if (path === "/api/auth/session") {
+      if (route.request().method() === "POST") authenticated = true;
+      return route.fulfill({
+        status: authenticated ? 200 : 401,
+        json: { authenticated },
+      });
+    }
     if (path === "/api/state") return route.fulfill({ json: state });
     if (path === "/api/operations") return route.fulfill({ json: operations });
     if (path === "/api/backtest") {
@@ -132,7 +140,7 @@ test("Japanese screens preserve actions, ratios and epochs across all viewports"
   for (const [tab, content] of [
     [
       "ダッシュボード",
-      page.getByRole("region", { name: "通信とPAPER注文の状態", exact: true }),
+      page.getByRole("region", { name: "Workerの状態", exact: true }),
     ],
     [
       "戦略",
@@ -142,7 +150,6 @@ test("Japanese screens preserve actions, ratios and epochs across all viewports"
       "取引履歴",
       page.getByRole("heading", { name: "仮想約定履歴", exact: true }),
     ],
-    ["運用検証", page.getByRole("region", { name: "運用状態", exact: true })],
     [
       "バックテスト比較",
       page.getByRole("heading", {

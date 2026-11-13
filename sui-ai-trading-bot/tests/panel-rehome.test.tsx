@@ -1,7 +1,5 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { expect, it } from "vitest";
 import { readAppShell } from "./helpers/source";
 import { OperationMonitor } from "../apps/worker/src/operations.ts";
@@ -150,7 +148,7 @@ it("summarizes recovery without repeating its technical requirements", () => {
   db.close();
 });
 
-it("keeps diagnostics on the operations tab without a duplicate overview status card", () => {
+it("keeps the shared header while retiring the operations page", () => {
   const shell = readAppShell();
   // The fixed header already provides the overview's current status.
   expect(shell).toContain('activeTab === "Overview"');
@@ -160,15 +158,4 @@ it("keeps diagnostics on the operations tab without a duplicate overview status 
   expect(shell).not.toContain("<ConnectivityPanel");
   // The tab-independent emergency notice stays visible on every tab.
   expect(shell).not.toContain("<RecoveryGuidance");
-  const operations = readFileSync(
-    resolve("apps/dashboard/src/OperationsPanel.tsx"),
-    "utf8",
-  );
-  // Exactly one market panel on the operations tab, inside the
-  // diagnostics details (layering details are covered by
-  // operations-layers.test.tsx).
-  expect(operations.match(/<MarketDataPanel/g)).toHaveLength(1);
-  expect(operations.indexOf("<MarketDataPanel")).toBeGreaterThan(
-    operations.indexOf('id="operation-diagnostics"'),
-  );
 });

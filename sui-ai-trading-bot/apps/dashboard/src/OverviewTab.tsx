@@ -1,3 +1,5 @@
+import { WorkerFreshness } from "./WorkerFreshness.tsx";
+import type { OperationsSnapshot } from "./operationsTypes.ts";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { number, percent, label } from "./presentation.ts";
 import { PortfolioMix } from "./PortfolioMix.tsx";
@@ -24,6 +26,8 @@ const money = (v: number | null | undefined) => number(v, 4);
  */
 export function OverviewTab({
   data,
+  operations,
+  operationsStale = false,
   timeframe,
   setTimeframe,
   api,
@@ -35,6 +39,8 @@ export function OverviewTab({
   sellLines,
 }: {
   data: State;
+  operations?: OperationsSnapshot | null;
+  operationsStale?: boolean;
   timeframe: 300 | 900 | 3600;
   setTimeframe: (tf: 300 | 900 | 3600) => void;
   api: SettingsApi;
@@ -47,6 +53,7 @@ export function OverviewTab({
 }) {
   return (
                   <div className="overview-tab">
+                    <WorkerFreshness data={operations ?? null} stale={operationsStale} />
                     <div className="cards">
                       {[
                         ["仮想総資産", data.equity, "USDC"],

@@ -323,3 +323,21 @@
 .validation-control dialog::backdrop {
   background: rgb(0 0 0 / 75%);
 }
+.worker-freshness dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 16px;
+}
+.worker-freshness dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 375px) {
+  .worker-freshness dl {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .worker-freshness dd {
+    margin-bottom: 8px;
+  }
+}
