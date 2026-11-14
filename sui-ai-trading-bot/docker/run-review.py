@@ -467,6 +467,23 @@ def render_learning(learning):
             else:
                 value, pos = f"{stat['mean']:+.2f}%（n={stat['n']}）", f"{stat['pos']:.1f}%"
             lines.append(f"| {labels[met]} | {regime_labels[regime]} | {value} | {pos} |")
+    detail_has_data = any(
+        (stat := learning["forward"][met][regime][24])
+        and stat["n"] >= LEARNING_MIN_SAMPLES
+        for met in (3, 2)
+        for regime in ("up", "down", "range")
+    ) or any(
+        learning["baseline"][met][key]["n"] >= LEARNING_MIN_SAMPLES
+        for met in (3, 2)
+        for key in ("all", "withoutDown")
+    ) or any(
+        learning["baseline"][met]["byRegime"][regime]["n"] >= LEARNING_MIN_SAMPLES
+        for met in (3, 2)
+        for regime in ("up", "down", "range")
+    )
+    if not detail_has_data:
+        return lines
+
     lines += ["", "<details><summary>+24h と基準出口の逐次模擬</summary>", ""]
     for met in (3, 2):
         lines.append(f"### {labels[met]}")

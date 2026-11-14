@@ -140,6 +140,7 @@ class ExitGridTests(unittest.TestCase):
         self.assertIn("フル充足: データ不足", section)
         self.assertNotIn("全20セル", section)
         self.assertIn("| フル充足 | 横ばい | データ不足 |", section)
+        self.assertNotIn("<details>", section)
 
 
 class VariantTests(unittest.TestCase):
@@ -612,7 +613,7 @@ class ShadowReviewTests(unittest.TestCase):
             self.assertEqual(result,empty_result)
             self.assertEqual(empty_text.split("\n## AI 影運用",1)[0],legacy)
             # Main report contract, including the observational learning block.
-            self.assertEqual(hashlib.sha256(legacy.encode()).hexdigest(), "faff8b582b5537b8751c2e209a7182a6d72158e2e46aaff848216bb1a2a03b50")
+            self.assertEqual(hashlib.sha256(legacy.encode()).hexdigest(), "a52e30f6b594c9f1f8e178e981ab6ee0b03aad3c300a39315b6b743dfc8d0cc9")
 
     def test_real_s1_sanitize_and_indexer_path_feed_shadow_without_changing_existing_fetch(self):
         from unittest.mock import patch
