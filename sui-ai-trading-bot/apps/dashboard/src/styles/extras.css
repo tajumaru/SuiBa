@@ -386,6 +386,38 @@
   color: #e8f5ef;
   font-weight: 600;
 }
+.chain-credit {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  opacity: 0.72;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.chain-credit:hover,
+.chain-credit:focus-visible {
+  color: var(--text);
+  opacity: 1;
+}
+.chain-credit:focus-visible {
+  outline: 1px solid var(--mint);
+  outline-offset: 3px;
+}
+.chain-credit img {
+  width: 8px;
+  height: 10px;
+}
+@media (max-width: 640px) {
+  .chain-credit {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+}
 
 /* Highlights: bookmarked moments + the replay sheet. */
 .highlight-bar {
