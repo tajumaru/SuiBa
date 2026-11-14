@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -31,6 +32,7 @@ e = load('snapshot_export', HERE/'export_snapshot.py')
 c = load('controller', HERE/'controller.py')
 client = load('public_package', HERE.parents[1]/'docker/public-snapshot-package.py')
 SECRET = 'SECRET_FIXTURE_TOKEN_DO_NOT_EXPORT'
+NOW_MS = int(time.time() * 1000)
 
 
 class ExportTests(unittest.TestCase):
@@ -99,7 +101,7 @@ class ExportTests(unittest.TestCase):
         for table, value in records.items():
             db.execute(f'CREATE TABLE {table}(id TEXT PRIMARY KEY,timestamp INTEGER,json TEXT)')
             row_id = {'shadow_decisions': 'cycle', 'strategy_decisions': 'cycle', 'technical_indicators': 'cycle', 'operation_candidates': 'candidate', 'paper_orders': 'order-'+SECRET, 'paper_trades': 'order-'+SECRET}.get(table, table)
-            db.execute(f'INSERT INTO {table} VALUES(?,?,?)', (row_id, 600000, json.dumps(value)))
+            db.execute(f'INSERT INTO {table} VALUES(?,?,?)', (row_id, NOW_MS, json.dumps(value)))
         db.commit()
         if not wal: db.close()
         stream = io.BytesIO()
@@ -111,7 +113,7 @@ class ExportTests(unittest.TestCase):
             archive.addfile(member, io.BytesIO(raw))
         if wal: db.close()
         raw = stream.getvalue()
-        record = {'id': 'a'*32, 'status': 'completed', 'started': 700000, 'duration': '6h', 'sha': 'b'*40,
+        record = {'id': 'a'*32, 'status': 'completed', 'started': NOW_MS, 'duration': '6h', 'sha': 'b'*40,
                   'backup': {'file': 'paper-check-'+'c'*32+'.tar', 'sha256': hashlib.sha256(raw).hexdigest()}, 'secret': SECRET}
         return raw, record
 
@@ -147,6 +149,59 @@ class ExportTests(unittest.TestCase):
             manifest = json.loads((output/'manifest.json').read_text())
             self.assertEqual(manifest['scope'], 'PRE_RUN_BACKUP_PUBLIC_EXTRACT')
             self.assertEqual(manifest['sourceArchiveSha256'], record['backup']['sha256'])
+            self.assertEqual(manifest['version'], 2)
+            self.assertEqual(manifest['window']['to'] - manifest['window']['from'], e.WINDOW_MS)
+            self.assertLessEqual(manifest['window']['from'], NOW_MS)
+            self.assertGreaterEqual(manifest['window']['to'], NOW_MS)
+
+    def test_export_keeps_window_rows_and_excludes_older_history_under_row_limit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root/'bot.sqlite'
+            db = sqlite3.connect(path)
+            db.execute('CREATE TABLE shadow_decisions(id TEXT PRIMARY KEY,timestamp INTEGER,json TEXT)')
+            db.execute('CREATE INDEX shadow_decisions_timestamp ON shadow_decisions(timestamp)')
+            old_at = NOW_MS - e.WINDOW_MS - 1
+            raw = json.dumps({'status': 'OK', 'action': 'WAIT'})
+            # The former unbounded loop trips ROW_LIMIT on this history before
+            # reaching the current row. The indexed window query reads one row.
+            db.executemany('INSERT INTO shadow_decisions VALUES(?,?,?)',
+                           ((f'old-{index}', old_at, raw) for index in range(e.ROW_LIMIT + 1)))
+            db.execute('INSERT INTO shadow_decisions VALUES(?,?,?)', ('current', NOW_MS, raw))
+            db.commit(); db.close()
+            legacy = sqlite3.connect(path)
+            try:
+                with self.assertRaises(e.ExportError) as error:
+                    total_rows = 0
+                    for _ in legacy.execute('SELECT id,timestamp,json FROM shadow_decisions ORDER BY timestamp,id'):
+                        total_rows += 1
+                        e.check(total_rows <= e.ROW_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
+                self.assertEqual(error.exception.code, 'EXPORT_LIMIT_EXCEEDED')
+                self.assertEqual(total_rows, e.ROW_LIMIT + 1)
+            finally:
+                legacy.close()
+            stream = io.BytesIO()
+            with tarfile.open(fileobj=stream, mode='w') as archive:
+                archive.add(path, arcname='./bot.sqlite')
+            archive_raw = stream.getvalue()
+            record = {'id': 'a'*32, 'status': 'completed', 'started': NOW_MS, 'duration': '24h',
+                      'backup': {'sha256': hashlib.sha256(archive_raw).hexdigest()}}
+            with patch.object(e.time, 'time', return_value=NOW_MS / 1000):
+                package = e.build_export(io.BytesIO(archive_raw), record)
+            with zipfile.ZipFile(io.BytesIO(package)) as archive:
+                manifest = json.loads(archive.read('manifest.json'))
+                exported_path = root/'exported.sqlite'
+                exported_path.write_bytes(archive.read('SUI_USDC.sqlite'))
+            exported = sqlite3.connect(exported_path)
+            try:
+                rows = exported.execute('SELECT id,timestamp FROM shadow_decisions').fetchall()
+            finally:
+                exported.close()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0], (e.identifier('current'), NOW_MS))
+            self.assertEqual(manifest['files']['SUI_USDC.sqlite']['rows']['shadow_decisions'], 1)
+            self.assertEqual(manifest['window'], {'from': NOW_MS - e.WINDOW_MS, 'to': NOW_MS})
+            self.assertLess(len(package), e.EXPORT_LIMIT)
 
     def test_episode_summary_survives_sanitization(self):
         event = {'kind': 'STOP', 'code': 'PAPER_RECOVERY_EXHAUSTED', 'fatal': False,
@@ -186,17 +241,17 @@ class ExportTests(unittest.TestCase):
             path = root/'bot.sqlite'
             db = sqlite3.connect(path)
             db.execute('CREATE TABLE operation_events(id TEXT PRIMARY KEY,timestamp INTEGER,json TEXT)')
-            event = {'timestamp': 183000, 'kind': 'STOP', 'code': 'PAPER_RECOVERY_EXHAUSTED',
+            event = {'timestamp': NOW_MS, 'kind': 'STOP', 'code': 'PAPER_RECOVERY_EXHAUSTED',
                      'episode': {'startedAt': 1000, 'endedAt': 183000, 'durationMs': 182000,
                                  'failures': 1, 'lastFailureAt': 3000, 'outcome': 'EXHAUSTED',
                                  'tally': {'MarketData/SPREAD_TOO_WIDE': 1}}}
-            db.execute('INSERT INTO operation_events VALUES(?,?,?)', ('event-1', 183000, json.dumps(event)))
+            db.execute('INSERT INTO operation_events VALUES(?,?,?)', ('event-1', NOW_MS, json.dumps(event)))
             db.commit(); db.close()
             stream = io.BytesIO()
             with tarfile.open(fileobj=stream, mode='w') as archive:
                 archive.add(path, arcname='./bot.sqlite')
             raw = stream.getvalue()
-            record = {'id': 'a'*32, 'status': 'completed', 'started': 700000, 'duration': '24h',
+            record = {'id': 'a'*32, 'status': 'completed', 'started': NOW_MS, 'duration': '24h',
                       'sha': 'b'*40, 'backup': {'file': 'paper-check-'+'c'*32+'.tar',
                       'sha256': hashlib.sha256(raw).hexdigest()}}
             package = e.build_export(io.BytesIO(raw), record)
@@ -321,14 +376,14 @@ class ProdLiveExportTests(unittest.TestCase):
         }
         for table, value in records.items():
             db.execute(f'CREATE TABLE {table}(id TEXT PRIMARY KEY,timestamp INTEGER,json TEXT)')
-            db.execute(f'INSERT INTO {table} VALUES(?,?,?)', ('row-'+table, 600000, json.dumps(value)))
+            db.execute(f'INSERT INTO {table} VALUES(?,?,?)', ('row-'+table, NOW_MS, json.dumps(value)))
         db.commit()
         pair = sqlite3.connect(root/'bot.sqlite.WAL_USDC.sqlite')
         pair.execute('CREATE TABLE paper_trades(id TEXT PRIMARY KEY,timestamp INTEGER,json TEXT)')
         pair.execute('INSERT INTO paper_trades VALUES(?,?,?)',
-                     ('trade-1', 600000, json.dumps({'side': 'SELL', 'fee': 0.01, 'secret': SECRET})))
+                     ('trade-1', NOW_MS, json.dumps({'side': 'SELL', 'fee': 0.01, 'secret': SECRET})))
         pair.commit(); pair.close()
-        record = {'id': 'd'*32, 'status': 'in_progress', 'started': 700000, 'sha': 'b'*40, 'secret': SECRET}
+        record = {'id': 'd'*32, 'status': 'in_progress', 'started': NOW_MS, 'sha': 'b'*40, 'secret': SECRET}
         return db, record
 
     def snapshot_stream(self, root):
@@ -358,7 +413,7 @@ class ProdLiveExportTests(unittest.TestCase):
             manifest = json.loads((output/'manifest.json').read_text())
             self.assertEqual(manifest['scope'], 'PROD_LIVE_PUBLIC_EXTRACT')
             self.assertEqual(manifest['run'], {'id': 'd'*32, 'status': 'in_progress', 'pair': 'SUI_USDC',
-                                               'mode': 'PAPER', 'started': 700000, 'sha': 'b'*40})
+                                               'mode': 'PAPER', 'started': NOW_MS, 'sha': 'b'*40})
             sui = sqlite3.connect(output/'SUI_USDC.sqlite')
             try:
                 decision = json.loads(sui.execute('SELECT json FROM strategy_decisions').fetchone()[0])
