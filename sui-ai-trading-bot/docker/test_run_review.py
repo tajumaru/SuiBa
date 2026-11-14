@@ -8,6 +8,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("run_review", os.path.join(HERE, "run-review.py"))
@@ -94,6 +95,51 @@ class AnalyzeTests(unittest.TestCase):
         candles = candles_with_close_at({BASE + 3600: 1.02})
         result = rr.analyze([decision(missing=None)], candles)
         self.assertAlmostEqual(result["buckets"][3]["h"][1]["mean"], 2.0, places=6)
+
+
+class ExitGridTests(unittest.TestCase):
+    def candles(self, bars):
+        candles = candles_with_close_at({})
+        close, high, low = candles[:3]
+        for offset, hi, lo, final in bars:
+            stamp = BASE + offset
+            high[stamp], low[stamp], close[stamp] = hi, lo, final
+        return candles
+
+    def test_first_touch_tp_and_sl(self):
+        tp = rr.simulate_exits([decision()], self.candles([(300, 1.016, 0.999, 1.01)]), 1.5, 1.0)
+        self.assertEqual(tp[0]["outcome"], "tp_first")
+        self.assertAlmostEqual(tp[0]["net"], 0.9)
+        sl = rr.simulate_exits([decision()], self.candles([(300, 1.001, 0.989, 0.99)]), 1.5, 1.0)
+        self.assertEqual(sl[0]["outcome"], "sl_first")
+        self.assertAlmostEqual(sl[0]["net"], -1.6)
+
+    def test_same_bar_both_is_a_stop_loss(self):
+        trades = rr.simulate_exits(
+            [decision()], self.candles([(300, 1.016, 0.989, 1.00)]), 1.5, 1.0)
+        self.assertEqual(trades[0]["outcome"], "both_same_bar")
+        self.assertAlmostEqual(trades[0]["net"], -1.6)
+
+    def test_open_position_skips_later_entry(self):
+        ds = [decision(cts=BASE), decision(cts=BASE + 300), decision(cts=BASE + 900)]
+        candles = self.candles([(600, 1.016, 0.999, 1.01),
+                                (1200, 1.016, 0.999, 1.01)])
+        trades = rr.simulate_exits(ds, candles, 1.5, 1.0)
+        self.assertEqual([t["entry"]["cts"] for t in trades], [BASE, BASE + 900])
+
+    def test_timeout_uses_close_and_deducts_cost(self):
+        candles = self.candles([(86400, 1.011, 0.999, 1.01)])
+        trades = rr.simulate_exits([decision()], candles, 1.5, 1.0)
+        self.assertEqual(trades[0]["outcome"], "timeout")
+        self.assertAlmostEqual(trades[0]["net"], 0.4)
+
+    def test_thin_sets_and_regimes_render_only_data_insufficient(self):
+        result = rr.analyze([decision()], candles_with_close_at({}))
+        text = rr.render(result, 1, 0, 0, datetime.now(timezone.utc))
+        section = text.split("## 学習: 出口グリッド", 1)[1].split("## 局面別の内訳", 1)[0]
+        self.assertIn("フル充足: データ不足", section)
+        self.assertNotIn("全20セル", section)
+        self.assertIn("| フル充足 | 横ばい | データ不足 |", section)
 
 
 class VariantTests(unittest.TestCase):
@@ -526,8 +572,8 @@ class ShadowReviewTests(unittest.TestCase):
             _,empty_text,empty_result,_=self.review(db,candles_with_close_at({BASE+14400:1.02}))
             self.assertEqual(result,empty_result)
             self.assertEqual(empty_text.split("\n## AI 影運用",1)[0],legacy)
-            # SHA of original main's render/analyze, frozen before S2 changes.
-            self.assertEqual(hashlib.sha256(legacy.encode()).hexdigest(), "5e7f04bed245679f8d025ae5caa2985115458ca08d1eab4300fd00105d14e38e")
+            # Main report contract, including the observational learning block.
+            self.assertEqual(hashlib.sha256(legacy.encode()).hexdigest(), "faff8b582b5537b8751c2e209a7182a6d72158e2e46aaff848216bb1a2a03b50")
 
     def test_real_s1_sanitize_and_indexer_path_feed_shadow_without_changing_existing_fetch(self):
         from unittest.mock import patch

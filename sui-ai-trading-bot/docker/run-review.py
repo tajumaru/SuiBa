@@ -44,6 +44,12 @@ CAUTION_MAX_MEAN_4H = -0.30
 # higher; exports omit the live settings, hence the default is used.
 FEE_RATE_PER_SIDE = 0.003
 ROUND_TRIP_COST_PCT = 2 * FEE_RATE_PER_SIDE * 100  # 0.6%
+TAKE_PROFIT_PCT = 1.5
+STOP_LOSS_PCT = 1.0
+EXIT_TPS = (1.0, 1.5, 2.0, 2.5, 3.0)
+EXIT_SLS = (0.7, 1.0, 1.5, 2.0)
+EXIT_HOURS = 24
+LEARNING_MIN_SAMPLES = 5
 
 
 def compute_limit(decisions):
@@ -302,6 +308,151 @@ def virtual_touch(d, candles, hours=24):
     return "neither"
 
 
+def simulate_exits(decisions, candles, tp_pct, sl_pct, hours=EXIT_HOURS):
+    """Sequential single-position first-touch simulation."""
+    close, high, low, ordered, _, _ = candles
+    candidates = sorted((d for d in decisions if d.get("cts") is not None and d.get("price")),
+                        key=lambda d: d["cts"])
+    trades, busy_until = [], None
+    for d in candidates:
+        if busy_until is not None and d["cts"] < busy_until:
+            continue
+        deadline = d["cts"] + hours * 3600
+        up = d["price"] * (1 + tp_pct / 100)
+        dn = d["price"] * (1 - sl_pct / 100)
+        outcome = None
+        for t in ordered:
+            if t <= d["cts"]:
+                continue
+            if t > deadline:
+                break
+            hit_tp, hit_sl = high[t] >= up, low[t] <= dn
+            if hit_sl:
+                outcome = (t, "both_same_bar" if hit_tp else "sl_first",
+                           -sl_pct - ROUND_TRIP_COST_PCT)
+                break
+            if hit_tp:
+                outcome = (t, "tp_first", tp_pct - ROUND_TRIP_COST_PCT)
+                break
+        if outcome is None and deadline in close:
+            outcome = (deadline, "timeout",
+                       (close[deadline] / d["price"] - 1) * 100 - ROUND_TRIP_COST_PCT)
+        if outcome is None:
+            busy_until = deadline
+            continue
+        exit_cts, kind, net = outcome
+        trades.append({"entry": d, "exitCts": exit_cts, "outcome": kind, "net": net})
+        busy_until = exit_cts
+    return trades
+
+
+def summarize_trades(trades):
+    if not trades:
+        return {"n": 0, "win": 0.0, "mean": 0.0, "total": 0.0, "outcomes": Counter()}
+    nets = [t["net"] for t in trades]
+    return {"n": len(trades), "win": sum(v > 0 for v in nets) / len(nets) * 100,
+            "mean": statistics.mean(nets), "total": sum(nets),
+            "outcomes": Counter(t["outcome"] for t in trades)}
+
+
+def fmt_trade_stat(cell):
+    return (f"n={cell['n']}、勝率 {cell['win']:.1f}%、平均 {cell['mean']:+.2f}%、"
+            f"合計 {cell['total']:+.1f}%")
+
+
+def render_learning(learning):
+    labels = {3: "フル充足", 2: "あと1つ"}
+    regime_labels = {"up": "上昇", "down": "下降", "range": "横ばい", "unknown": "不明"}
+    lines = ["", "## 学習: 出口グリッド（逐次模擬）", "",
+             f"24時間、往復コスト {ROUND_TRIP_COST_PCT:.1f}% 控除後。基準セルは export にライブ設定が"
+             f"含まれないため共有既定値（利確 +{TAKE_PROFIT_PCT:.1f}%／損切り −{STOP_LOSS_PCT:.1f}%）を使用。"
+             "同一5分足で両方に触れた場合は損切り扱い。", ""]
+    for met in (3, 2):
+        cells = learning["grids"][met]
+        baseline = next(c for c in cells if c["tp"] == TAKE_PROFIT_PCT and c["sl"] == STOP_LOSS_PCT)
+        if baseline["n"] < LEARNING_MIN_SAMPLES:
+            lines.append(f"- {labels[met]}: データ不足")
+            continue
+        best, worst = max(cells, key=lambda c: c["mean"]), min(cells, key=lambda c: c["mean"])
+        for name, cell in (("基準", baseline), ("最良", best), ("最悪", worst)):
+            lines.append(f"- {labels[met]} {name}（TP +{cell['tp']:.1f}%／SL −{cell['sl']:.1f}%）: "
+                         f"{fmt_trade_stat(cell)}")
+        lines += ["", f"<details><summary>{labels[met]}の全20セル</summary>", "",
+                  "| TP | SL | n | 勝率 | 平均 | 合計 | TP/SL/同足/時間切れ |",
+                  "|---:|---:|---:|---:|---:|---:|---:|"]
+        for cell in cells:
+            o = cell["outcomes"]
+            lines.append(f"| +{cell['tp']:.1f}% | −{cell['sl']:.1f}% | {cell['n']} | {cell['win']:.1f}% | "
+                         f"{cell['mean']:+.2f}% | {cell['total']:+.1f}% | "
+                         f"{o.get('tp_first', 0)}/{o.get('sl_first', 0)}/{o.get('both_same_bar', 0)}/{o.get('timeout', 0)} |")
+        lines += ["", "</details>", ""]
+
+    lines += ["", "## 学習: 入口×局面", "",
+              "信号単位の前方向リターン（往復コスト控除後。逐次化なし）。", "",
+              "| 集合 | 局面 | +4h 平均 | プラス率 |", "|---|---|---:|---:|"]
+    for met in (3, 2):
+        for regime in ("up", "down", "range"):
+            stat = learning["forward"][met][regime][4]
+            if not stat or stat["n"] < LEARNING_MIN_SAMPLES:
+                value = "データ不足"
+                pos = "—"
+            else:
+                value, pos = f"{stat['mean']:+.2f}%（n={stat['n']}）", f"{stat['pos']:.1f}%"
+            lines.append(f"| {labels[met]} | {regime_labels[regime]} | {value} | {pos} |")
+    lines += ["", "<details><summary>+24h と基準出口の逐次模擬</summary>", ""]
+    for met in (3, 2):
+        lines.append(f"### {labels[met]}")
+        for regime in ("up", "down", "range"):
+            stat = learning["forward"][met][regime][24]
+            fwd = "データ不足" if not stat or stat["n"] < LEARNING_MIN_SAMPLES else \
+                f"平均 {stat['mean']:+.2f}%、プラス率 {stat['pos']:.1f}%（n={stat['n']}）"
+            seq = learning["baseline"][met]["byRegime"][regime]
+            seq_text = "データ不足" if seq["n"] < LEARNING_MIN_SAMPLES else fmt_trade_stat(seq)
+            lines.append(f"- {regime_labels[regime]}: 正味 +24h {fwd}／逐次 {seq_text}")
+        base = learning["baseline"][met]
+        all_text = "データ不足" if base["all"]["n"] < LEARNING_MIN_SAMPLES else fmt_trade_stat(base["all"])
+        no_down = base["withoutDown"]
+        no_down_text = "データ不足" if no_down["n"] < LEARNING_MIN_SAMPLES else fmt_trade_stat(no_down)
+        lines.append(f"- 全入口: {all_text}／下降入口を除外: {no_down_text}")
+    lines += ["", "</details>"]
+    return lines
+
+
+def analyze_learning(decisions, candles):
+    sets = {3: [d for d in decisions if d["met"] == 3],
+            2: [d for d in decisions if d["met"] == 2]}
+    grids = {}
+    for met, group in sets.items():
+        cells = []
+        for tp in EXIT_TPS:
+            for sl in EXIT_SLS:
+                trades = simulate_exits(group, candles, tp, sl)
+                cells.append({"tp": tp, "sl": sl, "trades": trades,
+                              **summarize_trades(trades)})
+        grids[met] = cells
+
+    forward = {}
+    for met, group in sets.items():
+        forward[met] = {}
+        for regime in ("up", "down", "range"):
+            regime_group = [d for d in group if d["regime"] == regime]
+            forward[met][regime] = {
+                h: summarize_net([forward_return(d, h, candles) for d in regime_group])
+                for h in (4, 24)}
+
+    baseline = {}
+    for met, group in sets.items():
+        trades = simulate_exits(group, candles, TAKE_PROFIT_PCT, STOP_LOSS_PCT)
+        by_regime = {regime: summarize_trades(
+            [t for t in trades if t["entry"]["regime"] == regime])
+            for regime in ("up", "down", "range")}
+        without_down = simulate_exits([d for d in group if d["regime"] != "down"], candles,
+                                      TAKE_PROFIT_PCT, STOP_LOSS_PCT)
+        baseline[met] = {"all": summarize_trades(trades), "byRegime": by_regime,
+                         "withoutDown": summarize_trades(without_down)}
+    return {"grids": grids, "forward": forward, "baseline": baseline}
+
+
 def analyze(decisions, candles):
     close, high, low, ordered, ema, gap = candles
     for d in decisions:
@@ -381,9 +532,11 @@ def analyze(decisions, candles):
     if decisions:
         span = (datetime.fromtimestamp(decisions[0]["cts"], timezone.utc),
                 datetime.fromtimestamp(decisions[-1]["cts"], timezone.utc))
+    learning = analyze_learning(decisions, candles)
     return {"buckets": buckets, "marginal": marginal, "touches": touches,
             "flags": flags, "prices": prices, "span": span, "regimes": regimes,
             "variants": variants, "vols": vols,
+            "learning": learning,
             "actions": Counter(d["action"] for d in decisions),
             "rules": Counter(d["rule"] for d in decisions)}
 
@@ -579,6 +732,7 @@ def render(result, decisions_count, orders, trades, generated_at, shadow=None):
             lines.append(f"| 影BUY（{version}） | {v['n']} | {fmt_stat(v['h'][1])} | "
                          f"{fmt_stat(v['net'][4])} | {fmt_stat(v['net'][24])} | "
                          f"{t.get('tp_first', 0)}/{t.get('sl_first', 0)} |")
+    lines += render_learning(result["learning"])
     lines += ["", "## 局面別の内訳（EMA50 の24h傾き：上昇 ≥+0.5%／下降 ≤−0.5%／横ばい）", ""]
     labels = {"up": "上昇", "down": "下降", "range": "横ばい", "unknown": "不明"}
     for name, r in result["regimes"].items():
