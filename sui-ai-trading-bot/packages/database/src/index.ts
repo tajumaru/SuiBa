@@ -491,6 +491,16 @@ export class BotDatabase {
       ).all(from, until) as { json: string }[]
     ).map((row) => JSON.parse(row.json));
   }
+  shadowRuleConditions(
+    from: number,
+    until: number,
+  ): readonly (readonly [string, { evidence?: Record<string, unknown> }])[] {
+    return (
+      this.prepare(
+        "SELECT id,json FROM strategy_decisions WHERE timestamp>=? AND timestamp<=? ORDER BY timestamp,id",
+      ).all(from, until) as { id: string; json: string }[]
+    ).map((row) => [row.id, JSON.parse(row.json)] as const);
+  }
   /** Display input cache only; retain SQL timestamps independently of JSON at. */
   displayValidationRows(from: number, until: number) {
     return this.prepare(

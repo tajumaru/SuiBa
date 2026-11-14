@@ -24,6 +24,7 @@ import {
   type EquityAttribution,
   type ValuationPoint,
 } from "./equity-attribution.ts";
+import { shadowTodaySummary } from "./shadow-summary.ts";
 
 /**
  * Downsample the recorded equity snapshots for the dashboard's
@@ -137,6 +138,10 @@ export function buildSnapshot(
       todayTrades: trades.filter(
         (x) => dayKey(x.timestamp) === dayKey(Date.now()),
       ).length,
+      shadowToday:
+        process.env.SUIBA_SHADOW_ENABLED === "true"
+          ? shadowTodaySummary(src.db)
+          : null,
       metrics: metrics(
         values,
         trades.flatMap((x) => (x.pnl === null ? [] : [x.pnl])),

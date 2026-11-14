@@ -16,6 +16,24 @@ import type { ShareCardInput } from "./shareCard.ts";
 type State = BotSnapshot;
 const money = (v: number | null | undefined) => number(v, 4);
 
+export function ShadowTodayLine({
+  summary,
+}: {
+  summary: State["shadowToday"];
+}) {
+  if (!summary) return null;
+  return (
+    <p className="overview-sub">
+      影 本日 {summary.total}件
+      {summary.total > 0 && (
+        <>
+          （AIのみBUY {summary.aiOnlyBuy}件・エラー {summary.errors}件）
+        </>
+      )}
+    </p>
+  );
+}
+
 /**
  * The overview tab, extracted from App: asset cards, the
  * portfolio mix, the equity curve, the activity grass,
@@ -54,6 +72,7 @@ export function OverviewTab({
   return (
                   <div className="overview-tab">
                     <WorkerFreshness data={operations ?? null} stale={operationsStale} />
+                    <ShadowTodayLine summary={data.shadowToday} />
                     <div className="cards">
                       {[
                         ["仮想総資産", data.equity, "USDC"],
