@@ -28,6 +28,7 @@ STATUS_COMMAND = ('/usr/bin/su', '-s', '/bin/sh', 'suiba-deploy', '-c',
 PROGRESS_MAX_AGE = 90
 STARTUP_GRACE = 180
 NETWORK_PAUSE_MAX_AGE = 60 * 60
+SHADOW_STALL_MAX_AGE = 6 * 60 * 60
 
 
 def require(value):
@@ -201,7 +202,7 @@ def assess(status, evidence, now):
         worker = status.get('worker')
         if worker == {'reachable': False, 'reason': 'WORKER_UNREACHABLE'}:
             reasons.add('WORKER_UNREACHABLE')
-        elif not isinstance(worker, dict) or set(worker) != {'running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper', 'networkPause', 'networkStopReason'} or any(type(worker[k]) is not bool for k in ('running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper')) or not (worker['networkStopReason'] is None or reason_code(worker['networkStopReason'])):
+        elif not isinstance(worker, dict) or set(worker) != {'running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper', 'hasPosition', 'networkPause', 'networkStopReason'} or any(type(worker[k]) is not bool for k in ('running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper', 'hasPosition')) or not (worker['networkStopReason'] is None or reason_code(worker['networkStopReason'])):
             reasons.add('WORKER_STATE_INVALID')
         else:
             pause = network_pause(worker['networkPause'], now)
@@ -215,6 +216,15 @@ def assess(status, evidence, now):
                               ('ledgerOk', 'LEDGER_UNHEALTHY'), ('paper', 'NOT_PAPER')):
                 if not worker[key]: reasons.add(code)
             if worker['maintenance']: reasons.add('MAINTENANCE_ENABLED')
+            current_shadow = shadow(status.get('shadow'), now)
+            if current_shadow is not None:
+                if current_shadow['errors'] >= 3 and current_shadow['errors'] * 2 >= current_shadow['total']:
+                    reasons.add('SHADOW_ERROR_RATE_HIGH')
+                last = current_shadow['lastDecisionAt']
+                silent_since = run['started']/1000 if last is None else last/1000
+                if (not worker['hasPosition'] and pause is None and
+                        now-silent_since >= SHADOW_STALL_MAX_AGE):
+                    reasons.add('SHADOW_DECISION_STALE')
         p = evidence.get('progress', {})
         if not number(p.get('at')) or not 0 <= now-p['at'] <= PROGRESS_MAX_AGE or p.get('status') != 'monitoring' or p.get('pair') != 'SUI_USDC':
             reasons.add('PROGRESS_STALE')

@@ -23,7 +23,7 @@ def healthy():
               'controller_alive': True, 'requires_review': False,
               'shadow': {'total': 4, 'aiOnlyBuy': 1, 'errors': 1, 'lastDecisionAt': 1999000},
               'worker': {'running': True, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True, 'paper': True,
-                         'networkPause': None, 'networkStopReason': None}}
+                         'hasPosition': False, 'networkPause': None, 'networkStopReason': None}}
     evidence = {'service_active': True, 'cutoffs_quiet': True,
                 'container': {'running': True, 'oom': False, 'restarts': 0, 'restart': 'no', 'health': 'healthy', 'exit': 0},
                 'progress': {'at': 1999, 'status': 'monitoring', 'pair': 'SUI_USDC', 'market_last_success': 1999000},
@@ -62,6 +62,36 @@ class WatchdogTests(unittest.TestCase):
         e['container'].update(running=False, health=None)
         e.update(lifecycle='clean', latch=True)
         self.assertEqual(w.assess(s, e, 2000), ('ok', [], 'a'*32))
+
+    def test_shadow_stall_requires_active_flat_enabled_unpaused_worker(self):
+        for change in ('fresh', 'position', 'disabled', 'pause', 'stopped'):
+            with self.subTest(change=change):
+                s, e = healthy(); now = 30000
+                s['shadow']['lastDecisionAt'] = (now-w.SHADOW_STALL_MAX_AGE)*1000
+                e['progress'].update(at=now, market_last_success=now*1000)
+                if change == 'fresh': s['shadow']['lastDecisionAt'] += 1000
+                if change == 'position': s['worker']['hasPosition'] = True
+                if change == 'disabled': s['shadow'] = None
+                if change == 'pause':
+                    s['worker'].update(running=False, networkPause={
+                        'state': 'RECOVERING', 'reasons': {'DeepBook Indexer/UPSTREAM_TIMEOUT': 1},
+                        'startedAt': now*1000-1000, 'durationMs': 1000, 'autoRecoveryCount': 0})
+                if change == 'stopped':
+                    s['run'].update(status='completed', stage='stopped'); s.update(controller_alive=False, worker=None)
+                    e['container'].update(running=False, health=None); e.update(lifecycle='clean', latch=True)
+                self.assertNotIn('SHADOW_DECISION_STALE', w.assess(s, e, now)[1])
+        s, e = healthy(); now = 30000
+        s['shadow']['lastDecisionAt'] = (now-w.SHADOW_STALL_MAX_AGE)*1000
+        e['progress'].update(at=now, market_last_success=now*1000)
+        self.assertIn('SHADOW_DECISION_STALE', w.assess(s, e, now)[1])
+        s['shadow']['lastDecisionAt'] = None; s['run']['started'] = (now-w.SHADOW_STALL_MAX_AGE)*1000
+        self.assertIn('SHADOW_DECISION_STALE', w.assess(s, e, now)[1])
+
+    def test_shadow_error_rate_requires_three_errors_and_at_least_half(self):
+        for total, errors, expected in ((6, 3, True), (5, 3, True), (7, 3, False), (4, 2, False)):
+            with self.subTest(total=total, errors=errors):
+                s, e = healthy(); s['shadow'].update(total=total, errors=errors, aiOnlyBuy=0)
+                self.assertEqual('SHADOW_ERROR_RATE_HIGH' in w.assess(s, e, 2000)[1], expected)
 
     def test_optional_previous_verdict_never_affects_current_checker_decision(self):
         status, evidence = healthy()
