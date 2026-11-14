@@ -27,6 +27,7 @@ STATUS_COMMAND = ('/usr/bin/su', '-s', '/bin/sh', 'suiba-deploy', '-c',
                   '/usr/bin/sudo -n -- /usr/local/sbin/suiba-paper-check')
 PROGRESS_MAX_AGE = 90
 STARTUP_GRACE = 180
+NETWORK_PAUSE_MAX_AGE = 60 * 60
 
 
 def require(value):
@@ -38,6 +39,13 @@ def number(value):
     return type(value) in (int, float) and math.isfinite(value)
 
 
+def reason_code(value):
+    return (isinstance(value, str) and 1 <= len(value) <= 101 and
+            'A' <= value[0] <= 'Z' and
+            all(character == '_' or 'A' <= character <= 'Z' or '0' <= character <= '9'
+                for character in value))
+
+
 def shadow(value, now):
     require(value is None or isinstance(value, dict) and
             set(value) == {'total', 'aiOnlyBuy', 'errors', 'lastDecisionAt'} and
@@ -45,6 +53,23 @@ def shadow(value, now):
             value['aiOnlyBuy'] <= value['total'] and value['errors'] <= value['total'] and
             (value['lastDecisionAt'] is None or type(value['lastDecisionAt']) is int and
              0 <= value['lastDecisionAt'] <= int((now+60)*1000)))
+    return value
+
+
+def network_pause(value, now):
+    if value is None:
+        return None
+    require(isinstance(value, dict) and set(value) ==
+            {'state', 'reasons', 'startedAt', 'durationMs', 'autoRecoveryCount'})
+    require(value['state'] in ('DEGRADED', 'RECOVERING') and
+            number(value['startedAt']) and 0 <= value['startedAt'] <= now*1000 and
+            number(value['durationMs']) and value['durationMs'] >= 0 and
+            abs(value['durationMs'] - (now*1000-value['startedAt'])) <= 60000 and
+            type(value['autoRecoveryCount']) is int and value['autoRecoveryCount'] >= 0 and
+            isinstance(value['reasons'], dict) and 0 < len(value['reasons']) <= 8)
+    for key, count in value['reasons'].items():
+        require(isinstance(key, str) and re.fullmatch(r'[A-Za-z][A-Za-z0-9 ]{0,31}/[A-Z][A-Z0-9_]{0,63}', key) and
+                type(count) is int and 1 <= count <= 100000)
     return value
 
 
@@ -164,6 +189,7 @@ def assess(status, evidence, now):
             number(run.get('started')) and 0 <= run['started']/1000 <= now and
             type(status.get('controller_alive')) is bool)
     active = run['status'] == 'in_progress'
+    pause = None
     starting = active and run.get('stage') != 'monitoring' and now-run['started']/1000 <= STARTUP_GRACE
     if run['status'] == 'failed_requires_review': reasons.add('RUN_FAILED')
     if active and not status['controller_alive']: reasons.add('CONTROLLER_NOT_RUNNING')
@@ -175,17 +201,25 @@ def assess(status, evidence, now):
         worker = status.get('worker')
         if worker == {'reachable': False, 'reason': 'WORKER_UNREACHABLE'}:
             reasons.add('WORKER_UNREACHABLE')
-        elif not isinstance(worker, dict) or set(worker) != {'running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper'} or any(type(v) is not bool for v in worker.values()):
+        elif not isinstance(worker, dict) or set(worker) != {'running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper', 'networkPause', 'networkStopReason'} or any(type(worker[k]) is not bool for k in ('running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper')) or not (worker['networkStopReason'] is None or reason_code(worker['networkStopReason'])):
             reasons.add('WORKER_STATE_INVALID')
         else:
-            for key, code in (('running', 'TRADING_STOPPED'), ('databaseHealthy', 'DATABASE_UNHEALTHY'),
+            pause = network_pause(worker['networkPause'], now)
+            if not worker['running'] and pause is None: reasons.add('TRADING_STOPPED')
+            if worker['running'] and pause is not None: reasons.add('WORKER_STATE_INVALID')
+            if pause is not None and now-pause['startedAt']/1000 >= NETWORK_PAUSE_MAX_AGE:
+                reasons.add('NETWORK_PAUSE_OVER_ONE_HOUR')
+            if worker['networkStopReason'] == 'PAPER_RECOVERY_FLAPPING':
+                reasons.add('NETWORK_RECOVERY_FLAPPING')
+            for key, code in (('databaseHealthy', 'DATABASE_UNHEALTHY'),
                               ('ledgerOk', 'LEDGER_UNHEALTHY'), ('paper', 'NOT_PAPER')):
                 if not worker[key]: reasons.add(code)
             if worker['maintenance']: reasons.add('MAINTENANCE_ENABLED')
         p = evidence.get('progress', {})
         if not number(p.get('at')) or not 0 <= now-p['at'] <= PROGRESS_MAX_AGE or p.get('status') != 'monitoring' or p.get('pair') != 'SUI_USDC':
             reasons.add('PROGRESS_STALE')
-        if not number(p.get('market_last_success')) or not 0 <= now*1000-p['market_last_success'] <= 90000:
+        if (pause is None and
+            (not number(p.get('market_last_success')) or not 0 <= now*1000-p['market_last_success'] <= 90000)):
             reasons.add('MARKET_STALE')
     container = evidence.get('container')
     if not isinstance(container, dict) or type(container.get('running')) is not bool or type(container.get('oom')) is not bool or type(container.get('restarts')) is not int or type(container.get('exit')) is not int:

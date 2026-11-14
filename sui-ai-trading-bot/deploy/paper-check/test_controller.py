@@ -1689,7 +1689,8 @@ class ProductionTests(unittest.TestCase):
             self.assertEqual(ctl.prod_status(), {
                 'run': {key: record.get(key) for key in ('id', 'status', 'started', 'stopped', 'sha', 'stage', 'admitted')},
                 'controller_alive': True,
-                'worker': {'running': False, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True, 'paper': True},
+                'worker': {'running': False, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True, 'paper': True,
+                           'networkPause': None, 'networkStopReason': None},
                 'shadow': None,
                 'requires_review': False,
                 'watchdog': {'record': None, 'code': 'WATCHDOG_RECORD_MISSING'},

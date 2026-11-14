@@ -72,8 +72,13 @@ def production(value, now):
     if worker is not None:
         require(type(worker) is dict)
         require(unreachable(worker) or
-                set(worker) == {'running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper'} and
-                all(type(v) is bool for v in worker.values()))
+                set(worker) == {'running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper',
+                                'networkPause', 'networkStopReason'} and
+                all(type(worker[key]) is bool for key in
+                    ('running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper')) and
+                (worker['networkPause'] is None or type(worker['networkPause']) is dict) and
+                (worker['networkStopReason'] is None or type(worker['networkStopReason']) is str and
+                 re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,100}', worker['networkStopReason'])))
     require(run['status'] == 'in_progress' or worker is None)
     return value
 

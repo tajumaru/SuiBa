@@ -22,7 +22,8 @@ def healthy():
                      'sha': 'e'*40, 'stage': 'monitoring', 'admitted': True},
               'controller_alive': True, 'requires_review': False,
               'shadow': {'total': 4, 'aiOnlyBuy': 1, 'errors': 1, 'lastDecisionAt': 1999000},
-              'worker': {'running': True, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True, 'paper': True}}
+              'worker': {'running': True, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True, 'paper': True,
+                         'networkPause': None, 'networkStopReason': None}}
     evidence = {'service_active': True, 'cutoffs_quiet': True,
                 'container': {'running': True, 'oom': False, 'restarts': 0, 'restart': 'no', 'health': 'healthy', 'exit': 0},
                 'progress': {'at': 1999, 'status': 'monitoring', 'pair': 'SUI_USDC', 'market_last_success': 1999000},
@@ -35,6 +36,27 @@ class WatchdogTests(unittest.TestCase):
     def test_healthy_and_intentionally_stopped_are_normal(self):
         s, e = healthy()
         self.assertEqual(w.assess(s, e, 2000), ('ok', [], 'a'*32))
+
+    def test_network_pause_is_visible_and_turns_attention_at_one_hour(self):
+        s, e = healthy()
+        now = 10000
+        s['worker'].update(running=False, networkPause={
+            'state': 'RECOVERING', 'reasons': {'DeepBook Indexer/UPSTREAM_TIMEOUT': 1},
+            'startedAt': now*1000-3599000, 'durationMs': 3599000, 'autoRecoveryCount': 2})
+        e['progress']['market_last_success'] = 1
+        e['progress']['at'] = now
+        self.assertEqual(w.assess(s, e, now), ('ok', [], 'a'*32))
+        s['worker']['networkPause'].update(startedAt=now*1000-3600000, durationMs=3600000)
+        verdict, reasons, _ = w.assess(s, e, now)
+        self.assertEqual(verdict, 'attention')
+        self.assertIn('NETWORK_PAUSE_OVER_ONE_HOUR', reasons)
+
+    def test_flapping_hard_stop_is_named(self):
+        s, e = healthy()
+        s['worker'].update(running=False, networkStopReason='PAPER_RECOVERY_FLAPPING')
+        reasons = w.assess(s, e, 2000)[1]
+        self.assertIn('NETWORK_RECOVERY_FLAPPING', reasons)
+        self.assertIn('TRADING_STOPPED', reasons)
         s['run'].update(status='completed', stage='stopped')
         s.update(controller_alive=False, worker=None)
         e['container'].update(running=False, health=None)

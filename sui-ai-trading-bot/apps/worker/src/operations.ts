@@ -313,6 +313,16 @@ export class OperationMonitor {
       !this.db.runtime().error &&
       !r.emergency &&
       this.mode === "PAPER";
+    const recentAutoRecoveries = s.recentAutoRecoveries.filter(
+      (at) => now - at < paperRecoveryLimits.flapWindowMs,
+    );
+    if (
+      resume &&
+      recentAutoRecoveries.length >= paperRecoveryLimits.maxRecoveriesPerWindow
+    ) {
+      this.stop("PAPER_RECOVERY_FLAPPING", now);
+      return false;
+    }
     const episode = episodeSummaryOf(s, now, "RECOVERED") ?? undefined;
     this.saveSafety({
       connectivity: "HEALTHY",
@@ -324,6 +334,10 @@ export class OperationMonitor {
       episodeTally: {},
       resumePending: false,
       recoveredAt: resume ? now : null,
+      autoRecoveryCount: s.autoRecoveryCount + (resume ? 1 : 0),
+      recentAutoRecoveries: resume
+        ? [...recentAutoRecoveries, now]
+        : recentAutoRecoveries,
     });
     if (resume) {
       this.db.set("runtime", { ...this.db.runtime(), running: true });
@@ -557,6 +571,7 @@ export class OperationMonitor {
   }
   boot(now = Date.now()) {
     const s = this.state();
+    const priorSafety = this.safety();
     // After an unclean exit only confirmed heartbeats count; offline time is not PAPER uptime.
     this.update({
       runningMs:
@@ -575,7 +590,11 @@ export class OperationMonitor {
       episodeSummaryOf(this.safety(), now, "INTERRUPTED") ?? undefined;
     this.saveSafety({
       ...initialPaperSafety(),
-      generation: this.safety().generation + 1,
+      generation: priorSafety.generation + 1,
+      autoRecoveryCount: priorSafety.autoRecoveryCount,
+      recentAutoRecoveries: priorSafety.recentAutoRecoveries.filter(
+        (at) => now - at < paperRecoveryLimits.flapWindowMs,
+      ),
       // A previous process's stop reason remains in operation_events only.
     });
     this.db.set("runtime", { ...this.db.runtime(), running: false });
@@ -1028,14 +1047,25 @@ export class OperationMonitor {
     return computeReport(this.db, this.state(), hours, now);
   }
   safetySnapshot(now = Date.now()) {
-    const r = this.db.runtime();
+    const r = this.db.runtime(),
+      persisted = this.safety();
     return {
-      ...this.safety(),
+      ...persisted,
+      pause:
+        persisted.episodeAt == null
+          ? null
+          : {
+              state: persisted.connectivity,
+              reasons: { ...persisted.episodeTally },
+              startedAt: persisted.episodeAt,
+              durationMs: Math.max(0, now - persisted.episodeAt),
+              autoRecoveryCount: persisted.autoRecoveryCount,
+            },
       // Display evidence only; ordersAllowed retains the acquisition gate.
       marketUpdating: this.fetchMono !== null,
       controlState: botControlState({
         ...r,
-        ...this.safety(),
+        ...persisted,
         databaseHealthy: this.db.health().healthy,
         ordersAllowed: this.ordersAllowed(undefined, now),
       }),
@@ -1043,9 +1073,9 @@ export class OperationMonitor {
         ? "EMERGENCY_STOP"
         : r.error
           ? "ABNORMAL_STOP"
-          : !r.running && !this.safety().resumePending
+          : !r.running && !persisted.resumePending
             ? "MANUAL_STOP"
-            : this.safety().connectivity,
+            : persisted.connectivity,
       lastMarketSuccessAt: this.state().lastFetchSuccessAt,
       latestApiError:
         apiAccess
@@ -1053,7 +1083,7 @@ export class OperationMonitor {
           .flatMap((a) => (a.lastFailure ? [a.lastFailure] : []))
           .concat(
             this.db.get<ApiFailure>("latest_api_failure") ??
-              this.safety().latestFailure ??
+              persisted.latestFailure ??
               [],
           )
           .sort((a, b) => b.occurredAt - a.occurredAt)[0] ?? null,

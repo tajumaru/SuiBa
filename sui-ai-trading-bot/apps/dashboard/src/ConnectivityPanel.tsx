@@ -133,6 +133,22 @@ export function ConnectivityDetails({
           {safety.healthyCycles} / {safety.limits.healthyCycles} 周期 ·
           正常確認の間隔 {safety.limits.minimumHealthyMs / 1000}秒以上
         </dd>
+        <dt>通信一時停止</dt>
+        <dd>
+          {safety.pause
+            ? `${dateTime(safety.pause.startedAt)}から・${Math.floor(safety.pause.durationMs / 60000)}分継続`
+            : "なし"}
+        </dd>
+        <dt>一時停止の理由</dt>
+        <dd>
+          {safety.pause
+            ? Object.entries(safety.pause.reasons)
+                .map(([reason, count]) => `${reason} ×${count}`)
+                .join("、")
+            : "記録なし"}
+        </dd>
+        <dt>自動復旧回数</dt>
+        <dd>{safety.autoRecoveryCount}回</dd>
         <dt>最終正常取得</dt>
         <dd>
           {dateTime(timing?.lastFetchSuccessAt ?? safety.lastMarketSuccessAt)}

@@ -31,6 +31,10 @@ export type PaperSafetyState = {
   firstHealthyAt: number | null;
   lastHealthyCycleAt: number | null;
   recoveredAt: number | null;
+  /** Successful unattended resumes since this safety state was created. */
+  autoRecoveryCount: number;
+  /** Successful unattended resume timestamps retained for flap detection. */
+  recentAutoRecoveries: number[];
   lastStopReason: string | null;
 };
 export const paperRecoveryLimits = {
@@ -39,6 +43,9 @@ export const paperRecoveryLimits = {
   minimumCycleSpacingMs: 30000,
   maxEpisodeMs: 180000,
   maxFailures: 9,
+  probeIntervalMs: 30000,
+  flapWindowMs: 900000,
+  maxRecoveriesPerWindow: 2,
 };
 /** A candle-stale episode means the indexer fell behind on candle
  * publication (one missing trailing candle consumes most of the
@@ -95,6 +102,8 @@ export const initialPaperSafety = (): PaperSafetyState => ({
   firstHealthyAt: null,
   lastHealthyCycleAt: null,
   recoveredAt: null,
+  autoRecoveryCount: 0,
+  recentAutoRecoveries: [],
   lastStopReason: null,
 });
 
