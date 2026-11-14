@@ -37,7 +37,7 @@ UNITS='suiba-paper-check.service suiba-prod.service suiba-prod-watchdog.service 
 
 # Cross-setup integrity pin, checked by test_setup.py (not installed here).
 # shellcheck disable=SC2034 # Consumed by the cross-setup integrity test.
-SETUP_CI_APPROVAL_SHA256='e2511ae343a1f9369cabebe676eddcfce1ff35339ad2063db67e7e4ae48c63b2'
+SETUP_CI_APPROVAL_SHA256='9ea212dfec43baf43a590624b279cf06caa2888b0c9642746cf378689552a364'
 
 # name|sha256|target|mode
 FILES=(
