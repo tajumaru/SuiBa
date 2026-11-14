@@ -141,7 +141,8 @@ def main():
         status = {'run': {'id': 'a'*32, 'status': 'in_progress', 'started': int((now-1000)*1000),
                          'stopped': None, 'sha': 'e'*40, 'stage': 'monitoring', 'admitted': True},
                   'controller_alive': True, 'requires_review': False,
-                  'worker': {'running': True, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True, 'paper': True}}
+                  'worker': {'running': True, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True,
+                             'paper': True, 'networkPause': None, 'networkStopReason': None}}
         evidence = {'service_active': True, 'cutoffs_quiet': True,
                     'container': {'running': True, 'oom': False, 'restarts': 0, 'restart': 'no', 'health': 'healthy', 'exit': 0},
                     'progress': {'at': int(now), 'status': 'monitoring', 'pair': 'SUI_USDC', 'market_last_success': now*1000},

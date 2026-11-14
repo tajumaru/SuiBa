@@ -39,6 +39,13 @@ def number(value):
     return type(value) in (int, float) and math.isfinite(value)
 
 
+def reason_code(value):
+    return (isinstance(value, str) and 1 <= len(value) <= 101 and
+            'A' <= value[0] <= 'Z' and
+            all(character == '_' or 'A' <= character <= 'Z' or '0' <= character <= '9'
+                for character in value))
+
+
 def shadow(value, now):
     require(value is None or isinstance(value, dict) and
             set(value) == {'total', 'aiOnlyBuy', 'errors', 'lastDecisionAt'} and
@@ -194,7 +201,7 @@ def assess(status, evidence, now):
         worker = status.get('worker')
         if worker == {'reachable': False, 'reason': 'WORKER_UNREACHABLE'}:
             reasons.add('WORKER_UNREACHABLE')
-        elif not isinstance(worker, dict) or set(worker) != {'running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper', 'networkPause', 'networkStopReason'} or any(type(worker[k]) is not bool for k in ('running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper')) or not (worker['networkStopReason'] is None or isinstance(worker['networkStopReason'], str) and re.fullmatch(r'[A-Z][A-Z0-9_]{0,100}', worker['networkStopReason'])):
+        elif not isinstance(worker, dict) or set(worker) != {'running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper', 'networkPause', 'networkStopReason'} or any(type(worker[k]) is not bool for k in ('running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper')) or not (worker['networkStopReason'] is None or reason_code(worker['networkStopReason'])):
             reasons.add('WORKER_STATE_INVALID')
         else:
             pause = network_pause(worker['networkPause'], now)
