@@ -84,6 +84,9 @@ class ExportTests(unittest.TestCase):
         db = sqlite3.connect(path)
         if wal: db.execute('PRAGMA journal_mode=WAL')
         records = {
+            'forecast_records': {'pair': 'SUI_USDC', 'origin': NOW_MS // 1000,
+                'startClose': 1, 'dir': 'up', 'up': [1.01, 1.02], 'lo': [.99, .98],
+                'mid': [1, 1.01], 'touch': {'line': SECRET}},
             'shadow_decisions': {'cycleId': 'cycle', 'status': 'OK', 'action': 'BUY', 'model': SECRET, 'promptVersion': 'shadow-s1-v1', 'rationale': {'text': SECRET, 'refs': []}},
             'strategy_decisions': {'action': 'BUY', 'reason': SECRET, 'apiKey': SECRET, 'stopLossPct': 0.12345,
                 'analysisContext': {'cycleId': 'cycle', 'runningAtAnalysis': True},
@@ -141,6 +144,9 @@ class ExportTests(unittest.TestCase):
                 self.assertEqual(decision_id, db.execute('SELECT id FROM shadow_decisions').fetchone()[0])
                 self.assertNotIn('thresholds', json.loads(decision)['evidence'])
                 self.assertNotIn('stopLossPct', json.loads(decision))
+                forecast = json.loads(db.execute('SELECT json FROM forecast_records').fetchone()[0])
+                self.assertEqual(forecast, {'origin': NOW_MS // 1000,
+                                            'up': [1.01, 1.02], 'lo': [.99, .98]})
                 candidate = json.loads(db.execute('SELECT json FROM operation_candidates').fetchone()[0])
                 self.assertNotIn('minProfitUsdc', candidate)
                 self.assertEqual(candidate['orderId'], db.execute('SELECT id FROM paper_orders').fetchone()[0])
