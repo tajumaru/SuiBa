@@ -25,10 +25,15 @@ def unpack(package, destination):
         if sum(e.file_size for e in entries) > LIMIT+65536: raise ValueError()
         if archive.getinfo('manifest.json').file_size > 65536: raise ValueError()
         manifest = json.loads(archive.read('manifest.json'))
-        if (type(manifest) is not dict or set(manifest) != {'version', 'scope', 'public', 'run', 'sourceArchiveSha256', 'files', 'omitted'} or
-                type(manifest['version']) is not int or manifest['version'] != 1 or manifest['public'] is not True or
+        if (type(manifest) is not dict or set(manifest) != {'version', 'scope', 'public', 'window', 'run', 'sourceArchiveSha256', 'files', 'omitted'} or
+                type(manifest['version']) is not int or manifest['version'] != 2 or manifest['public'] is not True or
                 manifest['scope'] not in ('PRE_RUN_BACKUP_PUBLIC_EXTRACT', 'PROD_LIVE_PUBLIC_EXTRACT') or
                 type(manifest['sourceArchiveSha256']) is not str or not re.fullmatch(r'[a-f0-9]{64}', manifest['sourceArchiveSha256'])): raise ValueError()
+        window = manifest['window']
+        if (type(window) is not dict or set(window) != {'from', 'to'} or
+                type(window['from']) is not int or type(window['to']) is not int or
+                window['from'] < 0 or window['to'] > 2**53 or
+                window['to'] - window['from'] != scope['WINDOW_MS']): raise ValueError()
         if manifest['omitted'] != ['settings', 'runtime', 'auth', 'market_candles', 'portfolio_snapshots', 'thresholds', 'free_text', 'raw_ids']: raise ValueError()
         run_check = scope['public_prod_run'] if manifest['scope'] == 'PROD_LIVE_PUBLIC_EXTRACT' else scope['public_run']
         if run_check(manifest['run']) != manifest['run']: raise ValueError()
@@ -53,6 +58,7 @@ def unpack(package, destination):
                         count = 0
                         for row_id, at, raw in db.execute(f'SELECT id,timestamp,json FROM {table}'):
                             if type(row_id) is not str or not re.fullmatch(r'h:[a-f0-9]{64}', row_id) or type(at) is not int or not 0 <= at <= 2**53: raise ValueError()
+                            if not window['from'] <= at <= window['to']: raise ValueError()
                             value = json.loads(raw)
                             if scope['sanitize'](table, value, public=True) != value: raise ValueError()
                             count += 1

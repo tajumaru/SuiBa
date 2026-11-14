@@ -14,6 +14,8 @@ import zipfile
 ARCHIVE_LIMIT = 128 * 1024**2
 EXPORT_LIMIT = 16 * 1024**2
 ROW_LIMIT = 100000
+WINDOW_DAYS = 14
+WINDOW_MS = WINDOW_DAYS * 24 * 60 * 60 * 1000
 TABLES = ('shadow_decisions', 'strategy_decisions', 'technical_indicators', 'operation_candidates',
           'paper_orders', 'paper_trades', 'operation_events', 'cycle_audits')
 DATABASES = {'bot.sqlite': 'SUI_USDC.sqlite', 'bot.sqlite.WAL_USDC.sqlite': 'WAL_USDC.sqlite'}
@@ -230,6 +232,8 @@ def _unpack_archive(stream, root, deadline):
 def _package(root, seen, run, scope, source_sha256, deadline):
     result = io.BytesIO()
     files, total_rows = {}, 0
+    window_to = int(time.time() * 1000)
+    window_from = window_to - WINDOW_MS
     for name, target in DATABASES.items():
         if name not in seen: continue
         source = sqlite3.connect((root/name).as_uri()+'?mode=ro', uri=True)
@@ -244,7 +248,10 @@ def _package(root, seen, run, scope, source_sha256, deadline):
                 if table not in names: continue
                 destination.execute(f'CREATE TABLE {table}(id TEXT PRIMARY KEY,timestamp INTEGER NOT NULL,json TEXT NOT NULL)')
                 count = 0
-                for row_id, at, raw in source.execute(f'SELECT id,timestamp,json FROM {table} ORDER BY timestamp,id'):
+                for row_id, at, raw in source.execute(
+                        f'SELECT id,timestamp,json FROM {table} '
+                        'WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp,id',
+                        (window_from, window_to)):
                     total_rows += 1
                     check(total_rows <= ROW_LIMIT and time.monotonic() < deadline, 'EXPORT_LIMIT_EXCEEDED')
                     check(type(at) is int and 0 <= at <= 2**53 and identifier(row_id) is not None, 'EXPORT_DATABASE_INVALID')
@@ -261,7 +268,8 @@ def _package(root, seen, run, scope, source_sha256, deadline):
         data = (root/target).read_bytes()
         check(len(data) <= EXPORT_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
         files[target] = {'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data), 'rows': counts}
-    manifest = {'version': 1, 'scope': scope, 'public': True,
+    manifest = {'version': 2, 'scope': scope, 'public': True,
+                'window': {'from': window_from, 'to': window_to},
                 'run': run, 'sourceArchiveSha256': source_sha256, 'files': files,
                 'omitted': ['settings', 'runtime', 'auth', 'market_candles', 'portfolio_snapshots', 'thresholds', 'free_text', 'raw_ids']}
     check(sum(v['bytes'] for v in files.values()) <= EXPORT_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
