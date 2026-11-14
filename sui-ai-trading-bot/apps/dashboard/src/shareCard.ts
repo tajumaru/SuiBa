@@ -122,17 +122,8 @@ export function buildShareCardSvg(
   const loPts = steps
     .map((p, i) => `${n1(x(hist.length + i))},${n1(y(p.lower))}`)
     .join(" ");
-  const midPts = [
-    `${n1(x(hist.length - 1))},${n1(y(hist[hist.length - 1].close))}`,
-    ...steps.map(
-      (p, i) => `${n1(x(hist.length + i))},${n1(y(p.mid))}`,
-    ),
-  ].join(" ");
   out.push(
     `<polygon points="${upPts} ${loPts.split(" ").reverse().join(" ")}" fill="${palette.fill}"/>`,
-    `<polyline points="${upPts}" fill="none" stroke="${palette.stroke}" stroke-width="1.5" opacity="0.75"/>`,
-    `<polyline points="${loPts}" fill="none" stroke="${palette.stroke}" stroke-width="1.5" opacity="0.75"/>`,
-    `<polyline points="${midPts}" fill="none" stroke="${palette.stroke}" stroke-width="3" stroke-dasharray="7 6"/>`,
     `<line x1="${originX}" y1="${y0}" x2="${originX}" y2="${y1}" stroke="#64b5ff" stroke-width="1.5"/>`,
   );
   const drift = forecast.driftPct * 100;

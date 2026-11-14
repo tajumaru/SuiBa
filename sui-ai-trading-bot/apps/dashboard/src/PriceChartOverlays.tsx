@@ -19,7 +19,6 @@ type Scale = (v: number) => number;
 export function ForecastOverlay({
   fc,
   fcCone,
-  fcMid,
   fcPalette,
   crossingMarks,
   x,
@@ -28,7 +27,6 @@ export function ForecastOverlay({
 }: {
   fc: ChartForecast;
   fcCone: string;
-  fcMid: string;
   fcPalette: ReturnType<typeof forecastPalette>;
   crossingMarks: CrossingMark[];
   x: Scale;
@@ -47,13 +45,6 @@ export function ForecastOverlay({
         opacity="0.6"
       />
       <polygon points={fcCone} fill={fcPalette!.fill} />
-      <polyline
-        points={fcMid}
-        fill="none"
-        stroke={fcPalette!.stroke}
-        strokeWidth="1.6"
-        strokeDasharray="5 4"
-      />
       {fc.touch && (
         <g className="chart-forecast-touch" aria-label="タッチライン">
           <line
@@ -112,8 +103,12 @@ export function ForecastDetails({
     <dl className="chart-forecast-details" aria-label="予測の詳細（模式）">
       <div>
         <dt>
-          <span className="chart-detail-swatch forecast" aria-hidden="true" />
-          これから{number(horizonHours, 1)}時間の予測
+          <span
+            className="chart-detail-swatch forecast"
+            style={{ backgroundColor: forecastPalette(fc.direction).fill }}
+            aria-hidden="true"
+          />
+          これから{number(horizonHours, 1)}時間の予測範囲（帯）
         </dt>
         <dd>{label}（模式）</dd>
       </div>

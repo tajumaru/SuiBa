@@ -137,6 +137,10 @@ describe("PriceChart forecast overlay", () => {
     )?.[0];
     expect(details).toContain("これから2時間の予測");
     expect(details).toContain("（模式）");
+    expect(details).toContain("予測範囲（帯）");
+    const overlay = html.match(/<g class="chart-forecast"[\s\S]*?<\/g>/)?.[0];
+    expect(overlay).toContain("<polygon");
+    expect(overlay).not.toContain("<polyline");
   });
 
   it.each([
@@ -184,17 +188,17 @@ describe("PriceChart forecast overlay", () => {
     );
 
     const up = render(rising);
-    expect(up).toContain('stroke="#43dfb2"');
+    expect(up).toContain(`fill="${forecastPalette("up").fill}"`);
     expect(up).toContain("rgba(67, 223, 178");
     expect(up).toMatch(/予測 \+\d+\.\d%/);
 
     const down = render(falling);
-    expect(down).toContain('stroke="#f77d8f"');
+    expect(down).toContain(`fill="${forecastPalette("down").fill}"`);
     expect(down).toContain("rgba(247, 125, 143");
     expect(down).toMatch(/予測 -\d+\.\d%/);
 
     const flatHtml = render(flat);
-    expect(flatHtml).toContain('stroke="#64b5ff"');
+    expect(flatHtml).toContain(`fill="${forecastPalette("flat").fill}"`);
     expect(flatHtml).toContain(">予測（模式）<");
     expect(flatHtml).not.toMatch(/予測 [+-]/);
   });

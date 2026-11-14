@@ -81,6 +81,7 @@ describe("share card svg", () => {
     );
     expect(svg).toContain("SUI / USDC");
     expect(svg).toContain("予測 +1.3%");
+    expect(svg).not.toContain('stroke-dasharray="7 6"');
     expect(svg).toContain("2時間で 上昇");
     expect(svg).toContain("ぺんちゃんの予測");
     expect(svg).toContain("コーン収まり 84%");
