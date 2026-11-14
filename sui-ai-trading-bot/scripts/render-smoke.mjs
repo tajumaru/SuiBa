@@ -123,6 +123,16 @@ try {
     ),
   );
   fixture.operations.safety.lastStopReason = "UPSTREAM_HTTP_500";
+  fixture.state.chain = {
+    epoch: 1024,
+    checkpoint: 182394551,
+    tps: 1208,
+    gasMist: 1000,
+    epochStartMs: Date.now() - 3600000,
+    epochDurationMs: 86400000,
+    validators: 108,
+    at: Date.now(),
+  };
   fixture.operations.reports.find(
     (report) => report.hours === 168,
   ).stopReasons = [
@@ -153,6 +163,37 @@ try {
     const buttons = page.locator("nav button[aria-label]");
     if ((await buttons.count()) !== 5)
       failures.push(`${width}px: expected five tabs`);
+    const chainStrip = page.locator(
+      '.chain-strip[aria-label="Suiチェーン情報"]',
+    );
+    const chainCredit = page.getByRole("link", { name: "Sui" });
+    await chainStrip.waitFor();
+    const chainLayout = await chainStrip.evaluate((strip) => {
+      const credit = strip.querySelector(".chain-credit");
+      const metric = credit?.previousElementSibling;
+      const stripRect = strip.getBoundingClientRect();
+      const creditRect = credit?.getBoundingClientRect();
+      const metricRect = metric?.getBoundingClientRect();
+      return {
+        fits: strip.scrollWidth <= strip.clientWidth,
+        creditFits:
+          !!creditRect &&
+          creditRect.left >= stripRect.left &&
+          creditRect.right <= stripRect.right,
+        creditBelowMetrics:
+          !!creditRect && !!metricRect && creditRect.top >= metricRect.bottom,
+      };
+    });
+    if (!chainLayout.fits || !chainLayout.creditFits)
+      failures.push(`${width}px: Sui chain credit overflows its strip`);
+    if (width <= 375 && !chainLayout.creditBelowMetrics)
+      failures.push(`${width}px: Sui chain credit competes with chain metrics`);
+    const creditLogo = chainCredit.locator("img");
+    if (
+      (await chainCredit.getAttribute("href")) !== "https://sui.io" ||
+      (await creditLogo.getAttribute("src")) !== "/sui-logo.svg"
+    )
+      failures.push(`${width}px: Sui chain credit link or logo is missing`);
     for (const name of [
       "実況",
       "ダッシュボード",

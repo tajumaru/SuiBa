@@ -38,11 +38,13 @@ export function ChainStrip({ chain }: { chain: ChainInfo | null }) {
         EPOCH <strong>{chain.epoch.toLocaleString("en-US")}</strong>
       </span>
       <span>
-        CHECKPOINT{" "}
-        <strong>{chain.checkpoint.toLocaleString("en-US")}</strong>
+        CHECKPOINT <strong>{chain.checkpoint.toLocaleString("en-US")}</strong>
       </span>
       <span>
-        TPS <strong>{chain.tps == null ? "—" : chain.tps.toLocaleString("en-US")}</strong>
+        TPS{" "}
+        <strong>
+          {chain.tps == null ? "—" : chain.tps.toLocaleString("en-US")}
+        </strong>
       </span>
       {chain.gasMist != null && (
         <span>
@@ -67,6 +69,16 @@ export function ChainStrip({ chain }: { chain: ChainInfo | null }) {
           VALIDATORS <strong>{chain.validators.toLocaleString("en-US")}</strong>
         </span>
       )}
+      <a
+        className="chain-credit"
+        href="https://sui.io"
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Sui"
+      >
+        <img src="/sui-logo.svg" alt="Sui" />
+        <span>Built on Sui</span>
+      </a>
     </div>
   );
 }

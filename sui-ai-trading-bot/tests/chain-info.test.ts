@@ -35,7 +35,6 @@ describe("ChainSampler", () => {
     expect(next.tps).toBeNull();
   });
 });
-
 describe("ChainStrip", () => {
   it("renders the chain vitals and hides itself before the first sample", () => {
     const html = renderToStaticMarkup(
@@ -53,6 +52,13 @@ describe("ChainStrip", () => {
     expect(html).toContain("（目安）");
     expect(html).toContain("VALIDATORS");
     expect(html).toContain("108");
+    expect(html).toContain("Built on Sui");
+    expect(html).toContain('href="https://sui.io"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noreferrer"');
+    expect(html).toContain('aria-label="Sui"');
+    expect(html).toContain('src="/sui-logo.svg"');
+    expect(html).toContain('alt="Sui"');
     expect(
       renderToStaticMarkup(React.createElement(ChainStrip, { chain: null })),
     ).toBe("");
