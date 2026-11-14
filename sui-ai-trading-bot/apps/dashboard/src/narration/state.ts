@@ -23,6 +23,7 @@ export type NarrationKind =
   | "priceLine" // the buy-run line declared — RSI's target price, called out loud
   | "priceLineReached" // the price touched the declared buy-run line
   | "sellLine" // the sell lines declared — take-profit / stop-loss prices of the open position
+  | "sellLineCrossing" // a forecast path newly meets an open position's sell line
   | "sleepTalk" // a mutter from the sleeping character, built from recorded facts
   | "alert" // a 速報 breaking in on a sudden price / volume move
   | "chatUser" // a comment the user typed to the character
@@ -69,6 +70,7 @@ export interface NarrationEntry {
    * the serial watches their pairing cannot be recovered
    * reliably from the texts alone. */
   forecastOrigin?: number;
+  sellLineSide?: "tp" | "sl";
 }
 
 /**
@@ -190,6 +192,11 @@ export interface NarrationState {
    * stop-loss prices derived from the recorded entry price and the
    * strategy's percentages, declared once per position. */
   sellLines: { tp: number; sl: number } | null;
+  sellLineCrossingState: Record<"tp" | "sl", {
+    present: boolean;
+    absentSince: number | null;
+    lastCalledAt: number | null;
+  }>;
   /** Cumulative session score of declared watches (see WatchScore). */
   watchScore: WatchScore;
   /** The same settlements split by watched condition (see
@@ -351,6 +358,10 @@ export function emptyNarrationState(): NarrationState {
     lastNearMiss: null,
     priceLine: null,
     sellLines: null,
+    sellLineCrossingState: {
+      tp: { present: false, absentSince: null, lastCalledAt: null },
+      sl: { present: false, absentSince: null, lastCalledAt: null },
+    },
     sleepingSince: null,
     lastSleepTalkAt: null,
     lastSleepTalkText: null,

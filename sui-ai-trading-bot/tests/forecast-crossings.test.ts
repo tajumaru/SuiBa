@@ -7,6 +7,7 @@ import {
   type ForecastPoint,
 } from "../apps/dashboard/src/chartForecast.ts";
 import { PriceChart } from "../apps/dashboard/src/PriceChart.tsx";
+import { crossingMarksFor } from "../apps/dashboard/src/chartOverlayGeometry.ts";
 import type { Candle } from "../packages/shared/src/index.ts";
 
 const T0 = 1_700_000_000;
@@ -58,6 +59,23 @@ describe("forecastLineCrossings", () => {
 });
 
 describe("PriceChart forecast crossing marks", () => {
+  it("uses the centre for mid hits and the reached edge for edge-only hits", () => {
+    const latest: Candle = { timestamp: T0 - 300, timeframe: 300, open: 1, high: 1, low: 1, close: 1, volume: 1, source: "GeckoTerminal" };
+    const base = { driftPct: 0, bandPct: 0.01, direction: "up" as const, directionWord: "上向き", bookTiltPct: 0, touch: null };
+    const x = (v: number) => v, y = (v: number) => v * 1000;
+    const mid = crossingMarksFor({ ...base, points: points([1.001, 1.006], 0.002) }, { tp: 1.005, sl: 0.5 }, latest, x, y, 300)[0];
+    const midPath = mid.trajectory.split(" ").map((p) => p.split(",").map(Number));
+    expect(mid.edgeOnly).toBe(false);
+    expect(midPath[1][1]).toBeCloseTo(1001);
+    expect(midPath[2][1]).toBeCloseTo(1005);
+    const edge = crossingMarksFor({ ...base, points: points([1.001, 1.003], 0.004) }, { tp: 1.0055, sl: 0.5 }, latest, x, y, 300)[0];
+    const edgePath = edge.trajectory.split(" ").map((p) => p.split(",").map(Number));
+    expect(edge.edgeOnly).toBe(true);
+    expect(edgePath[1][1]).toBeCloseTo(1005);
+    expect(edgePath[1][1]).not.toBeCloseTo(1001);
+    expect(edgePath[2][1]).toBeCloseTo(1005.5);
+  });
+
   it("labels the bar where the outlook reaches the take-profit line", () => {
     const now = Math.floor(Date.now() / 1000 / 300) * 300;
     const cs: Candle[] = Array.from({ length: 60 }, (_, i) => {

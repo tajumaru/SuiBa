@@ -64,14 +64,14 @@ export function ForecastOverlay({
           className="chart-forecast-crossing"
           opacity={m.edgeOnly ? 0.65 : 1}
         >
-          <line
-            x1={x(latestEnd)}
-            x2={m.cx}
-            y1={m.cy}
-            y2={m.cy}
+          <polyline
+            points={m.trajectory}
+            fill="none"
             stroke={m.color}
             strokeDasharray="3 3"
-            opacity="0.55"
+            strokeWidth={m.edgeOnly ? "1" : "1.5"}
+            strokeLinejoin="round"
+            opacity={m.edgeOnly ? "0.45" : "0.75"}
           />
           <circle
             cx={m.cx}

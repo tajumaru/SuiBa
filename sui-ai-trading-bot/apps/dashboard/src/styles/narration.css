@@ -904,6 +904,20 @@
   border-color: rgba(62, 207, 111, 0.55);
   color: #3ecf6f;
 }
+.agent-feed-entry.sellLineCrossing.crossing-tp {
+  border-left-color: var(--mint);
+}
+.agent-feed-entry.sellLineCrossing.crossing-sl {
+  border-left-color: var(--pink);
+}
+.agent-feed-entry-tag.crossing-tp {
+  border-color: var(--mint);
+  color: var(--mint);
+}
+.agent-feed-entry-tag.crossing-sl {
+  border-color: var(--pink);
+  color: var(--pink);
+}
 /* A 寝言 (sleep talk) drifts in soft blue, italic — the character
    is asleep and dreaming of the session's facts. */
 .agent-feed-entry.sleepTalk p {

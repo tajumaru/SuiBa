@@ -26,6 +26,7 @@ import {
   PRICE_LINE_MURMUR_PCT,
   candidateKey,
   eventKey,
+  forecastSellLineCrossings,
   stageBook,
   stageBtc,
   stageCalibration,
@@ -197,6 +198,8 @@ export function advanceNarration(
               (firstLine / firstDec.price - 1) * 100 >= PRICE_LINE_MURMUR_PCT,
           }
         : null;
+    const firstSellLines = firstDec ? sellLinesOf(firstDec) : null;
+    const firstCrossings = forecastSellLineCrossings(forecasts?.records ?? [], firstSellLines);
     // Existing forecasts are adopted silently on first load,
     // like the first watch and the buy-run line: their stories
     // are already under way. Only forecasts recorded from here
@@ -227,7 +230,19 @@ export function advanceNarration(
         priceLine: firstPriceLine,
         // A position already open when the feed starts has its sell
         // lines adopted silently, like the buy-run line above.
-        sellLines: firstDec ? sellLinesOf(firstDec) : null,
+        sellLines: firstSellLines,
+        sellLineCrossingState: {
+          tp: {
+            present: Boolean(firstCrossings?.tpMid ?? firstCrossings?.tpEdge),
+            absentSince: firstCrossings?.tpMid || firstCrossings?.tpEdge ? null : now,
+            lastCalledAt: null,
+          },
+          sl: {
+            present: Boolean(firstCrossings?.slMid ?? firstCrossings?.slEdge),
+            absentSince: firstCrossings?.slMid || firstCrossings?.slEdge ? null : now,
+            lastCalledAt: null,
+          },
+        },
         // The first recorded decision seeds the spike alerts' price
         // history — but only when it is fresh evidence; a stale
         // first snapshot warms the alerts up from zero instead.
@@ -287,6 +302,7 @@ export function advanceNarration(
     lastNearMiss: prev.lastNearMiss,
     priceLine: prev.priceLine,
     sellLines: prev.sellLines,
+    sellLineCrossingState: prev.sellLineCrossingState,
     sleepingSince: prev.sleepingSince,
     lastSleepTalkAt: prev.lastSleepTalkAt,
     lastSleepTalkText: prev.lastSleepTalkText,
@@ -347,6 +363,7 @@ export function advanceNarration(
       lastNearMiss: work.lastNearMiss,
       priceLine: work.priceLine,
       sellLines: work.sellLines,
+      sellLineCrossingState: work.sellLineCrossingState,
       sleepingSince: work.sleepingSince,
       lastSleepTalkAt: work.lastSleepTalkAt,
       lastSleepTalkText: work.lastSleepTalkText,

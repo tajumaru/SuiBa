@@ -49,6 +49,7 @@ const schema: z.ZodType<NarrationState> = z.object({
           "priceLine",
           "priceLineReached",
           "sellLine",
+          "sellLineCrossing",
           "review",
           "alert",
           "sleepTalk",
@@ -73,6 +74,7 @@ const schema: z.ZodType<NarrationState> = z.object({
         topic: z.string().optional(),
         promptChip: z.string().optional(),
         forecastOrigin: number.optional(),
+        sellLineSide: z.enum(["tp", "sl"]).optional(),
       }),
     )
     .max(MAX_NARRATION_ENTRIES + MAX_CHAT_ENTRIES),
@@ -114,6 +116,16 @@ const schema: z.ZodType<NarrationState> = z.object({
     .object({ tp: number, sl: number })
     .nullable()
     .default(null),
+  sellLineCrossingState: z
+    .record(z.enum(["tp", "sl"]), z.object({
+      present: z.boolean(),
+      absentSince: nullableNumber,
+      lastCalledAt: nullableNumber,
+    }))
+    .default({
+      tp: { present: false, absentSince: null, lastCalledAt: null },
+      sl: { present: false, absentSince: null, lastCalledAt: null },
+    }),
   watchScore: z.object({
     declared: number,
     hits: number,

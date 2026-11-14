@@ -78,7 +78,7 @@ export function AgentFeedEntryRow({
   const buy = isBuyTradeEntry(entry);
   return (
     <div
-      className={`agent-feed-entry ${entry.kind}${buy ? " buy" : ""}${justBought ? " just-bought" : ""}${entry.mono ? " mono" : ""}`}
+      className={`agent-feed-entry ${entry.kind}${entry.kind === "sellLineCrossing" ? ` crossing-${entry.sellLineSide}` : ""}${buy ? " buy" : ""}${justBought ? " just-bought" : ""}${entry.mono ? " mono" : ""}`}
     >
       <time dateTime={new Date(entry.at).toISOString()}>
         {timeText(entry.at)}
@@ -145,6 +145,11 @@ export function AgentFeedEntryRow({
       )}
       {entry.kind === "sellLine" && (
         <span className="agent-feed-entry-tag sell">売りライン</span>
+      )}
+      {entry.kind === "sellLineCrossing" && (
+        <span className={`agent-feed-entry-tag crossing-${entry.sellLineSide}`}>
+          {entry.sellLineSide === "sl" ? "損切り接近" : "利確接近"}
+        </span>
       )}
       {entry.kind === "chatUser" && (
         <span className="agent-feed-entry-tag user">あなた</span>

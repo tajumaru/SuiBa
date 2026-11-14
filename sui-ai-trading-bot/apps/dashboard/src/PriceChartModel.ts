@@ -199,7 +199,9 @@ export function usePriceChartModel({
   // Where the outlook meets the position's sell lines, if it
   // does: geometry over the sketch, labelled as such in place.
   const crossingMarks =
-    fc && sellLines ? crossingMarksFor(fc, sellLines, x, y, tf) : [];
+    fc && sellLines && latest
+      ? crossingMarksFor(fc, sellLines, latest, x, y, tf)
+      : [];
   const geometry = useMemo(
     () => candleGeometry(c, x, y, dx),
     [visible, w, min, max, tf],

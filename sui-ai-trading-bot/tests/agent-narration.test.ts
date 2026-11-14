@@ -34,6 +34,7 @@ import type {
   OperationEvent,
 } from "../packages/shared/src/operations.ts";
 import type { ApiFailure } from "../packages/shared/src/http-errors.ts";
+import type { ForecastRecord } from "../apps/dashboard/src/forecastLog.ts";
 
 const NOW = 1_800_000_000_000;
 const databases: BotDatabase[] = [];
@@ -2963,6 +2964,37 @@ describe("sell line narration", () => {
     expect(
       sellLinesOf({ entryPrice: 2, takeProfitPct: 0, stopLossPct: 0.02 }),
     ).toBeNull();
+  });
+
+  it("silently adopts, suppresses persistence, and re-arms a crossing", () => {
+    const { db, monitor } = fixture();
+    const snap = (at: number) => runningSnapshot(db, monitor, holding({ evaluatedAt: at - 1_000 }));
+    const rec = (origin: number, mid: number[]): ForecastRecord => ({ origin, startClose: 2.02, dir: "up", mid, up: mid.map((v) => v + 0.005), lo: mid.map((v) => v - 0.005) });
+    const input = (record: ForecastRecord) => ({ records: [record], candles: [] });
+    const crossing = rec(NOW / 1000, [2.03, 2.07]);
+    let state = advanceNarration(emptyNarrationState(), snap(NOW), "alive", NOW, undefined, undefined, input(crossing));
+    state = advanceNarration(state, snap(NOW + 60_000), "alive", NOW + 60_000, undefined, undefined, input(crossing));
+    expect(ofKind(state, "sellLineCrossing")).toHaveLength(0);
+    state = advanceNarration(state, snap(NOW + 2 * 60_000), "alive", NOW + 2 * 60_000, undefined, undefined, input(rec(NOW / 1000 + 300, [2.02, 2.03])));
+    state = advanceNarration(state, snap(NOW + 18 * 60_000), "alive", NOW + 18 * 60_000, undefined, undefined, input(crossing));
+    const calls = ofKind(state, "sellLineCrossing");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sellLineSide).toBe("tp");
+    expect(calls[0].text).toBe("利確ラインまで、中心の予測ならあと2本。模式の交点が新しく出たよ");
+    expect(calls[0].text).not.toMatch(/やで|やろ|ねん|へん/);
+  });
+
+  it("names an edge-only crossing honestly and applies cooldown", () => {
+    const { db, monitor } = fixture();
+    const snap = (at: number) => runningSnapshot(db, monitor, holding({ evaluatedAt: at - 1_000 }));
+    const rec = (origin: number, upper: number): ForecastRecord => ({ origin, startClose: 2.02, dir: "up", mid: [2.02], up: [upper], lo: [2.01] });
+    const input = (record: ForecastRecord) => ({ records: [record], candles: [] });
+    let state = advanceNarration(emptyNarrationState(), snap(NOW), "alive", NOW, undefined, undefined, input(rec(NOW / 1000, 2.04)));
+    state = advanceNarration(state, snap(NOW + 16 * 60_000), "alive", NOW + 16 * 60_000, undefined, undefined, input(rec(NOW / 1000 + 300, 2.07)));
+    expect(ofKind(state, "sellLineCrossing")[0].text).toContain("予測帯の上端だけならあと1本");
+    state = advanceNarration(state, snap(NOW + 17 * 60_000), "alive", NOW + 17 * 60_000, undefined, undefined, input(rec(NOW / 1000 + 600, 2.04)));
+    state = advanceNarration(state, snap(NOW + 33 * 60_000), "alive", NOW + 33 * 60_000, undefined, undefined, input(rec(NOW / 1000 + 900, 2.07)));
+    expect(ofKind(state, "sellLineCrossing")).toHaveLength(1);
   });
 });
 

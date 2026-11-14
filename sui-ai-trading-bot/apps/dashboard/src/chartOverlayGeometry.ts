@@ -142,6 +142,8 @@ export interface CrossingMark {
   cx: number;
   cy: number;
   edgeOnly: boolean;
+  /** Mid hits follow the centre; edge-only hits follow the reached edge. */
+  trajectory: string;
 }
 
 /**
@@ -151,6 +153,7 @@ export interface CrossingMark {
 export function crossingMarksFor(
   fc: ChartForecast,
   sellLines: { tp: number; sl: number },
+  latest: Candle,
   x: Scale,
   y: Scale,
   tf: number,
@@ -177,6 +180,9 @@ export function crossingMarksFor(
     ] as const
   ).flatMap((m) => {
     const c = m.hit ?? m.edge;
+    const path = m.hit
+      ? fc.points.map((p) => p.mid)
+      : fc.points.map((p) => (m.key === "tp" ? p.upper : p.lower));
     return c
       ? [
           {
@@ -188,6 +194,16 @@ export function crossingMarksFor(
             cx: x(c.timestamp + tf / 2),
             cy: y(m.line),
             edgeOnly: !m.hit,
+            trajectory: [
+              // Purpose-built only to the sell-line crossing: do not restore
+              // the centre line across the cone or draw beyond the target.
+              `${x(latest.timestamp + tf / 2)},${y(latest.close)}`,
+              ...path.slice(0, c.bars).map((value, i) =>
+                `${x(fc.points[i].timestamp + tf / 2)},${
+                  i === c.bars - 1 ? y(m.line) : y(value)
+                }`,
+              ),
+            ].join(" "),
           },
         ]
       : [];
