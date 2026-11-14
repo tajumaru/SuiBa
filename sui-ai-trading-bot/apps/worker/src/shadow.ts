@@ -131,7 +131,27 @@ export function shadowRegime(
   const slope = (value / prior - 1) * 100;
   return slope >= 0.5 ? "up" : slope <= -0.5 ? "down" : "range";
 }
-export function freezeSnapshot(i: ShadowInput) {
+export type ShadowTrigger =
+  | "big-move"
+  | "near-buy"
+  | "condition-increase"
+  | "rule-buy"
+  | "regime-change"
+  | "initial"
+  | "heartbeat";
+export type ShadowTriggerContext = {
+  type: ShadowTrigger;
+  bigMove60mPct?: number;
+};
+export function bigMove60mPct(candles: Candle[]): number | undefined {
+  if (candles.length < 13) return undefined;
+  const start = candles.at(-13)?.close;
+  const end = candles.at(-1)?.close;
+  if (start === undefined || end === undefined || start <= 0) return undefined;
+  const change = (end / start - 1) * 100;
+  return Number.isFinite(change) ? change : undefined;
+}
+export function freezeSnapshot(i: ShadowInput, trigger?: ShadowTriggerContext) {
   const e = i.decision.evidence!;
   const candles = i.candles.slice(-50);
   const snapshot = JSON.parse(
@@ -150,6 +170,12 @@ export function freezeSnapshot(i: ShadowInput) {
       evidence: e,
       conditionCount: coreCount(i.decision),
       ruleAction: i.decision.action,
+      ...(trigger && {
+        triggerType: trigger.type,
+        ...(trigger.type === "big-move" && {
+          bigMove60mPct: trigger.bigMove60mPct,
+        }),
+      }),
       book: {
         bid: i.market?.bid ?? null,
         ask: i.market?.ask ?? null,
@@ -182,6 +208,8 @@ type Snapshot = {
   evidence: NonNullable<TradingDecision["evidence"]>;
   conditionCount: number;
   ruleAction: string;
+  triggerType?: ShadowTrigger;
+  bigMove60mPct?: number;
   book: Record<string, unknown>;
   portfolio: Record<string, unknown>;
   settings: Settings;
@@ -264,6 +292,8 @@ export class ShadowRecorder {
   private flight: Flight;
   private previousCount: number | undefined;
   private previousRegime: string | undefined;
+  private bigMoveInitialized = false;
+  private bigMoveArmed = false;
   constructor(
     private db: Pick<
       BotDatabase,
@@ -288,30 +318,49 @@ export class ShadowRecorder {
       )
         return;
       const i = input();
-      if (
-        !i.healthy ||
-        i.portfolio.sui > 0 ||
-        !i.decision.evidence ||
-        i.candles.length === 0
-      )
-        return;
+      if (!i.healthy || !i.decision.evidence || i.candles.length === 0) return;
+      const bigMove = bigMove60mPct(i.candles);
+      let bigMoveCrossed = false;
+      if (bigMove !== undefined) {
+        const magnitude = Math.abs(bigMove);
+        if (!this.bigMoveInitialized) {
+          this.bigMoveInitialized = true;
+          this.bigMoveArmed = magnitude < 1;
+        } else if (this.bigMoveArmed && magnitude >= 1) {
+          bigMoveCrossed = true;
+          this.bigMoveArmed = false;
+        } else if (!this.bigMoveArmed && magnitude < 0.8) {
+          this.bigMoveArmed = true;
+        }
+      }
+      if (i.portfolio.sui > 0) return;
       const count = coreCount(i.decision),
         regime = shadowRegime(i.candles);
       const last = this.budget.shadowLastCall();
-      const trigger =
-        count === 2 ||
-        (this.previousCount !== undefined && count > this.previousCount) ||
-        i.decision.action === "BUY" ||
-        (regime !== "unknown" &&
-          this.previousRegime !== undefined &&
-          this.previousRegime !== "unknown" &&
-          regime !== this.previousRegime) ||
-        last === null ||
-        i.now - last >= 900000;
+      const regimeChanged =
+        regime !== "unknown" &&
+        this.previousRegime !== undefined &&
+        this.previousRegime !== "unknown" &&
+        regime !== this.previousRegime;
+      const trigger: ShadowTriggerContext | undefined = bigMoveCrossed
+        ? { type: "big-move", bigMove60mPct: bigMove }
+        : count === 2
+          ? { type: "near-buy" }
+          : this.previousCount !== undefined && count > this.previousCount
+            ? { type: "condition-increase" }
+            : i.decision.action === "BUY"
+              ? { type: "rule-buy" }
+              : regimeChanged
+                ? { type: "regime-change" }
+                : last === null
+                  ? { type: "initial" }
+                  : i.now - last >= 900000
+                    ? { type: "heartbeat" }
+                    : undefined;
       this.previousCount = count;
       this.previousRegime = regime;
       if (!trigger || (last !== null && i.now - last < 300000)) return;
-      const frozen = freezeSnapshot(i);
+      const frozen = freezeSnapshot(i, trigger);
       const offeredAt = i.now;
       this.flight.busy = true;
       setImmediate(() => {
@@ -333,6 +382,7 @@ export class ShadowRecorder {
       ruleAction: s.ruleAction,
       selectedRule: s.evidence.selectedRule,
       conditionCount: s.conditionCount,
+      triggerType: s.triggerType,
       promptVersion: SHADOW_PROMPT_VERSION,
     };
     let timer: ReturnType<typeof setTimeout> | undefined;
