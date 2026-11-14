@@ -530,6 +530,7 @@ describe("PAPER operation monitor", () => {
       netPnl: 5,
       maxDrawdown: 0.1,
     });
+    expect(m.snapshot(now).accounting.totals.roundTrips).toBe(251);
     db.close();
   });
   it("labels missing legacy gas as unknown instead of zero", () => {
@@ -552,6 +553,7 @@ describe("PAPER operation monitor", () => {
       now,
     );
     expect(m.snapshot().accounting.totals).toMatchObject({
+      roundTrips: 0,
       gasUsdc: null,
       unknownGasTrades: 1,
       feesUsdc: "0.1",

@@ -71,6 +71,9 @@ export interface MonthlyReport {
   fillsBuy: number;
   fillsSell: number;
   closed: number;
+  /** Closed round trips in the month, or null when the fills
+   * window does not verifiably cover the whole month. */
+  roundTrips: number | null;
   wins: number;
   /** 0..100, or null when nothing closed that month. */
   winRatePct: number | null;
@@ -160,6 +163,7 @@ export function buildMonthlyReport(input: {
         ? counters.fillsSell
         : monthFills.filter((f) => f.side === "SELL").length,
     closed,
+    roundTrips: moneyCovered ? closed : null,
     wins,
     winRatePct:
       moneyCovered && closed > 0 ? Math.round((wins / closed) * 100) : null,

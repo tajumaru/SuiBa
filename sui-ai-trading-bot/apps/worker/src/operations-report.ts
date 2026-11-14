@@ -184,10 +184,12 @@ export function computeTotals(trades: Fill[]) {
   let fees = new D(0),
     gas = new D(0),
     dex = new D(0),
+    roundTrips = 0,
     unknownFees = 0,
     unknownGas = 0,
     unknownDex = 0;
   for (const t of trades) {
+    if (typeof t.pnl === "number" && Number.isFinite(t.pnl)) roundTrips++;
     const f = numericText(t.fee);
     if (f === null) unknownFees++;
     else fees = fees.plus(f);
@@ -199,6 +201,7 @@ export function computeTotals(trades: Fill[]) {
     else dex = dex.plus(d);
   }
   return {
+    roundTrips,
     feesUsdc: unknownFees ? null : fees.toString(),
     knownFeesUsdc: fees.toString(),
     unknownFeeTrades: unknownFees,
