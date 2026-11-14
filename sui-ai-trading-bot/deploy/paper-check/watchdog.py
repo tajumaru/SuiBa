@@ -38,6 +38,16 @@ def number(value):
     return type(value) in (int, float) and math.isfinite(value)
 
 
+def shadow(value, now):
+    require(value is None or isinstance(value, dict) and
+            set(value) == {'total', 'aiOnlyBuy', 'errors', 'lastDecisionAt'} and
+            all(type(value[key]) is int and value[key] >= 0 for key in ('total', 'aiOnlyBuy', 'errors')) and
+            value['aiOnlyBuy'] <= value['total'] and value['errors'] <= value['total'] and
+            (value['lastDecisionAt'] is None or type(value['lastDecisionAt']) is int and
+             0 <= value['lastDecisionAt'] <= int((now+60)*1000)))
+    return value
+
+
 def read_json(path, owner=0, maximum=131072, directory_fd=None):
     fd = os.open(str(path), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory_fd)
     try:
@@ -203,13 +213,14 @@ def check(host, now):
     try:
         status = host.status()
     except Exception:
-        return {'at': int(now), 'verdict': 'attention', 'reasons': ['STATUS_UNAVAILABLE'], 'run_id': None}
+        return {'at': int(now), 'verdict': 'attention', 'reasons': ['STATUS_UNAVAILABLE'], 'run_id': None, 'shadow': None}
     try:
         evidence = host.collect(status, now) if status.get('run') is not None else {}
         verdict, reasons, run_id = assess(status, evidence, now)
-        return {'at': int(now), 'verdict': verdict, 'reasons': reasons, 'run_id': run_id}
+        return {'at': int(now), 'verdict': verdict, 'reasons': reasons, 'run_id': run_id,
+                'shadow': shadow(status.get('shadow'), now)}
     except Exception:
-        return {'at': int(now), 'verdict': 'attention', 'reasons': ['STATUS_INVALID'], 'run_id': None}
+        return {'at': int(now), 'verdict': 'attention', 'reasons': ['STATUS_INVALID'], 'run_id': None, 'shadow': None}
 
 
 def record(value):

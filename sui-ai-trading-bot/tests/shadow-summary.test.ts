@@ -77,6 +77,7 @@ it("counts only the current daily-key window and reuses the review base split", 
     total: 4,
     aiOnlyBuy: 1,
     errors: 1,
+    lastDecisionAt: now + 3,
   });
 });
 
@@ -85,14 +86,14 @@ it("renders no disabled line, a compact zero line, and the exact populated line"
   expect(
     renderToStaticMarkup(
       createElement(ShadowTodayLine, {
-        summary: { total: 0, aiOnlyBuy: 0, errors: 0 },
+        summary: { total: 0, aiOnlyBuy: 0, errors: 0, lastDecisionAt: null },
       }),
     ),
   ).toContain("影 本日 0件</p>");
   expect(
     renderToStaticMarkup(
       createElement(ShadowTodayLine, {
-        summary: { total: 7, aiOnlyBuy: 2, errors: 1 },
+        summary: { total: 7, aiOnlyBuy: 2, errors: 1, lastDecisionAt: now },
       }),
     ),
   ).toContain("影 本日 7件（AIのみBUY 2件・エラー 1件）</p>");

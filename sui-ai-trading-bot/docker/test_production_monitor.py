@@ -26,8 +26,10 @@ def healthy(now=2000):
     status = {'run': {'id': 'a'*32, 'status': 'in_progress', 'started': 1000000,
                      'stopped': None, 'sha': 'e'*40, 'stage': 'monitoring', 'admitted': True},
               'controller_alive': True, 'requires_review': False,
+              'shadow': {'total': 4, 'aiOnlyBuy': 1, 'errors': 1, 'lastDecisionAt': int(now*1000)-1000},
               'worker': {'running': True, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True, 'paper': True}}
-    watch = {'at': int(now)-1, 'verdict': 'ok', 'reasons': [], 'run_id': 'a'*32}
+    watch = {'at': int(now)-1, 'verdict': 'ok', 'reasons': [], 'run_id': 'a'*32,
+             'shadow': status['shadow']}
     return status, watch
 
 
@@ -84,7 +86,7 @@ class ShapeTests(unittest.TestCase):
             self.assertTrue(result['watchdog_at'] is None or result['watchdog_at'] <= 2060)
         self.assertEqual(combine(status, {**watch, 'at': 1100}, 2000)['verdict'], 'ok')
         self.assertIn('WATCHDOG_RUN_MISMATCH', combine(status, {**watch, 'run_id': 'b'*32}, 2000)['reasons'])
-        self.assertIn('STATUS_INCONSISTENT', combine(status, {'at': 2000, 'run_id': None, 'verdict': 'not_started', 'reasons': []}, 2000)['reasons'])
+        self.assertIn('STATUS_INCONSISTENT', combine(status, {'at': 2000, 'run_id': None, 'verdict': 'not_started', 'reasons': [], 'shadow': status['shadow']}, 2000)['reasons'])
 
     def test_live_status_can_raise_attention_even_if_last_watchdog_was_normal(self):
         status, watch = healthy()

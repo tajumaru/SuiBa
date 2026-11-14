@@ -22,6 +22,16 @@ def unreachable(worker):
             worker['reachable'] is False and worker['reason'] == 'WORKER_UNREACHABLE')
 
 
+def shadow(value, now):
+    require(value is None or type(value) is dict and
+            set(value) == {'total', 'aiOnlyBuy', 'errors', 'lastDecisionAt'} and
+            all(type(value[key]) is int and value[key] >= 0 for key in ('total', 'aiOnlyBuy', 'errors')) and
+            value['aiOnlyBuy'] <= value['total'] and value['errors'] <= value['total'] and
+            (value['lastDecisionAt'] is None or type(value['lastDecisionAt']) is int and
+             0 <= value['lastDecisionAt'] <= (now+60)*1000))
+    return value
+
+
 def failure_summary(value, run):
     require(type(value) is dict and set(value) == {'status', 'stage', 'code', 'http_status', 'backup'})
     require(value['status'] == run['status'] and value['status'] in ('in_progress', 'completed', 'failed_requires_review'))
@@ -41,17 +51,18 @@ def production(value, now):
         require(optional['code'] in ('WATCHDOG_RECORD_MISSING', 'WATCHDOG_RECORD_INVALID'))
     else:
         require(optional['code'] is None)
-        watchdog(optional['record'])
+        watchdog(optional['record'], now)
     run = value['run']
     if run is None:
         require(set(value) == {'run', 'requires_review', 'watchdog'})
         return value
-    require({'run', 'requires_review', 'worker', 'controller_alive', 'watchdog'} <= set(value) <=
-            {'run', 'requires_review', 'worker', 'controller_alive', 'watchdog', 'failure'} and
+    require({'run', 'requires_review', 'worker', 'controller_alive', 'watchdog', 'shadow'} <= set(value) <=
+            {'run', 'requires_review', 'worker', 'controller_alive', 'watchdog', 'shadow', 'failure'} and
             type(value['controller_alive']) is bool and type(run) is dict and
             set(run) == {'id', 'status', 'started', 'stopped', 'sha', 'stage', 'admitted'})
     if 'failure' in value:
         failure_summary(value['failure'], run)
+    shadow(value['shadow'], now)
     require(hex_id(run['id']) and run['status'] in CONTRACT['prod_states'][2:] and
             type(run['started']) is int and 0 <= run['started'] <= (now+60)*1000 and
             type(run['admitted']) is bool and run['stage'] in CONTRACT['stages'])
@@ -67,8 +78,8 @@ def production(value, now):
     return value
 
 
-def watchdog(value):
-    require(type(value) is dict and set(value) == {'at', 'verdict', 'reasons', 'run_id'})
+def watchdog(value, now):
+    require(type(value) is dict and set(value) == {'at', 'verdict', 'reasons', 'run_id', 'shadow'})
     require(type(value['at']) is int and value['at'] >= 0 and value['verdict'] in ('ok', 'attention', 'not_started'))
     require(type(value['reasons']) is list and len(value['reasons']) <= 32 and
             all(type(code) is str and code in HOST_REASONS for code in value['reasons']))
@@ -76,6 +87,7 @@ def watchdog(value):
     require((value['verdict'] == 'attention') == bool(value['reasons']))
     require(value['verdict'] != 'not_started' or value['run_id'] is None)
     require(value['verdict'] != 'ok' or hex_id(value['run_id']))
+    shadow(value['shadow'], now)
     return value
 
 

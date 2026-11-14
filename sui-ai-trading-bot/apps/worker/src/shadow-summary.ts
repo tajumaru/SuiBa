@@ -26,6 +26,7 @@ export type ShadowTodaySummary = {
   total: number;
   aiOnlyBuy: number;
   errors: number;
+  lastDecisionAt: number | null;
 };
 
 /** The registered base predicate and four-way truth table are shared with
@@ -82,5 +83,6 @@ export function shadowTodaySummary(
     total: shadows.length,
     aiOnlyBuy,
     errors: shadows.filter((row) => row.status === "ERROR").length,
+    lastDecisionAt: db.shadowLastDecision(),
   };
 }
