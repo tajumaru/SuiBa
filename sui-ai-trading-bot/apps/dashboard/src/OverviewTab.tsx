@@ -95,6 +95,9 @@ export function OverviewTab({
                       pair={data.pair}
                       trades={data.trades}
                       orders={data.orders}
+                      cumulativeRoundTrips={
+                        operations?.accounting.totals.roundTrips
+                      }
                     />
                     <MarketWeatherCard weather={data.weather} />
                     <label>

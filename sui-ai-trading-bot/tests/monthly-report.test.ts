@@ -74,6 +74,7 @@ describe("buildMonthlyReport", () => {
     expect(r.fillsTotal).toBe(3);
     expect(r.fillsBuy).toBe(1);
     expect(r.closed).toBe(2);
+    expect(r.roundTrips).toBe(2);
     expect(r.winRatePct).toBe(50);
     expect(r.pnlUsdc).toBeCloseTo(0.3);
     expect(r.best?.pnl).toBe(0.5);
@@ -87,6 +88,7 @@ describe("buildMonthlyReport", () => {
       counters: undefined,
     });
     expect(r.pnlUsdc).toBeNull();
+    expect(r.roundTrips).toBeNull();
     expect(r.winRatePct).toBeNull();
     expect(r.best).toBeNull();
     expect(monthlyReportText(r)).toContain("記録の範囲外");
@@ -302,11 +304,13 @@ describe("MonthlyReportCard", () => {
         pair: "SUI_USDC",
         trades,
         orders: [],
+        cumulativeRoundTrips: 7,
       }),
     );
     expect(html).toContain("月報");
     expect(html).toContain("2件（買い1・売り1）");
     expect(html).toContain("100%（1/1）");
+    expect(html).toContain("往復</dt><dd>今月 1件（累計7件）");
     expect(html).toContain("+0.50 USDC");
     expect(html).toContain("今月");
     expect(html).toContain("先月");
