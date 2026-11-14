@@ -446,7 +446,7 @@ export function PriceChart(props: PriceChartProps) {
             ))}
           </svg>
           {ghost && answerCheck && (
-            <AnswerDetails check={answerCheck} ghost={ghost} />
+            <AnswerDetails check={answerCheck} ghost={ghost} timeframe={tf} />
           )}
           {fc && fcCone && fcMid && (
             <ForecastDetails

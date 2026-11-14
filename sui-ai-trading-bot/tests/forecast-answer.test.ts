@@ -208,10 +208,31 @@ describe("PriceChart answer-check view", () => {
       )?.[0] ?? "";
     expect(details).toContain("当時の予測（破線）");
     expect(details).toContain("実際の値動き（実線）");
+    expect(details).toContain("比較期間：2026/11/01 12:00〜14:00（日本時間）");
     expect(details).toContain("+1.00%");
     expect(details).toContain("+2.80%");
     expect(on.indexOf('class="chart-answer-details"')).toBeGreaterThan(
       on.indexOf("</svg>"),
+    );
+  });
+
+  it("shows both dates when the comparison crosses midnight in Japan", () => {
+    const offset = Date.UTC(2026, 10, 13, 14) / 1000 - check.origin;
+    const shifted = {
+      ...check,
+      origin: check.origin + offset,
+      points: check.points.map((p) => ({
+        ...p,
+        timestamp: p.timestamp + offset,
+      })),
+      actuals: check.actuals.map((p) => ({
+        ...p,
+        timestamp: p.timestamp + offset,
+      })),
+    };
+    const html = render({ answerDefaultOn: true, answerCheck: shifted });
+    expect(html).toContain(
+      "比較期間：2026/11/13 23:00〜2026/11/14 01:00（日本時間）",
     );
   });
 

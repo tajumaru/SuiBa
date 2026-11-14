@@ -4,6 +4,7 @@ import { forecastPalette } from "./chartForecast.ts";
 import type { ForecastAnswerCheck } from "./forecastLog.ts";
 import type { AnswerGhost, CrossingMark } from "./chartOverlayGeometry.ts";
 import { number } from "./presentation.ts";
+import { chartTime } from "./chartPresentation.ts";
 
 /**
  * The price chart's SVG overlay groups, extracted from
@@ -204,15 +205,23 @@ export function AnswerGhostOverlay({ ghost }: { ghost: AnswerGhost }) {
 export function AnswerDetails({
   check,
   ghost,
+  timeframe,
 }: {
   check: ForecastAnswerCheck;
   ghost: AnswerGhost;
+  timeframe: number;
 }) {
+  const start = chartTime(check.origin);
+  const end = chartTime(check.actuals.at(-1)!.timestamp + timeframe);
+  const sameDay = start.slice(0, 10) === end.slice(0, 10);
   const pct = (value: number) =>
     `${value >= 0 ? "+" : ""}${(value * 100).toFixed(2)}%`;
   return (
     <section className="chart-answer-details" aria-label="前の予測と実際の詳細">
       <h4>前の予測と実際</h4>
+      <p className="chart-meta">
+        比較期間：{start}〜{sameDay ? end.slice(11) : end}（日本時間）
+      </p>
       <dl className="chart-forecast-details">
         <div>
           <dt>
