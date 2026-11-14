@@ -16,6 +16,7 @@ const context = {
   browserSessions: {
     bearer: (req: { headers: { authorization?: string } }) =>
       req.headers.authorization === "Bearer fixture",
+    readonlyBearer: () => false,
     valid: () => false,
   },
   deploymentGate: { blocked: () => false },

@@ -141,8 +141,13 @@ export function createRequestHandler(ctx: WorkerContext) {
     }
     const bearer = ctx.browserSessions.bearer(req);
     const session = ctx.browserSessions.valid(req.headers.cookie);
-    if (!bearer && !session) {
+    const readonlyBearer = ctx.browserSessions.readonlyBearer(req);
+    if (!bearer && !session && !readonlyBearer) {
       send(401, { error: "UNAUTHORIZED" });
+      return;
+    }
+    if (req.method !== "GET" && !bearer && !session && readonlyBearer) {
+      send(403, { error: "FORBIDDEN" });
       return;
     }
     if (req.method !== "GET" && !bearer && !sessionMutationAllowed(req)) {
