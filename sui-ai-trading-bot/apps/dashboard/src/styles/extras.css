@@ -279,6 +279,10 @@
 .chart-detail-swatch.touch {
   border-color: var(--gold);
 }
+.chart-detail-swatch.forecast {
+  height: 10px;
+  border-top: 0;
+}
 .chart-answer-details h4 {
   margin: 12px 0 0;
   font-size: 13px;

@@ -72,7 +72,6 @@ export function PriceChart(props: PriceChartProps) {
     ghost,
     crossingMarks,
     fcCone,
-    fcMid,
     fcPalette,
     fcLabel,
     chosen,
@@ -398,11 +397,10 @@ export function PriceChart(props: PriceChartProps) {
                 </text>
               );
             })}
-            {fc && fcCone && fcMid && (
+            {fc && fcCone && (
               <ForecastOverlay
                 fc={fc}
                 fcCone={fcCone}
-                fcMid={fcMid}
                 fcPalette={fcPalette!}
                 crossingMarks={crossingMarks}
                 x={x}
@@ -448,7 +446,7 @@ export function PriceChart(props: PriceChartProps) {
           {ghost && answerCheck && (
             <AnswerDetails check={answerCheck} ghost={ghost} timeframe={tf} />
           )}
-          {fc && fcCone && fcMid && (
+          {fc && fcCone && (
             <ForecastDetails
               fc={fc}
               horizonHours={(fc.points.length * tf) / 3600}
