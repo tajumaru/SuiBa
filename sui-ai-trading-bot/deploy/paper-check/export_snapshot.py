@@ -12,10 +12,16 @@ import time
 import zipfile
 
 ARCHIVE_LIMIT = 128 * 1024**2
-EXPORT_LIMIT = 16 * 1024**2
-ROW_LIMIT = 100000
+EXPORT_LIMIT = 256 * 1024**2
+ROW_LIMIT = 800000
+EXPORT_TIMEOUT_SECONDS = 180
 WINDOW_DAYS = 14
 WINDOW_MS = WINDOW_DAYS * 24 * 60 * 60 * 1000
+# The limits remain bounded by the 14-day window and the worker's maximum
+# write cadence. At the minimum 30-second cycle interval, even a deliberately
+# conservative one-row-per-cycle fixture for every event table (plus the two
+# cycle audit rows and the separately capped shadow calls) stays below these
+# limits with more than 2x headroom.
 TABLES = ('shadow_decisions', 'strategy_decisions', 'technical_indicators', 'operation_candidates',
           'paper_orders', 'paper_trades', 'operation_events', 'cycle_audits')
 DATABASES = {'bot.sqlite': 'SUI_USDC.sqlite', 'bot.sqlite.WAL_USDC.sqlite': 'WAL_USDC.sqlite'}
@@ -290,7 +296,7 @@ def build_export(stream, record):
     stream.seek(0)
     check(hashlib.file_digest(stream, 'sha256').hexdigest() == backup['sha256'], 'EXPORT_MANIFEST_MISMATCH')
     stream.seek(0)
-    deadline = time.monotonic()+60
+    deadline = time.monotonic()+EXPORT_TIMEOUT_SECONDS
     with tempfile.TemporaryDirectory(prefix='suiba-public-export-') as tmp:
         root = Path(tmp)
         seen = _unpack_archive(stream, root, deadline)
@@ -309,7 +315,7 @@ def build_live_export(stream, record, source_sha256):
     stream.seek(0, 2)
     check(0 < stream.tell() <= ARCHIVE_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
     stream.seek(0)
-    deadline = time.monotonic()+60
+    deadline = time.monotonic()+EXPORT_TIMEOUT_SECONDS
     with tempfile.TemporaryDirectory(prefix='suiba-prod-export-') as tmp:
         root = Path(tmp)
         seen = _unpack_archive(stream, root, deadline)
