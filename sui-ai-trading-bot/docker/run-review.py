@@ -33,6 +33,7 @@ with (Path(__file__).resolve().parents[1] / "packages/shared/src/shadow-comparis
     SHADOW_COMPARISON = json.load(fh)
 CORE = SHADOW_COMPARISON["coreConditions"]
 HORIZONS = (1, 4, 24)
+FORECAST_MIN_SAMPLES = 10
 # Candidate-flag thresholds (v1 heuristics, see docs/RUN_REVIEW_JA.md).
 # Flags are judged on NET returns (after the round-trip cost below).
 FLAG_MIN_SAMPLES = 30
@@ -272,6 +273,73 @@ def load_decisions(db_path):
             "cur": inp.get("current") or {}, "prev": inp.get("previous") or {},
         })
     return decisions, orders, trades
+
+
+def load_forecasts(db_path):
+    """Load the archived cone once; older exports may omit its table."""
+    conn = sqlite3.connect(db_path)
+    try:
+        if not conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='forecast_records'"
+        ).fetchone():
+            return []
+        rows = conn.execute(
+            "SELECT json FROM forecast_records ORDER BY timestamp, id").fetchall()
+    finally:
+        conn.close()
+    forecasts = []
+    for (raw,) in rows:
+        try:
+            value = json.loads(raw)
+            origin, upper, lower = value["origin"], value["up"], value["lo"]
+            if (type(origin) is not int or not upper or len(upper) != len(lower)
+                    or any(type(x) not in (int, float) or not math.isfinite(x)
+                           for x in upper + lower)):
+                continue
+            forecasts.append({"origin": origin, "up": upper, "lo": lower})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return forecasts
+
+
+def analyze_forecast_bias(forecasts, candles, timeframe=300):
+    """Classify each closed forecast at its final horizon point.
+
+    Bounds are inclusive, matching the worker's forecast score. Requiring a
+    later candle ensures the final horizon candle has closed.
+    """
+    close, _, _, ordered, ema, _ = candles
+    latest = ordered[-1] if ordered else None
+    rows = []
+    for forecast in forecasts:
+        steps = len(forecast["up"])
+        final_at = forecast["origin"] + (steps - 1) * timeframe
+        if latest is None or latest <= final_at or final_at not in close:
+            continue
+        actual = close[final_at]
+        upper, lower = forecast["up"][-1], forecast["lo"][-1]
+        outcome = "above" if actual > upper else "below" if actual < lower else "inside"
+        rows.append({
+            "horizon": steps * timeframe,
+            "regime": regime_at(ema, ordered, forecast["origin"]),
+            "outcome": outcome,
+        })
+
+    def tally(group):
+        counts = Counter(row["outcome"] for row in group)
+        return {"n": len(group), "inside": counts["inside"],
+                "above": counts["above"], "below": counts["below"]}
+
+    horizons = {}
+    for horizon in sorted({row["horizon"] for row in rows}):
+        group = [row for row in rows if row["horizon"] == horizon]
+        horizons[horizon] = {
+            **tally(group),
+            "regimes": {regime: tally([row for row in group if row["regime"] == regime])
+                        for regime in ("up", "down", "range", "unknown")
+                        if any(row["regime"] == regime for row in group)},
+        }
+    return {"n": len(rows), "horizons": horizons}
 
 
 def summarize(values):
@@ -684,7 +752,21 @@ def fmt_stat(s):
     return "—" if s is None else f"{s['mean']:+.2f}%（プラス {s['pos']:.0f}%、n={s['n']}）"
 
 
-def render(result, decisions_count, orders, trades, generated_at, shadow=None):
+def fmt_forecast_bias(tally):
+    if tally["n"] < FORECAST_MIN_SAMPLES:
+        return None
+    n = tally["n"]
+    return (f"収まり率 {tally['inside'] / n * 100:.0f}%・"
+            f"上振れ率 {tally['above'] / n * 100:.0f}%・"
+            f"下振れ率 {tally['below'] / n * 100:.0f}%（n={n}）")
+
+
+def horizon_text(seconds):
+    return f"{seconds // 3600}h" if seconds % 3600 == 0 else f"{seconds // 60}分"
+
+
+def render(result, decisions_count, orders, trades, generated_at, shadow=None,
+           forecast_bias=None):
     b, m = result["buckets"], result["marginal"]
     prices = result["prices"]
     lines = ["# SuiBa 振り返りレポート（段階1）", ""]
@@ -743,6 +825,21 @@ def render(result, decisions_count, orders, trades, generated_at, shadow=None):
     for name, r in result["vols"].items():
         lines.append(f"- {vlabels[name]}: {r['n']} 件（充足数内訳 {dict(sorted(r['met'].items()))}）、"
                      f"あと1つの +4h {fmt_stat(r['near4'])}、全体の +4h {fmt_stat(r['all4'])}")
+    if forecast_bias and forecast_bias["n"]:
+        lines += ["", "## 予測コーンの方向バイアス（成熟済み）", ""]
+        regime_labels = {"up": "上昇", "down": "下降", "range": "横ばい", "unknown": "不明"}
+        for horizon, tally in forecast_bias["horizons"].items():
+            summary = fmt_forecast_bias(tally)
+            if summary is None:
+                continue
+            lines.append(f"- {horizon_text(horizon)}: {summary}")
+            details = [(regime_labels[name], fmt_forecast_bias(regime))
+                       for name, regime in tally["regimes"].items()]
+            details = [(label, text) for label, text in details if text is not None]
+            if details:
+                lines += ["", "<details>", f"<summary>{horizon_text(horizon)} の局面別内訳</summary>", ""]
+                lines += [f"- {label}: {text}" for label, text in details]
+                lines += ["", "</details>"]
     lines += ["", "## フラグ", ""]
     if result["flags"]:
         for f in result["flags"]:
@@ -793,6 +890,7 @@ def main(argv):
         else:
             i += 1
     decisions, orders, trades = load_decisions(db)
+    forecasts = load_forecasts(db)
     undetermined = False
     if window == "last-session":
         session = load_last_session_window(db)
@@ -802,6 +900,9 @@ def main(argv):
             since, until = session
     if since is not None or until is not None:
         decisions = filter_window(decisions, since, until)
+        forecasts = [f for f in forecasts
+                     if (since is None or f["origin"] >= since)
+                     and (until is None or f["origin"] <= until)]
     if undetermined or (window == "last-session" and not decisions):
         if out:
             with open(out, "w") as fh:
@@ -811,12 +912,17 @@ def main(argv):
     if candles_path:
         raw = json.load(open(candles_path))["candles"]
     else:
-        raw = fetch_candles(decisions)
+        candle_sources = sorted(
+            decisions + [{"cts": f["origin"]} for f in forecasts],
+            key=lambda row: row["cts"])
+        raw = fetch_candles(candle_sources)
     candles = load_candles(raw)
     result = analyze(decisions, candles)
     shadow_rows = filter_window(load_shadow_decisions(db), since, until)
     shadow = analyze_shadow(shadow_rows, decisions, candles)
-    text = render(result, len(decisions), orders, trades, datetime.now(timezone.utc), shadow)
+    forecast_bias = analyze_forecast_bias(forecasts, candles)
+    text = render(result, len(decisions), orders, trades, datetime.now(timezone.utc),
+                  shadow, forecast_bias)
     if out:
         with open(out, "w") as fh:
             fh.write(text)

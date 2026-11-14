@@ -205,6 +205,45 @@ class RegimeTests(unittest.TestCase):
         self.assertEqual([d["cts"] for d in rr.filter_window(ds, 150, 250)], [200])
 
 
+class ForecastBiasTests(unittest.TestCase):
+    def forecast(self, close, steps=24, origin=BASE):
+        return {"origin": origin, "up": [1.01] * (steps - 1) + [close],
+                "lo": [0.99] * (steps - 1) + [close]}
+
+    def test_final_boundaries_are_inside(self):
+        upper = {"origin": BASE, "up": [1.0], "lo": [.99]}
+        lower = {"origin": BASE, "up": [1.01], "lo": [1.0]}
+        forecasts = [upper, lower]
+        result = rr.analyze_forecast_bias(forecasts, candles_with_close_at({}))
+        tally = result["horizons"][300]
+        self.assertEqual(tally["inside"], 2)
+        self.assertEqual((tally["above"], tally["below"]), (0, 0))
+
+    def test_above_below_and_unmatured_are_classified(self):
+        above = {"origin": BASE, "up": [0.99], "lo": [0.98]}
+        below = {"origin": BASE, "up": [1.02], "lo": [1.01]}
+        pending = {"origin": BASE + 90000, "up": [1.01], "lo": [0.99]}
+        result = rr.analyze_forecast_bias([above, below, pending], candles_with_close_at({}))
+        self.assertEqual(result["n"], 2)
+        self.assertEqual(result["horizons"][300]["above"], 1)
+        self.assertEqual(result["horizons"][300]["below"], 1)
+
+    def test_thin_horizon_and_regime_are_not_rendered(self):
+        forecasts = [self.forecast(1.0) for _ in range(rr.FORECAST_MIN_SAMPLES)]
+        bias = rr.analyze_forecast_bias(forecasts, candles_with_close_at({}))
+        bias["horizons"][7200]["regimes"]["unknown"]["n"] -= 1
+        text = rr.render(rr.analyze([decision()], candles_with_close_at({})), 1, 0, 0,
+                         __import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+                         forecast_bias=bias)
+        self.assertIn("収まり率 100%・上振れ率 0%・下振れ率 0%（n=10）", text)
+        self.assertNotIn("<details>", text)
+        thin = rr.analyze_forecast_bias(forecasts[:-1], candles_with_close_at({}))
+        thin_text = rr.render(rr.analyze([decision()], candles_with_close_at({})), 1, 0, 0,
+                              __import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+                              forecast_bias=thin)
+        self.assertNotIn("収まり率", thin_text)
+
+
 class VolBandTests(unittest.TestCase):
     def test_atr_bands(self):
         candles = candles_with_close_at({})
