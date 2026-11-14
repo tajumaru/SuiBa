@@ -1667,6 +1667,8 @@ class ProductionTests(unittest.TestCase):
             original = ctl.api
             def api(*args):
                 result = original(*args); result['secret'] = 'DO_NOT_RETURN_FIXTURE'
+                result['shadow'] = {'total': 4, 'aiOnlyBuy': 1, 'errors': 1,
+                                    'lastDecisionAt': int(time.time()*1000)}
                 return result
             ctl.api = api
             before = {p: p.read_bytes() for p in Path(root).rglob('*') if p.is_file()}
@@ -1676,6 +1678,7 @@ class ProductionTests(unittest.TestCase):
             self.assertNotIn('DO_NOT_RETURN_FIXTURE', json.dumps(status))
             self.assertTrue(status['controller_alive'])
             self.assertEqual(status['worker']['running'], False)
+            self.assertEqual(status['shadow']['aiOnlyBuy'], 1)
 
     def test_reachable_prod_status_preserves_the_exact_existing_response(self):
         with tempfile.TemporaryDirectory() as root:
@@ -1687,6 +1690,7 @@ class ProductionTests(unittest.TestCase):
                 'run': {key: record.get(key) for key in ('id', 'status', 'started', 'stopped', 'sha', 'stage', 'admitted')},
                 'controller_alive': True,
                 'worker': {'running': False, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True, 'paper': True},
+                'shadow': None,
                 'requires_review': False,
                 'watchdog': {'record': None, 'code': 'WATCHDOG_RECORD_MISSING'},
             })
@@ -2056,7 +2060,9 @@ class ProductionTests(unittest.TestCase):
             missing = {'record': None, 'code': 'WATCHDOG_RECORD_MISSING'}
             self.assertEqual(ctl.prod_status()['watchdog'], missing)
             c.WATCHDOG_RECORD.parent.mkdir()
-            value = {'at': int(time.time()), 'verdict': 'ok', 'reasons': [], 'run_id': 'a'*32}
+            value = {'at': int(time.time()), 'verdict': 'ok', 'reasons': [], 'run_id': 'a'*32,
+                     'shadow': {'total': 4, 'aiOnlyBuy': 1, 'errors': 1,
+                                'lastDecisionAt': int(time.time()*1000)}}
             c.WATCHDOG_RECORD.write_text(json.dumps(value))
             before = c.WATCHDOG_RECORD.read_bytes()
             self.assertEqual(ctl.prod_status()['watchdog'], {'record': value, 'code': None})

@@ -2622,7 +2622,7 @@ class ProductionController(Controller):
                 return result
             value = json.loads(raw, object_pairs_hook=pairs,
                                parse_constant=lambda _: require(False))
-            require(type(value) is dict and set(value) == {'at', 'verdict', 'reasons', 'run_id'})
+            require(type(value) is dict and set(value) == {'at', 'verdict', 'reasons', 'run_id', 'shadow'})
             require(type(value['at']) is int and 0 <= value['at'] <= int(time.time())+60 and
                     value['verdict'] in ('ok', 'attention', 'not_started'))
             require(type(value['reasons']) is list and len(value['reasons']) <= 32 and
@@ -2632,6 +2632,7 @@ class ProductionController(Controller):
                     re.fullmatch(r'[a-f0-9]{32}', value['run_id']))
             require(value['verdict'] != 'ok' or value['run_id'] is not None)
             require(value['verdict'] != 'not_started' or value['run_id'] is None)
+            self.validate_shadow(value['shadow'])
             return {'record': value, 'code': None}
         except FileNotFoundError:
             return {'record': None, 'code': 'WATCHDOG_RECORD_MISSING'}
@@ -2900,6 +2901,7 @@ class ProductionController(Controller):
         run = {key: record.get(key) for key in ('id', 'status', 'started', 'stopped', 'sha', 'stage', 'admitted')}
         alive = not self.exited(record)
         worker = None
+        shadow = None
         if record['status'] == 'in_progress' and record['admitted'] and alive:
             try:
                 d = self.api('GET', '/api/deployment')
@@ -2910,12 +2912,15 @@ class ProductionController(Controller):
             else:
                 worker = {key: d[key] for key in ('running', 'maintenance', 'databaseHealthy', 'ledgerOk') if type(d.get(key)) is bool}
                 worker['paper'] = d.get('mode') == 'PAPER'
+                shadow = d.get('shadow')
+                self.validate_shadow(shadow)
         # The abort inhibit joins requires_review: nothing in the
         # repo writes production/abort-inhibit.json, yet prod_start
         # refuses while one exists, so its presence must be
         # discoverable here instead of surfacing only as a
         # reasonless start refusal (audit F-8).
         result = {'run': run, 'controller_alive': alive, 'worker': worker,
+                  'shadow': shadow,
                   'requires_review': record['status'] == 'failed_requires_review' or self.faults(record)
                                      or os.path.lexists(self.state/'abort-inhibit.json'),
                   'watchdog': watchdog}
@@ -2923,6 +2928,17 @@ class ProductionController(Controller):
         if failure is not None:
             result['failure'] = failure
         return result
+
+    @staticmethod
+    def validate_shadow(value):
+        if value is None:
+            return value
+        require(type(value) is dict and set(value) == {'total', 'aiOnlyBuy', 'errors', 'lastDecisionAt'})
+        require(all(type(value[key]) is int and value[key] >= 0 for key in ('total', 'aiOnlyBuy', 'errors')))
+        require(value['aiOnlyBuy'] <= value['total'] and value['errors'] <= value['total'])
+        require(value['lastDecisionAt'] is None or type(value['lastDecisionAt']) is int and
+                0 <= value['lastDecisionAt'] <= int(time.time()*1000)+60000)
+        return value
 
     def export_prod_snapshot(self):
         # Read-only public extract of the LIVE production databases, feeding

@@ -21,6 +21,7 @@ def healthy():
     status = {'run': {'id': 'a'*32, 'status': 'in_progress', 'started': 1000000, 'stopped': None,
                      'sha': 'e'*40, 'stage': 'monitoring', 'admitted': True},
               'controller_alive': True, 'requires_review': False,
+              'shadow': {'total': 4, 'aiOnlyBuy': 1, 'errors': 1, 'lastDecisionAt': 1999000},
               'worker': {'running': True, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True, 'paper': True}}
     evidence = {'service_active': True, 'cutoffs_quiet': True,
                 'container': {'running': True, 'oom': False, 'restarts': 0, 'restart': 'no', 'health': 'healthy', 'exit': 0},
@@ -51,7 +52,7 @@ class WatchdogTests(unittest.TestCase):
         host = SimpleNamespace(status=lambda: {'run': None, 'requires_review': False},
                                collect=lambda *args: self.fail('host reads before first run'))
         result = w.check(host, 2000)
-        self.assertEqual(result, {'at': 2000, 'verdict': 'not_started', 'reasons': [], 'run_id': None})
+        self.assertEqual(result, {'at': 2000, 'verdict': 'not_started', 'reasons': [], 'run_id': None, 'shadow': None})
         for value, expected in ((result, ''), ({**result, 'verdict': 'ok'}, 'SUIBA_WATCHDOG_OK\n')):
             out = io.StringIO(); written = []
             with patch.object(w.os, 'geteuid', return_value=0), patch.object(w.sys, 'argv', ['watchdog']), \

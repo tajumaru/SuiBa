@@ -427,6 +427,12 @@ export class BotDatabase {
     ).get() as { at: number | null };
     return row.at;
   }
+  shadowLastDecision(): number | null {
+    const row = this.prepare(
+      "SELECT MAX(timestamp) AS at FROM shadow_decisions",
+    ).get() as { at: number | null };
+    return row.at;
+  }
   history<T = Record<string, unknown>>(table: EventTable, limit = 200): T[] {
     return (
       this.prepare(

@@ -31,6 +31,7 @@ import {
 import { comparisonOptionsSchema } from "../../../packages/backtest-engine/src/index.ts";
 import type { WorkerContext } from "./worker-context.ts";
 import { PredecessorReset } from "./predecessor-reset.ts";
+import { shadowTodaySummary } from "./shadow-summary.ts";
 
 /**
  * The HTTP request handler, extracted from the worker boot:
@@ -188,6 +189,10 @@ export function createRequestHandler(ctx: WorkerContext) {
         ledgerOk: ctx.engine.monitor.ledger().ok,
         paperCheck: ctx.paperCheck.status(),
         resetScope: ctx.predecessorReset.status(),
+        shadow:
+          process.env.SUIBA_SHADOW_ENABLED === "true"
+            ? shadowTodaySummary(ctx.db)
+            : null,
         ...(() => {
           const readiness = {
             connectivity: ctx.engine.monitor.safety().connectivity === "HEALTHY",
