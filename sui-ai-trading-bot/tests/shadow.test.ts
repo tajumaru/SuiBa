@@ -11,9 +11,11 @@ import {
   ShadowRecorder,
   bigMove60mPct,
   freezeSnapshot,
+  shadowPrompt,
   shadowRegime,
   SHADOW_PROMPT_VERSION,
   type ShadowInput,
+  validateShadowOutput,
 } from "../apps/worker/src/shadow.ts";
 const dbs: BotDatabase[] = [];
 const dirs: string[] = [];
@@ -155,6 +157,47 @@ it("freezes all same-cycle fields, sha256 and nested values before queued invoca
   });
   expect(row.triggerType).toBe("initial");
   expect(row.snapshot.triggerType).toBe("initial");
+});
+it("rounds finite non-integers to 6 significant digits before prompt, refs and hash", async () => {
+  const { input } = await fixture();
+  input.candles.at(-1)!.close = 1.2345678901234567;
+  input.candles.at(-1)!.volume = 123456.78901234567;
+  input.market!.bid = 0.00012345678901234567;
+  input.market!.bookAt = 1794522345123;
+  input.decision.evidence!.inputs.current.rsi = 12.345678901234567;
+
+  const frozen = freezeSnapshot(input);
+
+  expect(frozen.snapshot.candles.at(-1)).toMatchObject({
+    timestamp: input.candles.at(-1)!.timestamp,
+    close: 1.23457,
+    volume: 123457,
+    timeframe: 300,
+  });
+  expect(frozen.snapshot.book).toMatchObject({
+    bid: 0.000123457,
+    fetchedAt: 1794522345123,
+  });
+  expect(frozen.snapshot.evidence.inputs.current.rsi).toBe(12.3457);
+  expect(JSON.parse(shadowPrompt(frozen.snapshot)).snapshot).toEqual(
+    frozen.snapshot,
+  );
+  expect(frozen.snapshotSha256).toBe(
+    createHash("sha256").update(JSON.stringify(frozen.snapshot)).digest("hex"),
+  );
+
+  expect(() =>
+    validateShadowOutput(
+      {
+        ...output(),
+        rationale: {
+          refs: [{ type: "book", key: "bid", value: 0.000123457 }],
+          text: "rounded fixture rationale",
+        },
+      },
+      frozen.snapshot,
+    ),
+  ).not.toThrow();
 });
 it("big-move is edge-triggered across a 60-minute window with hysteresis", async () => {
   const { db, input } = await fixture();

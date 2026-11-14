@@ -12,7 +12,7 @@ import {
 import type { MarketStatus } from "../../../packages/market-data/src/provider.ts";
 import type { BotDatabase } from "../../../packages/database/src/index.ts";
 
-export const SHADOW_PROMPT_VERSION = "shadow-openai-nano-v1";
+export const SHADOW_PROMPT_VERSION = "shadow-openai-nano-v2";
 const indicators = [
   "ema20",
   "ema50",
@@ -190,6 +190,7 @@ export function freezeSnapshot(i: ShadowInput, trigger?: ShadowTriggerContext) {
       settings: i.settings,
     }),
   ) as Snapshot;
+  roundSnapshotNumbers(snapshot);
   deepFreeze(snapshot);
   return {
     snapshot,
@@ -214,6 +215,19 @@ type Snapshot = {
   portfolio: Record<string, unknown>;
   settings: Settings;
 };
+function roundSnapshotNumbers(value: object) {
+  for (const [key, nested] of Object.entries(value)) {
+    if (
+      typeof nested === "number" &&
+      Number.isFinite(nested) &&
+      !Number.isInteger(nested)
+    ) {
+      (value as Record<string, unknown>)[key] = Number(nested.toPrecision(6));
+    } else if (nested && typeof nested === "object") {
+      roundSnapshotNumbers(nested);
+    }
+  }
+}
 function deepFreeze(value: object) {
   Object.freeze(value);
   for (const v of Object.values(value))
