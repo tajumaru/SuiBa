@@ -37,14 +37,14 @@ UNITS='suiba-paper-check.service suiba-prod.service suiba-prod-watchdog.service 
 
 # Cross-setup integrity pin, checked by test_setup.py (not installed here).
 # shellcheck disable=SC2034 # Consumed by the cross-setup integrity test.
-SETUP_CI_APPROVAL_SHA256='e2511ae343a1f9369cabebe676eddcfce1ff35339ad2063db67e7e4ae48c63b2'
+SETUP_CI_APPROVAL_SHA256='9ea212dfec43baf43a590624b279cf06caa2888b0c9642746cf378689552a364'
 
 # name|sha256|target|mode
 FILES=(
   'shadow-runtime.py|b01865234bff5f271b163c97e4023fb3cd1a2582511806a5b8606f4c9d301c8b|/usr/local/libexec/suiba-shadow-runtime.py|755'
   'suiba-shadow-runtime|4a058c1f881c028ebdb573890e540175a0d10ed5cc534b1c5ff2d48c3cdae201|/usr/local/sbin/suiba-shadow-runtime|755'
   'suiba-shadow-runtime.sudoers|39c85055fc1fd995853e06004eafc071727575e0ebfa61de53d06e1573c0bc2e|/etc/sudoers.d/suiba-shadow-runtime|440'
-  'export_snapshot.py|bd6d2e67c938f92f5eea89e55b6043a2b7547020f5983d22570c6684e6edeb1b|/usr/local/libexec/suiba-paper-export.py|755'
+  'export_snapshot.py|1649b22aa44dd033636f1ea389cb612a0116689e3f52745c58a642d28ad55e10|/usr/local/libexec/suiba-paper-export.py|755'
   'controller.py|e948ef4612b3d7269da85cedc86833bb3aec473114ea2e86817c19bb06a72e98|/usr/local/libexec/suiba-paper-check.py|755'
   'suiba-paper-check|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-check|755'
   'suiba-paper-check.sudoers|54d64fdadf0b38749008c112fc12761e03f633538e526ebe6f37eb4b1ec38607|/etc/sudoers.d/suiba-paper-check|440'

@@ -8,6 +8,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("run_review", os.path.join(HERE, "run-review.py"))
@@ -96,6 +97,51 @@ class AnalyzeTests(unittest.TestCase):
         self.assertAlmostEqual(result["buckets"][3]["h"][1]["mean"], 2.0, places=6)
 
 
+class ExitGridTests(unittest.TestCase):
+    def candles(self, bars):
+        candles = candles_with_close_at({})
+        close, high, low = candles[:3]
+        for offset, hi, lo, final in bars:
+            stamp = BASE + offset
+            high[stamp], low[stamp], close[stamp] = hi, lo, final
+        return candles
+
+    def test_first_touch_tp_and_sl(self):
+        tp = rr.simulate_exits([decision()], self.candles([(300, 1.016, 0.999, 1.01)]), 1.5, 1.0)
+        self.assertEqual(tp[0]["outcome"], "tp_first")
+        self.assertAlmostEqual(tp[0]["net"], 0.9)
+        sl = rr.simulate_exits([decision()], self.candles([(300, 1.001, 0.989, 0.99)]), 1.5, 1.0)
+        self.assertEqual(sl[0]["outcome"], "sl_first")
+        self.assertAlmostEqual(sl[0]["net"], -1.6)
+
+    def test_same_bar_both_is_a_stop_loss(self):
+        trades = rr.simulate_exits(
+            [decision()], self.candles([(300, 1.016, 0.989, 1.00)]), 1.5, 1.0)
+        self.assertEqual(trades[0]["outcome"], "both_same_bar")
+        self.assertAlmostEqual(trades[0]["net"], -1.6)
+
+    def test_open_position_skips_later_entry(self):
+        ds = [decision(cts=BASE), decision(cts=BASE + 300), decision(cts=BASE + 900)]
+        candles = self.candles([(600, 1.016, 0.999, 1.01),
+                                (1200, 1.016, 0.999, 1.01)])
+        trades = rr.simulate_exits(ds, candles, 1.5, 1.0)
+        self.assertEqual([t["entry"]["cts"] for t in trades], [BASE, BASE + 900])
+
+    def test_timeout_uses_close_and_deducts_cost(self):
+        candles = self.candles([(86400, 1.011, 0.999, 1.01)])
+        trades = rr.simulate_exits([decision()], candles, 1.5, 1.0)
+        self.assertEqual(trades[0]["outcome"], "timeout")
+        self.assertAlmostEqual(trades[0]["net"], 0.4)
+
+    def test_thin_sets_and_regimes_render_only_data_insufficient(self):
+        result = rr.analyze([decision()], candles_with_close_at({}))
+        text = rr.render(result, 1, 0, 0, datetime.now(timezone.utc))
+        section = text.split("## 学習: 出口グリッド", 1)[1].split("## 局面別の内訳", 1)[0]
+        self.assertIn("フル充足: データ不足", section)
+        self.assertNotIn("全20セル", section)
+        self.assertIn("| フル充足 | 横ばい | データ不足 |", section)
+
+
 class VariantTests(unittest.TestCase):
     def test_novol_fires_through_volume_gate_but_base_does_not(self):
         d = decision(cond_extra={"volumeChangeExceeded": True})
@@ -157,6 +203,45 @@ class RegimeTests(unittest.TestCase):
         self.assertEqual([d["cts"] for d in rr.filter_window(ds, since=150)], [200, 300])
         self.assertEqual([d["cts"] for d in rr.filter_window(ds, until=200)], [100, 200])
         self.assertEqual([d["cts"] for d in rr.filter_window(ds, 150, 250)], [200])
+
+
+class ForecastBiasTests(unittest.TestCase):
+    def forecast(self, close, steps=24, origin=BASE):
+        return {"origin": origin, "up": [1.01] * (steps - 1) + [close],
+                "lo": [0.99] * (steps - 1) + [close]}
+
+    def test_final_boundaries_are_inside(self):
+        upper = {"origin": BASE, "up": [1.0], "lo": [.99]}
+        lower = {"origin": BASE, "up": [1.01], "lo": [1.0]}
+        forecasts = [upper, lower]
+        result = rr.analyze_forecast_bias(forecasts, candles_with_close_at({}))
+        tally = result["horizons"][300]
+        self.assertEqual(tally["inside"], 2)
+        self.assertEqual((tally["above"], tally["below"]), (0, 0))
+
+    def test_above_below_and_unmatured_are_classified(self):
+        above = {"origin": BASE, "up": [0.99], "lo": [0.98]}
+        below = {"origin": BASE, "up": [1.02], "lo": [1.01]}
+        pending = {"origin": BASE + 90000, "up": [1.01], "lo": [0.99]}
+        result = rr.analyze_forecast_bias([above, below, pending], candles_with_close_at({}))
+        self.assertEqual(result["n"], 2)
+        self.assertEqual(result["horizons"][300]["above"], 1)
+        self.assertEqual(result["horizons"][300]["below"], 1)
+
+    def test_thin_horizon_and_regime_are_not_rendered(self):
+        forecasts = [self.forecast(1.0) for _ in range(rr.FORECAST_MIN_SAMPLES)]
+        bias = rr.analyze_forecast_bias(forecasts, candles_with_close_at({}))
+        bias["horizons"][7200]["regimes"]["unknown"]["n"] -= 1
+        text = rr.render(rr.analyze([decision()], candles_with_close_at({})), 1, 0, 0,
+                         __import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+                         forecast_bias=bias)
+        self.assertIn("収まり率 100%・上振れ率 0%・下振れ率 0%（n=10）", text)
+        self.assertNotIn("<details>", text)
+        thin = rr.analyze_forecast_bias(forecasts[:-1], candles_with_close_at({}))
+        thin_text = rr.render(rr.analyze([decision()], candles_with_close_at({})), 1, 0, 0,
+                              __import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+                              forecast_bias=thin)
+        self.assertNotIn("収まり率", thin_text)
 
 
 class VolBandTests(unittest.TestCase):
@@ -526,8 +611,8 @@ class ShadowReviewTests(unittest.TestCase):
             _,empty_text,empty_result,_=self.review(db,candles_with_close_at({BASE+14400:1.02}))
             self.assertEqual(result,empty_result)
             self.assertEqual(empty_text.split("\n## AI 影運用",1)[0],legacy)
-            # SHA of original main's render/analyze, frozen before S2 changes.
-            self.assertEqual(hashlib.sha256(legacy.encode()).hexdigest(), "5e7f04bed245679f8d025ae5caa2985115458ca08d1eab4300fd00105d14e38e")
+            # Main report contract, including the observational learning block.
+            self.assertEqual(hashlib.sha256(legacy.encode()).hexdigest(), "faff8b582b5537b8751c2e209a7182a6d72158e2e46aaff848216bb1a2a03b50")
 
     def test_real_s1_sanitize_and_indexer_path_feed_shadow_without_changing_existing_fetch(self):
         from unittest.mock import patch

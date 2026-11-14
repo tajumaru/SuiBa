@@ -33,6 +33,7 @@ with (Path(__file__).resolve().parents[1] / "packages/shared/src/shadow-comparis
     SHADOW_COMPARISON = json.load(fh)
 CORE = SHADOW_COMPARISON["coreConditions"]
 HORIZONS = (1, 4, 24)
+FORECAST_MIN_SAMPLES = 10
 # Candidate-flag thresholds (v1 heuristics, see docs/RUN_REVIEW_JA.md).
 # Flags are judged on NET returns (after the round-trip cost below).
 FLAG_MIN_SAMPLES = 30
@@ -44,6 +45,12 @@ CAUTION_MAX_MEAN_4H = -0.30
 # higher; exports omit the live settings, hence the default is used.
 FEE_RATE_PER_SIDE = 0.003
 ROUND_TRIP_COST_PCT = 2 * FEE_RATE_PER_SIDE * 100  # 0.6%
+TAKE_PROFIT_PCT = 1.5
+STOP_LOSS_PCT = 1.0
+EXIT_TPS = (1.0, 1.5, 2.0, 2.5, 3.0)
+EXIT_SLS = (0.7, 1.0, 1.5, 2.0)
+EXIT_HOURS = 24
+LEARNING_MIN_SAMPLES = 5
 
 
 def compute_limit(decisions):
@@ -268,6 +275,73 @@ def load_decisions(db_path):
     return decisions, orders, trades
 
 
+def load_forecasts(db_path):
+    """Load the archived cone once; older exports may omit its table."""
+    conn = sqlite3.connect(db_path)
+    try:
+        if not conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='forecast_records'"
+        ).fetchone():
+            return []
+        rows = conn.execute(
+            "SELECT json FROM forecast_records ORDER BY timestamp, id").fetchall()
+    finally:
+        conn.close()
+    forecasts = []
+    for (raw,) in rows:
+        try:
+            value = json.loads(raw)
+            origin, upper, lower = value["origin"], value["up"], value["lo"]
+            if (type(origin) is not int or not upper or len(upper) != len(lower)
+                    or any(type(x) not in (int, float) or not math.isfinite(x)
+                           for x in upper + lower)):
+                continue
+            forecasts.append({"origin": origin, "up": upper, "lo": lower})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return forecasts
+
+
+def analyze_forecast_bias(forecasts, candles, timeframe=300):
+    """Classify each closed forecast at its final horizon point.
+
+    Bounds are inclusive, matching the worker's forecast score. Requiring a
+    later candle ensures the final horizon candle has closed.
+    """
+    close, _, _, ordered, ema, _ = candles
+    latest = ordered[-1] if ordered else None
+    rows = []
+    for forecast in forecasts:
+        steps = len(forecast["up"])
+        final_at = forecast["origin"] + (steps - 1) * timeframe
+        if latest is None or latest <= final_at or final_at not in close:
+            continue
+        actual = close[final_at]
+        upper, lower = forecast["up"][-1], forecast["lo"][-1]
+        outcome = "above" if actual > upper else "below" if actual < lower else "inside"
+        rows.append({
+            "horizon": steps * timeframe,
+            "regime": regime_at(ema, ordered, forecast["origin"]),
+            "outcome": outcome,
+        })
+
+    def tally(group):
+        counts = Counter(row["outcome"] for row in group)
+        return {"n": len(group), "inside": counts["inside"],
+                "above": counts["above"], "below": counts["below"]}
+
+    horizons = {}
+    for horizon in sorted({row["horizon"] for row in rows}):
+        group = [row for row in rows if row["horizon"] == horizon]
+        horizons[horizon] = {
+            **tally(group),
+            "regimes": {regime: tally([row for row in group if row["regime"] == regime])
+                        for regime in ("up", "down", "range", "unknown")
+                        if any(row["regime"] == regime for row in group)},
+        }
+    return {"n": len(rows), "horizons": horizons}
+
+
 def summarize(values):
     values = [v for v in values if v is not None]
     if not values:
@@ -300,6 +374,151 @@ def virtual_touch(d, candles, hours=24):
         if low[t] <= dn:
             return "sl_first"
     return "neither"
+
+
+def simulate_exits(decisions, candles, tp_pct, sl_pct, hours=EXIT_HOURS):
+    """Sequential single-position first-touch simulation."""
+    close, high, low, ordered, _, _ = candles
+    candidates = sorted((d for d in decisions if d.get("cts") is not None and d.get("price")),
+                        key=lambda d: d["cts"])
+    trades, busy_until = [], None
+    for d in candidates:
+        if busy_until is not None and d["cts"] < busy_until:
+            continue
+        deadline = d["cts"] + hours * 3600
+        up = d["price"] * (1 + tp_pct / 100)
+        dn = d["price"] * (1 - sl_pct / 100)
+        outcome = None
+        for t in ordered:
+            if t <= d["cts"]:
+                continue
+            if t > deadline:
+                break
+            hit_tp, hit_sl = high[t] >= up, low[t] <= dn
+            if hit_sl:
+                outcome = (t, "both_same_bar" if hit_tp else "sl_first",
+                           -sl_pct - ROUND_TRIP_COST_PCT)
+                break
+            if hit_tp:
+                outcome = (t, "tp_first", tp_pct - ROUND_TRIP_COST_PCT)
+                break
+        if outcome is None and deadline in close:
+            outcome = (deadline, "timeout",
+                       (close[deadline] / d["price"] - 1) * 100 - ROUND_TRIP_COST_PCT)
+        if outcome is None:
+            busy_until = deadline
+            continue
+        exit_cts, kind, net = outcome
+        trades.append({"entry": d, "exitCts": exit_cts, "outcome": kind, "net": net})
+        busy_until = exit_cts
+    return trades
+
+
+def summarize_trades(trades):
+    if not trades:
+        return {"n": 0, "win": 0.0, "mean": 0.0, "total": 0.0, "outcomes": Counter()}
+    nets = [t["net"] for t in trades]
+    return {"n": len(trades), "win": sum(v > 0 for v in nets) / len(nets) * 100,
+            "mean": statistics.mean(nets), "total": sum(nets),
+            "outcomes": Counter(t["outcome"] for t in trades)}
+
+
+def fmt_trade_stat(cell):
+    return (f"n={cell['n']}、勝率 {cell['win']:.1f}%、平均 {cell['mean']:+.2f}%、"
+            f"合計 {cell['total']:+.1f}%")
+
+
+def render_learning(learning):
+    labels = {3: "フル充足", 2: "あと1つ"}
+    regime_labels = {"up": "上昇", "down": "下降", "range": "横ばい", "unknown": "不明"}
+    lines = ["", "## 学習: 出口グリッド（逐次模擬）", "",
+             f"24時間、往復コスト {ROUND_TRIP_COST_PCT:.1f}% 控除後。基準セルは export にライブ設定が"
+             f"含まれないため共有既定値（利確 +{TAKE_PROFIT_PCT:.1f}%／損切り −{STOP_LOSS_PCT:.1f}%）を使用。"
+             "同一5分足で両方に触れた場合は損切り扱い。", ""]
+    for met in (3, 2):
+        cells = learning["grids"][met]
+        baseline = next(c for c in cells if c["tp"] == TAKE_PROFIT_PCT and c["sl"] == STOP_LOSS_PCT)
+        if baseline["n"] < LEARNING_MIN_SAMPLES:
+            lines.append(f"- {labels[met]}: データ不足")
+            continue
+        best, worst = max(cells, key=lambda c: c["mean"]), min(cells, key=lambda c: c["mean"])
+        for name, cell in (("基準", baseline), ("最良", best), ("最悪", worst)):
+            lines.append(f"- {labels[met]} {name}（TP +{cell['tp']:.1f}%／SL −{cell['sl']:.1f}%）: "
+                         f"{fmt_trade_stat(cell)}")
+        lines += ["", f"<details><summary>{labels[met]}の全20セル</summary>", "",
+                  "| TP | SL | n | 勝率 | 平均 | 合計 | TP/SL/同足/時間切れ |",
+                  "|---:|---:|---:|---:|---:|---:|---:|"]
+        for cell in cells:
+            o = cell["outcomes"]
+            lines.append(f"| +{cell['tp']:.1f}% | −{cell['sl']:.1f}% | {cell['n']} | {cell['win']:.1f}% | "
+                         f"{cell['mean']:+.2f}% | {cell['total']:+.1f}% | "
+                         f"{o.get('tp_first', 0)}/{o.get('sl_first', 0)}/{o.get('both_same_bar', 0)}/{o.get('timeout', 0)} |")
+        lines += ["", "</details>", ""]
+
+    lines += ["", "## 学習: 入口×局面", "",
+              "信号単位の前方向リターン（往復コスト控除後。逐次化なし）。", "",
+              "| 集合 | 局面 | +4h 平均 | プラス率 |", "|---|---|---:|---:|"]
+    for met in (3, 2):
+        for regime in ("up", "down", "range"):
+            stat = learning["forward"][met][regime][4]
+            if not stat or stat["n"] < LEARNING_MIN_SAMPLES:
+                value = "データ不足"
+                pos = "—"
+            else:
+                value, pos = f"{stat['mean']:+.2f}%（n={stat['n']}）", f"{stat['pos']:.1f}%"
+            lines.append(f"| {labels[met]} | {regime_labels[regime]} | {value} | {pos} |")
+    lines += ["", "<details><summary>+24h と基準出口の逐次模擬</summary>", ""]
+    for met in (3, 2):
+        lines.append(f"### {labels[met]}")
+        for regime in ("up", "down", "range"):
+            stat = learning["forward"][met][regime][24]
+            fwd = "データ不足" if not stat or stat["n"] < LEARNING_MIN_SAMPLES else \
+                f"平均 {stat['mean']:+.2f}%、プラス率 {stat['pos']:.1f}%（n={stat['n']}）"
+            seq = learning["baseline"][met]["byRegime"][regime]
+            seq_text = "データ不足" if seq["n"] < LEARNING_MIN_SAMPLES else fmt_trade_stat(seq)
+            lines.append(f"- {regime_labels[regime]}: 正味 +24h {fwd}／逐次 {seq_text}")
+        base = learning["baseline"][met]
+        all_text = "データ不足" if base["all"]["n"] < LEARNING_MIN_SAMPLES else fmt_trade_stat(base["all"])
+        no_down = base["withoutDown"]
+        no_down_text = "データ不足" if no_down["n"] < LEARNING_MIN_SAMPLES else fmt_trade_stat(no_down)
+        lines.append(f"- 全入口: {all_text}／下降入口を除外: {no_down_text}")
+    lines += ["", "</details>"]
+    return lines
+
+
+def analyze_learning(decisions, candles):
+    sets = {3: [d for d in decisions if d["met"] == 3],
+            2: [d for d in decisions if d["met"] == 2]}
+    grids = {}
+    for met, group in sets.items():
+        cells = []
+        for tp in EXIT_TPS:
+            for sl in EXIT_SLS:
+                trades = simulate_exits(group, candles, tp, sl)
+                cells.append({"tp": tp, "sl": sl, "trades": trades,
+                              **summarize_trades(trades)})
+        grids[met] = cells
+
+    forward = {}
+    for met, group in sets.items():
+        forward[met] = {}
+        for regime in ("up", "down", "range"):
+            regime_group = [d for d in group if d["regime"] == regime]
+            forward[met][regime] = {
+                h: summarize_net([forward_return(d, h, candles) for d in regime_group])
+                for h in (4, 24)}
+
+    baseline = {}
+    for met, group in sets.items():
+        trades = simulate_exits(group, candles, TAKE_PROFIT_PCT, STOP_LOSS_PCT)
+        by_regime = {regime: summarize_trades(
+            [t for t in trades if t["entry"]["regime"] == regime])
+            for regime in ("up", "down", "range")}
+        without_down = simulate_exits([d for d in group if d["regime"] != "down"], candles,
+                                      TAKE_PROFIT_PCT, STOP_LOSS_PCT)
+        baseline[met] = {"all": summarize_trades(trades), "byRegime": by_regime,
+                         "withoutDown": summarize_trades(without_down)}
+    return {"grids": grids, "forward": forward, "baseline": baseline}
 
 
 def analyze(decisions, candles):
@@ -381,9 +600,11 @@ def analyze(decisions, candles):
     if decisions:
         span = (datetime.fromtimestamp(decisions[0]["cts"], timezone.utc),
                 datetime.fromtimestamp(decisions[-1]["cts"], timezone.utc))
+    learning = analyze_learning(decisions, candles)
     return {"buckets": buckets, "marginal": marginal, "touches": touches,
             "flags": flags, "prices": prices, "span": span, "regimes": regimes,
             "variants": variants, "vols": vols,
+            "learning": learning,
             "actions": Counter(d["action"] for d in decisions),
             "rules": Counter(d["rule"] for d in decisions)}
 
@@ -531,7 +752,21 @@ def fmt_stat(s):
     return "—" if s is None else f"{s['mean']:+.2f}%（プラス {s['pos']:.0f}%、n={s['n']}）"
 
 
-def render(result, decisions_count, orders, trades, generated_at, shadow=None):
+def fmt_forecast_bias(tally):
+    if tally["n"] < FORECAST_MIN_SAMPLES:
+        return None
+    n = tally["n"]
+    return (f"収まり率 {tally['inside'] / n * 100:.0f}%・"
+            f"上振れ率 {tally['above'] / n * 100:.0f}%・"
+            f"下振れ率 {tally['below'] / n * 100:.0f}%（n={n}）")
+
+
+def horizon_text(seconds):
+    return f"{seconds // 3600}h" if seconds % 3600 == 0 else f"{seconds // 60}分"
+
+
+def render(result, decisions_count, orders, trades, generated_at, shadow=None,
+           forecast_bias=None):
     b, m = result["buckets"], result["marginal"]
     prices = result["prices"]
     lines = ["# SuiBa 振り返りレポート（段階1）", ""]
@@ -579,6 +814,7 @@ def render(result, decisions_count, orders, trades, generated_at, shadow=None):
             lines.append(f"| 影BUY（{version}） | {v['n']} | {fmt_stat(v['h'][1])} | "
                          f"{fmt_stat(v['net'][4])} | {fmt_stat(v['net'][24])} | "
                          f"{t.get('tp_first', 0)}/{t.get('sl_first', 0)} |")
+    lines += render_learning(result["learning"])
     lines += ["", "## 局面別の内訳（EMA50 の24h傾き：上昇 ≥+0.5%／下降 ≤−0.5%／横ばい）", ""]
     labels = {"up": "上昇", "down": "下降", "range": "横ばい", "unknown": "不明"}
     for name, r in result["regimes"].items():
@@ -589,6 +825,21 @@ def render(result, decisions_count, orders, trades, generated_at, shadow=None):
     for name, r in result["vols"].items():
         lines.append(f"- {vlabels[name]}: {r['n']} 件（充足数内訳 {dict(sorted(r['met'].items()))}）、"
                      f"あと1つの +4h {fmt_stat(r['near4'])}、全体の +4h {fmt_stat(r['all4'])}")
+    if forecast_bias and forecast_bias["n"]:
+        lines += ["", "## 予測コーンの方向バイアス（成熟済み）", ""]
+        regime_labels = {"up": "上昇", "down": "下降", "range": "横ばい", "unknown": "不明"}
+        for horizon, tally in forecast_bias["horizons"].items():
+            summary = fmt_forecast_bias(tally)
+            if summary is None:
+                continue
+            lines.append(f"- {horizon_text(horizon)}: {summary}")
+            details = [(regime_labels[name], fmt_forecast_bias(regime))
+                       for name, regime in tally["regimes"].items()]
+            details = [(label, text) for label, text in details if text is not None]
+            if details:
+                lines += ["", "<details>", f"<summary>{horizon_text(horizon)} の局面別内訳</summary>", ""]
+                lines += [f"- {label}: {text}" for label, text in details]
+                lines += ["", "</details>"]
     lines += ["", "## フラグ", ""]
     if result["flags"]:
         for f in result["flags"]:
@@ -639,6 +890,7 @@ def main(argv):
         else:
             i += 1
     decisions, orders, trades = load_decisions(db)
+    forecasts = load_forecasts(db)
     undetermined = False
     if window == "last-session":
         session = load_last_session_window(db)
@@ -648,6 +900,9 @@ def main(argv):
             since, until = session
     if since is not None or until is not None:
         decisions = filter_window(decisions, since, until)
+        forecasts = [f for f in forecasts
+                     if (since is None or f["origin"] >= since)
+                     and (until is None or f["origin"] <= until)]
     if undetermined or (window == "last-session" and not decisions):
         if out:
             with open(out, "w") as fh:
@@ -657,12 +912,17 @@ def main(argv):
     if candles_path:
         raw = json.load(open(candles_path))["candles"]
     else:
-        raw = fetch_candles(decisions)
+        candle_sources = sorted(
+            decisions + [{"cts": f["origin"]} for f in forecasts],
+            key=lambda row: row["cts"])
+        raw = fetch_candles(candle_sources)
     candles = load_candles(raw)
     result = analyze(decisions, candles)
     shadow_rows = filter_window(load_shadow_decisions(db), since, until)
     shadow = analyze_shadow(shadow_rows, decisions, candles)
-    text = render(result, len(decisions), orders, trades, datetime.now(timezone.utc), shadow)
+    forecast_bias = analyze_forecast_bias(forecasts, candles)
+    text = render(result, len(decisions), orders, trades, datetime.now(timezone.utc),
+                  shadow, forecast_bias)
     if out:
         with open(out, "w") as fh:
             fh.write(text)

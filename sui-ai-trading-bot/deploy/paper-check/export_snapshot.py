@@ -12,11 +12,17 @@ import time
 import zipfile
 
 ARCHIVE_LIMIT = 128 * 1024**2
-EXPORT_LIMIT = 16 * 1024**2
-ROW_LIMIT = 100000
+EXPORT_LIMIT = 256 * 1024**2
+ROW_LIMIT = 800000
+EXPORT_TIMEOUT_SECONDS = 180
 WINDOW_DAYS = 14
 WINDOW_MS = WINDOW_DAYS * 24 * 60 * 60 * 1000
-TABLES = ('shadow_decisions', 'strategy_decisions', 'technical_indicators', 'operation_candidates',
+# The limits remain bounded by the 14-day window and the worker's maximum
+# write cadence. At the minimum 30-second cycle interval, even a deliberately
+# conservative one-row-per-cycle fixture for every event table (plus the two
+# cycle audit rows and the separately capped shadow calls) stays below these
+# limits with more than 2x headroom.
+TABLES = ('forecast_records', 'shadow_decisions', 'strategy_decisions', 'technical_indicators', 'operation_candidates',
           'paper_orders', 'paper_trades', 'operation_events', 'cycle_audits')
 DATABASES = {'bot.sqlite': 'SUI_USDC.sqlite', 'bot.sqlite.WAL_USDC.sqlite': 'WAL_USDC.sqlite'}
 ERROR_CODES = frozenset(('EXPORT_BACKUP_MISSING', 'EXPORT_MANIFEST_MISMATCH', 'EXPORT_ARCHIVE_INVALID',
@@ -80,7 +86,14 @@ def sanitize(table, value, public=False):
     for key in ('orderId', 'cycleId', 'candidateId'):
         if key in value and ref(value[key]) is not None: out[key] = ref(value[key])
     out.update(numeric_fields(value, ('timestamp', 'createdAt', 'beganAt', 'endedAt')))
-    if table == 'strategy_decisions':
+    if table == 'forecast_records':
+        out.update(numeric_fields(value, ('origin',)))
+        for key in ('up', 'lo'):
+            points = value.get(key)
+            if (type(points) is list and 1 <= len(points) <= 48
+                    and all(number(point) and point > 0 for point in points)):
+                out[key] = points
+    elif table == 'strategy_decisions':
         if value.get('action') in ('BUY', 'SELL', 'WAIT'): out['action'] = value['action']
         out.update(numeric_fields(value, ('confidence',)))
         e = value.get('evidence')
@@ -290,7 +303,7 @@ def build_export(stream, record):
     stream.seek(0)
     check(hashlib.file_digest(stream, 'sha256').hexdigest() == backup['sha256'], 'EXPORT_MANIFEST_MISMATCH')
     stream.seek(0)
-    deadline = time.monotonic()+60
+    deadline = time.monotonic()+EXPORT_TIMEOUT_SECONDS
     with tempfile.TemporaryDirectory(prefix='suiba-public-export-') as tmp:
         root = Path(tmp)
         seen = _unpack_archive(stream, root, deadline)
@@ -309,7 +322,7 @@ def build_live_export(stream, record, source_sha256):
     stream.seek(0, 2)
     check(0 < stream.tell() <= ARCHIVE_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
     stream.seek(0)
-    deadline = time.monotonic()+60
+    deadline = time.monotonic()+EXPORT_TIMEOUT_SECONDS
     with tempfile.TemporaryDirectory(prefix='suiba-prod-export-') as tmp:
         root = Path(tmp)
         seen = _unpack_archive(stream, root, deadline)
