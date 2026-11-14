@@ -194,8 +194,9 @@ export function createRequestHandler(ctx: WorkerContext) {
             ? shadowTodaySummary(ctx.db)
             : null,
         ...(() => {
+          const safety = ctx.engine.monitor.safetySnapshot();
           const readiness = {
-            connectivity: ctx.engine.monitor.safety().connectivity === "HEALTHY",
+            connectivity: safety.connectivity === "HEALTHY",
             apiAccess: !apiAccess.blocked(),
             emergencyClear: !ctx.db.runtime().emergency,
             runtimeClear: !ctx.db.runtime().error,
@@ -206,6 +207,11 @@ export function createRequestHandler(ctx: WorkerContext) {
           return {
             readiness,
             startReady: Object.values(readiness).every(Boolean),
+            networkPause:
+              safety.resumePending && safety.pause != null
+                ? safety.pause
+                : null,
+            networkStopReason: safety.lastStopReason,
           };
         })(),
       });

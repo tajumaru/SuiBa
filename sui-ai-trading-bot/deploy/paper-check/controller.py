@@ -2912,6 +2912,8 @@ class ProductionController(Controller):
             else:
                 worker = {key: d[key] for key in ('running', 'maintenance', 'databaseHealthy', 'ledgerOk') if type(d.get(key)) is bool}
                 worker['paper'] = d.get('mode') == 'PAPER'
+                worker['networkPause'] = d.get('networkPause')
+                worker['networkStopReason'] = d.get('networkStopReason')
                 shadow = d.get('shadow')
                 self.validate_shadow(shadow)
         # The abort inhibit joins requires_review: nothing in the
@@ -3074,14 +3076,9 @@ def require_caller_scope(caller, request):
                             {'operation': 'export-prod-snapshot'}))
 
 
-# Outer bound for a declared recovery pause during monitoring. The worker's
-# own stale-episode deadline is 30 minutes and its resume proofs take about
-# two more; a worker that exhausts its deadline latches a runtime error,
-# which ends the pause classification below and fails the run at once. This
-# bound is only the backstop for a pause that somehow never resolves and
-# never errors (decided 2026-11-08 after two validation runs were finalized
-# by the first monitoring poll that saw running=false).
-PAUSE_OUTER_LIMIT_MS = 40 * 60 * 1000
+# The production supervisor and independent watchdog use the brief's one-hour
+# boundary for a declared pause that somehow neither recovers nor hard-stops.
+PAUSE_OUTER_LIMIT_MS = 60 * 60 * 1000
 
 
 def declared_pause(deployment):

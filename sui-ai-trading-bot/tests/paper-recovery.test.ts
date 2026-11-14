@@ -404,6 +404,32 @@ it("stops immediately on a 429 that arrives during a candle-stale pause", () => 
   expect(db.runtime().error).toBe("UPSTREAM_HTTP_429");
   expect(monitor.safety().resumePending).toBe(false);
 });
+it.each([429, 500])(
+  "never auto-resumes an HTTP %i hard stop",
+  (status) => {
+    const { db, monitor } = setup(),
+      start = Date.now(),
+      f = failure({
+        code: `UPSTREAM_HTTP_${status}`,
+        phase: "HTTP",
+        status,
+        timeoutType: null,
+        occurredAt: start,
+      });
+    monitor.transientFailure(f.api, f.code, f, start);
+    expect(db.runtime().error).toBe(`UPSTREAM_HTTP_${status}`);
+    expect(monitor.safety().resumePending).toBe(false);
+    monitor.market(start, start);
+    for (const at of [start + 1000, start + 61000]) {
+      monitor.beginCycle();
+      expect(monitor.recoveryCycle({ market: true, sui: true }, at)).toBe(false);
+    }
+    expect(db.runtime()).toMatchObject({
+      running: false,
+      error: `UPSTREAM_HTTP_${status}`,
+    });
+  },
+);
 it("restores the standard deadline when another failure joins a stale episode", () => {
   const { db, monitor } = setup(),
     start = Date.now();
@@ -727,6 +753,35 @@ it("requires independent clean cycles and a full minute before PAPER recovery", 
   ).toBe(true);
   expect(db.runtime().running).toBe(true);
   expect(monitor.safety().recoveredAt).toBe(start + 61000);
+});
+
+it("halts automatic recovery after two resumes inside the flap window", () => {
+  const { db, monitor } = setup();
+  const base = Date.now();
+  for (let episode = 0; episode < 3; episode++) {
+    const start = base + episode * 120000;
+    const f = failure({ occurredAt: start });
+    monitor.beginCycle();
+    monitor.transientFailure(f.api, f.code, f, start);
+    monitor.market(start, start);
+    monitor.beginCycle();
+    expect(
+      monitor.recoveryCycle({ market: true, sui: true }, start + 1000),
+    ).toBe(false);
+    monitor.beginCycle();
+    expect(
+      monitor.recoveryCycle({ market: true, sui: true }, start + 61000),
+    ).toBe(episode < paperRecoveryLimits.maxRecoveriesPerWindow);
+  }
+  expect(db.runtime()).toMatchObject({
+    running: false,
+    error: "PAPER_RECOVERY_FLAPPING",
+  });
+  expect(monitor.safety()).toMatchObject({
+    resumePending: false,
+    autoRecoveryCount: 2,
+    lastStopReason: "PAPER_RECOVERY_FLAPPING",
+  });
 });
 
 it.each(["MANUAL_STOP", "MANUAL_RESET", "EMERGENCY_STOP", "PROCESS_SHUTDOWN"])(

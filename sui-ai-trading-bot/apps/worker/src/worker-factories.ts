@@ -12,6 +12,7 @@ import { CetusRouter } from "../../../packages/dex-router/src/index.ts";
 import { WalPaperRouter } from "../../../packages/dex-router/src/pair-router.ts";
 import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
+import { paperRecoveryLimits } from "../../../packages/shared/src/paper-recovery.ts";
 import type { BotDatabase } from "../../../packages/database/src/index.ts";
 import type { TradingPair } from "../../../packages/shared/src/index.ts";
 import type { WorkerContext } from "./worker-context.ts";
@@ -124,7 +125,14 @@ export const createScheduler = (ctx: WorkerContext) =>
       }
     },
     () => ({
-      intervalMs: ctx.db.settings().intervalMs,
+      // Recovery uses the normal acquisition/validation/Sui/ledger diagnostic;
+      // only its cadence changes while trading is safely paused.
+      intervalMs:
+        ctx.engine.monitor.safety().resumePending &&
+        !ctx.db.runtime().error &&
+        !ctx.db.runtime().emergency
+          ? paperRecoveryLimits.probeIntervalMs
+          : ctx.db.settings().intervalMs,
       deepbook:
         ctx.pair === "WAL_USDC" ||
         ctx.marketMode === "deepbook" ||
