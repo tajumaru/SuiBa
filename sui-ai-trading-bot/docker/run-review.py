@@ -26,9 +26,12 @@ import sys
 import urllib.request
 from collections import Counter
 from datetime import datetime, timezone
+from pathlib import Path
 
 INDEXER = "https://deepbook-indexer.mainnet.mystenlabs.com/ohclv/SUI_USDC"
-CORE = ["emaUp", "rsiRecovery", "histogramImproving"]
+with (Path(__file__).resolve().parents[1] / "packages/shared/src/shadow-comparison.json").open(encoding="utf-8") as fh:
+    SHADOW_COMPARISON = json.load(fh)
+CORE = SHADOW_COMPARISON["coreConditions"]
 HORIZONS = (1, 4, 24)
 # Candidate-flag thresholds (v1 heuristics, see docs/RUN_REVIEW_JA.md).
 # Flags are judged on NET returns (after the round-trip cost below).
@@ -193,8 +196,9 @@ def load_last_session_window(db_path):
 
 def vol_ok(d):
     c = d["cond"]
-    return bool(c.get("latestVolumePositive") and c.get("previousVolumePositive")
-                and not c.get("volumeChangeExceeded"))
+    gate = SHADOW_COMPARISON["volumeGate"]
+    return bool(all(c.get(k) is True for k in gate["requiredTrue"])
+                and all(c.get(k) is not True for k in gate["requiredFalse"]))
 
 
 def pred_base(d):
@@ -436,12 +440,9 @@ def analyze_shadow(rows, decisions, candles):
                            "regime": regime_at(candles[4], candles[3], r["cts"]),
                            "vol": "unknown" if not atr else ("high" if atr / price * 100 >= 0.65 else "normal")})
         buys = [d for d in joined if d["action"] == "BUY"]
-        groups = {
-            "ai_only": [d for d in joined if d["action"] == "BUY" and not d["ruleBuy"]],
-            "rule_only": [d for d in joined if d["action"] == "WAIT" and d["ruleBuy"]],
-            "both_buy": [d for d in joined if d["action"] == "BUY" and d["ruleBuy"]],
-            "both_wait": [d for d in joined if d["action"] == "WAIT" and not d["ruleBuy"]],
-        }
+        groups = {group["key"]: [d for d in joined
+                  if d["action"] == group["action"] and d["ruleBuy"] is group["ruleBuy"]]
+                  for group in SHADOW_COMPARISON["groups"]}
         comparisons = {k: score_shadow(g, candles) for k, g in groups.items()}
         ai = comparisons["ai_only"]["net"][4]
         regimes = {d["regime"] for d in groups["ai_only"]
