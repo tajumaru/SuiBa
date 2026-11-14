@@ -11,7 +11,7 @@ import tempfile
 import time
 import zipfile
 
-ARCHIVE_LIMIT = 128 * 1024**2
+ARCHIVE_LIMIT = 512 * 1024**2
 EXPORT_LIMIT = 256 * 1024**2
 ROW_LIMIT = 800000
 EXPORT_TIMEOUT_SECONDS = 180

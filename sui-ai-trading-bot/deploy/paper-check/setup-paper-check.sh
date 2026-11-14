@@ -44,7 +44,7 @@ FILES=(
   'shadow-runtime.py|b01865234bff5f271b163c97e4023fb3cd1a2582511806a5b8606f4c9d301c8b|/usr/local/libexec/suiba-shadow-runtime.py|755'
   'suiba-shadow-runtime|4a058c1f881c028ebdb573890e540175a0d10ed5cc534b1c5ff2d48c3cdae201|/usr/local/sbin/suiba-shadow-runtime|755'
   'suiba-shadow-runtime.sudoers|39c85055fc1fd995853e06004eafc071727575e0ebfa61de53d06e1573c0bc2e|/etc/sudoers.d/suiba-shadow-runtime|440'
-  'export_snapshot.py|1649b22aa44dd033636f1ea389cb612a0116689e3f52745c58a642d28ad55e10|/usr/local/libexec/suiba-paper-export.py|755'
+  'export_snapshot.py|f13d98d30cb38502646018e1ff205cf8f6cd03ef2912d443d3e60aee0ac9e00f|/usr/local/libexec/suiba-paper-export.py|755'
   'controller.py|e51914a07a77aeed186ab9315e4ef1047bb810e66e145e71768e50ebdda0b02e|/usr/local/libexec/suiba-paper-check.py|755'
   'suiba-paper-check|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-check|755'
   'suiba-paper-check.sudoers|54d64fdadf0b38749008c112fc12761e03f633538e526ebe6f37eb4b1ec38607|/etc/sudoers.d/suiba-paper-check|440'

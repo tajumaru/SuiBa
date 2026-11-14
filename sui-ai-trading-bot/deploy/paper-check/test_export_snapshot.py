@@ -36,6 +36,25 @@ NOW_MS = int(time.time() * 1000)
 
 
 class ExportTests(unittest.TestCase):
+    def test_source_archive_limit_accepts_the_boundary_and_rejects_one_byte_over(self):
+        class ReportedSizeStream(io.BytesIO):
+            def __init__(self, reported_size):
+                super().__init__(b'not a tar archive')
+                self.reported_size = reported_size
+
+            def tell(self):
+                position = super().tell()
+                return self.reported_size if position == len(self.getvalue()) else position
+
+        record = {'id': 'a'*32, 'status': 'in_progress'}
+        digest = hashlib.sha256(b'not a tar archive').hexdigest()
+        with self.assertRaises(e.ExportError) as boundary:
+            e.build_live_export(ReportedSizeStream(e.ARCHIVE_LIMIT), record, digest)
+        self.assertEqual(boundary.exception.code, 'EXPORT_ARCHIVE_INVALID')
+        with self.assertRaises(e.ExportError) as oversized:
+            e.build_live_export(ReportedSizeStream(e.ARCHIVE_LIMIT + 1), record, digest)
+        self.assertEqual(oversized.exception.code, 'EXPORT_LIMIT_EXCEEDED')
+
     def test_host_stop_codes_survive_the_public_event_export(self):
         for code in ('EXTERNAL_STOP', 'WORKER_OOM', 'WORKER_EXITED', 'WORKER_EXITED_CLEAN', 'UNKNOWN'):
             with self.subTest(code=code):
