@@ -9,6 +9,7 @@ import { calculate } from "../packages/indicators/src/index.ts";
 import { dayKey, type Candle } from "../packages/shared/src/index.ts";
 import {
   ShadowRecorder,
+  bigMove60mPct,
   freezeSnapshot,
   shadowRegime,
   SHADOW_PROMPT_VERSION,
@@ -98,7 +99,13 @@ function rows(db: BotDatabase) {
     action?: string;
     snapshot: ReturnType<typeof freezeSnapshot>["snapshot"];
     snapshotSha256: string;
+    triggerType?: string;
   }>("shadow_decisions", 1000);
+}
+function setBigMove(i: ShadowInput, percent: number) {
+  const window = i.candles.slice(-13);
+  for (const candle of window) candle.close = 2;
+  window.at(-1)!.close = 2 * (1 + percent / 100);
 }
 it("OFF and missing adapter never evaluate input or freeze/append/reserve", () => {
   const read = vi.fn(() => {
@@ -118,7 +125,7 @@ it("OFF and missing adapter never evaluate input or freeze/append/reserve", () =
 });
 it("freezes all same-cycle fields, sha256 and nested values before queued invocation", async () => {
   const { db, input } = await fixture();
-  const frozen = freezeSnapshot(input);
+  const frozen = freezeSnapshot(input, { type: "initial" });
   const complete = vi.fn(async (request) => {
     expect(request.snapshot).toEqual(frozen.snapshot);
     expect(JSON.parse(request.prompt).snapshot).toEqual(frozen.snapshot);
@@ -145,6 +152,141 @@ it("freezes all same-cycle fields, sha256 and nested values before queued invoca
     ask: 2.01,
     spread: 0.02,
     fetchedAt: input.now,
+  });
+  expect(row.triggerType).toBe("initial");
+  expect(row.snapshot.triggerType).toBe("initial");
+});
+it("big-move is edge-triggered across a 60-minute window with hysteresis", async () => {
+  const { db, input } = await fixture();
+  const snapshots: ReturnType<typeof freezeSnapshot>["snapshot"][] = [];
+  const complete = vi.fn(async ({ snapshot }) => {
+    snapshots.push(snapshot);
+    return output();
+  });
+  const r = new ShadowRecorder(db, { complete }, () => true);
+  r.offer(() => input);
+  await turn();
+  await turn();
+
+  advance(input);
+  setBigMove(input, 1);
+  expect(bigMove60mPct(input.candles)).toBeCloseTo(1);
+  r.offer(() => input);
+  await turn();
+  await turn();
+  expect(complete).toHaveBeenCalledTimes(2);
+  expect(snapshots.at(-1)).toMatchObject({
+    triggerType: "big-move",
+    bigMove60mPct: expect.closeTo(1),
+  });
+
+  advance(input);
+  setBigMove(input, 1.4);
+  r.offer(() => input);
+  await turn();
+  expect(complete).toHaveBeenCalledTimes(2);
+
+  advance(input);
+  setBigMove(input, 0.79);
+  r.offer(() => input);
+  await turn();
+  advance(input);
+  setBigMove(input, -1.1);
+  r.offer(() => input);
+  await turn();
+  await turn();
+  expect(complete).toHaveBeenCalledTimes(3);
+  expect(snapshots.at(-1)).toMatchObject({
+    triggerType: "big-move",
+    bigMove60mPct: expect.closeTo(-1.1),
+  });
+});
+it("big-move ignores sub-threshold and incomplete windows", async () => {
+  const { db, input } = await fixture();
+  const complete = vi.fn(async () => output());
+  const lastCall = input.now;
+  const budget = {
+    reserveShadowCall: vi.fn(() => true),
+    shadowLastCall: vi.fn(() => lastCall),
+  };
+  const r = new ShadowRecorder(db, { complete }, () => true, budget);
+  input.candles = input.candles.slice(-12);
+  r.offer(() => input);
+  advance(input);
+  setBigMove(input, 0.99);
+  r.offer(() => input);
+  await turn();
+  expect(complete).not.toHaveBeenCalled();
+  expect(bigMove60mPct(input.candles)).toBeUndefined();
+
+  input.candles.unshift({
+    ...input.candles[0],
+    timestamp: input.candles[0].timestamp - 300,
+  });
+  r.offer(() => input);
+  advance(input);
+  setBigMove(input, 1);
+  r.offer(() => input);
+  await turn();
+  await turn();
+  expect(complete).toHaveBeenCalledTimes(1);
+});
+it("big-move obeys position, minimum-interval and daily-budget gates", async () => {
+  const holding = await fixture();
+  const holdingComplete = vi.fn(async () => output());
+  const holdingRecorder = new ShadowRecorder(
+    holding.db,
+    { complete: holdingComplete },
+    () => true,
+  );
+  setBigMove(holding.input, 0);
+  holdingRecorder.offer(() => holding.input);
+  holding.input.portfolio.sui = 1;
+  advance(holding.input);
+  setBigMove(holding.input, 1.1);
+  holdingRecorder.offer(() => holding.input);
+  await turn();
+  expect(holdingComplete).toHaveBeenCalledTimes(1);
+
+  const limited = await fixture();
+  const limitedComplete = vi.fn(async () => output());
+  const limitedRecorder = new ShadowRecorder(
+    limited.db,
+    { complete: limitedComplete },
+    () => true,
+  );
+  limitedRecorder.offer(() => limited.input);
+  await turn();
+  await turn();
+  advance(limited.input, 299999);
+  setBigMove(limited.input, 1.1);
+  limitedRecorder.offer(() => limited.input);
+  await turn();
+  expect(limitedComplete).toHaveBeenCalledTimes(1);
+
+  const capped = await fixture();
+  const cappedComplete = vi.fn(async () => output());
+  const budget = {
+    reserveShadowCall: vi.fn(() => false),
+    shadowLastCall: vi.fn(() => capped.input.now - 300000),
+  };
+  const cappedRecorder = new ShadowRecorder(
+    capped.db,
+    { complete: cappedComplete },
+    () => true,
+    budget,
+  );
+  setBigMove(capped.input, 0);
+  cappedRecorder.offer(() => capped.input);
+  advance(capped.input);
+  setBigMove(capped.input, 1.1);
+  cappedRecorder.offer(() => capped.input);
+  await turn();
+  await turn();
+  expect(cappedComplete).not.toHaveBeenCalled();
+  expect(rows(capped.db)[0]).toMatchObject({
+    status: "SKIPPED_BUDGET",
+    triggerType: "big-move",
   });
 });
 it("heartbeat, minimum interval, increasing conditions, near BUY and BUY signals", async () => {
