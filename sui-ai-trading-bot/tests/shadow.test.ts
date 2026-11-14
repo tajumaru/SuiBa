@@ -199,6 +199,25 @@ it("rounds finite non-integers to 6 significant digits before prompt, refs and h
     ),
   ).not.toThrow();
 });
+it("asks for an independent stance and explicitly identifies unmet rule conditions", async () => {
+  const { input } = await fixture();
+  input.decision.evidence!.conditions.emaUp = true;
+
+  const prompt = JSON.parse(shadowPrompt(freezeSnapshot(input).snapshot));
+
+  expect(prompt.promptVersion).toBe("shadow-openai-nano-v3");
+  expect(prompt.instruction).toContain("independent second opinion");
+  expect(prompt.instruction).toContain(
+    "choose BUY when the evidence as a whole supports buying even if rule conditions are unmet",
+  );
+  expect(prompt.instruction).toContain(
+    "choose WAIT when the evidence is weak even if the rule chose BUY",
+  );
+  expect(prompt.ruleConditionStatus).toEqual({
+    met: ["emaUp"],
+    unmet: ["rsiRecovery", "histogramImproving"],
+  });
+});
 it("big-move is edge-triggered across a 60-minute window with hysteresis", async () => {
   const { db, input } = await fixture();
   const snapshots: ReturnType<typeof freezeSnapshot>["snapshot"][] = [];

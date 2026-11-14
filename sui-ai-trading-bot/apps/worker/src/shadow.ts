@@ -12,7 +12,7 @@ import {
 import type { MarketStatus } from "../../../packages/market-data/src/provider.ts";
 import type { BotDatabase } from "../../../packages/database/src/index.ts";
 
-export const SHADOW_PROMPT_VERSION = "shadow-openai-nano-v2";
+export const SHADOW_PROMPT_VERSION = "shadow-openai-nano-v3";
 const indicators = [
   "ema20",
   "ema50",
@@ -234,10 +234,20 @@ function deepFreeze(value: object) {
     if (v && typeof v === "object") deepFreeze(v);
 }
 export function shadowPrompt(snapshot: Readonly<Snapshot>): string {
+  const conditions = snapshot.evidence.conditions;
+  const ruleConditionStatus = {
+    met: Object.entries(conditions)
+      .filter(([, value]) => value === true)
+      .map(([key]) => key),
+    unmet: Object.entries(conditions)
+      .filter(([, value]) => value !== true)
+      .map(([key]) => key),
+  };
   return JSON.stringify({
     promptVersion: SHADOW_PROMPT_VERSION,
     instruction:
-      "Return one JSON object only. Evaluate BUY or WAIT for the flat position using only this frozen snapshot. Never place orders or change settings. References must name an allowlisted field and its exact observed value. No invented or repaired values.",
+      "Return one JSON object only. Act as an independent second opinion, not a re-evaluator of the rule. Evaluate BUY or WAIT for the flat position using only this frozen snapshot. The rule condition status is context and does not constrain your decision: choose BUY when the evidence as a whole supports buying even if rule conditions are unmet, and choose WAIT when the evidence is weak even if the rule chose BUY. Never place orders or change settings. References must name an allowlisted field and its exact observed value. No invented or repaired values.",
+    ruleConditionStatus,
     output: {
       action: ["BUY", "WAIT"],
       confidence: "number [0,1]",
