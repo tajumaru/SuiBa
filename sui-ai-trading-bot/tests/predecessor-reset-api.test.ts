@@ -74,7 +74,11 @@ async function fixture(error = "UPSTREAM_HTTP_429") {
     pair: "SUI_USDC",
     switching: false,
     stopping: false,
-    browserSessions: { bearer: () => true, valid: () => false },
+    browserSessions: {
+      bearer: () => true,
+      readonlyBearer: () => false,
+      valid: () => false,
+    },
     deploymentGate: { blocked: () => false },
     paperCheck: {
       status: () => ({ enabled: true, armed: true }),

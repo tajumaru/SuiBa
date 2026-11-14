@@ -10,7 +10,10 @@ const equal = (a: string, b: string) => {
 };
 
 export class BrowserSessions {
-  constructor(private readonly secret: string) {}
+  constructor(
+    private readonly secret: string,
+    private readonly readonlySecret?: string,
+  ) {}
   private sign(value: string) {
     return createHmac("sha256", this.secret)
       .update("suiba-session:" + value)
@@ -38,6 +41,12 @@ export class BrowserSessions {
   }
   bearer(req: IncomingMessage) {
     return equal(req.headers.authorization ?? "", "Bearer " + this.secret);
+  }
+  readonlyBearer(req: IncomingMessage) {
+    return (
+      Boolean(this.readonlySecret) &&
+      equal(req.headers.authorization ?? "", "Bearer " + this.readonlySecret)
+    );
   }
   setCookie(req: IncomingMessage, res: ServerResponse, clear = false) {
     const secure =

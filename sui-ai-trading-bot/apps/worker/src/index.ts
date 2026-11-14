@@ -43,7 +43,10 @@ const token = process.env.ADMIN_TOKEN_FILE
   : process.env.ADMIN_TOKEN;
 if (!token || token.length < 32)
   throw new Error("ADMIN_TOKEN must contain at least 32 characters");
-const browserSessions = new BrowserSessions(token);
+const browserSessions = new BrowserSessions(
+  token,
+  process.env.SUIBA_READONLY_TOKEN || undefined,
+);
 const marketMode = process.env.MARKET_DATA_PROVIDER ?? "geckoterminal";
 if (!["geckoterminal", "deepbook", "auto"].includes(marketMode))
   throw new Error("INVALID_MARKET_DATA_PROVIDER");
