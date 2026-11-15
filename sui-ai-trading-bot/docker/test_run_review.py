@@ -178,6 +178,78 @@ class ExitGridTests(unittest.TestCase):
         self.assertNotIn("<details>", section)
 
 
+class ImprovementProposalTests(unittest.TestCase):
+    def result(self, count=29, mark=1.0):
+        return rr.analyze([decision(cts=BASE + i * 300) for i in range(count)],
+                          candles_with_close_at({BASE + i * 300 + 14400: mark
+                                                 for i in range(count)}))
+
+    def test_no_candidates_is_exactly_one_line(self):
+        text = rr.render_improvement_proposals(self.result())
+        body = text.split("## 改善候補（証拠ゲート通過分のみ）\n\n", 1)[1]
+        self.assertEqual(body, "候補なし（全ゲート未達）\n")
+
+    def test_entry_regime_sample_boundary_and_both_bias_directions(self):
+        for count, mark, expected in ((29, 1.01, False), (30, 1.01, True),
+                                      (30, .99, True)):
+            with self.subTest(count=count, mark=mark):
+                result = self.result()
+                result["learning"]["forward"][3]["range"][4] = {
+                    "n": count, "mean": (mark - 1) * 100,
+                    "median": (mark - 1) * 100, "pos": 100 if mark > 1 else 0}
+                proposals = rr.build_improvement_proposals(result)
+                self.assertEqual(any(title.startswith("入口×局面")
+                                     for title, _, _ in proposals), expected)
+
+    def test_scene_gate_reuses_supplied_scene_stat(self):
+        result = self.result()
+        result["scenes"] = [{"label": "dip-rebound", "net": {
+            "n": 30, "mean": -.3, "median": -.3, "pos": 0}}]
+        self.assertTrue(any(title == "場面「dip-rebound」"
+                            for title, _, _ in rr.build_improvement_proposals(result)))
+        result["scenes"][0]["net"]["n"] = 29
+        self.assertFalse(any(title.startswith("場面")
+                             for title, _, _ in rr.build_improvement_proposals(result)))
+
+    def test_exit_grid_gate_uses_existing_cells_and_current_cell(self):
+        result = self.result()
+        cells = result["learning"]["grids"][3]
+        for cell in cells:
+            cell.update(n=30, mean=0.0)
+        best = next(cell for cell in cells if cell["tp"] == 2.0 and cell["sl"] == 1.5)
+        best["mean"] = .3
+        proposals = rr.build_improvement_proposals(result)
+        self.assertTrue(any("TP +2.0%／SL −1.5%" in action
+                            for _, _, action in proposals))
+        best["n"] = 29
+        self.assertFalse(any(title.startswith("出口設定")
+                             for title, _, _ in rr.build_improvement_proposals(result)))
+
+    def test_forecast_gate_requires_second_adjustment_and_extreme_coverage(self):
+        result = self.result()
+        tally = {"n": 30, "inside": 17, "above": 8, "below": 5,
+                 "regimes": {}, "calibrationAdjustments": 2}
+        bias = {"n": 30, "horizons": {7200: tally}}
+        self.assertTrue(any(title.startswith("予測コーン")
+                            for title, _, _ in rr.build_improvement_proposals(result, forecast_bias=bias)))
+        tally["calibrationAdjustments"] = 1
+        self.assertFalse(any(title.startswith("予測コーン")
+                             for title, _, _ in rr.build_improvement_proposals(result, forecast_bias=bias)))
+
+    def test_shadow_gate_reuses_complete_graduation_checks(self):
+        result = self.result()
+        stat = {"n": 30, "mean": .3, "median": .3, "pos": 50}
+        group = {"checks": {key: True for key in
+                            ("samples", "mean", "positive", "regimes", "base")},
+                 "comparisons": {"ai_only": {"net": {4: stat}}}, "regimeCount": 2}
+        shadow = {"versions": {"current": group}}
+        self.assertTrue(any(title.startswith("影 AI-only BUY")
+                            for title, _, _ in rr.build_improvement_proposals(result, shadow)))
+        group["checks"]["samples"] = False
+        self.assertFalse(any(title.startswith("影 AI-only BUY")
+                             for title, _, _ in rr.build_improvement_proposals(result, shadow)))
+
+
 class VariantTests(unittest.TestCase):
     def test_novol_fires_through_volume_gate_but_base_does_not(self):
         d = decision(cond_extra={"volumeChangeExceeded": True})
@@ -517,7 +589,8 @@ class ShadowReviewTests(unittest.TestCase):
                 db = self.public_db(tmp, [decision()], shadows)
                 shadow, text, _, _ = self.review(db, candles_with_close_at({}))
                 self.assertEqual(shadow["n"], 0)
-                self.assertEqual(text.split("## AI 影運用", 1)[1].split("\n\n", 1)[1],
+                shadow_section = text.split("\n## 改善候補", 1)[0]
+                self.assertEqual(shadow_section.split("## AI 影運用", 1)[1].split("\n\n", 1)[1],
                                  "記録なし（影運用は未有効化）\n")
 
     def test_only_ok_is_scored_and_all_non_ok_statuses_are_counted(self):
@@ -642,13 +715,14 @@ class ShadowReviewTests(unittest.TestCase):
             legacy=rr.render(result,len(rules),0,0,at)
             existing=text.split("\n## AI 影運用",1)[0]
             existing="\n".join(line for line in existing.split("\n") if not line.startswith("| 影BUY（"))
-            self.assertEqual(existing,legacy)
+            legacy_existing = legacy.split("\n## 改善候補", 1)[0]
+            self.assertEqual(existing, legacy_existing)
             conn=sqlite3.connect(db); conn.execute("DELETE FROM shadow_decisions"); conn.commit(); conn.close()
             _,empty_text,empty_result,_=self.review(db,candles_with_close_at({BASE+14400:1.02}))
             self.assertEqual(result,empty_result)
-            self.assertEqual(empty_text.split("\n## AI 影運用",1)[0],legacy)
+            self.assertEqual(empty_text.split("\n## AI 影運用",1)[0], legacy_existing)
             # Main report contract, including the observational learning block.
-            self.assertEqual(hashlib.sha256(legacy.encode()).hexdigest(), "a52e30f6b594c9f1f8e178e981ab6ee0b03aad3c300a39315b6b743dfc8d0cc9")
+            self.assertEqual(hashlib.sha256(legacy_existing.encode()).hexdigest(), "a52e30f6b594c9f1f8e178e981ab6ee0b03aad3c300a39315b6b743dfc8d0cc9")
 
     def test_real_s1_sanitize_and_indexer_path_feed_shadow_without_changing_existing_fetch(self):
         from unittest.mock import patch

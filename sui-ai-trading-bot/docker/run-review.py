@@ -362,7 +362,11 @@ def analyze_forecast_bias(forecasts, candles, timeframe=300):
     def tally(group):
         counts = Counter(row["outcome"] for row in group)
         return {"n": len(group), "inside": counts["inside"],
-                "above": counts["above"], "below": counts["below"]}
+                "above": counts["above"], "below": counts["below"],
+                # Existing calibration starts at 30 and then runs every 10.
+                "calibrationAdjustments": max(
+                    0, (len(group) - FLAG_MIN_SAMPLES) // FORECAST_MIN_SAMPLES + 1),
+                }
 
     horizons = {}
     for horizon in sorted({row["horizon"] for row in rows}):
@@ -816,6 +820,97 @@ def horizon_text(seconds):
     return f"{seconds // 3600}h" if seconds % 3600 == 0 else f"{seconds // 60}分"
 
 
+def build_improvement_proposals(result, shadow=None, forecast_bias=None):
+    """Turn already-computed review evidence into human-review proposals."""
+    proposals = []
+
+    if shadow and shadow["versions"]:
+        # analyze_shadow inserts sorted prompt versions; only the current
+        # (latest) version is eligible, never a pool of historical versions.
+        version = next(reversed(shadow["versions"]))
+        group = shadow["versions"][version]
+        if group:
+            if all(group["checks"].values()):
+                stat = group["comparisons"]["ai_only"]["net"][4]
+                proposals.append((
+                    f"影 AI-only BUY（{version}）の卒業判定",
+                    f"根拠: n={stat['n']}、正味 +4h 平均 {stat['mean']:+.2f}%、"
+                    f"プラス率 {stat['pos']:.0f}%、{group['regimeCount']}局面。"
+                    "現行の卒業判定を全て満たした。",
+                    "推奨アクション: 卒業判定を満たした。運用切替の検討材料。",
+                ))
+
+    for scene in result.get("scenes", []):
+        stat = scene.get("net")
+        if stat and stat["n"] >= FLAG_MIN_SAMPLES \
+                and abs(stat["mean"]) >= FLAG_MIN_MEAN_4H:
+            proposals.append((
+                f"場面「{scene['label']}」",
+                f"根拠: n={stat['n']}、正味平均 {stat['mean']:+.2f}%。"
+                f"n≥{FLAG_MIN_SAMPLES} かつ正味平均の偏り "
+                f"≥ {FLAG_MIN_MEAN_4H:.1f}% を満たした。",
+                "推奨アクション: 場面の参考値がゲート到達。買い条件化の検証候補。",
+            ))
+
+    regime_labels = {"up": "上昇", "down": "下降", "range": "横ばい"}
+    set_labels = {3: "フル充足", 2: "あと1つ"}
+    for met in (3, 2):
+        for regime in ("up", "down", "range"):
+            stat = result["learning"]["forward"][met][regime][4]
+            if stat and stat["n"] >= FLAG_MIN_SAMPLES \
+                    and abs(stat["mean"]) >= FLAG_MIN_MEAN_4H:
+                proposals.append((
+                    f"入口×局面（{set_labels[met]}／{regime_labels[regime]}）",
+                    f"根拠: n={stat['n']}、正味 +4h 平均 {stat['mean']:+.2f}%。"
+                    f"n≥{FLAG_MIN_SAMPLES} かつ偏りの絶対値 "
+                    f"≥ {FLAG_MIN_MEAN_4H:.1f}% を満たした。",
+                    "推奨アクション: 局面セルの偏りがゲート到達。入口条件の変更検証候補。",
+                ))
+
+    for met in (3, 2):
+        cells = result["learning"]["grids"][met]
+        baseline = next(c for c in cells
+                        if c["tp"] == TAKE_PROFIT_PCT and c["sl"] == STOP_LOSS_PCT)
+        best = max(cells, key=lambda c: c["mean"])
+        improvement = best["mean"] - baseline["mean"]
+        if best["n"] >= FLAG_MIN_SAMPLES and improvement >= FLAG_MIN_MEAN_4H:
+            proposals.append((
+                f"出口設定（{set_labels[met]}）",
+                f"根拠: 最良セル n={best['n']}、平均 {best['mean']:+.2f}%、"
+                f"現行セル平均 {baseline['mean']:+.2f}%、差 {improvement:+.2f}%。"
+                f"n≥{FLAG_MIN_SAMPLES} かつ改善幅 ≥ {FLAG_MIN_MEAN_4H:.1f}% を満たした。",
+                f"推奨アクション: 出口設定の変更候補（TP +{best['tp']:.1f}%／"
+                f"SL −{best['sl']:.1f}%）。",
+            ))
+
+    if forecast_bias:
+        for horizon, tally in forecast_bias["horizons"].items():
+            adjustments = tally.get("calibrationAdjustments", 0)
+            if not tally["n"] or adjustments < 2:
+                continue
+            coverage = tally["inside"] / tally["n"] * 100
+            if coverage < 60 or coverage > 95:
+                proposals.append((
+                    f"予測コーン（{horizon_text(horizon)}）",
+                    f"根拠: n={tally['n']}、収まり率 {coverage:.0f}%、"
+                    f"上外れ {tally['above']}件／下外れ {tally['below']}件、"
+                    f"自己校正 {adjustments}回。目標80%に対する外れ幅ゲートを満たした。",
+                    "推奨アクション: コーン改良候補（外れの上下偏りの記録／調整歩幅。"
+                    "2026-11-13 に保留した2件）。",
+                ))
+    return proposals
+
+
+def render_improvement_proposals(result, shadow=None, forecast_bias=None):
+    lines = ["", "## 改善候補（証拠ゲート通過分のみ）", ""]
+    proposals = build_improvement_proposals(result, shadow, forecast_bias)
+    if not proposals:
+        return "\n".join(lines + ["候補なし（全ゲート未達）", ""])
+    for title, evidence, action in proposals:
+        lines += [f"### {title}", evidence, action, ""]
+    return "\n".join(lines)
+
+
 def render(result, decisions_count, orders, trades, generated_at, shadow=None,
            forecast_bias=None):
     b, m = result["buckets"], result["marginal"]
@@ -905,7 +1000,9 @@ def render(result, decisions_count, orders, trades, generated_at, shadow=None,
               "- 標本が1つの相場つきに偏る間は、フラグは「判断材料が揃った」合図にすぎない。",
               ""]
     text = "\n".join(lines)
-    return text if shadow is None else text + render_shadow(shadow)
+    if shadow is not None:
+        text += render_shadow(shadow)
+    return text + render_improvement_proposals(result, shadow, forecast_bias)
 
 
 def parse_time(text):
