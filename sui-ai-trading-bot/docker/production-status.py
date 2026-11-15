@@ -98,9 +98,9 @@ def production(value, now):
         require(type(worker) is dict, 'worker', 'worker_or_unreachable', worker)
         require(unreachable(worker) or
                 set(worker) == {'running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper',
-                                'networkPause', 'networkStopReason'} and
+                                'hasPosition', 'networkPause', 'networkStopReason'} and
                 all(type(worker[key]) is bool for key in
-                    ('running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper')) and
+                    ('running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper', 'hasPosition')) and
                 (worker['networkPause'] is None or type(worker['networkPause']) is dict) and
                 (worker['networkStopReason'] is None or type(worker['networkStopReason']) is str and
                  re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,100}', worker['networkStopReason'])),

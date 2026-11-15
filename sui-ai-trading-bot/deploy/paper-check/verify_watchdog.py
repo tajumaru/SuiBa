@@ -142,7 +142,8 @@ def main():
                          'stopped': None, 'sha': 'e'*40, 'stage': 'monitoring', 'admitted': True},
                   'controller_alive': True, 'requires_review': False,
                   'worker': {'running': True, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True,
-                             'paper': True, 'networkPause': None, 'networkStopReason': None}}
+                             'paper': True, 'hasPosition': False, 'networkPause': None, 'networkStopReason': None},
+                  'shadow': {'total': 4, 'aiOnlyBuy': 1, 'errors': 1, 'lastDecisionAt': int(now*1000)}}
         evidence = {'service_active': True, 'cutoffs_quiet': True,
                     'container': {'running': True, 'oom': False, 'restarts': 0, 'restart': 'no', 'health': 'healthy', 'exit': 0},
                     'progress': {'at': int(now), 'status': 'monitoring', 'pair': 'SUI_USDC', 'market_last_success': now*1000},
@@ -153,6 +154,15 @@ def main():
         response(status)
         wait_record(record, lambda v: v['verdict'] == 'ok')
         assert 'SUIBA_WATCHDOG_OK' in journal()
+        status['shadow'].update(total=4, errors=3)
+        response(status)
+        wait_record(record, lambda v: v['verdict'] == 'attention' and v['reasons'] == ['SHADOW_ERROR_RATE_HIGH'])
+        wait_journal(name, record, 'SUIBA_WATCHDOG_ATTENTION SHADOW_ERROR_RATE_HIGH')
+        status['shadow'].update(errors=1, lastDecisionAt=int((now-6*60*60)*1000))
+        response(status)
+        wait_record(record, lambda v: v['verdict'] == 'attention' and v['reasons'] == ['SHADOW_DECISION_STALE'])
+        wait_journal(name, record, 'SUIBA_WATCHDOG_ATTENTION SHADOW_DECISION_STALE')
+        status['shadow']['lastDecisionAt'] = int(time.time()*1000)
         status['worker'] = {'reachable': False, 'reason': 'WORKER_UNREACHABLE'}
         response(status)
         wait_record(record, lambda v: v['verdict'] == 'attention' and v['reasons'] == ['WORKER_UNREACHABLE'])

@@ -1514,7 +1514,7 @@ class ProductionTests(unittest.TestCase):
             self.calls.append((method, path, value))
             if path == '/api/deployment':
                 return {'mode': 'PAPER', 'running': self.trading, 'maintenance': False,
-                        'databaseHealthy': True, 'ledgerOk': True, 'startReady': True,
+                        'databaseHealthy': True, 'ledgerOk': True, 'hasPosition': False, 'startReady': True,
                         'paperCheck': {'enabled': True, 'armed': self.armed, 'expired': False, 'expires': None}}
             if path == '/api/pairs': return {'selected': 'SUI_USDC'}
             if path == '/api/dashboard/summary':
@@ -1690,7 +1690,7 @@ class ProductionTests(unittest.TestCase):
                 'run': {key: record.get(key) for key in ('id', 'status', 'started', 'stopped', 'sha', 'stage', 'admitted')},
                 'controller_alive': True,
                 'worker': {'running': False, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True, 'paper': True,
-                           'networkPause': None, 'networkStopReason': None},
+                           'hasPosition': False, 'networkPause': None, 'networkStopReason': None},
                 'shadow': None,
                 'requires_review': False,
                 'watchdog': {'record': None, 'code': 'WATCHDOG_RECORD_MISSING'},

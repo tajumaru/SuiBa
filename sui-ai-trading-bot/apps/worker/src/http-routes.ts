@@ -187,6 +187,7 @@ export function createRequestHandler(ctx: WorkerContext) {
         lockSha256: build?.lockSha256 ?? null,
         databaseHealthy: ctx.db.health().healthy,
         ledgerOk: ctx.engine.monitor.ledger().ok,
+        hasPosition: ctx.db.portfolio().sui > 0,
         paperCheck: ctx.paperCheck.status(),
         resetScope: ctx.predecessorReset.status(),
         shadow:
