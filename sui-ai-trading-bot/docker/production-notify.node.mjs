@@ -17,6 +17,7 @@ const report = (verdict = "attention") => ({
   run_id: "a".repeat(32),
   prod_state: "in_progress",
   watchdog_at: 1999,
+  detail: null,
 });
 const issue = (number, extra = {}) => ({
   number,

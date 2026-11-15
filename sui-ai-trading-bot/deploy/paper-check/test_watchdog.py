@@ -185,7 +185,17 @@ class WatchdogTests(unittest.TestCase):
             host = SimpleNamespace(status=lambda: status, collect=lambda *args: {})
             result = w.check(host, 2000)
             self.assertEqual(result['reasons'], ['STATUS_INVALID'])
+            self.assertEqual(set(result['detail']), {'check', 'expected', 'actual'})
             self.assertNotIn('SECRET_FIXTURE', json.dumps(result))
+
+    def test_invalid_status_detail_contains_only_check_and_shape_kinds(self):
+        status, _ = healthy(); status['requires_review'] = 'SECRET_FIXTURE'
+        result = w.check(SimpleNamespace(status=lambda: status, collect=lambda *args: {}), 2000)
+        self.assertEqual(result['detail'], {
+            'check': 'requires_review', 'expected': 'boolean', 'actual': 'string'})
+        status, evidence = healthy()
+        self.assertNotIn('detail', w.check(SimpleNamespace(
+            status=lambda: status, collect=lambda *args: evidence), 2000))
 
     def test_no_prior_result_is_read_and_repeated_checks_are_independent(self):
         s, e = healthy()

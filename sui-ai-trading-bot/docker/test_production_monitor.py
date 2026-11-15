@@ -49,7 +49,7 @@ class ShapeTests(unittest.TestCase):
         status, watch = healthy()
         result = combine(status, watch, 2000)
         self.assertEqual(result, {'at': 2000, 'verdict': 'ok', 'reasons': [], 'run_id': 'a'*32,
-                                  'prod_state': 'in_progress', 'watchdog_at': 1999})
+                                  'prod_state': 'in_progress', 'watchdog_at': 1999, 'detail': None})
         status['run'].update(status='completed', stage='stopped', stopped=1900000)
         status.update(controller_alive=False, worker=None)
         self.assertEqual(combine(status, watch, 2000)['verdict'], 'ok')
@@ -74,10 +74,29 @@ class ShapeTests(unittest.TestCase):
             bad = copy.deepcopy(status); mutate(bad)
             result = combine(bad, watch, 2000)
             self.assertEqual(result['reasons'], ['PROD_STATUS_INVALID'])
+            self.assertEqual(set(result['detail']), {'check', 'expected', 'actual'})
             self.assertNotIn('SECRET_FIXTURE', json.dumps(result))
         for bad in ({**watch, 'reasons': ['SECRET_FIXTURE'], 'verdict': 'attention'},
                     {**watch, 'at': True}, {**watch, 'verdict': 'attention'}, {**watch, 'extra': 'SECRET_FIXTURE'}):
             self.assertIn('PROD_STATUS_INVALID', combine(status, bad, 2000)['reasons'])
+
+    def test_invalid_shape_detail_names_check_and_shape_kinds_only(self):
+        status, watch = healthy()
+        status['requires_review'] = 'SECRET_FIXTURE'
+        result = combine(status, watch, 2000)
+        self.assertEqual(result['reasons'], ['PROD_STATUS_INVALID'])
+        self.assertEqual(result['detail'], {
+            'check': 'requires_review', 'expected': 'boolean', 'actual': 'string'})
+        status, watch = healthy()
+        self.assertIsNone(combine(status, watch, 2000)['detail'])
+
+    def test_host_shape_detail_uses_the_same_closed_shape(self):
+        status, watch = healthy()
+        watch.update(verdict='attention', reasons=['STATUS_INVALID'], run_id=None,
+                     detail={'check': 'run', 'expected': 'production_run', 'actual': 'string'})
+        result = combine(status, watch, 2000)
+        self.assertIn('STATUS_INVALID', result['reasons'])
+        self.assertEqual(result['detail'], watch['detail'])
 
     def test_stale_future_and_different_run_records_require_review(self):
         status, watch = healthy()
