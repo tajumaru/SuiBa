@@ -36,6 +36,25 @@ NOW_MS = int(time.time() * 1000)
 
 
 class ExportTests(unittest.TestCase):
+    def test_source_archive_limit_accepts_the_boundary_and_rejects_one_byte_over(self):
+        class ReportedSizeStream(io.BytesIO):
+            def __init__(self, reported_size):
+                super().__init__(b'not a tar archive')
+                self.reported_size = reported_size
+
+            def tell(self):
+                position = super().tell()
+                return self.reported_size if position == len(self.getvalue()) else position
+
+        record = {'id': 'a'*32, 'status': 'in_progress'}
+        digest = hashlib.sha256(b'not a tar archive').hexdigest()
+        with self.assertRaises(e.ExportError) as boundary:
+            e.build_live_export(ReportedSizeStream(e.ARCHIVE_LIMIT), record, digest)
+        self.assertEqual(boundary.exception.code, 'EXPORT_ARCHIVE_INVALID')
+        with self.assertRaises(e.ExportError) as oversized:
+            e.build_live_export(ReportedSizeStream(e.ARCHIVE_LIMIT + 1), record, digest)
+        self.assertEqual(oversized.exception.code, 'EXPORT_LIMIT_EXCEEDED')
+
     def test_host_stop_codes_survive_the_public_event_export(self):
         for code in ('EXTERNAL_STOP', 'WORKER_OOM', 'WORKER_EXITED', 'WORKER_EXITED_CLEAN', 'UNKNOWN'):
             with self.subTest(code=code):
@@ -68,13 +87,22 @@ class ExportTests(unittest.TestCase):
         self.assertNotIn('promptVersion', e.sanitize('shadow_decisions', raw))
         self.assertIn('shadow_decisions', e.TABLES)
 
-    def test_shadow_owner_approved_model_and_prompt_version_allowlists(self):
+    def test_shadow_owner_approved_model_and_prompt_version_shapes(self):
         for model in ('gpt-5.4-nano', 'gpt-5.4-mini', 'arbitrary-secret-model'):
-            out = e.sanitize('shadow_decisions', {'status': 'OK', 'model': model, 'promptVersion': 'shadow-openai-nano-v1'})
-            self.assertEqual(out.get('model'), model if model == 'gpt-5.4-nano' else None)
-            self.assertEqual(out['promptVersion'], 'shadow-openai-nano-v1')
+            out = e.sanitize('shadow_decisions', {'status': 'OK', 'model': model, 'promptVersion': 'shadow-openai-nano-v99'})
+            self.assertEqual(out.get('model'), model if model in ('gpt-5.4-nano', 'gpt-5.4-mini') else None)
+            self.assertEqual(out['promptVersion'], 'shadow-openai-nano-v99')
             self.assertEqual(e.sanitize('shadow_decisions', out, public=True), out)
-        self.assertNotIn('promptVersion', e.sanitize('shadow_decisions', {'promptVersion': 'unknown'}))
+        invalid_versions = (
+            'unknown',
+            'shadow-openai-nano-v0',
+            'shadow-openai-nano-v1/../../secret',
+            'shadow-openai-nano version 4',
+            'shadow-' + 'a' * 71 + '-v1',
+        )
+        for version in invalid_versions:
+            with self.subTest(version=version):
+                self.assertNotIn('promptVersion', e.sanitize('shadow_decisions', {'promptVersion': version}))
         for code in ('SHADOW_API_KEY_MISSING', 'OPENAI_REFUSAL', 'OPENAI_RATE_LIMITED'):
             self.assertEqual(e.sanitize('shadow_decisions', {'status': 'ERROR', 'reasonCode': code})['reasonCode'], code)
 

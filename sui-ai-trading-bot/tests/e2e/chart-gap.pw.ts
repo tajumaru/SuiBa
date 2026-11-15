@@ -54,9 +54,10 @@ test("audited gaps expose exact times and verified reconstruction causes", async
     .getByRole("button", { name: "DeepBookの7日履歴を取得", exact: true })
     .click();
   const quality = page.getByLabel("表示履歴の品質");
-  await expect(quality).toContainText("期待：2016本");
-  await expect(quality).toContainText("取得済み：2016本");
-  await expect(quality).toContainText("原因未確定：0本");
+  const status = page.getByLabel("実際の表示期間");
+  await expect(status).toContainText("7日・2016本（欠損0）");
+  await expect(status).toContainText("検証済み再構築48本");
+  await expect(status).not.toContainText("原因未確定");
   await page
     .getByLabel("欠損・再構築の日時")
     .selectOption(String(verifiedDisplayRepairs[0].timestamp));

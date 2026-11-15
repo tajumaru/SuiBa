@@ -48,6 +48,8 @@ test("2016 bars share periods gestures and selection without repeated history tr
   // The frozen chart clock must also advance the login success animation.
   await expect(page.getByRole("status")).toHaveText("おはようございます！");
   await page.clock.runFor(1000);
+  await page.getByLabel("起動中").click();
+  await page.clock.runFor(300);
   await page
     .getByRole("button", { name: "ダッシュボード", exact: true })
     .click();
@@ -62,24 +64,37 @@ test("2016 bars share periods gestures and selection without repeated history tr
   await expect(chart).toContainText("2016本");
   await expect(chart.getByLabel("RSI連動チャート")).toBeVisible();
   await expect(chart.getByLabel("MACD連動チャート")).toBeVisible();
+  const writeBaseline = [...writes];
   async function synced() {
-    const p = (await chart.getByLabel("実際の表示期間").textContent())!.replace(
-      "表示期間：",
-      "",
-    );
+    const p = await chart
+      .getByLabel("実際の表示期間")
+      .locator(".sr-only")
+      .textContent();
     for (const kind of ["RSI", "MACD"])
-      await expect(chart.getByLabel(`${kind}表示期間`)).toHaveText(
-        `表示期間：${p}`,
-      );
+      await expect(chart.getByLabel(`${kind}表示期間`)).toHaveText(p!.trim());
   }
   await synced();
   const initial = await chart.getByLabel("実際の表示期間").textContent();
   const t = performance.now();
-  await chart.getByRole("button", { name: "拡大", exact: true }).click();
+  const price = chart.getByRole("img", { name: "価格チャート", exact: true });
+  if (info.project.name === "width-1280") {
+    await chart.getByRole("button", { name: "拡大", exact: true }).click();
+  } else {
+    await expect(
+      chart.getByRole("button", { name: "拡大", exact: true }),
+    ).toBeHidden();
+    await price.focus();
+    await page.keyboard.press("+");
+  }
   await synced();
   const zoomMs = performance.now() - t;
   await expect(chart.getByLabel("実際の表示期間")).not.toHaveText(initial!);
-  await chart.getByRole("button", { name: "過去へ", exact: true }).click();
+  if (info.project.name === "width-1280") {
+    await chart.getByRole("button", { name: "過去へ", exact: true }).click();
+  } else {
+    await price.focus();
+    await page.keyboard.press("ArrowLeft");
+  }
   await synced();
   await chart
     .getByRole("button", { name: "最新データへ戻る", exact: true })
@@ -106,7 +121,7 @@ test("2016 bars share periods gestures and selection without repeated history tr
   expect(historyRequests).toBe(1);
   await page.clock.fastForward(21000);
   expect(historyRequests).toBe(1);
-  expect(writes).toEqual([]);
+  expect(writes).toEqual(writeBaseline);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,

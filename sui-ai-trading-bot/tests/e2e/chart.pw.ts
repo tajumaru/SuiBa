@@ -40,6 +40,8 @@ async function open(page: Page, empty = false, provisional = false) {
   // Keep chart time deterministic while allowing authenticated navigation.
   await expect(page.getByRole("status")).toHaveText("おはようございます！");
   await page.clock.runFor(1000);
+  await page.getByLabel("起動中").click();
+  await page.clock.runFor(300);
   await page
     .getByRole("button", { name: "ダッシュボード", exact: true })
     .click();
@@ -101,16 +103,35 @@ test("chart zoom pan hover tap slider keyboard and latest update visible period"
   const baseline = [...calls];
   const range = chart.getByLabel("実際の表示期間"),
     initial = await range.textContent();
-  await chart.getByRole("button", { name: "過去へ", exact: true }).click();
+  const svg = chart.getByRole("img", { name: "価格チャート", exact: true });
+  if (infoMobile(page)) {
+    await expect(
+      chart.getByRole("button", { name: "過去へ", exact: true }),
+    ).toBeHidden();
+    await svg.focus();
+    await page.keyboard.press("ArrowLeft");
+  } else {
+    await chart.getByRole("button", { name: "過去へ", exact: true }).click();
+  }
   await expect(range).not.toHaveText(initial!);
+  await expect(
+    chart.getByRole("button", { name: "最新データへ戻る", exact: true }),
+  ).toBeVisible();
   await chart
     .getByRole("button", { name: "最新データへ戻る", exact: true })
     .click();
   await expect(range).toHaveText(initial!);
-  await chart.getByRole("button", { name: "拡大", exact: true }).click();
+  await expect(
+    chart.getByRole("button", { name: "最新データへ戻る", exact: true }),
+  ).toHaveCount(0);
+  if (infoMobile(page)) {
+    await svg.focus();
+    await page.keyboard.press("+");
+  } else {
+    await chart.getByRole("button", { name: "拡大", exact: true }).click();
+  }
   await expect(range).not.toHaveText(initial!);
   await chart.getByRole("button", { name: "6時間", exact: true }).click();
-  const svg = chart.getByRole("img", { name: "価格チャート", exact: true });
   await svg.focus();
   await page.keyboard.press("ArrowLeft");
   await expect(range).not.toHaveText(initial!);

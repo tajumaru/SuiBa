@@ -307,7 +307,7 @@ status/diagnoseにadmission_failureを追加し、初回のrun未作成時も確
 
 対象は現在のrun.jsonが指す直近ランに紐づく**開始前バックアップのみ**。終了済みランに加え、オーナーの選択により稼働中/終了処理中ランも同じ開始前コピーを対象にできる。backup未記録ならEXPORT_BACKUP_MISSINGで拒否する。生の現行DBやvolumeを開かず、worker/API/systemctl/Dockerを呼ばず、停止・ラッチ・復旧操作をしない。
 
-既存の開始前保存形式はtarで、独立したmanifest.jsonではなく、root所有run.jsonのbackup欄がfileとsha256を保持している。このtrusted manifest情報のSHA256を同じFDのtar全体と照合し、不一致はEXPORT_MANIFEST_MISMATCH。元のtarは公開しない。128MiB/4096メンバー/60秒/総10万行/抽出16MiBを上限とし、超過時は部分抽出を成功扱いしない。SQLite WAL回復は一時コピー内だけで行う。
+既存の開始前保存形式はtarで、独立したmanifest.jsonではなく、root所有run.jsonのbackup欄がfileとsha256を保持している。このtrusted manifest情報のSHA256を同じFDのtar全体と照合し、不一致はEXPORT_MANIFEST_MISMATCH。元のtarは公開しない。512MiB/4096メンバー/180秒/総80万行/抽出256MiBを上限とし、超過時は部分抽出を成功扱いしない。SQLite WAL回復は一時コピー内だけで行う。
 
 新規SQLiteへ再構成する対象テーブルは strategy_decisions / technical_indicators / operation_candidates / paper_orders / paper_trades / operation_events / cycle_audits の7種類（存在するもの）。列はid/timestamp/jsonだけ。JSONも固定の数値・真偽値・enumのallowlistで再構成する。設定テーブル、runtime、認証、足、portfolio_snapshots、判断のthresholds、注文経路・HTTP headers、自由文は出さない。IDと相互参照は同じSHA256表現へ変換し、結合を維持する。未知のイベントコードはREDACTEDとする。
 

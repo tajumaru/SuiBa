@@ -344,12 +344,16 @@
   font-size: 12px;
 }
 .chart-answer-toggle[aria-pressed="true"] {
-  background: #254f61;
+  background: var(--steel);
   border-color: var(--mint);
-  color: #e5fff6;
+  color: var(--text);
   box-shadow: inset 0 -3px var(--mint);
 }
 .chart-answer-verdict {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   margin: 0;
@@ -360,6 +364,14 @@
 }
 .chart-answer-verdict.miss {
   color: var(--pink);
+}
+.chart-answer-tag {
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
 /* Sui chain strip: the chain's vital signs under the ticker. */
