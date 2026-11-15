@@ -31,6 +31,13 @@ on:
     # first fire. The posting step dedupes by JST date (see the marker
     # guard there), so when both fires run, only the first one posts.
     - cron: '17 16 * * *'
+    # Third fire at 06:17 JST. Observed 2026-11-11..15: this
+    # workflow's scheduled fires routinely land 4.5-7.5 hours late
+    # and one day (2026-11-13) never posted at all, while other
+    # workflows in the repo fire on time. A morning fire absorbs
+    # that delay and covers a fully dropped night; the JST-date
+    # dedupe keeps extra fires harmless.
+    - cron: '17 21 * * *'
   workflow_dispatch:
     inputs:
       confirmation:
