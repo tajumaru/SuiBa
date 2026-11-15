@@ -272,6 +272,11 @@ export interface NarrationState {
   forecastCalibEventIds: string[];
   /** Last memory narration per regime × entry kind; display-only cooldowns. */
   memoryCooldowns: Record<string, number>;
+  /** Device-local rollout boundary for the scratch seal. Entries already in
+   * the feed before this instant stay readable. Optional for legacy saves. */
+  memorySealEnabledAt?: number;
+  /** Memory entry ids whose device-local seals have been opened. */
+  openedMemorySealIds?: string[];
 }
 
 /** One JST month of feed-side tallies for the monthly report.
@@ -336,6 +341,7 @@ export function trimNarrationEntries(
 }
 export const MAX_SEEN_KEYS = 200;
 export const DECISION_FRESH_MS = 360_000;
+const MEMORY_SEAL_ENABLED_AT = Date.now();
 
 export function freshDecision(dec: DecisionTelemetry | null | undefined, now: number) {
   return (
@@ -400,6 +406,8 @@ export function emptyNarrationState(): NarrationState {
     lastCalibScoredAt: 0,
     forecastCalibEventIds: [],
     memoryCooldowns: {},
+    memorySealEnabledAt: MEMORY_SEAL_ENABLED_AT,
+    openedMemorySealIds: [],
   };
 }
 
