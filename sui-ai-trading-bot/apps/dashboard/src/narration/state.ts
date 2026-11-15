@@ -39,6 +39,7 @@ export type NarrationKind =
   | "forecastTouchNear" // the touch line was nearly reached before time ran out
   | "bookWall" // an order-book wall appeared / vanished / was breached
   | "forecastCalib" // the cone's width learned from its scored record
+  | "memory" // a display-only historical situation statistic, optionally with recall
   | "greeting" // the incoming character's handover line on a character switch
   | "status"; // feed-initialised status line
 
@@ -269,6 +270,8 @@ export interface NarrationState {
    * feed has taken in (told or quietly adopted). */
   lastCalibScoredAt: number;
   forecastCalibEventIds: string[];
+  /** Last memory narration per regime × entry kind; display-only cooldowns. */
+  memoryCooldowns: Record<string, number>;
 }
 
 /** One JST month of feed-side tallies for the monthly report.
@@ -396,6 +399,7 @@ export function emptyNarrationState(): NarrationState {
     lastForecastCallAt: null,
     lastCalibScoredAt: 0,
     forecastCalibEventIds: [],
+    memoryCooldowns: {},
   };
 }
 

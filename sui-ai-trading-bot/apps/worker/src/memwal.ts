@@ -1,8 +1,15 @@
 import { MemWal } from "@mysten-incubation/memwal";
 import type { BotDatabase } from "../../../packages/database/src/index.ts";
+import {
+  refreshSituationMemory,
+  SITUATION_MEMORY_BIAS_PCT,
+  SITUATION_MEMORY_MIN_SAMPLES,
+  type SituationMemory,
+} from "./situation-memory.ts";
 
 export interface MemwalClient {
   remember(text: string, idempotencyKey: string): Promise<{ id: string }>;
+  recall?(query: string): Promise<string | null>;
 }
 
 export interface MemwalConfig {
@@ -36,6 +43,11 @@ export function createMemwalClient(config: MemwalConfig): MemwalClient {
     async remember(text, idempotencyKey) {
       const job = await client.remember(text, { idempotencyKey });
       return { id: job.job_id };
+    },
+    async recall(query) {
+      const result = await client.recall({ query, limit: 1 });
+      const text = result.results[0]?.text;
+      return typeof text === "string" && text.trim() ? text.trim().slice(0, 180) : null;
     },
   };
 }
@@ -76,12 +88,24 @@ export function startMemwalFlusher(
   env: NodeJS.ProcessEnv = process.env,
 ) {
   const config = memwalConfig(env);
-  if (!config) return null;
-  const flusher = new MemwalFlusher(db, createMemwalClient(config));
-  const run = () => {
+  const client = config ? createMemwalClient(config) : null;
+  const flusher = new MemwalFlusher(db, client);
+  let recallFor = "";
+  const run = async () => {
     try {
       enqueueSettledShadowEpisodes(db);
+      const statistic = refreshSituationMemory(db);
       void flusher.flush().catch(() => {});
+      if (
+        client?.recall &&
+        statistic &&
+        statistic.n >= SITUATION_MEMORY_MIN_SAMPLES &&
+        Math.abs(statistic.mean4hPct) >= SITUATION_MEMORY_BIAS_PCT &&
+        recallFor !== `${statistic.key}:${statistic.evaluatedAt}`
+      ) {
+        recallFor = `${statistic.key}:${statistic.evaluatedAt}`;
+        void attachRecall(db, client, statistic);
+      }
     } catch {
       /* Mirror curation and delivery never affect the worker. */
     }
@@ -90,6 +114,20 @@ export function startMemwalFlusher(
   timer.unref();
   setImmediate(run);
   return { flusher, stop: () => clearInterval(timer) };
+}
+
+async function attachRecall(db: BotDatabase, client: MemwalClient, statistic: SituationMemory) {
+  try {
+    const recall = await client.recall?.(`${statistic.regime} ${statistic.kind} +4h`);
+    const current = db.get<SituationMemory>("situation_memory");
+    if (
+      recall &&
+      current?.key === statistic.key &&
+      current.evaluatedAt === statistic.evaluatedAt
+    ) db.set("situation_memory", { ...current, recall });
+  } catch {
+    /* Recall is optional display enrichment; the SQLite statistic remains. */
+  }
 }
 
 type ShadowRecord = {

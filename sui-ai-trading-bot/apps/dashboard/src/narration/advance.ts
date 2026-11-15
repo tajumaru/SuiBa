@@ -20,6 +20,7 @@ import type { CalibEvent } from "../forecastCalib.ts";
 import type { VitalState } from "../botVital.ts";
 import type { AgentCharacter } from "../agentCharacter.ts";
 import { voiceText } from "./voice.ts";
+import { memoryNarration } from "./memory.ts";
 import { cycleNarrationText, decisionTrail, sellLinesOf } from "./decision.ts";
 import { chooseWatchTarget, makeWatch, watchEligible } from "./watch.ts";
 import {
@@ -325,6 +326,8 @@ export function advanceNarration(
   stageEvents(work, prev, d);
   stageCandidates(work, prev, d);
   stageStrategy(work, d, vitalState, now);
+  const memory = memoryNarration(d.situationMemory, prev.memoryCooldowns, now);
+  if (memory) work.drafts.push(memory.draft);
   stageConnectivity(work, d, now);
   stageStatusAndSleep(work, prev, d, vitalState, now);
   stageBtc(work, btc, now);
@@ -355,6 +358,9 @@ export function advanceNarration(
       lastForecastCallAt: work.lastForecastCallAt,
       lastCalibScoredAt: work.lastCalibScoredAt,
       forecastCalibEventIds: work.forecastCalibEventIds,
+      memoryCooldowns: memory
+        ? { ...prev.memoryCooldowns, [memory.key]: now }
+        : prev.memoryCooldowns,
       sessionStartPrice: work.sessionStartPrice,
       priceHistory: work.priceHistory,
       alertCooldown: work.alertCooldown,
