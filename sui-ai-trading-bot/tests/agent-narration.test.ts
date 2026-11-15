@@ -12,6 +12,7 @@ import {
 import {
   advanceNarration,
   agentPose,
+  agentPoseDetails,
   currentConditionChips,
   currentWatch,
   currentWatchScore,
@@ -1082,6 +1083,23 @@ describe("agent narration: fail-closed", () => {
     const vital = botVital(d, false, NOW, NOW);
     expect(agentPose(state, d, vital, NOW)).toBe("pointSmile");
     expect(agentPose(state, d, vital, NOW + 360_001)).toBe("laptop");
+  });
+
+  it("reports the point-smile cause with recorded fills taking priority", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, null);
+    const state = emptyNarrationState();
+    const vital = botVital(d, false, NOW, NOW);
+    state.lastHitAt = NOW;
+    expect(agentPoseDetails(state, d, vital, NOW)).toEqual({
+      pose: "pointSmile",
+      pointSmileCause: "hit",
+    });
+    state.entries = [{ id: "trade", at: NOW, kind: "trade", text: "recorded" }];
+    expect(agentPoseDetails(state, d, vital, NOW)).toEqual({
+      pose: "pointSmile",
+      pointSmileCause: "trade",
+    });
   });
 
   it("does not narrate or point for old/future evidence or unconfirmed running state", () => {

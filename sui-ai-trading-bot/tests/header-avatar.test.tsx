@@ -63,6 +63,23 @@ describe("agent header avatar", () => {
     }
   });
 
+  it("labels a hit-caused smile without changing other pose labels", () => {
+    const hit = renderToStaticMarkup(
+      <AgentHeaderAvatar pose="pointSmile" pointSmileCause="hit" />,
+    );
+    expect(hit).toContain("的中しました");
+    expect(hit).not.toContain("売買を記録しました");
+    const trade = renderToStaticMarkup(
+      <AgentHeaderAvatar pose="pointSmile" pointSmileCause="trade" />,
+    );
+    expect(trade).toContain("売買を記録しました");
+    const point = renderToStaticMarkup(
+      <AgentHeaderAvatar pose="point" pointSmileCause="hit" />,
+    );
+    expect(point).toContain(EXPECTED.point.label);
+    expect(point).not.toContain("的中しました");
+  });
+
   it("keeps only the coarse marks: a Zzz and a star, keyed by CSS", () => {
     const html = renderToStaticMarkup(<AgentHeaderAvatar pose="sleep" />);
     expect(html).toContain('class="agent-avatar-zzz"');
@@ -263,7 +280,7 @@ describe("narration feed after the stage removal", () => {
 
   it("reports the derived pose to the app shell", () => {
     const component = readNarrationFeed();
-    expect(component).toContain("onPoseChange?.(reportedPose)");
+    expect(component).toContain("pointSmileCause");
   });
 });
 
@@ -273,9 +290,10 @@ describe("agent header avatar wiring (app shell)", () => {
   it("renders the avatar at the app top, fed by the narration feed", () => {
     expect(shell).toContain("<AgentHeaderAvatar");
     expect(shell).toContain("pose={agentPose}");
+    expect(shell).toContain("pointSmileCause={pointSmileCause}");
     expect(shell).toContain("celebrating={buyCelebration}");
     expect(shell).toContain("shout={shout}");
-    expect(shell).toContain("onPoseChange={setAgentPose}");
+    expect(shell).toContain("onPoseChange={handlePoseChange}");
     expect(shell).toContain('useState<AgentPose>("normal")');
   });
 

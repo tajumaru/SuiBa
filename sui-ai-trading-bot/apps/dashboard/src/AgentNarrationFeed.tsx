@@ -1,11 +1,11 @@
 import type { OperationsSnapshot } from "./operationsTypes.ts";
-import type { AgentPose, NarrationEntry, NarrationState } from "./agentNarration.ts";
+import type { AgentPose, NarrationEntry, NarrationState, PointSmileCause } from "./agentNarration.ts";
 import { agentDisplayName } from "./agentName.ts";
 import { greetingText } from "./narration/voice.ts";
 import { useAgentCharacter } from "./agentCharacter.ts";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { persistNarration, restoreNarration } from "./narrationStorage.ts";
-import { BUY_CELEBRATION_MS, CELEBRATION_FRESH_MS, advanceNarration, agentPose, currentConditionChips, currentWatch, currentWatchScore, findNewBuyEntry, isBuyTradeEntry, trimNarrationEntries } from "./agentNarration.ts";
+import { BUY_CELEBRATION_MS, CELEBRATION_FRESH_MS, advanceNarration, agentPoseDetails, currentConditionChips, currentWatch, currentWatchScore, findNewBuyEntry, isBuyTradeEntry, trimNarrationEntries } from "./agentNarration.ts";
 import { botVital } from "./botVital.ts";
 import { appendHighlights, captureHighlights, highlightLabel, loadHighlights, saveHighlights } from "./highlightStore.ts";
 import type { Highlight } from "./highlightStore.ts";
@@ -84,7 +84,7 @@ export function AgentNarrationFeed({
   pairLabel?: string;
   /** Reports the derived pose to the app shell (the header avatar),
    * so the avatar and the feed always agree on the pose. */
-  onPoseChange?: (pose: AgentPose) => void;
+  onPoseChange?: (pose: AgentPose, pointSmileCause: PointSmileCause) => void;
   /** Fires once when a brand-new recorded buy fill joins the feed
    * this session (never for the loaded history, never for a sell),
    * so the app shell can run the buy celebration. */
@@ -302,7 +302,7 @@ export function AgentNarrationFeed({
     }
   }, [data, stale, onCelebrate, onMemwalEpisode, trades, btc, forecasts, book, pairLabel, calibEvent, character, hardMode]);
   const vital = botVital(data, stale, now, receivedAt);
-  const pose = agentPose(narration, data, vital, now);
+  const { pose, pointSmileCause } = agentPoseDetails(narration, data, vital, now);
   // While a chat reply is fresh, the character turns to the user
   // with the smile pose (from the base poses only — pointing, the
   // blue line and the rest keep their meaning).
@@ -314,8 +314,11 @@ export function AgentNarrationFeed({
       ? "pointSmile"
       : pose;
   useEffect(() => {
-    onPoseChange?.(reportedPose);
-  }, [reportedPose, onPoseChange]);
+    onPoseChange?.(
+      reportedPose,
+      reportedPose === pose ? pointSmileCause : null,
+    );
+  }, [reportedPose, pose, pointSmileCause, onPoseChange]);
   // Message-order scroll management (stick-to-bottom
   // tracking, the landing scroll, the jump pill's visibility)
   // lives in useFeedScroll; the pill itself renders below.
