@@ -57,6 +57,7 @@ export interface AgentChatContext {
   /** The latest Sui chain sample (display-only), or null before
    * the first sample arrives. Quoted by /status only. */
   chain: { epoch: number; checkpoint: number; tps: number | null } | null;
+  memwal?: { enabled: boolean; pending: number; lastSuccessAt: number | null };
 }
 
 export type ChatMood = "confident" | "humble" | "neutral";

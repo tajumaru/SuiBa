@@ -13,4 +13,9 @@ export type OperationsSnapshot = ReturnType<OperationMonitor["snapshot"]> & {
   validation?: ValidationReport;
   /** Absent when the running worker predates the environment block. */
   environment?: EnvironmentInfo;
+  memwal?: {
+    enabled: boolean;
+    pending: number;
+    lastSuccessAt: number | null;
+  };
 };

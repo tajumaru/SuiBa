@@ -42,6 +42,7 @@ export function AgentNarrationFeed({
   hardMode = false,
   onListeningChange,
   onSpeakingChange,
+  onMemwalEpisode,
 }: {
   data: OperationsSnapshot;
   stale: boolean;
@@ -94,6 +95,7 @@ export function AgentNarrationFeed({
   /** Reports speech-synthesis activity so the shell can show
    * the avatar mid-speech. */
   onSpeakingChange?: (speaking: boolean) => void;
+  onMemwalEpisode?: (entry: NarrationEntry) => void;
 }) {
   const character = useAgentCharacter();
   const displayName = agentDisplayName(agentName, character);
@@ -208,6 +210,13 @@ export function AgentNarrationFeed({
     const firstAdvance = !hasAdvancedRef.current;
     hasAdvancedRef.current = true;
     if (firstAdvance || !prev.initialized) return;
+    const priorIds = new Set(prev.entries.map((entry) => entry.id));
+    for (const entry of next.entries)
+      if (
+        !priorIds.has(entry.id) &&
+        ["watchHit", "nearMiss", "review"].includes(entry.kind)
+      )
+        onMemwalEpisode?.(entry);
     const hit = findNewBuyEntry(prev.entries, next.entries);
     if (hit && Math.abs(Date.now() - hit.at) <= CELEBRATION_FRESH_MS) {
       setCelebration({ entryId: hit.id, startedAt: Date.now() });
@@ -279,7 +288,7 @@ export function AgentNarrationFeed({
       persist(withPrompt);
       setNarration(withPrompt);
     }
-  }, [data, stale, onCelebrate, trades, btc, forecasts, book, pairLabel, calibEvent, character, hardMode]);
+  }, [data, stale, onCelebrate, onMemwalEpisode, trades, btc, forecasts, book, pairLabel, calibEvent, character, hardMode]);
   const vital = botVital(data, stale, now, receivedAt);
   const pose = agentPose(narration, data, vital, now);
   // While a chat reply is fresh, the character turns to the user
@@ -362,6 +371,7 @@ export function AgentNarrationFeed({
               : null,
       pairLabel,
       chain,
+      memwal: data.memwal,
     };
   });
   // Epoch boundary: when the chain sample reports a newer epoch

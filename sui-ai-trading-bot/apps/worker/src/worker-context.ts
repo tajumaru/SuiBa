@@ -76,6 +76,7 @@ export class WorkerContext {
   activeTick: Promise<void> | undefined = undefined;
   inFlightRequests = 0;
   lastExportAt = 0;
+  memwal: { stop(): void } | null = null;
   constructor(init: WorkerContextInit) {
     this.browserSessions = init.browserSessions;
     this.deploymentGate = init.deploymentGate;

@@ -40,6 +40,17 @@ const eventTables = [
   "sui_observations",
 ] as const;
 type EventTable = (typeof eventTables)[number];
+export type MemwalEpisodeKind = "shadow" | "daily_review" | "narration";
+export interface MemwalOutboxRow {
+  id: string;
+  kind: MemwalEpisodeKind;
+  text: string;
+  sourceId: string;
+  createdAt: number;
+  sentAt: number | null;
+  jobId: string | null;
+  attempts: number;
+}
 export const RETENTION_FULL_EVIDENCE_DAYS = 30;
 export const RETENTION_CHUNK_ROWS = 16;
 const retentionVersion = 1;
@@ -265,6 +276,15 @@ export class BotDatabase {
     this.db.exec(
       "CREATE TABLE IF NOT EXISTS shadow_daily_budget(day TEXT PRIMARY KEY, calls INTEGER NOT NULL, lastAt INTEGER NOT NULL);",
     );
+    this.db.exec(
+      `CREATE TABLE IF NOT EXISTS memwal_outbox(
+        id TEXT PRIMARY KEY, kind TEXT NOT NULL, text TEXT NOT NULL,
+        source_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+        sent_at INTEGER, job_id TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(kind, source_id)
+      ); CREATE INDEX IF NOT EXISTS memwal_outbox_pending
+        ON memwal_outbox(sent_at, attempts, created_at);`,
+    );
     for (const t of eventTables)
       this.db.exec(
         `CREATE TABLE IF NOT EXISTS ${t}(id TEXT PRIMARY KEY,timestamp INTEGER NOT NULL,json TEXT NOT NULL);`,
@@ -475,6 +495,43 @@ export class BotDatabase {
       throw error;
     }
     this.perfFinish(draft, t0);
+  }
+  enqueueMemwal(
+    kind: MemwalEpisodeKind,
+    text: string,
+    sourceId: string,
+    now = Date.now(),
+  ) {
+    this.prepare(
+      `INSERT INTO memwal_outbox(id,kind,text,source_id,created_at)
+       VALUES(?,?,?,?,?) ON CONFLICT(kind,source_id) DO NOTHING`,
+    ).run(randomUUID(), kind, text, sourceId, now);
+  }
+  memwalPending(now = Date.now(), limit = 20): MemwalOutboxRow[] {
+    return this.prepare(
+      `SELECT id,kind,text,source_id AS sourceId,created_at AS createdAt,
+              sent_at AS sentAt,job_id AS jobId,attempts
+       FROM memwal_outbox
+       WHERE sent_at IS NULL
+         AND created_at + MIN(3600000, 5000 * (1 << MIN(attempts, 8))) <= ?
+       ORDER BY created_at,id LIMIT ?`,
+    ).all(now, limit) as unknown as MemwalOutboxRow[];
+  }
+  memwalSent(id: string, jobId: string, now = Date.now()) {
+    this.prepare(
+      "UPDATE memwal_outbox SET sent_at=?,job_id=? WHERE id=? AND sent_at IS NULL",
+    ).run(now, jobId, id);
+  }
+  memwalFailed(id: string) {
+    this.prepare(
+      "UPDATE memwal_outbox SET attempts=attempts+1 WHERE id=? AND sent_at IS NULL",
+    ).run(id);
+  }
+  memwalStatus(): { pending: number; lastSuccessAt: number | null } {
+    return this.prepare(
+      `SELECT COALESCE(SUM(CASE WHEN sent_at IS NULL THEN 1 ELSE 0 END),0) AS pending,
+              MAX(sent_at) AS lastSuccessAt FROM memwal_outbox`,
+    ).get() as { pending: number; lastSuccessAt: number | null };
   }
   /** Shadow-only durable reservation, before invocation; crashes consume budget.
    * No strategy/portfolio/runtime rows or analysis transaction are touched. */

@@ -32,6 +32,11 @@ import { comparisonOptionsSchema } from "../../../packages/backtest-engine/src/i
 import type { WorkerContext } from "./worker-context.ts";
 import { PredecessorReset } from "./predecessor-reset.ts";
 import { shadowTodaySummary } from "./shadow-summary.ts";
+import {
+  memwalConfig,
+  narrationEpisode,
+  startMemwalFlusher,
+} from "./memwal.ts";
 
 /**
  * The HTTP request handler, extracted from the worker boot:
@@ -312,6 +317,9 @@ export function createRequestHandler(ctx: WorkerContext) {
         suiHealth: { ...ctx.sui.status },
         suiReads: { ...ctx.sui.readStatus },
         suiObservations: ctx.db.history("sui_observations", 50),
+        memwal: memwalConfig()
+          ? { enabled: true, ...ctx.db.memwalStatus() }
+          : { enabled: false, pending: 0, lastSuccessAt: null },
         ...(ctx.validation
           ? { validation: timeAggregation(() => ctx.validation!.report()) }
           : {}),
@@ -384,6 +392,33 @@ export function createRequestHandler(ctx: WorkerContext) {
           send(400, { error: error.message });
         else throw error;
       }
+      return;
+    }
+    if (url.pathname === "/api/memwal/narration") {
+      if (!memwalConfig()) {
+        send(200, { queued: false });
+        return;
+      }
+      const kind = body.kind;
+      if (
+        !["watchHit", "nearMiss", "review"].includes(kind) ||
+        typeof body.id !== "string" ||
+        body.id.length > 100 ||
+        typeof body.at !== "number" ||
+        !Number.isFinite(body.at)
+      ) {
+        send(400, { error: "INVALID_MEMWAL_EPISODE" });
+        return;
+      }
+      ctx.db.transaction(() =>
+        ctx.db.enqueueMemwal(
+          "narration",
+          narrationEpisode({ at: body.at, kind, pair: ctx.pair }),
+          body.id,
+          body.at,
+        ),
+      );
+      send(200, { queued: true });
       return;
     }
     if (url.pathname === "/api/paper-check/arm") {
@@ -472,6 +507,7 @@ export function createRequestHandler(ctx: WorkerContext) {
         ctx.validation?.closed();
         ctx.db.set("api_cooldowns", apiAccess.snapshot());
         ctx.sui.close();
+        ctx.memwal?.stop();
         ctx.db.close();
         ctx.pair = parsed;
         ctx.db = nextDb;
@@ -498,6 +534,7 @@ export function createRequestHandler(ctx: WorkerContext) {
         ctx.selectionDb.set("selected_pair", ctx.pair);
         ctx.chartHistory = createChartHistory(ctx);
         ctx.dashboard = new DashboardService(ctx.engine, ctx.db);
+        ctx.memwal = startMemwalFlusher(ctx.db);
         ctx.scheduler = createScheduler(ctx);
         ctx.scheduler.start();
         ctx.switching = false;
