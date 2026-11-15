@@ -80,6 +80,7 @@ it("actual loopback deployment maintenance rejects changes and duplicate workers
     expect(await (await request("deployment")).json()).toMatchObject({
       mode: "PAPER",
       maintenance: false,
+      hasPosition: false,
     });
     const duplicate = start(0);
     let duplicateError = "";

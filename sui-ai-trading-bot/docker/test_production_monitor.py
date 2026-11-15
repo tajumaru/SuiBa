@@ -28,7 +28,7 @@ def healthy(now=2000):
               'controller_alive': True, 'requires_review': False,
               'shadow': {'total': 4, 'aiOnlyBuy': 1, 'errors': 1, 'lastDecisionAt': int(now*1000)-1000},
               'worker': {'running': True, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True,
-                         'paper': True, 'networkPause': None, 'networkStopReason': None}}
+                         'paper': True, 'hasPosition': False, 'networkPause': None, 'networkStopReason': None}}
     watch = {'at': int(now)-1, 'verdict': 'ok', 'reasons': [], 'run_id': 'a'*32,
              'shadow': status['shadow']}
     return status, watch

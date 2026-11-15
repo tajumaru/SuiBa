@@ -119,7 +119,8 @@ WATCHDOG_REASONS = frozenset((
     'LATCH_UNCONFIRMED', 'STOPPED_WITHOUT_LATCH', 'HOST_MEMORY_LOW_OR_UNKNOWN',
     'HOST_DISK_LOW_OR_UNKNOWN', 'BACKUP_UNCONFIRMED', 'STATUS_UNAVAILABLE',
     'STATUS_INVALID', 'PAPER_RECOVERY_FLAPPING', 'NETWORK_PAUSE_OVER_ONE_HOUR',
-    'NETWORK_RECOVERY_FLAPPING',
+    'NETWORK_RECOVERY_FLAPPING', 'SHADOW_DECISION_STALE',
+    'SHADOW_ERROR_RATE_HIGH',
 ))
 DIAGNOSTIC_STAGES = (
     'maintenance-release', 'worker-start', 'worker-readiness', 'deployment-state',
@@ -2911,7 +2912,7 @@ class ProductionController(Controller):
                 # failure. Never expose exception messages, URLs or headers.
                 worker = {'reachable': False, 'reason': 'WORKER_UNREACHABLE'}
             else:
-                worker = {key: d[key] for key in ('running', 'maintenance', 'databaseHealthy', 'ledgerOk') if type(d.get(key)) is bool}
+                worker = {key: d[key] for key in ('running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'hasPosition') if type(d.get(key)) is bool}
                 worker['paper'] = d.get('mode') == 'PAPER'
                 worker['networkPause'] = d.get('networkPause')
                 worker['networkStopReason'] = d.get('networkStopReason')
