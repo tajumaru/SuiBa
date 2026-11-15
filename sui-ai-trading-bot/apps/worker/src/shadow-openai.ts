@@ -21,8 +21,6 @@ const object = (properties: Record<string, unknown>) => ({
   required: Object.keys(properties),
   additionalProperties: false,
 });
-const referenceTypes = Object.keys(refKeys);
-const referenceKeys = [...new Set(Object.values(refKeys).flat())];
 /** Only model-authored fields. Host supplies identity, version and actual usage. */
 export const SHADOW_OPENAI_SCHEMA = object({
   action: { type: "string", enum: ["BUY", "WAIT"] },
@@ -32,13 +30,14 @@ export const SHADOW_OPENAI_SCHEMA = object({
       type: "array",
       maxItems: 5,
       items: {
-        ...object({
-          type: { type: "string", enum: referenceTypes },
-          key: { type: "string", enum: referenceKeys },
-          // Match S1, including portfolio.hasPosition (boolean). The local
-          // validator still enforces each type/key pairing and exact value.
-          value: { anyOf: [{ type: "number" }, { type: "boolean" }] },
-        }),
+        anyOf: Object.entries(refKeys).map(([type, keys]) =>
+          object({
+            type: { type: "string", enum: [type] },
+            key: { type: "string", enum: keys },
+            // Match S1, including portfolio.hasPosition (boolean).
+            value: { anyOf: [{ type: "number" }, { type: "boolean" }] },
+          }),
+        ),
       },
     },
     text: { type: "string", maxLength: 200 },

@@ -157,6 +157,30 @@ it("strict schema closes every object, constrains refs and matches local rejecti
       else visit(v);
   }
   visit(SHADOW_OPENAI_SCHEMA);
+  const schema = SHADOW_OPENAI_SCHEMA as unknown as {
+    properties: {
+      rationale: {
+        properties: {
+          refs: {
+            items: {
+              anyOf: Array<{
+                properties: {
+                  type: { enum: string[] };
+                  key: { enum: string[] };
+                };
+              }>;
+            };
+          };
+        };
+      };
+    };
+  };
+  const refBranches = schema.properties.rationale.properties.refs.items.anyOf;
+  const indicatorBranch = refBranches.find(
+    (branch) => branch.properties.type.enum[0] === "indicator",
+  );
+  expect(indicatorBranch?.properties.key.enum).toContain("ema20");
+  expect(indicatorBranch?.properties.key.enum).not.toContain("emaUp");
   const { request } = await fixture();
   for (const bad of [
     { ...decision(), action: "SELL" },
@@ -230,7 +254,7 @@ it("rejects allowlisted keys paired with the wrong reference type", async () => 
             text: JSON.stringify({
               ...decision(),
               rationale: {
-                refs: [{ type: "book", key: "close", value: 2 }],
+                refs: [{ type: "indicator", key: "emaUp", value: true }],
                 text: "mismatched allowlist pair",
               },
             }),
