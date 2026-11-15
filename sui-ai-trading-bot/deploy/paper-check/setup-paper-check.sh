@@ -44,6 +44,9 @@ FILES=(
   'shadow-runtime.py|b01865234bff5f271b163c97e4023fb3cd1a2582511806a5b8606f4c9d301c8b|/usr/local/libexec/suiba-shadow-runtime.py|755'
   'suiba-shadow-runtime|4a058c1f881c028ebdb573890e540175a0d10ed5cc534b1c5ff2d48c3cdae201|/usr/local/sbin/suiba-shadow-runtime|755'
   'suiba-shadow-runtime.sudoers|39c85055fc1fd995853e06004eafc071727575e0ebfa61de53d06e1573c0bc2e|/etc/sudoers.d/suiba-shadow-runtime|440'
+  'memwal-runtime.py|fe44e69329cf53c16d18873c845c03a910169277cfc443a3b9247ea53be4b75e|/usr/local/libexec/suiba-memwal-runtime.py|755'
+  'suiba-memwal-runtime|523f942e7105d945f85d398713b07b1d30b0d4bde605ae34e44683f6d64edf93|/usr/local/sbin/suiba-memwal-runtime|755'
+  'suiba-memwal-runtime.sudoers|7edfbd82b607b46f600c2d90a04fcfc2dd71f3344681b72620f0ebd3d3470af1|/etc/sudoers.d/suiba-memwal-runtime|440'
   'export_snapshot.py|62ebfac28e6fe133dda0844f43c0ff821e3a251d1f2d7ae528c97b6ada40a78b|/usr/local/libexec/suiba-paper-export.py|755'
   'controller.py|035293508ab5f6d15b88bcd74bbfcbec227c7d20b229be8f074426275002120b|/usr/local/libexec/suiba-paper-check.py|755'
   'suiba-paper-check|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-check|755'
@@ -128,6 +131,8 @@ visudo -cf "$tmp/suiba-paper-observe.sudoers" >/dev/null || fail 'observe sudoer
 
 visudo -cf "$tmp/suiba-shadow-runtime.sudoers" >/dev/null || fail 'shadow sudoers の構文検証に失敗'
 python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/shadow-runtime.py" || fail 'shadow helper の構文検証に失敗'
+visudo -cf "$tmp/suiba-memwal-runtime.sudoers" >/dev/null || fail 'memwal sudoers の構文検証に失敗'
+python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/memwal-runtime.py" || fail 'memwal helper の構文検証に失敗'
 
 echo '== 3/5 配置（旧ファイルはバックアップ） =='
 install -d -o root -g root -m 755 /etc/needrestart/conf.d || fail 'needrestart 設定ディレクトリを作れません'
