@@ -20,25 +20,33 @@ export function memoryNarration(
   cooldowns: Readonly<Record<string, number>>,
   now: number,
 ): { draft: EntryDraft; key: string } | null {
+  if (!statistic) return null;
+  const mean =
+    statistic.scene === "dip-rebound"
+      ? statistic.mean24hPct
+      : statistic.mean4hPct;
   if (
-    !statistic ||
     statistic.n < SITUATION_MEMORY_MIN_SAMPLES ||
-    Math.abs(statistic.mean4hPct) < SITUATION_MEMORY_BIAS_PCT ||
+    Math.abs(mean) < SITUATION_MEMORY_BIAS_PCT ||
     statistic.evaluatedAt > now ||
     now - statistic.evaluatedAt > MEMORY_FRESH_MS ||
     now - (cooldowns[statistic.key] ?? 0) < MEMORY_COOLDOWN_MS
   )
     return null;
-  const sign = statistic.mean4hPct >= 0 ? "+" : "";
-  const base = `この手の${labels[statistic.regime]}、過去 n=${statistic.n} はコスト控除後の +4h 平均 ${sign}${statistic.mean4hPct.toFixed(2)}%、プラス率 ${statistic.positiveRate.toFixed(0)}%です。`;
+  const sign = mean >= 0 ? "+" : "";
+  const base =
+    statistic.scene === "dip-rebound"
+      ? `この手の急落後、過去 n=${statistic.n} はコスト控除後の +24h 平均 ${sign}${mean.toFixed(2)}%、プラス率 ${statistic.positiveRate.toFixed(0)}%です。`
+      : `この手の${labels[statistic.regime]}、過去 n=${statistic.n} はコスト控除後の +4h 平均 ${sign}${mean.toFixed(2)}%、プラス率 ${statistic.positiveRate.toFixed(0)}%です。`;
   return {
     key: statistic.key,
     draft: {
       at: now,
       kind: "memory",
-      text: statistic.recall
-        ? `${base} 記憶には「${statistic.recall}」があります。`
-        : base,
+      text:
+        statistic.scene === "decision" && statistic.recall
+          ? `${base} 記憶には「${statistic.recall}」があります。`
+          : base,
     },
   };
 }
