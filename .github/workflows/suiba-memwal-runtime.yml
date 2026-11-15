@@ -34,7 +34,7 @@ jobs:
           MEMWAL_RUNTIME_CONFIRMATION: ${{ inputs.confirmation }}
           SUIBA_MEMWAL_ENABLED: ${{ inputs.enabled }}
           MEMWAL_PRIVATE_KEY: ${{ secrets.SUIBA_MEMWAL_PRIVATE_KEY }}
-          MEMWAL_ACCOUNT_ID: 0x45c49b20f568a54db56f15e150739df08d61d4495a3fa6ff5d609ccd3ef15578
+          MEMWAL_ACCOUNT_ID: "0x45c49b20f568a54db56f15e150739df08d61d4495a3fa6ff5d609ccd3ef15578"
           MEMWAL_RELAYER_URL: https://relayer.memory.walrus.xyz
           MEMWAL_NAMESPACE: potario
           VPS_HOST: ${{ secrets.VPS_HOST }}
