@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { aggregateSituationMemory } from "../apps/worker/src/situation-memory.ts";
+import {
+  aggregateDipReboundMemory,
+  aggregateSituationMemory,
+  dipReboundEvents,
+} from "../apps/worker/src/situation-memory.ts";
 import {
   memoryNarration,
   MEMORY_COOLDOWN_MS,
@@ -113,9 +117,79 @@ describe("situation memory statistic", () => {
   });
 });
 
+describe("dip-rebound scene statistic", () => {
+  function series(hours = 30) {
+    return Array.from({ length: (hours * 3600) / 300 + 1 }, (_, i) =>
+      candle(START + i * 300),
+    );
+  }
+
+  it("detects -3% exactly but not -2.9%", () => {
+    const exact = series(5);
+    exact[48] = candle(exact[48]!.timestamp, 97);
+    expect(dipReboundEvents(exact).map((item) => item.timestamp)).toEqual([
+      START + 4 * 3600,
+    ]);
+
+    const above = series(5);
+    above[48] = candle(above[48]!.timestamp, 97.1);
+    expect(dipReboundEvents(above)).toEqual([]);
+  });
+
+  it("does not recount a slide until three consecutive false candles", () => {
+    const candles = series(6);
+    const set = (offset: number, close: number) => {
+      candles[offset] = candle(candles[offset]!.timestamp, close);
+    };
+    set(48, 97); // first event
+    set(49, 97.1); // false: 1
+    set(50, 97); // true again: still the same slide, reset the false streak
+    set(51, 97.1); // false: 1
+    set(52, 97.1); // false: 2
+    set(53, 97.1); // false: 3, re-armed
+    set(54, 97); // a new event
+    expect(dipReboundEvents(candles).map((item) => item.timestamp)).toEqual([
+      START + 48 * 300,
+      START + 54 * 300,
+    ]);
+  });
+
+  it("does not treat false candles separated by a gap as consecutive", () => {
+    const candles = series(6);
+    candles[48] = candle(candles[48]!.timestamp, 97);
+    candles[49] = candle(candles[49]!.timestamp, 97.1);
+    candles[50] = candle(candles[50]!.timestamp, 97.1);
+    candles.splice(51, 1); // break the run before the third false candle
+    candles[51] = candle(candles[51]!.timestamp, 97.1);
+    candles[52] = candle(candles[52]!.timestamp, 97);
+    expect(dipReboundEvents(candles).map((item) => item.timestamp)).toEqual([
+      START + 48 * 300,
+    ]);
+  });
+
+  it("uses the +24h axis and 0.2% cost instead of the existing +4h axis", () => {
+    const candles = series();
+    const eventAt = START + 4 * 3600;
+    candles[48] = candle(eventAt, 97);
+    candles[96] = candle(eventAt + 4 * 3600, 99);
+    candles[336] = candle(eventAt + 24 * 3600, 98.164);
+    const result = aggregateDipReboundMemory(candles);
+    expect(result).toMatchObject({
+      scene: "dip-rebound",
+      key: "dip-rebound",
+      evaluatedAt: eventAt * 1000,
+      n: 1,
+      positiveRate: 100,
+      periods: [{ period: expect.any(String), n: 1 }],
+    });
+    expect(result?.mean24hPct).toBeCloseTo(1, 10);
+  });
+});
+
 describe("walrus memory narration", () => {
   const at = START * 1000;
   const statistic = {
+    scene: "decision" as const,
     key: "up:near-buy",
     regime: "up" as const,
     kind: "near-buy" as const,
@@ -163,5 +237,43 @@ describe("walrus memory narration", () => {
         "text": "この手の上昇局面、過去 n=30 はコスト控除後の +4h 平均 -0.80%、プラス率 41%です。 記憶には「似た局面では出来高の戻りを待った」があります。",
       }
     `);
+  });
+
+  it("does not speak for a dip-rebound scene below n=30", () => {
+    expect(
+      memoryNarration(
+        {
+          scene: "dip-rebound",
+          key: "dip-rebound",
+          evaluatedAt: at,
+          n: 29,
+          mean24hPct: 3.26,
+          positiveRate: 88,
+          periods: [],
+        },
+        {},
+        at,
+      ),
+    ).toBeNull();
+  });
+
+  it("uses the +24h axis when a dip-rebound scene becomes speakable", () => {
+    expect(
+      memoryNarration(
+        {
+          scene: "dip-rebound",
+          key: "dip-rebound",
+          evaluatedAt: at,
+          n: 30,
+          mean24hPct: 3.26,
+          positiveRate: 88,
+          periods: [],
+        },
+        {},
+        at,
+      )?.draft.text,
+    ).toBe(
+      "この手の急落後、過去 n=30 はコスト控除後の +24h 平均 +3.26%、プラス率 88%です。",
+    );
   });
 });

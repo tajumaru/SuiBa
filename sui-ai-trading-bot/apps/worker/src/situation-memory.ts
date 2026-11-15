@@ -8,10 +8,12 @@ import { shadowRuleBuy } from "./shadow-summary.ts";
 export const SITUATION_MEMORY_MIN_SAMPLES = 30;
 export const SITUATION_MEMORY_BIAS_PCT = 0.3;
 export const REVIEW_ROUND_TRIP_COST_PCT = 0.6;
+export const DIP_REBOUND_ROUND_TRIP_COST_PCT = 0.2;
 
 export type SituationRegime = "up" | "down" | "range" | "unknown";
 export type SituationKind = "rule-buy" | "near-buy" | "shadow-ai-buy";
-export type SituationMemory = {
+export type DecisionSituationMemory = {
+  scene: "decision";
   key: string;
   regime: SituationRegime;
   kind: SituationKind;
@@ -21,6 +23,23 @@ export type SituationMemory = {
   positiveRate: number;
   recall?: string;
 };
+export type DipReboundPeriod = {
+  period: string;
+  n: number;
+  mean24hPct: number;
+  positiveRate: number;
+};
+export type DipReboundSituationMemory = {
+  scene: "dip-rebound";
+  key: string;
+  evaluatedAt: number;
+  n: number;
+  mean24hPct: number;
+  positiveRate: number;
+  periods: DipReboundPeriod[];
+};
+export type SituationMemory =
+  DecisionSituationMemory | DipReboundSituationMemory;
 
 type DecisionRow = { id: string; timestamp: number; decision: TradingDecision };
 type ShadowRow = {
@@ -90,7 +109,7 @@ export function aggregateSituationMemory(
   decisions: readonly DecisionRow[],
   shadows: readonly ShadowRow[],
   candles: readonly Candle[],
-): SituationMemory | null {
+): DecisionSituationMemory | null {
   const series = regimes(candles);
   const rules = new Map(decisions.map((row) => [row.id, row]));
   const samples: {
@@ -174,6 +193,7 @@ export function aggregateSituationMemory(
   if (!matched.length) return null;
   return {
     ...current,
+    scene: "decision",
     key: `${current.regime}:${current.kind}`,
     n: matched.length,
     mean4hPct:
@@ -184,14 +204,116 @@ export function aggregateSituationMemory(
   };
 }
 
+/**
+ * Finds the first 5-minute candle at or below a -3% exact 4-hour return.
+ * Once found, another event is suppressed until three consecutive candles
+ * are outside the condition. Missing 4-hour anchors do not re-arm the latch.
+ */
+export function dipReboundEvents(candles: readonly Candle[]): Candle[] {
+  const ordered = [...candles]
+    .filter(
+      (c) => c.timeframe === 300 && Number.isFinite(c.close) && c.close > 0,
+    )
+    .sort((a, b) => a.timestamp - b.timestamp);
+  const closeAt = new Map(ordered.map((c) => [c.timestamp, c.close]));
+  const events: Candle[] = [];
+  let armed = true;
+  let falseCandles = 0;
+  let previousTimestamp: number | undefined;
+  for (const candle of ordered) {
+    if (
+      previousTimestamp !== undefined &&
+      candle.timestamp !== previousTimestamp + 300
+    )
+      falseCandles = 0;
+    previousTimestamp = candle.timestamp;
+    const start = closeAt.get(candle.timestamp - 4 * 3600);
+    if (start === undefined || start <= 0) {
+      falseCandles = 0;
+      continue;
+    }
+    const matches = (candle.close / start - 1) * 100 <= -3;
+    if (matches) {
+      if (armed) events.push(candle);
+      armed = false;
+      falseCandles = 0;
+    } else if (!armed && ++falseCandles >= 3) {
+      armed = true;
+      falseCandles = 0;
+    }
+  }
+  return events;
+}
+
+const utcPeriod = (timestamp: number) =>
+  new Date(timestamp * 1000).toISOString().slice(0, 10);
+
+function dipStats(
+  samples: readonly { timestamp: number; net: number }[],
+): Omit<DipReboundPeriod, "period"> {
+  return {
+    n: samples.length,
+    mean24hPct:
+      samples.reduce((sum, sample) => sum + sample.net, 0) / samples.length,
+    positiveRate:
+      (samples.filter((sample) => sample.net > 0).length / samples.length) *
+      100,
+  };
+}
+
+/** Display-only +24h outcome for the latest detected dip-rebound scene. */
+export function aggregateDipReboundMemory(
+  candles: readonly Candle[],
+): DipReboundSituationMemory | null {
+  const events = dipReboundEvents(candles);
+  const current = events.at(-1);
+  if (!current) return null;
+  const closeAt = new Map(candles.map((c) => [c.timestamp, c.close]));
+  const samples = events.flatMap((event) => {
+    const result = closeAt.get(event.timestamp + 24 * 3600);
+    return result === undefined
+      ? []
+      : [
+          {
+            timestamp: event.timestamp,
+            net:
+              (result / event.close - 1) * 100 -
+              DIP_REBOUND_ROUND_TRIP_COST_PCT,
+          },
+        ];
+  });
+  if (!samples.length) return null;
+  const grouped = new Map<string, typeof samples>();
+  for (const sample of samples) {
+    const period = utcPeriod(sample.timestamp);
+    grouped.set(period, [...(grouped.get(period) ?? []), sample]);
+  }
+  return {
+    scene: "dip-rebound",
+    key: "dip-rebound",
+    evaluatedAt: current.timestamp * 1000,
+    ...dipStats(samples),
+    periods: [...grouped].map(([period, periodSamples]) => ({
+      period,
+      ...dipStats(periodSamples),
+    })),
+  };
+}
+
 export function refreshSituationMemory(
   db: BotDatabase,
 ): SituationMemory | null {
-  const value = aggregateSituationMemory(
+  const candles = db.candles(300);
+  const decision = aggregateSituationMemory(
     db.situationDecisionRows(),
     db.history<ShadowRow>("shadow_decisions", 10000),
-    db.candles(300),
+    candles,
   );
+  const dip = aggregateDipReboundMemory(candles);
+  const value =
+    dip && (!decision || dip.evaluatedAt + 300_000 >= decision.evaluatedAt)
+      ? dip
+      : decision;
   db.set("situation_memory", value);
   return value;
 }

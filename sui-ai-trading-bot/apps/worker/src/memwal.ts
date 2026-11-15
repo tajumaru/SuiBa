@@ -47,7 +47,9 @@ export function createMemwalClient(config: MemwalConfig): MemwalClient {
     async recall(query) {
       const result = await client.recall({ query, limit: 1 });
       const text = result.results[0]?.text;
-      return typeof text === "string" && text.trim() ? text.trim().slice(0, 180) : null;
+      return typeof text === "string" && text.trim()
+        ? text.trim().slice(0, 180)
+        : null;
     },
   };
 }
@@ -99,6 +101,7 @@ export function startMemwalFlusher(
       if (
         client?.recall &&
         statistic &&
+        statistic.scene === "decision" &&
         statistic.n >= SITUATION_MEMORY_MIN_SAMPLES &&
         Math.abs(statistic.mean4hPct) >= SITUATION_MEMORY_BIAS_PCT &&
         recallFor !== `${statistic.key}:${statistic.evaluatedAt}`
@@ -116,15 +119,24 @@ export function startMemwalFlusher(
   return { flusher, stop: () => clearInterval(timer) };
 }
 
-async function attachRecall(db: BotDatabase, client: MemwalClient, statistic: SituationMemory) {
+async function attachRecall(
+  db: BotDatabase,
+  client: MemwalClient,
+  statistic: SituationMemory,
+) {
+  if (statistic.scene !== "decision") return;
   try {
-    const recall = await client.recall?.(`${statistic.regime} ${statistic.kind} +4h`);
+    const recall = await client.recall?.(
+      `${statistic.regime} ${statistic.kind} +4h`,
+    );
     const current = db.get<SituationMemory>("situation_memory");
     if (
       recall &&
+      current?.scene === "decision" &&
       current?.key === statistic.key &&
       current.evaluatedAt === statistic.evaluatedAt
-    ) db.set("situation_memory", { ...current, recall });
+    )
+      db.set("situation_memory", { ...current, recall });
   } catch {
     /* Recall is optional display enrichment; the SQLite statistic remains. */
   }
