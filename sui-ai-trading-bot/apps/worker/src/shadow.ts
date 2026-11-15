@@ -12,7 +12,7 @@ import {
 import type { MarketStatus } from "../../../packages/market-data/src/provider.ts";
 import type { BotDatabase } from "../../../packages/database/src/index.ts";
 
-export const SHADOW_PROMPT_VERSION = "shadow-openai-nano-v4";
+export const SHADOW_PROMPT_VERSION = "shadow-openai-nano-v5";
 const indicators = [
   "ema20",
   "ema50",
@@ -246,8 +246,17 @@ export function shadowPrompt(snapshot: Readonly<Snapshot>): string {
   return JSON.stringify({
     promptVersion: SHADOW_PROMPT_VERSION,
     instruction:
-      "Return one JSON object. Act as an independent second opinion, not a re-evaluator of the rule. For this flat position, choose BUY when the snapshot evidence as a whole supports buying even if rule conditions are unmet; choose WAIT when evidence is weak even if the rule chose BUY. Rule condition status is context, not a constraint. Use only the frozen snapshot. Refs must use an allowlisted type/key and its exact observed value; never invent or repair values. Never place orders or change settings.",
+      "Return one JSON object only. Act as an independent second opinion, not a re-evaluator of the rule. Evaluate BUY or WAIT for the flat position using only this frozen snapshot. The rule condition status is context and does not constrain your decision: choose BUY when the evidence as a whole supports buying even if rule conditions are unmet, and choose WAIT when the evidence is weak even if the rule chose BUY. Never place orders or change settings. References must name an allowlisted field and its exact observed value. No invented or repaired values.",
     ruleConditionStatus,
+    output: {
+      action: ["BUY", "WAIT"],
+      confidence: "number [0,1]",
+      rationale: {
+        refs: "at most 5 {type,key,value} entries",
+        text: "at most 200 Unicode characters",
+      },
+    },
+    referenceKeys: refKeys,
     snapshot,
   });
 }
