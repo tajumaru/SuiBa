@@ -670,10 +670,50 @@
   margin: 0;
 }
 .chart-controls button[aria-pressed="true"] {
-  background: #254f61;
+  background: var(--steel);
   border-color: var(--mint);
-  color: #e5fff6;
+  color: var(--text);
   box-shadow: inset 0 -3px var(--mint);
+}
+.chart-period-segments {
+  display: inline-flex;
+  max-width: 100%;
+  margin: 12px 0;
+  border: 1px solid var(--steel);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.chart-period-segments button {
+  min-height: 36px;
+  margin: 0;
+  padding: 5px 12px;
+  border: 0;
+  border-right: 1px solid var(--steel);
+  border-radius: 0;
+  font-size: 12px;
+}
+.chart-period-segments button:last-child {
+  border-right: 0;
+}
+.chart-period-segments button[aria-pressed="true"] {
+  background: var(--steel);
+  color: var(--text);
+  box-shadow: inset 0 -3px var(--mint);
+}
+.chart-status-line {
+  font-variant-numeric: tabular-nums;
+}
+.chart-history-button,
+.chart-latest-button {
+  min-height: 36px;
+  margin: 0;
+  padding: 4px 10px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--mint);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .chart-warning {
   color: var(--gold);
@@ -757,8 +797,19 @@
   .price-chart .chart-controls button {
     flex: 1 1 auto;
   }
+  .price-chart .chart-navigation button:not(.chart-latest-button) {
+    display: none;
+  }
+  .price-chart .chart-navigation:not(:has(.chart-latest-button)) {
+    display: none;
+  }
   .candle-detail {
     padding: 12px;
+  }
+}
+@media (hover: none), (pointer: coarse) {
+  .price-chart > .chart-operation-help {
+    display: none;
   }
 }
 .price-chart .linked-indicator {

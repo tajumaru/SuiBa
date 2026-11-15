@@ -196,7 +196,10 @@ describe("PriceChart answer-check view", () => {
     expect(on).not.toContain("2時間前の予測 → 実際");
     expect(on).toContain("予測 +1.00%");
     expect(on).toContain("実際 +2.80%");
-    expect(on).toContain("上がるという予測は当たりました");
+    expect(on).toContain("範囲内 100%");
+    expect(on).toContain("当たり");
+    expect(on).not.toContain("各足の終値は");
+    expect(on).not.toContain("範囲内の割合は");
     const plot = on.slice(on.indexOf("<svg"), on.indexOf("</svg>"));
     const comparison =
       plot.match(/<g class="chart-answer"[\s\S]*?<\/g>/)?.[0] ?? "";

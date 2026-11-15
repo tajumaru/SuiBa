@@ -9,7 +9,6 @@ import { candleHoverLines } from "./chartHover.ts";
 // Kept as a re-export: the hover readout's home is chartHover.ts,
 // and existing imports (and tests) name this module.
 export { candleHoverLines };
-import { answerCheckText } from "./forecastLog.ts";
 import { IndicatorPanel } from "./IndicatorPanel.tsx";
 import { lineSegments } from "./chartIndicators.ts";
 import React from "react";
@@ -92,6 +91,13 @@ export function PriceChart(props: PriceChartProps) {
     plot,
   } = usePriceChartModel(props);
   const markerRows = new Map<string, number>();
+  const viewingAdjusted = span !== hours * 3600 || anchor != null;
+  const displayMissing = c.length
+    ? Math.max(0, Math.round((finish - start) / tf - c.length))
+    : 0;
+  const periodText = hours === 168 ? "7日" : `${hours}時間`;
+  const signedPct = (value: number) =>
+    `${value >= 0 ? "+" : ""}${(value * 100).toFixed(2)}%`;
   return (
     <div
       className="price-chart"
@@ -168,14 +174,25 @@ export function PriceChart(props: PriceChartProps) {
                     : " miss"
               }`}
             >
-              {answerCheckText(answerCheck)}
-              <br />
-              各足の終値は、5分ごとなどの区切りでの最後の価格です。範囲内の割合は、価格がぴったり当たった割合ではありません。
+              予測 {signedPct(answerCheck.driftPct)} → 実際{" "}
+              {signedPct(answerCheck.actualPct)}／範囲内{" "}
+              {answerCheck.coveragePct}%
+              <span className="chart-answer-tag">
+                {answerCheck.directionHit == null
+                  ? "判定なし"
+                  : answerCheck.directionHit
+                    ? "当たり"
+                    : "外れ"}
+              </span>
             </p>
           )}
         </div>
       )}
-      <div className="chart-controls" role="group" aria-label="表示期間の選択">
+      <div
+        className="chart-period-segments"
+        role="group"
+        aria-label="表示期間の選択"
+      >
         {chartPeriods.map((n) => (
           <button
             key={n}
@@ -188,7 +205,11 @@ export function PriceChart(props: PriceChartProps) {
       </div>
       {historyApi && (
         <div className="chart-history">
-          <button disabled={historyBusy} onClick={() => void loadHistory()}>
+          <button
+            className="chart-history-button"
+            disabled={historyBusy}
+            onClick={() => void loadHistory()}
+          >
             {historyBusy ? "履歴取得中…" : "DeepBookの7日履歴を取得"}
           </button>
           <p className="chart-meta" role="status">
@@ -199,20 +220,17 @@ export function PriceChart(props: PriceChartProps) {
           </small>
         </div>
       )}
-      <p className="chart-meta">
-        選択期間：{hours === 168 ? "7日" : `${hours}時間`}
-        {span !== hours * 3600 || anchor != null ? "（表示範囲を操作中）" : ""}
-      </p>
       {c.length ? (
-        <>
-          <p className="chart-meta" aria-label="実際の表示期間">
+        <p className="chart-meta chart-status-line" aria-label="実際の表示期間">
+          {periodText}・{c.length}本（欠損{displayMissing}）
+          {gapQuality.reconstructed > 0 &&
+            `・検証済み再構築${gapQuality.reconstructed}本`}
+          {gapQuality.unknown > 0 && `・原因未確定${gapQuality.unknown}本`}
+          {viewingAdjusted && "・表示範囲を操作中"}
+          <span className="sr-only">
             表示期間：{chartTime(start)} ～ {chartTime(xFinish)}（日本時間）
-          </p>
-          <p className="chart-meta">
-            表示範囲：{number((finish - start) / 3600, 2)}時間 ／ {c.length}
-            本。開始は最初の足の開始、終了は最後の足の終了です。
-          </p>
-        </>
+          </span>
+        </p>
       ) : (
         <p className="chart-meta" role="status">
           期間を取得できません。表示可能なローソク足がありません。未取得の場合は次の画面更新を待ってください。
@@ -225,19 +243,8 @@ export function PriceChart(props: PriceChartProps) {
           時間の範囲で表示します。追加のAPI取得は行いません。
         </p>
       )}
-      {c.length > 0 && (finish - start) / tf > c.length && (
-        <p className="chart-warning chart-meta">
-          表示期間内の欠損：{Math.round((finish - start) / tf - c.length)}
-          本。未取得部分を補間せず、指標の準備が不足する区間は未計測です。
-        </p>
-      )}
       {c.length > 0 && (
         <div aria-label="表示履歴の品質">
-          <p className="chart-meta">
-            期待：{gapQuality.expected}本 ／ 取得済み：{gapQuality.received}本
-            ／ 欠損：{gapQuality.missing}本 ／ 検証済み再構築：
-            {gapQuality.reconstructed}本 ／ 原因未確定：{gapQuality.unknown}本
-          </p>
           {gapQuality.entries.length > 0 && (
             <>
               <label>
@@ -275,7 +282,7 @@ export function PriceChart(props: PriceChartProps) {
       {data.candles.length > 0 && (
         <>
           <div
-            className="chart-controls"
+            className="chart-controls chart-navigation"
             role="group"
             aria-label="チャート操作"
           >
@@ -293,20 +300,23 @@ export function PriceChart(props: PriceChartProps) {
             >
               新しい方へ
             </button>
-            <button
-              onClick={() => {
-                setAnchor(undefined);
-                setSelected(null);
-              }}
-            >
-              最新データへ戻る
-            </button>
+            {viewingAdjusted && (
+              <button
+                className="chart-latest-button"
+                onClick={() => {
+                  setAnchor(undefined);
+                  setSelected(null);
+                }}
+              >
+                最新データへ戻る
+              </button>
+            )}
           </div>
         </>
       )}
       {c.length > 0 && (
         <>
-          <p className="chart-help">
+          <p className="chart-help chart-operation-help">
             横ドラッグで移動、Ctrl＋ホイールで拡大・縮小。キーボードではグラフにフォーカスし、左右キーで移動、＋／−で拡大・縮小、Homeで最新へ。時刻は日本時間です。
           </p>
           <HoverReadout hoverLines={hoverLines} />
