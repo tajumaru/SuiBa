@@ -1,4 +1,5 @@
 import imgNormal from "./assets/agent-white-normal.webp";
+import type { PointSmileCause } from "./agentNarration.ts";
 import imgPoint from "./assets/agent-white-point.webp";
 import imgPointSmile from "./assets/agent-white-point-smile.webp";
 import imgSleep from "./assets/agent-white-sleep.webp";
@@ -248,6 +249,7 @@ export const AVATAR_BURST_MARKS = [
  */
 export function AgentHeaderAvatar({
   pose,
+  pointSmileCause = null,
   celebrating = false,
   shout = null,
   hardMode = false,
@@ -257,6 +259,7 @@ export function AgentHeaderAvatar({
   speaking = false,
 }: {
   pose: AgentPose;
+  pointSmileCause?: PointSmileCause;
   celebrating?: boolean;
   shout?: ErrorShout | null;
   /** Voice recognition is live in the chat: the DJ artwork
@@ -319,7 +322,9 @@ export function AgentHeaderAvatar({
           ? "喋ってる…"
           : hardShown
             ? "ハードモード中"
-            : POSE_LABEL[shownPose];
+            : shownPose === "pointSmile" && pointSmileCause === "hit"
+              ? "的中しました"
+              : POSE_LABEL[shownPose];
   return (
     <div className={`agent-avatar-dock${stuck ? " stuck" : ""}`}>
       <div

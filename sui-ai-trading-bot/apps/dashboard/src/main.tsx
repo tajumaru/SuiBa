@@ -49,6 +49,7 @@ import {
   BUY_CELEBRATION_MS,
   sellLinesOf,
   type AgentPose,
+  type PointSmileCause,
 } from "./agentNarration.ts";
 import { NAV_SHORT_LABELS, NavTabIcon } from "./navTabs.tsx";
 /* Secondary tabs load on first open, keeping the initial
@@ -179,6 +180,14 @@ function App() {
   // the feed can never show different poses. Before the feed first
   // reports (no snapshot yet), the unconfirmed "normal" pose shows.
   const [agentPose, setAgentPose] = useState<AgentPose>("normal");
+  const [pointSmileCause, setPointSmileCause] = useState<PointSmileCause>(null);
+  const handlePoseChange = useCallback(
+    (pose: AgentPose, cause: PointSmileCause) => {
+      setAgentPose(pose);
+      setPointSmileCause(cause);
+    },
+    [],
+  );
   // The character's user-chosen name (device-local; "" = キャラ).
   const [agentName, setAgentName] = useState<string>(() => loadAgentName());
   // Voice recognition is live in the chat (the avatar listens).
@@ -471,6 +480,7 @@ function App() {
         control={control}
         logout={logout}
         agentPose={agentPose}
+        pointSmileCause={pointSmileCause}
         buyCelebration={buyCelebration}
         shout={shout}
         agentName={agentName}
@@ -587,7 +597,7 @@ function App() {
                     <AgentNarrationFeed
                       data={operations.data}
                       stale={operations.stale}
-                      onPoseChange={setAgentPose}
+                      onPoseChange={handlePoseChange}
                       onCelebrate={handleBuyCelebration}
                       pairLabel={data?.pair === "WAL_USDC" ? "WAL" : "SUI"}
                       chain={data?.chain ?? null}
