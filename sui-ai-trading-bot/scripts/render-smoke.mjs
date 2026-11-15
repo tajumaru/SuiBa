@@ -167,10 +167,12 @@ try {
       '.chain-strip[aria-label="Suiチェーン情報"]',
     );
     const chainCredit = page.getByRole("link", { name: "Sui" });
+    const walrusCredit = page.getByRole("link", { name: "Walrus" });
     await chainStrip.waitFor();
     const chainLayout = await chainStrip.evaluate((strip) => {
-      const credit = strip.querySelector(".chain-credit");
-      const metric = credit?.previousElementSibling;
+      const credits = strip.querySelector(".chain-credits");
+      const credit = credits?.querySelector(".chain-credit");
+      const metric = credits?.previousElementSibling;
       const stripRect = strip.getBoundingClientRect();
       const creditRect = credit?.getBoundingClientRect();
       const metricRect = metric?.getBoundingClientRect();
@@ -194,6 +196,12 @@ try {
       (await creditLogo.getAttribute("src")) !== "/sui-logo.svg"
     )
       failures.push(`${width}px: Sui chain credit link or logo is missing`);
+    const walrusLogo = walrusCredit.locator("img");
+    if (
+      (await walrusCredit.getAttribute("href")) !== "https://walrus.xyz" ||
+      (await walrusLogo.getAttribute("src")) !== "/walrus-glyph.svg"
+    )
+      failures.push(`${width}px: Walrus chain credit link or glyph is missing`);
     for (const name of [
       "実況",
       "ダッシュボード",
