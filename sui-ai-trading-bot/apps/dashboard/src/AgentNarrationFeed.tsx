@@ -7,7 +7,12 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { persistNarration, restoreNarration } from "./narrationStorage.ts";
 import { BUY_CELEBRATION_MS, CELEBRATION_FRESH_MS, advanceNarration, agentPose, currentConditionChips, currentWatch, currentWatchScore, findNewBuyEntry, isBuyTradeEntry, trimNarrationEntries } from "./agentNarration.ts";
 import { botVital } from "./botVital.ts";
-import { appendHighlights, captureHighlights, highlightLabel, loadHighlights, saveHighlights } from "./highlightStore.ts";
+import {
+  appendHighlights,
+  captureHighlights,
+  loadHighlights,
+  saveHighlights,
+} from "./highlightStore.ts";
 import type { Highlight } from "./highlightStore.ts";
 import { proactivePrompt, proactivePromptDue } from "./agentChat.ts";
 import { epochTransition, loadLastEpoch, saveLastEpoch } from "./epochMark.ts";
@@ -472,27 +477,6 @@ export function AgentNarrationFeed({
           {score.specialty.judged - score.specialty.hits}）
         </div>
       )}
-      {highlights.length > 0 && (
-        <div className="highlight-bar" aria-label="ハイライト">
-          <span className="highlight-bar-title">ハイライト</span>
-          <div className="highlight-bar-list">
-            {[...highlights].reverse().map((h) => (
-              <button
-                key={h.id}
-                type="button"
-                className="highlight-chip"
-                onClick={() => setReplay(h)}
-              >
-                {highlightLabel(h)}{" "}
-                {new Date(h.at).toLocaleTimeString("ja-JP", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
       {replay && (
         <Suspense fallback={null}>
           <HighlightReplay highlight={replay} onClose={() => setReplay(null)} />
@@ -514,22 +498,27 @@ export function AgentNarrationFeed({
           // list flows with the page (no inner scroll box); the
           // scroll management above keeps a reader who is at the
           // bottom at the latest entry.
-          narration.entries.map((entry) => (
-            <AgentFeedEntryRow
-              key={entry.id}
-              entry={entry}
-              memorySealed={
-                entry.kind === "memory" &&
-                entry.at >=
-                  (narration.memorySealEnabledAt ?? Number.POSITIVE_INFINITY) &&
-                !(narration.openedMemorySealIds ?? []).includes(entry.id)
-              }
-              onOpenMemorySeal={openMemorySeal}
-              justBought={celebration?.entryId === entry.id}
-              onPromptChip={submitChat}
-              speakerName={displayName}
-            />
-          ))
+          narration.entries.map((entry) => {
+            const highlight = highlights.find((item) => item.id === entry.id);
+            return (
+              <AgentFeedEntryRow
+                key={entry.id}
+                entry={entry}
+                memorySealed={
+                  entry.kind === "memory" &&
+                  entry.at >=
+                    (narration.memorySealEnabledAt ??
+                      Number.POSITIVE_INFINITY) &&
+                  !(narration.openedMemorySealIds ?? []).includes(entry.id)
+                }
+                onOpenMemorySeal={openMemorySeal}
+                justBought={celebration?.entryId === entry.id}
+                onPromptChip={submitChat}
+                speakerName={displayName}
+                onReplay={highlight ? () => setReplay(highlight) : undefined}
+              />
+            );
+          })
         )}
         {chatThinking && (
           <article className="agent-feed-entry chatReply thinking" role="status">

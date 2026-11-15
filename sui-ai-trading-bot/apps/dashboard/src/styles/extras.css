@@ -440,35 +440,23 @@
   }
 }
 
-/* Highlights: bookmarked moments + the replay sheet. */
-.highlight-bar {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  margin: 8px 0;
-}
-.highlight-bar-title {
+/* Highlights: entry replay affordance + the replay sheet. */
+.agent-feed-replay-button {
+  margin-left: auto;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
   color: var(--gold);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: inherit;
   font-size: 12px;
-  padding-top: 5px;
-  white-space: nowrap;
-}
-.highlight-bar-list {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-}
-.highlight-chip {
-  background: var(--btn-bg);
-  border: 1px solid var(--gold);
-  border-radius: 6px;
-  color: var(--gold);
-  font-size: 12px;
-  padding: 4px 9px;
-  white-space: nowrap;
+  line-height: 1;
+  text-decoration: underline;
+  text-underline-offset: 2px;
   cursor: pointer;
+}
+.agent-feed-replay-button:focus-visible {
+  outline: 1px solid var(--mint);
+  outline-offset: 2px;
 }
 .highlight-replay {
   position: fixed;

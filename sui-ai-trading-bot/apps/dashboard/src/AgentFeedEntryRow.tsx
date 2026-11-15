@@ -71,6 +71,7 @@ export function AgentFeedEntryRow({
   speakerName = "キャラ",
   memorySealed = false,
   onOpenMemorySeal,
+  onReplay,
 }: {
   entry: NarrationEntry;
   justBought?: boolean;
@@ -82,6 +83,8 @@ export function AgentFeedEntryRow({
   memorySealed?: boolean;
   /** Records that the device-local memory seal has been opened. */
   onOpenMemorySeal?: (entryId: string) => void;
+  /** Opens the saved highlight replay for this exact entry. */
+  onReplay?: () => void;
 }) {
   const buy = isBuyTradeEntry(entry);
   return (
@@ -196,6 +199,15 @@ export function AgentFeedEntryRow({
           onClick={() => onPromptChip(entry.promptChip!)}
         >
           {entry.promptChip}
+        </button>
+      )}
+      {onReplay && (
+        <button
+          type="button"
+          className="agent-feed-replay-button"
+          onClick={onReplay}
+        >
+          再演
         </button>
       )}
     </div>
