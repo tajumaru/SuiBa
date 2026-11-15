@@ -59,6 +59,11 @@ describe("ChainStrip", () => {
     expect(html).toContain('aria-label="Sui"');
     expect(html).toContain('src="/sui-logo.svg"');
     expect(html).toContain('alt="Sui"');
+    expect(html).toContain("Memory on Walrus");
+    expect(html).toContain('href="https://walrus.xyz"');
+    expect(html).toContain('aria-label="Walrus"');
+    expect(html).toContain('src="/walrus-glyph.svg"');
+    expect(html).toContain('alt="Walrus"');
     expect(
       renderToStaticMarkup(React.createElement(ChainStrip, { chain: null })),
     ).toBe("");

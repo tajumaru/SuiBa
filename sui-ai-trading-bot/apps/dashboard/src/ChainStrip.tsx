@@ -69,16 +69,28 @@ export function ChainStrip({ chain }: { chain: ChainInfo | null }) {
           VALIDATORS <strong>{chain.validators.toLocaleString("en-US")}</strong>
         </span>
       )}
-      <a
-        className="chain-credit"
-        href="https://sui.io"
-        target="_blank"
-        rel="noreferrer"
-        aria-label="Sui"
-      >
-        <img src="/sui-logo.svg" alt="Sui" />
-        <span>Built on Sui</span>
-      </a>
+      <div className="chain-credits">
+        <a
+          className="chain-credit"
+          href="https://sui.io"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Sui"
+        >
+          <img src="/sui-logo.svg" alt="Sui" />
+          <span>Built on Sui</span>
+        </a>
+        <a
+          className="chain-credit chain-credit-walrus"
+          href="https://walrus.xyz"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Walrus"
+        >
+          <img src="/walrus-glyph.svg" alt="Walrus" />
+          <span>Memory on Walrus</span>
+        </a>
+      </div>
     </div>
   );
 }

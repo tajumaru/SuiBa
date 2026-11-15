@@ -398,11 +398,16 @@
   color: #e8f5ef;
   font-weight: 600;
 }
+.chain-credits {
+  display: inline-flex;
+  gap: 16px;
+  align-items: center;
+  margin-left: auto;
+}
 .chain-credit {
   display: inline-flex;
   gap: 5px;
   align-items: center;
-  margin-left: auto;
   color: var(--faint);
   font-size: 10px;
   letter-spacing: 0.02em;
@@ -424,8 +429,12 @@
   width: 8px;
   height: 10px;
 }
+.chain-credit-walrus img {
+  width: 11px;
+  height: 11px;
+}
 @media (max-width: 640px) {
-  .chain-credit {
+  .chain-credits {
     flex-basis: 100%;
     justify-content: flex-end;
   }
