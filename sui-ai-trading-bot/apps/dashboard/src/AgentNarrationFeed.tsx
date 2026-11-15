@@ -372,6 +372,7 @@ export function AgentNarrationFeed({
       pairLabel,
       chain,
       memwal: data.memwal,
+      liquidation: data.liquidation,
     };
   });
   // Epoch boundary: when the chain sample reports a newer epoch

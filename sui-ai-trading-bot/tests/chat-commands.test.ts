@@ -71,6 +71,23 @@ describe("chat commands", () => {
     );
     expect(mirrored).toContain("待機 3 件");
     expect(mirrored).toContain("まだ送信なし");
+    const covered = runChatCommand(
+      "/status",
+      ctx({
+        liquidation: {
+          source: "Binance USD-M Futures (external reference)",
+          connected: false,
+          coveragePct: 75,
+          coveredMs: 3,
+          gapMs: 1,
+          gaps: 2,
+          lastConnectedAt: 0,
+          lastEventAt: null,
+        },
+      }),
+    );
+    expect(covered).toContain("欠落中 · 外部参考");
+    expect(covered).toContain("75.0% / 24h · 欠落 2 区間");
   });
 
   it("/score summarises the scoreboard or declines", () => {

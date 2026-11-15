@@ -9,6 +9,8 @@ export const SITUATION_MEMORY_MIN_SAMPLES = 30;
 export const SITUATION_MEMORY_BIAS_PCT = 0.3;
 export const REVIEW_ROUND_TRIP_COST_PCT = 0.6;
 export const DIP_REBOUND_ROUND_TRIP_COST_PCT = 0.2;
+export const LIQUIDATION_SPIKE_MULTIPLIER = 5;
+export const LIQUIDATION_SPIKE_MIN_USD = 100_000;
 
 export type SituationRegime = "up" | "down" | "range" | "unknown";
 export type SituationKind = "rule-buy" | "near-buy" | "shadow-ai-buy";
@@ -38,8 +40,27 @@ export type DipReboundSituationMemory = {
   positiveRate: number;
   periods: DipReboundPeriod[];
 };
+export type LiquidationSpikeSituationMemory = {
+  scene: "liquidation-spike";
+  key: "liquidation-spike";
+  evaluatedAt: number;
+  n: number;
+  mean24hPct: number;
+  positiveRate: number;
+  periods: DipReboundPeriod[];
+  source: "Binance USD-M Futures (external reference)";
+};
 export type SituationMemory =
-  DecisionSituationMemory | DipReboundSituationMemory;
+  | DecisionSituationMemory
+  | DipReboundSituationMemory
+  | LiquidationSpikeSituationMemory;
+
+export type LiquidationBucket = {
+  bucketAt: number;
+  longUsd: number;
+  shortUsd: number;
+  count: number;
+};
 
 type DecisionRow = { id: string; timestamp: number; decision: TradingDecision };
 type ShadowRow = {
@@ -300,6 +321,78 @@ export function aggregateDipReboundMemory(
   };
 }
 
+const median = (values: readonly number[]) => {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? sorted[middle]!
+    : (sorted[middle - 1]! + sorted[middle]!) / 2;
+};
+
+export function liquidationSpike(
+  longUsd: number,
+  priorFourHourTotals: readonly number[],
+) {
+  return (
+    priorFourHourTotals.length > 0 &&
+    longUsd >= LIQUIDATION_SPIKE_MIN_USD &&
+    longUsd >= median(priorFourHourTotals) * LIQUIDATION_SPIKE_MULTIPLIER
+  );
+}
+
+/** Display-only external-reference scene; never consumed by trading or shadow decisions. */
+export function aggregateLiquidationSpikeMemory(
+  candles: readonly Candle[],
+  buckets: readonly LiquidationBucket[],
+): LiquidationSpikeSituationMemory | null {
+  const dips = dipReboundEvents(candles);
+  const closeAt = new Map(candles.map((c) => [c.timestamp, c.close]));
+  const longIn = (after: number, through: number) =>
+    buckets
+      .filter((b) => b.bucketAt > after && b.bucketAt <= through)
+      .reduce((sum, b) => sum + b.longUsd, 0);
+  const events = dips.filter((event) => {
+    const current = longIn(event.timestamp - 4 * 3600, event.timestamp);
+    const baseline = Array.from({ length: 12 }, (_, index) => {
+      const end = event.timestamp - (index + 1) * 4 * 3600;
+      return longIn(end - 4 * 3600, end);
+    });
+    return liquidationSpike(current, baseline);
+  });
+  const current = events.at(-1);
+  if (!current) return null;
+  const samples = events.flatMap((event) => {
+    const result = closeAt.get(event.timestamp + 24 * 3600);
+    return result === undefined
+      ? []
+      : [
+          {
+            timestamp: event.timestamp,
+            net:
+              (result / event.close - 1) * 100 -
+              DIP_REBOUND_ROUND_TRIP_COST_PCT,
+          },
+        ];
+  });
+  if (!samples.length) return null;
+  const grouped = new Map<string, typeof samples>();
+  for (const sample of samples) {
+    const period = utcPeriod(sample.timestamp);
+    grouped.set(period, [...(grouped.get(period) ?? []), sample]);
+  }
+  return {
+    scene: "liquidation-spike",
+    key: "liquidation-spike",
+    evaluatedAt: current.timestamp * 1000,
+    ...dipStats(samples),
+    periods: [...grouped].map(([period, periodSamples]) => ({
+      period,
+      ...dipStats(periodSamples),
+    })),
+    source: "Binance USD-M Futures (external reference)",
+  };
+}
+
 export function refreshSituationMemory(
   db: BotDatabase,
 ): SituationMemory | null {
@@ -310,10 +403,15 @@ export function refreshSituationMemory(
     candles,
   );
   const dip = aggregateDipReboundMemory(candles);
+  const liquidation = aggregateLiquidationSpikeMemory(
+    candles,
+    db.liquidationBuckets(candles[0]?.timestamp ?? 0),
+  );
   const value =
-    dip && (!decision || dip.evaluatedAt + 300_000 >= decision.evaluatedAt)
-      ? dip
-      : decision;
+    [decision, dip, liquidation]
+      .filter((item): item is SituationMemory => item !== null)
+      .sort((a, b) => a.evaluatedAt - b.evaluatedAt)
+      .at(-1) ?? null;
   db.set("situation_memory", value);
   return value;
 }

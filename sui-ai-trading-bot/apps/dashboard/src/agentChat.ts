@@ -4,6 +4,7 @@ import {
   type NarrationEntry,
   type WatchScoreDisplay,
 } from "./agentNarration.ts";
+import type { LiquidationStatus } from "../../worker/src/liquidation-collector.ts";
 
 /**
  * Record-grounded replies for the narration character. The user
@@ -58,6 +59,7 @@ export interface AgentChatContext {
    * the first sample arrives. Quoted by /status only. */
   chain: { epoch: number; checkpoint: number; tps: number | null } | null;
   memwal?: { enabled: boolean; pending: number; lastSuccessAt: number | null };
+  liquidation?: LiquidationStatus | null;
 }
 
 export type ChatMood = "confident" | "humble" | "neutral";

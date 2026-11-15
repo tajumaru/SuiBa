@@ -86,6 +86,10 @@ function statusText(ctx: AgentChatContext): string {
       ),
     );
   }
+  if (ctx.liquidation) {
+    lines.push(row("liq-ref", `${ctx.liquidation.connected ? "接続中" : "欠落中"} · 外部参考`));
+    lines.push(row("liq-cover", `${ctx.liquidation.coveragePct.toFixed(1)}% / 24h · 欠落 ${ctx.liquidation.gaps} 区間`));
+  }
   if (ctx.recentMovePct != null) {
     const sign = ctx.recentMovePct >= 0 ? "+" : "";
     lines.push(row("move", `${sign}${ctx.recentMovePct.toFixed(2)}%（直近）`));

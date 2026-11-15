@@ -37,6 +37,7 @@ import {
   narrationEpisode,
   startMemwalFlusher,
 } from "./memwal.ts";
+import { startLiquidationCollector } from "./liquidation-collector.ts";
 
 /**
  * The HTTP request handler, extracted from the worker boot:
@@ -321,6 +322,7 @@ export function createRequestHandler(ctx: WorkerContext) {
           ? { enabled: true, ...ctx.db.memwalStatus() }
           : { enabled: false, pending: 0, lastSuccessAt: null },
         situationMemory: ctx.db.get("situation_memory") ?? null,
+        liquidation: ctx.liquidation?.status() ?? null,
         ...(ctx.validation
           ? { validation: timeAggregation(() => ctx.validation!.report()) }
           : {}),
@@ -509,6 +511,7 @@ export function createRequestHandler(ctx: WorkerContext) {
         ctx.db.set("api_cooldowns", apiAccess.snapshot());
         ctx.sui.close();
         ctx.memwal?.stop();
+        ctx.liquidation?.stop();
         ctx.db.close();
         ctx.pair = parsed;
         ctx.db = nextDb;
@@ -536,6 +539,8 @@ export function createRequestHandler(ctx: WorkerContext) {
         ctx.chartHistory = createChartHistory(ctx);
         ctx.dashboard = new DashboardService(ctx.engine, ctx.db);
         ctx.memwal = startMemwalFlusher(ctx.db);
+        ctx.liquidation =
+          ctx.pair === "SUI_USDC" ? startLiquidationCollector(ctx.db) : null;
         ctx.scheduler = createScheduler(ctx);
         ctx.scheduler.start();
         ctx.switching = false;

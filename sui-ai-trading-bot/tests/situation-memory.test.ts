@@ -3,6 +3,8 @@ import {
   aggregateDipReboundMemory,
   aggregateSituationMemory,
   dipReboundEvents,
+  liquidationSpike,
+  aggregateLiquidationSpikeMemory,
 } from "../apps/worker/src/situation-memory.ts";
 import {
   memoryNarration,
@@ -181,6 +183,33 @@ describe("dip-rebound scene statistic", () => {
       n: 1,
       positiveRate: 100,
       periods: [{ period: expect.any(String), n: 1 }],
+    });
+    expect(result?.mean24hPct).toBeCloseTo(1, 10);
+  });
+});
+
+describe("liquidation-spike scene statistic", () => {
+  it("requires both the relative multiplier and absolute USD floor at their boundaries", () => {
+    expect(liquidationSpike(100_000, [20_000, 20_000, 20_000])).toBe(true);
+    expect(liquidationSpike(99_999.99, [1, 1, 1])).toBe(false);
+    expect(liquidationSpike(100_000, [20_001, 20_001, 20_001])).toBe(false);
+  });
+
+  it("counts a qualified external-reference dip on the cost-deducted +24h axis", () => {
+    const candles = Array.from({ length: 110 * 12 + 1 }, (_, i) =>
+      candle(START + i * 300),
+    );
+    const eventAt = START + 20 * 4 * 3600;
+    const eventIndex = (eventAt - START) / 300;
+    candles[eventIndex] = candle(eventAt, 97);
+    candles[eventIndex + 288] = candle(eventAt + 24 * 3600, 98.164);
+    const result = aggregateLiquidationSpikeMemory(candles, [
+      { bucketAt: eventAt, longUsd: 100_000, shortUsd: 0, count: 1 },
+    ]);
+    expect(result).toMatchObject({
+      scene: "liquidation-spike",
+      n: 1,
+      source: "Binance USD-M Futures (external reference)",
     });
     expect(result?.mean24hPct).toBeCloseTo(1, 10);
   });
