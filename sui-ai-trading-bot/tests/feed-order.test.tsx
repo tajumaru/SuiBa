@@ -9,6 +9,10 @@ import {
   type NarrationEntry,
 } from "../apps/dashboard/src/agentNarration.ts";
 import { persistNarration } from "../apps/dashboard/src/narrationStorage.ts";
+import {
+  saveHighlights,
+  type Highlight,
+} from "../apps/dashboard/src/highlightStore.ts";
 
 const stopped = {
   status: "STOPPED",
@@ -168,6 +172,65 @@ describe("narration feed: message order", () => {
     const newerAt = html.indexOf("新しい返信です");
     expect(olderAt).toBeGreaterThanOrEqual(0);
     expect(newerAt).toBeGreaterThan(olderAt);
+  });
+
+  it("offers replay only on the entry matching a saved highlight", () => {
+    const highlighted: NarrationEntry = {
+      id: "narration:20",
+      at: 1_700_000_000_000,
+      kind: "watchHit",
+      text: "保存済みの的中です",
+    };
+    const ordinary: NarrationEntry = {
+      id: "narration:21",
+      at: 1_700_000_060_000,
+      kind: "cycle",
+      text: "通常の実況です",
+    };
+    const highlight: Highlight = {
+      id: highlighted.id,
+      at: highlighted.at,
+      kind: highlighted.kind,
+      title: highlighted.text,
+      entries: [highlighted],
+      prices: [1, 1.01],
+    };
+    const storage = memoryStorage();
+    persistNarration(
+      { ...emptyNarrationState(), entries: [highlighted, ordinary] },
+      storage,
+    );
+    saveHighlights([highlight], "SUI", storage);
+    vi.stubGlobal("window", { localStorage: storage });
+
+    const html = renderToStaticMarkup(
+      <AgentNarrationFeed data={stopped} stale={false} />,
+    );
+    expect(html).not.toContain("highlight-bar");
+    expect(html.match(/>再演<\/button>/g)).toHaveLength(1);
+    expect(html.indexOf("再演")).toBeGreaterThan(
+      html.indexOf(highlighted.text),
+    );
+    expect(html.indexOf("再演")).toBeLessThan(html.indexOf(ordinary.text));
+  });
+
+  it("wires the replay text button to its entry action", () => {
+    const onReplay = vi.fn();
+    const row = AgentFeedEntryRow({
+      entry: {
+        id: "narration:30",
+        at: 1_700_000_000_000,
+        kind: "watchHit",
+        text: "再演する実況です",
+      },
+      onReplay,
+    });
+    const button = (
+      row.props.children as Array<{ props?: Record<string, unknown> }>
+    ).find((child) => child?.props?.className === "agent-feed-replay-button");
+    expect(button?.props?.children).toBe("再演");
+    (button?.props?.onClick as () => void)();
+    expect(onReplay).toHaveBeenCalledOnce();
   });
 
   it("wires the jump pill and the stick management into the feed", () => {
