@@ -3234,10 +3234,15 @@ describe("agent narration: reach escalation and hit streaks", () => {
     delete legacy.reach;
     delete legacy.hitStreak;
     delete legacy.memoryCooldowns;
+    delete legacy.memorySealEnabledAt;
+    delete legacy.openedMemorySealIds;
+    const restoredAt = Date.now();
     saved.setItem("suiba.narration.v1", JSON.stringify(legacy));
     const fromLegacy = restoreNarration(saved);
     expect(fromLegacy.reach).toBeNull();
     expect(fromLegacy.hitStreak).toBe(0);
     expect(fromLegacy.memoryCooldowns).toEqual({});
+    expect(fromLegacy.memorySealEnabledAt).toBeGreaterThanOrEqual(restoredAt);
+    expect(fromLegacy.openedMemorySealIds).toEqual([]);
   });
 });

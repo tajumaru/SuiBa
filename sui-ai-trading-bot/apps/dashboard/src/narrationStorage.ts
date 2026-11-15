@@ -199,6 +199,11 @@ const schema: z.ZodType<NarrationState> = z.object({
   lastCalibScoredAt: number.default(0),
   forecastCalibEventIds: z.array(z.string()).default([]),
   memoryCooldowns: z.record(z.string(), number).default({}),
+  // The rollout time defaults at restore time, so every entry in a legacy
+  // save predates the feature and remains visible. Both inputs are optional
+  // for states written before the memory seal existed.
+  memorySealEnabledAt: number.default(() => Date.now()),
+  openedMemorySealIds: z.array(z.string()).max(200).default([]),
 });
 
 // Resolve storage inside the try: browsers may deny even the localStorage getter.

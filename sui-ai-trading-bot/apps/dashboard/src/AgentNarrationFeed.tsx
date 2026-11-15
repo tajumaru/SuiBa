@@ -105,6 +105,18 @@ export function AgentNarrationFeed({
   // Narration storage is scoped per pair (see narrationStorage).
   const persist = (state: NarrationState) =>
     persistNarration(state, undefined, pairLabel);
+  const openMemorySeal = (entryId: string) => {
+    const state = narrationRef.current;
+    const opened = state.openedMemorySealIds ?? [];
+    if (opened.includes(entryId)) return;
+    const next = {
+      ...state,
+      openedMemorySealIds: [...opened, entryId].slice(-200),
+    };
+    narrationRef.current = next;
+    persist(next);
+    setNarration(next);
+  };
   const [now, setNow] = useState(() => Date.now());
   const [receivedAt, setReceivedAt] = useState(() => Date.now());
   const receivedRef = useRef(receivedAt);
@@ -506,6 +518,13 @@ export function AgentNarrationFeed({
             <AgentFeedEntryRow
               key={entry.id}
               entry={entry}
+              memorySealed={
+                entry.kind === "memory" &&
+                entry.at >=
+                  (narration.memorySealEnabledAt ?? Number.POSITIVE_INFINITY) &&
+                !(narration.openedMemorySealIds ?? []).includes(entry.id)
+              }
+              onOpenMemorySeal={openMemorySeal}
               justBought={celebration?.entryId === entry.id}
               onPromptChip={submitChat}
               speakerName={displayName}
