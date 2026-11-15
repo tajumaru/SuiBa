@@ -80,6 +80,14 @@ export function AgentFeedEntryRow({
     <div
       className={`agent-feed-entry ${entry.kind}${entry.kind === "sellLineCrossing" ? ` crossing-${entry.sellLineSide}` : ""}${buy ? " buy" : ""}${justBought ? " just-bought" : ""}${entry.mono ? " mono" : ""}`}
     >
+      {entry.kind === "memory" && (
+        <img
+          className="agent-feed-memory-bg"
+          src="/walrus-memory-bg.png"
+          alt=""
+          aria-hidden="true"
+        />
+      )}
       <time dateTime={new Date(entry.at).toISOString()}>
         {timeText(entry.at)}
       </time>

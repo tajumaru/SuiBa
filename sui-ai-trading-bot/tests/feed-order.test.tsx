@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readNarrationFeed } from "./helpers/source";
 import { AgentNarrationFeed } from "../apps/dashboard/src/AgentNarration.tsx";
+import { AgentFeedEntryRow } from "../apps/dashboard/src/AgentFeedEntryRow.tsx";
 import type { OperationsSnapshot } from "../apps/dashboard/src/operationsTypes.ts";
 import {
   emptyNarrationState,
@@ -31,6 +32,33 @@ afterEach(() => {
 });
 
 describe("narration feed: message order", () => {
+  it("renders the Walrus background only for memory entries", () => {
+    const memory: NarrationEntry = {
+      id: "narration:1",
+      at: 1_700_000_000_000,
+      kind: "memory",
+      text: "記憶の実況です",
+    };
+    const ordinary: NarrationEntry = {
+      ...memory,
+      id: "narration:2",
+      kind: "cycle",
+      text: "通常の実況です",
+    };
+
+    const memoryHtml = renderToStaticMarkup(
+      <AgentFeedEntryRow entry={memory} />,
+    );
+    const ordinaryHtml = renderToStaticMarkup(
+      <AgentFeedEntryRow entry={ordinary} />,
+    );
+    expect(memoryHtml).toContain('class="agent-feed-memory-bg"');
+    expect(memoryHtml).toContain('src="/walrus-memory-bg.png"');
+    expect(memoryHtml).toContain('alt=""');
+    expect(memoryHtml).toContain('aria-hidden="true"');
+    expect(ordinaryHtml).not.toContain("agent-feed-memory-bg");
+  });
+
   it("renders entries oldest first, newest at the bottom", () => {
     // Seed the device-local narration store with a two-entry
     // exchange; the feed's initial state restores from it.
