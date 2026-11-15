@@ -30,9 +30,26 @@ STARTUP_GRACE = 180
 NETWORK_PAUSE_MAX_AGE = 60 * 60
 
 
-def require(value):
+def shape_kind(value):
+    if value is None: return 'null'
+    if type(value) is bool: return 'boolean'
+    if type(value) is int: return 'integer'
+    if type(value) is float: return 'number'
+    if type(value) is str: return 'string'
+    if type(value) is list: return 'array'
+    if type(value) is dict: return 'object'
+    return 'other'
+
+
+class ShapeError(ValueError):
+    def __init__(self, check, expected, value):
+        super().__init__('WATCHDOG_INVALID_EVIDENCE')
+        self.detail = {'check': check, 'expected': expected, 'actual': shape_kind(value)}
+
+
+def require(value, check='production_status', expected='valid', actual=None):
     if not value:
-        raise ValueError('WATCHDOG_INVALID_EVIDENCE')
+        raise ShapeError(check, expected, actual)
 
 
 def number(value):
@@ -177,7 +194,9 @@ class Host:
 
 
 def assess(status, evidence, now):
-    require(type(status.get('requires_review')) is bool and 'run' in status)
+    require(isinstance(status, dict), 'status', 'object', status)
+    require(type(status.get('requires_review')) is bool, 'requires_review', 'boolean', status.get('requires_review'))
+    require('run' in status, 'run', 'present', None)
     reasons = set()
     if status['requires_review']:
         reasons.add('REVIEW_REQUIRED')
@@ -187,7 +206,7 @@ def assess(status, evidence, now):
     require(isinstance(run, dict) and isinstance(run.get('id'), str) and re.fullmatch(r'[0-9a-f]{32}', run['id']) and
             run.get('status') in ('in_progress', 'completed', 'failed_requires_review') and
             number(run.get('started')) and 0 <= run['started']/1000 <= now and
-            type(status.get('controller_alive')) is bool)
+            type(status.get('controller_alive')) is bool, 'run', 'production_run', run)
     active = run['status'] == 'in_progress'
     pause = None
     starting = active and run.get('stage') != 'monitoring' and now-run['started']/1000 <= STARTUP_GRACE
@@ -253,8 +272,13 @@ def check(host, now):
         verdict, reasons, run_id = assess(status, evidence, now)
         return {'at': int(now), 'verdict': verdict, 'reasons': reasons, 'run_id': run_id,
                 'shadow': shadow(status.get('shadow'), now)}
+    except ShapeError as error:
+        return {'at': int(now), 'verdict': 'attention', 'reasons': ['STATUS_INVALID'], 'run_id': None,
+                'shadow': None, 'detail': error.detail}
     except Exception:
-        return {'at': int(now), 'verdict': 'attention', 'reasons': ['STATUS_INVALID'], 'run_id': None, 'shadow': None}
+        return {'at': int(now), 'verdict': 'attention', 'reasons': ['STATUS_INVALID'], 'run_id': None,
+                'shadow': None, 'detail': {'check': 'production_status', 'expected': 'valid',
+                                         'actual': shape_kind(status)}}
 
 
 def record(value):

@@ -9,8 +9,28 @@ CONTRACT = json.loads(Path(__file__).with_name('production-monitor-contract.json
 HOST_REASONS = frozenset(CONTRACT['host_reasons'])
 
 
-def require(value):
-    if not value: raise ValueError('PRODUCTION_RESPONSE_INVALID')
+SHAPE_KINDS = frozenset(CONTRACT['shape_kinds'])
+
+
+def shape_kind(value):
+    if value is None: return 'null'
+    if type(value) is bool: return 'boolean'
+    if type(value) is int: return 'integer'
+    if type(value) is float: return 'number'
+    if type(value) is str: return 'string'
+    if type(value) is list: return 'array'
+    if type(value) is dict: return 'object'
+    return 'other'
+
+
+class ShapeError(ValueError):
+    def __init__(self, check, expected, value):
+        super().__init__('PRODUCTION_RESPONSE_INVALID')
+        self.detail = {'check': check, 'expected': expected, 'actual': shape_kind(value)}
+
+
+def require(value, check='production_status', expected='valid', actual=None):
+    if not value: raise ShapeError(check, expected, actual)
 
 
 def hex_id(value):
@@ -28,12 +48,13 @@ def shadow(value, now):
             all(type(value[key]) is int and value[key] >= 0 for key in ('total', 'aiOnlyBuy', 'errors')) and
             value['aiOnlyBuy'] <= value['total'] and value['errors'] <= value['total'] and
             (value['lastDecisionAt'] is None or type(value['lastDecisionAt']) is int and
-             0 <= value['lastDecisionAt'] <= (now+60)*1000))
+             0 <= value['lastDecisionAt'] <= (now+60)*1000), 'shadow', 'shadow_or_null', value)
     return value
 
 
 def failure_summary(value, run):
-    require(type(value) is dict and set(value) == {'status', 'stage', 'code', 'http_status', 'backup'})
+    require(type(value) is dict and set(value) == {'status', 'stage', 'code', 'http_status', 'backup'},
+            'failure', 'failure_summary', value)
     require(value['status'] == run['status'] and value['status'] in ('in_progress', 'completed', 'failed_requires_review'))
     require(value['stage'] is None or value['stage'] in CONTRACT['stages'])
     require(value['code'] is None or type(value['code']) is str and
@@ -44,33 +65,37 @@ def failure_summary(value, run):
 
 
 def production(value, now):
-    require(type(value) is dict and type(value.get('requires_review')) is bool and 'run' in value)
+    require(type(value) is dict, 'status', 'object', value)
+    require(type(value.get('requires_review')) is bool, 'requires_review', 'boolean', value.get('requires_review'))
+    require('run' in value, 'run', 'present', None)
     optional = value.get('watchdog')
-    require(type(optional) is dict and set(optional) == {'record', 'code'})
+    require(type(optional) is dict and set(optional) == {'record', 'code'}, 'watchdog', 'watchdog', optional)
     if optional['record'] is None:
-        require(optional['code'] in ('WATCHDOG_RECORD_MISSING', 'WATCHDOG_RECORD_INVALID'))
+        require(optional['code'] in ('WATCHDOG_RECORD_MISSING', 'WATCHDOG_RECORD_INVALID'), 'watchdog.code', 'watchdog_code', optional['code'])
     else:
-        require(optional['code'] is None)
+        require(optional['code'] is None, 'watchdog.code', 'null', optional['code'])
         watchdog(optional['record'], now)
     run = value['run']
     if run is None:
-        require(set(value) == {'run', 'requires_review', 'watchdog'})
+        require(set(value) == {'run', 'requires_review', 'watchdog'}, 'status.keys', 'not_started_status', value)
         return value
     require({'run', 'requires_review', 'worker', 'controller_alive', 'watchdog', 'shadow'} <= set(value) <=
             {'run', 'requires_review', 'worker', 'controller_alive', 'watchdog', 'shadow', 'failure'} and
             type(value['controller_alive']) is bool and type(run) is dict and
-            set(run) == {'id', 'status', 'started', 'stopped', 'sha', 'stage', 'admitted'})
+            set(run) == {'id', 'status', 'started', 'stopped', 'sha', 'stage', 'admitted'}, 'status.keys', 'running_status', value)
     if 'failure' in value:
         failure_summary(value['failure'], run)
     shadow(value['shadow'], now)
     require(hex_id(run['id']) and run['status'] in CONTRACT['prod_states'][2:] and
             type(run['started']) is int and 0 <= run['started'] <= (now+60)*1000 and
-            type(run['admitted']) is bool and run['stage'] in CONTRACT['stages'])
-    require(run['stopped'] is None or type(run['stopped']) is int and run['started'] <= run['stopped'] <= (now+60)*1000)
-    require(run['sha'] is None or type(run['sha']) is str and re.fullmatch(r'[a-f0-9]{40}', run['sha']))
+            type(run['admitted']) is bool and run['stage'] in CONTRACT['stages'], 'run', 'production_run', run)
+    require(run['stopped'] is None or type(run['stopped']) is int and run['started'] <= run['stopped'] <= (now+60)*1000,
+            'run.stopped', 'timestamp_or_null', run['stopped'])
+    require(run['sha'] is None or type(run['sha']) is str and re.fullmatch(r'[a-f0-9]{40}', run['sha']),
+            'run.sha', 'sha40_or_null', run['sha'])
     worker = value['worker']
     if worker is not None:
-        require(type(worker) is dict)
+        require(type(worker) is dict, 'worker', 'worker_or_unreachable', worker)
         require(unreachable(worker) or
                 set(worker) == {'running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper',
                                 'networkPause', 'networkStopReason'} and
@@ -78,13 +103,20 @@ def production(value, now):
                     ('running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'paper')) and
                 (worker['networkPause'] is None or type(worker['networkPause']) is dict) and
                 (worker['networkStopReason'] is None or type(worker['networkStopReason']) is str and
-                 re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,100}', worker['networkStopReason'])))
-    require(run['status'] == 'in_progress' or worker is None)
+                 re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,100}', worker['networkStopReason'])),
+                'worker', 'worker_or_unreachable', worker)
+    require(run['status'] == 'in_progress' or worker is None, 'worker', 'null_when_stopped', worker)
     return value
 
 
 def watchdog(value, now):
-    require(type(value) is dict and set(value) == {'at', 'verdict', 'reasons', 'run_id', 'shadow'})
+    require(type(value) is dict and {'at', 'verdict', 'reasons', 'run_id', 'shadow'} <= set(value) <=
+            {'at', 'verdict', 'reasons', 'run_id', 'shadow', 'detail'}, 'watchdog', 'watchdog', value)
+    detail = value.get('detail')
+    require(detail is None or type(detail) is dict and set(detail) == {'check', 'expected', 'actual'} and
+            detail['check'] in CONTRACT['detail_checks'] and detail['expected'] in CONTRACT['detail_expected'] and
+            detail['actual'] in CONTRACT['shape_kinds'], 'watchdog', 'watchdog', value)
+    require(('STATUS_INVALID' in value['reasons']) == (detail is not None), 'watchdog', 'watchdog', value)
     require(type(value['at']) is int and value['at'] >= 0 and value['verdict'] in ('ok', 'attention', 'not_started'))
     require(type(value['reasons']) is list and len(value['reasons']) <= 32 and
             all(type(code) is str and code in HOST_REASONS for code in value['reasons']))
@@ -98,12 +130,15 @@ def watchdog(value, now):
 
 def combine(prod, now, prod_read=True):
     result = {'at': int(now), 'verdict': 'attention', 'reasons': [], 'run_id': None,
-              'prod_state': 'unknown', 'watchdog_at': None}
+              'prod_state': 'unknown', 'watchdog_at': None, 'detail': None}
     if not prod_read:
         result['reasons'] = ['PROD_STATUS_UNAVAILABLE']; return result
     try: production(prod, now)
+    except ShapeError as error:
+        result.update(reasons=['PROD_STATUS_INVALID'], detail=error.detail); return result
     except Exception:
-        result['reasons'] = ['PROD_STATUS_INVALID']; return result
+        result.update(reasons=['PROD_STATUS_INVALID'], detail={
+            'check': 'production_status', 'expected': 'valid', 'actual': shape_kind(prod)}); return result
     watch = prod['watchdog']['record']
     run = prod['run']
     reasons = set()
@@ -128,6 +163,7 @@ def combine(prod, now, prod_read=True):
         elif run['status'] == 'in_progress' and run['stage'] == 'monitoring' and prod['controller_alive']:
             reasons.add('WORKER_STATE_INVALID')
     if watch is not None:
+        result['detail'] = watch.get('detail')
         if watch['at'] <= now+60:
             result['watchdog_at'] = watch['at']
         if not -60 <= now-watch['at'] <= CONTRACT['watchdog_max_age']:

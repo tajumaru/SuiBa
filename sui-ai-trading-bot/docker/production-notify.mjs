@@ -12,6 +12,14 @@ const reasons = new Set([
   ...contract.host_reasons,
   ...contract.monitor_reasons,
 ]);
+const detailShape = (value) =>
+  value &&
+  typeof value === "object" &&
+  !Array.isArray(value) &&
+  Object.keys(value).sort().join(",") === "actual,check,expected" &&
+  contract.detail_checks.includes(value.check) &&
+  contract.detail_expected.includes(value.expected) &&
+  contract.shape_kinds.includes(value.actual);
 export const LABEL = "suiba-production-alert";
 export const TITLE = "SuiBa VPS 本番：要確認";
 export const MARKER = "<!-- suiba-production-monitor:v1 -->";
@@ -57,8 +65,8 @@ export function validateReport(value, now = Date.now() / 1000) {
   require(value && typeof value === "object" && !Array.isArray(value));
   require(
     [
-      "at,prod_state,reasons,run_id,verdict,watchdog_at",
-      "at,failure,prod_state,reasons,run_id,verdict,watchdog_at",
+      "at,detail,prod_state,reasons,run_id,verdict,watchdog_at",
+      "at,detail,failure,prod_state,reasons,run_id,verdict,watchdog_at",
     ].includes(Object.keys(value).sort().join(",")),
   );
   if (value.failure !== undefined) require(failureShape(value.failure));
@@ -69,6 +77,12 @@ export function validateReport(value, now = Date.now() / 1000) {
     Array.isArray(value.reasons) &&
       value.reasons.length <= 64 &&
       value.reasons.every((code) => reasons.has(code)),
+  );
+  require(value.detail === null || detailShape(value.detail));
+  require(
+    (value.reasons.includes("PROD_STATUS_INVALID") ||
+      value.reasons.includes("STATUS_INVALID")) ===
+      (value.detail !== null),
   );
   require((value.verdict === "attention") === value.reasons.length > 0);
   require(value.run_id === null || hexId(value.run_id));
@@ -101,6 +115,7 @@ export function notificationReport(raw, now = Date.now() / 1000) {
     run_id: null,
     prod_state: "unknown",
     watchdog_at: null,
+    detail: null,
   });
   try {
     require(typeof raw === "string" && raw.length <= 16384);
@@ -184,6 +199,9 @@ export async function syncIssues(
     `- ラン: \`${report.run_id ?? "unknown"}\``,
     `- watchdog記録（UTC）: ${report.watchdog_at === null ? "未取得" : new Date(report.watchdog_at * 1000).toISOString()}`,
     `- 理由コード: ${report.reasons.map((code) => "\`" + code + "\`").join(", ") || "なし"}`,
+    ...(report.detail
+      ? [`- 形検証: \`${report.detail.check}\`（期待: \`${report.detail.expected}\`、実際: \`${report.detail.actual}\`）`]
+      : []),
     ...(report.verdict === "attention" && report.failure
       ? [
           `- 失敗段階: \`${report.failure.stage ?? "unknown"}\``,

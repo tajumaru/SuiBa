@@ -53,7 +53,7 @@ FILES=(
   'suiba-needrestart.conf|0d0ff8114a4c713321cd6082c98a663a02785fcfdf0ebd13fb54d97722de1cc6|/etc/needrestart/conf.d/suiba.conf|644'
   'suiba-paper-check.service|44efe8db2b1c569fd8c2176002acc76b724d6d4c66fa1df1babb988e63f60e95|/etc/systemd/system/suiba-paper-check.service|644'
   'suiba-prod.service|042b393fd872481faffa17d09e57fe7c7a2d57ddb931d609655f4cf29f6ddb02|/etc/systemd/system/suiba-prod.service|644'
-  'watchdog.py|11bb497491e56855164cdcb2c5d37b43298b1ee8f1bef6bbc21a4b11834f6c04|/usr/local/libexec/suiba-prod-watchdog.py|755'
+  'watchdog.py|a061c942d693364eba51f4e3e0271abc57cc8b50d34abada0dff86a07a7ef8fc|/usr/local/libexec/suiba-prod-watchdog.py|755'
   'suiba-prod-watchdog.service|88ac174a834219b34d23ee6864ce4c8f676e7b0a72e970ea82c12c1d125f1b0d|/etc/systemd/system/suiba-prod-watchdog.service|644'
   'suiba-prod-watchdog.timer|43e893738a839eb12cfd0fe8fa8b464bcb25e751d2a3ee115b7558e9d70a02cf|/etc/systemd/system/suiba-prod-watchdog.timer|644'
   'suiba-paper-check-cutoff.service|8b40feb7b662796763e53eb6114083233d240d49229027ccea3104c7a628bd96|/etc/systemd/system/suiba-paper-check-cutoff.service|644'

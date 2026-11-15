@@ -28,7 +28,7 @@ OLD_RUN_ID = 'fa320242aad145cb9ef25d50f2103969'
 
 def report(state='in_progress', failure=None, run_id=RUN_ID):
     value = {'at': 1794480000, 'verdict': 'ok', 'reasons': [], 'run_id': run_id,
-             'prod_state': state, 'watchdog_at': 1794480000}
+             'prod_state': state, 'watchdog_at': 1794480000, 'detail': None}
     if failure is not None:
         value['failure'] = failure
         value['verdict'] = 'attention'
