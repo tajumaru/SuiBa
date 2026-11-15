@@ -37,6 +37,7 @@ import {
 } from "../../../packages/shared/src/index.ts";
 import { resolveSuiGrpcEndpoints } from "./suiEndpoints.ts";
 import { startMemwalFlusher } from "./memwal.ts";
+import { startLiquidationCollector } from "./liquidation-collector.ts";
 if (process.env.MODE && process.env.MODE !== "PAPER")
   throw new Error("ONLY_PAPER_SUPPORTED");
 const token = process.env.ADMIN_TOKEN_FILE
@@ -170,6 +171,8 @@ ctx.chartHistory = createChartHistory(ctx);
 ctx.scheduler = createScheduler(ctx);
 ctx.dashboard = new DashboardService(ctx.engine, ctx.db);
 ctx.memwal = startMemwalFlusher(ctx.db);
+ctx.liquidation =
+  ctx.pair === "SUI_USDC" ? startLiquidationCollector(ctx.db) : null;
 const handleRequest = createRequestHandler(ctx);
 const server = createServer((req, res) => {
   ctx.inFlightRequests++;
@@ -192,6 +195,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
     ctx.engine.monitor.beginShutdown();
     ctx.scheduler.stop();
     ctx.memwal?.stop();
+    ctx.liquidation?.stop();
     const chartClosed = ctx.chartHistory.close();
     apiAccess.cancel();
     deepBookTransport.close();

@@ -22,7 +22,7 @@ export function memoryNarration(
 ): { draft: EntryDraft; key: string } | null {
   if (!statistic) return null;
   const mean =
-    statistic.scene === "dip-rebound"
+    statistic.scene !== "decision"
       ? statistic.mean24hPct
       : statistic.mean4hPct;
   if (
@@ -35,8 +35,8 @@ export function memoryNarration(
     return null;
   const sign = mean >= 0 ? "+" : "";
   const base =
-    statistic.scene === "dip-rebound"
-      ? `この手の急落後、過去 n=${statistic.n} はコスト控除後の +24h 平均 ${sign}${mean.toFixed(2)}%、プラス率 ${statistic.positiveRate.toFixed(0)}%です。`
+    statistic.scene !== "decision"
+      ? `${statistic.scene === "liquidation-spike" ? "外部参考のロング清算スパイクを伴う急落後" : "この手の急落後"}、過去 n=${statistic.n} はコスト控除後の +24h 平均 ${sign}${mean.toFixed(2)}%、プラス率 ${statistic.positiveRate.toFixed(0)}%です。`
       : `この手の${labels[statistic.regime]}、過去 n=${statistic.n} はコスト控除後の +4h 平均 ${sign}${mean.toFixed(2)}%、プラス率 ${statistic.positiveRate.toFixed(0)}%です。`;
   return {
     key: statistic.key,

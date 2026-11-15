@@ -52,6 +52,7 @@ export interface MemwalOutboxRow {
   attempts: number;
 }
 export const RETENTION_FULL_EVIDENCE_DAYS = 30;
+export const LIQUIDATION_RETENTION_DAYS = RETENTION_FULL_EVIDENCE_DAYS;
 export const RETENTION_CHUNK_ROWS = 16;
 const retentionVersion = 1;
 
@@ -284,6 +285,19 @@ export class BotDatabase {
         UNIQUE(kind, source_id)
       ); CREATE INDEX IF NOT EXISTS memwal_outbox_pending
         ON memwal_outbox(sent_at, attempts, created_at);`,
+    );
+    this.db.exec(
+      `CREATE TABLE IF NOT EXISTS liquidation_buckets(
+        bucket_at INTEGER PRIMARY KEY, long_usd REAL NOT NULL DEFAULT 0,
+        short_usd REAL NOT NULL DEFAULT 0, event_count INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS liquidation_coverage(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL,
+        started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS liquidation_coverage_started
+        ON liquidation_coverage(started_at);`,
     );
     for (const t of eventTables)
       this.db.exec(
@@ -765,6 +779,51 @@ export class BotDatabase {
     )
       .map((x) => JSON.parse(x.json))
       .reverse();
+  }
+  addLiquidation(input: {
+    timestamp: number;
+    side: "long" | "short";
+    notionalUsd: number;
+  }) {
+    const bucketAt = Math.floor(input.timestamp / 300_000) * 300;
+    this.prepare(
+      `INSERT INTO liquidation_buckets(bucket_at,long_usd,short_usd,event_count,updated_at)
+       VALUES(?,?,?,?,?) ON CONFLICT(bucket_at) DO UPDATE SET
+       long_usd=long_usd+excluded.long_usd,
+       short_usd=short_usd+excluded.short_usd,
+       event_count=event_count+1,updated_at=excluded.updated_at`,
+    ).run(bucketAt, input.side === "long" ? input.notionalUsd : 0,
+      input.side === "short" ? input.notionalUsd : 0, 1, input.timestamp);
+  }
+  liquidationBuckets(sinceSeconds = 0): {
+    bucketAt: number; longUsd: number; shortUsd: number; count: number;
+  }[] {
+    return this.prepare(
+      `SELECT bucket_at AS bucketAt,long_usd AS longUsd,short_usd AS shortUsd,
+              event_count AS count FROM liquidation_buckets
+       WHERE bucket_at>=? ORDER BY bucket_at`,
+    ).all(sinceSeconds) as ReturnType<BotDatabase["liquidationBuckets"]>;
+  }
+  recordLiquidationCoverage(kind: "connected" | "gap", startedAt: number, endedAt: number) {
+    if (endedAt <= startedAt) return;
+    this.prepare("INSERT INTO liquidation_coverage(kind,started_at,ended_at) VALUES(?,?,?)")
+      .run(kind, startedAt, endedAt);
+  }
+  liquidationCoverage(since = 0): {
+    kind: "connected" | "gap"; startedAt: number; endedAt: number;
+  }[] {
+    return this.prepare(
+      `SELECT kind,started_at AS startedAt,ended_at AS endedAt
+       FROM liquidation_coverage WHERE ended_at>? ORDER BY started_at`,
+    ).all(since) as ReturnType<BotDatabase["liquidationCoverage"]>;
+  }
+  pruneLiquidations(now = Date.now()) {
+    const cutoff = now - LIQUIDATION_RETENTION_DAYS * 86_400_000;
+    this.transaction(() => {
+      this.prepare("DELETE FROM liquidation_buckets WHERE bucket_at<?")
+        .run(Math.floor(cutoff / 1000));
+      this.prepare("DELETE FROM liquidation_coverage WHERE ended_at<?").run(cutoff);
+    });
   }
   recordAnalysis(
     id: string,
