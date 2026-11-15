@@ -629,6 +629,15 @@ export class BotDatabase {
       ).all(from, until) as { id: string; json: string }[]
     ).map((row) => [row.id, JSON.parse(row.json)] as const);
   }
+  situationDecisionRows(): { id: string; timestamp: number; decision: TradingDecision }[] {
+    return (this.prepare(
+      "SELECT id,timestamp,json FROM strategy_decisions ORDER BY timestamp,id",
+    ).all() as { id: string; timestamp: number; json: string }[]).map((row) => ({
+      id: row.id,
+      timestamp: row.timestamp,
+      decision: JSON.parse(row.json) as TradingDecision,
+    }));
+  }
   /** Display input cache only; retain SQL timestamps independently of JSON at. */
   displayValidationRows(from: number, until: number) {
     return this.prepare(

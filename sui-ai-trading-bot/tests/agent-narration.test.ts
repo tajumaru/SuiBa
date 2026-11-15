@@ -3233,9 +3233,11 @@ describe("agent narration: reach escalation and hit streaks", () => {
     const legacy = { ...emptyNarrationState() } as Record<string, unknown>;
     delete legacy.reach;
     delete legacy.hitStreak;
+    delete legacy.memoryCooldowns;
     saved.setItem("suiba.narration.v1", JSON.stringify(legacy));
     const fromLegacy = restoreNarration(saved);
     expect(fromLegacy.reach).toBeNull();
     expect(fromLegacy.hitStreak).toBe(0);
+    expect(fromLegacy.memoryCooldowns).toEqual({});
   });
 });

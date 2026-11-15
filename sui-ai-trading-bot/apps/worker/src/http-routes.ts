@@ -320,6 +320,7 @@ export function createRequestHandler(ctx: WorkerContext) {
         memwal: memwalConfig()
           ? { enabled: true, ...ctx.db.memwalStatus() }
           : { enabled: false, pending: 0, lastSuccessAt: null },
+        situationMemory: ctx.db.get("situation_memory") ?? null,
         ...(ctx.validation
           ? { validation: timeAggregation(() => ctx.validation!.report()) }
           : {}),

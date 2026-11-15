@@ -137,6 +137,9 @@ export function AgentFeedEntryRow({
       {entry.kind === "forecastCalib" && (
         <span className="agent-feed-entry-tag calib">学習</span>
       )}
+      {entry.kind === "memory" && (
+        <span className="agent-feed-entry-tag">記憶</span>
+      )}
       {entry.kind === "priceLine" && (
         <span className="agent-feed-entry-tag line">買い走りライン</span>
       )}
