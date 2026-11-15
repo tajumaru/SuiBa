@@ -123,6 +123,19 @@ export const createScheduler = (ctx: WorkerContext) =>
       } finally {
         ctx.activeTick = undefined;
       }
+      const maintenance = setImmediate(() => {
+        try {
+          ctx.db.maintainRetentionChunk();
+        } catch {
+          console.warn(
+            JSON.stringify({
+              event: "DATABASE_RETENTION_FAILED",
+              databaseHealth: ctx.db.health(),
+            }),
+          );
+        }
+      });
+      maintenance.unref();
     },
     () => ({
       // Recovery uses the normal acquisition/validation/Sui/ledger diagnostic;

@@ -40,6 +40,71 @@ const eventTables = [
   "sui_observations",
 ] as const;
 type EventTable = (typeof eventTables)[number];
+export const RETENTION_FULL_EVIDENCE_DAYS = 30;
+export const RETENTION_CHUNK_ROWS = 16;
+const retentionVersion = 1;
+
+type RetentionRow = { id: string; json: string };
+
+function compactDecision(value: Record<string, unknown>) {
+  const evidence =
+    value.evidence && typeof value.evidence === "object"
+      ? (value.evidence as Record<string, unknown>)
+      : null;
+  const inputs =
+    evidence?.inputs && typeof evidence.inputs === "object"
+      ? (evidence.inputs as Record<string, unknown>)
+      : null;
+  return {
+    _retention: retentionVersion,
+    action: value.action,
+    confidence: value.confidence,
+    stopLossPct: value.stopLossPct,
+    takeProfitPct: value.takeProfitPct,
+    timestamp: value.timestamp,
+    ...(value.sellPurpose === undefined
+      ? {}
+      : { sellPurpose: value.sellPurpose }),
+    ...(evidence === null
+      ? {}
+      : {
+          evidence: {
+            version: evidence.version,
+            evaluatedAt: evidence.evaluatedAt,
+            candleTimestamp: evidence.candleTimestamp,
+            previousCandleTimestamp: evidence.previousCandleTimestamp,
+            inputs: {
+              price: inputs?.price,
+              entryPrice: inputs?.entryPrice,
+            },
+            conditions: evidence.conditions,
+            selectedRule: evidence.selectedRule,
+          },
+        }),
+  };
+}
+
+function compactCycleAudit(value: Record<string, unknown>) {
+  const keys = [
+    "cycleId",
+    "phase",
+    "beganAt",
+    "endedAt",
+    "runningAtStart",
+    "runningAtEnd",
+    "outcome",
+    "action",
+    "error",
+    "candidateId",
+    "orderId",
+  ] as const;
+  return Object.fromEntries([
+    ["_retention", retentionVersion],
+    ...keys
+      .filter((key) => value[key] !== undefined)
+      .map((key) => [key, value[key]]),
+  ]);
+}
 /**
  * Timing metadata for one synchronous persistence operation. Emitted
  * only when BotDatabase.perfSink is installed (detailed performance
@@ -647,6 +712,37 @@ export class BotDatabase {
       this.set("decision", decision);
       this.set("indicators", indicators);
     });
+  }
+  /**
+   * Rewrites a bounded number of old diagnostic payloads without deleting
+   * rows. This is called between trading cycles; the small transaction keeps
+   * retention work from becoming an unbounded cycle delay.
+   */
+  maintainRetentionChunk(now = Date.now()) {
+    const cutoff = now - RETENTION_FULL_EVIDENCE_DAYS * 24 * 60 * 60 * 1000;
+    const eligible = (table: "strategy_decisions" | "cycle_audits") =>
+      this.prepare(
+        `SELECT id,json FROM ${table}
+         WHERE timestamp<?
+           AND CASE WHEN json_valid(json) THEN json_extract(json,'$._retention') END IS NULL
+         ORDER BY timestamp,id LIMIT ?`,
+      ).all(cutoff, RETENTION_CHUNK_ROWS) as RetentionRow[];
+    const decisions = eligible("strategy_decisions");
+    const audits = eligible("cycle_audits");
+    if (decisions.length === 0 && audits.length === 0) return 0;
+    this.transaction(() => {
+      for (const { id, json } of decisions)
+        this.prepare("UPDATE strategy_decisions SET json=? WHERE id=?").run(
+          JSON.stringify(compactDecision(JSON.parse(json))),
+          id,
+        );
+      for (const { id, json } of audits)
+        this.prepare("UPDATE cycle_audits SET json=? WHERE id=?").run(
+          JSON.stringify(compactCycleAudit(JSON.parse(json))),
+          id,
+        );
+    });
+    return decisions.length + audits.length;
   }
   commitFill(
     id: string,
