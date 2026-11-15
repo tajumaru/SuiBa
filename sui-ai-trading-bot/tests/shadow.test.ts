@@ -205,13 +205,13 @@ it("asks for an independent stance and explicitly identifies unmet rule conditio
 
   const prompt = JSON.parse(shadowPrompt(freezeSnapshot(input).snapshot));
 
-  expect(prompt.promptVersion).toBe("shadow-openai-nano-v3");
+  expect(prompt.promptVersion).toBe("shadow-openai-nano-v4");
   expect(prompt.instruction).toContain("independent second opinion");
   expect(prompt.instruction).toContain(
-    "choose BUY when the evidence as a whole supports buying even if rule conditions are unmet",
+    "choose BUY when the snapshot evidence as a whole supports buying even if rule conditions are unmet",
   );
   expect(prompt.instruction).toContain(
-    "choose WAIT when the evidence is weak even if the rule chose BUY",
+    "choose WAIT when evidence is weak even if the rule chose BUY",
   );
   expect(prompt.ruleConditionStatus).toEqual({
     met: ["emaUp"],

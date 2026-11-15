@@ -217,6 +217,32 @@ it("validates exact frozen ref observations, never repairs invented values", asy
       await expect(result).rejects.toMatchObject({ code: "INVALID_REFERENCE" });
   }
 });
+it("rejects allowlisted keys paired with the wrong reference type", async () => {
+  const { request } = await fixture();
+  const body = response({
+    output: [
+      {
+        type: "message",
+        role: "assistant",
+        content: [
+          {
+            type: "output_text",
+            text: JSON.stringify({
+              ...decision(),
+              rationale: {
+                refs: [{ type: "book", key: "close", value: 2 }],
+                text: "mismatched allowlist pair",
+              },
+            }),
+          },
+        ],
+      },
+    ],
+  });
+  await expect(
+    new OpenAIShadowAdapter(mockHTTP(body)).complete(request),
+  ).rejects.toMatchObject({ code: "INVALID_REFERENCE" });
+});
 it("calculates USD from measured input/output, cache discounts and already-inclusive reasoning", () => {
   expect(openAIUsage({ input_tokens: 1000, output_tokens: 200 })).toEqual({
     inputTokens: 1000,
