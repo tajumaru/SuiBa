@@ -36,6 +36,7 @@ import {
   type TradingPair,
 } from "../../../packages/shared/src/index.ts";
 import { resolveSuiGrpcEndpoints } from "./suiEndpoints.ts";
+import { startMemwalFlusher } from "./memwal.ts";
 if (process.env.MODE && process.env.MODE !== "PAPER")
   throw new Error("ONLY_PAPER_SUPPORTED");
 const token = process.env.ADMIN_TOKEN_FILE
@@ -168,6 +169,7 @@ watchdog.unref();
 ctx.chartHistory = createChartHistory(ctx);
 ctx.scheduler = createScheduler(ctx);
 ctx.dashboard = new DashboardService(ctx.engine, ctx.db);
+ctx.memwal = startMemwalFlusher(ctx.db);
 const handleRequest = createRequestHandler(ctx);
 const server = createServer((req, res) => {
   ctx.inFlightRequests++;
@@ -189,6 +191,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
     ctx.stopping = true;
     ctx.engine.monitor.beginShutdown();
     ctx.scheduler.stop();
+    ctx.memwal?.stop();
     const chartClosed = ctx.chartHistory.close();
     apiAccess.cancel();
     deepBookTransport.close();

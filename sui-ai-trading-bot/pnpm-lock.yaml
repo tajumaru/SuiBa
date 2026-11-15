@@ -11,9 +11,18 @@ importers:
       '@cetusprotocol/aggregator-sdk':
         specifier: 1.7.5
         version: 1.7.5(axios@1.20.0)(typescript@6.0.3)
+      '@mysten-incubation/memwal':
+        specifier: 0.1.14
+        version: 0.1.14(@mysten/seal@1.1.3(@mysten/sui@2.37.0(typescript@6.0.3)))(@mysten/sui@2.37.0(typescript@6.0.3))(@mysten/walrus@1.1.7(@mysten/sui@2.37.0(typescript@6.0.3)))(zod@4.6.7)
+      '@mysten/seal':
+        specifier: 1.1.3
+        version: 1.1.3(@mysten/sui@2.37.0(typescript@6.0.3))
       '@mysten/sui':
         specifier: 2.37.0
         version: 2.37.0(typescript@6.0.3)
+      '@mysten/walrus':
+        specifier: 1.1.7
+        version: 1.1.7(@mysten/sui@2.37.0(typescript@6.0.3))
       decimal.js:
         specifier: ^10.6.0
         version: 10.6.0
@@ -446,8 +455,33 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
+  '@mysten-incubation/memwal@0.1.14':
+    resolution: {integrity: sha512-8TLVZwaZSnaprlLbKPpM9rsqLa7iLlmgWa33SgFQIt0PH0Lge+HyhmhPTbdbDHDTbTSEM61DjjZnN+iY1g9MKg==}
+    engines: {node: '>=20.0.0'}
+    peerDependencies:
+      '@mysten/seal': '>=1.1.0'
+      '@mysten/sui': '>=2.5.0'
+      '@mysten/walrus': '>=1.0.3'
+      ai: '>=4.0.0'
+      zod: ^3.23.0 || ^4.0.0
+    peerDependenciesMeta:
+      '@mysten/walrus':
+        optional: true
+      ai:
+        optional: true
+      zod:
+        optional: true
+
   '@mysten/bcs@2.1.3':
     resolution: {integrity: sha512-sg3hstwDLQQmQTpiX8Vzs13bEEGTqnhp1gUzBLlVQ493xyTTCDwB/jXGzT0g2I/GXd2o1B3s7Bd67Ua3VZo+Jw==}
+
+  '@mysten/bcs@2.1.4':
+    resolution: {integrity: sha512-ksfm0HGy82iDcuLaf4kAduaeTNqALH8D8WCdxxwU/L2Gpk4SnqoC7D8R4qMoMpCSkh56CFVG3Tme343Iz2P8PA==}
+
+  '@mysten/seal@1.1.3':
+    resolution: {integrity: sha512-HS54mkWEkd6ENl4U94jorwYzahTSSxWiFiDKbYFw+SFEIc4HoqSg2dULKI1WUi6nw8eWYcw/XobeNOlm3Ss5CQ==}
+    peerDependencies:
+      '@mysten/sui': ^2.16.2
 
   '@mysten/sui@2.31.2':
     resolution: {integrity: sha512-AarMaFrTlRUZyhHNRh/hrAIaxgrYXupbXypJq0TbGmgouJspwzg+fsk0aH4/67kkCeUC23idueQ2lc7BMyTlMg==}
@@ -457,8 +491,19 @@ packages:
     resolution: {integrity: sha512-WW5gs8y9EE3sd5u4vqA4Rw9Oo6iiA/yQRmRnj9KAtF59ykYpgUtSw+u9tJKCpZrN+0tPTeTUdUm6+o/eBYCHdw==}
     engines: {node: '>=22'}
 
+  '@mysten/utils@0.3.3':
+    resolution: {integrity: sha512-gVHn5toh24eXXLEyBknwwM2F/tbDgqPX0yj77KtHjuoYUallcQ9vSwGfGsAy39IcTB259Yprt/ZOEwdup+zrpA==}
+
   '@mysten/utils@0.4.2':
     resolution: {integrity: sha512-K/5eBuYKxUFCrYcic1lvYvWE9OVSH581cjVjwsSJGUqPit91nZq2acUwes+B4lo98VE/CILIUeBcyEIvuNxMhA==}
+
+  '@mysten/walrus-wasm@0.2.2':
+    resolution: {integrity: sha512-MbI1OAYvnlcdYo3hhSPgMra4Loiox32gI13aP+EpC1pjVxkIRnINzM2FcUgu1PIrl/L49O6f+latQm0vcCGXiQ==}
+
+  '@mysten/walrus@1.1.7':
+    resolution: {integrity: sha512-9hymg7JJmvAvUFFbsOAGcKD47Td/lfdyBgxmI6um65n0M8qnJIll44mvnNX/QKIyN3wRfFb2wE/odRLLy3HKMw==}
+    peerDependencies:
+      '@mysten/sui': ^2.16.2
 
   '@noble/ciphers@2.4.0':
     resolution: {integrity: sha512-AnjFn0Jv92laAkvMrghlFZq4qQCIN/4DxFV/eooqtC2YTjB7kBeLMS2T9KJX4Dn+ZVXLOwK0lSgqDtx9gvxtiw==}
@@ -467,6 +512,9 @@ packages:
   '@noble/curves@2.4.0':
     resolution: {integrity: sha512-P4/62zrgfH33CneE3Dn4WhJVA22YUU0eR51wKIan4NVRvwsA0YnPTwWGpNbpuacSujmSFLvyzpyuR30+fbq2Ew==}
     engines: {node: '>= 20.19.0'}
+
+  '@noble/ed25519@2.3.0':
+    resolution: {integrity: sha512-M7dvXL2B92/M7dw9+gzuydL8qn/jiqNHaoR3Q+cb1q1GHV7uwE17WCyFMG+Y+TZb5izcaXk5TdJRrDUxHXL78A==}
 
   '@noble/hashes@1.8.0':
     resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
@@ -815,6 +863,9 @@ packages:
   data-uri-to-buffer@4.0.1:
     resolution: {integrity: sha512-0R9ikRb668HB7QDxT1vkpuUBtqc53YyAwMwGeUFKRojY/NWKvdZ+9UYtRfGmhqNbRkTSVpMbmyhXipFFv2cb/A==}
     engines: {node: '>= 12'}
+
+  dataloader@2.2.3:
+    resolution: {integrity: sha512-y2krtASINtPFS1rSDjacrFgn1dcUuoREVabwlOGOe4SdxenREqwjwjElAdwvbGM7kgZz9a3KVicWR7vcz8rnzA==}
 
   debug@4.4.3:
     resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
@@ -1874,10 +1925,32 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
+  '@mysten-incubation/memwal@0.1.14(@mysten/seal@1.1.3(@mysten/sui@2.37.0(typescript@6.0.3)))(@mysten/sui@2.37.0(typescript@6.0.3))(@mysten/walrus@1.1.7(@mysten/sui@2.37.0(typescript@6.0.3)))(zod@4.6.7)':
+    dependencies:
+      '@mysten/seal': 1.1.3(@mysten/sui@2.37.0(typescript@6.0.3))
+      '@mysten/sui': 2.37.0(typescript@6.0.3)
+      '@noble/ed25519': 2.3.0
+      '@noble/hashes': 2.4.0
+    optionalDependencies:
+      '@mysten/walrus': 1.1.7(@mysten/sui@2.37.0(typescript@6.0.3))
+      zod: 4.6.7
+
   '@mysten/bcs@2.1.3':
     dependencies:
       '@mysten/utils': 0.4.2
       '@scure/base': 2.4.0
+
+  '@mysten/bcs@2.1.4':
+    dependencies:
+      '@mysten/utils': 0.4.2
+      '@scure/base': 2.4.0
+
+  '@mysten/seal@1.1.3(@mysten/sui@2.37.0(typescript@6.0.3))':
+    dependencies:
+      '@mysten/bcs': 2.1.4
+      '@mysten/sui': 2.37.0(typescript@6.0.3)
+      '@noble/curves': 2.4.0
+      '@noble/hashes': 2.4.0
 
   '@mysten/sui@2.31.2(typescript@6.0.3)':
     dependencies:
@@ -1924,13 +1997,29 @@ snapshots:
       - '@gql.tada/vue-support'
       - typescript
 
+  '@mysten/utils@0.3.3':
+    dependencies:
+      '@scure/base': 2.4.0
+
   '@mysten/utils@0.4.2': {}
+
+  '@mysten/walrus-wasm@0.2.2': {}
+
+  '@mysten/walrus@1.1.7(@mysten/sui@2.37.0(typescript@6.0.3))':
+    dependencies:
+      '@mysten/bcs': 2.1.4
+      '@mysten/sui': 2.37.0(typescript@6.0.3)
+      '@mysten/utils': 0.3.3
+      '@mysten/walrus-wasm': 0.2.2
+      dataloader: 2.2.3
 
   '@noble/ciphers@2.4.0': {}
 
   '@noble/curves@2.4.0':
     dependencies:
       '@noble/hashes': 2.4.0
+
+  '@noble/ed25519@2.3.0': {}
 
   '@noble/hashes@1.8.0': {}
 
@@ -2263,6 +2352,8 @@ snapshots:
   csstype@3.2.3: {}
 
   data-uri-to-buffer@4.0.1: {}
+
+  dataloader@2.2.3: {}
 
   debug@4.4.3:
     dependencies:

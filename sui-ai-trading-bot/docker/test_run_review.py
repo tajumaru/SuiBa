@@ -8,6 +8,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -16,6 +17,40 @@ rr = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rr)
 
 BASE = 1_800_000_000
+
+
+class MemwalOutboxTests(unittest.TestCase):
+    def test_no_credentials_is_a_complete_noop(self):
+        with tempfile.NamedTemporaryFile(suffix=".sqlite") as db, \
+                patch.dict(os.environ, {}, clear=True):
+            rr.enqueue_memwal_lessons(
+                db.name, [{"kind": "candidate", "text": "lesson"}], BASE * 1000)
+            conn = sqlite3.connect(db.name)
+            tables = conn.execute(
+                "SELECT name FROM sqlite_master WHERE name='memwal_outbox'").fetchall()
+            conn.close()
+            self.assertEqual(tables, [])
+
+    def test_enabled_review_queues_only_the_curated_lesson(self):
+        env = {
+            "SUIBA_MEMWAL_ENABLED": "true",
+            "MEMWAL_PRIVATE_KEY": "do-not-store",
+            "MEMWAL_ACCOUNT_ID": "account",
+            "MEMWAL_RELAYER_URL": "https://relayer.example",
+            "MEMWAL_NAMESPACE": "suiba",
+        }
+        with tempfile.NamedTemporaryFile(suffix=".sqlite") as db, \
+                patch.dict(os.environ, env, clear=True):
+            rr.enqueue_memwal_lessons(
+                db.name, [{"kind": "candidate", "text": "下降局面では待つ"}], BASE * 1000)
+            conn = sqlite3.connect(db.name)
+            row = conn.execute(
+                "SELECT kind,text,attempts FROM memwal_outbox").fetchone()
+            conn.close()
+            self.assertEqual(row[0], "daily_review")
+            self.assertIn("lesson: candidate: 下降局面では待つ", row[1])
+            self.assertNotIn("do-not-store", row[1])
+            self.assertEqual(row[2], 0)
 
 
 def candles_with_close_at(marks):

@@ -292,6 +292,16 @@ function App() {
     },
     [token, connection],
   );
+  const mirrorNarrationEpisode = useCallback(
+    (entry: import("./agentNarration.ts").NarrationEntry) => {
+      void api("memwal/narration", {
+        id: `${data?.pair ?? "SUI_USDC"}:${entry.id}`,
+        at: entry.at,
+        kind: entry.kind,
+      }).catch(() => {});
+    },
+    [api, data?.pair],
+  );
   useForecastMigration(data?.pair, api);
   // One shared operations feed for the narration tab and the
   // overview and history tabs (see useOperationsFeed). It polls only while
@@ -591,6 +601,7 @@ function App() {
                       agentName={agentName}
                       onListeningChange={setVoiceListening}
                       onSpeakingChange={setAgentSpeaking}
+                      onMemwalEpisode={mirrorNarrationEpisode}
                     />
                   ) : (
                     <p role="status">

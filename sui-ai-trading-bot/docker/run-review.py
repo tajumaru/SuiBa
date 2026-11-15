@@ -19,7 +19,9 @@ Without --candles, candles are fetched from the public Indexer.
 own operation events (the most recent run's BOOT..PROCESS_SHUTDOWN).
 """
 import json
+import hashlib
 import math
+import os
 import sqlite3
 import statistics
 import sys
@@ -51,6 +53,38 @@ EXIT_TPS = (1.0, 1.5, 2.0, 2.5, 3.0)
 EXIT_SLS = (0.7, 1.0, 1.5, 2.0)
 EXIT_HOURS = 24
 LEARNING_MIN_SAMPLES = 5
+
+
+def enqueue_memwal_lessons(db_path, flags, created_at):
+    """Queue only concise review lessons; never the report, prompts, or raw rows."""
+    required = ("MEMWAL_PRIVATE_KEY", "MEMWAL_ACCOUNT_ID",
+                "MEMWAL_RELAYER_URL", "MEMWAL_NAMESPACE")
+    if os.environ.get("SUIBA_MEMWAL_ENABLED") != "true" or not all(
+            os.environ.get(name) for name in required):
+        return
+    lessons = [f"{flag['kind']}: {flag['text']}" for flag in flags]
+    if not lessons:
+        return
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS memwal_outbox(
+            id TEXT PRIMARY KEY, kind TEXT NOT NULL, text TEXT NOT NULL,
+            source_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+            sent_at INTEGER, job_id TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(kind, source_id))""")
+        with conn:
+            for lesson in lessons:
+                day = datetime.fromtimestamp(
+                    created_at / 1000, timezone.utc).date().isoformat()
+                source = hashlib.sha256(
+                    f"{day}:{lesson}".encode("utf-8")).hexdigest()
+                text = (f"[daily-review] {datetime.fromtimestamp(created_at / 1000, timezone.utc).isoformat().replace('+00:00', 'Z')} "
+                        f"lesson: {lesson}")
+                conn.execute(
+                    "INSERT OR IGNORE INTO memwal_outbox VALUES(?,?,?,?,?,NULL,NULL,0)",
+                    (source, "daily_review", text, source, created_at))
+    finally:
+        conn.close()
 
 
 def compute_limit(decisions):
@@ -938,8 +972,10 @@ def main(argv):
     shadow_rows = filter_window(load_shadow_decisions(db), since, until)
     shadow = analyze_shadow(shadow_rows, decisions, candles)
     forecast_bias = analyze_forecast_bias(forecasts, candles)
-    text = render(result, len(decisions), orders, trades, datetime.now(timezone.utc),
+    generated_at = datetime.now(timezone.utc)
+    text = render(result, len(decisions), orders, trades, generated_at,
                   shadow, forecast_bias)
+    enqueue_memwal_lessons(db, result["flags"], int(generated_at.timestamp() * 1000))
     if out:
         with open(out, "w") as fh:
             fh.write(text)

@@ -65,6 +65,12 @@ describe("chat commands", () => {
     );
     expect(stopped).toContain("安全停止中");
     expect(stopped).toContain("確認中");
+    const mirrored = runChatCommand(
+      "/status",
+      ctx({ memwal: { enabled: true, pending: 3, lastSuccessAt: 0 } }),
+    );
+    expect(mirrored).toContain("待機 3 件");
+    expect(mirrored).toContain("まだ送信なし");
   });
 
   it("/score summarises the scoreboard or declines", () => {
