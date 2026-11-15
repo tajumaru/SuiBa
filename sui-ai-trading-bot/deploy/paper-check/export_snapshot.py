@@ -42,6 +42,8 @@ PAPER_NETWORK_PAUSED PAPER_NETWORK_RECOVERED
 EXTERNAL_STOP WORKER_OOM WORKER_EXITED WORKER_EXITED_CLEAN UNKNOWN'''.split())
 EPISODE_OUTCOMES = frozenset(('RECOVERED', 'EXHAUSTED', 'STOPPED', 'INTERRUPTED'))
 TALLY_KEY = re.compile(r'[A-Za-z][A-Za-z0-9 ]{0,31}/[A-Z][A-Z0-9_]{0,63}')
+SHADOW_PROMPT_VERSION = re.compile(r'shadow-[a-z0-9]+(?:-[a-z0-9]+)*-v[1-9][0-9]{0,5}')
+SHADOW_MODEL = re.compile(r'gpt-5\.4-(?:nano|mini)')
 
 
 class ExportError(RuntimeError):
@@ -120,7 +122,10 @@ def sanitize(table, value, public=False):
         if value.get('action') in ('BUY', 'WAIT'): out['action'] = value['action']
         if value.get('ruleAction') in ('BUY', 'SELL', 'WAIT'): out['ruleAction'] = value['ruleAction']
         if value.get('selectedRule') in RULES: out['selectedRule'] = value['selectedRule']
-        if value.get('promptVersion') in ('shadow-s1-v1', 'shadow-openai-nano-v1'): out['promptVersion'] = value['promptVersion']
+        prompt_version = value.get('promptVersion')
+        if (type(prompt_version) is str and len(prompt_version) <= 80
+                and SHADOW_PROMPT_VERSION.fullmatch(prompt_version)):
+            out['promptVersion'] = prompt_version
         if value.get('reasonCode') in ('INVALID_JSON', 'INVALID_SCHEMA', 'INVALID_REFERENCE', 'TIMEOUT', 'CREDENTIAL_IN_OUTPUT', 'ADAPTER_FAILED', 'SHADOW_API_KEY_MISSING', 'OPENAI_AUTH_FAILED', 'OPENAI_RATE_LIMITED', 'OPENAI_HTTP_ERROR', 'OPENAI_NETWORK_FAILED', 'OPENAI_REFUSAL', 'OPENAI_INCOMPLETE', 'OPENAI_RESPONSE_FAILED', 'OPENAI_INVALID_RESPONSE'): out['reasonCode'] = value['reasonCode']
         out['usage'] = numeric_fields(value.get('usage'), ('inputTokens', 'outputTokens', 'cost'))
         snapshot = value.get('snapshot')
@@ -143,8 +148,9 @@ def sanitize(table, value, public=False):
                 for r in refs[:5] if type(r) is dict and type(r.get('type')) is str
                 and r['type'] in keys and type(r.get('key')) is str
                 and r['key'] in keys[r['type']] and number(r.get('value'))]}
-        if value.get('model') == 'gpt-5.4-nano': out['model'] = value['model']
-        # Only the owner-approved model enum is public; arbitrary strings remain private.
+        model = value.get('model')
+        if type(model) is str and SHADOW_MODEL.fullmatch(model): out['model'] = model
+        # Only the owner-approved model family is public; arbitrary strings remain private.
     elif table == 'operation_candidates':
         if value.get('side') in ('BUY', 'SELL'): out['side'] = value['side']
         if value.get('finalAction') in ('PENDING', 'BUY', 'SELL', 'WAIT', 'SAFE_STOP'): out['finalAction'] = value['finalAction']
