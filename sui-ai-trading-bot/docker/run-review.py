@@ -754,6 +754,14 @@ def render_shadow(shadow):
     lines = ["", "## AI 影運用（記録専用・証拠のみ）", ""]
     if not shadow["n"]:
         return "\n".join(lines + ["記録なし（影運用は未有効化）", ""])
+    latest_version = max(
+        shadow["versions"],
+        key=lambda version: (
+            shadow["versions"][version]["span"][1]
+            if shadow["versions"][version]["span"] is not None else -1,
+            version,
+        ),
+    ) if shadow["versions"] else None
     counts = shadow["statuses"]
     lines += [f"記録 {shadow['n']} 件：OK {counts.get('OK', 0)} / ERROR {counts.get('ERROR', 0)} / "
               f"SKIPPED_BUDGET {counts.get('SKIPPED_BUDGET', 0)} / SKIPPED_DISABLED {counts.get('SKIPPED_DISABLED', 0)}。"
@@ -778,6 +786,31 @@ def render_shadow(shadow):
                            ("both_buy", "両者 BUY"), ("both_wait", "両者 WAIT")):
             g = group["comparisons"][key]
             lines.append(f"| {label} | {g['n']} | {fmt_shadow_stat(g['net'][4])} |")
+        if version == latest_version:
+            rejected = group["comparisons"]["rule_only"]
+            rejected4 = rejected["net"][4]
+            passed = group["comparisons"]["both_buy"]
+            passed4 = passed["net"][4]
+            passed_mean = (f"{passed4['mean']:+.2f}%" if passed4
+                           else "—（採点可能な標本なし）")
+            lines += ["", "### 影が反対した買い（フィルタ反事実）", "",
+                      f"拒否対象（ルールのみ BUY）: 総件数 {rejected['n']} 件 / "
+                      f"+4h 採点可能 n={rejected4['n'] if rejected4 else 0}",
+                      f"正味 +4h: {fmt_shadow_stat(rejected4)}"]
+            if rejected4 is None:
+                lines.append("合計の反事実: —（採点可能な標本なし）")
+            else:
+                total = rejected4["mean"] * rejected4["n"]
+                if total < 0:
+                    lines.append(f"合計の反事実: 見送っていれば合計 {abs(total):.2f}%pt の損失を回避")
+                elif total > 0:
+                    lines.append(f"合計の反事実: 見送ると合計 {total:.2f}%pt の利益を取りこぼし")
+                else:
+                    lines.append("合計の反事実: 見送っても合計の損益差なし（0.00%pt）")
+            lines += [f"通過側（両者 BUY）: 総件数 {passed['n']} 件 / "
+                      f"+4h 採点可能 n={passed4['n'] if passed4 else 0} / "
+                      f"正味 +4h 平均 {passed_mean}",
+                      f"判定は +4h 採点可能 n が {FLAG_MIN_SAMPLES} に達するまで保留。表示のみで、自動適用はしない。"]
         for name, labels in (("regimes", {"up": "上昇", "down": "下降", "range": "横ばい", "unknown": "不明"}),
                              ("vols", {"high": "高ボラ", "normal": "通常ボラ", "unknown": "不明"})):
             lines += ["", "局面別（EMA50の24h傾き ±0.5%）" if name == "regimes" else "ボラ帯別（ATR% ≥0.65が高ボラ、同サイクルのルール指標を参照）", "",

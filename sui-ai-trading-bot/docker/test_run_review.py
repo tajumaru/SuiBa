@@ -639,6 +639,36 @@ class ShadowReviewTests(unittest.TestCase):
             self.assertEqual(text.count("### promptVersion:"), 2)
             self.assertEqual(text.count("| 影BUY（"), 2)
 
+    def test_veto_counterfactual_negative_mean_reports_avoided_loss_for_latest_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c1, c2 = BASE, BASE + 300
+            rules = [decision(cts=c1), decision(cts=c2)]
+            rows = [self.shadow(0, action="WAIT", version="older", cts=c1),
+                    self.shadow(1, action="WAIT", version="latest", cts=c2)]
+            db = self.public_db(tmp, rules, rows)
+            _, text, _, _ = self.review(db, candles_with_close_at({c1 + 14400: .98, c2 + 14400: .98}))
+            block = text.split("### 影が反対した買い（フィルタ反事実）", 1)[1]
+            self.assertEqual(text.count("### 影が反対した買い（フィルタ反事実）"), 1)
+            self.assertIn("見送っていれば合計 2.60%pt の損失を回避", block)
+            self.assertIn("判定は +4h 採点可能 n が 30 に達するまで保留", block)
+
+    def test_veto_counterfactual_positive_mean_reports_missed_profit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = self.public_db(tmp, [decision()], [self.shadow(action="WAIT")])
+            _, text, _, _ = self.review(db, candles_with_close_at({BASE + 14400: 1.02}))
+            self.assertIn("見送ると合計 1.40%pt の利益を取りこぼし", text)
+
+    def test_veto_counterfactual_without_scorable_sample_keeps_placeholder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = self.public_db(tmp, [decision()], [self.shadow(action="WAIT")])
+            candles = candles_with_close_at({})
+            del candles[0][BASE + 14400]
+            _, text, _, _ = self.review(db, candles)
+            block = text.split("### 影が反対した買い（フィルタ反事実）", 1)[1]
+            self.assertIn("正味 +4h: —（採点可能な標本なし）", block)
+            self.assertIn("合計の反事実: —（採点可能な標本なし）", block)
+            self.assertIn("通過側（両者 BUY）: 総件数 0 件 / +4h 採点可能 n=0 / 正味 +4h 平均 —（採点可能な標本なし）", block)
+
     def test_graduation_all_checks_and_same_period_base_includes_untriggered_cycles(self):
         with tempfile.TemporaryDirectory() as tmp:
             c1, c2 = BASE, BASE+86400
