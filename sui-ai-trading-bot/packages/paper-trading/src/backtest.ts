@@ -4,6 +4,7 @@ import {
   USDC,
   dayKey,
   defaults,
+  PAPER_SLIPPAGE_RATE,
   type Candle,
   type Settings,
   type QuoteResult,
@@ -94,10 +95,10 @@ export async function backtest(
         amountIn: input,
         amountOut: atomic(out, side === "BUY" ? SUI : USDC),
         minAmountOut: atomic(
-          out * (1 - s.maxSlippage),
+          out * (1 - PAPER_SLIPPAGE_RATE),
           side === "BUY" ? SUI : USDC,
         ),
-        slippage: s.maxSlippage,
+        slippage: PAPER_SLIPPAGE_RATE,
         referencePrice: price,
         priceImpact: o.impact,
         liquid: true,
@@ -164,7 +165,7 @@ export async function backtest(
   const final = values.at(-1)!;
   return {
     model:
-      "next-open + fixed impact + worst slippage + fee + gas; NOT historical executable DEX quotes",
+      "next-open + fixed impact + fee + gas; NOT historical executable DEX quotes",
     split: o,
     settings: s,
     initialEquity: p.initialEquity,
@@ -183,9 +184,9 @@ export async function backtest(
     fees: p.fees,
     buyAndHoldPnl:
       (p.initialEquity /
-        (test[0].open * (1 + s.feeRate + s.maxSlippage + o.impact))) *
+        (test[0].open * (1 + s.feeRate + PAPER_SLIPPAGE_RATE + o.impact))) *
         test.at(-1)!.close *
-        (1 - s.feeRate - s.maxSlippage - o.impact) -
+        (1 - s.feeRate - PAPER_SLIPPAGE_RATE - o.impact) -
       2 * s.gasUsdc -
       p.initialEquity,
     trades,

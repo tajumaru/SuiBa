@@ -212,8 +212,8 @@ describe("PAPER operation monitor", () => {
       saleModel: "PROJECTED_TARGET",
     });
     expect(s.candidates[0].quotePriceUsdc).not.toBeNull();
-    expect(s.accounting.totals.gasUsdc).toBe("0.03");
-    expect(s.accounting.ledger.expectedGasUsdc).toBe("0.03");
+    expect(s.accounting.totals.gasUsdc).toBe("0.005");
+    expect(s.accounting.ledger.expectedGasUsdc).toBe("0.005");
     expect(s.lastTradeAt).not.toBeNull();
     t.db.close();
   });
@@ -709,7 +709,7 @@ it("detects cumulative gas and fill-count ledger corruption independently", asyn
   expect(ledger.ok).toBe(false);
   expect(ledger.reasons).toContain("GAS_LEDGER_MISMATCH");
   expect(ledger.reasons).toContain("FILL_LEDGER_COUNT_MISMATCH");
-  expect(Number(trade.costs?.gasUsdc)).toBe(0.03);
+  expect(Number(trade.costs?.gasUsdc)).toBe(0.005);
   t.engine.monitor.watchdog();
   expect(t.db.runtime().running).toBe(false);
   t.db.close();
@@ -854,10 +854,10 @@ it("completes an isolated BUY and protective SELL with exact cash, fees, realize
   try {
     await t.engine.tick();
     expect(t.db.portfolio()).toMatchObject({
-      usdc: 97.964,
+      usdc: 97.993,
       sui: 0.997,
-      costBasis: 2.036,
-      fees: 0.036,
+      costBasis: 2.007,
+      fees: 0.007,
       realized: 0,
     });
     vi.setSystemTime(Date.now() + 300000);
@@ -872,9 +872,9 @@ it("completes an isolated BUY and protective SELL with exact cash, fees, realize
     });
     await t.engine.tick();
     const p = t.db.portfolio();
-    expect(p.usdc).toBeCloseTo(99.916053, 6);
-    expect(p.realized).toBeCloseTo(-0.083947, 6);
-    expect(p.fees).toBeCloseTo(0.071965, 6);
+    expect(p.usdc).toBeCloseTo(99.974029, 6);
+    expect(p.realized).toBeCloseTo(-0.025971, 6);
+    expect(p.fees).toBeCloseTo(0.013989, 6);
     expect(p.sui).toBe(0);
     expect(p.costBasis).toBe(0);
     for (const table of [
@@ -886,7 +886,7 @@ it("completes an isolated BUY and protective SELL with exact cash, fees, realize
       expect(t.db.history(table)).toHaveLength(2);
     const trades = t.db.history<Fill>("paper_trades");
     expect(trades.find((x) => x.side === "SELL")?.pnl).toBeCloseTo(
-      -0.083947,
+      -0.025971,
       6,
     );
     for (const c of t.db.history<CandidateAudit>("operation_candidates"))

@@ -10,7 +10,10 @@ import {
 import { Reason } from "./Reason.tsx";
 import { BacktestReplay } from "./BacktestReplay.tsx";
 import { useEffect, useState } from "react";
-import type { Settings } from "../../../packages/shared/src/index.ts";
+import {
+  PAPER_SLIPPAGE_RATE,
+  type Settings,
+} from "../../../packages/shared/src/index.ts";
 import type {
   ComparisonInput,
   ComparisonResult,
@@ -162,7 +165,7 @@ export function BacktestComparison({
     trainEnd: 0,
     initialUsdc: 100,
     maxOrder: settings.maxOrder,
-    slippage: settings.maxSlippage,
+    slippage: PAPER_SLIPPAGE_RATE,
     spread: 0.001,
     impact: 0.001,
     dexFeeRate: 0.003,
@@ -230,7 +233,7 @@ export function BacktestComparison({
   const fields: [keyof ComparisonInput, string, number, number, number][] = [
     ["initialUsdc", "初期USDC", 0.01, 1000000, 0.01],
     ["maxOrder", "注文上限 USDC", 0.01, 5, 0.01],
-    ["slippage", "価格ずれの上限（%）", 0, 0.003, 0.0001],
+    ["slippage", "追加の価格ずれ控除率（%）", 0, 0.003, 0.0001],
     ["spread", "売値と買値の差の控除率（%）", 0, 0.01, 0.0001],
     ["impact", "取引による価格への影響（%）", 0, 0.003, 0.0001],
     ["dexFeeRate", "DEX内包手数料率（%）", 0, 0.01, 0.0001],

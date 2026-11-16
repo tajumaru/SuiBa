@@ -195,11 +195,11 @@ describe("market validation", () => {
   });
 });
 describe("paper ledger and persistence", () => {
-  it("charges worst slippage, gas and fees; round trip conserves equity accounting", () => {
+  it("charges modeled quote impact, gas and fees; round trip conserves equity accounting", () => {
     const exec = new PaperTrading(),
       p = initialPortfolio(now);
     const b = exec.fill("b", "BUY", quote, p, defaults, now);
-    expect(b.portfolio.usdc).toBeCloseTo(94.955);
+    expect(b.portfolio.usdc).toBeCloseTo(94.99);
     expect(b.portfolio.sui).toBe(2.4925);
     const sell = {
       ...quote,
