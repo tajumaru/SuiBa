@@ -36,6 +36,8 @@ const key = (pair: string) => `forecast.v1:${pair}`;
 export interface ForecastState {
   records: ForecastRecord[];
   calib: ForecastCalib;
+  /** Scale used as the baseline for the last emitted calibration event. */
+  lastReportedScale?: number;
   /** Unique origins that have acquired at least one scored step. */
   scoredTotal: number;
   counterBootstrap: boolean;
@@ -49,6 +51,25 @@ export interface ForecastState {
   migrationAdopted: boolean;
   updatedAt: number;
 }
+
+export function calibrationReportGate(
+  lastReportedScale: number | undefined,
+  previousScale: number,
+  nextScale: number,
+  evaluated: boolean,
+  changed: boolean,
+): { lastReportedScale: number | undefined; report: boolean } {
+  if (!evaluated) return { lastReportedScale, report: false };
+  const baseline = lastReportedScale ?? previousScale;
+  const report =
+    changed &&
+    Math.abs(Math.round(nextScale * 100) - Math.round(baseline * 100)) >= 5;
+  return {
+    lastReportedScale: report ? nextScale : baseline,
+    report,
+  };
+}
+
 export function readForecast(db: BotDatabase, pair: string): ForecastState {
   return (
     db.get<ForecastState>(key(pair)) ?? {
@@ -108,9 +129,16 @@ export function advanceForecast(
     { ...score, scoredRecords: scoredTotal },
     before.calib,
   );
+  const reportGate = calibrationReportGate(
+    before.lastReportedScale,
+    before.calib.scale,
+    step.calib.scale,
+    step.calib !== before.calib,
+    step.changed,
+  );
   const events = [...before.events];
   const event: CalibEvent | null =
-    step.changed && score.coveragePct != null
+    reportGate.report && score.coveragePct != null
       ? {
           id: `forecast-calib:${pair}:${now}:${scoredTotal}`,
           at: now,
@@ -131,6 +159,7 @@ export function advanceForecast(
     ...before,
     records,
     calib: step.calib,
+    lastReportedScale: reportGate.lastReportedScale,
     scoredTotal,
     counterBootstrap: false,
     latest: step.changed

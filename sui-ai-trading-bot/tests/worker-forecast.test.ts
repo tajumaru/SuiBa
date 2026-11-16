@@ -15,6 +15,7 @@ import { calibrationStep } from "../packages/shared/src/forecastCalib.ts";
 import type { Candle } from "../packages/shared/src/index.ts";
 import {
   advanceForecast,
+  calibrationReportGate,
   readForecast,
   importForecast,
 } from "../apps/worker/src/forecast.ts";
@@ -28,6 +29,50 @@ const golden = JSON.parse(
 const candles = golden.fixtures[0].candles as Candle[];
 
 describe("worker forecasts", () => {
+  it("reports calibration only after cumulative scale movement reaches 0.05", () => {
+    let lastReportedScale: number | undefined = 1;
+    for (const [previousScale, nextScale] of [
+      [1, 0.98],
+      [0.98, 0.96],
+    ]) {
+      const gate = calibrationReportGate(
+        lastReportedScale,
+        previousScale,
+        nextScale,
+        true,
+        true,
+      );
+      expect(gate.report).toBe(false);
+      lastReportedScale = gate.lastReportedScale;
+    }
+    const gate = calibrationReportGate(
+      lastReportedScale,
+      0.96,
+      0.94,
+      true,
+      true,
+    );
+    expect(gate).toEqual({ lastReportedScale: 0.94, report: true });
+  });
+
+  it("reports a single calibration movement of at least 0.06 immediately", () => {
+    expect(calibrationReportGate(1, 1, 1.06, true, true)).toEqual({
+      lastReportedScale: 1.06,
+      report: true,
+    });
+  });
+
+  it("initializes a missing report baseline at the pre-evaluation scale", () => {
+    expect(calibrationReportGate(undefined, 1.16, 1.14, true, true)).toEqual({
+      lastReportedScale: 1.16,
+      report: false,
+    });
+    expect(calibrationReportGate(undefined, 1.16, 1.16, false, false)).toEqual({
+      lastReportedScale: undefined,
+      report: false,
+    });
+  });
+
   it("matches frozen pre-move calculations, records, scoring and calibration exactly", () => {
     for (const f of golden.fixtures) {
       expect(
