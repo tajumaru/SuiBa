@@ -201,13 +201,30 @@ class ImprovementProposalTests(unittest.TestCase):
                 self.assertEqual(any(title.startswith("入口×局面")
                                      for title, _, _ in proposals), expected)
 
-    def test_scene_gate_reuses_supplied_scene_stat(self):
+    def test_scene_gate_accepts_30_samples_and_point_three_bias(self):
         result = self.result()
         result["scenes"] = [{"label": "dip-rebound", "net": {
-            "n": 30, "mean": -.3, "median": -.3, "pos": 0}}]
+            "n": 30, "mean": .1, "median": .1, "pos": 50},
+            "overall": {"n": 100, "mean": .4, "median": .4, "pos": 50},
+            "delta": -.3}]
         self.assertTrue(any(title == "場面「dip-rebound」"
                             for title, _, _ in rr.build_improvement_proposals(result)))
-        result["scenes"][0]["net"]["n"] = 29
+
+    def test_scene_gate_rejects_insufficient_samples(self):
+        result = self.result()
+        result["scenes"] = [{"label": "dip-rebound", "net": {
+            "n": 29, "mean": .1, "median": .1, "pos": 50},
+            "overall": {"n": 100, "mean": .4, "median": .4, "pos": 50},
+            "delta": -.3}]
+        self.assertFalse(any(title.startswith("場面")
+                             for title, _, _ in rr.build_improvement_proposals(result)))
+
+    def test_scene_gate_rejects_insufficient_bias(self):
+        result = self.result()
+        result["scenes"] = [{"label": "dip-rebound", "net": {
+            "n": 30, "mean": .11, "median": .11, "pos": 50},
+            "overall": {"n": 100, "mean": .4, "median": .4, "pos": 50},
+            "delta": -.29}]
         self.assertFalse(any(title.startswith("場面")
                              for title, _, _ in rr.build_improvement_proposals(result)))
 
