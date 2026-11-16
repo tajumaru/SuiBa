@@ -20,6 +20,7 @@ import {
   createChartHistory,
   createEngine,
   createScheduler,
+  generateNarrationSafely,
   validationHeartbeat,
 } from "./worker-factories.ts";
 import { ValidationRecorder, assertValidationProfile } from "./validation.ts";
@@ -40,6 +41,11 @@ import { startMemwalFlusher } from "./memwal.ts";
 import { startLiquidationCollector } from "./liquidation-collector.ts";
 if (process.env.MODE && process.env.MODE !== "PAPER")
   throw new Error("ONLY_PAPER_SUPPORTED");
+if (
+  process.env.SUIBA_NARRATION_GENERATION_ENABLED !== undefined &&
+  !["true", "false"].includes(process.env.SUIBA_NARRATION_GENERATION_ENABLED)
+)
+  throw new Error("INVALID_NARRATION_GENERATION_FLAG");
 const token = process.env.ADMIN_TOKEN_FILE
   ? readFileSync(process.env.ADMIN_TOKEN_FILE, "utf8").trim()
   : process.env.ADMIN_TOKEN;
@@ -121,6 +127,14 @@ const ctx = new WorkerContext({
 const created = createEngine(ctx, db, pair);
 ctx.sui = created.sui;
 ctx.engine = created.engine;
+const generateNarration = () => generateNarrationSafely(ctx);
+ctx.generateNarration = generateNarration;
+ctx.chainSampler.onAdopt = generateNarration;
+ctx.btcSampler.onAdopt = generateNarration;
+for (const selected of Object.keys(ctx.bookSamplers) as TradingPair[])
+  ctx.bookSamplers[selected].onAdopt = () => {
+    if (ctx.pair === selected) generateNarration();
+  };
 // Monitoring boot closes the previous uptime segment and never resumes trading.
 ctx.engine.monitor.boot();
 ctx.validation = validationEnabled ? new ValidationRecorder(db) : undefined;
@@ -170,7 +184,7 @@ watchdog.unref();
 ctx.chartHistory = createChartHistory(ctx);
 ctx.scheduler = createScheduler(ctx);
 ctx.dashboard = new DashboardService(ctx.engine, ctx.db);
-ctx.memwal = startMemwalFlusher(ctx.db);
+ctx.memwal = startMemwalFlusher(ctx.db, process.env, ctx.generateNarration);
 ctx.liquidation =
   ctx.pair === "SUI_USDC" ? startLiquidationCollector(ctx.db) : null;
 const handleRequest = createRequestHandler(ctx);

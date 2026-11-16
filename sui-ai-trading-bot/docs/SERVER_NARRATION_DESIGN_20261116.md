@@ -217,6 +217,10 @@ GET /api/narration?pair=SUI_USDC&since=<seq>&limit=100
 | 3. 表示切替 | server entry を表示正本にし、端末生成は fallback として残す | 端末間一致、音声の過去一括再生なし、pair 分離 | feature flag で端末生成へ戻す。server table は保持 |
 | 4. 端末生成撤去 | 運用 kind の `advanceNarration` と旧 MemWal POST を撤去 | 一定観察期間で欠落・重複・cursor expired 復帰を確認 | 直前版へコード rollback。DB は前方互換で残す |
 
+段階1の生成フラグは `SUIBA_NARRATION_GENERATION_ENABLED` とし、未設定または
+`false` を既定の停止状態とする。`true` への変更は48時間の影生成を開始する
+リリース判断時に別途行う。
+
 既存端末の過去フィードは**サーバーへ取り込まない**ことを推奨する。理由は、同じ事実から複数端末が異なる本文・id・時刻を持ち、どれを正本にするか証明できず、重複や順序逆転を避けられないためである。切替時は localStorage を即削除せず、端末内の「切替前の履歴」として短い互換期間だけ閲覧可能にするか、単に新 server feed へ置き換えてロールバック用に残す。サーバー API へ upload する経路は作らない。
 
 リリースは既存の単一イメージ経路を使う。worker／UI の変更を含むため停止窓と通常の配置・再開手順が必要だが、broker の特権コードや監視経路は変更しない。

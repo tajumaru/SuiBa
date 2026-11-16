@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -15,6 +15,12 @@ import {
   NARRATION_RETENTION_ROWS,
 } from "../packages/database/src/index.ts";
 import { withApiTiming } from "../packages/shared/src/api-timing.ts";
+import { OperationMonitor } from "../apps/worker/src/operations.ts";
+import {
+  narrationIdentity,
+  NarrationGenerator,
+  SERVER_NARRATION_KINDS,
+} from "../apps/worker/src/narration-generator.ts";
 
 const day = 24 * 60 * 60 * 1000;
 const now = 2_000_000_000_000;
@@ -23,6 +29,7 @@ const servers: Server[] = [];
 const tempDirs: string[] = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   for (const server of servers.splice(0))
     await new Promise<void>((resolve) => server.close(() => resolve()));
   for (const db of databases.splice(0)) db.close();
@@ -97,6 +104,98 @@ describe("narration database migration", () => {
         .all(),
     ).toEqual([{ name: "narration_entries" }, { name: "narration_state" }]);
     inspect.close();
+  });
+
+  it("commits entries and their cursor atomically and exposes kind counts", () => {
+    const db = new BotDatabase(":memory:");
+    databases.push(db);
+    db.commitNarration([
+      {
+        id: "stable-1", pair: "SUI_USDC", sourceKey: "decision:1:0",
+        kind: "cycle", occurredAt: now, createdAt: now + 1,
+        json: { text: "recorded fact" },
+      },
+    ], {
+      pair: "SUI_USDC", version: 1, updatedAt: now + 1,
+      json: { cursor: "decision:1" },
+    });
+    expect(db.narrationCounts("SUI_USDC")).toEqual({ cycle: 1 });
+    expect(db.narrationState("SUI_USDC")?.json).toEqual({ cursor: "decision:1" });
+    // Replaying the material after a crash cannot add a duplicate row.
+    db.commitNarration([
+      {
+        id: "stable-1", pair: "SUI_USDC", sourceKey: "decision:1:0",
+        kind: "cycle", occurredAt: now, createdAt: now + 2,
+        json: { text: "recorded fact" },
+      },
+    ], {
+      pair: "SUI_USDC", version: 1, updatedAt: now + 2,
+      json: { cursor: "decision:1" },
+    });
+    expect(db.narrationEntries("SUI_USDC").entries).toHaveLength(1);
+  });
+});
+
+describe("server narration identity", () => {
+  it("keeps the stage-1 set fixed and hashes facts independently of text", () => {
+    expect(SERVER_NARRATION_KINDS).toHaveLength(17);
+    expect(new Set(SERVER_NARRATION_KINDS).size).toBe(17);
+    expect(narrationIdentity("SUI_USDC", "cycle", "decision:1", 0)).toBe(
+      narrationIdentity("SUI_USDC", "cycle", "decision:1", 0),
+    );
+    expect(narrationIdentity("WAL_USDC", "cycle", "decision:1", 0)).not.toBe(
+      narrationIdentity("SUI_USDC", "cycle", "decision:1", 0),
+    );
+    expect(narrationIdentity("SUI_USDC", "cycle", "decision:1", 1)).not.toBe(
+      narrationIdentity("SUI_USDC", "cycle", "decision:1", 0),
+    );
+  });
+
+  it("does no reads or writes while the feature flag is off", () => {
+    vi.stubEnv("SUIBA_NARRATION_GENERATION_ENABLED", "false");
+    const db = new BotDatabase(":memory:");
+    databases.push(db);
+    const generator = new NarrationGenerator(
+      db,
+      "SUI_USDC",
+      null as never,
+      () => now,
+    );
+    expect(generator.generate()).toBe(0);
+    expect(db.narrationEntries("SUI_USDC").entries).toEqual([]);
+    expect(db.narrationState("SUI_USDC")).toBeNull();
+  });
+
+  it("replays a committed operation with the terminal template exactly once", () => {
+    vi.stubEnv("SUIBA_NARRATION_GENERATION_ENABLED", "true");
+    const db = new BotDatabase(":memory:");
+    databases.push(db);
+    const monitor = new OperationMonitor(db);
+    monitor.event("CONTROL", "MANUAL_START", now);
+    const engine = {
+      monitor,
+      snapshot: () => ({
+        runtime: db.runtime(),
+        forecast: { records: [], events: [] },
+        trades: [],
+        btc: null,
+        candlesByTimeframe: { 300: [] },
+        bookLevels: null,
+        settings: db.settings(),
+        chain: null,
+      }),
+    };
+    const generator = new NarrationGenerator(
+      db, "SUI_USDC", engine as never, () => now + 1,
+    );
+    expect(generator.generate()).toBe(1);
+    expect(db.narrationEntries("SUI_USDC").entries[0]).toMatchObject({
+      kind: "start",
+      occurredAt: now,
+      json: { text: "PAPER運用を始めたよ" },
+    });
+    expect(generator.generate()).toBe(0);
+    expect(db.narrationEntries("SUI_USDC").entries).toHaveLength(1);
   });
 });
 
