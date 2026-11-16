@@ -88,6 +88,7 @@ export class MemwalFlusher {
 export function startMemwalFlusher(
   db: BotDatabase,
   env: NodeJS.ProcessEnv = process.env,
+  onMemorySaved: () => void = () => {},
 ) {
   const config = memwalConfig(env);
   const client = config ? createMemwalClient(config) : null;
@@ -97,6 +98,7 @@ export function startMemwalFlusher(
     try {
       enqueueSettledShadowEpisodes(db);
       const statistic = refreshSituationMemory(db);
+      if (statistic) onMemorySaved();
       void flusher.flush().catch(() => {});
       if (
         client?.recall &&
@@ -107,7 +109,7 @@ export function startMemwalFlusher(
         recallFor !== `${statistic.key}:${statistic.evaluatedAt}`
       ) {
         recallFor = `${statistic.key}:${statistic.evaluatedAt}`;
-        void attachRecall(db, client, statistic);
+        void attachRecall(db, client, statistic).then(onMemorySaved);
       }
     } catch {
       /* Mirror curation and delivery never affect the worker. */

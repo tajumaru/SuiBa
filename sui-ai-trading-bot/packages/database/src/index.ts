@@ -934,6 +934,28 @@ export class BotDatabase {
        updated_at=excluded.updated_at,json=excluded.json`,
     ).run(state.pair, state.version, state.updatedAt, JSON.stringify(state.json));
   }
+  commitNarration(
+    entries: (Omit<NarrationEntry, "seq" | "json"> & { json: unknown })[],
+    state: NarrationState,
+  ) {
+    this.transaction(() => {
+      for (const entry of entries)
+        this.prepare(
+          `INSERT INTO narration_entries
+           (id,pair,source_key,kind,occurred_at,created_at,json)
+           VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
+        ).run(entry.id, entry.pair, entry.sourceKey, entry.kind,
+          entry.occurredAt, entry.createdAt, JSON.stringify(entry.json));
+      this.setNarrationState(state);
+    });
+  }
+  narrationCounts(pair: string): Record<string, number> {
+    const rows = this.prepare(
+      `SELECT kind,COUNT(*) AS count FROM narration_entries
+       WHERE pair=? GROUP BY kind ORDER BY kind`,
+    ).all(pair) as { kind: string; count: number }[];
+    return Object.fromEntries(rows.map((row) => [row.kind, row.count]));
+  }
   narrationEntries(pair: string, since?: number, limit = 100) {
     const oldest = this.prepare(
       "SELECT MIN(seq) AS seq FROM narration_entries WHERE pair=?",

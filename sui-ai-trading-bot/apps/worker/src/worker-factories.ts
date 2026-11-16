@@ -16,6 +16,7 @@ import { paperRecoveryLimits } from "../../../packages/shared/src/paper-recovery
 import type { BotDatabase } from "../../../packages/database/src/index.ts";
 import type { TradingPair } from "../../../packages/shared/src/index.ts";
 import type { WorkerContext } from "./worker-context.ts";
+import { NarrationGenerator } from "./narration-generator.ts";
 
 /**
  * The worker's factories, extracted from the boot script: the
@@ -92,6 +93,21 @@ export function validationHeartbeat(ctx: WorkerContext, final = false) {
   }
 }
 
+export function generateNarrationSafely(ctx: WorkerContext) {
+  try {
+    return new NarrationGenerator(ctx.db, ctx.pair, ctx.engine).generate();
+  } catch (error) {
+    // Narration is deliberately outside the trading/safety failure path. Its
+    // cursor remains uncommitted, so the next generation point replays it.
+    ctx.engine.monitor.event("ERROR", "NARRATION_GENERATION_FAILED");
+    console.warn(JSON.stringify({
+      event: "NARRATION_GENERATION_FAILED",
+      reason: error instanceof Error ? error.message : "UNKNOWN_FAILURE",
+    }));
+    return 0;
+  }
+}
+
 export const createChartHistory = (ctx: WorkerContext) =>
   new ChartHistoryClient(
     ctx.pairPath(ctx.pair) + ".chart-history.sqlite",
@@ -123,6 +139,7 @@ export const createScheduler = (ctx: WorkerContext) =>
       } finally {
         ctx.activeTick = undefined;
       }
+      generateNarrationSafely(ctx);
       const maintenance = setImmediate(() => {
         try {
           ctx.db.maintainRetentionChunk();

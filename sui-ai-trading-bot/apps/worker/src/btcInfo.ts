@@ -48,6 +48,7 @@ export function createBtcPriceFetcher(
 }
 
 export class BtcSampler {
+  onAdopt: (() => void) | null = null;
   private samples: { price: number; at: number }[] = [];
   private latest: BtcInfo | null = null;
 
@@ -72,6 +73,7 @@ export class BtcSampler {
           : null,
       at: now,
     };
+    this.onAdopt?.();
     return this.latest;
   }
 

@@ -165,6 +165,7 @@ async function readChainSample(
  * known values in place (their stillness is itself the signal).
  */
 export class ChainSampler {
+  onAdopt: (() => void) | null = null;
   private samples: { totalTx: number; at: number }[] = [];
   private latest: ChainInfo | null = null;
   observe(raw: RawChainSample, now = Date.now()): ChainInfo {
@@ -199,6 +200,7 @@ export class ChainSampler {
       validators: raw.validators ?? this.latest?.validators ?? null,
       at: now,
     };
+    this.onAdopt?.();
     return this.latest;
   }
   current(): ChainInfo | null {

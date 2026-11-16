@@ -121,6 +121,7 @@ class ModeChangeGuardTests(unittest.TestCase):
                   encoding="utf-8") as fh:
             fh.write("MARKET_DATA_PROVIDER=deepbook\n"
                      "DEEPBOOK_RECONSTRUCT_CANDLES=off\n"
+                     "SUIBA_NARRATION_GENERATION_ENABLED=false\n"
                      "SUI_GRPC_URL=https://fullnode.mainnet.sui.io:443\n")
         with open(os.path.join(self.shared, "admin-token"), "w",
                   encoding="utf-8") as fh:

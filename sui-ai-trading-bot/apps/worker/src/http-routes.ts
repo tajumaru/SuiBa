@@ -200,6 +200,10 @@ export function createRequestHandler(ctx: WorkerContext) {
           process.env.SUIBA_SHADOW_ENABLED === "true"
             ? shadowTodaySummary(ctx.db)
             : null,
+        narration: {
+          enabled: process.env.SUIBA_NARRATION_GENERATION_ENABLED === "true",
+          counts: ctx.db.narrationCounts(ctx.pair),
+        },
         ...(() => {
           const safety = ctx.engine.monitor.safetySnapshot();
           const readiness = {
@@ -364,6 +368,10 @@ export function createRequestHandler(ctx: WorkerContext) {
           ? { enabled: true, ...ctx.db.memwalStatus() }
           : { enabled: false, pending: 0, lastSuccessAt: null },
         situationMemory: ctx.db.get("situation_memory") ?? null,
+        narration: {
+          enabled: process.env.SUIBA_NARRATION_GENERATION_ENABLED === "true",
+          counts: ctx.db.narrationCounts(ctx.pair),
+        },
         liquidation: ctx.liquidation?.status() ?? null,
         ...(ctx.validation
           ? { validation: timeAggregation(() => ctx.validation!.report()) }
@@ -580,7 +588,11 @@ export function createRequestHandler(ctx: WorkerContext) {
         ctx.selectionDb.set("selected_pair", ctx.pair);
         ctx.chartHistory = createChartHistory(ctx);
         ctx.dashboard = new DashboardService(ctx.engine, ctx.db);
-        ctx.memwal = startMemwalFlusher(ctx.db);
+        ctx.memwal = startMemwalFlusher(
+          ctx.db,
+          process.env,
+          ctx.generateNarration,
+        );
         ctx.liquidation =
           ctx.pair === "SUI_USDC" ? startLiquidationCollector(ctx.db) : null;
         ctx.scheduler = createScheduler(ctx);

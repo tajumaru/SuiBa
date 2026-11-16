@@ -79,6 +79,7 @@ export class WorkerContext {
   lastExportAt = 0;
   memwal: { stop(): void } | null = null;
   liquidation: LiquidationCollector | null = null;
+  generateNarration: () => void = () => {};
   constructor(init: WorkerContextInit) {
     this.browserSessions = init.browserSessions;
     this.deploymentGate = init.deploymentGate;
