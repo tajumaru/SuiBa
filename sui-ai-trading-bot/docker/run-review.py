@@ -53,6 +53,9 @@ EXIT_TPS = (1.0, 1.5, 2.0, 2.5, 3.0)
 EXIT_SLS = (0.7, 1.0, 1.5, 2.0)
 EXIT_HOURS = 24
 LEARNING_MIN_SAMPLES = 5
+SCENE_MIN_SAMPLES = 30
+SCENE_MIN_BIAS_PCT = 0.30
+DIP_REBOUND_COST_PCT = 0.20
 
 
 def enqueue_memwal_lessons(db_path, flags, created_at):
@@ -395,6 +398,80 @@ def forward_return(d, hours, candles):
         return None
     p = close.get(d["cts"] + hours * 3600)
     return None if p is None else (p / d["price"] - 1) * 100
+
+
+def dip_rebound_events(candles):
+    """Worker-compatible -3%/4h dip events with a three-candle re-arm."""
+    close, _, _, ordered, _, _ = candles
+    events, armed, misses, previous = [], True, 0, None
+    for timestamp in ordered:
+        if previous is not None and timestamp != previous + 300:
+            misses = 0
+        previous = timestamp
+        start = close.get(timestamp - 4 * 3600)
+        if start is None or start <= 0:
+            misses = 0
+            continue
+        matches = (close[timestamp] / start - 1) * 100 <= -3
+        if matches:
+            if armed:
+                events.append(timestamp)
+            armed, misses = False, 0
+        elif not armed:
+            misses += 1
+            if misses >= 3:
+                armed, misses = True, 0
+    return events
+
+
+def analyze_scenes(decisions, shadow_rows, candles):
+    """Aggregate worker-compatible scenes and their same-period baseline."""
+    samples = []
+    by_id = {d["cycleId"]: d for d in decisions if "cycleId" in d}
+    for decision in decisions:
+        kind = "rule-buy" if decision["action"] == "BUY" else (
+            "near-buy" if decision["met"] == 2 else None)
+        if kind is None:
+            continue
+        value = forward_return(decision, 4, candles)
+        if value is not None:
+            samples.append((f"{decision['regime']}:{kind}",
+                            value - ROUND_TRIP_COST_PCT))
+    for row in shadow_rows:
+        rule = by_id.get(row["cycleId"])
+        if (row["status"] != "OK" or row["action"] != "BUY" or rule is None
+                or row["cts"] != rule["cts"] or pred_base(rule)):
+            continue
+        value = forward_return(row, 4, candles)
+        if value is not None:
+            regime = regime_at(candles[4], candles[3], row["cts"])
+            samples.append((f"{regime}:shadow-ai-buy",
+                            value - ROUND_TRIP_COST_PCT))
+    scenes = []
+    overall = summarize([value for _, value in samples])
+    if overall:
+        for label in sorted({label for label, _ in samples}):
+            stat = summarize([value for key, value in samples if key == label])
+            scenes.append({"label": label, "net": stat, "overall": overall,
+                           "delta": stat["mean"] - overall["mean"]})
+
+    close, _, _, ordered, _, _ = candles
+    events = dip_rebound_events(candles)
+    dip_values = [((close[t + 24 * 3600] / close[t] - 1) * 100
+                   - DIP_REBOUND_COST_PCT)
+                  for t in events if t + 24 * 3600 in close]
+    if dip_values:
+        first, last = min(events), max(events)
+        baseline = [((close[t + 24 * 3600] / close[t] - 1) * 100
+                     - DIP_REBOUND_COST_PCT)
+                    for t in ordered if first <= t <= last
+                    and t + 24 * 3600 in close and close[t] > 0]
+        stat, overall = summarize(dip_values), summarize(baseline)
+        if overall:
+            scenes.append({"label": "dip-rebound", "net": stat,
+                           "overall": overall,
+                           "delta": stat["mean"] - overall["mean"]})
+    return scenes
 
 
 def virtual_touch(d, candles, hours=24):
@@ -874,15 +951,14 @@ def build_improvement_proposals(result, shadow=None, forecast_bias=None):
                 ))
 
     for scene in result.get("scenes", []):
-        stat = scene.get("net")
-        if stat and stat["n"] >= FLAG_MIN_SAMPLES \
-                and abs(stat["mean"]) >= FLAG_MIN_MEAN_4H:
+        stat, delta = scene.get("net"), scene.get("delta")
+        if stat and stat["n"] >= SCENE_MIN_SAMPLES \
+                and delta is not None and abs(delta) >= SCENE_MIN_BIAS_PCT:
             proposals.append((
                 f"場面「{scene['label']}」",
-                f"根拠: n={stat['n']}、正味平均 {stat['mean']:+.2f}%。"
-                f"n≥{FLAG_MIN_SAMPLES} かつ正味平均の偏り "
-                f"≥ {FLAG_MIN_MEAN_4H:.1f}% を満たした。",
-                "推奨アクション: 場面の参考値がゲート到達。買い条件化の検証候補。",
+                f"場面『{scene['label']}』の成績が全体より {delta:+.2f}%"
+                f"（n={stat['n']}）。この場面の扱いはオーナー判断。",
+                "推奨アクション: 証拠を確認し、この場面の扱いをオーナーが判断。",
             ))
 
     regime_labels = {"up": "上昇", "down": "下降", "range": "横ばい"}
@@ -1098,8 +1174,9 @@ def main(argv):
             key=lambda row: row["cts"])
         raw = fetch_candles(candle_sources)
     candles = load_candles(raw)
-    result = analyze(decisions, candles)
     shadow_rows = filter_window(load_shadow_decisions(db), since, until)
+    result = analyze(decisions, candles)
+    result["scenes"] = analyze_scenes(decisions, shadow_rows, candles)
     shadow = analyze_shadow(shadow_rows, decisions, candles)
     forecast_bias = analyze_forecast_bias(forecasts, candles)
     generated_at = datetime.now(timezone.utc)
