@@ -28,7 +28,7 @@ const trail = z.object({
   hasPosition: z.boolean(),
   rsiLinePrice: nullableNumber,
 });
-const schema: z.ZodType<NarrationState> = z.object({
+export const narrationStateSchema: z.ZodType<NarrationState> = z.object({
   entries: z
     .array(
       z.object({
@@ -222,7 +222,7 @@ export function restoreNarration(
   try {
     const raw = (storage ?? window.localStorage).getItem(keyFor(scope));
     if (!raw || raw.length > 500_000) return emptyNarrationState();
-    const result = schema.safeParse(JSON.parse(raw));
+    const result = narrationStateSchema.safeParse(JSON.parse(raw));
     return result.success ? result.data : emptyNarrationState();
   } catch {
     return emptyNarrationState();
