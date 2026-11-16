@@ -16,7 +16,9 @@ import {
 } from "../packages/database/src/index.ts";
 import { withApiTiming } from "../packages/shared/src/api-timing.ts";
 import { OperationMonitor } from "../apps/worker/src/operations.ts";
+import { emptyNarrationState } from "../apps/dashboard/src/narration/state.ts";
 import {
+  NARRATION_STATE_VERSION,
   narrationIdentity,
   NarrationGenerator,
   SERVER_NARRATION_KINDS,
@@ -137,9 +139,14 @@ describe("narration database migration", () => {
 });
 
 describe("server narration identity", () => {
-  it("keeps the stage-1 set fixed and hashes facts independently of text", () => {
-    expect(SERVER_NARRATION_KINDS).toHaveLength(17);
-    expect(new Set(SERVER_NARRATION_KINDS).size).toBe(17);
+  it("keeps the complete stage-1 set fixed and hashes facts independently of text", () => {
+    expect(SERVER_NARRATION_KINDS).toHaveLength(28);
+    expect(new Set(SERVER_NARRATION_KINDS).size).toBe(28);
+    expect(SERVER_NARRATION_KINDS).toEqual(expect.arrayContaining([
+      "nearMiss", "watchHit", "reach", "superReach", "priceLine",
+      "priceLineReached", "sellLine", "sellLineCrossing", "review", "alert",
+      "monthlyReport",
+    ]));
     expect(narrationIdentity("SUI_USDC", "cycle", "decision:1", 0)).toBe(
       narrationIdentity("SUI_USDC", "cycle", "decision:1", 0),
     );
@@ -196,6 +203,57 @@ describe("server narration identity", () => {
     });
     expect(generator.generate()).toBe(0);
     expect(db.narrationEntries("SUI_USDC").entries).toHaveLength(1);
+  });
+
+  it("migrates a valid stage-1a state to version 2 without resetting it", () => {
+    vi.stubEnv("SUIBA_NARRATION_GENERATION_ENABLED", "true");
+    const db = new BotDatabase(":memory:");
+    databases.push(db);
+    const narration = {
+      ...emptyNarrationState(),
+      initialized: true,
+      hitStreak: 2,
+      watchScore: { declared: 4, hits: 2, misses: 1, unreviewed: 1 },
+    };
+    db.setNarrationState({
+      pair: "SUI_USDC", version: 1, updatedAt: now,
+      json: { narration, lastEpoch: 9 },
+    });
+    const monitor = new OperationMonitor(db);
+    const engine = {
+      monitor,
+      snapshot: () => ({
+        runtime: db.runtime(), forecast: { records: [], events: [] }, trades: [],
+        btc: null, candlesByTimeframe: { 300: [] }, bookLevels: null,
+        settings: db.settings(), chain: { epoch: 9 },
+      }),
+    };
+    const generator = new NarrationGenerator(db, "SUI_USDC", engine as never, () => now + 1);
+    expect(generator.generate()).toBe(0);
+    const saved = db.narrationState("SUI_USDC");
+    expect(saved?.version).toBe(NARRATION_STATE_VERSION);
+    expect((saved?.json as { narration: typeof narration }).narration).toMatchObject({
+      hitStreak: 2,
+      watchScore: { declared: 4, hits: 2, misses: 1, unreviewed: 1 },
+    });
+  });
+
+  it("refuses unknown versions and malformed current state without advancing", () => {
+    vi.stubEnv("SUIBA_NARRATION_GENERATION_ENABLED", "true");
+    for (const state of [
+      { version: 99, json: { narration: emptyNarrationState(), lastEpoch: null } },
+      { version: NARRATION_STATE_VERSION, json: { narration: {}, lastEpoch: null } },
+    ]) {
+      const db = new BotDatabase(":memory:");
+      databases.push(db);
+      db.setNarrationState({ pair: "SUI_USDC", updatedAt: now, ...state });
+      const generator = new NarrationGenerator(db, "SUI_USDC", null as never, () => now + 1);
+      expect(() => generator.generate()).toThrow(
+        state.version === 99 ? "NARRATION_STATE_VERSION_UNSUPPORTED" : "NARRATION_STATE_INVALID",
+      );
+      expect(db.narrationEntries("SUI_USDC").entries).toEqual([]);
+      expect(db.narrationState("SUI_USDC")?.version).toBe(state.version);
+    }
   });
 });
 
