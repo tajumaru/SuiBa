@@ -41,6 +41,9 @@ SETUP_CI_APPROVAL_SHA256='70fcabd68d5ec4553f3df2bae7745dc31dff5a55a2847f9b16e26c
 
 # name|sha256|target|mode
 FILES=(
+  'narration-runtime.py|4d7adb247d342467b0c927659ed8b7261ccd5e8468865b9e7d0f9406b8788156|/usr/local/libexec/suiba-narration-runtime.py|755'
+  'suiba-narration-runtime|003bc04d3768349d1895250b13099c543076683602f51ee388e5374bd3f3cb82|/usr/local/sbin/suiba-narration-runtime|755'
+  'suiba-narration-runtime.sudoers|d6b0c3ad56d1af8b916ddb1a58d870656b95fe004944d392fdd0068e45281f06|/etc/sudoers.d/suiba-narration-runtime|440'
   'shadow-runtime.py|b01865234bff5f271b163c97e4023fb3cd1a2582511806a5b8606f4c9d301c8b|/usr/local/libexec/suiba-shadow-runtime.py|755'
   'suiba-shadow-runtime|4a058c1f881c028ebdb573890e540175a0d10ed5cc534b1c5ff2d48c3cdae201|/usr/local/sbin/suiba-shadow-runtime|755'
   'suiba-shadow-runtime.sudoers|39c85055fc1fd995853e06004eafc071727575e0ebfa61de53d06e1573c0bc2e|/etc/sudoers.d/suiba-shadow-runtime|440'
@@ -129,6 +132,8 @@ python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/watchdog
 visudo -cf "$tmp/suiba-paper-check.sudoers" >/dev/null || fail 'sudoers の構文検証に失敗'
 visudo -cf "$tmp/suiba-paper-observe.sudoers" >/dev/null || fail 'observe sudoers の構文検証に失敗'
 
+visudo -cf "$tmp/suiba-narration-runtime.sudoers" >/dev/null || fail 'narration sudoers の構文検証に失敗'
+python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/narration-runtime.py" || fail 'narration helper の構文検証に失敗'
 visudo -cf "$tmp/suiba-shadow-runtime.sudoers" >/dev/null || fail 'shadow sudoers の構文検証に失敗'
 python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/shadow-runtime.py" || fail 'shadow helper の構文検証に失敗'
 visudo -cf "$tmp/suiba-memwal-runtime.sudoers" >/dev/null || fail 'memwal sudoers の構文検証に失敗'
