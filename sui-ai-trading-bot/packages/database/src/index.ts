@@ -54,7 +54,28 @@ export interface MemwalOutboxRow {
 export const RETENTION_FULL_EVIDENCE_DAYS = 30;
 export const LIQUIDATION_RETENTION_DAYS = RETENTION_FULL_EVIDENCE_DAYS;
 export const RETENTION_CHUNK_ROWS = 16;
+export const NARRATION_RETENTION_DAYS = 30;
+export const NARRATION_RETENTION_ROWS = 50_000;
+export const NARRATION_RETENTION_CHUNK_ROWS = 200;
 const retentionVersion = 1;
+
+export interface NarrationEntry {
+  seq: number;
+  id: string;
+  pair: string;
+  sourceKey: string;
+  kind: string;
+  occurredAt: number;
+  createdAt: number;
+  json: unknown;
+}
+
+export interface NarrationState {
+  pair: string;
+  version: number;
+  updatedAt: number;
+  json: unknown;
+}
 
 type RetentionRow = { id: string; json: string };
 
@@ -298,6 +319,27 @@ export class BotDatabase {
       );
       CREATE INDEX IF NOT EXISTS liquidation_coverage_started
         ON liquidation_coverage(started_at);`,
+    );
+    this.db.exec(
+      `CREATE TABLE IF NOT EXISTS narration_entries(
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT NOT NULL UNIQUE,
+        pair TEXT NOT NULL,
+        source_key TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        occurred_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        json TEXT NOT NULL,
+        UNIQUE(pair, source_key, kind)
+      );
+      CREATE INDEX IF NOT EXISTS narration_entries_pair_order
+        ON narration_entries(pair, occurred_at, seq);
+      CREATE TABLE IF NOT EXISTS narration_state(
+        pair TEXT PRIMARY KEY,
+        version INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        json TEXT NOT NULL
+      );`,
     );
     for (const t of eventTables)
       this.db.exec(
@@ -868,6 +910,81 @@ export class BotDatabase {
         );
     });
     return decisions.length + audits.length;
+  }
+  appendNarrationEntry(input: Omit<NarrationEntry, "seq" | "json"> & { json: unknown }) {
+    const result = this.prepare(
+      `INSERT INTO narration_entries
+       (id,pair,source_key,kind,occurred_at,created_at,json)
+       VALUES(?,?,?,?,?,?,?)`,
+    ).run(input.id, input.pair, input.sourceKey, input.kind, input.occurredAt,
+      input.createdAt, JSON.stringify(input.json));
+    return Number(result.lastInsertRowid);
+  }
+  narrationState(pair: string): NarrationState | null {
+    const row = this.prepare(
+      `SELECT pair,version,updated_at AS updatedAt,json
+       FROM narration_state WHERE pair=?`,
+    ).get(pair) as (Omit<NarrationState, "json"> & { json: string }) | undefined;
+    return row ? { ...row, json: JSON.parse(row.json) } : null;
+  }
+  setNarrationState(state: NarrationState) {
+    this.prepare(
+      `INSERT INTO narration_state(pair,version,updated_at,json) VALUES(?,?,?,?)
+       ON CONFLICT(pair) DO UPDATE SET version=excluded.version,
+       updated_at=excluded.updated_at,json=excluded.json`,
+    ).run(state.pair, state.version, state.updatedAt, JSON.stringify(state.json));
+  }
+  narrationEntries(pair: string, since?: number, limit = 100) {
+    const oldest = this.prepare(
+      "SELECT MIN(seq) AS seq FROM narration_entries WHERE pair=?",
+    ).get(pair) as { seq: number | null };
+    const oldestAvailable = oldest.seq;
+    if (since !== undefined && oldestAvailable !== null && since < oldestAvailable - 1)
+      return { expired: true as const, oldestAvailable, entries: [] };
+    const rows = (since === undefined
+      ? this.prepare(
+          `SELECT * FROM (
+             SELECT seq,id,pair,source_key AS sourceKey,kind,
+                    occurred_at AS occurredAt,created_at AS createdAt,json
+             FROM narration_entries WHERE pair=?
+             ORDER BY occurred_at DESC,seq DESC LIMIT 30
+           ) ORDER BY occurredAt ASC,seq ASC`,
+        ).all(pair)
+      : this.prepare(
+          `SELECT seq,id,pair,source_key AS sourceKey,kind,
+                  occurred_at AS occurredAt,created_at AS createdAt,json
+           FROM narration_entries WHERE pair=? AND seq>?
+           ORDER BY occurred_at ASC,seq ASC LIMIT ?`,
+        ).all(pair, since, limit + 1)) as (Omit<NarrationEntry, "json"> & {
+      json: string;
+    })[];
+    const hasMore = since !== undefined && rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    return {
+      expired: false as const,
+      oldestAvailable,
+      hasMore,
+      entries: page.map((row) => ({ ...row, json: JSON.parse(row.json) })),
+    };
+  }
+  maintainNarrationRetentionChunk(pair: string, now = Date.now()) {
+    const cutoff = now - NARRATION_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    const countBoundary = this.prepare(
+      `SELECT seq FROM narration_entries WHERE pair=?
+       ORDER BY seq DESC LIMIT 1 OFFSET ?`,
+    ).get(pair, NARRATION_RETENTION_ROWS - 1) as { seq: number } | undefined;
+    const rows = this.prepare(
+      `SELECT seq FROM narration_entries
+       WHERE pair=? AND (occurred_at<? OR (? IS NOT NULL AND seq<?))
+       ORDER BY seq ASC LIMIT ?`,
+    ).all(pair, cutoff, countBoundary?.seq ?? null, countBoundary?.seq ?? null,
+      NARRATION_RETENTION_CHUNK_ROWS) as { seq: number }[];
+    if (rows.length === 0) return 0;
+    this.transaction(() => {
+      const remove = this.prepare("DELETE FROM narration_entries WHERE seq=?");
+      for (const row of rows) remove.run(row.seq);
+    });
+    return rows.length;
   }
   commitFill(
     id: string,
