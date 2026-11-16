@@ -56,6 +56,8 @@ LEARNING_MIN_SAMPLES = 5
 SCENE_MIN_SAMPLES = 30
 SCENE_MIN_BIAS_PCT = 0.30
 DIP_REBOUND_COST_PCT = 0.20
+LIQUIDATION_SPIKE_MULTIPLIER = 5
+LIQUIDATION_SPIKE_MIN_USD = 100_000
 
 
 def enqueue_memwal_lessons(db_path, flags, created_at):
@@ -424,7 +426,44 @@ def dip_rebound_events(candles):
     return events
 
 
-def analyze_scenes(decisions, shadow_rows, candles):
+def load_liquidation_buckets(db_path):
+    """Read the bounded public aggregate; older extracts have no table."""
+    conn = sqlite3.connect(db_path)
+    try:
+        if not conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='liquidation_buckets'").fetchone():
+            return []
+        rows = conn.execute(
+            "SELECT bucket_at,long_usd FROM liquidation_buckets "
+            "ORDER BY bucket_at").fetchall()
+    finally:
+        conn.close()
+    return [{"bucketAt": bucket_at, "longUsd": long_usd}
+            for bucket_at, long_usd in rows
+            if type(bucket_at) is int and type(long_usd) in (int, float)
+            and math.isfinite(long_usd) and long_usd >= 0]
+
+
+def liquidation_spike_events(candles, buckets):
+    """Worker-compatible dip plus long-liquidation spike events."""
+    events = []
+    for timestamp in dip_rebound_events(candles):
+        def long_in(after, through):
+            return sum(row["longUsd"] for row in buckets
+                       if after < row["bucketAt"] <= through)
+        current = long_in(timestamp - 4 * 3600, timestamp)
+        baseline = [long_in(timestamp - (index + 2) * 4 * 3600,
+                            timestamp - (index + 1) * 4 * 3600)
+                    for index in range(12)]
+        middle = statistics.median(baseline)
+        if (current >= LIQUIDATION_SPIKE_MIN_USD
+                and current >= middle * LIQUIDATION_SPIKE_MULTIPLIER):
+            events.append(timestamp)
+    return events
+
+
+def analyze_scenes(decisions, shadow_rows, candles, liquidation_buckets=None):
     """Aggregate worker-compatible scenes and their same-period baseline."""
     samples = []
     by_id = {d["cycleId"]: d for d in decisions if "cycleId" in d}
@@ -469,6 +508,24 @@ def analyze_scenes(decisions, shadow_rows, candles):
         stat, overall = summarize(dip_values), summarize(baseline)
         if overall:
             scenes.append({"label": "dip-rebound", "net": stat,
+                           "overall": overall,
+                           "delta": stat["mean"] - overall["mean"]})
+    liquidation_events = liquidation_spike_events(
+        candles, liquidation_buckets or [])
+    liquidation_values = [
+        ((close[t + 24 * 3600] / close[t] - 1) * 100
+         - DIP_REBOUND_COST_PCT)
+        for t in liquidation_events
+        if t + 24 * 3600 in close and close[t] > 0]
+    if liquidation_values:
+        first, last = min(liquidation_events), max(liquidation_events)
+        baseline = [((close[t + 24 * 3600] / close[t] - 1) * 100
+                     - DIP_REBOUND_COST_PCT)
+                    for t in ordered if first <= t <= last
+                    and t + 24 * 3600 in close and close[t] > 0]
+        stat, overall = summarize(liquidation_values), summarize(baseline)
+        if overall:
+            scenes.append({"label": "liquidation-spike", "net": stat,
                            "overall": overall,
                            "delta": stat["mean"] - overall["mean"]})
     return scenes
@@ -1176,7 +1233,9 @@ def main(argv):
     candles = load_candles(raw)
     shadow_rows = filter_window(load_shadow_decisions(db), since, until)
     result = analyze(decisions, candles)
-    result["scenes"] = analyze_scenes(decisions, shadow_rows, candles)
+    liquidation_buckets = load_liquidation_buckets(db)
+    result["scenes"] = analyze_scenes(
+        decisions, shadow_rows, candles, liquidation_buckets)
     shadow = analyze_shadow(shadow_rows, decisions, candles)
     forecast_bias = analyze_forecast_bias(forecasts, candles)
     generated_at = datetime.now(timezone.utc)

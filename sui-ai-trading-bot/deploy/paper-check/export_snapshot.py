@@ -17,13 +17,15 @@ ROW_LIMIT = 800000
 EXPORT_TIMEOUT_SECONDS = 180
 WINDOW_DAYS = 14
 WINDOW_MS = WINDOW_DAYS * 24 * 60 * 60 * 1000
+LIQUIDATION_ROW_LIMIT = WINDOW_MS // (5 * 60 * 1000) + 1
 # The limits remain bounded by the 14-day window and the worker's maximum
 # write cadence. At the minimum 30-second cycle interval, even a deliberately
 # conservative one-row-per-cycle fixture for every event table (plus the two
 # cycle audit rows and the separately capped shadow calls) stays below these
 # limits with more than 2x headroom.
-TABLES = ('forecast_records', 'shadow_decisions', 'strategy_decisions', 'technical_indicators', 'operation_candidates',
-          'paper_orders', 'paper_trades', 'operation_events', 'cycle_audits')
+JSON_TABLES = ('forecast_records', 'shadow_decisions', 'strategy_decisions', 'technical_indicators', 'operation_candidates',
+               'paper_orders', 'paper_trades', 'operation_events', 'cycle_audits')
+TABLES = JSON_TABLES + ('liquidation_buckets',)
 DATABASES = {'bot.sqlite': 'SUI_USDC.sqlite', 'bot.sqlite.WAL_USDC.sqlite': 'WAL_USDC.sqlite'}
 ERROR_CODES = frozenset(('EXPORT_BACKUP_MISSING', 'EXPORT_MANIFEST_MISMATCH', 'EXPORT_ARCHIVE_INVALID',
     'EXPORT_LIMIT_EXCEEDED', 'EXPORT_DATABASE_INVALID', 'EXPORT_RUN_INVALID', 'EXPORT_PACKAGE_INVALID',
@@ -262,7 +264,7 @@ def _package(root, seen, run, scope, source_sha256, deadline):
         try:
             source.execute('PRAGMA query_only=ON')
             names = {r[0] for r in source.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            for table in TABLES:
+            for table in JSON_TABLES:
                 check(time.monotonic() < deadline, 'EXPORT_LIMIT_EXCEEDED')
                 if table not in names: continue
                 destination.execute(f'CREATE TABLE {table}(id TEXT PRIMARY KEY,timestamp INTEGER NOT NULL,json TEXT NOT NULL)')
@@ -279,6 +281,33 @@ def _package(root, seen, run, scope, source_sha256, deadline):
                     destination.execute(f'INSERT INTO {table} VALUES(?,?,?)', (identifier(row_id), at, json.dumps(value, allow_nan=False, separators=(',', ':'))))
                     count += 1
                 counts[table] = count
+            if 'liquidation_buckets' in names:
+                # The worker has already reduced the external feed to one
+                # aggregate per five-minute bucket. Export only the event time
+                # and long-liquidation scale needed to reproduce the scene;
+                # short totals, event counts, update times and raw events are
+                # not review inputs and remain private.
+                destination.execute(
+                    'CREATE TABLE liquidation_buckets('
+                    'bucket_at INTEGER PRIMARY KEY,long_usd REAL NOT NULL)')
+                rows = source.execute(
+                    'SELECT bucket_at,long_usd FROM liquidation_buckets '
+                    'WHERE bucket_at BETWEEN ? AND ? ORDER BY bucket_at DESC LIMIT ?',
+                    (window_from // 1000, window_to // 1000,
+                     LIQUIDATION_ROW_LIMIT)).fetchall()
+                count = 0
+                for bucket_at, long_usd in reversed(rows):
+                    total_rows += 1
+                    check(total_rows <= ROW_LIMIT and time.monotonic() < deadline,
+                          'EXPORT_LIMIT_EXCEEDED')
+                    check(type(bucket_at) is int and 0 <= bucket_at <= 2**53 and
+                          number(long_usd) and long_usd >= 0,
+                          'EXPORT_DATABASE_INVALID')
+                    destination.execute(
+                        'INSERT INTO liquidation_buckets VALUES(?,?)',
+                        (bucket_at, long_usd))
+                    count += 1
+                counts['liquidation_buckets'] = count
             destination.commit()
         except (sqlite3.Error, ValueError, TypeError): raise ExportError('EXPORT_DATABASE_INVALID') from None
         finally:

@@ -133,6 +133,11 @@ class ExportTests(unittest.TestCase):
             db.execute(f'CREATE TABLE {table}(id TEXT PRIMARY KEY,timestamp INTEGER,json TEXT)')
             row_id = {'shadow_decisions': 'cycle', 'strategy_decisions': 'cycle', 'technical_indicators': 'cycle', 'operation_candidates': 'candidate', 'paper_orders': 'order-'+SECRET, 'paper_trades': 'order-'+SECRET}.get(table, table)
             db.execute(f'INSERT INTO {table} VALUES(?,?,?)', (row_id, NOW_MS, json.dumps(value)))
+        db.execute('CREATE TABLE liquidation_buckets('
+                   'bucket_at INTEGER PRIMARY KEY,long_usd REAL,short_usd REAL,'
+                   'event_count INTEGER,updated_at INTEGER)')
+        db.execute('INSERT INTO liquidation_buckets VALUES(?,?,?,?,?)',
+                   (NOW_MS // 1000, 125000, 9000, 7, NOW_MS))
         db.commit()
         if not wal: db.close()
         stream = io.BytesIO()
@@ -179,6 +184,13 @@ class ExportTests(unittest.TestCase):
                 self.assertNotIn('minProfitUsdc', candidate)
                 self.assertEqual(candidate['orderId'], db.execute('SELECT id FROM paper_orders').fetchone()[0])
                 self.assertEqual(json.loads(db.execute('SELECT json FROM operation_events').fetchone()[0])['code'], 'REDACTED')
+                self.assertEqual(
+                    db.execute('PRAGMA table_info(liquidation_buckets)').fetchall(),
+                    [(0, 'bucket_at', 'INTEGER', 0, None, 1),
+                     (1, 'long_usd', 'REAL', 1, None, 0)])
+                self.assertEqual(
+                    db.execute('SELECT * FROM liquidation_buckets').fetchall(),
+                    [(NOW_MS // 1000, 125000.0)])
             finally: db.close()
             manifest = json.loads((output/'manifest.json').read_text())
             self.assertEqual(manifest['scope'], 'PRE_RUN_BACKUP_PUBLIC_EXTRACT')
@@ -236,6 +248,46 @@ class ExportTests(unittest.TestCase):
             self.assertEqual(manifest['files']['SUI_USDC.sqlite']['rows']['shadow_decisions'], 1)
             self.assertEqual(manifest['window'], {'from': NOW_MS - e.WINDOW_MS, 'to': NOW_MS})
             self.assertLess(len(package), e.EXPORT_LIMIT)
+
+    def test_liquidation_buckets_are_capped_to_the_latest_window_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root/'bot.sqlite'
+            db = sqlite3.connect(path)
+            db.execute('CREATE TABLE liquidation_buckets('
+                       'bucket_at INTEGER PRIMARY KEY,long_usd REAL,short_usd REAL,'
+                       'event_count INTEGER,updated_at INTEGER)')
+            first = NOW_MS // 1000 - e.WINDOW_MS // 1000
+            total = e.LIQUIDATION_ROW_LIMIT + 25
+            db.executemany('INSERT INTO liquidation_buckets VALUES(?,?,?,?,?)',
+                           ((first + index, 100000 + index, SECRET, SECRET, NOW_MS)
+                            for index in range(total)))
+            db.commit(); db.close()
+            stream = io.BytesIO()
+            with tarfile.open(fileobj=stream, mode='w') as archive:
+                archive.add(path, arcname='./bot.sqlite')
+            raw = stream.getvalue()
+            record = {'id': 'a'*32, 'status': 'completed',
+                      'backup': {'sha256': hashlib.sha256(raw).hexdigest()}}
+            with patch.object(e.time, 'time', return_value=NOW_MS / 1000):
+                package = e.build_export(io.BytesIO(raw), record)
+            with zipfile.ZipFile(io.BytesIO(package)) as archive:
+                manifest = json.loads(archive.read('manifest.json'))
+                exported_path = root/'liquidations.sqlite'
+                exported_path.write_bytes(archive.read('SUI_USDC.sqlite'))
+            exported = sqlite3.connect(exported_path)
+            try:
+                count, minimum, maximum = exported.execute(
+                    'SELECT count(*),min(bucket_at),max(bucket_at) '
+                    'FROM liquidation_buckets').fetchone()
+            finally:
+                exported.close()
+            self.assertEqual(count, e.LIQUIDATION_ROW_LIMIT)
+            self.assertEqual(maximum, first + total - 1)
+            self.assertEqual(minimum, first + total - e.LIQUIDATION_ROW_LIMIT)
+            self.assertEqual(
+                manifest['files']['SUI_USDC.sqlite']['rows']['liquidation_buckets'],
+                e.LIQUIDATION_ROW_LIMIT)
 
     def test_window_rate_fixture_exceeds_old_caps_and_fits_new_caps(self):
         """Thirty-second cycles bound the 14-day extract without old history."""
