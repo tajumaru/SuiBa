@@ -34,6 +34,23 @@ export function ShadowTodayLine({
   );
 }
 
+export function PnlBreakdownLine({
+  totals,
+  stale = false,
+}: {
+  totals?: OperationsSnapshot["accounting"]["totals"] | null;
+  stale?: boolean;
+}) {
+  if (stale || !totals || totals.roundTrips === 0) return null;
+  return (
+    <p className="overview-sub">
+      閉じた往復 {totals.roundTrips}件 ・ 勝率{" "}
+      {percent(totals.wins / totals.roundTrips)} ・ 1回平均{" "}
+      {money(Number(totals.realizedPnlUsdc) / totals.roundTrips)} USDC
+    </p>
+  );
+}
+
 /**
  * The overview tab, extracted from App: asset cards, the
  * portfolio mix, the equity curve, the activity grass,
@@ -88,6 +105,12 @@ export function OverviewTab({
                           <h2>
                             {money(value as number | null)} <em>{unit}</em>
                           </h2>
+                          {label === "累計損益" && (
+                            <PnlBreakdownLine
+                              totals={operations?.accounting.totals}
+                              stale={operationsStale}
+                            />
+                          )}
                         </section>
                       ))}
                       <section>

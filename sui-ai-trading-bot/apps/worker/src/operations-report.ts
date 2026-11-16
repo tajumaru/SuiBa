@@ -184,12 +184,18 @@ export function computeTotals(trades: Fill[]) {
   let fees = new D(0),
     gas = new D(0),
     dex = new D(0),
+    realizedPnl = new D(0),
     roundTrips = 0,
+    wins = 0,
     unknownFees = 0,
     unknownGas = 0,
     unknownDex = 0;
   for (const t of trades) {
-    if (typeof t.pnl === "number" && Number.isFinite(t.pnl)) roundTrips++;
+    if (typeof t.pnl === "number" && Number.isFinite(t.pnl)) {
+      roundTrips++;
+      realizedPnl = realizedPnl.plus(t.pnl);
+      if (t.pnl > 0) wins++;
+    }
     const f = numericText(t.fee);
     if (f === null) unknownFees++;
     else fees = fees.plus(f);
@@ -202,6 +208,8 @@ export function computeTotals(trades: Fill[]) {
   }
   return {
     roundTrips,
+    wins,
+    realizedPnlUsdc: realizedPnl.toString(),
     feesUsdc: unknownFees ? null : fees.toString(),
     knownFeesUsdc: fees.toString(),
     unknownFeeTrades: unknownFees,
