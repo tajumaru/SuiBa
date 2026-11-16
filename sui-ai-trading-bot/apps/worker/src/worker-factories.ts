@@ -126,6 +126,7 @@ export const createScheduler = (ctx: WorkerContext) =>
       const maintenance = setImmediate(() => {
         try {
           ctx.db.maintainRetentionChunk();
+          ctx.db.maintainNarrationRetentionChunk(ctx.pair);
         } catch {
           console.warn(
             JSON.stringify({

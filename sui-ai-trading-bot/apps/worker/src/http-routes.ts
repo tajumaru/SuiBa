@@ -232,6 +232,48 @@ export function createRequestHandler(ctx: WorkerContext) {
       });
       return;
     }
+    if (req.method === "GET" && url.pathname === "/api/narration") {
+      const pair = url.searchParams.get("pair");
+      if (pair !== "SUI_USDC" && pair !== "WAL_USDC") {
+        send(400, { error: "INVALID_NARRATION_PAIR" });
+        return;
+      }
+      if (pair !== ctx.pair) {
+        send(409, { error: "PAIR_CHANGED" });
+        return;
+      }
+      const sinceValue = url.searchParams.get("since");
+      const limitValue = url.searchParams.get("limit");
+      const since = sinceValue === null ? undefined : Number(sinceValue);
+      const limit = limitValue === null ? 100 : Number(limitValue);
+      if (
+        (since !== undefined && (!Number.isSafeInteger(since) || since < 0)) ||
+        !Number.isSafeInteger(limit) || limit < 1 || limit > 200
+      ) {
+        send(400, { error: "INVALID_NARRATION_CURSOR" });
+        return;
+      }
+      const result = timeAggregation(() =>
+        ctx.db.narrationEntries(pair, since, limit),
+      );
+      if (result.expired) {
+        send(410, {
+          error: "NARRATION_CURSOR_EXPIRED",
+          oldestAvailable: result.oldestAvailable,
+        });
+        return;
+      }
+      send(200, {
+        schema: 1,
+        pair,
+        entries: result.entries,
+        nextSince: result.entries.at(-1)?.seq ?? since ?? null,
+        hasMore: result.hasMore,
+        oldestAvailable: result.oldestAvailable,
+        generatedAt: Date.now(),
+      });
+      return;
+    }
     if (req.method === "GET" && url.pathname === "/api/chart/history") {
       try {
         const query = historyQuery(url.searchParams);
