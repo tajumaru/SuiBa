@@ -54,6 +54,26 @@ def unpack(package, destination):
                     if any(kind != 'table' or table not in TABLES for table, kind in schema): raise ValueError()
                     if type(item['rows']) is not dict or {t for t, _ in schema} != set(item['rows']): raise ValueError()
                     for table, _ in schema:
+                        if table == 'liquidation_buckets':
+                            if [r[1] for r in db.execute(
+                                    'PRAGMA table_info(liquidation_buckets)')] != [
+                                        'bucket_at', 'long_usd']:
+                                raise ValueError()
+                            count = 0
+                            for bucket_at, long_usd in db.execute(
+                                    'SELECT bucket_at,long_usd FROM liquidation_buckets'):
+                                if (type(bucket_at) is not int or
+                                        not window['from'] // 1000 <= bucket_at <= window['to'] // 1000 or
+                                        type(long_usd) not in (int, float) or
+                                        not 0 <= long_usd <= 2**53):
+                                    raise ValueError()
+                                count += 1
+                                if count > scope['LIQUIDATION_ROW_LIMIT']:
+                                    raise ValueError()
+                            if (type(item['rows'][table]) is not int or
+                                    count != item['rows'][table]):
+                                raise ValueError()
+                            continue
                         if [r[1] for r in db.execute(f'PRAGMA table_info({table})')] != ['id', 'timestamp', 'json']: raise ValueError()
                         count = 0
                         for row_id, at, raw in db.execute(f'SELECT id,timestamp,json FROM {table}'):

@@ -131,6 +131,27 @@ class AnalyzeTests(unittest.TestCase):
         result = rr.analyze([decision(missing=None)], candles)
         self.assertAlmostEqual(result["buckets"][3]["h"][1]["mean"], 2.0, places=6)
 
+    def test_liquidation_scene_reproduces_worker_spike_and_24h_axis(self):
+        close = {}
+        for stamp in range(BASE - 60 * 3600, BASE + 25 * 3600 + 1, 300):
+            close[stamp] = 1.0
+        close[BASE] = .97
+        close[BASE + 24 * 3600] = .98
+        ordered = sorted(close)
+        candles = (close, dict(close), dict(close), ordered, dict(close), {})
+        buckets = [{"bucketAt": BASE, "longUsd": 100_000}]
+        self.assertEqual(rr.liquidation_spike_events(candles, buckets), [BASE])
+        scenes = rr.analyze_scenes([], [], candles, buckets)
+        scene = next(item for item in scenes
+                     if item["label"] == "liquidation-spike")
+        self.assertEqual(scene["net"]["n"], 1)
+        self.assertAlmostEqual(
+            scene["net"]["mean"], (.98 / .97 - 1) * 100 - .2)
+
+    def test_liquidation_loader_accepts_old_extract_without_table(self):
+        with tempfile.NamedTemporaryFile(suffix=".sqlite") as db:
+            self.assertEqual(rr.load_liquidation_buckets(db.name), [])
+
 
 class ExitGridTests(unittest.TestCase):
     def candles(self, bars):
@@ -227,6 +248,27 @@ class ImprovementProposalTests(unittest.TestCase):
             "delta": -.29}]
         self.assertFalse(any(title.startswith("場面")
                              for title, _, _ in rr.build_improvement_proposals(result)))
+
+    def liquidation_scene(self, count, delta):
+        result = self.result()
+        result["scenes"] = [{"label": "liquidation-spike", "net": {
+            "n": count, "mean": .4 + delta, "median": .4 + delta,
+            "pos": 50},
+            "overall": {"n": 100, "mean": .4, "median": .4, "pos": 50},
+            "delta": delta}]
+        return rr.build_improvement_proposals(result)
+
+    def test_liquidation_scene_is_silent_below_30_samples(self):
+        self.assertFalse(any(title == "場面「liquidation-spike」"
+                             for title, _, _ in self.liquidation_scene(29, .3)))
+
+    def test_liquidation_scene_is_candidate_at_30_samples_with_bias(self):
+        self.assertTrue(any(title == "場面「liquidation-spike」"
+                            for title, _, _ in self.liquidation_scene(30, -.3)))
+
+    def test_liquidation_scene_is_silent_without_point_three_bias(self):
+        self.assertFalse(any(title == "場面「liquidation-spike」"
+                             for title, _, _ in self.liquidation_scene(30, .29)))
 
     def test_exit_grid_gate_uses_existing_cells_and_current_cell(self):
         result = self.result()
