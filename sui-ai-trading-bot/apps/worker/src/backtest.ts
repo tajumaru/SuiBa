@@ -2,7 +2,10 @@ import "dotenv/config";
 import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
 import { compareBacktests } from "../../../packages/backtest-engine/src/index.ts";
-import type { Candle } from "../../../packages/shared/src/index.ts";
+import {
+  PAPER_SLIPPAGE_RATE,
+  type Candle,
+} from "../../../packages/shared/src/index.ts";
 // Optional JSON candle array (or a saved report's history) and JSON options file.
 const db = new BotDatabase(process.env.DATABASE_PATH ?? "data/bot.sqlite");
 try {
@@ -27,7 +30,7 @@ try {
         trainEnd: c[split - 1].timestamp,
         end: c.at(-1)!.timestamp,
         maxOrder: settings.maxOrder,
-        slippage: settings.maxSlippage,
+        slippage: PAPER_SLIPPAGE_RATE,
         additionalFeeRate: 0,
         gasUsdc: settings.gasUsdc,
         minNetProfitUsdc: settings.minNetProfitUsdc,

@@ -25,6 +25,7 @@ import {
   type TradingDecision,
   type QuoteResult,
   type QuoteRequest,
+  PAPER_SLIPPAGE_RATE,
   Decimal,
 } from "../../../packages/shared/src/index.ts";
 import type { CandidateAudit } from "../../../packages/shared/src/operations.ts";
@@ -291,7 +292,7 @@ export class BotEngine {
               Math.min(p.sui, s.maxOrder / price),
               tradingPairs[this.pair].base,
             ),
-            slippage: s.maxSlippage,
+            slippage: PAPER_SLIPPAGE_RATE,
             referencePrice: price,
           });
           if (!(await this.router.validateQuote(sellPreview)))
@@ -444,7 +445,7 @@ export class BotEngine {
                 amount,
                 side === "BUY" ? USDC : tradingPairs[this.pair].base,
               ),
-              slippage: s.maxSlippage,
+              slippage: PAPER_SLIPPAGE_RATE,
               referencePrice: price,
             });
       const quantity = side === "BUY" ? q.minAmountOut : q.amountIn;
@@ -465,7 +466,7 @@ export class BotEngine {
             from: tradingPairs[this.pair].base,
             to: USDC,
             amountIn: q.minAmountOut,
-            slippage: this.db.settings().maxSlippage,
+            slippage: PAPER_SLIPPAGE_RATE,
             referencePrice: price,
           });
           audit.reverseQuoteExpiresAt = Number.isFinite(reverse.expiresAt)

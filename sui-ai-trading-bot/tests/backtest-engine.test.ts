@@ -43,6 +43,11 @@ const options: ComparisonInput = {
   end: start + 99 * 300,
   trainEnd: start + 64 * 300,
 };
+const conservativeOptions: ComparisonInput = {
+  ...options,
+  slippage: 0.003,
+  gasUsdc: 0.03,
+};
 const decision = (
   action: TradingDecision["action"],
   purpose: TradingDecision["sellPurpose"] = "TAKE_PROFIT",
@@ -66,7 +71,12 @@ const cycle: Dependencies = {
 };
 
 it("ON rejects insufficient projected BUY profit while OFF retains safety checks", async () => {
-  const result = await compareBacktests(history(), options, defaults, buy);
+  const result = await compareBacktests(
+    history(),
+    conservativeOptions,
+    defaults,
+    buy,
+  );
   expect(result.on.summary.tradeCount).toBe(0);
   expect(result.on.summary.profitWaitCount).toBeGreaterThan(0);
   expect(result.off.summary.buyCount).toBeGreaterThan(0);
@@ -163,13 +173,13 @@ it("uses next open, completed history, previous volume, and no current high/low/
 it("is deterministic and ON/OFF portfolios are independent", async () => {
   const c = history(),
     base = structuredClone(defaults),
-    o = structuredClone(options);
+    o = structuredClone(conservativeOptions);
   const a = await compareBacktests(c, o, base, buy),
     b = await compareBacktests(c, o, base, buy);
   expect(a).toEqual(b);
   expect(c).toEqual(history());
   expect(base).toEqual(defaults);
-  expect(o).toEqual(options);
+  expect(o).toEqual(conservativeOptions);
   expect(a.on.portfolio).not.toBe(a.off.portfolio);
   a.off.portfolio.usdc = 0;
   expect(a.on.portfolio.usdc).toBe(100);
@@ -219,7 +229,7 @@ it("uses PAPER accounting and does not add embedded DEX fees twice", async () =>
     e.timestamp,
   );
   expect(e.trade).toEqual(expected.trade);
-  expect(e.trade!.acquisition!.totalCostUsdc).toBe("5.030000");
+  expect(e.trade!.acquisition!.totalCostUsdc).toBe("5.005000");
   expect(r.off.summary.dexFees).toBeGreaterThan(0);
 });
 it("allocates partial SELL basis exactly with shared PAPER accounting", () => {
@@ -275,10 +285,10 @@ it("allocates partial SELL basis exactly with shared PAPER accounting", () => {
     now: start * 1000,
   });
   expect(report.allowed).toBe(true);
-  expect(report.allocatedCostUsdc).toBe("2.012000");
+  expect(report.allocatedCostUsdc).toBe("2.002000");
   const fill = paper.fill("s", "SELL", sell, b.portfolio, s, start * 1000);
-  expect(fill.trade.allocatedCostUsdc).toBe("2.012000");
-  expect(fill.portfolio.costBasisUsdc).toBe("3.018000");
+  expect(fill.trade.allocatedCostUsdc).toBe("2.002000");
+  expect(fill.portfolio.costBasisUsdc).toBe("3.003000");
 });
 function rOptions() {
   return {

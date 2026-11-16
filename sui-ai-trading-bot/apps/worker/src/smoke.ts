@@ -1,7 +1,11 @@
 import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
 import { GeckoMarketData } from "../../../packages/market-data/src/index.ts";
 import { CetusRouter } from "../../../packages/dex-router/src/index.ts";
-import { SUI, USDC } from "../../../packages/shared/src/index.ts";
+import {
+  PAPER_SLIPPAGE_RATE,
+  SUI,
+  USDC,
+} from "../../../packages/shared/src/index.ts";
 import { resolveSuiGrpcEndpoints } from "./suiEndpoints.ts";
 try {
   const endpoints = resolveSuiGrpcEndpoints();
@@ -22,7 +26,7 @@ try {
       from,
       to,
       amountIn,
-      slippage: 0.003,
+      slippage: PAPER_SLIPPAGE_RATE,
       referencePrice: c.at(-1)!.close,
     });
     console.info("quote", {
