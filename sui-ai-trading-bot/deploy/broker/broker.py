@@ -557,6 +557,43 @@ def bounded_process(argv, env, output=None, timeout=180):
         child.stderr.close()
 
 
+def successful_release_images(state):
+    """Broker-recorded successful releases, newest sequence first."""
+    releases = []
+    for receipt in Path(state).glob('*/receipt.json'):
+        value = decode(read_trusted(receipt, maximum=16384))
+        require(type(value) is dict and type(value.get('status')) is str,
+                'RELEASE_RECEIPT')
+        if value['status'] != 'prepared_stopped':
+            continue
+        require(type(value.get('sequence')) is int and value['sequence'] > 0 and
+                type(value.get('image_id')) is str and DIGEST.fullmatch(value['image_id']),
+                'RELEASE_RECEIPT')
+        releases.append((value['sequence'], value['image_id']))
+    return sorted(set(releases), reverse=True)
+
+
+def cleanup_release_images(docker, state):
+    """Best-effort removal of broker-recorded releases older than two generations."""
+    result = {'status': 'completed', 'deleted': 0}
+    try:
+        releases = successful_release_images(state)
+        protected = {image for _, image in releases[:2]}
+        candidates = {image for _, image in releases[2:]} - protected
+        container_ids = docker.call(['ps', '-aq', '--no-trunc']).split()
+        referenced = {docker.call(['inspect', '--format', '{{.Image}}', cid]).strip()
+                      for cid in container_ids}
+        for image in sorted(candidates - referenced):
+            try:
+                docker.call(['image', 'rm', image])  # No --force: Docker rechecks references.
+                result['deleted'] += 1
+            except Exception:
+                result['status'] = 'partial'
+        return result
+    except Exception:
+        return {'status': 'failed', 'deleted': result['deleted']}
+
+
 def validate_model(model, image):
     """Fixed project/service, volumes, secret and every executable privilege."""
     require(set(model.get('services', {})) == {'bot'} and model.get('name') == PROJECT, 'COMPOSE_PROJECT')
@@ -983,6 +1020,13 @@ class Broker:
             stage = 'complete'
             atomic(ledger, record)
             atomic(transaction/'receipt.json', record)
+            # A durable successful receipt exists before cleanup. Cleanup and its
+            # result persistence can never turn this deployment into a failure.
+            record['image_cleanup'] = cleanup_release_images(self.docker, self.state)
+            with contextlib.suppress(BaseException):
+                atomic(ledger, record)
+            with contextlib.suppress(BaseException):
+                atomic(transaction/'receipt.json', record)
             return record
         except BaseException as error:
             evidence = failure_diagnostic(error, stage)
@@ -1031,7 +1075,10 @@ def main():
             # except path below publishes nothing for verify.
             print(json.dumps(result))
         else:
-            print(json.dumps({'status': result['status'], 'sha': result['sha']}))
+            output = {'status': result['status'], 'sha': result['sha']}
+            if 'image_cleanup' in result:
+                output['image_cleanup'] = result['image_cleanup']
+            print(json.dumps(output))
     except BaseException as error:
         if 'req' in locals() and isinstance(req, dict) and req.get('operation') == 'deploy':
             publish_public_result('failed', public_failure_code(error), req.get('sha'))

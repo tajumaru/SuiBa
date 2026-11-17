@@ -4,13 +4,14 @@
 # Run once on the VPS as root (sudo bash setup-ci-approval.sh). It:
 #   1. fetches the current broker.py from the public repository and
 #      installs it only if its sha256 matches the pinned digest;
-#   2. creates /opt/suiba/shared/runtime.env and admin-token when
+#   2. installs the pinned MemWAL runtime helper, wrapper and sudoers rule;
+#   3. creates /opt/suiba/shared/runtime.env and admin-token when
 #      missing (existing files are never overwritten);
-#   3. fetches docker/compose.vps.yaml from the repository, verifies
+#   4. fetches docker/compose.vps.yaml from the repository, verifies
 #      its pinned sha256 and installs it as the policy compose at
 #      /etc/suiba-deploy/compose.yaml (with the optional "prod"
 #      argument, docker/compose.vps-prod.yaml is installed instead);
-#   4. adds "approval_source": "ci" to /etc/suiba-deploy/policy.json
+#   5. adds "approval_source": "ci" to /etc/suiba-deploy/policy.json
 #      and sets compose_sha256 to the installed compose's digest
 #      (helper_image is left untouched).
 # Backups of replaced files are kept next to the originals.
@@ -29,8 +30,15 @@ set -Eeuo pipefail
 umask 077
 
 BROKER_URL='https://raw.githubusercontent.com/tajumaru/SuiBa/main/sui-ai-trading-bot/deploy/broker/broker.py'
-BROKER_SHA256='0989fa16d4e4a832b132f9f2adf842a9340fad4cb434afd3cf5deb1395194f78'
+BROKER_SHA256='68154c4db86523f9e52d29e67c007e641adf50b4605220b88fc1fccb8deef76e'
 BROKER_TARGET='/usr/local/libexec/suiba-deploy-broker.py'
+MEMWAL_BASE_URL='https://raw.githubusercontent.com/tajumaru/SuiBa/main/sui-ai-trading-bot/deploy/paper-check'
+MEMWAL_HELPER_SHA256='fe44e69329cf53c16d18873c845c03a910169277cfc443a3b9247ea53be4b75e'
+MEMWAL_WRAPPER_SHA256='523f942e7105d945f85d398713b07b1d30b0d4bde605ae34e44683f6d64edf93'
+MEMWAL_SUDOERS_SHA256='7edfbd82b607b46f600c2d90a04fcfc2dd71f3344681b72620f0ebd3d3470af1'
+MEMWAL_HELPER_TARGET='/usr/local/libexec/suiba-memwal-runtime.py'
+MEMWAL_WRAPPER_TARGET='/usr/local/sbin/suiba-memwal-runtime'
+MEMWAL_SUDOERS_TARGET='/etc/sudoers.d/suiba-memwal-runtime'
 # The policy compose is the repository's docker/compose.vps.yaml, or
 # docker/compose.vps-prod.yaml when the "prod" variant is selected.
 # Update these pins in the same commit as any compose change.
@@ -67,15 +75,25 @@ esac
 [[ -f $POLICY ]] || fail "policy.json がありません: $POLICY"
 [[ -d $SHARED ]] || fail "shared ディレクトリがありません: $SHARED"
 [[ -d $(dirname "$BROKER_TARGET") ]] || fail 'libexec ディレクトリがありません'
+[[ -d $(dirname "$MEMWAL_WRAPPER_TARGET") ]] || fail 'sbin ディレクトリがありません'
+[[ -d $(dirname "$MEMWAL_SUDOERS_TARGET") ]] || fail 'sudoers.d ディレクトリがありません'
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 stamp=$(date +%Y%m%d%H%M%S)
 
-echo '== 1/4 broker.py を取得して検証 =='
+echo '== 1/4 broker.py、MemWAL helper、compose.yaml を取得して検証 =='
 curl -fsSL "$BROKER_URL" -o "$tmp/broker.py" || fail 'broker.py の取得に失敗'
 printf '%s  %s\n' "$BROKER_SHA256" "$tmp/broker.py" | sha256sum -c - >/dev/null || fail 'broker.py の sha256 が一致しません'
 python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/broker.py" || fail 'broker.py の構文検証に失敗'
+curl -fsSL "$MEMWAL_BASE_URL/memwal-runtime.py" -o "$tmp/memwal-runtime.py" || fail 'MemWAL helper の取得に失敗'
+curl -fsSL "$MEMWAL_BASE_URL/suiba-memwal-runtime" -o "$tmp/suiba-memwal-runtime" || fail 'MemWAL wrapper の取得に失敗'
+curl -fsSL "$MEMWAL_BASE_URL/suiba-memwal-runtime.sudoers" -o "$tmp/suiba-memwal-runtime.sudoers" || fail 'MemWAL sudoers の取得に失敗'
+printf '%s  %s\n' "$MEMWAL_HELPER_SHA256" "$tmp/memwal-runtime.py" | sha256sum -c - >/dev/null || fail 'MemWAL helper の sha256 が一致しません'
+printf '%s  %s\n' "$MEMWAL_WRAPPER_SHA256" "$tmp/suiba-memwal-runtime" | sha256sum -c - >/dev/null || fail 'MemWAL wrapper の sha256 が一致しません'
+printf '%s  %s\n' "$MEMWAL_SUDOERS_SHA256" "$tmp/suiba-memwal-runtime.sudoers" | sha256sum -c - >/dev/null || fail 'MemWAL sudoers の sha256 が一致しません'
+python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/memwal-runtime.py" || fail 'MemWAL helper の構文検証に失敗'
+visudo -cf "$tmp/suiba-memwal-runtime.sudoers" >/dev/null || fail 'MemWAL sudoers の構文検証に失敗'
 curl -fsSL "$COMPOSE_URL" -o "$tmp/compose.yaml" || fail 'compose.yaml の取得に失敗'
 printf '%s  %s\n' "$COMPOSE_SHA256" "$tmp/compose.yaml" | sha256sum -c - >/dev/null || fail 'compose.yaml の sha256 が一致しません'
 
@@ -94,7 +112,7 @@ if [[ -e $COMPOSE_TARGET ]]; then
   fi
 fi
 
-echo '== 2/4 broker.py と compose.yaml を配置 =='
+echo '== 2/4 broker.py、MemWAL helper、compose.yaml を配置 =='
 if [[ -e $BROKER_TARGET ]]; then
   cp -a "$BROKER_TARGET" "$BROKER_TARGET.bak-$stamp"
   echo "旧 broker.py をバックアップ: $BROKER_TARGET.bak-$stamp"
@@ -102,6 +120,18 @@ fi
 install -o root -g root -m 755 "$tmp/broker.py" "$BROKER_TARGET"
 printf '配置後の sha256: '
 sha256sum "$BROKER_TARGET" | awk '{print $1}'
+for target in "$MEMWAL_HELPER_TARGET" "$MEMWAL_WRAPPER_TARGET" "$MEMWAL_SUDOERS_TARGET"; do
+  if [[ -e $target ]]; then
+    cp -a "$target" "$target.bak-$stamp"
+    echo "旧 MemWAL 配布物をバックアップ: $target.bak-$stamp"
+  fi
+done
+install -o root -g root -m 755 "$tmp/memwal-runtime.py" "$MEMWAL_HELPER_TARGET"
+install -o root -g root -m 755 "$tmp/suiba-memwal-runtime" "$MEMWAL_WRAPPER_TARGET"
+install -o root -g root -m 440 "$tmp/suiba-memwal-runtime.sudoers" "$MEMWAL_SUDOERS_TARGET"
+printf '%s  %s\n' "$MEMWAL_HELPER_SHA256" "$MEMWAL_HELPER_TARGET" | sha256sum -c - >/dev/null || fail '配置後の MemWAL helper が一致しません'
+printf '%s  %s\n' "$MEMWAL_WRAPPER_SHA256" "$MEMWAL_WRAPPER_TARGET" | sha256sum -c - >/dev/null || fail '配置後の MemWAL wrapper が一致しません'
+printf '%s  %s\n' "$MEMWAL_SUDOERS_SHA256" "$MEMWAL_SUDOERS_TARGET" | sha256sum -c - >/dev/null || fail '配置後の MemWAL sudoers が一致しません'
 if [[ -e $COMPOSE_TARGET ]]; then
   cp -a "$COMPOSE_TARGET" "$COMPOSE_TARGET.bak-$stamp"
   echo "旧 compose.yaml をバックアップ: $COMPOSE_TARGET.bak-$stamp"
@@ -115,12 +145,12 @@ echo '== 3/4 runtime.env と admin-token =='
 if [[ -e $SHARED/runtime.env ]]; then
   echo 'runtime.env: 既にあるため変更しません（キー構成だけ確認します。値は出しません）'
   keys=$(cut -d= -f1 "$SHARED/runtime.env")
-  for want in MARKET_DATA_PROVIDER DEEPBOOK_RECONSTRUCT_CANDLES SUI_GRPC_URL; do
+  for want in MARKET_DATA_PROVIDER DEEPBOOK_RECONSTRUCT_CANDLES SUI_GRPC_URL SUIBA_SHADOW_ENABLED SUIBA_SHADOW_API_KEY SUIBA_NARRATION_GENERATION_ENABLED SUIBA_MEMWAL_ENABLED MEMWAL_PRIVATE_KEY MEMWAL_ACCOUNT_ID MEMWAL_RELAYER_URL MEMWAL_NAMESPACE; do
     grep -qx "$want" <<< "$keys" || echo "  警告: runtime.env に $want がありません"
   done
   while IFS= read -r key; do
     case $key in
-      ''|MARKET_DATA_PROVIDER|DEEPBOOK_RECONSTRUCT_CANDLES|SUI_GRPC_URL) ;;
+      ''|MARKET_DATA_PROVIDER|DEEPBOOK_RECONSTRUCT_CANDLES|SUI_GRPC_URL|SUIBA_SHADOW_ENABLED|SUIBA_SHADOW_API_KEY|SUIBA_NARRATION_GENERATION_ENABLED|SUIBA_MEMWAL_ENABLED|MEMWAL_PRIVATE_KEY|MEMWAL_ACCOUNT_ID|MEMWAL_RELAYER_URL|MEMWAL_NAMESPACE) ;;
       *) echo "  警告: runtime.env に想定外のキー $key があります" ;;
     esac
   done <<< "$keys"
@@ -128,6 +158,7 @@ else
   printf '%s\n' \
     'MARKET_DATA_PROVIDER=deepbook' \
     'DEEPBOOK_RECONSTRUCT_CANDLES=off' \
+    'SUIBA_NARRATION_GENERATION_ENABLED=false' \
     "SUI_GRPC_URL=$GRPC_URL" > "$SHARED/runtime.env"
   chown root:root "$SHARED/runtime.env"
   chmod 600 "$SHARED/runtime.env"

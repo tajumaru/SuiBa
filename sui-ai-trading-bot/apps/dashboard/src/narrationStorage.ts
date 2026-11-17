@@ -28,7 +28,7 @@ const trail = z.object({
   hasPosition: z.boolean(),
   rsiLinePrice: nullableNumber,
 });
-const schema: z.ZodType<NarrationState> = z.object({
+export const narrationStateSchema: z.ZodType<NarrationState> = z.object({
   entries: z
     .array(
       z.object({
@@ -49,6 +49,7 @@ const schema: z.ZodType<NarrationState> = z.object({
           "priceLine",
           "priceLineReached",
           "sellLine",
+          "sellLineCrossing",
           "review",
           "alert",
           "sleepTalk",
@@ -65,6 +66,7 @@ const schema: z.ZodType<NarrationState> = z.object({
           "forecastTouchNear",
           "bookWall",
           "forecastCalib",
+          "memory",
           "greeting",
           "status",
         ]),
@@ -73,6 +75,7 @@ const schema: z.ZodType<NarrationState> = z.object({
         topic: z.string().optional(),
         promptChip: z.string().optional(),
         forecastOrigin: number.optional(),
+        sellLineSide: z.enum(["tp", "sl"]).optional(),
       }),
     )
     .max(MAX_NARRATION_ENTRIES + MAX_CHAT_ENTRIES),
@@ -114,6 +117,16 @@ const schema: z.ZodType<NarrationState> = z.object({
     .object({ tp: number, sl: number })
     .nullable()
     .default(null),
+  sellLineCrossingState: z
+    .record(z.enum(["tp", "sl"]), z.object({
+      present: z.boolean(),
+      absentSince: nullableNumber,
+      lastCalledAt: nullableNumber,
+    }))
+    .default({
+      tp: { present: false, absentSince: null, lastCalledAt: null },
+      sl: { present: false, absentSince: null, lastCalledAt: null },
+    }),
   watchScore: z.object({
     declared: number,
     hits: number,
@@ -184,6 +197,13 @@ const schema: z.ZodType<NarrationState> = z.object({
   forecastTouchSettled: z.record(z.string(), z.boolean()).default({}),
   lastForecastCallAt: number.nullable().default(null),
   lastCalibScoredAt: number.default(0),
+  forecastCalibEventIds: z.array(z.string()).default([]),
+  memoryCooldowns: z.record(z.string(), number).default({}),
+  // The rollout time defaults at restore time, so every entry in a legacy
+  // save predates the feature and remains visible. Both inputs are optional
+  // for states written before the memory seal existed.
+  memorySealEnabledAt: number.default(() => Date.now()),
+  openedMemorySealIds: z.array(z.string()).max(200).default([]),
 });
 
 // Resolve storage inside the try: browsers may deny even the localStorage getter.
@@ -202,7 +222,7 @@ export function restoreNarration(
   try {
     const raw = (storage ?? window.localStorage).getItem(keyFor(scope));
     if (!raw || raw.length > 500_000) return emptyNarrationState();
-    const result = schema.safeParse(JSON.parse(raw));
+    const result = narrationStateSchema.safeParse(JSON.parse(raw));
     return result.success ? result.data : emptyNarrationState();
   } catch {
     return emptyNarrationState();

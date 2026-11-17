@@ -5,7 +5,14 @@ import { PriceTicker } from "./PriceTicker.tsx";
 import { LoginScreen } from "./LoginScreen.tsx";
 import { loginSession, SESSION } from "./browserSession.ts";
 import { DashboardClient } from "./dashboardClient.ts";
-import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  lazy,
+  Suspense,
+} from "react";
 import { createRoot } from "react-dom/client";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import "./style.css";
@@ -13,12 +20,19 @@ import { label, errorCode } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
 import type { StrategySegment } from "./StrategyTab.tsx";
 import { useOperationsFeed } from "./operationsFeed.ts";
+import { useForecastMigration } from "./useForecastMigration.ts";
 import { useForecastSuite } from "./useForecastSuite.ts";
 import { OverviewTab } from "./OverviewTab.tsx";
 import { AppHeader } from "./AppHeader.tsx";
 import { AgentNarrationFeed } from "./AgentNarration.tsx";
 import { presetName } from "./settingsPresets.ts";
 import { BootScreen } from "./BootScreen.tsx";
+import { ConnectionNotice } from "./ConnectionNotice.tsx";
+import {
+  ConnectionRecovery,
+  ConnectionUnavailable,
+  isConnectionFailure,
+} from "./connectionRecovery.ts";
 
 import { useUpdateCheck } from "./appVersion.ts";
 import { UpdateBanner, VersionFooter } from "./VersionFooter.tsx";
@@ -35,6 +49,7 @@ import {
   BUY_CELEBRATION_MS,
   sellLinesOf,
   type AgentPose,
+  type PointSmileCause,
 } from "./agentNarration.ts";
 import { NAV_SHORT_LABELS, NavTabIcon } from "./navTabs.tsx";
 /* Secondary tabs load on first open, keeping the initial
@@ -50,11 +65,6 @@ const BacktestComparison = lazy(() =>
     default: m.BacktestComparison,
   })),
 );
-const OperationsFeedView = lazy(() =>
-  import("./OperationsPanel.tsx").then((m) => ({
-    default: m.OperationsFeedView,
-  })),
-);
 const tabFallback = (
   <p className="tab-loading" role="status">
     読み込み中…
@@ -67,7 +77,6 @@ const NAV_TABS = [
   "Overview",
   "Strategy",
   "Trading History",
-  "運用検証",
   "バックテスト比較",
 ];
 function App() {
@@ -114,9 +123,10 @@ function App() {
     // the tab closes, so the bar never starts past an open editor.
     [startBlocked, setStartBlocked] = useState<string[]>([]);
   const [receivedAt, setReceivedAt] = useState<number | null>(null);
+  const [disconnected, setDisconnected] = useState(false);
+  const [connection] = useState(() => new ConnectionRecovery(setDisconnected));
   const [now, setNow] = useState(() => Date.now());
   const [checking, setChecking] = useState(false);
-  const [openDiagnostics, setOpenDiagnostics] = useState(false);
   useEffect(() => {
     const update = () => setNow(Date.now());
     const timer = window.setInterval(update, 1000);
@@ -129,6 +139,7 @@ function App() {
     };
   }, []);
   const stateStale =
+    disconnected ||
     !!error ||
     (data !== null &&
       (receivedAt === null ||
@@ -140,7 +151,7 @@ function App() {
   // restored "Settings" opens the strategy tab on its 設定
   // segment, and any other unknown value (for example a restored
   // "Chart" from before the chart tab was merged into the
-  // dashboard) opens the dashboard.
+  // dashboard, or the retired "運用検証") opens the dashboard.
   const activeTab =
     tab === "Settings" ? "Strategy" : NAV_TABS.includes(tab) ? tab : "Overview";
   // The strategy tab's segment: ルール by default, or 設定 when
@@ -169,6 +180,14 @@ function App() {
   // the feed can never show different poses. Before the feed first
   // reports (no snapshot yet), the unconfirmed "normal" pose shows.
   const [agentPose, setAgentPose] = useState<AgentPose>("normal");
+  const [pointSmileCause, setPointSmileCause] = useState<PointSmileCause>(null);
+  const handlePoseChange = useCallback(
+    (pose: AgentPose, cause: PointSmileCause) => {
+      setAgentPose(pose);
+      setPointSmileCause(cause);
+    },
+    [],
+  );
   // The character's user-chosen name (device-local; "" = キャラ).
   const [agentName, setAgentName] = useState<string>(() => loadAgentName());
   // Voice recognition is live in the chat (the avatar listens).
@@ -236,54 +255,67 @@ function App() {
   const pairRef = useRef<State["pair"] | undefined>(undefined);
   pairRef.current = data?.pair;
   const api = useCallback(
-    async (path: string, body?: unknown) => {
-      const r = await fetch("/api/" + path, {
-        signal: body ? undefined : AbortSignal.timeout(8000),
-        headers: {
-          ...(token !== SESSION ? { Authorization: "Bearer " + token } : {}),
-          "X-SuiBa-Request": "1",
-          ...(pairRef.current ? { "X-SuiBa-Pair": pairRef.current } : {}),
-          ...(body ? { "Content-Type": "application/json" } : {}),
-        },
-        method: body ? "POST" : "GET",
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      if (!r.ok) {
-        if (r.status === 401) {
-          setToken("");
-          setData(null);
+    async (path: string, body?: unknown, primary = false) => {
+      if (!body && !primary && !connection.canReadAuxiliary)
+        throw new ConnectionUnavailable();
+      try {
+        const r = await fetch("/api/" + path, {
+          cache: "no-store",
+          signal: body ? undefined : AbortSignal.timeout(8000),
+          headers: {
+            ...(token !== SESSION ? { Authorization: "Bearer " + token } : {}),
+            "X-SuiBa-Request": "1",
+            ...(pairRef.current ? { "X-SuiBa-Pair": pairRef.current } : {}),
+            ...(body ? { "Content-Type": "application/json" } : {}),
+          },
+          method: body ? "POST" : "GET",
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        if (!r.ok) {
+          if ([502, 503, 504].includes(r.status)) connection.fail();
+          if (r.status === 401) {
+            setToken("");
+            setData(null);
+          }
+          const body = await r.json().catch(() => ({}));
+          if (body.error === "PAIR_CHANGED") window.location.reload();
+          throw new Error(
+            typeof body.error === "string" ? body.error : `HTTP_${r.status}`,
+          );
         }
-        const body = await r.json().catch(() => ({}));
-        if (body.error === "PAIR_CHANGED") window.location.reload();
-        throw new Error(
-          typeof body.error === "string" ? body.error : `HTTP_${r.status}`,
-        );
+        const value = await r.json();
+        const responsePair = value.summary?.pair ?? value.pair;
+        if (
+          pairRef.current &&
+          responsePair &&
+          responsePair !== pairRef.current
+        ) {
+          window.location.reload();
+          throw Error("PAIR_CHANGED");
+        }
+        return value;
+      } catch (e) {
+        if (isConnectionFailure(e)) connection.fail();
+        throw e;
       }
-      const value = await r.json();
-      const responsePair = value.summary?.pair ?? value.pair;
-      if (pairRef.current && responsePair && responsePair !== pairRef.current) {
-        window.location.reload();
-        throw Error("PAIR_CHANGED");
-      }
-      return value;
     },
-    [token],
+    [token, connection],
   );
+  const mirrorNarrationEpisode = useCallback(
+    (entry: import("./agentNarration.ts").NarrationEntry) => {
+      void api("memwal/narration", {
+        id: `${data?.pair ?? "SUI_USDC"}:${entry.id}`,
+        at: entry.at,
+        kind: entry.kind,
+      }).catch(() => {});
+    },
+    [api, data?.pair],
+  );
+  useForecastMigration(data?.pair, api);
   // One shared operations feed for the narration tab and the
-  // operations tab (see useOperationsFeed). It polls only while
+  // overview and history tabs (see useOperationsFeed). It polls only while
   // logged in.
-  const operations = useOperationsFeed(api, token !== "");
-  useEffect(() => {
-    if (!openDiagnostics || activeTab !== "運用検証") return;
-    const details = document.getElementById(
-      "operation-diagnostics",
-    ) as HTMLDetailsElement | null;
-    if (!details) return;
-    details.open = true;
-    details.querySelector("summary")?.focus({ preventScroll: true });
-    details.scrollIntoView({ block: "start" });
-    setOpenDiagnostics(false);
-  }, [openDiagnostics, activeTab, operations.data, data]);
+  const operations = useOperationsFeed(api, token !== "", disconnected);
   async function refreshStatus() {
     if (checking) return;
     setChecking(true);
@@ -291,8 +323,7 @@ function App() {
     setChecking(false);
   }
   function diagnose() {
-    setTab("運用検証");
-    setOpenDiagnostics(true);
+    setTab("Overview");
     void refreshStatus();
   }
   // Short indicator history for the strategy tab's mini charts,
@@ -300,14 +331,15 @@ function App() {
   const indicatorHistory = useIndicatorHistory(
     operations.data?.decision ?? null,
   );
-  async function refresh() {
+  const refreshingRef = useRef<Promise<void> | null>(null);
+  const refreshSnapshot = useCallback(async () => {
     const feed = feedRef.current;
     if (!feed) return;
     const serial = ++serialRef.current;
     const view = viewRef.current;
     try {
       const result = await feed.poll(
-        api,
+        (path, body) => api(path, body, true),
         view.tab === "Overview" ? view.timeframe : null,
         ["Overview", "Trading History"].includes(view.tab),
         (state) => {
@@ -317,6 +349,7 @@ function App() {
             setNow(Date.now());
             setError("");
             setBannerError("");
+            connection.recovered();
           }
         },
       );
@@ -332,30 +365,47 @@ function App() {
         setBannerError(errorCode(e));
       }
     }
-  }
+  }, [api, connection]);
+  const refresh = useCallback((): Promise<void> => {
+    if (refreshingRef.current) return refreshingRef.current;
+    if (!connection.canPoll) return Promise.resolve();
+    const pending = refreshSnapshot().finally(() => {
+      if (refreshingRef.current === pending) refreshingRef.current = null;
+    });
+    refreshingRef.current = pending;
+    return pending;
+  }, [connection, refreshSnapshot]);
   useEffect(() => {
     if (!token) return;
     feedRef.current = new DashboardClient();
     setData(null);
     setReceivedAt(null);
-    void refresh();
-    const id = setInterval(() => void refresh(), 10000);
-    return () => {
-      clearInterval(id);
-      serialRef.current++;
-      feedRef.current = null;
+    let alive = true;
+    const serial = serialRef;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      await refresh();
+      if (alive) timer = setTimeout(() => void poll(), connection.pollDelay);
     };
-  }, [token]);
+    void poll();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      serial.current++;
+      feedRef.current = null;
+      refreshingRef.current = null;
+    };
+  }, [token, connection, refresh]);
   useEffect(() => {
     // Catch acquisition completion promptly. One follow-up per received
     // snapshot avoids stacking requests when the local API itself is slow.
     if (!token || stateStale || data?.safety?.marketUpdating !== true) return;
     const timer = window.setTimeout(() => void refresh(), 1000);
     return () => window.clearTimeout(timer);
-  }, [token, receivedAt, data?.safety?.marketUpdating, stateStale]);
+  }, [token, receivedAt, data?.safety?.marketUpdating, stateStale, refresh]);
   useEffect(() => {
     if (token) void refresh();
-  }, [tab, timeframe]);
+  }, [tab, timeframe, token, refresh]);
   // Resolves to null on success, or to the server's machine-readable
   // error code on failure, so the surface that issued the command
   // (for example the PAPER operation controls) can show the reason
@@ -411,7 +461,7 @@ function App() {
           code === "PAIR_POSITION_OPEN"
             ? "未決済ポジションまたは未精算の原価が残っています。対象ペアで決済・会計確認を完了してから切り替えてください。"
             : code === "PAIR_PENDING_WORK" || code === "PAIR_INVALID_LEDGER"
-              ? "未処理注文または会計の確認が必要です。運用検証で対象ペアを確認してください。"
+              ? "未処理注文または会計の確認が必要です。履歴で停止理由と対象ペアを確認してください。"
               : code === "STOP_AND_WAIT_BEFORE_PAIR_SWITCH"
                 ? "切り替えの準備が整いませんでした。市場データの取得が落ち着いてから、もう一度タップしてください。"
                 : "ペアを切り替えられません。売買を停止し、市場データ取得の完了後に再試行してください。",
@@ -430,6 +480,7 @@ function App() {
         control={control}
         logout={logout}
         agentPose={agentPose}
+        pointSmileCause={pointSmileCause}
         buyCelebration={buyCelebration}
         shout={shout}
         agentName={agentName}
@@ -449,6 +500,7 @@ function App() {
         />
       ) : (
         <>
+          {disconnected && <ConnectionNotice receivedAt={receivedAt} />}
           <nav className="has-avatar">
             {NAV_TABS.map((t) => {
               const formal = label(t) === "未確認" ? t : label(t);
@@ -473,7 +525,7 @@ function App() {
               ログアウト
             </button>
           </nav>
-          <main className="has-avatar">
+          <main className="has-avatar" data-connection-stale={disconnected}>
             {channelError && (
               <p role="alert" className="error">
                 {channelError}
@@ -484,11 +536,6 @@ function App() {
                 <Reason code={bannerError} />
                 操作を完了できませんでした。最新状態と通信診断を確認してください。
               </p>
-            )}
-            {!data && activeTab === "運用検証" && (
-              <Suspense fallback={tabFallback}>
-                <OperationsFeedView api={api} feed={operations} />
-              </Suspense>
             )}
             {data && (
               <>
@@ -549,8 +596,8 @@ function App() {
                   {operations.data ? (
                     <AgentNarrationFeed
                       data={operations.data}
-                      stale={!!operations.error}
-                      onPoseChange={setAgentPose}
+                      stale={operations.stale}
+                      onPoseChange={handlePoseChange}
                       onCelebrate={handleBuyCelebration}
                       pairLabel={data?.pair === "WAL_USDC" ? "WAL" : "SUI"}
                       chain={data?.chain ?? null}
@@ -564,6 +611,7 @@ function App() {
                       agentName={agentName}
                       onListeningChange={setVoiceListening}
                       onSpeakingChange={setAgentSpeaking}
+                      onMemwalEpisode={mirrorNarrationEpisode}
                     />
                   ) : (
                     <p role="status">
@@ -575,6 +623,8 @@ function App() {
                 </div>
                 {activeTab === "Overview" && (
                   <OverviewTab
+                    operations={operations.data}
+                    operationsStale={operations.stale}
                     data={data}
                     timeframe={timeframe}
                     setTimeframe={setTimeframe}
@@ -609,6 +659,8 @@ function App() {
                 {activeTab === "Trading History" && (
                   <Suspense fallback={tabFallback}>
                     <HistoryTab
+                      operations={operations.data}
+                      operationsError={operations.error}
                       orders={data.orders}
                       trades={data.trades}
                       candles={data.candlesByTimeframe[300]}
@@ -621,11 +673,6 @@ function App() {
                       token={token}
                       settings={data.settings}
                     />
-                  </Suspense>
-                )}
-                {activeTab === "運用検証" && (
-                  <Suspense fallback={tabFallback}>
-                    <OperationsFeedView api={api} feed={operations} />
                   </Suspense>
                 )}
               </>

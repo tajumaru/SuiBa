@@ -224,6 +224,74 @@
   font-size: 12px;
 }
 
+.chart-selected-readout {
+  min-height: 3em;
+  margin: 8px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.chart-selected-readout p {
+  margin: 0;
+}
+.chart-selected-readout[data-empty="true"] {
+  border-color: transparent;
+  background: transparent;
+}
+
+.price-chart .chart-forecast-details {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.chart-forecast-details > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  min-width: 0;
+}
+.chart-forecast-details dt {
+  color: var(--dim);
+}
+.price-chart .chart-forecast-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.chart-detail-swatch {
+  display: inline-block;
+  width: 18px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-top: 2px dashed var(--mint);
+}
+.chart-detail-swatch.touch {
+  border-color: var(--gold);
+}
+.chart-detail-swatch.forecast {
+  height: 10px;
+  border-top: 0;
+}
+.chart-answer-details h4 {
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+.chart-detail-swatch.answer-actual {
+  border-color: var(--text);
+  border-top-style: solid;
+}
+
 /* Grass streak line */
 .activity-grass-head {
   display: flex;
@@ -276,12 +344,16 @@
   font-size: 12px;
 }
 .chart-answer-toggle[aria-pressed="true"] {
-  background: #254f61;
+  background: var(--steel);
   border-color: var(--mint);
-  color: #e5fff6;
+  color: var(--text);
   box-shadow: inset 0 -3px var(--mint);
 }
 .chart-answer-verdict {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   margin: 0;
@@ -292,6 +364,14 @@
 }
 .chart-answer-verdict.miss {
   color: var(--pink);
+}
+.chart-answer-tag {
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
 /* Sui chain strip: the chain's vital signs under the ticker. */
@@ -318,36 +398,65 @@
   color: #e8f5ef;
   font-weight: 600;
 }
+.chain-credits {
+  display: inline-flex;
+  gap: 16px;
+  align-items: center;
+  margin-left: auto;
+}
+.chain-credit {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  color: var(--faint);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  opacity: 0.72;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.chain-credit:hover,
+.chain-credit:focus-visible {
+  color: var(--text);
+  opacity: 1;
+}
+.chain-credit:focus-visible {
+  outline: 1px solid var(--mint);
+  outline-offset: 3px;
+}
+.chain-credit img {
+  width: 8px;
+  height: 10px;
+}
+.chain-credit-walrus img {
+  width: 11px;
+  height: 11px;
+}
+@media (max-width: 640px) {
+  .chain-credits {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+}
 
-/* Highlights: bookmarked moments + the replay sheet. */
-.highlight-bar {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  margin: 8px 0;
-}
-.highlight-bar-title {
+/* Highlights: entry replay affordance + the replay sheet. */
+.agent-feed-replay-button {
+  margin-left: auto;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
   color: var(--gold);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: inherit;
   font-size: 12px;
-  padding-top: 5px;
-  white-space: nowrap;
-}
-.highlight-bar-list {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-}
-.highlight-chip {
-  background: var(--btn-bg);
-  border: 1px solid var(--gold);
-  border-radius: 6px;
-  color: var(--gold);
-  font-size: 12px;
-  padding: 4px 9px;
-  white-space: nowrap;
+  line-height: 1;
+  text-decoration: underline;
+  text-underline-offset: 2px;
   cursor: pointer;
+}
+.agent-feed-replay-button:focus-visible {
+  outline: 1px solid var(--mint);
+  outline-offset: 2px;
 }
 .highlight-replay {
   position: fixed;
@@ -591,19 +700,23 @@
 .monthly-report-rows {
   margin: 8px 0 0;
   font-size: 12.5px;
-  line-height: 1.9;
+  line-height: 1.6;
 }
 .monthly-report-rows > div {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 .monthly-report-rows dt {
   color: var(--faint);
   flex: none;
-  width: 4.5em;
+  width: 5em;
+  white-space: nowrap;
 }
 .monthly-report-rows dd {
   margin: 0;
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
 }
 .monthly-report-rows .pos {
   color: var(--mint);
@@ -770,6 +883,24 @@
 }
 .equity-curve-delta.neg {
   color: var(--pink);
+}
+.equity-curve-breakdown {
+  margin-top: 6px;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.equity-curve-breakdown p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 16px;
+  margin: 0;
+}
+.equity-curve-breakdown span {
+  white-space: nowrap;
+}
+.equity-curve-breakdown small {
+  font: inherit;
 }
 .equity-curve-tabs {
   display: flex;
@@ -1021,4 +1152,24 @@
 }
 .version-skew {
   color: var(--gold);
+}
+/* The browser cannot infer why the worker is unreachable. Keep the outage
+   separate from Bot safety, and label retained values even while scrolled. */
+.connection-notice {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: grid;
+  gap: 4px;
+  padding: 12px 16px;
+  border: 1px solid var(--gold);
+  background: var(--panel);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.connection-notice strong {
+  color: var(--gold);
+}
+main[data-connection-stale="true"] .price-ticker {
+  filter: grayscale(1);
 }

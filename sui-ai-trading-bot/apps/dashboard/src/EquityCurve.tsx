@@ -82,6 +82,29 @@ export function EquityCurve({
           </span>
         )}
       </div>
+      {model && (
+        <div className="equity-curve-breakdown">
+          {model.breakdown ? (
+            <p>
+              <span>
+                取引（確定） {formatDelta(model.breakdown.realized, null)} USDC
+              </span>
+              <span>
+                保有中の値動き {formatDelta(model.breakdown.holding, null)} USDC
+              </span>
+            </p>
+          ) : (
+            <p>
+              {model.breakdownIssue === "reconciliation"
+                ? "記録が一致しないため、内訳を計算できません"
+                : "取引記録が不足しているため、内訳を計算できません"}
+            </p>
+          )}
+          {model.partialPeriod && (
+            <small>増減と内訳は、記録のある範囲です</small>
+          )}
+        </div>
+      )}
       <div className="equity-curve-tabs" role="group" aria-label="資産グラフの期間">
         {EQUITY_RANGES.map((r) => (
           <button

@@ -1,13 +1,18 @@
 import type { OperationsSnapshot } from "./operationsTypes.ts";
-import type { AgentPose, NarrationEntry, NarrationState } from "./agentNarration.ts";
+import type { AgentPose, NarrationEntry, NarrationState, PointSmileCause } from "./agentNarration.ts";
 import { agentDisplayName } from "./agentName.ts";
 import { greetingText } from "./narration/voice.ts";
 import { useAgentCharacter } from "./agentCharacter.ts";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { persistNarration, restoreNarration } from "./narrationStorage.ts";
-import { BUY_CELEBRATION_MS, CELEBRATION_FRESH_MS, advanceNarration, agentPose, currentConditionChips, currentWatch, currentWatchScore, findNewBuyEntry, isBuyTradeEntry, trimNarrationEntries } from "./agentNarration.ts";
+import { BUY_CELEBRATION_MS, CELEBRATION_FRESH_MS, advanceNarration, agentPoseDetails, currentConditionChips, currentWatch, currentWatchScore, findNewBuyEntry, isBuyTradeEntry, trimNarrationEntries } from "./agentNarration.ts";
 import { botVital } from "./botVital.ts";
-import { appendHighlights, captureHighlights, highlightLabel, loadHighlights, saveHighlights } from "./highlightStore.ts";
+import {
+  appendHighlights,
+  captureHighlights,
+  loadHighlights,
+  saveHighlights,
+} from "./highlightStore.ts";
 import type { Highlight } from "./highlightStore.ts";
 import { proactivePrompt, proactivePromptDue } from "./agentChat.ts";
 import { epochTransition, loadLastEpoch, saveLastEpoch } from "./epochMark.ts";
@@ -42,6 +47,7 @@ export function AgentNarrationFeed({
   hardMode = false,
   onListeningChange,
   onSpeakingChange,
+  onMemwalEpisode,
 }: {
   data: OperationsSnapshot;
   stale: boolean;
@@ -61,7 +67,7 @@ export function AgentNarrationFeed({
   } | null;
   /** The newest cone-calibration change (display-only), told
    * once by the feed when it is fresh. */
-  calibEvent?: import("./forecastCalib.ts").CalibEvent | null;
+  calibEvent?: import("./forecastCalib.ts").CalibEvent | import("./forecastCalib.ts").CalibEvent[] | null;
   /** The engine's newest fills, threaded to the narration
    * advance so a finished month's report can be priced and
    * posted. Display/record only. */
@@ -83,7 +89,7 @@ export function AgentNarrationFeed({
   pairLabel?: string;
   /** Reports the derived pose to the app shell (the header avatar),
    * so the avatar and the feed always agree on the pose. */
-  onPoseChange?: (pose: AgentPose) => void;
+  onPoseChange?: (pose: AgentPose, pointSmileCause: PointSmileCause) => void;
   /** Fires once when a brand-new recorded buy fill joins the feed
    * this session (never for the loaded history, never for a sell),
    * so the app shell can run the buy celebration. */
@@ -94,6 +100,7 @@ export function AgentNarrationFeed({
   /** Reports speech-synthesis activity so the shell can show
    * the avatar mid-speech. */
   onSpeakingChange?: (speaking: boolean) => void;
+  onMemwalEpisode?: (entry: NarrationEntry) => void;
 }) {
   const character = useAgentCharacter();
   const displayName = agentDisplayName(agentName, character);
@@ -103,6 +110,18 @@ export function AgentNarrationFeed({
   // Narration storage is scoped per pair (see narrationStorage).
   const persist = (state: NarrationState) =>
     persistNarration(state, undefined, pairLabel);
+  const openMemorySeal = (entryId: string) => {
+    const state = narrationRef.current;
+    const opened = state.openedMemorySealIds ?? [];
+    if (opened.includes(entryId)) return;
+    const next = {
+      ...state,
+      openedMemorySealIds: [...opened, entryId].slice(-200),
+    };
+    narrationRef.current = next;
+    persist(next);
+    setNarration(next);
+  };
   const [now, setNow] = useState(() => Date.now());
   const [receivedAt, setReceivedAt] = useState(() => Date.now());
   const receivedRef = useRef(receivedAt);
@@ -208,6 +227,13 @@ export function AgentNarrationFeed({
     const firstAdvance = !hasAdvancedRef.current;
     hasAdvancedRef.current = true;
     if (firstAdvance || !prev.initialized) return;
+    const priorIds = new Set(prev.entries.map((entry) => entry.id));
+    for (const entry of next.entries)
+      if (
+        !priorIds.has(entry.id) &&
+        ["watchHit", "nearMiss", "review"].includes(entry.kind)
+      )
+        onMemwalEpisode?.(entry);
     const hit = findNewBuyEntry(prev.entries, next.entries);
     if (hit && Math.abs(Date.now() - hit.at) <= CELEBRATION_FRESH_MS) {
       setCelebration({ entryId: hit.id, startedAt: Date.now() });
@@ -279,9 +305,9 @@ export function AgentNarrationFeed({
       persist(withPrompt);
       setNarration(withPrompt);
     }
-  }, [data, stale, onCelebrate, trades, btc, forecasts, book, pairLabel, calibEvent, character, hardMode]);
+  }, [data, stale, onCelebrate, onMemwalEpisode, trades, btc, forecasts, book, pairLabel, calibEvent, character, hardMode]);
   const vital = botVital(data, stale, now, receivedAt);
-  const pose = agentPose(narration, data, vital, now);
+  const { pose, pointSmileCause } = agentPoseDetails(narration, data, vital, now);
   // While a chat reply is fresh, the character turns to the user
   // with the smile pose (from the base poses only — pointing, the
   // blue line and the rest keep their meaning).
@@ -293,8 +319,11 @@ export function AgentNarrationFeed({
       ? "pointSmile"
       : pose;
   useEffect(() => {
-    onPoseChange?.(reportedPose);
-  }, [reportedPose, onPoseChange]);
+    onPoseChange?.(
+      reportedPose,
+      reportedPose === pose ? pointSmileCause : null,
+    );
+  }, [reportedPose, pose, pointSmileCause, onPoseChange]);
   // Message-order scroll management (stick-to-bottom
   // tracking, the landing scroll, the jump pill's visibility)
   // lives in useFeedScroll; the pill itself renders below.
@@ -362,6 +391,8 @@ export function AgentNarrationFeed({
               : null,
       pairLabel,
       chain,
+      memwal: data.memwal,
+      liquidation: data.liquidation,
     };
   });
   // Epoch boundary: when the chain sample reports a newer epoch
@@ -449,27 +480,6 @@ export function AgentNarrationFeed({
           {score.specialty.judged - score.specialty.hits}）
         </div>
       )}
-      {highlights.length > 0 && (
-        <div className="highlight-bar" aria-label="ハイライト">
-          <span className="highlight-bar-title">ハイライト</span>
-          <div className="highlight-bar-list">
-            {[...highlights].reverse().map((h) => (
-              <button
-                key={h.id}
-                type="button"
-                className="highlight-chip"
-                onClick={() => setReplay(h)}
-              >
-                {highlightLabel(h)}{" "}
-                {new Date(h.at).toLocaleTimeString("ja-JP", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
       {replay && (
         <Suspense fallback={null}>
           <HighlightReplay highlight={replay} onClose={() => setReplay(null)} />
@@ -491,15 +501,27 @@ export function AgentNarrationFeed({
           // list flows with the page (no inner scroll box); the
           // scroll management above keeps a reader who is at the
           // bottom at the latest entry.
-          narration.entries.map((entry) => (
-            <AgentFeedEntryRow
-              key={entry.id}
-              entry={entry}
-              justBought={celebration?.entryId === entry.id}
-              onPromptChip={submitChat}
-              speakerName={displayName}
-            />
-          ))
+          narration.entries.map((entry) => {
+            const highlight = highlights.find((item) => item.id === entry.id);
+            return (
+              <AgentFeedEntryRow
+                key={entry.id}
+                entry={entry}
+                memorySealed={
+                  entry.kind === "memory" &&
+                  entry.at >=
+                    (narration.memorySealEnabledAt ??
+                      Number.POSITIVE_INFINITY) &&
+                  !(narration.openedMemorySealIds ?? []).includes(entry.id)
+                }
+                onOpenMemorySeal={openMemorySeal}
+                justBought={celebration?.entryId === entry.id}
+                onPromptChip={submitChat}
+                speakerName={displayName}
+                onReplay={highlight ? () => setReplay(highlight) : undefined}
+              />
+            );
+          })
         )}
         {chatThinking && (
           <article className="agent-feed-entry chatReply thinking" role="status">

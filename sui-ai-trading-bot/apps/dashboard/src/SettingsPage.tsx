@@ -1,5 +1,6 @@
 import React, { useEffect, useReducer, useRef, useState } from "react";
 import {
+  defaults,
   settingsSchema,
   type Settings,
 } from "../../../packages/shared/src/index.ts";
@@ -11,6 +12,7 @@ import {
 } from "./settingsPresets.ts";
 import {
   createEditor,
+  defaultDifferentKeys,
   settingsEditor,
   sameSettings,
   type Mode,
@@ -165,56 +167,123 @@ export function PresetSelector({
   );
 }
 function Inputs({
+  saved,
   draft,
   setDraft,
   items,
 }: {
+  saved: Settings;
   draft: Settings;
   setDraft: (s: Settings) => void;
   items: Field[];
 }) {
+  const different = new Set(defaultDifferentKeys(saved));
   return (
     <div className="settings-grid">
-      {items.map((f) => (
-        <label key={f.key}>
-          {f.label} {f.unit && `(${f.unit})`}
-          <input
-            id={`setting-${f.key}`}
-            type="number"
-            inputMode="decimal"
-            step="any"
-            required
-            value={
-              Number.isNaN(draft[f.key])
-                ? ""
-                : Number(
-                    (Number(draft[f.key]) * (f.scale ?? 1)).toPrecision(12),
-                  )
-            }
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                [f.key]:
-                  e.target.value === ""
-                    ? NaN
-                    : Number(e.target.value) / (f.scale ?? 1),
-              })
-            }
-          />
-          <small>{f.help}</small>
-        </label>
-      ))}
+      {items.map((f) => {
+        const differs = different.has(f.key);
+        return (
+          <div className="settings-field" key={f.key}>
+            <div className="settings-field-label">
+              <label htmlFor={`setting-${f.key}`}>
+                {f.label} {f.unit && `(${f.unit})`}
+              </label>
+              {differs && (
+                <span className="settings-default-diff">
+                  既定と異なる（既定: {formatSettingValue(defaults, f)}）
+                </span>
+              )}
+            </div>
+            <input
+              id={`setting-${f.key}`}
+              type="number"
+              inputMode="decimal"
+              step="any"
+              required
+              value={
+                Number.isNaN(draft[f.key])
+                  ? ""
+                  : Number(
+                      (Number(draft[f.key]) * (f.scale ?? 1)).toPrecision(12),
+                    )
+              }
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  [f.key]:
+                    e.target.value === ""
+                      ? NaN
+                      : Number(e.target.value) / (f.scale ?? 1),
+                })
+              }
+            />
+            {differs && (
+              <button
+                type="button"
+                className="settings-default-reset"
+                onClick={() => setDraft({ ...draft, [f.key]: defaults[f.key] })}
+              >
+                既定に戻す
+              </button>
+            )}
+            <small>{f.help}</small>
+          </div>
+        );
+      })}
     </div>
   );
 }
 export const BasicSettings = (props: {
+  saved: Settings;
   draft: Settings;
   setDraft: (s: Settings) => void;
 }) => <Inputs {...props} items={fields.slice(0, 2)} />;
 export function AdvancedSettings(props: {
+  saved: Settings;
   draft: Settings;
   setDraft: (s: Settings) => void;
 }) {
+  const different = new Set(defaultDifferentKeys(props.saved));
+  const toggle = (
+    key: "profitGuardEnabled" | "emaGapShrinkEnabled",
+    label: string,
+    help: string,
+  ) => {
+    const differs = different.has(key);
+    return (
+      <div className="settings-toggle">
+        <div className="settings-field-label">
+          <label>
+            <input
+              type="checkbox"
+              checked={props.draft[key]}
+              onChange={(e) =>
+                props.setDraft({ ...props.draft, [key]: e.target.checked })
+              }
+            />
+            {label}
+          </label>
+          {differs && (
+            <span className="settings-default-diff">
+              既定と異なる（既定: {defaults[key] ? "有効" : "無効"}）
+            </span>
+          )}
+        </div>
+        {differs && (
+          <button
+            type="button"
+            className="settings-default-reset"
+            onClick={() =>
+              props.setDraft({ ...props.draft, [key]: defaults[key] })
+            }
+          >
+            既定に戻す
+          </button>
+        )}
+        <small>{help}</small>
+      </div>
+    );
+  };
   return (
     <details>
       <summary>詳細設定を開く</summary>
@@ -222,38 +291,16 @@ export function AdvancedSettings(props: {
         戦略：ルールベース（固定）。EMA20/50は平均価格の傾向、MACDは勢いを確認します。EMA・MACDの期間は既存仕様の固定値です。
       </p>
       <Inputs {...props} items={fields.slice(2)} />
-      <label>
-        <input
-          type="checkbox"
-          checked={props.draft.profitGuardEnabled}
-          onChange={(e) =>
-            props.setDraft({
-              ...props.draft,
-              profitGuardEnabled: e.target.checked,
-            })
-          }
-        />
-        利益保護を有効にする
-      </label>
-      <small>
-        利益条件の設定です。見積もり・費用・数量の検証とリスク制限は常に適用されます。
-      </small>
-      <label>
-        <input
-          type="checkbox"
-          checked={props.draft.emaGapShrinkEnabled}
-          onChange={(e) =>
-            props.setDraft({
-              ...props.draft,
-              emaGapShrinkEnabled: e.target.checked,
-            })
-          }
-        />
-        EMAの差が縮小中も成立にする
-      </label>
-      <small>
-        買い条件のEMAは通常「短期（EMA20）が長期（EMA50）より上」で成立します。有効にすると、短期がまだ下でも、差が「縮小とみなす連続本数」だけ縮み続いていれば成立として扱います。既定は無効です。
-      </small>
+      {toggle(
+        "profitGuardEnabled",
+        "利益保護を有効にする",
+        "利益条件の設定です。見積もり・費用・数量の検証とリスク制限は常に適用されます。",
+      )}
+      {toggle(
+        "emaGapShrinkEnabled",
+        "EMAの差が縮小中も成立にする",
+        "買い条件のEMAは通常「短期（EMA20）が長期（EMA50）より上」で成立します。有効にすると、短期がまだ下でも、差が「縮小とみなす連続本数」だけ縮み続いていれば成立として扱います。既定は無効です。",
+      )}
     </details>
   );
 }
@@ -409,6 +456,7 @@ export function SettingsForm({
     save,
     dispatch,
   } = editor;
+  const defaultDifferenceCount = defaultDifferentKeys(saved).length;
   return (
     <section className="easy-settings" aria-busy={busy}>
       <h2>かんたん設定</h2>
@@ -425,6 +473,11 @@ export function SettingsForm({
           </aside>
         )}
         <PresetSelector value={selected} onChange={choose} />
+        {defaultDifferenceCount > 0 && (
+          <p className="settings-default-summary">
+            既定と異なる項目: {defaultDifferenceCount}件
+          </p>
+        )}
         {switchTo && (
           <div
             className="settings-review"
@@ -450,8 +503,8 @@ export function SettingsForm({
             </button>
           </div>
         )}
-        <BasicSettings draft={draft} setDraft={edit} />
-        <AdvancedSettings draft={draft} setDraft={edit} />
+        <BasicSettings saved={saved} draft={draft} setDraft={edit} />
+        <AdvancedSettings saved={saved} draft={draft} setDraft={edit} />
         <div className="controls">
           <button
             type="button"

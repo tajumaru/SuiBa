@@ -20,12 +20,14 @@ import type { CalibEvent } from "../forecastCalib.ts";
 import type { VitalState } from "../botVital.ts";
 import type { AgentCharacter } from "../agentCharacter.ts";
 import { voiceText } from "./voice.ts";
+import { memoryNarration } from "./memory.ts";
 import { cycleNarrationText, decisionTrail, sellLinesOf } from "./decision.ts";
 import { chooseWatchTarget, makeWatch, watchEligible } from "./watch.ts";
 import {
   PRICE_LINE_MURMUR_PCT,
   candidateKey,
   eventKey,
+  forecastSellLineCrossings,
   stageBook,
   stageBtc,
   stageCalibration,
@@ -139,7 +141,7 @@ export function advanceNarration(
   pairLabel = "SUI",
   /** The newest cone-calibration change (display-only), told
    * once when it is fresh. */
-  calib?: CalibEvent | null,
+  calib?: CalibEvent | CalibEvent[] | null,
   /** Who is speaking: new entries are laid down in that
    * character's voice (see voice.ts). Defaults to the white
    * character, whose voice is the templates as written. */
@@ -197,6 +199,8 @@ export function advanceNarration(
               (firstLine / firstDec.price - 1) * 100 >= PRICE_LINE_MURMUR_PCT,
           }
         : null;
+    const firstSellLines = firstDec ? sellLinesOf(firstDec) : null;
+    const firstCrossings = forecastSellLineCrossings(forecasts?.records ?? [], firstSellLines);
     // Existing forecasts are adopted silently on first load,
     // like the first watch and the buy-run line: their stories
     // are already under way. Only forecasts recorded from here
@@ -227,7 +231,19 @@ export function advanceNarration(
         priceLine: firstPriceLine,
         // A position already open when the feed starts has its sell
         // lines adopted silently, like the buy-run line above.
-        sellLines: firstDec ? sellLinesOf(firstDec) : null,
+        sellLines: firstSellLines,
+        sellLineCrossingState: {
+          tp: {
+            present: Boolean(firstCrossings?.tpMid ?? firstCrossings?.tpEdge),
+            absentSince: firstCrossings?.tpMid || firstCrossings?.tpEdge ? null : now,
+            lastCalledAt: null,
+          },
+          sl: {
+            present: Boolean(firstCrossings?.slMid ?? firstCrossings?.slEdge),
+            absentSince: firstCrossings?.slMid || firstCrossings?.slEdge ? null : now,
+            lastCalledAt: null,
+          },
+        },
         // The first recorded decision seeds the spike alerts' price
         // history — but only when it is fresh evidence; a stale
         // first snapshot warms the alerts up from zero instead.
@@ -287,6 +303,7 @@ export function advanceNarration(
     lastNearMiss: prev.lastNearMiss,
     priceLine: prev.priceLine,
     sellLines: prev.sellLines,
+    sellLineCrossingState: prev.sellLineCrossingState,
     sleepingSince: prev.sleepingSince,
     lastSleepTalkAt: prev.lastSleepTalkAt,
     lastSleepTalkText: prev.lastSleepTalkText,
@@ -304,16 +321,19 @@ export function advanceNarration(
     forecastTouchSettled: prev.forecastTouchSettled,
     lastForecastCallAt: prev.lastForecastCallAt,
     lastCalibScoredAt: prev.lastCalibScoredAt,
+    forecastCalibEventIds: prev.forecastCalibEventIds,
   };
   stageEvents(work, prev, d);
   stageCandidates(work, prev, d);
   stageStrategy(work, d, vitalState, now);
+  const memory = memoryNarration(d.situationMemory, prev.memoryCooldowns, now);
+  if (memory) work.drafts.push(memory.draft);
   stageConnectivity(work, d, now);
   stageStatusAndSleep(work, prev, d, vitalState, now);
   stageBtc(work, btc, now);
   stageBook(work, book, pairLabel, now);
   stageForecasts(work, forecasts, d.decision, now);
-  stageCalibration(work, calib, now);
+  for (const event of Array.isArray(calib) ? calib : [calib]) stageCalibration(work, event, now);
   stageMonthly(work, fills, now);
 
   return finish(
@@ -337,6 +357,10 @@ export function advanceNarration(
       forecastTouchSettled: work.forecastTouchSettled,
       lastForecastCallAt: work.lastForecastCallAt,
       lastCalibScoredAt: work.lastCalibScoredAt,
+      forecastCalibEventIds: work.forecastCalibEventIds,
+      memoryCooldowns: memory
+        ? { ...prev.memoryCooldowns, [memory.key]: now }
+        : prev.memoryCooldowns,
       sessionStartPrice: work.sessionStartPrice,
       priceHistory: work.priceHistory,
       alertCooldown: work.alertCooldown,
@@ -345,6 +369,7 @@ export function advanceNarration(
       lastNearMiss: work.lastNearMiss,
       priceLine: work.priceLine,
       sellLines: work.sellLines,
+      sellLineCrossingState: work.sellLineCrossingState,
       sleepingSince: work.sleepingSince,
       lastSleepTalkAt: work.lastSleepTalkAt,
       lastSleepTalkText: work.lastSleepTalkText,
@@ -396,7 +421,7 @@ export function finish(
       continue;
     entries.push({
       ...draft,
-      id: `narration:${nextEntryId++}`,
+      id: draft.id ?? `narration:${nextEntryId++}`,
     });
   }
   return {

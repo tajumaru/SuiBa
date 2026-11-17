@@ -28,7 +28,7 @@ OLD_RUN_ID = 'fa320242aad145cb9ef25d50f2103969'
 
 def report(state='in_progress', failure=None, run_id=RUN_ID):
     value = {'at': 1794480000, 'verdict': 'ok', 'reasons': [], 'run_id': run_id,
-             'prod_state': state, 'watchdog_at': 1794480000}
+             'prod_state': state, 'watchdog_at': 1794480000, 'detail': None}
     if failure is not None:
         value['failure'] = failure
         value['verdict'] = 'attention'
@@ -42,6 +42,12 @@ def failure(status='failed_requires_review', stage='preflight', code='RuntimeErr
 
 
 class FailureLinesTests(unittest.TestCase):
+    def test_host_stop_codes_are_rendered(self):
+        for code in ('EXTERNAL_STOP', 'WORKER_OOM', 'WORKER_EXITED', 'WORKER_EXITED_CLEAN', 'UNKNOWN'):
+            value = failure(stage='monitoring', code=code)
+            self.assertIsNotNone(FOLLOWUP.parse_report(report('failed_requires_review', value)))
+            self.assertIn(f'- 失敗コード: `{code}`', FOLLOWUP.failure_lines(value))
+
     def test_lines_match_the_alert_issue_wording(self):
         self.assertEqual(FOLLOWUP.failure_lines(failure()), [
             '- 失敗段階: `preflight`',
@@ -163,6 +169,19 @@ class RunStopTests(unittest.TestCase):
         result, reads, sleeps, blocks = self.drive(report('completed', failure(status='completed')))
         self.assertEqual((result, reads, sleeps), (0, 1, []))
         self.assertEqual(blocks, [FOLLOWUP.failure_lines(failure(status='completed'))])
+
+    def test_closed_midrun_failure_prints_its_stop_reason(self):
+        # The shape the mid-run close-out persists, once the stop
+        # has closed the record: the STOP output names the stage
+        # and the worker's own stop reason, no host terminal.
+        midrun = failure(status='completed', stage='monitoring', code='UPSTREAM_HTTP_500')
+        result, reads, sleeps, blocks = self.drive(report('completed', midrun))
+        self.assertEqual((result, reads, sleeps), (0, 1, []))
+        self.assertEqual(blocks, [[
+            '- 失敗段階: `monitoring`',
+            '- 失敗コード: `UPSTREAM_HTTP_500`',
+            '- バックアップ: 未確認',
+        ]])
 
     def test_healthy_closed_record_and_unclosed_record_stay_silent(self):
         for value in (report('completed'),

@@ -356,6 +356,21 @@ describe("forecast calibration narration", () => {
     ).toHaveLength(1);
   });
 
+  it("replays worker events after a day away with identical IDs on two devices, then deduplicates after storage", () => {
+    const events = [{ ...event(T0 - 24 * HOUR), id: "forecast-calib:SUI_USDC:1", previousScale: 1 },
+      { ...event(T0 - 23 * HOUR, 50), id: "forecast-calib:SUI_USDC:2", scale: 1.16, previousScale: 1.08 }];
+    const advance = (state: ReturnType<typeof initialized>) => advanceNarration(state, ops({}), "sleeping", T0,
+      undefined, null, null, null, "SUI", events);
+    const a = advance(initialized()), b = advance(initialized());
+    const entries = (s: typeof a) => s.entries.filter(e => e.kind === "forecastCalib");
+    expect(entries(a).map(e => e.id)).toEqual(events.map(e => e.id));
+    expect(entries(b)).toEqual(entries(a));
+    const backing = new Map<string,string>();
+    const storage = {getItem:(k:string)=>backing.get(k)??null,setItem:(k:string,v:string)=>void backing.set(k,v)};
+    persistNarration(a,storage);
+    expect(entries(advance(restoreNarration(storage)))).toEqual(entries(a));
+  });
+
   it("adopts a stale calibration silently", () => {
     const next = advanceNarration(
       initialized(),

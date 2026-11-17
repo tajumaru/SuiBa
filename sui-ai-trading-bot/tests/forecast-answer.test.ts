@@ -6,6 +6,7 @@ import { chartForecast } from "../apps/dashboard/src/chartForecast.ts";
 import {
   answerCheckText,
   forecastRecordFrom,
+  forecastVerdictText,
   latestAnswerCheck,
   loadForecastLog,
   saveForecastLog,
@@ -97,8 +98,10 @@ describe("latestAnswerCheck", () => {
     expect(check.coveragePct).toBe(100);
     expect(check.points).toHaveLength(24);
     expect(check.actuals.at(-1)!.close).toBeCloseTo(2.13);
-    expect(answerCheckText(check)).toContain("方向 的中");
-    expect(answerCheckText(check)).toContain("コーン収まり 100%");
+    expect(answerCheckText(check)).toContain("上がるという予測は当たりました");
+    expect(answerCheckText(check)).toContain(
+      "各足の終値の100%が、予測した価格の範囲内でした。",
+    );
   });
 
   it("calls a miss a miss, with the realised coverage", () => {
@@ -112,14 +115,16 @@ describe("latestAnswerCheck", () => {
     expect(check.directionHit).toBe(false);
     expect(check.actualPct).toBeLessThan(0);
     expect(check.coveragePct).toBeLessThan(100);
-    expect(answerCheckText(check)).toContain("方向 外れ");
+    expect(answerCheckText(check)).toContain("上がるという予測は外れました");
   });
 
   it("makes no direction claim for a flat forecast", () => {
     const rec = record(risingOutcome, 40, "flat", 0.001, 0.02);
     const check = latestAnswerCheck([rec], risingOutcome)!;
     expect(check.directionHit).toBeNull();
-    expect(answerCheckText(check)).toContain("方向は名乗らず");
+    expect(answerCheckText(check)).toContain(
+      "横ばいの予測だったため、上がる・下がるの正解判定はしていません。",
+    );
   });
 
   it("skips records without a centre line, unfinished ones and antiques", () => {
@@ -184,14 +189,85 @@ describe("PriceChart answer-check view", () => {
     const off = render();
     expect(off).toContain("chart-answer-toggle");
     expect(off).not.toContain('class="chart-answer"');
+    expect(off).not.toContain('class="chart-answer-details"');
     const on = render({ answerDefaultOn: true });
     expect(on).toContain('class="chart-answer"');
     expect(on).toContain('stroke="#ffffff"');
-    expect(on).toContain("2時間前の予測 → 実際");
-    expect(on).toContain("予測 +1.0%");
-    expect(on).toContain("実際 +2.8%");
-    expect(on).toContain("方向 的中");
+    expect(on).not.toContain("2時間前の予測 → 実際");
+    expect(on).toContain("予測 +1.00%");
+    expect(on).toContain("実際 +2.80%");
+    expect(on).toContain("範囲内 100%");
+    expect(on).toContain("当たり");
+    expect(on).not.toContain("各足の終値は");
+    expect(on).not.toContain("範囲内の割合は");
+    const plot = on.slice(on.indexOf("<svg"), on.indexOf("</svg>"));
+    const comparison =
+      plot.match(/<g class="chart-answer"[\s\S]*?<\/g>/)?.[0] ?? "";
+    expect(comparison).toContain("<polyline");
+    expect(comparison).not.toContain("<text");
+    const details =
+      on.match(
+        /<section class="chart-answer-details"[\s\S]*?<\/section>/,
+      )?.[0] ?? "";
+    expect(details).toContain("当時の予測（破線）");
+    expect(details).toContain("実際の値動き（実線）");
+    expect(details).toContain("比較期間：2026/11/01 12:00〜14:00（日本時間）");
+    expect(details).toContain("+1.00%");
+    expect(details).toContain("+2.80%");
+    expect(on.indexOf('class="chart-answer-details"')).toBeGreaterThan(
+      on.indexOf("</svg>"),
+    );
   });
+
+  it("shows both dates when the comparison crosses midnight in Japan", () => {
+    const offset = Date.UTC(2026, 10, 13, 14) / 1000 - check.origin;
+    const shifted = {
+      ...check,
+      origin: check.origin + offset,
+      points: check.points.map((p) => ({
+        ...p,
+        timestamp: p.timestamp + offset,
+      })),
+      actuals: check.actuals.map((p) => ({
+        ...p,
+        timestamp: p.timestamp + offset,
+      })),
+    };
+    const html = render({ answerDefaultOn: true, answerCheck: shifted });
+    expect(html).toContain(
+      "比較期間：2026/11/13 23:00〜2026/11/14 01:00（日本時間）",
+    );
+  });
+
+  it.each([
+    [0.0011, 0.0014, "+0.11%", "+0.14%"],
+    [-0.0011, -0.0014, "-0.11%", "-0.14%"],
+    [0, 0, "+0.00%", "+0.00%"],
+  ] as const)(
+    "preserves small differences in comparison text and details (%s, %s)",
+    (driftPct, actualPct, predicted, actual) => {
+      const comparison = { ...check, driftPct, actualPct };
+      const html = render({ answerCheck: comparison, answerDefaultOn: true });
+      expect(html).toContain(`予測 ${predicted} → 実際 ${actual}`);
+      const details =
+        html.match(
+          /<section class="chart-answer-details"[\s\S]*?<\/section>/,
+        )?.[0] ?? "";
+      expect(details).toContain(`<dd>${predicted}</dd>`);
+      expect(details).toContain(`<dd>${actual}</dd>`);
+      // Narration keeps the existing single-decimal format.
+      const narration = forecastVerdictText({
+        origin: check.origin,
+        dir: "up",
+        driftPct,
+        actualPct,
+        hit: true,
+        completedAt: 0,
+      });
+      expect(narration).toContain(`${(driftPct * 100).toFixed(1)}%`);
+      expect(narration).not.toContain(predicted);
+    },
+  );
 
   it("offers no toggle without a checkable forecast", () => {
     const html = renderToStaticMarkup(

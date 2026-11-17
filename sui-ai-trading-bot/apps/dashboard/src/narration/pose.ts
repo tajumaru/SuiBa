@@ -19,23 +19,30 @@ import { metEntryConditions } from "./decision.ts";
  *   one is met) -> point （指立て）
  * - otherwise -> laptop (working at the laptop while watching)
  */
-export function agentPose(
+export type PointSmileCause = "trade" | "hit" | null;
+
+export function agentPoseDetails(
   state: NarrationState,
   d: OperationsSnapshot,
   vital: BotVital,
   now = Date.now(),
-): AgentPose {
-  if (vital.state === "sleeping" || vital.state === "flatlined") return "sleep";
-  if (vital.state === "unknown") return "normal";
-  if (vital.state === "weak") return "laptop";
-  if (vital.state !== "alive") return "normal";
+): { pose: AgentPose; pointSmileCause: PointSmileCause } {
+  const result = (pose: AgentPose, pointSmileCause: PointSmileCause = null) => ({
+    pose,
+    pointSmileCause,
+  });
+  if (vital.state === "sleeping" || vital.state === "flatlined")
+    return result("sleep");
+  if (vital.state === "unknown") return result("normal");
+  if (vital.state === "weak") return result("laptop");
+  if (vital.state !== "alive") return result("normal");
   const latest = state.entries.at(-1);
   if (
     latest?.kind === "trade" &&
     now >= latest.at &&
     now - latest.at <= DECISION_FRESH_MS
   )
-    return "pointSmile";
+    return result("pointSmile", "trade");
   const dec = d.decision;
   const fresh = dec != null && freshDecision(dec, now);
   if (fresh) {
@@ -46,7 +53,7 @@ export function agentPose(
       state.lastAlert?.direction === "up" &&
       state.lastAlert.at === dec.evaluatedAt
     )
-      return "point";
+      return result("point");
   }
   // A standing buy-run line turns the character blue — the roaring
   // crowd artwork — for as long as the line stands. The line only
@@ -56,12 +63,12 @@ export function agentPose(
   // would never show. So the line ranks above the persistent
   // pointing (the blue artwork points too), and below only a
   // recorded fill and an upward spike.
-  if (state.priceLine != null) return "buyLine";
+  if (state.priceLine != null) return result("buyLine");
   if (fresh) {
-    if (dec.action === "BUY") return "point";
+    if (dec.action === "BUY") return result("point");
     const met = metEntryConditions(dec);
-    if (met >= 2) return "point";
-    if (met >= 1 && state.priceRising) return "point";
+    if (met >= 2) return result("point");
+    if (met >= 1 && state.priceRising) return result("point");
   }
   // A watch hit told on a recent cycle flashes the smug smile while
   // it is fresh — but only when the decision itself claims no
@@ -74,8 +81,17 @@ export function agentPose(
     now >= state.lastHitAt &&
     now - state.lastHitAt <= DECISION_FRESH_MS
   )
-    return "pointSmile";
-  return "laptop";
+    return result("pointSmile", "hit");
+  return result("laptop");
+}
+
+export function agentPose(
+  state: NarrationState,
+  d: OperationsSnapshot,
+  vital: BotVital,
+  now = Date.now(),
+): AgentPose {
+  return agentPoseDetails(state, d, vital, now).pose;
 }
 
 /** How long a buy celebration lasts (avatar, pill, ticker glow). */

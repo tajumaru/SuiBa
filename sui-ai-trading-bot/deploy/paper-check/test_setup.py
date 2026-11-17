@@ -40,19 +40,29 @@ class UnitTests(unittest.TestCase):
     def test_setup_pins_every_distributed_file_and_verifies_every_unit(self):
         script = (HERE/'setup-paper-check.sh').read_text()
         entries = re.findall(r"'([^'|]+)\|([a-f0-9]{64})\|([^'|]+)\|([0-7]{3})'", script)
-        self.assertEqual(len(entries), 16)
-        self.assertEqual(len({name for name, *_ in entries}), 16)
+        self.assertEqual(len(entries), 26)
+        self.assertEqual(len({name for name, *_ in entries}), 26)
         for name, digest, target, mode in entries:
             self.assertEqual(hashlib.sha256((HERE/name).read_bytes().replace(b'\r\n', b'\n')).hexdigest(), digest, name)
             if name.endswith(('.service', '.timer')):
                 self.assertEqual(target, '/etc/systemd/system/'+name)
                 self.assertEqual(mode, '644')
+        pin = re.search(r"^SETUP_CI_APPROVAL_SHA256='([a-f0-9]{64})'", script, re.M).group(1)
+        self.assertEqual(pin, hashlib.sha256((HERE.parent/'broker/setup-ci-approval.sh').read_bytes()).hexdigest())
         units = re.search(r"^UNITS='([^']+)'", script, re.M).group(1).split()
         self.assertEqual(set(units), {name for name, *_ in entries if name.endswith(('.service', '.timer'))})
         self.assertEqual(len(units), len(set(units)))
         by_name = {name: (target, mode) for name, _, target, mode in entries}
+        self.assertEqual(by_name['narration-runtime.py'],
+                         ('/usr/local/libexec/suiba-narration-runtime.py', '755'))
+        self.assertEqual(by_name['suiba-narration-runtime'],
+                         ('/usr/local/sbin/suiba-narration-runtime', '755'))
+        self.assertEqual(by_name['suiba-narration-runtime.sudoers'],
+                         ('/etc/sudoers.d/suiba-narration-runtime', '440'))
         self.assertEqual(by_name['suiba-paper-observe'], ('/usr/local/sbin/suiba-paper-observe', '755'))
         self.assertEqual(by_name['suiba-paper-observe.sudoers'], ('/etc/sudoers.d/suiba-paper-observe', '440'))
+        self.assertEqual(by_name['suiba-needrestart.conf'],
+                         ('/etc/needrestart/conf.d/suiba.conf', '644'))
         self.assertIn('suiba-prod.service', units)
         self.assertIn('suiba-prod-watchdog.service', units)
         self.assertIn('suiba-prod-watchdog.timer', units)
@@ -60,6 +70,18 @@ class UnitTests(unittest.TestCase):
         # daemon-reload/verify are permitted, but installation never activates
         # a unit or boot target. The sole stop action retires old cutoff timers.
         self.assertNotRegex(script, r'(?m)^\s*systemctl\s+(?:start|restart|enable|preset)\b')
+
+    def test_needrestart_drop_in_defers_every_distributed_unit_and_docker_runtime(self):
+        script = (HERE/'setup-paper-check.sh').read_text()
+        drop_in = (HERE/'suiba-needrestart.conf').read_text()
+        units = re.search(r"^UNITS='([^']+)'", script, re.M).group(1).split()
+        for unit in (*units, 'docker.service', 'containerd.service'):
+            escaped = re.escape(unit).replace(r'\-', '-')
+            self.assertIn(f'qr(^{escaped}$)', drop_in, unit)
+        self.assertEqual(drop_in.count(' = 0;'), len(units) + 2)
+        self.assertIn('[[ $name == suiba-needrestart.conf && -e $target ]]', script)
+        self.assertIn('既存の needrestart 設定が想定と違います', script)
+        self.assertIn('変更なし: $target', script)
 
     def test_watchdog_is_an_independent_observer_with_explicit_timer_activation(self):
         service = configparser.ConfigParser(interpolation=None)
@@ -143,6 +165,9 @@ class VerifyRunCoverageTests(unittest.TestCase):
         job = workflow.split('  docker-run:\n', 1)[1].split('  docker-suites:\n', 1)[0]
         self.assertIn('fail-fast: false', job)
         self.assertIn('${{ matrix.scenarios }}', job)
+        self.assertNotRegex(job, r"(?m)^    if: needs\.changes\.outputs\.heavy == 'true'$")
+        self.assertEqual(job.count("        if: needs.changes.outputs.heavy == 'true'"), 4)
+        self.assertIn("        if: needs.changes.outputs.heavy != 'true'", job)
         legs = re.findall(r'scenarios: ([a-z0-9,\-]+)', job)
         self.assertEqual(len(legs), 3)
         covered = [name for leg in legs for name in leg.split(',')]

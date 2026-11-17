@@ -1,3 +1,5 @@
+import { ShadowRecorder, type ShadowAdapter, type ShadowBudget } from "./shadow.ts";
+import { advanceForecast } from "./forecast.ts";
 import { quoteBookReason } from "../../../packages/market-data/src/quote-book.ts";
 import type { MarketDataProvider } from "../../../packages/market-data/src/provider.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
@@ -23,6 +25,7 @@ import {
   type TradingDecision,
   type QuoteResult,
   type QuoteRequest,
+  PAPER_SLIPPAGE_RATE,
   Decimal,
 } from "../../../packages/shared/src/index.ts";
 import type { CandidateAudit } from "../../../packages/shared/src/operations.ts";
@@ -58,6 +61,7 @@ export type BotSnapshot = ReturnType<BotEngine["snapshot"]>;
 
 export class BotEngine {
   validation?: ValidationRecorder;
+  private readonly shadow: ShadowRecorder;
   marketStatus() {
     return this.market.status?.() ?? null;
   }
@@ -79,7 +83,10 @@ export class BotEngine {
      * (see longTerm.ts); null for pairs without a series. */
     private readonly longTermSource: () => DailyCandle[] | null = () => null,
     private readonly sessionOrdersAllowed: () => boolean = () => true,
+    shadowAdapter?: ShadowAdapter,
+    shadowBudget?: ShadowBudget,
   ) {
+    this.shadow = new ShadowRecorder(db, shadowAdapter, undefined, shadowBudget);
     const portfolio = db.portfolio();
     const baseCoin = tradingPairs[pair].base;
     if (portfolio.baseCoin && portfolio.baseCoin !== baseCoin)
@@ -260,6 +267,12 @@ export class BotEngine {
       decision.analysisContext = cycle.analysis;
       cycle.outcome = "ANALYZED";
       this.db.recordAnalysis(cycle.cycleId, decision, current, now);
+      this.shadow.offer(() => ({
+        cycleId: cycle.cycleId, pair: this.pair, now, candles: c,
+        decision, portfolio: p, settings: s, market: this.marketStatus(),
+        healthy: !recoveryTransition && this.monitor.safety().connectivity === "HEALTHY"
+          && this.marketStatus()?.healthy === true,
+      }));
       this.monitor.analysis();
       this.db.set("price", price);
       this.db.append(
@@ -279,7 +292,7 @@ export class BotEngine {
               Math.min(p.sui, s.maxOrder / price),
               tradingPairs[this.pair].base,
             ),
-            slippage: s.maxSlippage,
+            slippage: PAPER_SLIPPAGE_RATE,
             referencePrice: price,
           });
           if (!(await this.router.validateQuote(sellPreview)))
@@ -432,7 +445,7 @@ export class BotEngine {
                 amount,
                 side === "BUY" ? USDC : tradingPairs[this.pair].base,
               ),
-              slippage: s.maxSlippage,
+              slippage: PAPER_SLIPPAGE_RATE,
               referencePrice: price,
             });
       const quantity = side === "BUY" ? q.minAmountOut : q.amountIn;
@@ -453,7 +466,7 @@ export class BotEngine {
             from: tradingPairs[this.pair].base,
             to: USDC,
             amountIn: q.minAmountOut,
-            slippage: this.db.settings().maxSlippage,
+            slippage: PAPER_SLIPPAGE_RATE,
             referencePrice: price,
           });
           audit.reverseQuoteExpiresAt = Number.isFinite(reverse.expiresAt)
@@ -840,6 +853,19 @@ export class BotEngine {
         last = c.at(-1)!,
         price = last.close;
       validateCandles(c, 300, Date.now());
+      // Forecast failures must never change trading or safety decisions.
+      try {
+        advanceForecast(
+          this.db, this.pair, c,
+          this.market.bookImbalance?.(now) ?? this.bookImbalanceSource(),
+          now, frames,
+        );
+        this.db.set("forecast_error", null);
+      } catch {
+        try {
+          this.db.set("forecast_error", { at: now, code: "FORECAST_UPDATE_FAILED" });
+        } catch {}
+      }
       this.monitor.market((last.timestamp + 300) * 1000);
       if (this.db.runtime().running && !this.monitor.ledger().ok)
         throw new Error("PAPER_RECONCILIATION_FAILED");

@@ -14,10 +14,7 @@ import {
 } from "../apps/dashboard/src/PriceChart.tsx";
 
 const T0 = Date.UTC(2026, 10, 1, 0) / 1000;
-function candles(
-  closes: number[],
-  range = 0.01,
-): Candle[] {
+function candles(closes: number[], range = 0.01): Candle[] {
   return closes.map((close, i) => ({
     timestamp: T0 + i * 300,
     timeframe: 300,
@@ -109,7 +106,10 @@ describe("chartForecast", () => {
     gapped[55] = { ...gapped[55], timestamp: gapped[55].timestamp + 300 };
     // The gap leaves a trailing run of 4 — too short to trust.
     expect(chartForecast(gapped)).toBeNull();
-    const still = candles(Array.from({ length: 60 }, () => 2), 0);
+    const still = candles(
+      Array.from({ length: 60 }, () => 2),
+      0,
+    );
     expect(chartForecast(still)).toBeNull();
     expect(chartForecast([])).toBeNull();
   });
@@ -118,7 +118,11 @@ describe("chartForecast", () => {
 describe("PriceChart forecast overlay", () => {
   const render = (cs: Candle[]) =>
     renderToStaticMarkup(
-      React.createElement(PriceChart, { candles: cs, trades: [] }),
+      React.createElement(PriceChart, {
+        candles: cs,
+        trades: [],
+        forecast: chartForecast(cs),
+      }),
     );
 
   it("draws the cone and the model caption in the latest view", () => {
@@ -127,6 +131,40 @@ describe("PriceChart forecast overlay", () => {
     expect(html).toContain("予測（模式）");
     expect(html).toContain("上向き気味");
     expect(html).toContain("実際の価格ではありません");
+    expect(html).toContain("これから2時間の予測");
+    const details = html.match(
+      /<dl class="chart-forecast-details"[\s\S]*?<\/dl>/,
+    )?.[0];
+    expect(details).toContain("これから2時間の予測");
+    expect(details).toContain("（模式）");
+    expect(details).toContain("予測範囲（帯）");
+    const overlay = html.match(/<g class="chart-forecast"[\s\S]*?<\/g>/)?.[0];
+    expect(overlay).toContain("<polygon");
+    expect(overlay).not.toContain("<polyline");
+  });
+
+  it.each([
+    [900, 6],
+    [3600, 24],
+  ] as const)(
+    "labels the actual forecast horizon for %i-second candles",
+    (timeframe, hours) => {
+      const cs = rising.map((c, i) => ({
+        ...c,
+        timeframe,
+        timestamp: T0 + i * timeframe,
+      }));
+      const html = render(cs);
+      expect(html).toContain(`これから${hours}時間の予測`);
+      expect(html).not.toContain("これから2時間の予測");
+    },
+  );
+
+  it("never generates a forecast in the browser when the worker supplies none", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(PriceChart, { candles: rising, trades: [] }),
+    );
+    expect(html).not.toContain("chart-forecast");
   });
 
   it("omits the forecast when the data cannot carry one", () => {
@@ -141,9 +179,7 @@ describe("PriceChart forecast overlay", () => {
     expect(forecastPalette("flat").stroke).toBe("#64b5ff");
     // The share card shares the hues with a stronger wash for
     // claimed directions; flat keeps the chart's alpha.
-    expect(forecastPalette("up", "card").fill).toBe(
-      "rgba(67, 223, 178, 0.13)",
-    );
+    expect(forecastPalette("up", "card").fill).toBe("rgba(67, 223, 178, 0.13)");
     expect(forecastPalette("down", "card").fill).toBe(
       "rgba(247, 125, 143, 0.13)",
     );
@@ -152,18 +188,18 @@ describe("PriceChart forecast overlay", () => {
     );
 
     const up = render(rising);
-    expect(up).toContain('stroke="#43dfb2"');
+    expect(up).toContain(`fill="${forecastPalette("up").fill}"`);
     expect(up).toContain("rgba(67, 223, 178");
     expect(up).toMatch(/予測 \+\d+\.\d%/);
 
     const down = render(falling);
-    expect(down).toContain('stroke="#f77d8f"');
+    expect(down).toContain(`fill="${forecastPalette("down").fill}"`);
     expect(down).toContain("rgba(247, 125, 143");
     expect(down).toMatch(/予測 -\d+\.\d%/);
 
     const flatHtml = render(flat);
-    expect(flatHtml).toContain('stroke="#64b5ff"');
-    expect(flatHtml).toContain(">予測<");
+    expect(flatHtml).toContain(`fill="${forecastPalette("flat").fill}"`);
+    expect(flatHtml).toContain(">予測（模式）<");
     expect(flatHtml).not.toMatch(/予測 [+-]/);
   });
 
@@ -172,6 +208,7 @@ describe("PriceChart forecast overlay", () => {
       React.createElement(PriceChart, {
         candles: rising,
         trades: [],
+        forecast: chartForecast(rising),
         forecastScoreText: "予測の成績：コーン収まり 82%（判定 46 件）",
       }),
     );

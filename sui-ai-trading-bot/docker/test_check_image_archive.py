@@ -191,11 +191,11 @@ class MainTests(unittest.TestCase):
 
 
 class WorkflowShapeTests(unittest.TestCase):
-    """Both deploy workflows must build the release image with OCI
+    """Every deploy workflow must build the release image with OCI
     media types pinned and run the archive pre-flight on the saved
     tar before it is uploaded or transferred."""
 
-    WORKFLOWS = ['suiba-vps.yml', 'suiba-paper-deploy-cycle.yml']
+    WORKFLOWS = ['suiba-vps.yml', 'suiba-paper-deploy-cycle.yml', 'suiba-release.yml']
 
     @classmethod
     def setUpClass(cls):

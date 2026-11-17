@@ -17,6 +17,7 @@ import type { TradingPair } from "../../../packages/shared/src/index.ts";
 import type { DisplaySamplers } from "./display-samplers.ts";
 import { PredecessorReset } from "./predecessor-reset.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
+import type { LiquidationCollector } from "./liquidation-collector.ts";
 
 export interface WorkerContextInit {
   browserSessions: BrowserSessions;
@@ -76,6 +77,9 @@ export class WorkerContext {
   activeTick: Promise<void> | undefined = undefined;
   inFlightRequests = 0;
   lastExportAt = 0;
+  memwal: { stop(): void } | null = null;
+  liquidation: LiquidationCollector | null = null;
+  generateNarration: () => void = () => {};
   constructor(init: WorkerContextInit) {
     this.browserSessions = init.browserSessions;
     this.deploymentGate = init.deploymentGate;

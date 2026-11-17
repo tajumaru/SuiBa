@@ -110,6 +110,39 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
+.settings-field,
+.settings-toggle {
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--line);
+}
+.settings-field-label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.settings-default-diff {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  color: var(--gold);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.settings-default-reset {
+  font-size: 12px;
+}
+.settings-default-summary {
+  color: var(--gold);
+  font-weight: 600;
+}
+.settings-toggle {
+  margin-top: 12px;
+}
+.settings-toggle small {
+  display: block;
+}
 /* Three style cards (safe / hard / custom) share one row even on
    narrow screens; the settings grid keeps its two columns. */
 .preset-cards {
@@ -670,10 +703,50 @@
   margin: 0;
 }
 .chart-controls button[aria-pressed="true"] {
-  background: #254f61;
+  background: var(--steel);
   border-color: var(--mint);
-  color: #e5fff6;
+  color: var(--text);
   box-shadow: inset 0 -3px var(--mint);
+}
+.chart-period-segments {
+  display: inline-flex;
+  max-width: 100%;
+  margin: 12px 0;
+  border: 1px solid var(--steel);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.chart-period-segments button {
+  min-height: 36px;
+  margin: 0;
+  padding: 5px 12px;
+  border: 0;
+  border-right: 1px solid var(--steel);
+  border-radius: 0;
+  font-size: 12px;
+}
+.chart-period-segments button:last-child {
+  border-right: 0;
+}
+.chart-period-segments button[aria-pressed="true"] {
+  background: var(--steel);
+  color: var(--text);
+  box-shadow: inset 0 -3px var(--mint);
+}
+.chart-status-line {
+  font-variant-numeric: tabular-nums;
+}
+.chart-history-button,
+.chart-latest-button {
+  min-height: 36px;
+  margin: 0;
+  padding: 4px 10px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--mint);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .chart-warning {
   color: var(--gold);
@@ -727,6 +800,19 @@
   min-height: 44px;
   accent-color: var(--mint);
 }
+.candle-detail h4 {
+  font-size: 16px;
+}
+.candle-detail .candle-note {
+  font-size: 12px;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+.candle-detail .candle-source-part {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+}
 .candle-detail dl {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -744,8 +830,19 @@
   .price-chart .chart-controls button {
     flex: 1 1 auto;
   }
+  .price-chart .chart-navigation button:not(.chart-latest-button) {
+    display: none;
+  }
+  .price-chart .chart-navigation:not(:has(.chart-latest-button)) {
+    display: none;
+  }
   .candle-detail {
     padding: 12px;
+  }
+}
+@media (hover: none), (pointer: coarse) {
+  .price-chart > .chart-operation-help {
+    display: none;
   }
 }
 .price-chart .linked-indicator {
@@ -753,4 +850,127 @@
   border: 0;
   background: transparent;
   margin: 20px 0;
+}
+/* Orders stay one compact table row at every width. The disclosure keeps
+   all raw fields available; narrow screens can scroll the table. */
+.order-history-scroll {
+  overflow-x: auto;
+}
+.order-history-table {
+  display: table;
+  width: 100%;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.order-history-table thead {
+  position: static;
+  display: table-header-group;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+}
+.order-history-table tbody {
+  white-space: nowrap;
+  display: table-row-group;
+}
+.order-history-table tbody tr {
+  display: table-row;
+}
+.order-history-table td {
+  display: table-cell;
+  padding: 8px;
+  vertical-align: top;
+  overflow-wrap: normal;
+}
+.order-history-table td::before {
+  content: none;
+}
+.order-history-table td p {
+  display: inline;
+  margin: 0;
+}
+.order-history-table td p + p::before {
+  content: " ／ ";
+}
+.order-history-table details {
+  display: inline-block;
+  margin-left: 8px;
+  vertical-align: top;
+}
+.order-history-table pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: min(70vw, 600px);
+}
+
+.order-history-table summary {
+  white-space: nowrap;
+}
+/* History uses the dashboard scale; reasons lead and dates stay secondary. */
+.history-tab {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.history-tab > section {
+  padding: 12px;
+}
+.stop-history {
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.history-tab h3 {
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+.stop-history p {
+  margin: 8px 0;
+}
+.stop-history strong {
+  display: block;
+  color: var(--text);
+  font-weight: 600;
+}
+.stop-history-last > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dim);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.stop-history-released {
+  color: var(--mint);
+  border: 1px solid var(--pine);
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+.stop-history-period {
+  color: var(--dim);
+  font-size: 12px;
+}
+.stop-history-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.stop-history-list li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.stop-history-list li + li {
+  border-top: 1px solid var(--line);
+  margin-top: 10px;
+  padding-top: 10px;
+}
+.stop-history time {
+  display: block;
+  color: var(--dim);
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+.stop-history [role="alert"] {
+  color: var(--pink);
 }

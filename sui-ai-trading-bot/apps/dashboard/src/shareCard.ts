@@ -2,10 +2,10 @@
  * The forecast share card: a 1200×675 image for posting (X and
  * friends), rendered from the LIVE forecast — the last 48 real
  * candles, the current cone in its direction colour, the selected
- * character, and the recorded forecast score from this device.
+ * character, and the recorded forecast score from the worker.
  * The honesty notes travel with the card: the forecast is marked
  * 模式 (a schematic EMA+ATR projection) and the score is labelled
- * as this device's own record.
+ * as the worker's record (including migrated records).
  *
  * The SVG builder is pure (string in, string out) so it is
  * unit-testable; only createShareCardPng touches the DOM, turning
@@ -122,17 +122,8 @@ export function buildShareCardSvg(
   const loPts = steps
     .map((p, i) => `${n1(x(hist.length + i))},${n1(y(p.lower))}`)
     .join(" ");
-  const midPts = [
-    `${n1(x(hist.length - 1))},${n1(y(hist[hist.length - 1].close))}`,
-    ...steps.map(
-      (p, i) => `${n1(x(hist.length + i))},${n1(y(p.mid))}`,
-    ),
-  ].join(" ");
   out.push(
     `<polygon points="${upPts} ${loPts.split(" ").reverse().join(" ")}" fill="${palette.fill}"/>`,
-    `<polyline points="${upPts}" fill="none" stroke="${palette.stroke}" stroke-width="1.5" opacity="0.75"/>`,
-    `<polyline points="${loPts}" fill="none" stroke="${palette.stroke}" stroke-width="1.5" opacity="0.75"/>`,
-    `<polyline points="${midPts}" fill="none" stroke="${palette.stroke}" stroke-width="3" stroke-dasharray="7 6"/>`,
     `<line x1="${originX}" y1="${y0}" x2="${originX}" y2="${y1}" stroke="#64b5ff" stroke-width="1.5"/>`,
   );
   const drift = forecast.driftPct * 100;
@@ -153,7 +144,7 @@ export function buildShareCardSvg(
         : "2時間は 横ばい";
   out.push(
     `<text x="856" y="440" font-family="${SANS}" font-size="31" font-weight="bold" fill="${palette.stroke}">${directionLine}</text>`,
-    `<text x="856" y="482" font-family="${SANS}" font-size="17" fill="${DIM}">予測の成績（この端末の記録）</text>`,
+    `<text x="856" y="482" font-family="${SANS}" font-size="17" fill="${DIM}">予測の成績（Botの記録・移行分を含む）</text>`,
   );
   if (score.scoredRecords >= MIN_SCORED_RECORDS && score.coveragePct != null) {
     out.push(

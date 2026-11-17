@@ -45,7 +45,7 @@ export class DashboardService {
   private readRecords() {
     return {
       trades: this.db.history<Fill>("paper_trades", 200),
-      orders: this.db.history("paper_orders"),
+      orders: this.db.orderHistory(),
       riskEvents: this.db.history("risk_events"),
     };
   }

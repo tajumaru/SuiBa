@@ -21,7 +21,9 @@ def healthy():
     status = {'run': {'id': 'a'*32, 'status': 'in_progress', 'started': 1000000, 'stopped': None,
                      'sha': 'e'*40, 'stage': 'monitoring', 'admitted': True},
               'controller_alive': True, 'requires_review': False,
-              'worker': {'running': True, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True, 'paper': True}}
+              'shadow': {'total': 4, 'aiOnlyBuy': 1, 'errors': 1, 'lastDecisionAt': 1999000},
+              'worker': {'running': True, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True, 'paper': True,
+                         'hasPosition': False, 'networkPause': None, 'networkStopReason': None}}
     evidence = {'service_active': True, 'cutoffs_quiet': True,
                 'container': {'running': True, 'oom': False, 'restarts': 0, 'restart': 'no', 'health': 'healthy', 'exit': 0},
                 'progress': {'at': 1999, 'status': 'monitoring', 'pair': 'SUI_USDC', 'market_last_success': 1999000},
@@ -34,11 +36,62 @@ class WatchdogTests(unittest.TestCase):
     def test_healthy_and_intentionally_stopped_are_normal(self):
         s, e = healthy()
         self.assertEqual(w.assess(s, e, 2000), ('ok', [], 'a'*32))
+
+    def test_network_pause_is_visible_and_turns_attention_at_one_hour(self):
+        s, e = healthy()
+        now = 10000
+        s['worker'].update(running=False, networkPause={
+            'state': 'RECOVERING', 'reasons': {'DeepBook Indexer/UPSTREAM_TIMEOUT': 1},
+            'startedAt': now*1000-3599000, 'durationMs': 3599000, 'autoRecoveryCount': 2})
+        e['progress']['market_last_success'] = 1
+        e['progress']['at'] = now
+        self.assertEqual(w.assess(s, e, now), ('ok', [], 'a'*32))
+        s['worker']['networkPause'].update(startedAt=now*1000-3600000, durationMs=3600000)
+        verdict, reasons, _ = w.assess(s, e, now)
+        self.assertEqual(verdict, 'attention')
+        self.assertIn('NETWORK_PAUSE_OVER_ONE_HOUR', reasons)
+
+    def test_flapping_hard_stop_is_named(self):
+        s, e = healthy()
+        s['worker'].update(running=False, networkStopReason='PAPER_RECOVERY_FLAPPING')
+        reasons = w.assess(s, e, 2000)[1]
+        self.assertIn('NETWORK_RECOVERY_FLAPPING', reasons)
+        self.assertIn('TRADING_STOPPED', reasons)
         s['run'].update(status='completed', stage='stopped')
         s.update(controller_alive=False, worker=None)
         e['container'].update(running=False, health=None)
         e.update(lifecycle='clean', latch=True)
         self.assertEqual(w.assess(s, e, 2000), ('ok', [], 'a'*32))
+
+    def test_shadow_stall_requires_active_flat_enabled_unpaused_worker(self):
+        for change in ('fresh', 'position', 'disabled', 'pause', 'stopped'):
+            with self.subTest(change=change):
+                s, e = healthy(); now = 30000
+                s['shadow']['lastDecisionAt'] = (now-w.SHADOW_STALL_MAX_AGE)*1000
+                e['progress'].update(at=now, market_last_success=now*1000)
+                if change == 'fresh': s['shadow']['lastDecisionAt'] += 1000
+                if change == 'position': s['worker']['hasPosition'] = True
+                if change == 'disabled': s['shadow'] = None
+                if change == 'pause':
+                    s['worker'].update(running=False, networkPause={
+                        'state': 'RECOVERING', 'reasons': {'DeepBook Indexer/UPSTREAM_TIMEOUT': 1},
+                        'startedAt': now*1000-1000, 'durationMs': 1000, 'autoRecoveryCount': 0})
+                if change == 'stopped':
+                    s['run'].update(status='completed', stage='stopped'); s.update(controller_alive=False, worker=None)
+                    e['container'].update(running=False, health=None); e.update(lifecycle='clean', latch=True)
+                self.assertNotIn('SHADOW_DECISION_STALE', w.assess(s, e, now)[1])
+        s, e = healthy(); now = 30000
+        s['shadow']['lastDecisionAt'] = (now-w.SHADOW_STALL_MAX_AGE)*1000
+        e['progress'].update(at=now, market_last_success=now*1000)
+        self.assertIn('SHADOW_DECISION_STALE', w.assess(s, e, now)[1])
+        s['shadow']['lastDecisionAt'] = None; s['run']['started'] = (now-w.SHADOW_STALL_MAX_AGE)*1000
+        self.assertIn('SHADOW_DECISION_STALE', w.assess(s, e, now)[1])
+
+    def test_shadow_error_rate_requires_three_errors_and_at_least_half(self):
+        for total, errors, expected in ((6, 3, True), (5, 3, True), (7, 3, False), (4, 2, False)):
+            with self.subTest(total=total, errors=errors):
+                s, e = healthy(); s['shadow'].update(total=total, errors=errors, aiOnlyBuy=0)
+                self.assertEqual('SHADOW_ERROR_RATE_HIGH' in w.assess(s, e, 2000)[1], expected)
 
     def test_optional_previous_verdict_never_affects_current_checker_decision(self):
         status, evidence = healthy()
@@ -51,7 +104,7 @@ class WatchdogTests(unittest.TestCase):
         host = SimpleNamespace(status=lambda: {'run': None, 'requires_review': False},
                                collect=lambda *args: self.fail('host reads before first run'))
         result = w.check(host, 2000)
-        self.assertEqual(result, {'at': 2000, 'verdict': 'not_started', 'reasons': [], 'run_id': None})
+        self.assertEqual(result, {'at': 2000, 'verdict': 'not_started', 'reasons': [], 'run_id': None, 'shadow': None})
         for value, expected in ((result, ''), ({**result, 'verdict': 'ok'}, 'SUIBA_WATCHDOG_OK\n')):
             out = io.StringIO(); written = []
             with patch.object(w.os, 'geteuid', return_value=0), patch.object(w.sys, 'argv', ['watchdog']), \
@@ -132,7 +185,17 @@ class WatchdogTests(unittest.TestCase):
             host = SimpleNamespace(status=lambda: status, collect=lambda *args: {})
             result = w.check(host, 2000)
             self.assertEqual(result['reasons'], ['STATUS_INVALID'])
+            self.assertEqual(set(result['detail']), {'check', 'expected', 'actual'})
             self.assertNotIn('SECRET_FIXTURE', json.dumps(result))
+
+    def test_invalid_status_detail_contains_only_check_and_shape_kinds(self):
+        status, _ = healthy(); status['requires_review'] = 'SECRET_FIXTURE'
+        result = w.check(SimpleNamespace(status=lambda: status, collect=lambda *args: {}), 2000)
+        self.assertEqual(result['detail'], {
+            'check': 'requires_review', 'expected': 'boolean', 'actual': 'string'})
+        status, evidence = healthy()
+        self.assertNotIn('detail', w.check(SimpleNamespace(
+            status=lambda: status, collect=lambda *args: evidence), 2000))
 
     def test_no_prior_result_is_read_and_repeated_checks_are_independent(self):
         s, e = healthy()
@@ -211,6 +274,105 @@ class WatchdogTests(unittest.TestCase):
             link = root/'link'; link.symlink_to(good)
             with self.assertRaises(OSError): w.read_json(link, owner=os.geteuid())
             with self.assertRaises(ValueError): w.read_json(good, owner=os.geteuid(), maximum=2)
+
+
+class JournalVerificationTests(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location('verify_watchdog', Path(__file__).with_name('verify_watchdog.py'))
+        self.verify = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.verify)
+        self.expected = 'SUIBA_WATCHDOG_ATTENTION WORKER_UNREACHABLE'
+        self.clock = 0.0
+        self.delays = []
+
+    def sleep(self, seconds):
+        self.delays.append(seconds)
+        self.clock += seconds
+
+    def polling(self):
+        stack = contextlib.ExitStack()
+        stack.enter_context(patch.object(self.verify.time, 'monotonic', side_effect=lambda: self.clock))
+        stack.enter_context(patch.object(self.verify.time, 'sleep', side_effect=self.sleep))
+        return stack
+
+    def test_immediately_visible_line_does_not_sleep_or_dump(self):
+        with self.polling(), patch.object(self.verify.subprocess, 'check_output', return_value=self.expected.encode()) as command, \
+             patch.object(self.verify, 'dump_journal_timeout') as dump:
+            self.verify.wait_journal('fixture', Path('status.json'), self.expected)
+        self.assertEqual(self.delays, [])
+        command.assert_called_once_with(
+            ['journalctl', '-u', 'fixture.service', '--no-pager', '-o', 'cat'],
+            stderr=subprocess.STDOUT, timeout=10)
+        dump.assert_not_called()
+
+    def test_waits_for_delayed_exact_expected_line(self):
+        with self.polling(), patch.object(self.verify.subprocess, 'check_output', side_effect=[
+                b'', b'SUIBA_WATCHDOG_ATTENTION STATUS_UNAVAILABLE', self.expected.encode()]), \
+             patch.object(self.verify, 'dump_journal_timeout') as dump:
+            self.verify.wait_journal('fixture', Path('status.json'), self.expected)
+        self.assertEqual(self.delays, [.2, .2])
+        dump.assert_not_called()
+
+    def test_transient_journal_error_can_recover(self):
+        with self.polling(), patch.object(self.verify.subprocess, 'check_output', side_effect=[
+                subprocess.CalledProcessError(1, 'journalctl'), self.expected.encode()]):
+            self.verify.wait_journal('fixture', Path('status.json'), self.expected)
+        self.assertEqual(self.delays, [.2])
+
+    def test_missing_line_times_out_at_30_seconds_and_dumps(self):
+        record = Path('status.json')
+        with self.polling(), patch.object(self.verify.subprocess, 'check_output', return_value=b'') as command, \
+             patch.object(self.verify, 'dump_journal_timeout') as dump:
+            with self.assertRaisesRegex(AssertionError, 'WATCHDOG_FIXTURE_JOURNAL_DID_NOT_REPORT'):
+                self.verify.wait_journal('fixture', record, self.expected)
+        self.assertAlmostEqual(self.clock, 30)
+        self.assertTrue(all(0 < delay <= .2 for delay in self.delays))
+        self.assertLess(command.call_args.kwargs['timeout'], .21)
+        dump.assert_called_once_with('fixture', record, self.expected, None)
+
+    def test_hung_journal_reads_use_only_the_remaining_budget(self):
+        timeouts = []
+        def hung(command, *, stderr, timeout):
+            timeouts.append(timeout)
+            self.clock += timeout
+            raise subprocess.TimeoutExpired(command, timeout)
+        with self.polling(), patch.object(self.verify.subprocess, 'check_output', side_effect=hung), \
+             patch.object(self.verify, 'dump_journal_timeout') as dump:
+            with self.assertRaises(AssertionError):
+                self.verify.wait_journal('fixture', Path('status.json'), self.expected)
+        self.assertAlmostEqual(self.clock, 30)
+        self.assertEqual(len(timeouts), 3)
+        self.assertLess(timeouts[-1], 10)
+        self.assertIsInstance(dump.call_args.args[-1], subprocess.TimeoutExpired)
+
+    def test_timeout_diagnostics_include_record_state_and_precise_journal(self):
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as folder:
+            record = Path(folder)/'status.json'
+            record.write_text('{"verdict":"attention","reasons":["WORKER_UNREACHABLE"]}')
+            with patch.object(self.verify.subprocess, 'check_output', side_effect=[
+                    b'ActiveState=inactive\nSubState=dead\nResult=success\nExecMainStatus=0\n',
+                    b'2026-11-13T06:40:13.123456+0900 fixture SUIBA_WATCHDOG_OK\n']) as command, \
+                 contextlib.redirect_stdout(output):
+                self.verify.dump_journal_timeout('fixture', record, self.expected, None)
+        text = output.getvalue()
+        for expected in ('WATCHDOG_JOURNAL_TIMEOUT', 'mtime_ns=', '"verdict":"attention"',
+                         'SERVICE_STATE', 'ActiveState=inactive', 'JOURNAL_RECENT', '.123456+0900'):
+            self.assertIn(expected, text)
+        self.assertIn('short-iso-precise', command.call_args.args[0])
+        self.assertTrue(all(call.kwargs['timeout'] == 5 for call in command.call_args_list))
+
+    def test_unavailable_diagnostics_do_not_hide_remaining_evidence(self):
+        output = io.StringIO()
+        with patch.object(Path, 'stat', side_effect=FileNotFoundError('missing')), \
+             patch.object(self.verify.subprocess, 'check_output', side_effect=[
+                 subprocess.TimeoutExpired('systemctl', 5), b'precise journal evidence']), \
+             contextlib.redirect_stdout(output):
+            self.verify.dump_journal_timeout('fixture', Path('missing'), self.expected, OSError('journal unavailable'))
+        text = output.getvalue()
+        for expected in ('RESULT_FILE_UNAVAILABLE', 'JOURNAL_LAST_ERROR',
+                         'SERVICE_STATE_UNAVAILABLE', 'precise journal evidence'):
+            self.assertIn(expected, text)
 
 
 if __name__ == '__main__':

@@ -85,7 +85,7 @@ export function useAgentChat({
   // freshest snapshot, not from the moment the user hit send.
   const chatCtxRef = useRef<Pick<
     AgentChatContext,
-    "dec" | "score" | "running" | "stoppedKind" | "pairLabel" | "chain"
+    "dec" | "score" | "running" | "stoppedKind" | "pairLabel" | "chain" | "memwal" | "liquidation"
   > | null>(null);
   const [chatReplyText, setChatReplyText] = useState("");
   const submitChat = (raw: string) => {
@@ -132,6 +132,8 @@ export function useAgentChat({
         stoppedKind: base?.stoppedKind ?? null,
         pairLabel: base?.pairLabel ?? pairLabel,
         chain: base?.chain ?? null,
+        memwal: base?.memwal,
+        liquidation: base?.liquidation,
         linePrice: prev.priceLine?.price ?? null,
         tradeCount: prev.entries.filter((e) => e.kind === "trade").length,
         recentMovePct:

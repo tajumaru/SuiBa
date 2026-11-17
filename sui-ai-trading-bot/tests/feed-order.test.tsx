@@ -2,12 +2,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readNarrationFeed } from "./helpers/source";
 import { AgentNarrationFeed } from "../apps/dashboard/src/AgentNarration.tsx";
+import { AgentFeedEntryRow } from "../apps/dashboard/src/AgentFeedEntryRow.tsx";
 import type { OperationsSnapshot } from "../apps/dashboard/src/operationsTypes.ts";
 import {
   emptyNarrationState,
   type NarrationEntry,
 } from "../apps/dashboard/src/agentNarration.ts";
 import { persistNarration } from "../apps/dashboard/src/narrationStorage.ts";
+import {
+  saveHighlights,
+  type Highlight,
+} from "../apps/dashboard/src/highlightStore.ts";
 
 const stopped = {
   status: "STOPPED",
@@ -31,6 +36,113 @@ afterEach(() => {
 });
 
 describe("narration feed: message order", () => {
+  it("renders the Walrus background only for memory entries", () => {
+    const memory: NarrationEntry = {
+      id: "narration:1",
+      at: 1_700_000_000_000,
+      kind: "memory",
+      text: "記憶の実況です",
+    };
+    const ordinary: NarrationEntry = {
+      ...memory,
+      id: "narration:2",
+      kind: "cycle",
+      text: "通常の実況です",
+    };
+
+    const memoryHtml = renderToStaticMarkup(
+      <AgentFeedEntryRow entry={memory} />,
+    );
+    const ordinaryHtml = renderToStaticMarkup(
+      <AgentFeedEntryRow entry={ordinary} />,
+    );
+    expect(memoryHtml).toContain('class="agent-feed-memory-bg"');
+    expect(memoryHtml).toContain('src="/walrus-memory-bg.png"');
+    expect(memoryHtml).toContain('alt=""');
+    expect(memoryHtml).toContain('aria-hidden="true"');
+    expect(ordinaryHtml).not.toContain("agent-feed-memory-bg");
+  });
+
+  it("seals only eligible memory entries", () => {
+    const memory: NarrationEntry = {
+      id: "narration:10",
+      at: 1_700_000_000_000,
+      kind: "memory",
+      text: "記憶の実況です",
+    };
+    const sealed = renderToStaticMarkup(
+      <AgentFeedEntryRow
+        entry={memory}
+        memorySealed
+        onOpenMemorySeal={() => {}}
+      />,
+    );
+    const opened = renderToStaticMarkup(
+      <AgentFeedEntryRow
+        entry={memory}
+        memorySealed={false}
+        onOpenMemorySeal={() => {}}
+      />,
+    );
+    const ordinary = renderToStaticMarkup(
+      <AgentFeedEntryRow
+        entry={{ ...memory, kind: "cycle" }}
+        memorySealed
+        onOpenMemorySeal={() => {}}
+      />,
+    );
+    expect(sealed).toContain(`data-memory-seal="${memory.id}"`);
+    expect(opened).not.toContain("data-memory-seal");
+    expect(ordinary).not.toContain("data-memory-seal");
+  });
+
+  it("does not seal memory entries from before feature enablement", () => {
+    const storage = memoryStorage();
+    const entry: NarrationEntry = {
+      id: "narration:10",
+      at: 1_700_000_000_000,
+      kind: "memory",
+      text: "以前からある記憶です",
+    };
+    persistNarration(
+      {
+        ...emptyNarrationState(),
+        entries: [entry],
+        memorySealEnabledAt: entry.at + 1,
+      },
+      storage,
+    );
+    vi.stubGlobal("window", { localStorage: storage });
+    const html = renderToStaticMarkup(
+      <AgentNarrationFeed data={stopped} stale={false} />,
+    );
+    expect(html).not.toContain("data-memory-seal");
+  });
+
+  it("keeps an opened eligible memory entry unsealed", () => {
+    const storage = memoryStorage();
+    const entry: NarrationEntry = {
+      id: "narration:11",
+      at: 1_700_000_000_000,
+      kind: "memory",
+      text: "開封済みの記憶です",
+    };
+    persistNarration(
+      {
+        ...emptyNarrationState(),
+        entries: [entry],
+        memorySealEnabledAt: entry.at,
+        openedMemorySealIds: [entry.id],
+      },
+      storage,
+    );
+    vi.stubGlobal("window", { localStorage: storage });
+    const html = renderToStaticMarkup(
+      <AgentNarrationFeed data={stopped} stale={false} />,
+    );
+    expect(html).not.toContain("data-memory-seal");
+  });
+
   it("renders entries oldest first, newest at the bottom", () => {
     // Seed the device-local narration store with a two-entry
     // exchange; the feed's initial state restores from it.
@@ -60,6 +172,65 @@ describe("narration feed: message order", () => {
     const newerAt = html.indexOf("新しい返信です");
     expect(olderAt).toBeGreaterThanOrEqual(0);
     expect(newerAt).toBeGreaterThan(olderAt);
+  });
+
+  it("offers replay only on the entry matching a saved highlight", () => {
+    const highlighted: NarrationEntry = {
+      id: "narration:20",
+      at: 1_700_000_000_000,
+      kind: "watchHit",
+      text: "保存済みの的中です",
+    };
+    const ordinary: NarrationEntry = {
+      id: "narration:21",
+      at: 1_700_000_060_000,
+      kind: "cycle",
+      text: "通常の実況です",
+    };
+    const highlight: Highlight = {
+      id: highlighted.id,
+      at: highlighted.at,
+      kind: highlighted.kind,
+      title: highlighted.text,
+      entries: [highlighted],
+      prices: [1, 1.01],
+    };
+    const storage = memoryStorage();
+    persistNarration(
+      { ...emptyNarrationState(), entries: [highlighted, ordinary] },
+      storage,
+    );
+    saveHighlights([highlight], "SUI", storage);
+    vi.stubGlobal("window", { localStorage: storage });
+
+    const html = renderToStaticMarkup(
+      <AgentNarrationFeed data={stopped} stale={false} />,
+    );
+    expect(html).not.toContain("highlight-bar");
+    expect(html.match(/>再演<\/button>/g)).toHaveLength(1);
+    expect(html.indexOf("再演")).toBeGreaterThan(
+      html.indexOf(highlighted.text),
+    );
+    expect(html.indexOf("再演")).toBeLessThan(html.indexOf(ordinary.text));
+  });
+
+  it("wires the replay text button to its entry action", () => {
+    const onReplay = vi.fn();
+    const row = AgentFeedEntryRow({
+      entry: {
+        id: "narration:30",
+        at: 1_700_000_000_000,
+        kind: "watchHit",
+        text: "再演する実況です",
+      },
+      onReplay,
+    });
+    const button = (
+      row.props.children as Array<{ props?: Record<string, unknown> }>
+    ).find((child) => child?.props?.className === "agent-feed-replay-button");
+    expect(button?.props?.children).toBe("再演");
+    (button?.props?.onClick as () => void)();
+    expect(onReplay).toHaveBeenCalledOnce();
   });
 
   it("wires the jump pill and the stick management into the feed", () => {

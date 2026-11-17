@@ -1514,7 +1514,7 @@ class ProductionTests(unittest.TestCase):
             self.calls.append((method, path, value))
             if path == '/api/deployment':
                 return {'mode': 'PAPER', 'running': self.trading, 'maintenance': False,
-                        'databaseHealthy': True, 'ledgerOk': True, 'startReady': True,
+                        'databaseHealthy': True, 'ledgerOk': True, 'hasPosition': False, 'startReady': True,
                         'paperCheck': {'enabled': True, 'armed': self.armed, 'expired': False, 'expires': None}}
             if path == '/api/pairs': return {'selected': 'SUI_USDC'}
             if path == '/api/dashboard/summary':
@@ -1667,6 +1667,8 @@ class ProductionTests(unittest.TestCase):
             original = ctl.api
             def api(*args):
                 result = original(*args); result['secret'] = 'DO_NOT_RETURN_FIXTURE'
+                result['shadow'] = {'total': 4, 'aiOnlyBuy': 1, 'errors': 1,
+                                    'lastDecisionAt': int(time.time()*1000)}
                 return result
             ctl.api = api
             before = {p: p.read_bytes() for p in Path(root).rglob('*') if p.is_file()}
@@ -1676,6 +1678,7 @@ class ProductionTests(unittest.TestCase):
             self.assertNotIn('DO_NOT_RETURN_FIXTURE', json.dumps(status))
             self.assertTrue(status['controller_alive'])
             self.assertEqual(status['worker']['running'], False)
+            self.assertEqual(status['shadow']['aiOnlyBuy'], 1)
 
     def test_reachable_prod_status_preserves_the_exact_existing_response(self):
         with tempfile.TemporaryDirectory() as root:
@@ -1686,7 +1689,9 @@ class ProductionTests(unittest.TestCase):
             self.assertEqual(ctl.prod_status(), {
                 'run': {key: record.get(key) for key in ('id', 'status', 'started', 'stopped', 'sha', 'stage', 'admitted')},
                 'controller_alive': True,
-                'worker': {'running': False, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True, 'paper': True},
+                'worker': {'running': False, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True, 'paper': True,
+                           'hasPosition': False, 'networkPause': None, 'networkStopReason': None},
+                'shadow': None,
                 'requires_review': False,
                 'watchdog': {'record': None, 'code': 'WATCHDOG_RECORD_MISSING'},
             })
@@ -1766,6 +1771,273 @@ class ProductionTests(unittest.TestCase):
             self.assertEqual(summary['code'], 'PermissionError')
             self.assertEqual(summary['stage'], 'preflight')
 
+    def worker_db(self, root, runtime):
+        import sqlite3
+        path = Path(root)/'worker-bot.sqlite'
+        with contextlib.closing(sqlite3.connect(str(path))) as db:
+            with db:
+                db.execute("CREATE TABLE bot_runtime_state(key TEXT PRIMARY KEY, json TEXT NOT NULL)")
+                db.execute("INSERT INTO bot_runtime_state(key, json) VALUES('runtime', ?)",
+                           (json.dumps(runtime),))
+        return path
+
+    def monitoring_record(self, ctl):
+        record = self.admit(ctl); record['admitted'] = True
+        record['stage'] = 'monitoring'
+        FakeBroker.atomic(ctl.record, record)
+        self.running = self.trading = True
+        return record
+
+    def test_midrun_closeout_persists_the_workers_stop_reason(self):
+        # A session that reached monitoring and died there: the
+        # run() handler recorded only the stage. Close-out fills
+        # the worker's own latched stop reason into the failure
+        # record, and the read-only status surfaces it — the
+        # diagnosis the owner otherwise needs a host terminal for.
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            folder = ctl.folder(record)
+            FakeBroker.atomic(folder/'failure.json', {'id': record['id'], 'stage': 'monitoring'})
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': False,
+                'error': 'UPSTREAM_HTTP_500', 'lastCandle': None})
+            self.assertTrue(ctl.stop(expected=record['id'], source='failure'))
+            self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+            self.assertEqual(json.loads((folder/'failure.json').read_bytes()),
+                             {'id': record['id'], 'stage': 'monitoring',
+                              'code': 'UPSTREAM_HTTP_500'})
+            self.assertEqual(ctl.prod_status()['failure'],
+                             {'status': 'failed_requires_review', 'stage': 'monitoring',
+                              'code': 'UPSTREAM_HTTP_500', 'http_status': None,
+                              'backup': 'unconfirmed'})
+
+    def test_midrun_closeout_creates_the_failure_record_when_none_exists(self):
+        # The supervisor died with the session: no run() handler
+        # ever wrote failure.json. The post-stop close-out creates
+        # it with the worker's latched reason, so the run carries
+        # diagnosable evidence instead of only REVIEW_REQUIRED.
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            folder = ctl.folder(record)
+            self.assertFalse((folder/'failure.json').exists())
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': False,
+                'error': 'PAPER_RECOVERY_EXHAUSTED', 'lastCandle': None})
+            self.assertTrue(ctl.stop(expected=record['id'], source='post-stop'))
+            self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+            self.assertEqual(json.loads((folder/'failure.json').read_bytes()),
+                             {'id': record['id'], 'stage': 'monitoring',
+                              'code': 'PAPER_RECOVERY_EXHAUSTED'})
+            self.assertEqual(ctl.prod_status()['failure']['code'], 'PAPER_RECOVERY_EXHAUSTED')
+
+    def test_clean_prod_stop_close_writes_no_failure_record(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': False, 'error': None, 'lastCandle': None})
+            self.assertTrue(ctl.stop(expected=record['id'], source='prod-stop'))
+            self.assertEqual(ctl.current()['status'], 'completed')
+            self.assertFalse((ctl.folder(record)/'failure.json').exists())
+            self.assertNotIn('failure', ctl.prod_status())
+
+    def test_note_run_failure_falls_back_to_the_market_reason(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            record['status'] = 'failed_requires_review'
+            FakeBroker.atomic(ctl.record, record)
+            folder = ctl.folder(record)
+            market = {'source': 'DeepBook', 'lastSuccessAt': 1, 'reason': 'MARKET_DATA_STALLED'}
+            FakeBroker.atomic(folder/'failure.json',
+                              {'id': record['id'], 'stage': 'monitoring', 'market': market})
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': False, 'error': None, 'lastCandle': None})
+            ctl.note_run_failure(record)
+            self.assertEqual(json.loads((folder/'failure.json').read_bytes()),
+                             {'id': record['id'], 'stage': 'monitoring', 'market': market,
+                              'code': 'MARKET_DATA_STALLED'})
+
+    def test_note_run_failure_names_an_emergency_stop(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': True, 'error': None, 'lastCandle': None})
+            ctl.note_run_failure(record)
+            failure = json.loads((ctl.folder(record)/'failure.json').read_bytes())
+            self.assertEqual(failure['code'], 'EMERGENCY_STOP')
+
+    def test_note_run_failure_sanitizes_an_unknown_worker_error(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': False,
+                'error': 'a free-form failure the worker should never persist',
+                'lastCandle': None})
+            ctl.note_run_failure(record)
+            failure = json.loads((ctl.folder(record)/'failure.json').read_bytes())
+            self.assertEqual(failure['code'], 'OTHER_RUNTIME_ERROR')
+
+    def test_note_run_failure_leaves_unreadable_evidence_untouched(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            path = ctl.folder(record)/'failure.json'
+            path.write_bytes(b'{corrupt')
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': False,
+                'error': 'UPSTREAM_HTTP_500', 'lastCandle': None})
+            ctl.note_run_failure(record)
+            self.assertEqual(path.read_bytes(), b'{corrupt')
+
+    def test_note_run_failure_preserves_an_existing_code(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            folder = ctl.folder(record)
+            FakeBroker.atomic(folder/'failure.json',
+                              {'id': record['id'], 'stage': 'monitoring',
+                               'code': 'CONSECUTIVE_API_ERRORS'})
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': False,
+                'error': 'UPSTREAM_HTTP_500', 'lastCandle': None})
+            ctl.note_run_failure(record)
+            failure = json.loads((folder/'failure.json').read_bytes())
+            self.assertEqual(failure['code'], 'CONSECUTIVE_API_ERRORS')
+
+    def test_note_run_failure_without_a_source_records_unknown(self):
+        # The worker DB is unreadable and nothing else knows a
+        # reason: the failure record and summary explicitly name UNKNOWN.
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            record['status'] = 'failed_requires_review'
+            FakeBroker.atomic(ctl.record, record)
+            ctl.sui_db_path = lambda: Path(root)/'absent.sqlite'
+            ctl.note_run_failure(record)
+            failure = json.loads((ctl.folder(record)/'failure.json').read_bytes())
+            self.assertEqual(failure['code'], 'UNKNOWN')
+            self.assertIsNone(failure['detail']['lastHealthyAt'])
+            self.assertEqual(ctl.prod_status()['failure'],
+                             {'status': 'failed_requires_review', 'stage': 'monitoring',
+                              'code': 'UNKNOWN', 'http_status': None, 'backup': 'unconfirmed'})
+
+    def test_host_stop_reason_branches_and_timestamp_boundaries(self):
+        import sqlite3
+        finished = '2026-11-14T00:00:00.000000000Z'
+        finished_ms = 1794614400000
+        cases = [
+            (0, False, 24, None, 'EXTERNAL_STOP'),
+            (0, False, 300, None, 'EXTERNAL_STOP'),
+            (0, False, 300.001, None, 'WORKER_EXITED_CLEAN'),
+            (0, False, -1, None, 'EXTERNAL_STOP'),
+            (0, False, None, None, 'UNKNOWN'),
+            (137, True, 24, None, 'WORKER_OOM'),
+            (42, False, 24, None, 'WORKER_EXITED'),
+            (0, False, 24, 'UPSTREAM_HTTP_500', 'UPSTREAM_HTTP_500'),
+        ]
+        for exit_code, oom, gap, error, expected in cases:
+            with self.subTest(expected=expected, gap=gap), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                record = self.monitoring_record(ctl)
+                record['status'] = 'failed_requires_review'
+                FakeBroker.atomic(ctl.record, record)
+                path = self.worker_db(root, {'error': error, 'emergency': False})
+                timing = {'lastAnalysisAt': finished_ms-gap*1000 if gap is not None else None,
+                          'lastFetchSuccessAt': finished_ms-600000, 'secret': 'SECRET_FIXTURE'}
+                if gap is None:
+                    timing['lastFetchSuccessAt'] = None
+                with contextlib.closing(sqlite3.connect(str(path))) as db:
+                    with db:
+                        db.execute("INSERT INTO bot_runtime_state VALUES('operation_state', ?)",
+                                   (json.dumps(timing),))
+                ctl.sui_db_path = lambda: path
+                ctl.inspect = lambda: {'State': {'Status': 'exited', 'ExitCode': exit_code,
+                                                'OOMKilled': oom, 'FinishedAt': finished,
+                                                'Env': ['SECRET_FIXTURE']}}
+                ctl.note_run_failure(record)
+                raw = (ctl.folder(record)/'failure.json').read_text()
+                failure = json.loads(raw)
+                self.assertEqual(failure['code'], expected)
+                self.assertEqual(ctl.prod_status()['failure']['code'], expected)
+                self.assertNotIn('SECRET_FIXTURE', raw)
+                if error is None:
+                    detail = failure['detail']
+                    self.assertEqual(detail['exitCode'], exit_code)
+                    self.assertEqual(detail['oomKilled'], oom)
+                    self.assertEqual(detail['containerFinishedAt'], finished)
+                    if gap is not None:
+                        self.assertAlmostEqual(detail['gapSeconds'], gap, places=5)
+                        self.assertEqual(detail['lastHealthyAt'], timing['lastAnalysisAt'])
+                else:
+                    self.assertNotIn('detail', failure)
+
+    def test_missing_container_is_unknown_and_fault_precedes_host_fallback(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.monitoring_record(ctl)
+            ctl.inspect = lambda: (_ for _ in ()).throw(RuntimeError('SECRET_FIXTURE'))
+            ctl.sui_db_path = lambda: Path(root)/'absent.sqlite'
+            ctl.note_run_failure(record)
+            path = ctl.folder(record)/'failure.json'
+            self.assertEqual(json.loads(path.read_text())['code'], 'UNKNOWN')
+            self.assertNotIn('SECRET_FIXTURE', path.read_text())
+            path.unlink()
+            FakeBroker.atomic(ctl.folder(record)/'fault-first.json',
+                              {'id': record['id'], 'error': 'STOP_FAILED'})
+            ctl.note_run_failure(record)
+            self.assertEqual(json.loads(path.read_text())['code'], 'STOP_FAILED')
+
+    def test_host_stop_reason_uses_the_latest_healthy_timestamp(self):
+        import sqlite3
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            path = self.worker_db(root, {'error': None, 'emergency': False})
+            with contextlib.closing(sqlite3.connect(str(path))) as db:
+                with db:
+                    db.execute("INSERT INTO bot_runtime_state VALUES('operation_state', ?)",
+                               (json.dumps({'lastAnalysisAt': 1794613800000,
+                                            'lastFetchSuccessAt': 1794614376000}),))
+            ctl.sui_db_path = lambda: path
+            ctl.inspect = lambda: {'State': {'Status': 'exited', 'ExitCode': 0,
+                'OOMKilled': False, 'FinishedAt': '2026-11-14T00:00:00Z'}}
+            code, detail = ctl.host_stop_reason()
+            self.assertEqual(code, 'EXTERNAL_STOP')
+            self.assertEqual(detail['lastHealthyAt'], 1794614376000)
+            self.assertEqual(detail['gapSeconds'], 24)
+
+    def test_note_run_failure_ignores_non_monitoring_stages(self):
+        # A start-stage failure keeps today's evidence exactly:
+        # the worker DB may still hold a predecessor's error, so
+        # it is never consulted before monitoring.
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.admit(ctl); record['admitted'] = True
+            record['stage'] = 'worker-readiness'
+            FakeBroker.atomic(ctl.record, record)
+            ctl.sui_db_path = lambda: self.worker_db(root, {
+                'running': False, 'emergency': False,
+                'error': 'UPSTREAM_HTTP_500', 'lastCandle': None})
+            ctl.note_run_failure(record)
+            self.assertFalse((ctl.folder(record)/'failure.json').exists())
+
+    def test_failure_summary_prefers_the_reset_refusal_over_a_recorded_code(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.admit(ctl); record['admitted'] = True
+            record['status'] = 'failed_requires_review'; record['stage'] = 'monitoring'
+            FakeBroker.atomic(ctl.record, record)
+            ctl.exited = lambda record: True
+            FakeBroker.atomic(ctl.folder(record)/'failure.json',
+                              {'id': record['id'], 'stage': 'monitoring',
+                               'reset_refusal': 'RESET_SCOPE_CHANGED',
+                               'code': 'UPSTREAM_HTTP_500'})
+            self.assertEqual(ctl.prod_status()['failure']['code'], 'RESET_SCOPE_CHANGED')
+
     def test_prod_status_answers_while_the_deployment_lock_is_held(self):
         # The status path never takes the deployment lock: while a
         # supervisor holds it — exactly when the owner needs the
@@ -1789,7 +2061,9 @@ class ProductionTests(unittest.TestCase):
             missing = {'record': None, 'code': 'WATCHDOG_RECORD_MISSING'}
             self.assertEqual(ctl.prod_status()['watchdog'], missing)
             c.WATCHDOG_RECORD.parent.mkdir()
-            value = {'at': int(time.time()), 'verdict': 'ok', 'reasons': [], 'run_id': 'a'*32}
+            value = {'at': int(time.time()), 'verdict': 'ok', 'reasons': [], 'run_id': 'a'*32,
+                     'shadow': {'total': 4, 'aiOnlyBuy': 1, 'errors': 1,
+                                'lastDecisionAt': int(time.time()*1000)}}
             c.WATCHDOG_RECORD.write_text(json.dumps(value))
             before = c.WATCHDOG_RECORD.read_bytes()
             self.assertEqual(ctl.prod_status()['watchdog'], {'record': value, 'code': None})
@@ -2140,6 +2414,51 @@ class ProductionTests(unittest.TestCase):
             self.assertTrue((ctl.folder(closed)/'failure.json').exists())
             # The wedge is gone: a fresh explicit start is admitted.
             self.assertEqual(ctl.prod_start(), {'status': 'accepted'})
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_closes_a_monitoring_failure_whose_record_the_closeout_created(self):
+        # The verify_prod explicit-stop sequence at unit level, for
+        # the one state this change adds: a monitoring-stage session
+        # is first finalized failed_requires_review by a stop that is
+        # not prod-stop (its own failure stop / the post-stop hook),
+        # and that close-out — not a run() handler — creates
+        # failure.json, carrying the worker's stop reason as its
+        # code. A later lawful prod_stop must close the record
+        # through the same admitted close-out as a handler-written
+        # record: the persisted code is evidence for the status,
+        # never a blocker. An unaccepted fault still refuses.
+        for faults, closes in (
+                ((), True),
+                (('LATCHED_FAILURE', 'CONTROLLER_EXIT_UNCONFIRMED'), True),
+                (('DB_OR_MAINTENANCE_UNCONFIRMED',), False)):
+            with self.subTest(faults=faults), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                record = self.monitoring_record(ctl)
+                ctl.sui_db_path = lambda: self.worker_db(root, {
+                    'running': False, 'emergency': False,
+                    'error': 'UPSTREAM_HTTP_500', 'lastCandle': None})
+                self.assertTrue(ctl.stop(expected=record['id'], source='failure'))
+                self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+                folder = ctl.folder(record)
+                self.assertEqual(json.loads((folder/'failure.json').read_bytes()),
+                                 {'id': record['id'], 'stage': 'monitoring',
+                                  'code': 'UPSTREAM_HTTP_500'})
+                for code in faults:
+                    ctl.fault(record, code)
+                self.running = False
+                self.with_started_at(ctl, self.started_at_during(record))
+                if closes:
+                    self.assertEqual(ctl.prod_stop(), {'status': 'completed'})
+                    self.assertEqual(ctl.current()['status'], 'completed')
+                    # The close-out's record of why the run failed
+                    # stays in the folder, code included.
+                    self.assertEqual(json.loads((folder/'failure.json').read_bytes()),
+                                     {'id': record['id'], 'stage': 'monitoring',
+                                      'code': 'UPSTREAM_HTTP_500'})
+                else:
+                    with self.assertRaises(Exception):
+                        ctl.prod_stop()
+                    self.assertEqual(ctl.current()['status'], 'failed_requires_review')
 
     @unittest.skipIf(os.name == 'nt', 'Linux flock')
     def test_prod_stop_refuses_an_admitted_failure_with_an_unclean_exit(self):

@@ -75,6 +75,21 @@ function statusText(ctx: AgentChatContext): string {
     lines.push(row("price", "確認中"));
   }
   lines.push(row("trades", `${ctx.tradeCount} 件（記録分）`));
+  if (ctx.memwal?.enabled) {
+    lines.push(row("memory", `待機 ${ctx.memwal.pending} 件`));
+    lines.push(
+      row(
+        "mem-ok",
+        ctx.memwal.lastSuccessAt
+          ? new Date(ctx.memwal.lastSuccessAt).toISOString()
+          : "まだ送信なし",
+      ),
+    );
+  }
+  if (ctx.liquidation) {
+    lines.push(row("liq-ref", `${ctx.liquidation.connected ? "接続中" : "欠落中"} · 外部参考`));
+    lines.push(row("liq-cover", `${ctx.liquidation.coveragePct.toFixed(1)}% / 24h · 欠落 ${ctx.liquidation.gaps} 区間`));
+  }
   if (ctx.recentMovePct != null) {
     const sign = ctx.recentMovePct >= 0 ? "+" : "";
     lines.push(row("move", `${sign}${ctx.recentMovePct.toFixed(2)}%（直近）`));

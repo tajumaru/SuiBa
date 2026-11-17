@@ -18,8 +18,13 @@ import { initialPortfolio, type Fill } from "../../paper-trading/src/index.ts";
 import type { CandidateAudit } from "../../shared/src/operations.ts";
 import type { AccountingCheck } from "../../paper-trading/src/reconciliation.ts";
 const eventTables = [
+  "forecast_records",
+  "forecast_answers",
+  "forecast_calibrations",
+  "forecast_imports",
   "technical_indicators",
   "strategy_decisions",
+  "shadow_decisions",
   "paper_orders",
   "paper_trades",
   "portfolio_snapshots",
@@ -35,6 +40,104 @@ const eventTables = [
   "sui_observations",
 ] as const;
 type EventTable = (typeof eventTables)[number];
+export type MemwalEpisodeKind = "shadow" | "daily_review" | "narration";
+export interface MemwalOutboxRow {
+  id: string;
+  kind: MemwalEpisodeKind;
+  text: string;
+  sourceId: string;
+  createdAt: number;
+  sentAt: number | null;
+  jobId: string | null;
+  attempts: number;
+}
+export const RETENTION_FULL_EVIDENCE_DAYS = 30;
+export const LIQUIDATION_RETENTION_DAYS = RETENTION_FULL_EVIDENCE_DAYS;
+export const RETENTION_CHUNK_ROWS = 16;
+export const NARRATION_RETENTION_DAYS = 30;
+export const NARRATION_RETENTION_ROWS = 50_000;
+export const NARRATION_RETENTION_CHUNK_ROWS = 200;
+const retentionVersion = 1;
+
+export interface NarrationEntry {
+  seq: number;
+  id: string;
+  pair: string;
+  sourceKey: string;
+  kind: string;
+  occurredAt: number;
+  createdAt: number;
+  json: unknown;
+}
+
+export interface NarrationState {
+  pair: string;
+  version: number;
+  updatedAt: number;
+  json: unknown;
+}
+
+type RetentionRow = { id: string; json: string };
+
+function compactDecision(value: Record<string, unknown>) {
+  const evidence =
+    value.evidence && typeof value.evidence === "object"
+      ? (value.evidence as Record<string, unknown>)
+      : null;
+  const inputs =
+    evidence?.inputs && typeof evidence.inputs === "object"
+      ? (evidence.inputs as Record<string, unknown>)
+      : null;
+  return {
+    _retention: retentionVersion,
+    action: value.action,
+    confidence: value.confidence,
+    stopLossPct: value.stopLossPct,
+    takeProfitPct: value.takeProfitPct,
+    timestamp: value.timestamp,
+    ...(value.sellPurpose === undefined
+      ? {}
+      : { sellPurpose: value.sellPurpose }),
+    ...(evidence === null
+      ? {}
+      : {
+          evidence: {
+            version: evidence.version,
+            evaluatedAt: evidence.evaluatedAt,
+            candleTimestamp: evidence.candleTimestamp,
+            previousCandleTimestamp: evidence.previousCandleTimestamp,
+            inputs: {
+              price: inputs?.price,
+              entryPrice: inputs?.entryPrice,
+            },
+            conditions: evidence.conditions,
+            selectedRule: evidence.selectedRule,
+          },
+        }),
+  };
+}
+
+function compactCycleAudit(value: Record<string, unknown>) {
+  const keys = [
+    "cycleId",
+    "phase",
+    "beganAt",
+    "endedAt",
+    "runningAtStart",
+    "runningAtEnd",
+    "outcome",
+    "action",
+    "error",
+    "candidateId",
+    "orderId",
+  ] as const;
+  return Object.fromEntries([
+    ["_retention", retentionVersion],
+    ...keys
+      .filter((key) => value[key] !== undefined)
+      .map((key) => [key, value[key]]),
+  ]);
+}
 /**
  * Timing metadata for one synchronous persistence operation. Emitted
  * only when BotDatabase.perfSink is installed (detailed performance
@@ -191,6 +294,52 @@ export class BotDatabase {
     );
     this.db.exec(
       `CREATE TABLE IF NOT EXISTS market_candles(timeframe INTEGER NOT NULL,timestamp INTEGER NOT NULL,source TEXT NOT NULL,json TEXT NOT NULL,PRIMARY KEY(timeframe,timestamp,source));CREATE TABLE IF NOT EXISTS bot_runtime_state(key TEXT PRIMARY KEY,json TEXT NOT NULL);`,
+    );
+    this.db.exec(
+      "CREATE TABLE IF NOT EXISTS shadow_daily_budget(day TEXT PRIMARY KEY, calls INTEGER NOT NULL, lastAt INTEGER NOT NULL);",
+    );
+    this.db.exec(
+      `CREATE TABLE IF NOT EXISTS memwal_outbox(
+        id TEXT PRIMARY KEY, kind TEXT NOT NULL, text TEXT NOT NULL,
+        source_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+        sent_at INTEGER, job_id TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(kind, source_id)
+      ); CREATE INDEX IF NOT EXISTS memwal_outbox_pending
+        ON memwal_outbox(sent_at, attempts, created_at);`,
+    );
+    this.db.exec(
+      `CREATE TABLE IF NOT EXISTS liquidation_buckets(
+        bucket_at INTEGER PRIMARY KEY, long_usd REAL NOT NULL DEFAULT 0,
+        short_usd REAL NOT NULL DEFAULT 0, event_count INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS liquidation_coverage(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL,
+        started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS liquidation_coverage_started
+        ON liquidation_coverage(started_at);`,
+    );
+    this.db.exec(
+      `CREATE TABLE IF NOT EXISTS narration_entries(
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT NOT NULL UNIQUE,
+        pair TEXT NOT NULL,
+        source_key TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        occurred_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        json TEXT NOT NULL,
+        UNIQUE(pair, source_key, kind)
+      );
+      CREATE INDEX IF NOT EXISTS narration_entries_pair_order
+        ON narration_entries(pair, occurred_at, seq);
+      CREATE TABLE IF NOT EXISTS narration_state(
+        pair TEXT PRIMARY KEY,
+        version INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        json TEXT NOT NULL
+      );`,
     );
     for (const t of eventTables)
       this.db.exec(
@@ -403,12 +552,80 @@ export class BotDatabase {
     }
     this.perfFinish(draft, t0);
   }
+  enqueueMemwal(
+    kind: MemwalEpisodeKind,
+    text: string,
+    sourceId: string,
+    now = Date.now(),
+  ) {
+    this.prepare(
+      `INSERT INTO memwal_outbox(id,kind,text,source_id,created_at)
+       VALUES(?,?,?,?,?) ON CONFLICT(kind,source_id) DO NOTHING`,
+    ).run(randomUUID(), kind, text, sourceId, now);
+  }
+  memwalPending(now = Date.now(), limit = 20): MemwalOutboxRow[] {
+    return this.prepare(
+      `SELECT id,kind,text,source_id AS sourceId,created_at AS createdAt,
+              sent_at AS sentAt,job_id AS jobId,attempts
+       FROM memwal_outbox
+       WHERE sent_at IS NULL
+         AND created_at + MIN(3600000, 5000 * (1 << MIN(attempts, 8))) <= ?
+       ORDER BY created_at,id LIMIT ?`,
+    ).all(now, limit) as unknown as MemwalOutboxRow[];
+  }
+  memwalSent(id: string, jobId: string, now = Date.now()) {
+    this.prepare(
+      "UPDATE memwal_outbox SET sent_at=?,job_id=? WHERE id=? AND sent_at IS NULL",
+    ).run(now, jobId, id);
+  }
+  memwalFailed(id: string) {
+    this.prepare(
+      "UPDATE memwal_outbox SET attempts=attempts+1 WHERE id=? AND sent_at IS NULL",
+    ).run(id);
+  }
+  memwalStatus(): { pending: number; lastSuccessAt: number | null } {
+    return this.prepare(
+      `SELECT COALESCE(SUM(CASE WHEN sent_at IS NULL THEN 1 ELSE 0 END),0) AS pending,
+              MAX(sent_at) AS lastSuccessAt FROM memwal_outbox`,
+    ).get() as { pending: number; lastSuccessAt: number | null };
+  }
+  /** Shadow-only durable reservation, before invocation; crashes consume budget.
+   * No strategy/portfolio/runtime rows or analysis transaction are touched. */
+  reserveShadowCall(day: string, now: number): boolean {
+    const row = this.prepare(
+      `INSERT INTO shadow_daily_budget(day,calls,lastAt) VALUES(?,1,?)
+      ON CONFLICT(day) DO UPDATE SET calls=calls+1,lastAt=excluded.lastAt
+      WHERE calls<200 AND excluded.lastAt-lastAt>=300000 RETURNING calls`,
+    ).get(day, now);
+    return row !== undefined;
+  }
+  shadowLastCall(): number | null {
+    const row = this.prepare(
+      "SELECT MAX(lastAt) AS at FROM shadow_daily_budget",
+    ).get() as { at: number | null };
+    return row.at;
+  }
+  shadowLastDecision(): number | null {
+    const row = this.prepare(
+      "SELECT MAX(timestamp) AS at FROM shadow_decisions",
+    ).get() as { at: number | null };
+    return row.at;
+  }
   history<T = Record<string, unknown>>(table: EventTable, limit = 200): T[] {
     return (
       this.prepare(
         `SELECT json FROM ${table} ORDER BY timestamp DESC,id DESC LIMIT ?`,
       ).all(limit) as { json: string }[]
     ).map((r) => JSON.parse(r.json));
+  }
+  /** Display-only order history: the SQL column retains the recorded event time
+   * even when the order JSON (notably FILLED orders) has no timestamp. */
+  orderHistory(limit = 200): Record<string, unknown>[] {
+    return (
+      this.prepare(
+        "SELECT timestamp,json FROM paper_orders ORDER BY timestamp DESC,id DESC LIMIT ?",
+      ).all(limit) as { timestamp: number; json: string }[]
+    ).map((row) => ({ ...JSON.parse(row.json), timestamp: row.timestamp }));
   }
   hasOrder(id: string) {
     return !!this.prepare("SELECT id FROM paper_orders WHERE id=?").get(id);
@@ -457,6 +674,25 @@ export class BotDatabase {
         `SELECT json FROM ${table} WHERE timestamp>=? AND timestamp<=? ORDER BY timestamp,id`,
       ).all(from, until) as { json: string }[]
     ).map((row) => JSON.parse(row.json));
+  }
+  shadowRuleConditions(
+    from: number,
+    until: number,
+  ): readonly (readonly [string, { evidence?: Record<string, unknown> }])[] {
+    return (
+      this.prepare(
+        "SELECT id,json FROM strategy_decisions WHERE timestamp>=? AND timestamp<=? ORDER BY timestamp,id",
+      ).all(from, until) as { id: string; json: string }[]
+    ).map((row) => [row.id, JSON.parse(row.json)] as const);
+  }
+  situationDecisionRows(): { id: string; timestamp: number; decision: TradingDecision }[] {
+    return (this.prepare(
+      "SELECT id,timestamp,json FROM strategy_decisions ORDER BY timestamp,id",
+    ).all() as { id: string; timestamp: number; json: string }[]).map((row) => ({
+      id: row.id,
+      timestamp: row.timestamp,
+      decision: JSON.parse(row.json) as TradingDecision,
+    }));
   }
   /** Display input cache only; retain SQL timestamps independently of JSON at. */
   displayValidationRows(from: number, until: number) {
@@ -586,6 +822,51 @@ export class BotDatabase {
       .map((x) => JSON.parse(x.json))
       .reverse();
   }
+  addLiquidation(input: {
+    timestamp: number;
+    side: "long" | "short";
+    notionalUsd: number;
+  }) {
+    const bucketAt = Math.floor(input.timestamp / 300_000) * 300;
+    this.prepare(
+      `INSERT INTO liquidation_buckets(bucket_at,long_usd,short_usd,event_count,updated_at)
+       VALUES(?,?,?,?,?) ON CONFLICT(bucket_at) DO UPDATE SET
+       long_usd=long_usd+excluded.long_usd,
+       short_usd=short_usd+excluded.short_usd,
+       event_count=event_count+1,updated_at=excluded.updated_at`,
+    ).run(bucketAt, input.side === "long" ? input.notionalUsd : 0,
+      input.side === "short" ? input.notionalUsd : 0, 1, input.timestamp);
+  }
+  liquidationBuckets(sinceSeconds = 0): {
+    bucketAt: number; longUsd: number; shortUsd: number; count: number;
+  }[] {
+    return this.prepare(
+      `SELECT bucket_at AS bucketAt,long_usd AS longUsd,short_usd AS shortUsd,
+              event_count AS count FROM liquidation_buckets
+       WHERE bucket_at>=? ORDER BY bucket_at`,
+    ).all(sinceSeconds) as ReturnType<BotDatabase["liquidationBuckets"]>;
+  }
+  recordLiquidationCoverage(kind: "connected" | "gap", startedAt: number, endedAt: number) {
+    if (endedAt <= startedAt) return;
+    this.prepare("INSERT INTO liquidation_coverage(kind,started_at,ended_at) VALUES(?,?,?)")
+      .run(kind, startedAt, endedAt);
+  }
+  liquidationCoverage(since = 0): {
+    kind: "connected" | "gap"; startedAt: number; endedAt: number;
+  }[] {
+    return this.prepare(
+      `SELECT kind,started_at AS startedAt,ended_at AS endedAt
+       FROM liquidation_coverage WHERE ended_at>? ORDER BY started_at`,
+    ).all(since) as ReturnType<BotDatabase["liquidationCoverage"]>;
+  }
+  pruneLiquidations(now = Date.now()) {
+    const cutoff = now - LIQUIDATION_RETENTION_DAYS * 86_400_000;
+    this.transaction(() => {
+      this.prepare("DELETE FROM liquidation_buckets WHERE bucket_at<?")
+        .run(Math.floor(cutoff / 1000));
+      this.prepare("DELETE FROM liquidation_coverage WHERE ended_at<?").run(cutoff);
+    });
+  }
   recordAnalysis(
     id: string,
     decision: TradingDecision,
@@ -598,6 +879,134 @@ export class BotDatabase {
       this.set("decision", decision);
       this.set("indicators", indicators);
     });
+  }
+  /**
+   * Rewrites a bounded number of old diagnostic payloads without deleting
+   * rows. This is called between trading cycles; the small transaction keeps
+   * retention work from becoming an unbounded cycle delay.
+   */
+  maintainRetentionChunk(now = Date.now()) {
+    const cutoff = now - RETENTION_FULL_EVIDENCE_DAYS * 24 * 60 * 60 * 1000;
+    const eligible = (table: "strategy_decisions" | "cycle_audits") =>
+      this.prepare(
+        `SELECT id,json FROM ${table}
+         WHERE timestamp<?
+           AND CASE WHEN json_valid(json) THEN json_extract(json,'$._retention') END IS NULL
+         ORDER BY timestamp,id LIMIT ?`,
+      ).all(cutoff, RETENTION_CHUNK_ROWS) as RetentionRow[];
+    const decisions = eligible("strategy_decisions");
+    const audits = eligible("cycle_audits");
+    if (decisions.length === 0 && audits.length === 0) return 0;
+    this.transaction(() => {
+      for (const { id, json } of decisions)
+        this.prepare("UPDATE strategy_decisions SET json=? WHERE id=?").run(
+          JSON.stringify(compactDecision(JSON.parse(json))),
+          id,
+        );
+      for (const { id, json } of audits)
+        this.prepare("UPDATE cycle_audits SET json=? WHERE id=?").run(
+          JSON.stringify(compactCycleAudit(JSON.parse(json))),
+          id,
+        );
+    });
+    return decisions.length + audits.length;
+  }
+  appendNarrationEntry(input: Omit<NarrationEntry, "seq" | "json"> & { json: unknown }) {
+    const result = this.prepare(
+      `INSERT INTO narration_entries
+       (id,pair,source_key,kind,occurred_at,created_at,json)
+       VALUES(?,?,?,?,?,?,?)`,
+    ).run(input.id, input.pair, input.sourceKey, input.kind, input.occurredAt,
+      input.createdAt, JSON.stringify(input.json));
+    return Number(result.lastInsertRowid);
+  }
+  narrationState(pair: string): NarrationState | null {
+    const row = this.prepare(
+      `SELECT pair,version,updated_at AS updatedAt,json
+       FROM narration_state WHERE pair=?`,
+    ).get(pair) as (Omit<NarrationState, "json"> & { json: string }) | undefined;
+    return row ? { ...row, json: JSON.parse(row.json) } : null;
+  }
+  setNarrationState(state: NarrationState) {
+    this.prepare(
+      `INSERT INTO narration_state(pair,version,updated_at,json) VALUES(?,?,?,?)
+       ON CONFLICT(pair) DO UPDATE SET version=excluded.version,
+       updated_at=excluded.updated_at,json=excluded.json`,
+    ).run(state.pair, state.version, state.updatedAt, JSON.stringify(state.json));
+  }
+  commitNarration(
+    entries: (Omit<NarrationEntry, "seq" | "json"> & { json: unknown })[],
+    state: NarrationState,
+  ) {
+    this.transaction(() => {
+      for (const entry of entries)
+        this.prepare(
+          `INSERT INTO narration_entries
+           (id,pair,source_key,kind,occurred_at,created_at,json)
+           VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
+        ).run(entry.id, entry.pair, entry.sourceKey, entry.kind,
+          entry.occurredAt, entry.createdAt, JSON.stringify(entry.json));
+      this.setNarrationState(state);
+    });
+  }
+  narrationCounts(pair: string): Record<string, number> {
+    const rows = this.prepare(
+      `SELECT kind,COUNT(*) AS count FROM narration_entries
+       WHERE pair=? GROUP BY kind ORDER BY kind`,
+    ).all(pair) as { kind: string; count: number }[];
+    return Object.fromEntries(rows.map((row) => [row.kind, row.count]));
+  }
+  narrationEntries(pair: string, since?: number, limit = 100) {
+    const oldest = this.prepare(
+      "SELECT MIN(seq) AS seq FROM narration_entries WHERE pair=?",
+    ).get(pair) as { seq: number | null };
+    const oldestAvailable = oldest.seq;
+    if (since !== undefined && oldestAvailable !== null && since < oldestAvailable - 1)
+      return { expired: true as const, oldestAvailable, entries: [] };
+    const rows = (since === undefined
+      ? this.prepare(
+          `SELECT * FROM (
+             SELECT seq,id,pair,source_key AS sourceKey,kind,
+                    occurred_at AS occurredAt,created_at AS createdAt,json
+             FROM narration_entries WHERE pair=?
+             ORDER BY occurred_at DESC,seq DESC LIMIT 30
+           ) ORDER BY occurredAt ASC,seq ASC`,
+        ).all(pair)
+      : this.prepare(
+          `SELECT seq,id,pair,source_key AS sourceKey,kind,
+                  occurred_at AS occurredAt,created_at AS createdAt,json
+           FROM narration_entries WHERE pair=? AND seq>?
+           ORDER BY occurred_at ASC,seq ASC LIMIT ?`,
+        ).all(pair, since, limit + 1)) as (Omit<NarrationEntry, "json"> & {
+      json: string;
+    })[];
+    const hasMore = since !== undefined && rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    return {
+      expired: false as const,
+      oldestAvailable,
+      hasMore,
+      entries: page.map((row) => ({ ...row, json: JSON.parse(row.json) })),
+    };
+  }
+  maintainNarrationRetentionChunk(pair: string, now = Date.now()) {
+    const cutoff = now - NARRATION_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    const countBoundary = this.prepare(
+      `SELECT seq FROM narration_entries WHERE pair=?
+       ORDER BY seq DESC LIMIT 1 OFFSET ?`,
+    ).get(pair, NARRATION_RETENTION_ROWS - 1) as { seq: number } | undefined;
+    const rows = this.prepare(
+      `SELECT seq FROM narration_entries
+       WHERE pair=? AND (occurred_at<? OR (? IS NOT NULL AND seq<?))
+       ORDER BY seq ASC LIMIT ?`,
+    ).all(pair, cutoff, countBoundary?.seq ?? null, countBoundary?.seq ?? null,
+      NARRATION_RETENTION_CHUNK_ROWS) as { seq: number }[];
+    if (rows.length === 0) return 0;
+    this.transaction(() => {
+      const remove = this.prepare("DELETE FROM narration_entries WHERE seq=?");
+      for (const row of rows) remove.run(row.seq);
+    });
+    return rows.length;
   }
   commitFill(
     id: string,

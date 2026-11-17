@@ -9,11 +9,13 @@ cutoff and an existing independent release approval. Preserves failed history;
 issues one permission consumed by the broker before the next deployment attempt.
 """
 import contextlib
+import datetime
 import hashlib
 import http.client
 import importlib.util
 import io
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -116,7 +118,9 @@ WATCHDOG_REASONS = frozenset((
     'UNEXPECTED_CONTAINER_RUNNING', 'UNCLEAN_CONTAINER_EXIT', 'LIFECYCLE_UNCONFIRMED',
     'LATCH_UNCONFIRMED', 'STOPPED_WITHOUT_LATCH', 'HOST_MEMORY_LOW_OR_UNKNOWN',
     'HOST_DISK_LOW_OR_UNKNOWN', 'BACKUP_UNCONFIRMED', 'STATUS_UNAVAILABLE',
-    'STATUS_INVALID',
+    'STATUS_INVALID', 'PAPER_RECOVERY_FLAPPING', 'NETWORK_PAUSE_OVER_ONE_HOUR',
+    'NETWORK_RECOVERY_FLAPPING', 'SHADOW_DECISION_STALE',
+    'SHADOW_ERROR_RATE_HIGH',
 ))
 DIAGNOSTIC_STAGES = (
     'maintenance-release', 'worker-start', 'worker-readiness', 'deployment-state',
@@ -2262,6 +2266,13 @@ class ProductionController(Controller):
         if completed:
             record['stage'] = 'stopped'
         self.b.atomic(self.record, record)
+        if not completed:
+            # Observation only, after the failed status is durable:
+            # persist the mid-run failure's concrete reason while
+            # the worker's final state still exists to read. Never
+            # allowed to change the close-out's outcome.
+            with contextlib.suppress(Exception):
+                self.note_run_failure(record)
         return not errors and not self.faults(record)
 
     def run(self):
@@ -2613,7 +2624,7 @@ class ProductionController(Controller):
                 return result
             value = json.loads(raw, object_pairs_hook=pairs,
                                parse_constant=lambda _: require(False))
-            require(type(value) is dict and set(value) == {'at', 'verdict', 'reasons', 'run_id'})
+            require(type(value) is dict and set(value) == {'at', 'verdict', 'reasons', 'run_id', 'shadow'})
             require(type(value['at']) is int and 0 <= value['at'] <= int(time.time())+60 and
                     value['verdict'] in ('ok', 'attention', 'not_started'))
             require(type(value['reasons']) is list and len(value['reasons']) <= 32 and
@@ -2623,6 +2634,7 @@ class ProductionController(Controller):
                     re.fullmatch(r'[a-f0-9]{32}', value['run_id']))
             require(value['verdict'] != 'ok' or value['run_id'] is not None)
             require(value['verdict'] != 'not_started' or value['run_id'] is None)
+            self.validate_shadow(value['shadow'])
             return {'record': value, 'code': None}
         except FileNotFoundError:
             return {'record': None, 'code': 'WATCHDOG_RECORD_MISSING'}
@@ -2668,6 +2680,157 @@ class ProductionController(Controller):
                 return value['error']
         return None
 
+    def worker_stop_code(self):
+        """The worker's own latched stop reason, read from its
+        runtime row, or None. Read-only and best-effort: close-out
+        runs after stop_checks stopped the container, so the row
+        is quiet — the preset snapshot reads the same file the
+        same way after a stop, and the backup audit reads the
+        same row from the archives. Only this session's reason
+        can be present: wait_ready() returned only once the
+        deployment reported startReady, which requires a clear
+        runtime row, so an error latched at a monitoring-stage
+        close-out was latched by this session. The value is
+        sanitized to the code shape the failure summary carries
+        (the worker's own vocabulary is upper-snake, capped at
+        the summary's length); anything unexpected degrades to
+        the generic code the audit program maps unknowns to."""
+        try:
+            with contextlib.closing(sqlite3.connect(
+                    f'file:{self.sui_db_path()}?mode=ro', uri=True)) as db:
+                row = db.execute(
+                    "SELECT json FROM bot_runtime_state WHERE key='runtime'").fetchone()
+            state = json.loads(row[0]) if row is not None else None
+            if type(state) is not dict:
+                return None
+            if state.get('emergency') is True:
+                # The worker's own snapshot names an emergency
+                # stop ahead of any latched error.
+                return 'EMERGENCY_STOP'
+            error = state.get('error')
+            if error is None:
+                return None
+            if type(error) is str and re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', error):
+                return error
+            return 'OTHER_RUNTIME_ERROR'
+        except Exception:
+            return None
+
+    def host_stop_reason(self):
+        """Best-effort facts only, through the existing inspect and read-only DB paths.
+
+        Missing or malformed evidence never proves an external stop. Times in
+        operation_state are epoch milliseconds; Docker FinishedAt is UTC.
+        """
+        detail = dict(containerStatus=None, exitCode=None, oomKilled=None,
+                      containerFinishedAt=None, lastAnalysisAt=None,
+                      lastFetchSuccessAt=None, lastHealthyAt=None, gapSeconds=None)
+        runtime_clear = False
+        try:
+            state = self.inspect()['State']
+            if state.get('Status') in ('created', 'running', 'paused', 'restarting', 'removing', 'exited', 'dead'):
+                detail['containerStatus'] = state['Status']
+            if type(state.get('ExitCode')) is int:
+                detail['exitCode'] = state['ExitCode']
+            if type(state.get('OOMKilled')) is bool:
+                detail['oomKilled'] = state['OOMKilled']
+            finished = state.get('FinishedAt')
+            if type(finished) is str and re.fullmatch(
+                    r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z', finished):
+                parsed = datetime.datetime.fromisoformat(finished.replace('Z', '+00:00'))
+                if parsed.year > 1970:
+                    detail['containerFinishedAt'] = finished
+        except Exception:
+            pass
+        try:
+            with contextlib.closing(sqlite3.connect(
+                    f'file:{self.sui_db_path()}?mode=ro', uri=True)) as db:
+                rows = dict(db.execute("SELECT key, json FROM bot_runtime_state "
+                                       "WHERE key IN ('runtime', 'operation_state')"))
+            runtime = json.loads(rows.get('runtime', 'null'))
+            runtime_clear = (type(runtime) is dict and 'error' in runtime and
+                             runtime['error'] is None and runtime.get('emergency') is not True)
+            timing = json.loads(rows.get('operation_state', 'null'))
+            if type(timing) is dict:
+                for key in ('lastAnalysisAt', 'lastFetchSuccessAt'):
+                    value = timing.get(key)
+                    if type(value) in (int, float) and math.isfinite(value) and 0 < value <= 2**53:
+                        detail[key] = value
+        except Exception:
+            pass
+        healthy = [detail[key] for key in ('lastAnalysisAt', 'lastFetchSuccessAt')
+                   if detail[key] is not None]
+        if healthy:
+            detail['lastHealthyAt'] = max(healthy)
+        if detail['containerFinishedAt'] is not None and healthy:
+            detail['gapSeconds'] = parsed.timestamp() - detail['lastHealthyAt']/1000
+        code = 'UNKNOWN'
+        if detail['oomKilled'] is True:
+            code = 'WORKER_OOM'
+        elif detail['containerStatus'] in ('exited', 'dead'):
+            if detail['exitCode'] is not None and detail['exitCode'] != 0:
+                code = 'WORKER_EXITED'
+            elif detail['exitCode'] == 0 and runtime_clear and detail['gapSeconds'] is not None:
+                gap = detail['gapSeconds']
+                if gap <= 300:
+                    code = 'EXTERNAL_STOP'
+                elif gap > 300:
+                    code = 'WORKER_EXITED_CLEAN'
+        return code, detail
+
+    def note_run_failure(self, record):
+        """Persist a mid-run failure's concrete reason into the
+        run's failure record, so the read-only status — and with
+        it the monitor Issue and the STOP follow-up — can name
+        WHY a session that ran for hours closed as
+        failed_requires_review, not only THAT it did. Before
+        this, failure.json was written only by the run()
+        exception handlers: a controller that died mid-run left
+        no failure record at all, and one that caught the
+        failure recorded the stage and at most an HTTP status or
+        a market snapshot — never the worker's stop reason.
+
+        Monitoring-stage close-outs only: the stage proves the
+        session passed readiness and actually ran (see
+        worker_stop_code for why the reason is this session's).
+        Existing failure evidence is preserved; only a missing
+        code is filled, from the first source that knows one:
+        the worker's latched stop reason, the market snapshot
+        already on the failure record, then the stop machinery's
+        first fault, then host/container and DB timing facts (UNKNOWN
+        if those cannot explain the exit). Unreadable evidence is
+        left untouched."""
+        if record.get('stage') != 'monitoring':
+            return
+        path = self.folder(record)/'failure.json'
+        failure = None
+        if path.exists():
+            try:
+                value = self.b.decode(self.b.read_trusted(path))
+                require(type(value) is dict and value.get('id') == record['id'] and
+                        value.get('stage') in DIAGNOSTIC_STAGES)
+                failure = value
+            except Exception:
+                return
+            if failure.get('code') or failure.get('reset_refusal'):
+                return
+        code = self.worker_stop_code()
+        if code is None and failure is not None:
+            market = failure.get('market')
+            if type(market) is dict:
+                reason = market.get('reason')
+                if type(reason) is str and \
+                        re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', reason):
+                    code = reason
+        if code is None:
+            code = self.fault_code(record)
+        if failure is None:
+            failure = {'id': record['id'], 'stage': 'monitoring'}
+        if code is None:
+            code, failure['detail'] = self.host_stop_reason()
+        failure['code'] = code
+        self.b.atomic(path, failure)
+
     def failure_summary(self, record):
         """Bounded, lock-free read of the run's failure evidence for
         the read-only status — the diagnosis the owner otherwise
@@ -2693,6 +2856,14 @@ class ProductionController(Controller):
             refusal = value.get('reset_refusal')
             if type(refusal) is str and refusal in RESET_REFUSAL_CODES:
                 summary['code'] = refusal
+            recorded = value.get('code')
+            if summary['code'] is None and type(recorded) is str and \
+                    re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', recorded):
+                # A code the close-out itself persisted for a
+                # mid-run failure (see note_run_failure): the
+                # worker's own stop reason, captured while the
+                # evidence still existed to read.
+                summary['code'] = recorded
             http = value.get('http_status')
             if type(http) is int and 100 <= http <= 599:
                 summary['http_status'] = http
@@ -2732,6 +2903,7 @@ class ProductionController(Controller):
         run = {key: record.get(key) for key in ('id', 'status', 'started', 'stopped', 'sha', 'stage', 'admitted')}
         alive = not self.exited(record)
         worker = None
+        shadow = None
         if record['status'] == 'in_progress' and record['admitted'] and alive:
             try:
                 d = self.api('GET', '/api/deployment')
@@ -2740,14 +2912,19 @@ class ProductionController(Controller):
                 # failure. Never expose exception messages, URLs or headers.
                 worker = {'reachable': False, 'reason': 'WORKER_UNREACHABLE'}
             else:
-                worker = {key: d[key] for key in ('running', 'maintenance', 'databaseHealthy', 'ledgerOk') if type(d.get(key)) is bool}
+                worker = {key: d[key] for key in ('running', 'maintenance', 'databaseHealthy', 'ledgerOk', 'hasPosition') if type(d.get(key)) is bool}
                 worker['paper'] = d.get('mode') == 'PAPER'
+                worker['networkPause'] = d.get('networkPause')
+                worker['networkStopReason'] = d.get('networkStopReason')
+                shadow = d.get('shadow')
+                self.validate_shadow(shadow)
         # The abort inhibit joins requires_review: nothing in the
         # repo writes production/abort-inhibit.json, yet prod_start
         # refuses while one exists, so its presence must be
         # discoverable here instead of surfacing only as a
         # reasonless start refusal (audit F-8).
         result = {'run': run, 'controller_alive': alive, 'worker': worker,
+                  'shadow': shadow,
                   'requires_review': record['status'] == 'failed_requires_review' or self.faults(record)
                                      or os.path.lexists(self.state/'abort-inhibit.json'),
                   'watchdog': watchdog}
@@ -2755,6 +2932,17 @@ class ProductionController(Controller):
         if failure is not None:
             result['failure'] = failure
         return result
+
+    @staticmethod
+    def validate_shadow(value):
+        if value is None:
+            return value
+        require(type(value) is dict and set(value) == {'total', 'aiOnlyBuy', 'errors', 'lastDecisionAt'})
+        require(all(type(value[key]) is int and value[key] >= 0 for key in ('total', 'aiOnlyBuy', 'errors')))
+        require(value['aiOnlyBuy'] <= value['total'] and value['errors'] <= value['total'])
+        require(value['lastDecisionAt'] is None or type(value['lastDecisionAt']) is int and
+                0 <= value['lastDecisionAt'] <= int(time.time()*1000)+60000)
+        return value
 
     def export_prod_snapshot(self):
         # Read-only public extract of the LIVE production databases, feeding
@@ -2890,14 +3078,9 @@ def require_caller_scope(caller, request):
                             {'operation': 'export-prod-snapshot'}))
 
 
-# Outer bound for a declared recovery pause during monitoring. The worker's
-# own stale-episode deadline is 30 minutes and its resume proofs take about
-# two more; a worker that exhausts its deadline latches a runtime error,
-# which ends the pause classification below and fails the run at once. This
-# bound is only the backstop for a pause that somehow never resolves and
-# never errors (decided 2026-11-08 after two validation runs were finalized
-# by the first monitoring poll that saw running=false).
-PAUSE_OUTER_LIMIT_MS = 40 * 60 * 1000
+# The production supervisor and independent watchdog use the brief's one-hour
+# boundary for a declared pause that somehow neither recovers nor hard-stops.
+PAUSE_OUTER_LIMIT_MS = 60 * 60 * 1000
 
 
 def declared_pause(deployment):

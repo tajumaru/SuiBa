@@ -7,11 +7,7 @@
  */
 
 import type { Candle } from "../../../packages/shared/src/index.ts";
-import {
-  FORECAST_BARS,
-  chartForecast,
-  type ChartForecast,
-} from "./chartForecast.ts";
+import type { ChartForecast } from "./chartForecast.ts";
 import type { ForecastScore } from "./forecastLog.ts";
 import { artworkFor } from "./AgentHeaderAvatar.tsx";
 import { agentDisplayName } from "./agentName.ts";
@@ -38,6 +34,7 @@ export interface ShareCardInput {
 export function shareCardInputFor(args: {
   pair: string;
   candles: Candle[];
+  forecast?: ChartForecast | null;
   bookImbalance?: number | null;
   /** Learned cone-width scale, so the card's cone matches the
    * chart's. */
@@ -48,12 +45,7 @@ export function shareCardInputFor(args: {
   at: number;
 }): ShareCardInput | null {
   if (args.candles.length < 2) return null;
-  const forecast = chartForecast(
-    args.candles,
-    FORECAST_BARS,
-    args.bookImbalance ?? null,
-    args.bandScale ?? 1,
-  );
+  const forecast = args.forecast;
   if (!forecast) return null;
   return {
     pairLabel: args.pair === "WAL_USDC" ? "WAL / USDC" : "SUI / USDC",

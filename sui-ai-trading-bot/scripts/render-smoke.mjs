@@ -15,6 +15,7 @@
  * Run after `pnpm build`:  node scripts/render-smoke.mjs
  * (CI installs the browser first: playwright install --with-deps chromium)
  */
+import { execFileSync } from "node:child_process";
 import { chromium } from "playwright";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -48,7 +49,13 @@ const server = createServer(async (req, res) => {
   res.writeHead(200, { "content-type": type });
   res.end(body);
 });
-await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+await new Promise((resolve) =>
+  server.listen(
+    Number(process.env.RENDER_SMOKE_PORT ?? 0),
+    "127.0.0.1",
+    resolve,
+  ),
+);
 const port = server.address().port;
 
 const failures = [];
@@ -98,10 +105,246 @@ try {
     failures.push(
       `extras.css not applied (.version-footer color = ${probe.footerColor})`,
     );
-  await page
-    .screenshot({ path: "render-smoke.png" })
-    .catch(() => undefined);
+  await page.screenshot({ path: "render-smoke.png" }).catch(() => undefined);
   console.log("render smoke probe:", JSON.stringify(probe));
+  // Offline authenticated shell: exercise the five-tab navigation and relocated
+  // evidence without contacting any worker or writing a production database.
+  const fixture = JSON.parse(
+    execFileSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "-e",
+        'import { dashboardPreviewFixture } from "./scripts/dashboard-preview-fixture.ts"; process.stdout.write(JSON.stringify(dashboardPreviewFixture({ equityRoundTrip: true })));',
+      ],
+      { encoding: "utf8" },
+    ),
+  );
+  fixture.operations.safety.lastStopReason = "UPSTREAM_HTTP_500";
+  fixture.state.chain = {
+    epoch: 1024,
+    checkpoint: 182394551,
+    tps: 1208,
+    gasMist: 1000,
+    epochStartMs: Date.now() - 3600000,
+    epochDurationMs: 86400000,
+    validators: 108,
+    at: Date.now(),
+  };
+  fixture.operations.reports.find(
+    (report) => report.hours === 168,
+  ).stopReasons = [
+    { timestamp: Date.now() - 90000, reason: "PROCESS_RESTART_STOPPED" },
+    { timestamp: Date.now() - 60000, reason: "UPSTREAM_HTTP_429" },
+    { timestamp: Date.now() - 30000, reason: "UPSTREAM_HTTP_500" },
+  ];
+  const commands = [];
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/auth/session")
+      return route.fulfill({ json: { authenticated: true } });
+    if (path === "/api/state") return route.fulfill({ json: fixture.state });
+    if (path === "/api/operations")
+      return route.fulfill({ json: fixture.operations });
+    if (path === "/api/control") {
+      const { command } = route.request().postDataJSON();
+      commands.push(command);
+      fixture.state.runtime.running = command === "start";
+      return route.fulfill({ json: fixture.state.runtime });
+    }
+    return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
+  });
+  await page.reload();
+  await page.locator(".boot-screen").waitFor({ state: "hidden" });
+  for (const width of [320, 375, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    const buttons = page.locator("nav button[aria-label]");
+    if ((await buttons.count()) !== 5)
+      failures.push(`${width}px: expected five tabs`);
+    const chainStrip = page.locator(
+      '.chain-strip[aria-label="Suiチェーン情報"]',
+    );
+    const chainCredit = page.getByRole("link", { name: "Sui" });
+    const walrusCredit = page.getByRole("link", { name: "Walrus" });
+    await chainStrip.waitFor();
+    const chainLayout = await chainStrip.evaluate((strip) => {
+      const credits = strip.querySelector(".chain-credits");
+      const credit = credits?.querySelector(".chain-credit");
+      const metric = credits?.previousElementSibling;
+      const stripRect = strip.getBoundingClientRect();
+      const creditRect = credit?.getBoundingClientRect();
+      const metricRect = metric?.getBoundingClientRect();
+      return {
+        fits: strip.scrollWidth <= strip.clientWidth,
+        creditFits:
+          !!creditRect &&
+          creditRect.left >= stripRect.left &&
+          creditRect.right <= stripRect.right,
+        creditBelowMetrics:
+          !!creditRect && !!metricRect && creditRect.top >= metricRect.bottom,
+      };
+    });
+    if (!chainLayout.fits || !chainLayout.creditFits)
+      failures.push(`${width}px: Sui chain credit overflows its strip`);
+    if (width <= 375 && !chainLayout.creditBelowMetrics)
+      failures.push(`${width}px: Sui chain credit competes with chain metrics`);
+    const creditLogo = chainCredit.locator("img");
+    if (
+      (await chainCredit.getAttribute("href")) !== "https://sui.io" ||
+      (await creditLogo.getAttribute("src")) !== "/sui-logo.svg"
+    )
+      failures.push(`${width}px: Sui chain credit link or logo is missing`);
+    const walrusLogo = walrusCredit.locator("img");
+    if (
+      (await walrusCredit.getAttribute("href")) !== "https://walrus.xyz" ||
+      (await walrusLogo.getAttribute("src")) !== "/walrus-glyph.svg"
+    )
+      failures.push(`${width}px: Walrus chain credit link or glyph is missing`);
+    for (const name of [
+      "実況",
+      "ダッシュボード",
+      "戦略",
+      "取引履歴",
+      "バックテスト比較",
+    ]) {
+      await page.getByRole("button", { name, exact: true }).click();
+      await page
+        .getByRole("button", { name, exact: true })
+        .and(page.locator(".active"))
+        .waitFor();
+    }
+    await page
+      .getByRole("button", { name: "ダッシュボード", exact: true })
+      .click();
+    await page.getByRole("region", { name: "Workerの状態" }).waitFor();
+    const curve = page.getByRole("region", { name: "資産の推移" });
+    for (const range of ["24時間", "7日", "30日"]) {
+      await curve.getByRole("button", { name: range, exact: true }).click();
+      const text = await curve.textContent();
+      if (
+        !text.includes("取引（確定） -0.81 USDC") ||
+        !text.includes("保有中の値動き 0.00 USDC")
+      )
+        failures.push(
+          `${width}px/${range}: cash-only round-trip attribution missing`,
+        );
+    }
+    await curve.getByRole("button", { name: "7日", exact: true }).click();
+    if (
+      !(
+        await page.getByRole("region", { name: "Workerの状態" }).textContent()
+      ).includes("最終分析成功")
+    )
+      failures.push("analysis evidence missing");
+    /* eslint-disable no-undef -- computed typography runs inside Chromium */
+    const workerType = await page
+      .locator(".worker-freshness")
+      .evaluate((card) => ({
+        heading: getComputedStyle(card.querySelector("h3")).fontSize,
+        body: getComputedStyle(card.querySelector("dd")).fontSize,
+        status: getComputedStyle(card.querySelector("p")).fontSize,
+      }));
+    /* eslint-enable no-undef */
+    if (
+      workerType.heading !== "15px" ||
+      workerType.body !== "13px" ||
+      workerType.status !== "13px"
+    )
+      failures.push(
+        `${width}px: Worker typography differs from the overview scale`,
+      );
+    await page.screenshot({ path: `render-smoke-overview-${width}.png` });
+    await page.getByRole("button", { name: "取引履歴", exact: true }).click();
+    await page.getByRole("region", { name: "過去の停止理由" }).waitFor();
+    /* eslint-disable no-undef -- computed styles run inside Chromium */
+    const historyType = await page
+      .locator(".stop-history")
+      .evaluate((card) => ({
+        heading: getComputedStyle(card.querySelector("h3")).fontSize,
+        timestamp: getComputedStyle(card.querySelector("time")).fontSize,
+        reason: getComputedStyle(card.querySelector("li strong")).fontSize,
+        weight: getComputedStyle(card.querySelector("li strong")).fontWeight,
+        fits: card.scrollWidth <= card.clientWidth,
+      }));
+    /* eslint-enable no-undef */
+    if (
+      historyType.heading !== "15px" ||
+      historyType.timestamp !== "12px" ||
+      historyType.reason !== "13px" ||
+      Number(historyType.weight) < 600 ||
+      !historyType.fits
+    )
+      failures.push(`${width}px: stop history hierarchy regressed`);
+    await page.screenshot({ path: `render-smoke-history-${width}.png` });
+    /* eslint-disable no-undef -- runs inside Chromium */
+    if (
+      !(await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ))
+    )
+      failures.push(`${width}px: horizontal overflow`);
+    /* eslint-enable no-undef */
+  }
+  await page
+    .getByRole("button", { name: "PAPER運用開始", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "PAPER運用停止", exact: true })
+    .waitFor();
+  await page
+    .getByRole("button", { name: "PAPER運用停止", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "PAPER運用開始", exact: true })
+    .waitFor();
+  if (commands.join(",") !== "start,stop")
+    failures.push("header control commands changed");
+  // Populated monthly report: the longest labels must remain on one line.
+  fixture.state.trades = [0.17, -0.24].map((pnl, i) => ({
+    orderId: `monthly-smoke-${i}`,
+    side: "SELL",
+    timestamp: Date.now(),
+    quantity: 1,
+    price: 2,
+    fee: 0.01,
+    pnl,
+    slippage: 0,
+    priceImpact: 0,
+  }));
+  await page.reload();
+  await page.locator(".boot-screen").waitFor({ state: "hidden" });
+  await page
+    .getByRole("button", { name: "ダッシュボード", exact: true })
+    .click();
+  for (const width of [320, 375, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    const monthly = page.getByRole("region", { name: "月報", exact: true });
+    await monthly.scrollIntoViewIfNeeded();
+    await monthly.getByText("一番の勝ち", { exact: true }).waitFor();
+    /* eslint-disable no-undef -- runs inside Chromium */
+    const layout = await monthly.evaluate((card) => ({
+      labelsFit: [...card.querySelectorAll("dt")].every((label) => {
+        const text = document.createRange();
+        text.selectNodeContents(label);
+        return text.getClientRects().length === 1;
+      }),
+      fits: card.scrollWidth <= card.clientWidth,
+      rowLineHeight: getComputedStyle(
+        card.querySelector(".monthly-report-rows"),
+      ).lineHeight,
+    }));
+    /* eslint-enable no-undef */
+    if (!layout.labelsFit || !layout.fits || layout.rowLineHeight !== "20px")
+      failures.push(
+        `${width}px: monthly report layout ${JSON.stringify(layout)}`,
+      );
+    await page.screenshot({ path: `render-smoke-monthly-${width}.png` });
+  }
+  console.log(
+    `five-tab render: 320/375/1280px, header start/stop passed on loopback port ${port}`,
+  );
 } catch (e) {
   failures.push(`smoke crashed: ${e instanceof Error ? e.message : e}`);
 } finally {

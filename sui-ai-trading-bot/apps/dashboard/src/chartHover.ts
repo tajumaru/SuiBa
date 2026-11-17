@@ -10,7 +10,7 @@ const hoverTimeFormat = new Intl.DateTimeFormat("ja-JP", {
   hour12: false,
 });
 /**
- * The two readout lines shown inside the chart while a candle
+ * The two readout lines shown above the chart while a candle
  * is hovered or tapped: when it started and where it closed
  * (with the move across the candle), then the rest of the
  * OHLC. The full record (volume, source, provenance) stays in

@@ -1,3 +1,5 @@
+import { WorkerFreshness } from "./WorkerFreshness.tsx";
+import type { OperationsSnapshot } from "./operationsTypes.ts";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { number, percent, label } from "./presentation.ts";
 import { PortfolioMix } from "./PortfolioMix.tsx";
@@ -14,6 +16,41 @@ import type { ShareCardInput } from "./shareCard.ts";
 type State = BotSnapshot;
 const money = (v: number | null | undefined) => number(v, 4);
 
+export function ShadowTodayLine({
+  summary,
+}: {
+  summary: State["shadowToday"];
+}) {
+  if (!summary) return null;
+  return (
+    <p className="overview-sub">
+      影 本日 {summary.total}件
+      {summary.total > 0 && (
+        <>
+          （AIのみBUY {summary.aiOnlyBuy}件・エラー {summary.errors}件）
+        </>
+      )}
+    </p>
+  );
+}
+
+export function PnlBreakdownLine({
+  totals,
+  stale = false,
+}: {
+  totals?: OperationsSnapshot["accounting"]["totals"] | null;
+  stale?: boolean;
+}) {
+  if (stale || !totals || totals.roundTrips === 0) return null;
+  return (
+    <p className="overview-sub">
+      閉じた往復 {totals.roundTrips}件 ・ 勝率{" "}
+      {percent(totals.wins / totals.roundTrips)} ・ 1回平均{" "}
+      {money(Number(totals.realizedPnlUsdc) / totals.roundTrips)} USDC
+    </p>
+  );
+}
+
 /**
  * The overview tab, extracted from App: asset cards, the
  * portfolio mix, the equity curve, the activity grass,
@@ -24,6 +61,8 @@ const money = (v: number | null | undefined) => number(v, 4);
  */
 export function OverviewTab({
   data,
+  operations,
+  operationsStale = false,
   timeframe,
   setTimeframe,
   api,
@@ -35,6 +74,8 @@ export function OverviewTab({
   sellLines,
 }: {
   data: State;
+  operations?: OperationsSnapshot | null;
+  operationsStale?: boolean;
   timeframe: 300 | 900 | 3600;
   setTimeframe: (tf: 300 | 900 | 3600) => void;
   api: SettingsApi;
@@ -47,6 +88,8 @@ export function OverviewTab({
 }) {
   return (
                   <div className="overview-tab">
+                    <WorkerFreshness data={operations ?? null} stale={operationsStale} />
+                    <ShadowTodayLine summary={data.shadowToday} />
                     <div className="cards">
                       {[
                         ["仮想総資産", data.equity, "USDC"],
@@ -62,6 +105,12 @@ export function OverviewTab({
                           <h2>
                             {money(value as number | null)} <em>{unit}</em>
                           </h2>
+                          {label === "累計損益" && (
+                            <PnlBreakdownLine
+                              totals={operations?.accounting.totals}
+                              stale={operationsStale}
+                            />
+                          )}
                         </section>
                       ))}
                       <section>
@@ -88,6 +137,9 @@ export function OverviewTab({
                       pair={data.pair}
                       trades={data.trades}
                       orders={data.orders}
+                      cumulativeRoundTrips={
+                        operations?.accounting.totals.roundTrips
+                      }
                     />
                     <MarketWeatherCard weather={data.weather} />
                     <label>
@@ -117,6 +169,7 @@ export function OverviewTab({
                         historyApi={api}
                         forecastScoreText={forecastScoreLine}
                         forecastTouchText={forecastTouchLine}
+                        forecast={data.forecast?.cones[timeframe]}
                         forecastBandScale={forecastBandScale}
                         answerCheck={forecastAnswer}
                         shareCard={shareCard}

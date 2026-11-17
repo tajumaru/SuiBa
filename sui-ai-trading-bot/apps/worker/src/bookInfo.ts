@@ -30,6 +30,7 @@ export interface BookSample {
 }
 
 export class BookImbalanceSampler {
+  onAdopt: (() => void) | null = null;
   private value: number | null = null;
   private levels: BookLevels | null = null;
   private at = 0;
@@ -43,6 +44,7 @@ export class BookImbalanceSampler {
     if (sample.imbalance != null) this.value = sample.imbalance;
     this.levels = sample.levels;
     this.at = now;
+    this.onAdopt?.();
   }
   current(now = Date.now()): number | null {
     if (this.value == null || now - this.at > BOOK_IMBALANCE_FRESH_MS)

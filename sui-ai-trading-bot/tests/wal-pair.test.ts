@@ -241,7 +241,7 @@ it("accounts for WAL PAPER buy and sales with exact USDC PnL and Profit Guard", 
   const p = { ...initialPortfolio(now), baseCoin: WAL as typeof WAL };
   const buy = paper.fill("b", "BUY", quote(), p, defaults, now);
   expect(buy.portfolio.sui).toBe(2.5);
-  expect(buy.portfolio.costBasisUsdc).toBe("5.045000");
+  expect(buy.portfolio.costBasisUsdc).toBe("5.010000");
   const sell = paper.fill(
     "s",
     "SELL",
@@ -251,7 +251,7 @@ it("accounts for WAL PAPER buy and sales with exact USDC PnL and Profit Guard", 
     now,
   );
   expect(sell.portfolio.sui).toBe(0);
-  expect(sell.trade.realizedProfitUsdc).toBe("0.907000");
+  expect(sell.trade.realizedProfitUsdc).toBe("0.979000");
   expect(
     reconcileFill(
       buy.portfolio,

@@ -11,11 +11,21 @@ import tempfile
 import time
 import zipfile
 
-ARCHIVE_LIMIT = 128 * 1024**2
-EXPORT_LIMIT = 16 * 1024**2
-ROW_LIMIT = 100000
-TABLES = ('strategy_decisions', 'technical_indicators', 'operation_candidates',
-          'paper_orders', 'paper_trades', 'operation_events', 'cycle_audits')
+ARCHIVE_LIMIT = 512 * 1024**2
+EXPORT_LIMIT = 256 * 1024**2
+ROW_LIMIT = 800000
+EXPORT_TIMEOUT_SECONDS = 180
+WINDOW_DAYS = 14
+WINDOW_MS = WINDOW_DAYS * 24 * 60 * 60 * 1000
+LIQUIDATION_ROW_LIMIT = WINDOW_MS // (5 * 60 * 1000) + 1
+# The limits remain bounded by the 14-day window and the worker's maximum
+# write cadence. At the minimum 30-second cycle interval, even a deliberately
+# conservative one-row-per-cycle fixture for every event table (plus the two
+# cycle audit rows and the separately capped shadow calls) stays below these
+# limits with more than 2x headroom.
+JSON_TABLES = ('forecast_records', 'shadow_decisions', 'strategy_decisions', 'technical_indicators', 'operation_candidates',
+               'paper_orders', 'paper_trades', 'operation_events', 'cycle_audits')
+TABLES = JSON_TABLES + ('liquidation_buckets',)
 DATABASES = {'bot.sqlite': 'SUI_USDC.sqlite', 'bot.sqlite.WAL_USDC.sqlite': 'WAL_USDC.sqlite'}
 ERROR_CODES = frozenset(('EXPORT_BACKUP_MISSING', 'EXPORT_MANIFEST_MISMATCH', 'EXPORT_ARCHIVE_INVALID',
     'EXPORT_LIMIT_EXCEEDED', 'EXPORT_DATABASE_INVALID', 'EXPORT_RUN_INVALID', 'EXPORT_PACKAGE_INVALID',
@@ -30,9 +40,12 @@ UPSTREAM_HTTP_504 MARKET_DATA_STALLED STALE_CANDLES CANDLE_GAP INVALID_CANDLE IN
 PAPER_RECOVERY_EXHAUSTED PAPER_RECONCILIATION_FAILED SUI_READ_FAILED API_BACKOFF
 CONSECUTIVE_API_ERRORS MARKET_SOURCE_CHANGED MARKET_PAIR_MISMATCH VALIDATION_RECORD_FAILED
 DATABASE_UNAVAILABLE PROCESS_RESTART_INTERRUPTED PROCESS_RESTART_STOPPED
-PAPER_NETWORK_PAUSED PAPER_NETWORK_RECOVERED'''.split())
+PAPER_NETWORK_PAUSED PAPER_NETWORK_RECOVERED
+EXTERNAL_STOP WORKER_OOM WORKER_EXITED WORKER_EXITED_CLEAN UNKNOWN'''.split())
 EPISODE_OUTCOMES = frozenset(('RECOVERED', 'EXHAUSTED', 'STOPPED', 'INTERRUPTED'))
 TALLY_KEY = re.compile(r'[A-Za-z][A-Za-z0-9 ]{0,31}/[A-Z][A-Z0-9_]{0,63}')
+SHADOW_PROMPT_VERSION = re.compile(r'shadow-[a-z0-9]+(?:-[a-z0-9]+)*-v[1-9][0-9]{0,5}')
+SHADOW_MODEL = re.compile(r'gpt-5\.4-(?:nano|mini)')
 
 
 class ExportError(RuntimeError):
@@ -77,7 +90,14 @@ def sanitize(table, value, public=False):
     for key in ('orderId', 'cycleId', 'candidateId'):
         if key in value and ref(value[key]) is not None: out[key] = ref(value[key])
     out.update(numeric_fields(value, ('timestamp', 'createdAt', 'beganAt', 'endedAt')))
-    if table == 'strategy_decisions':
+    if table == 'forecast_records':
+        out.update(numeric_fields(value, ('origin',)))
+        for key in ('up', 'lo'):
+            points = value.get(key)
+            if (type(points) is list and 1 <= len(points) <= 48
+                    and all(number(point) and point > 0 for point in points)):
+                out[key] = points
+    elif table == 'strategy_decisions':
         if value.get('action') in ('BUY', 'SELL', 'WAIT'): out['action'] = value['action']
         out.update(numeric_fields(value, ('confidence',)))
         e = value.get('evidence')
@@ -98,6 +118,41 @@ def sanitize(table, value, public=False):
         if type(ctx) is dict:
             out['analysisContext'] = {k: ctx[k] for k in ('runningAtStart', 'runningAtAnalysis', 'ordersAllowedAtAnalysis') if type(ctx.get(k)) is bool}
             if ref(ctx.get('cycleId')) is not None: out['analysisContext']['cycleId'] = ref(ctx['cycleId'])
+    elif table == 'shadow_decisions':
+        out.update(numeric_fields(value, ('candleTimestamp', 'conditionCount', 'confidence', 'latencyMs', 'calledAt')))
+        if value.get('status') in ('OK', 'ERROR', 'SKIPPED_BUDGET', 'SKIPPED_DISABLED'): out['status'] = value['status']
+        if value.get('action') in ('BUY', 'WAIT'): out['action'] = value['action']
+        if value.get('ruleAction') in ('BUY', 'SELL', 'WAIT'): out['ruleAction'] = value['ruleAction']
+        if value.get('selectedRule') in RULES: out['selectedRule'] = value['selectedRule']
+        prompt_version = value.get('promptVersion')
+        if (type(prompt_version) is str and len(prompt_version) <= 80
+                and SHADOW_PROMPT_VERSION.fullmatch(prompt_version)):
+            out['promptVersion'] = prompt_version
+        if value.get('reasonCode') in ('INVALID_JSON', 'INVALID_SCHEMA', 'INVALID_REFERENCE', 'TIMEOUT', 'CREDENTIAL_IN_OUTPUT', 'ADAPTER_FAILED', 'SHADOW_API_KEY_MISSING', 'OPENAI_AUTH_FAILED', 'OPENAI_RATE_LIMITED', 'OPENAI_HTTP_ERROR', 'OPENAI_NETWORK_FAILED', 'OPENAI_REFUSAL', 'OPENAI_INCOMPLETE', 'OPENAI_RESPONSE_FAILED', 'OPENAI_INVALID_RESPONSE'): out['reasonCode'] = value['reasonCode']
+        out['usage'] = numeric_fields(value.get('usage'), ('inputTokens', 'outputTokens', 'cost'))
+        snapshot = value.get('snapshot')
+        if type(snapshot) is dict:
+            e = snapshot.get('evidence')
+            if type(e) is dict: out.update(numeric_fields(e.get('inputs'), ('price',)))
+        elif number(value.get('price')): out['price'] = value['price']
+        keys = {
+            'indicator': INDICATORS,
+            'condition': CONDITIONS,
+            'candle': frozenset('open high low close volume timestamp periodHigh periodLow changePct'.split()),
+            'book': frozenset('bid ask spread fetchedAt'.split()),
+            'portfolio': frozenset('hasPosition entryPrice dailyBought'.split()),
+        }
+        rationale = value.get('rationale')
+        refs = rationale.get('refs') if type(rationale) is dict else None
+        if type(refs) is list:
+            out['rationale'] = {'refs': [
+                {k: r[k] for k in ('type', 'key', 'value')}
+                for r in refs[:5] if type(r) is dict and type(r.get('type')) is str
+                and r['type'] in keys and type(r.get('key')) is str
+                and r['key'] in keys[r['type']] and number(r.get('value'))]}
+        model = value.get('model')
+        if type(model) is str and SHADOW_MODEL.fullmatch(model): out['model'] = model
+        # Only the owner-approved model family is public; arbitrary strings remain private.
     elif table == 'operation_candidates':
         if value.get('side') in ('BUY', 'SELL'): out['side'] = value['side']
         if value.get('finalAction') in ('PENDING', 'BUY', 'SELL', 'WAIT', 'SAFE_STOP'): out['finalAction'] = value['finalAction']
@@ -198,6 +253,8 @@ def _unpack_archive(stream, root, deadline):
 def _package(root, seen, run, scope, source_sha256, deadline):
     result = io.BytesIO()
     files, total_rows = {}, 0
+    window_to = int(time.time() * 1000)
+    window_from = window_to - WINDOW_MS
     for name, target in DATABASES.items():
         if name not in seen: continue
         source = sqlite3.connect((root/name).as_uri()+'?mode=ro', uri=True)
@@ -207,12 +264,15 @@ def _package(root, seen, run, scope, source_sha256, deadline):
         try:
             source.execute('PRAGMA query_only=ON')
             names = {r[0] for r in source.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            for table in TABLES:
+            for table in JSON_TABLES:
                 check(time.monotonic() < deadline, 'EXPORT_LIMIT_EXCEEDED')
                 if table not in names: continue
                 destination.execute(f'CREATE TABLE {table}(id TEXT PRIMARY KEY,timestamp INTEGER NOT NULL,json TEXT NOT NULL)')
                 count = 0
-                for row_id, at, raw in source.execute(f'SELECT id,timestamp,json FROM {table} ORDER BY timestamp,id'):
+                for row_id, at, raw in source.execute(
+                        f'SELECT id,timestamp,json FROM {table} '
+                        'WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp,id',
+                        (window_from, window_to)):
                     total_rows += 1
                     check(total_rows <= ROW_LIMIT and time.monotonic() < deadline, 'EXPORT_LIMIT_EXCEEDED')
                     check(type(at) is int and 0 <= at <= 2**53 and identifier(row_id) is not None, 'EXPORT_DATABASE_INVALID')
@@ -221,6 +281,33 @@ def _package(root, seen, run, scope, source_sha256, deadline):
                     destination.execute(f'INSERT INTO {table} VALUES(?,?,?)', (identifier(row_id), at, json.dumps(value, allow_nan=False, separators=(',', ':'))))
                     count += 1
                 counts[table] = count
+            if 'liquidation_buckets' in names:
+                # The worker has already reduced the external feed to one
+                # aggregate per five-minute bucket. Export only the event time
+                # and long-liquidation scale needed to reproduce the scene;
+                # short totals, event counts, update times and raw events are
+                # not review inputs and remain private.
+                destination.execute(
+                    'CREATE TABLE liquidation_buckets('
+                    'bucket_at INTEGER PRIMARY KEY,long_usd REAL NOT NULL)')
+                rows = source.execute(
+                    'SELECT bucket_at,long_usd FROM liquidation_buckets '
+                    'WHERE bucket_at BETWEEN ? AND ? ORDER BY bucket_at DESC LIMIT ?',
+                    (window_from // 1000, window_to // 1000,
+                     LIQUIDATION_ROW_LIMIT)).fetchall()
+                count = 0
+                for bucket_at, long_usd in reversed(rows):
+                    total_rows += 1
+                    check(total_rows <= ROW_LIMIT and time.monotonic() < deadline,
+                          'EXPORT_LIMIT_EXCEEDED')
+                    check(type(bucket_at) is int and 0 <= bucket_at <= 2**53 and
+                          number(long_usd) and long_usd >= 0,
+                          'EXPORT_DATABASE_INVALID')
+                    destination.execute(
+                        'INSERT INTO liquidation_buckets VALUES(?,?)',
+                        (bucket_at, long_usd))
+                    count += 1
+                counts['liquidation_buckets'] = count
             destination.commit()
         except (sqlite3.Error, ValueError, TypeError): raise ExportError('EXPORT_DATABASE_INVALID') from None
         finally:
@@ -229,7 +316,8 @@ def _package(root, seen, run, scope, source_sha256, deadline):
         data = (root/target).read_bytes()
         check(len(data) <= EXPORT_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
         files[target] = {'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data), 'rows': counts}
-    manifest = {'version': 1, 'scope': scope, 'public': True,
+    manifest = {'version': 2, 'scope': scope, 'public': True,
+                'window': {'from': window_from, 'to': window_to},
                 'run': run, 'sourceArchiveSha256': source_sha256, 'files': files,
                 'omitted': ['settings', 'runtime', 'auth', 'market_candles', 'portfolio_snapshots', 'thresholds', 'free_text', 'raw_ids']}
     check(sum(v['bytes'] for v in files.values()) <= EXPORT_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
@@ -250,7 +338,7 @@ def build_export(stream, record):
     stream.seek(0)
     check(hashlib.file_digest(stream, 'sha256').hexdigest() == backup['sha256'], 'EXPORT_MANIFEST_MISMATCH')
     stream.seek(0)
-    deadline = time.monotonic()+60
+    deadline = time.monotonic()+EXPORT_TIMEOUT_SECONDS
     with tempfile.TemporaryDirectory(prefix='suiba-public-export-') as tmp:
         root = Path(tmp)
         seen = _unpack_archive(stream, root, deadline)
@@ -269,7 +357,7 @@ def build_live_export(stream, record, source_sha256):
     stream.seek(0, 2)
     check(0 < stream.tell() <= ARCHIVE_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
     stream.seek(0)
-    deadline = time.monotonic()+60
+    deadline = time.monotonic()+EXPORT_TIMEOUT_SECONDS
     with tempfile.TemporaryDirectory(prefix='suiba-prod-export-') as tmp:
         root = Path(tmp)
         seen = _unpack_archive(stream, root, deadline)

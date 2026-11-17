@@ -33,6 +33,7 @@ import {
 } from "../monthlyReport.ts";
 import { number as fmtNumber, percent as fmtPercent } from "../presentation.ts";
 import type { OperationsSnapshot } from "../operationsTypes.ts";
+import { forecastLineCrossings } from "../../../../packages/shared/src/chartForecast.ts";
 import { operationReason } from "../operationLabels.ts";
 import type { VitalState } from "../botVital.ts";
 import { cycleNarrationText, decisionTrail, sellLinesOf } from "./decision.ts";
@@ -88,6 +89,27 @@ export const BTC_SAMPLE_FRESH_MS = 3 * 60 * 1000;
 export const FORECAST_CALL_FRESH_MS = 10 * 60_000;
 export const FORECAST_CALL_COOLDOWN_MS = 60 * 60_000;
 export const FORECAST_VERDICT_FRESH_MS = 2 * 3600 * 1000;
+export const SELL_LINE_CROSSING_REARM_MS = 15 * 60_000;
+export const SELL_LINE_CROSSING_COOLDOWN_MS = 30 * 60_000;
+
+/** Rebuild worker-recorded points only to call the shared crossing geometry. */
+export function forecastSellLineCrossings(
+  records: readonly ForecastRecord[],
+  lines: NarrationState["sellLines"],
+) {
+  const rec = records.at(-1);
+  if (!lines || !rec?.mid || rec.mid.length !== rec.up.length || rec.lo.length !== rec.up.length)
+    return null;
+  return forecastLineCrossings(
+    rec.mid.map((mid, i) => ({
+      timestamp: rec.origin + i * 300,
+      mid,
+      upper: rec.up[i],
+      lower: rec.lo[i],
+    })),
+    lines,
+  );
+}
 
 export function btcMutter(
   btc: BtcInfo | null | undefined,
@@ -199,6 +221,7 @@ export interface AdvanceWork {
   lastNearMiss: NarrationState["lastNearMiss"];
   priceLine: NarrationState["priceLine"];
   sellLines: NarrationState["sellLines"];
+  sellLineCrossingState: NarrationState["sellLineCrossingState"];
   sleepingSince: NarrationState["sleepingSince"];
   lastSleepTalkAt: NarrationState["lastSleepTalkAt"];
   lastSleepTalkText: NarrationState["lastSleepTalkText"];
@@ -210,6 +233,7 @@ export interface AdvanceWork {
   forecastTouchSettled: NarrationState["forecastTouchSettled"];
   lastForecastCallAt: NarrationState["lastForecastCallAt"];
   lastCalibScoredAt: NarrationState["lastCalibScoredAt"];
+  forecastCalibEventIds: string[];
 }
 
 function bumpMonthly(
@@ -353,11 +377,11 @@ for (const c of candidates) {
   work.seen.add(key);
   const qty =
     c.quantityAtomic != null && Number.isFinite(Number(c.quantityAtomic))
-      ? `${fmtNumber(Number(c.quantityAtomic) / 1e9, 9)} 基軸通貨`
+      ? `${fmtNumber(Number(c.quantityAtomic) / 1e9, 4)} 基軸通貨`
       : null;
   const quote =
-    c.quotePriceUsdc != null
-      ? `${fmtNumber(c.quotePriceUsdc, 4)} USDC`
+    c.quotePriceUsdc != null && Number.isFinite(Number(c.quotePriceUsdc))
+      ? `${fmtNumber(Number(c.quotePriceUsdc), 4)} USDC`
       : null;
   const fill = [qty, quote ? `見積もり価格 ${quote}` : null]
     .filter(Boolean)
@@ -711,6 +735,7 @@ export function stageForecasts(
   now: number,
 ) {
 if (forecasts) {
+  stageSellLineCrossings(work, forecasts.records, now);
   const pruneBefore = now - 3 * 24 * 3600 * 1000;
   const pruned = <T,>(m: Record<string, T>): Record<string, T> =>
     Object.fromEntries(
@@ -788,6 +813,44 @@ if (forecasts) {
 }
 }
 
+export function stageSellLineCrossings(
+  work: AdvanceWork,
+  records: readonly ForecastRecord[],
+  now: number,
+) {
+  const crossings = forecastSellLineCrossings(records, work.sellLines);
+  for (const side of ["tp", "sl"] as const) {
+    const before = work.sellLineCrossingState[side];
+    const mid = crossings?.[side === "tp" ? "tpMid" : "slMid"] ?? null;
+    const edge = crossings?.[side === "tp" ? "tpEdge" : "slEdge"] ?? null;
+    const crossing = mid ?? edge;
+    if (!crossing) {
+      work.sellLineCrossingState = {
+        ...work.sellLineCrossingState,
+        [side]: { ...before, present: false, absentSince: before.present ? now : before.absentSince },
+      };
+      continue;
+    }
+    const rearmed = before.absentSince != null && now - before.absentSince >= SELL_LINE_CROSSING_REARM_MS;
+    const cooled = before.lastCalledAt == null || now - before.lastCalledAt >= SELL_LINE_CROSSING_COOLDOWN_MS;
+    const shouldCall = !before.present && rearmed && cooled;
+    if (shouldCall) {
+      const name = side === "tp" ? "利確ライン" : "損切りライン";
+      const route = mid ? "中心の予測" : `予測帯の${side === "tp" ? "上端" : "下端"}だけ`;
+      work.drafts.push({
+        at: now,
+        kind: "sellLineCrossing",
+        sellLineSide: side,
+        text: `${name}まで、${route}ならあと${crossing.bars}本。模式の交点が新しく出たよ`,
+      });
+    }
+    work.sellLineCrossingState = {
+      ...work.sellLineCrossingState,
+      [side]: { present: true, absentSince: null, lastCalledAt: shouldCall ? now : before.lastCalledAt },
+    };
+  }
+}
+
 /** How fresh a calibration change must be to be told; an older
  * one is adopted silently (the feed was closed when it happened). */
 export const CALIB_TELL_FRESH_MS = 30 * 60 * 1000;
@@ -801,6 +864,12 @@ export function stageCalibration(
   calib: CalibEvent | null | undefined,
   now: number,
 ) {
+  if (calib?.id) {
+    if (work.forecastCalibEventIds.includes(calib.id)) return;
+    work.forecastCalibEventIds = [...work.forecastCalibEventIds, calib.id];
+    work.drafts.push({ id: calib.id, at: calib.at, kind: "forecastCalib", text: calibText(calib) });
+    return;
+  }
   if (!calib || calib.scored <= work.lastCalibScoredAt) return;
   work.lastCalibScoredAt = calib.scored;
   if (now - calib.at > CALIB_TELL_FRESH_MS) return;

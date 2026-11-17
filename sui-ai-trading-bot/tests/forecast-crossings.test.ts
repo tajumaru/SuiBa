@@ -7,13 +7,11 @@ import {
   type ForecastPoint,
 } from "../apps/dashboard/src/chartForecast.ts";
 import { PriceChart } from "../apps/dashboard/src/PriceChart.tsx";
+import { crossingMarksFor } from "../apps/dashboard/src/chartOverlayGeometry.ts";
 import type { Candle } from "../packages/shared/src/index.ts";
 
 const T0 = 1_700_000_000;
-function points(
-  mids: number[],
-  halfWidth = 0.002,
-): ForecastPoint[] {
+function points(mids: number[], halfWidth = 0.002): ForecastPoint[] {
   return mids.map((mid, i) => ({
     timestamp: T0 + i * 300,
     mid,
@@ -61,6 +59,23 @@ describe("forecastLineCrossings", () => {
 });
 
 describe("PriceChart forecast crossing marks", () => {
+  it("uses the centre for mid hits and the reached edge for edge-only hits", () => {
+    const latest: Candle = { timestamp: T0 - 300, timeframe: 300, open: 1, high: 1, low: 1, close: 1, volume: 1, source: "GeckoTerminal" };
+    const base = { driftPct: 0, bandPct: 0.01, direction: "up" as const, directionWord: "上向き", bookTiltPct: 0, touch: null };
+    const x = (v: number) => v, y = (v: number) => v * 1000;
+    const mid = crossingMarksFor({ ...base, points: points([1.001, 1.006], 0.002) }, { tp: 1.005, sl: 0.5 }, latest, x, y, 300)[0];
+    const midPath = mid.trajectory.split(" ").map((p) => p.split(",").map(Number));
+    expect(mid.edgeOnly).toBe(false);
+    expect(midPath[1][1]).toBeCloseTo(1001);
+    expect(midPath[2][1]).toBeCloseTo(1005);
+    const edge = crossingMarksFor({ ...base, points: points([1.001, 1.003], 0.004) }, { tp: 1.0055, sl: 0.5 }, latest, x, y, 300)[0];
+    const edgePath = edge.trajectory.split(" ").map((p) => p.split(",").map(Number));
+    expect(edge.edgeOnly).toBe(true);
+    expect(edgePath[1][1]).toBeCloseTo(1005);
+    expect(edgePath[1][1]).not.toBeCloseTo(1001);
+    expect(edgePath[2][1]).toBeCloseTo(1005.5);
+  });
+
   it("labels the bar where the outlook reaches the take-profit line", () => {
     const now = Math.floor(Date.now() / 1000 / 300) * 300;
     const cs: Candle[] = Array.from({ length: 60 }, (_, i) => {
@@ -83,6 +98,7 @@ describe("PriceChart forecast crossing marks", () => {
     const tp = fc!.points[8].mid;
     const html = renderToStaticMarkup(
       React.createElement(PriceChart, {
+        forecast: fc,
         candles: cs,
         trades: [],
         sellLines: { tp, sl: 0.5 },
@@ -91,5 +107,18 @@ describe("PriceChart forecast crossing marks", () => {
     expect(html).toContain("chart-forecast-crossing");
     expect(html).toContain("利確ライン");
     expect(html).not.toContain("損切りライン");
+    const plot = html.slice(html.indexOf("<svg"), html.indexOf("</svg>"));
+    expect(plot).toContain("chart-forecast-crossing");
+    expect(plot).not.toContain("利確ライン");
+    expect(plot).not.toContain("タッチライン $");
+    const details = html.slice(html.indexOf('class="chart-forecast-details"'));
+    expect(details).toContain("予測の詳細（模式）");
+    expect(details).toContain("利確ラインまで");
+    expect(details).toContain("あと");
+    if (fc!.touch) {
+      expect(details).toContain("タッチライン");
+      expect(details).toContain("到達確率");
+      expect(details).toContain(`${Math.round(fc!.touch.prob * 100)}%`);
+    }
   });
 });

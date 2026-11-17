@@ -51,7 +51,7 @@ describe("ProfitGuard contract (test-first)", () => {
         minAmountOut: "2500000000",
       };
     const buy = paper.fill("b", "BUY", q, initialPortfolio(now), defaults, now);
-    expect(buy.trade.acquisition?.totalCostUsdc).toBe("5.045000");
+    expect(buy.trade.acquisition?.totalCostUsdc).toBe("5.010000");
     expect(buy.trade.costs?.dexFeeUsdc).toBeNull();
     const a = paper.fill(
       "s1",
@@ -69,8 +69,8 @@ describe("ProfitGuard contract (test-first)", () => {
       defaults,
       now,
     );
-    expect(a.trade.allocatedCostUsdc).toBe("2.018000");
-    expect(b.trade.allocatedCostUsdc).toBe("3.027000");
+    expect(a.trade.allocatedCostUsdc).toBe("2.004000");
+    expect(b.trade.allocatedCostUsdc).toBe("3.006000");
     expect(b.portfolio.costBasisUsdc).toBe("0.000000");
     expect(b.portfolio.quantityAtomic).toBe("0");
     expect(b.portfolio.usdc - 100).toBeCloseTo(b.portfolio.realized, 10);
@@ -392,7 +392,7 @@ describe("ProfitGuard contract (test-first)", () => {
       now,
     );
     expect(second.portfolio.quantityAtomic).toBe("4500000000");
-    expect(second.portfolio.costBasisUsdc).toBe("10.090000");
+    expect(second.portfolio.costBasisUsdc).toBe("10.020000");
     expect(
       allocateCost(
         {
@@ -401,7 +401,7 @@ describe("ProfitGuard contract (test-first)", () => {
         },
         "2250000000",
       ).allocatedCostUsdc,
-    ).toBe("5.045000");
+    ).toBe("5.010000");
   });
   it.each([
     ["STOP_LOSS", null, position, costs, profitDefaults, "QUOTE_UNAVAILABLE"],

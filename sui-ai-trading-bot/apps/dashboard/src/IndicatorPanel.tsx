@@ -12,6 +12,7 @@ export function IndicatorPanel({
   width,
   start,
   end,
+  dataEnd,
   selected,
 }: {
   interaction?: React.SVGProps<SVGSVGElement>;
@@ -22,6 +23,8 @@ export function IndicatorPanel({
   width: number;
   start: number;
   end: number;
+  /** End of the historical window, excluding the forecast-only space. */
+  dataEnd: number;
   selected: number | null;
 }) {
   const svg = useRef<SVGSVGElement>(null);
@@ -45,7 +48,10 @@ export function IndicatorPanel({
   const index = candles.findIndex((c) => c.timestamp === selected),
     names = kind === "RSI" ? ["RSI14"] : ["MACD", "シグナル", "ヒストグラム"];
   return (
-    <section className="linked-indicator" aria-label={`${kind}連動チャート`}>
+    <section
+      className="linked-indicator chart-meta"
+      aria-label={`${kind}連動チャート`}
+    >
       <h3>
         {kind} · {candles[0]?.timeframe / 60}分足
       </h3>
@@ -114,9 +120,12 @@ export function IndicatorPanel({
           )
           .join(" ／ ")}
       </p>
-      {(end - start) / candles[0].timeframe > candles.length && (
-        <p className="chart-warning">データ不足：表示期間に欠損があります。</p>
-      )}
+      {candles.length > 0 &&
+        (dataEnd - start) / candles[0].timeframe > candles.length && (
+          <p className="chart-warning">
+            データ不足：表示期間に欠損があります。
+          </p>
+        )}
       {!valid.length && (
         <p className="chart-warning">
           データ不足：連続する確定足が60本揃うまで未計測です。

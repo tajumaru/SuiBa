@@ -12,6 +12,7 @@ import {
 import {
   advanceNarration,
   agentPose,
+  agentPoseDetails,
   currentConditionChips,
   currentWatch,
   currentWatchScore,
@@ -34,6 +35,7 @@ import type {
   OperationEvent,
 } from "../packages/shared/src/operations.ts";
 import type { ApiFailure } from "../packages/shared/src/http-errors.ts";
+import type { ForecastRecord } from "../apps/dashboard/src/forecastLog.ts";
 
 const NOW = 1_800_000_000_000;
 const databases: BotDatabase[] = [];
@@ -678,6 +680,31 @@ describe("agent narration: trades and rejections from candidate audits", () => {
     expect(agentPose(state, d2, vital, NOW + 1000)).toBe("pointSmile");
   });
 
+  it("rounds recorded trade quantities and prices for narration", () => {
+    const { db, monitor } = fixture();
+    const d1 = runningSnapshot(db, monitor, decision({}));
+    let state = advanceNarration(emptyNarrationState(), d1, "alive", NOW);
+    const d2 = runningSnapshot(
+      db,
+      monitor,
+      decision({ evaluatedAt: NOW, action: "SELL", selectedRule: "SELL_SIGNAL" }),
+    );
+    d2.candidates = [
+      candidate({
+        id: "cand-precision",
+        finalAction: "SELL",
+        quantityAtomic: "12326538895",
+        quotePriceUsdc: "0.81125773302482245565",
+        timestamp: NOW + 1000,
+        createdAt: NOW + 1000,
+      }),
+    ];
+    state = advanceNarration(state, d2, "alive", NOW + 1000);
+    expect(state.entries.at(-1)?.text).toContain(
+      "12.3265 基軸通貨・見積もり価格 0.8113 USDC",
+    );
+  });
+
   it("a gate rejection narrates the recorded reason in Japanese", () => {
     const { db, monitor } = fixture();
     const d1 = runningSnapshot(db, monitor, decision({}));
@@ -1056,6 +1083,23 @@ describe("agent narration: fail-closed", () => {
     const vital = botVital(d, false, NOW, NOW);
     expect(agentPose(state, d, vital, NOW)).toBe("pointSmile");
     expect(agentPose(state, d, vital, NOW + 360_001)).toBe("laptop");
+  });
+
+  it("reports the point-smile cause with recorded fills taking priority", () => {
+    const { db, monitor } = fixture();
+    const d = runningSnapshot(db, monitor, null);
+    const state = emptyNarrationState();
+    const vital = botVital(d, false, NOW, NOW);
+    state.lastHitAt = NOW;
+    expect(agentPoseDetails(state, d, vital, NOW)).toEqual({
+      pose: "pointSmile",
+      pointSmileCause: "hit",
+    });
+    state.entries = [{ id: "trade", at: NOW, kind: "trade", text: "recorded" }];
+    expect(agentPoseDetails(state, d, vital, NOW)).toEqual({
+      pose: "pointSmile",
+      pointSmileCause: "trade",
+    });
   });
 
   it("does not narrate or point for old/future evidence or unconfirmed running state", () => {
@@ -2939,6 +2983,37 @@ describe("sell line narration", () => {
       sellLinesOf({ entryPrice: 2, takeProfitPct: 0, stopLossPct: 0.02 }),
     ).toBeNull();
   });
+
+  it("silently adopts, suppresses persistence, and re-arms a crossing", () => {
+    const { db, monitor } = fixture();
+    const snap = (at: number) => runningSnapshot(db, monitor, holding({ evaluatedAt: at - 1_000 }));
+    const rec = (origin: number, mid: number[]): ForecastRecord => ({ origin, startClose: 2.02, dir: "up", mid, up: mid.map((v) => v + 0.005), lo: mid.map((v) => v - 0.005) });
+    const input = (record: ForecastRecord) => ({ records: [record], candles: [] });
+    const crossing = rec(NOW / 1000, [2.03, 2.07]);
+    let state = advanceNarration(emptyNarrationState(), snap(NOW), "alive", NOW, undefined, undefined, input(crossing));
+    state = advanceNarration(state, snap(NOW + 60_000), "alive", NOW + 60_000, undefined, undefined, input(crossing));
+    expect(ofKind(state, "sellLineCrossing")).toHaveLength(0);
+    state = advanceNarration(state, snap(NOW + 2 * 60_000), "alive", NOW + 2 * 60_000, undefined, undefined, input(rec(NOW / 1000 + 300, [2.02, 2.03])));
+    state = advanceNarration(state, snap(NOW + 18 * 60_000), "alive", NOW + 18 * 60_000, undefined, undefined, input(crossing));
+    const calls = ofKind(state, "sellLineCrossing");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sellLineSide).toBe("tp");
+    expect(calls[0].text).toBe("利確ラインまで、中心の予測ならあと2本。模式の交点が新しく出たよ");
+    expect(calls[0].text).not.toMatch(/やで|やろ|ねん|へん/);
+  });
+
+  it("names an edge-only crossing honestly and applies cooldown", () => {
+    const { db, monitor } = fixture();
+    const snap = (at: number) => runningSnapshot(db, monitor, holding({ evaluatedAt: at - 1_000 }));
+    const rec = (origin: number, upper: number): ForecastRecord => ({ origin, startClose: 2.02, dir: "up", mid: [2.02], up: [upper], lo: [2.01] });
+    const input = (record: ForecastRecord) => ({ records: [record], candles: [] });
+    let state = advanceNarration(emptyNarrationState(), snap(NOW), "alive", NOW, undefined, undefined, input(rec(NOW / 1000, 2.04)));
+    state = advanceNarration(state, snap(NOW + 16 * 60_000), "alive", NOW + 16 * 60_000, undefined, undefined, input(rec(NOW / 1000 + 300, 2.07)));
+    expect(ofKind(state, "sellLineCrossing")[0].text).toContain("予測帯の上端だけならあと1本");
+    state = advanceNarration(state, snap(NOW + 17 * 60_000), "alive", NOW + 17 * 60_000, undefined, undefined, input(rec(NOW / 1000 + 600, 2.04)));
+    state = advanceNarration(state, snap(NOW + 33 * 60_000), "alive", NOW + 33 * 60_000, undefined, undefined, input(rec(NOW / 1000 + 900, 2.07)));
+    expect(ofKind(state, "sellLineCrossing")).toHaveLength(1);
+  });
 });
 
 describe("agent narration: reach escalation and hit streaks", () => {
@@ -3176,9 +3251,16 @@ describe("agent narration: reach escalation and hit streaks", () => {
     const legacy = { ...emptyNarrationState() } as Record<string, unknown>;
     delete legacy.reach;
     delete legacy.hitStreak;
+    delete legacy.memoryCooldowns;
+    delete legacy.memorySealEnabledAt;
+    delete legacy.openedMemorySealIds;
+    const restoredAt = Date.now();
     saved.setItem("suiba.narration.v1", JSON.stringify(legacy));
     const fromLegacy = restoreNarration(saved);
     expect(fromLegacy.reach).toBeNull();
     expect(fromLegacy.hitStreak).toBe(0);
+    expect(fromLegacy.memoryCooldowns).toEqual({});
+    expect(fromLegacy.memorySealEnabledAt).toBeGreaterThanOrEqual(restoredAt);
+    expect(fromLegacy.openedMemorySealIds).toEqual([]);
   });
 });

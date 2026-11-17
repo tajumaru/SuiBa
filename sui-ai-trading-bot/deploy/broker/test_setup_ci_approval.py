@@ -30,6 +30,10 @@ SCRIPT = os.path.join(HERE, "setup-ci-approval.sh")
 BROKER = os.path.join(HERE, "broker.py")
 PAPER_COMPOSE = os.path.join(APP, "docker", "compose.vps.yaml")
 PROD_COMPOSE = os.path.join(APP, "docker", "compose.vps-prod.yaml")
+PAPER_CHECK = os.path.join(APP, "deploy", "paper-check")
+MEMWAL_HELPER = os.path.join(PAPER_CHECK, "memwal-runtime.py")
+MEMWAL_WRAPPER = os.path.join(PAPER_CHECK, "suiba-memwal-runtime")
+MEMWAL_SUDOERS = os.path.join(PAPER_CHECK, "suiba-memwal-runtime.sudoers")
 
 
 def sha256(path):
@@ -77,6 +81,11 @@ class ComposePinTests(unittest.TestCase):
         with open(PROD_COMPOSE, encoding="utf-8") as fh:
             self.assertIn("PAPER_CHECK_MODE: sui-prod", fh.read())
 
+    def test_memwal_delivery_pins_match_files(self):
+        self.assertEqual(script_pin("MEMWAL_HELPER_SHA256"), sha256(MEMWAL_HELPER))
+        self.assertEqual(script_pin("MEMWAL_WRAPPER_SHA256"), sha256(MEMWAL_WRAPPER))
+        self.assertEqual(script_pin("MEMWAL_SUDOERS_SHA256"), sha256(MEMWAL_SUDOERS))
+
 
 class VariantArgumentTests(unittest.TestCase):
     def test_unknown_variant_is_rejected(self):
@@ -98,7 +107,10 @@ class ModeChangeGuardTests(unittest.TestCase):
         self.policy_dir = os.path.join(root, "etc", "suiba-deploy")
         self.shared = os.path.join(root, "opt", "suiba", "shared")
         self.libexec = os.path.join(root, "usr", "local", "libexec")
-        for folder in (self.policy_dir, self.shared, self.libexec):
+        self.sbin = os.path.join(root, "usr", "local", "sbin")
+        self.sudoers_dir = os.path.join(root, "etc", "sudoers.d")
+        for folder in (self.policy_dir, self.shared, self.libexec,
+                       self.sbin, self.sudoers_dir):
             os.makedirs(folder)
         self.policy = os.path.join(self.policy_dir, "policy.json")
         with open(self.policy, "w", encoding="utf-8") as fh:
@@ -109,6 +121,7 @@ class ModeChangeGuardTests(unittest.TestCase):
                   encoding="utf-8") as fh:
             fh.write("MARKET_DATA_PROVIDER=deepbook\n"
                      "DEEPBOOK_RECONSTRUCT_CANDLES=off\n"
+                     "SUIBA_NARRATION_GENERATION_ENABLED=false\n"
                      "SUI_GRPC_URL=https://fullnode.mainnet.sui.io:443\n")
         with open(os.path.join(self.shared, "admin-token"), "w",
                   encoding="utf-8") as fh:
@@ -125,9 +138,13 @@ class ModeChangeGuardTests(unittest.TestCase):
             source = fh.read()
         overrides = {
             "BROKER_URL": "file://" + BROKER,
+            "MEMWAL_BASE_URL": "file://" + PAPER_CHECK,
             "COMPOSE_URL": "file://" + PAPER_COMPOSE,
             "COMPOSE_PROD_URL": "file://" + PROD_COMPOSE,
             "BROKER_TARGET": self.broker_target,
+            "MEMWAL_HELPER_TARGET": os.path.join(self.libexec, "suiba-memwal-runtime.py"),
+            "MEMWAL_WRAPPER_TARGET": os.path.join(self.sbin, "suiba-memwal-runtime"),
+            "MEMWAL_SUDOERS_TARGET": os.path.join(self.sudoers_dir, "suiba-memwal-runtime"),
             "COMPOSE_TARGET": self.compose_target,
             "POLICY": self.policy,
             "SHARED": self.shared,

@@ -141,6 +141,7 @@ export function Chart(props: {
   forecastScoreText?: string | null;
   forecastTouchText?: string | null;
   forecastBandScale?: number;
+  forecast?: import("./chartForecast.ts").ChartForecast | null;
   bookImbalance?: number | null;
   sellLines?: { tp: number; sl: number } | null;
   answerCheck?: ForecastAnswerCheck | null;

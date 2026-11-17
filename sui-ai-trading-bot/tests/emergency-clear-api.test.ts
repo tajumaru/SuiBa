@@ -52,7 +52,11 @@ async function fixture(runtime: Record<string, unknown>) {
     pair: "SUI_USDC",
     switching: false,
     stopping: false,
-    browserSessions: { bearer: () => true, valid: () => false },
+    browserSessions: {
+      bearer: () => true,
+      readonlyBearer: () => false,
+      valid: () => false,
+    },
     deploymentGate: { blocked: () => false },
     paperCheck: {
       status: () => ({ enabled: true, armed: true }),

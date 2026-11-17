@@ -212,8 +212,8 @@ describe("PAPER operation monitor", () => {
       saleModel: "PROJECTED_TARGET",
     });
     expect(s.candidates[0].quotePriceUsdc).not.toBeNull();
-    expect(s.accounting.totals.gasUsdc).toBe("0.03");
-    expect(s.accounting.ledger.expectedGasUsdc).toBe("0.03");
+    expect(s.accounting.totals.gasUsdc).toBe("0.005");
+    expect(s.accounting.ledger.expectedGasUsdc).toBe("0.005");
     expect(s.lastTradeAt).not.toBeNull();
     t.db.close();
   });
@@ -312,6 +312,22 @@ describe("PAPER operation monitor", () => {
       db.close();
     },
   );
+  it("clears a previous run's stop reason on boot and manual start", () => {
+    const db = new BotDatabase(":memory:");
+    const m = new OperationMonitor(db);
+    db.set("runtime", { ...db.runtime(), running: true });
+    m.failCycle("THIN_ORDERBOOK");
+    expect(m.safetySnapshot().lastStopReason).toBe("THIN_ORDERBOOK");
+    m.boot();
+    expect(m.safetySnapshot().lastStopReason).toBeNull();
+    db.set("runtime", { ...db.runtime(), running: true, error: null });
+    m.failCycle("SPREAD_TOO_WIDE");
+    expect(m.safetySnapshot().lastStopReason).toBe("SPREAD_TOO_WIDE");
+    db.set("runtime", { ...db.runtime(), running: true, error: null });
+    m.transition("MANUAL_START");
+    expect(m.safetySnapshot().lastStopReason).toBeNull();
+    db.close();
+  });
   it("retains the initiating stop reason while recording later failed monitoring", () => {
     const db = new BotDatabase(":memory:");
     db.set("runtime", { ...db.runtime(), running: true });
@@ -514,6 +530,11 @@ describe("PAPER operation monitor", () => {
       netPnl: 5,
       maxDrawdown: 0.1,
     });
+    expect(m.snapshot(now).accounting.totals).toMatchObject({
+      roundTrips: 251,
+      wins: 126,
+      realizedPnlUsdc: "2",
+    });
     db.close();
   });
   it("labels missing legacy gas as unknown instead of zero", () => {
@@ -536,6 +557,9 @@ describe("PAPER operation monitor", () => {
       now,
     );
     expect(m.snapshot().accounting.totals).toMatchObject({
+      roundTrips: 0,
+      wins: 0,
+      realizedPnlUsdc: "0",
       gasUsdc: null,
       unknownGasTrades: 1,
       feesUsdc: "0.1",
@@ -685,7 +709,7 @@ it("detects cumulative gas and fill-count ledger corruption independently", asyn
   expect(ledger.ok).toBe(false);
   expect(ledger.reasons).toContain("GAS_LEDGER_MISMATCH");
   expect(ledger.reasons).toContain("FILL_LEDGER_COUNT_MISMATCH");
-  expect(Number(trade.costs?.gasUsdc)).toBe(0.03);
+  expect(Number(trade.costs?.gasUsdc)).toBe(0.005);
   t.engine.monitor.watchdog();
   expect(t.db.runtime().running).toBe(false);
   t.db.close();
@@ -830,10 +854,10 @@ it("completes an isolated BUY and protective SELL with exact cash, fees, realize
   try {
     await t.engine.tick();
     expect(t.db.portfolio()).toMatchObject({
-      usdc: 97.964,
+      usdc: 97.993,
       sui: 0.997,
-      costBasis: 2.036,
-      fees: 0.036,
+      costBasis: 2.007,
+      fees: 0.007,
       realized: 0,
     });
     vi.setSystemTime(Date.now() + 300000);
@@ -848,9 +872,9 @@ it("completes an isolated BUY and protective SELL with exact cash, fees, realize
     });
     await t.engine.tick();
     const p = t.db.portfolio();
-    expect(p.usdc).toBeCloseTo(99.916053, 6);
-    expect(p.realized).toBeCloseTo(-0.083947, 6);
-    expect(p.fees).toBeCloseTo(0.071965, 6);
+    expect(p.usdc).toBeCloseTo(99.974029, 6);
+    expect(p.realized).toBeCloseTo(-0.025971, 6);
+    expect(p.fees).toBeCloseTo(0.013989, 6);
     expect(p.sui).toBe(0);
     expect(p.costBasis).toBe(0);
     for (const table of [
@@ -862,7 +886,7 @@ it("completes an isolated BUY and protective SELL with exact cash, fees, realize
       expect(t.db.history(table)).toHaveLength(2);
     const trades = t.db.history<Fill>("paper_trades");
     expect(trades.find((x) => x.side === "SELL")?.pnl).toBeCloseTo(
-      -0.083947,
+      -0.025971,
       6,
     );
     for (const c of t.db.history<CandidateAudit>("operation_candidates"))

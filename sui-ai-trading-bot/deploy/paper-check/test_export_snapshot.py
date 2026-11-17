@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -31,15 +32,90 @@ e = load('snapshot_export', HERE/'export_snapshot.py')
 c = load('controller', HERE/'controller.py')
 client = load('public_package', HERE.parents[1]/'docker/public-snapshot-package.py')
 SECRET = 'SECRET_FIXTURE_TOKEN_DO_NOT_EXPORT'
+NOW_MS = int(time.time() * 1000)
 
 
 class ExportTests(unittest.TestCase):
+    def test_source_archive_limit_accepts_the_boundary_and_rejects_one_byte_over(self):
+        class ReportedSizeStream(io.BytesIO):
+            def __init__(self, reported_size):
+                super().__init__(b'not a tar archive')
+                self.reported_size = reported_size
+
+            def tell(self):
+                position = super().tell()
+                return self.reported_size if position == len(self.getvalue()) else position
+
+        record = {'id': 'a'*32, 'status': 'in_progress'}
+        digest = hashlib.sha256(b'not a tar archive').hexdigest()
+        with self.assertRaises(e.ExportError) as boundary:
+            e.build_live_export(ReportedSizeStream(e.ARCHIVE_LIMIT), record, digest)
+        self.assertEqual(boundary.exception.code, 'EXPORT_ARCHIVE_INVALID')
+        with self.assertRaises(e.ExportError) as oversized:
+            e.build_live_export(ReportedSizeStream(e.ARCHIVE_LIMIT + 1), record, digest)
+        self.assertEqual(oversized.exception.code, 'EXPORT_LIMIT_EXCEEDED')
+
+    def test_host_stop_codes_survive_the_public_event_export(self):
+        for code in ('EXTERNAL_STOP', 'WORKER_OOM', 'WORKER_EXITED', 'WORKER_EXITED_CLEAN', 'UNKNOWN'):
+            with self.subTest(code=code):
+                self.assertEqual(e.sanitize('operation_events', {'kind': 'STOP', 'code': code})['code'], code)
+
+    def test_shadow_sanitize(self):
+        raw = {'cycleId': 'private-cycle', 'status': 'OK', 'action': 'BUY',
+               'confidence': .8, 'model': SECRET, 'promptVersion': 'shadow-s1-v1',
+               'ruleAction': 'WAIT', 'selectedRule': 'NO_SIGNAL', 'conditionCount': 2,
+               'candleTimestamp': 300, 'calledAt': 600000, 'latencyMs': 10,
+               'usage': {'inputTokens': 10, 'outputTokens': 5, 'cost': 0, 'secret': SECRET},
+               'snapshot': {'evidence': {'inputs': {'price': 2}, 'thresholds': {'oversold': 30}},
+                            'candles': [SECRET], 'settings': {'key': SECRET}},
+               'prompt': SECRET, 'apiKey': SECRET,
+               'rationale': {'text': SECRET, 'refs': [
+                   {'type': 'book', 'key': 'bid', 'value': 1.99},
+                   {'type': 'condition', 'key': 'emaUp', 'value': True},
+                   {'type': 'book', 'key': SECRET, 'value': 1},
+                   {'type': SECRET, 'key': 'bid', 'value': 1},
+                   {'type': 'book', 'key': 'ask', 'value': SECRET}]}}
+        out = e.sanitize('shadow_decisions', raw)
+        self.assertNotIn(SECRET, json.dumps(out))
+        for key in ('model', 'snapshot', 'settings', 'prompt', 'apiKey'):
+            self.assertNotIn(key, out)
+        self.assertEqual(out['promptVersion'], 'shadow-s1-v1')
+        self.assertEqual(out['price'], 2)
+        self.assertEqual(out['rationale'], {'refs': [{'type': 'book', 'key': 'bid', 'value': 1.99}]})
+        self.assertEqual(e.sanitize('shadow_decisions', out, public=True), out)
+        raw['promptVersion'] = SECRET
+        self.assertNotIn('promptVersion', e.sanitize('shadow_decisions', raw))
+        self.assertIn('shadow_decisions', e.TABLES)
+
+    def test_shadow_owner_approved_model_and_prompt_version_shapes(self):
+        for model in ('gpt-5.4-nano', 'gpt-5.4-mini', 'arbitrary-secret-model'):
+            out = e.sanitize('shadow_decisions', {'status': 'OK', 'model': model, 'promptVersion': 'shadow-openai-nano-v99'})
+            self.assertEqual(out.get('model'), model if model in ('gpt-5.4-nano', 'gpt-5.4-mini') else None)
+            self.assertEqual(out['promptVersion'], 'shadow-openai-nano-v99')
+            self.assertEqual(e.sanitize('shadow_decisions', out, public=True), out)
+        invalid_versions = (
+            'unknown',
+            'shadow-openai-nano-v0',
+            'shadow-openai-nano-v1/../../secret',
+            'shadow-openai-nano version 4',
+            'shadow-' + 'a' * 71 + '-v1',
+        )
+        for version in invalid_versions:
+            with self.subTest(version=version):
+                self.assertNotIn('promptVersion', e.sanitize('shadow_decisions', {'promptVersion': version}))
+        for code in ('SHADOW_API_KEY_MISSING', 'OPENAI_REFUSAL', 'OPENAI_RATE_LIMITED'):
+            self.assertEqual(e.sanitize('shadow_decisions', {'status': 'ERROR', 'reasonCode': code})['reasonCode'], code)
+
     def fixture(self, root, wal=False):
         root = Path(root)
         path = root/'bot.sqlite'
         db = sqlite3.connect(path)
         if wal: db.execute('PRAGMA journal_mode=WAL')
         records = {
+            'forecast_records': {'pair': 'SUI_USDC', 'origin': NOW_MS // 1000,
+                'startClose': 1, 'dir': 'up', 'up': [1.01, 1.02], 'lo': [.99, .98],
+                'mid': [1, 1.01], 'touch': {'line': SECRET}},
+            'shadow_decisions': {'cycleId': 'cycle', 'status': 'OK', 'action': 'BUY', 'model': SECRET, 'promptVersion': 'shadow-s1-v1', 'rationale': {'text': SECRET, 'refs': []}},
             'strategy_decisions': {'action': 'BUY', 'reason': SECRET, 'apiKey': SECRET, 'stopLossPct': 0.12345,
                 'analysisContext': {'cycleId': 'cycle', 'runningAtAnalysis': True},
                 'evidence': {'version': 1, 'candleTimestamp': 300, 'evaluatedAt': 600000, 'selectedRule': 'BUY_SIGNAL',
@@ -55,8 +131,13 @@ class ExportTests(unittest.TestCase):
         }
         for table, value in records.items():
             db.execute(f'CREATE TABLE {table}(id TEXT PRIMARY KEY,timestamp INTEGER,json TEXT)')
-            row_id = {'strategy_decisions': 'cycle', 'technical_indicators': 'cycle', 'operation_candidates': 'candidate', 'paper_orders': 'order-'+SECRET, 'paper_trades': 'order-'+SECRET}.get(table, table)
-            db.execute(f'INSERT INTO {table} VALUES(?,?,?)', (row_id, 600000, json.dumps(value)))
+            row_id = {'shadow_decisions': 'cycle', 'strategy_decisions': 'cycle', 'technical_indicators': 'cycle', 'operation_candidates': 'candidate', 'paper_orders': 'order-'+SECRET, 'paper_trades': 'order-'+SECRET}.get(table, table)
+            db.execute(f'INSERT INTO {table} VALUES(?,?,?)', (row_id, NOW_MS, json.dumps(value)))
+        db.execute('CREATE TABLE liquidation_buckets('
+                   'bucket_at INTEGER PRIMARY KEY,long_usd REAL,short_usd REAL,'
+                   'event_count INTEGER,updated_at INTEGER)')
+        db.execute('INSERT INTO liquidation_buckets VALUES(?,?,?,?,?)',
+                   (NOW_MS // 1000, 125000, 9000, 7, NOW_MS))
         db.commit()
         if not wal: db.close()
         stream = io.BytesIO()
@@ -68,7 +149,7 @@ class ExportTests(unittest.TestCase):
             archive.addfile(member, io.BytesIO(raw))
         if wal: db.close()
         raw = stream.getvalue()
-        record = {'id': 'a'*32, 'status': 'completed', 'started': 700000, 'duration': '6h', 'sha': 'b'*40,
+        record = {'id': 'a'*32, 'status': 'completed', 'started': NOW_MS, 'duration': '6h', 'sha': 'b'*40,
                   'backup': {'file': 'paper-check-'+'c'*32+'.tar', 'sha256': hashlib.sha256(raw).hexdigest()}, 'secret': SECRET}
         return raw, record
 
@@ -93,16 +174,191 @@ class ExportTests(unittest.TestCase):
                 self.assertEqual({r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}, set(e.TABLES))
                 decision_id, decision = db.execute('SELECT id,json FROM strategy_decisions').fetchone()
                 self.assertEqual(decision_id, db.execute('SELECT id FROM technical_indicators').fetchone()[0])
+                self.assertEqual(decision_id, db.execute('SELECT id FROM shadow_decisions').fetchone()[0])
                 self.assertNotIn('thresholds', json.loads(decision)['evidence'])
                 self.assertNotIn('stopLossPct', json.loads(decision))
+                forecast = json.loads(db.execute('SELECT json FROM forecast_records').fetchone()[0])
+                self.assertEqual(forecast, {'origin': NOW_MS // 1000,
+                                            'up': [1.01, 1.02], 'lo': [.99, .98]})
                 candidate = json.loads(db.execute('SELECT json FROM operation_candidates').fetchone()[0])
                 self.assertNotIn('minProfitUsdc', candidate)
                 self.assertEqual(candidate['orderId'], db.execute('SELECT id FROM paper_orders').fetchone()[0])
                 self.assertEqual(json.loads(db.execute('SELECT json FROM operation_events').fetchone()[0])['code'], 'REDACTED')
+                self.assertEqual(
+                    db.execute('PRAGMA table_info(liquidation_buckets)').fetchall(),
+                    [(0, 'bucket_at', 'INTEGER', 0, None, 1),
+                     (1, 'long_usd', 'REAL', 1, None, 0)])
+                self.assertEqual(
+                    db.execute('SELECT * FROM liquidation_buckets').fetchall(),
+                    [(NOW_MS // 1000, 125000.0)])
             finally: db.close()
             manifest = json.loads((output/'manifest.json').read_text())
             self.assertEqual(manifest['scope'], 'PRE_RUN_BACKUP_PUBLIC_EXTRACT')
             self.assertEqual(manifest['sourceArchiveSha256'], record['backup']['sha256'])
+            self.assertEqual(manifest['version'], 2)
+            self.assertEqual(manifest['window']['to'] - manifest['window']['from'], e.WINDOW_MS)
+            self.assertLessEqual(manifest['window']['from'], NOW_MS)
+            self.assertGreaterEqual(manifest['window']['to'], NOW_MS)
+
+    def test_export_keeps_window_rows_and_excludes_older_history_under_row_limit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root/'bot.sqlite'
+            db = sqlite3.connect(path)
+            db.execute('CREATE TABLE shadow_decisions(id TEXT PRIMARY KEY,timestamp INTEGER,json TEXT)')
+            db.execute('CREATE INDEX shadow_decisions_timestamp ON shadow_decisions(timestamp)')
+            old_at = NOW_MS - e.WINDOW_MS - 1
+            raw = json.dumps({'status': 'OK', 'action': 'WAIT'})
+            # The former unbounded loop trips ROW_LIMIT on this history before
+            # reaching the current row. The indexed window query reads one row.
+            db.executemany('INSERT INTO shadow_decisions VALUES(?,?,?)',
+                           ((f'old-{index}', old_at, raw) for index in range(e.ROW_LIMIT + 1)))
+            db.execute('INSERT INTO shadow_decisions VALUES(?,?,?)', ('current', NOW_MS, raw))
+            db.commit(); db.close()
+            legacy = sqlite3.connect(path)
+            try:
+                with self.assertRaises(e.ExportError) as error:
+                    total_rows = 0
+                    for _ in legacy.execute('SELECT id,timestamp,json FROM shadow_decisions ORDER BY timestamp,id'):
+                        total_rows += 1
+                        e.check(total_rows <= e.ROW_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
+                self.assertEqual(error.exception.code, 'EXPORT_LIMIT_EXCEEDED')
+                self.assertEqual(total_rows, e.ROW_LIMIT + 1)
+            finally:
+                legacy.close()
+            stream = io.BytesIO()
+            with tarfile.open(fileobj=stream, mode='w') as archive:
+                archive.add(path, arcname='./bot.sqlite')
+            archive_raw = stream.getvalue()
+            record = {'id': 'a'*32, 'status': 'completed', 'started': NOW_MS, 'duration': '24h',
+                      'backup': {'sha256': hashlib.sha256(archive_raw).hexdigest()}}
+            with patch.object(e.time, 'time', return_value=NOW_MS / 1000):
+                package = e.build_export(io.BytesIO(archive_raw), record)
+            with zipfile.ZipFile(io.BytesIO(package)) as archive:
+                manifest = json.loads(archive.read('manifest.json'))
+                exported_path = root/'exported.sqlite'
+                exported_path.write_bytes(archive.read('SUI_USDC.sqlite'))
+            exported = sqlite3.connect(exported_path)
+            try:
+                rows = exported.execute('SELECT id,timestamp FROM shadow_decisions').fetchall()
+            finally:
+                exported.close()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0], (e.identifier('current'), NOW_MS))
+            self.assertEqual(manifest['files']['SUI_USDC.sqlite']['rows']['shadow_decisions'], 1)
+            self.assertEqual(manifest['window'], {'from': NOW_MS - e.WINDOW_MS, 'to': NOW_MS})
+            self.assertLess(len(package), e.EXPORT_LIMIT)
+
+    def test_liquidation_buckets_are_capped_to_the_latest_window_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root/'bot.sqlite'
+            db = sqlite3.connect(path)
+            db.execute('CREATE TABLE liquidation_buckets('
+                       'bucket_at INTEGER PRIMARY KEY,long_usd REAL,short_usd REAL,'
+                       'event_count INTEGER,updated_at INTEGER)')
+            first = NOW_MS // 1000 - e.WINDOW_MS // 1000
+            total = e.LIQUIDATION_ROW_LIMIT + 25
+            db.executemany('INSERT INTO liquidation_buckets VALUES(?,?,?,?,?)',
+                           ((first + index, 100000 + index, SECRET, SECRET, NOW_MS)
+                            for index in range(total)))
+            db.commit(); db.close()
+            stream = io.BytesIO()
+            with tarfile.open(fileobj=stream, mode='w') as archive:
+                archive.add(path, arcname='./bot.sqlite')
+            raw = stream.getvalue()
+            record = {'id': 'a'*32, 'status': 'completed',
+                      'backup': {'sha256': hashlib.sha256(raw).hexdigest()}}
+            with patch.object(e.time, 'time', return_value=NOW_MS / 1000):
+                package = e.build_export(io.BytesIO(raw), record)
+            with zipfile.ZipFile(io.BytesIO(package)) as archive:
+                manifest = json.loads(archive.read('manifest.json'))
+                exported_path = root/'liquidations.sqlite'
+                exported_path.write_bytes(archive.read('SUI_USDC.sqlite'))
+            exported = sqlite3.connect(exported_path)
+            try:
+                count, minimum, maximum = exported.execute(
+                    'SELECT count(*),min(bucket_at),max(bucket_at) '
+                    'FROM liquidation_buckets').fetchone()
+            finally:
+                exported.close()
+            self.assertEqual(count, e.LIQUIDATION_ROW_LIMIT)
+            self.assertEqual(maximum, first + total - 1)
+            self.assertEqual(minimum, first + total - e.LIQUIDATION_ROW_LIMIT)
+            self.assertEqual(
+                manifest['files']['SUI_USDC.sqlite']['rows']['liquidation_buckets'],
+                e.LIQUIDATION_ROW_LIMIT)
+
+    def test_window_rate_fixture_exceeds_old_caps_and_fits_new_caps(self):
+        """Thirty-second cycles bound the 14-day extract without old history."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root/'bot.sqlite'
+            db = sqlite3.connect(path)
+            cycle_count = e.WINDOW_MS // 30000
+            counts = {
+                'shadow_decisions': e.WINDOW_DAYS * 200,
+                'strategy_decisions': cycle_count,
+                'technical_indicators': cycle_count,
+                'operation_candidates': cycle_count,
+                'paper_orders': cycle_count,
+                'paper_trades': cycle_count,
+                'operation_events': cycle_count,
+                'cycle_audits': cycle_count * 2,
+            }
+            payloads = {
+                'shadow_decisions': {'status': 'OK', 'action': 'WAIT', 'ruleAction': 'WAIT',
+                    'selectedRule': 'NO_SIGNAL', 'promptVersion': 'shadow-openai-nano-v1',
+                    'conditionCount': 2, 'confidence': .82, 'latencyMs': 1250,
+                    'usage': {'inputTokens': 900, 'outputTokens': 80, 'cost': .0002},
+                    'rationale': {'refs': [{'type': 'indicator', 'key': 'rsi', 'value': 48.2}]}},
+                'strategy_decisions': {'action': 'WAIT', 'confidence': .8,
+                    'evidence': {'version': 1, 'selectedRule': 'NO_SIGNAL',
+                        'inputs': {'price': 3.12, 'latestVolume': 12345, 'previousVolume': 12000,
+                            'current': {'ema20': 3.1, 'ema50': 3.0, 'rsi': 48.2}},
+                        'conditions': {'emaUp': True, 'rsiRecovery': False}}},
+                'technical_indicators': {'ema20': 3.1, 'ema50': 3.0, 'rsi': 48.2,
+                    'macd': .02, 'signal': .01, 'histogram': .01, 'atr': .05},
+                'operation_candidates': {'side': 'BUY', 'finalAction': 'WAIT',
+                    'requestedInputAtomic': '1000000', 'quotePriceUsdc': '3.12',
+                    'dexFeeUsdc': '.001', 'gasUsdc': '.002'},
+                'paper_orders': {'side': 'BUY', 'status': 'FILLED',
+                    'quote': {'amountIn': '1000000', 'amountOut': '320000000',
+                        'minAmountOut': '316800000', 'priceImpact': .001, 'slippage': .01}},
+                'paper_trades': {'side': 'BUY', 'quantity': 1, 'price': 3.12,
+                    'fee': .003, 'slippage': .001, 'allocatedCostUsdc': '3.123',
+                    'costs': {'gasUsdc': '.002', 'dexFeeUsdc': '.001'}},
+                'operation_events': {'kind': 'WAIT', 'code': 'API_BACKOFF'},
+                'cycle_audits': {'phase': 'END', 'runningAtStart': True, 'runningAtEnd': True},
+            }
+            first = NOW_MS - e.WINDOW_MS + 30000
+            for table, count in counts.items():
+                db.execute(f'CREATE TABLE {table}(id TEXT PRIMARY KEY,timestamp INTEGER,json TEXT)')
+                raw = json.dumps(payloads[table], separators=(',', ':'))
+                db.executemany(f'INSERT INTO {table} VALUES(?,?,?)',
+                    ((f'{table}-{index}', first + (index % cycle_count) * 30000, raw)
+                     for index in range(count)))
+                db.execute(f'CREATE INDEX {table}_timestamp ON {table}(timestamp)')
+            db.commit(); db.close()
+            stream = io.BytesIO()
+            with tarfile.open(fileobj=stream, mode='w') as archive:
+                archive.add(path, arcname='./bot.sqlite')
+            archive_raw = stream.getvalue()
+            record = {'id': 'a'*32, 'status': 'completed', 'started': NOW_MS,
+                'duration': '24h', 'backup': {'sha256': hashlib.sha256(archive_raw).hexdigest()}}
+            with patch.object(e.time, 'time', return_value=NOW_MS / 1000), \
+                 patch.object(e, 'ROW_LIMIT', 100000), patch.object(e, 'EXPORT_LIMIT', 16 * 1024**2):
+                with self.assertRaises(e.ExportError) as error:
+                    e.build_export(io.BytesIO(archive_raw), record)
+            self.assertEqual(error.exception.code, 'EXPORT_LIMIT_EXCEEDED')
+            with patch.object(e.time, 'time', return_value=NOW_MS / 1000):
+                package = e.build_export(io.BytesIO(archive_raw), record)
+            with zipfile.ZipFile(io.BytesIO(package)) as archive:
+                manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(manifest['files']['SUI_USDC.sqlite']['rows'], counts)
+            total_rows = sum(counts.values())
+            self.assertGreaterEqual(e.ROW_LIMIT / total_rows, 2)
+            self.assertGreaterEqual(e.EXPORT_LIMIT / manifest['files']['SUI_USDC.sqlite']['bytes'], 2)
 
     def test_episode_summary_survives_sanitization(self):
         event = {'kind': 'STOP', 'code': 'PAPER_RECOVERY_EXHAUSTED', 'fatal': False,
@@ -142,17 +398,17 @@ class ExportTests(unittest.TestCase):
             path = root/'bot.sqlite'
             db = sqlite3.connect(path)
             db.execute('CREATE TABLE operation_events(id TEXT PRIMARY KEY,timestamp INTEGER,json TEXT)')
-            event = {'timestamp': 183000, 'kind': 'STOP', 'code': 'PAPER_RECOVERY_EXHAUSTED',
+            event = {'timestamp': NOW_MS, 'kind': 'STOP', 'code': 'PAPER_RECOVERY_EXHAUSTED',
                      'episode': {'startedAt': 1000, 'endedAt': 183000, 'durationMs': 182000,
                                  'failures': 1, 'lastFailureAt': 3000, 'outcome': 'EXHAUSTED',
                                  'tally': {'MarketData/SPREAD_TOO_WIDE': 1}}}
-            db.execute('INSERT INTO operation_events VALUES(?,?,?)', ('event-1', 183000, json.dumps(event)))
+            db.execute('INSERT INTO operation_events VALUES(?,?,?)', ('event-1', NOW_MS, json.dumps(event)))
             db.commit(); db.close()
             stream = io.BytesIO()
             with tarfile.open(fileobj=stream, mode='w') as archive:
                 archive.add(path, arcname='./bot.sqlite')
             raw = stream.getvalue()
-            record = {'id': 'a'*32, 'status': 'completed', 'started': 700000, 'duration': '24h',
+            record = {'id': 'a'*32, 'status': 'completed', 'started': NOW_MS, 'duration': '24h',
                       'sha': 'b'*40, 'backup': {'file': 'paper-check-'+'c'*32+'.tar',
                       'sha256': hashlib.sha256(raw).hexdigest()}}
             package = e.build_export(io.BytesIO(raw), record)
@@ -277,14 +533,14 @@ class ProdLiveExportTests(unittest.TestCase):
         }
         for table, value in records.items():
             db.execute(f'CREATE TABLE {table}(id TEXT PRIMARY KEY,timestamp INTEGER,json TEXT)')
-            db.execute(f'INSERT INTO {table} VALUES(?,?,?)', ('row-'+table, 600000, json.dumps(value)))
+            db.execute(f'INSERT INTO {table} VALUES(?,?,?)', ('row-'+table, NOW_MS, json.dumps(value)))
         db.commit()
         pair = sqlite3.connect(root/'bot.sqlite.WAL_USDC.sqlite')
         pair.execute('CREATE TABLE paper_trades(id TEXT PRIMARY KEY,timestamp INTEGER,json TEXT)')
         pair.execute('INSERT INTO paper_trades VALUES(?,?,?)',
-                     ('trade-1', 600000, json.dumps({'side': 'SELL', 'fee': 0.01, 'secret': SECRET})))
+                     ('trade-1', NOW_MS, json.dumps({'side': 'SELL', 'fee': 0.01, 'secret': SECRET})))
         pair.commit(); pair.close()
-        record = {'id': 'd'*32, 'status': 'in_progress', 'started': 700000, 'sha': 'b'*40, 'secret': SECRET}
+        record = {'id': 'd'*32, 'status': 'in_progress', 'started': NOW_MS, 'sha': 'b'*40, 'secret': SECRET}
         return db, record
 
     def snapshot_stream(self, root):
@@ -314,7 +570,7 @@ class ProdLiveExportTests(unittest.TestCase):
             manifest = json.loads((output/'manifest.json').read_text())
             self.assertEqual(manifest['scope'], 'PROD_LIVE_PUBLIC_EXTRACT')
             self.assertEqual(manifest['run'], {'id': 'd'*32, 'status': 'in_progress', 'pair': 'SUI_USDC',
-                                               'mode': 'PAPER', 'started': 700000, 'sha': 'b'*40})
+                                               'mode': 'PAPER', 'started': NOW_MS, 'sha': 'b'*40})
             sui = sqlite3.connect(output/'SUI_USDC.sqlite')
             try:
                 decision = json.loads(sui.execute('SELECT json FROM strategy_decisions').fetchone()[0])

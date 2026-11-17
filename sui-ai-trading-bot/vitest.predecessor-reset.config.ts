@@ -5,7 +5,7 @@ import noWorker from "./vitest.no-worker.config.ts";
 export default defineConfig({
   plugins: noWorker.plugins,
   test: {
-    include: ["tests/predecessor-reset-api.test.ts"],
+    include: ["tests/predecessor-reset-api.test.ts", "tests/forecast-import-api.test.ts"],
     setupFiles: ["tests/loopback-guard.mjs", "tests/no-worker-guard.ts"],
     maxWorkers: 1,
   },

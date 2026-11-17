@@ -428,10 +428,8 @@ summary {
 .strategy-segments [role="tab"].active::after {
   content: "]";
 }
-.settings-grid label {
+.settings-grid .settings-field {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  padding-bottom: 10px;
-  border-bottom: 1px dashed rgba(67, 223, 178, 0.15);
 }
 .settings-grid input {
   text-align: right;

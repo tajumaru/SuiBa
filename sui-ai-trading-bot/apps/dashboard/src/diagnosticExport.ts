@@ -52,6 +52,7 @@ export function buildDiagnosticReport(
     `- build: 画面 ${APP_BUILD} / Bot ${data.workerBuild}${versionSkew(APP_BUILD, data.workerBuild) ? "（版がズレています）" : ""}`,
     `- stopReason: ${data.stopReason ?? "なし"}`,
     `- botState: ${s.botState} / connectivity: ${s.connectivity} / resumePending: ${s.resumePending}`,
+    `- 自動復旧回数: ${s.autoRecoveryCount}`,
     `- 稼働： processStartedAt=${iso(data.processStartedAt)} / runningMs=${data.runningMs}`,
     `- 市場： lastMarketAt=${iso(data.lastMarketAt)} / lastQuoteAt=${iso(data.lastQuoteAt)} / lastTradeAt=${iso(data.lastTradeAt)}`,
   ];

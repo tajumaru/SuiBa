@@ -1,5 +1,7 @@
 import type { NarrationEntry } from "./agentNarration.ts";
 import { isBuyTradeEntry } from "./agentNarration.ts";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { usePrefersReducedMotion } from "./usePrefersReducedMotion.ts";
 
 export const timeText = (at: number) =>
   new Intl.DateTimeFormat("ja-JP", {
@@ -67,6 +69,9 @@ export function AgentFeedEntryRow({
   justBought = false,
   onPromptChip,
   speakerName = "キャラ",
+  memorySealed = false,
+  onOpenMemorySeal,
+  onReplay,
 }: {
   entry: NarrationEntry;
   justBought?: boolean;
@@ -74,12 +79,32 @@ export function AgentFeedEntryRow({
   onPromptChip?: (chip: string) => void;
   /** The character's display name, for its speak-up tag. */
   speakerName?: string;
+  /** Whether this newly arrived memory is still covered on this device. */
+  memorySealed?: boolean;
+  /** Records that the device-local memory seal has been opened. */
+  onOpenMemorySeal?: (entryId: string) => void;
+  /** Opens the saved highlight replay for this exact entry. */
+  onReplay?: () => void;
 }) {
   const buy = isBuyTradeEntry(entry);
   return (
     <div
-      className={`agent-feed-entry ${entry.kind}${buy ? " buy" : ""}${justBought ? " just-bought" : ""}${entry.mono ? " mono" : ""}`}
+      className={`agent-feed-entry ${entry.kind}${entry.kind === "sellLineCrossing" ? ` crossing-${entry.sellLineSide}` : ""}${buy ? " buy" : ""}${justBought ? " just-bought" : ""}${entry.mono ? " mono" : ""}${entry.kind === "memory" && memorySealed ? " sealed-memory" : ""}`}
     >
+      {entry.kind === "memory" && (
+        <img
+          className="agent-feed-memory-bg"
+          src="/walrus-memory-bg.png"
+          alt=""
+          aria-hidden="true"
+        />
+      )}
+      {entry.kind === "memory" && memorySealed && onOpenMemorySeal && (
+        <MemoryKeySeal
+          entryId={entry.id}
+          onOpen={() => onOpenMemorySeal(entry.id)}
+        />
+      )}
       <time dateTime={new Date(entry.at).toISOString()}>
         {timeText(entry.at)}
       </time>
@@ -137,6 +162,9 @@ export function AgentFeedEntryRow({
       {entry.kind === "forecastCalib" && (
         <span className="agent-feed-entry-tag calib">学習</span>
       )}
+      {entry.kind === "memory" && (
+        <span className="agent-feed-entry-tag">記憶</span>
+      )}
       {entry.kind === "priceLine" && (
         <span className="agent-feed-entry-tag line">買い走りライン</span>
       )}
@@ -145,6 +173,11 @@ export function AgentFeedEntryRow({
       )}
       {entry.kind === "sellLine" && (
         <span className="agent-feed-entry-tag sell">売りライン</span>
+      )}
+      {entry.kind === "sellLineCrossing" && (
+        <span className={`agent-feed-entry-tag crossing-${entry.sellLineSide}`}>
+          {entry.sellLineSide === "sl" ? "損切り接近" : "利確接近"}
+        </span>
       )}
       {entry.kind === "chatUser" && (
         <span className="agent-feed-entry-tag user">あなた</span>
@@ -168,6 +201,198 @@ export function AgentFeedEntryRow({
           {entry.promptChip}
         </button>
       )}
+      {onReplay && (
+        <button
+          type="button"
+          className="agent-feed-replay-button"
+          onClick={onReplay}
+        >
+          再演
+        </button>
+      )}
     </div>
+  );
+}
+
+const TAP_MS = 260;
+const TAP_DISTANCE = 10;
+const OPEN_FRACTION = 0.3;
+const FADE_MS = 220;
+
+function MemoryKeySeal({
+  entryId,
+  onOpen,
+}: {
+  entryId: string;
+  onOpen: () => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const pointerRef = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    startedAt: number;
+    distance: number;
+  } | null>(null);
+  const openedRef = useRef(false);
+  const openTimerRef = useRef<number | null>(null);
+  const [opening, setOpening] = useState(false);
+  const reducedMotion = usePrefersReducedMotion();
+
+  const open = useCallback(() => {
+    if (openedRef.current) return;
+    openedRef.current = true;
+    if (reducedMotion) {
+      onOpen();
+      return;
+    }
+    setOpening(true);
+    openTimerRef.current = window.setTimeout(onOpen, FADE_MS);
+  }, [onOpen, reducedMotion]);
+
+  useEffect(
+    () => () => {
+      if (openTimerRef.current != null)
+        window.clearTimeout(openTimerRef.current);
+    },
+    [],
+  );
+
+  const drawCover = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const ratio = Math.max(1, window.devicePixelRatio || 1);
+    canvas.width = Math.round(rect.width * ratio);
+    canvas.height = Math.round(rect.height * ratio);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.scale(ratio, ratio);
+    const style = getComputedStyle(canvas);
+    const mint = style.getPropertyValue("--mint").trim();
+    const pine = style.getPropertyValue("--pine").trim();
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = pine;
+    ctx.fillRect(0, 0, rect.width, rect.height);
+
+    const centerX = rect.width / 2;
+    const motifY = Math.max(34, rect.height / 2 - 17);
+    ctx.strokeStyle = mint;
+    ctx.fillStyle = mint;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(centerX, motifY, 22, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(centerX, motifY - 4, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(centerX - 7, motifY + 1);
+    ctx.lineTo(centerX + 7, motifY + 1);
+    ctx.lineTo(centerX + 11, motifY + 16);
+    ctx.lineTo(centerX - 11, motifY + 16);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `600 14px ${style.fontFamily}`;
+    ctx.fillText("鍵のかかった記憶", centerX, motifY + 42);
+    ctx.font = `12px ${style.fontFamily}`;
+    ctx.fillText("なぞって鍵を開ける", centerX, motifY + 62);
+  }, []);
+
+  useEffect(() => {
+    drawCover();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const observer = new ResizeObserver(drawCover);
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [drawCover]);
+
+  const point = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = event.currentTarget;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+  };
+
+  const erasedFraction = (canvas: HTMLCanvasElement) => {
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return 0;
+    const step = 8;
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let erased = 0;
+    let sampled = 0;
+    for (let y = 0; y < canvas.height; y += step) {
+      for (let x = 0; x < canvas.width; x += step) {
+        sampled += 1;
+        if (pixels[(y * canvas.width + x) * 4 + 3] < 128) erased += 1;
+      }
+    }
+    return erased / sampled;
+  };
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className={`agent-feed-memory-seal${opening ? " opening" : ""}`}
+      aria-label="鍵のかかった記憶。なぞるか、短く押して開く"
+      role="button"
+      tabIndex={0}
+      data-memory-seal={entryId}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open();
+        }
+      }}
+      onPointerDown={(event) => {
+        const p = point(event);
+        event.currentTarget.setPointerCapture(event.pointerId);
+        pointerRef.current = {
+          id: event.pointerId,
+          ...p,
+          startedAt: performance.now(),
+          distance: 0,
+        };
+      }}
+      onPointerMove={(event) => {
+        const previous = pointerRef.current;
+        if (!previous || previous.id !== event.pointerId) return;
+        const p = point(event);
+        const ctx = event.currentTarget.getContext("2d");
+        if (!ctx) return;
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.lineWidth = Math.max(34, event.currentTarget.clientHeight * 0.2);
+        ctx.beginPath();
+        ctx.moveTo(previous.x, previous.y);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+        previous.distance += Math.hypot(p.x - previous.x, p.y - previous.y);
+        previous.x = p.x;
+        previous.y = p.y;
+        if (erasedFraction(event.currentTarget) > OPEN_FRACTION) open();
+      }}
+      onPointerUp={(event) => {
+        const pointer = pointerRef.current;
+        pointerRef.current = null;
+        if (
+          pointer?.id === event.pointerId &&
+          performance.now() - pointer.startedAt <= TAP_MS &&
+          pointer.distance <= TAP_DISTANCE
+        )
+          open();
+      }}
+      onPointerCancel={() => {
+        pointerRef.current = null;
+      }}
+    />
   );
 }

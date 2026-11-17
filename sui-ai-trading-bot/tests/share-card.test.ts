@@ -81,6 +81,7 @@ describe("share card svg", () => {
     );
     expect(svg).toContain("SUI / USDC");
     expect(svg).toContain("予測 +1.3%");
+    expect(svg).not.toContain('stroke-dasharray="7 6"');
     expect(svg).toContain("2時間で 上昇");
     expect(svg).toContain("ぺんちゃんの予測");
     expect(svg).toContain("コーン収まり 84%");
@@ -157,7 +158,7 @@ describe("share card input assembly", () => {
   const args = {
     pair: "SUI_USDC",
     candles: candles(80),
-    bookImbalance: null,
+    forecast: forecast("up", 0.013),
     score: SCORED,
     character: "pen" as const,
     agentName: "",

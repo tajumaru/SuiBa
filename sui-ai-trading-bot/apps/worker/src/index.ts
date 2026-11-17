@@ -20,6 +20,7 @@ import {
   createChartHistory,
   createEngine,
   createScheduler,
+  generateNarrationSafely,
   validationHeartbeat,
 } from "./worker-factories.ts";
 import { ValidationRecorder, assertValidationProfile } from "./validation.ts";
@@ -36,14 +37,24 @@ import {
   type TradingPair,
 } from "../../../packages/shared/src/index.ts";
 import { resolveSuiGrpcEndpoints } from "./suiEndpoints.ts";
+import { startMemwalFlusher } from "./memwal.ts";
+import { startLiquidationCollector } from "./liquidation-collector.ts";
 if (process.env.MODE && process.env.MODE !== "PAPER")
   throw new Error("ONLY_PAPER_SUPPORTED");
+if (
+  process.env.SUIBA_NARRATION_GENERATION_ENABLED !== undefined &&
+  !["true", "false"].includes(process.env.SUIBA_NARRATION_GENERATION_ENABLED)
+)
+  throw new Error("INVALID_NARRATION_GENERATION_FLAG");
 const token = process.env.ADMIN_TOKEN_FILE
   ? readFileSync(process.env.ADMIN_TOKEN_FILE, "utf8").trim()
   : process.env.ADMIN_TOKEN;
 if (!token || token.length < 32)
   throw new Error("ADMIN_TOKEN must contain at least 32 characters");
-const browserSessions = new BrowserSessions(token);
+const browserSessions = new BrowserSessions(
+  token,
+  process.env.SUIBA_READONLY_TOKEN || undefined,
+);
 const marketMode = process.env.MARKET_DATA_PROVIDER ?? "geckoterminal";
 if (!["geckoterminal", "deepbook", "auto"].includes(marketMode))
   throw new Error("INVALID_MARKET_DATA_PROVIDER");
@@ -116,6 +127,14 @@ const ctx = new WorkerContext({
 const created = createEngine(ctx, db, pair);
 ctx.sui = created.sui;
 ctx.engine = created.engine;
+const generateNarration = () => generateNarrationSafely(ctx);
+ctx.generateNarration = generateNarration;
+ctx.chainSampler.onAdopt = generateNarration;
+ctx.btcSampler.onAdopt = generateNarration;
+for (const selected of Object.keys(ctx.bookSamplers) as TradingPair[])
+  ctx.bookSamplers[selected].onAdopt = () => {
+    if (ctx.pair === selected) generateNarration();
+  };
 // Monitoring boot closes the previous uptime segment and never resumes trading.
 ctx.engine.monitor.boot();
 ctx.validation = validationEnabled ? new ValidationRecorder(db) : undefined;
@@ -165,6 +184,9 @@ watchdog.unref();
 ctx.chartHistory = createChartHistory(ctx);
 ctx.scheduler = createScheduler(ctx);
 ctx.dashboard = new DashboardService(ctx.engine, ctx.db);
+ctx.memwal = startMemwalFlusher(ctx.db, process.env, ctx.generateNarration);
+ctx.liquidation =
+  ctx.pair === "SUI_USDC" ? startLiquidationCollector(ctx.db) : null;
 const handleRequest = createRequestHandler(ctx);
 const server = createServer((req, res) => {
   ctx.inFlightRequests++;
@@ -186,6 +208,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
     ctx.stopping = true;
     ctx.engine.monitor.beginShutdown();
     ctx.scheduler.stop();
+    ctx.memwal?.stop();
+    ctx.liquidation?.stop();
     const chartClosed = ctx.chartHistory.close();
     apiAccess.cancel();
     deepBookTransport.close();

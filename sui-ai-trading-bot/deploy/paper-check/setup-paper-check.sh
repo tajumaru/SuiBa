@@ -15,6 +15,8 @@
 # installed hashes, and one real status call through the sudo wrapper
 # as suiba-deploy. When any pinned file changes, update its digest here
 # in the same commit (same discipline as setup-ci-approval.sh).
+# The needrestart drop-in is also pinned. It is installed when absent,
+# left untouched when identical, and rejected if an existing copy differs.
 # prod-policy.json is never installed or enabled here. Production activation
 # is a separate explicit cutover operation; installing a unit never starts it.
 # It also installs the read-only monitoring identity: user suiba-observe,
@@ -33,17 +35,31 @@ PROD_SERVICE='suiba-prod.service'
 TIMERS='suiba-paper-check-cutoff.timer suiba-paper-check-cutoff-2h.timer suiba-paper-check-cutoff-6h.timer suiba-paper-check-cutoff-24h.timer'
 UNITS='suiba-paper-check.service suiba-prod.service suiba-prod-watchdog.service suiba-prod-watchdog.timer suiba-paper-check-cutoff.service suiba-paper-check-cutoff.timer suiba-paper-check-cutoff-2h.timer suiba-paper-check-cutoff-6h.timer suiba-paper-check-cutoff-24h.timer'
 
+# Cross-setup integrity pin, checked by test_setup.py (not installed here).
+# shellcheck disable=SC2034 # Consumed by the cross-setup integrity test.
+SETUP_CI_APPROVAL_SHA256='70fcabd68d5ec4553f3df2bae7745dc31dff5a55a2847f9b16e26c1df2a92df2'
+
 # name|sha256|target|mode
 FILES=(
-  'export_snapshot.py|2979cb5b26dd3735dff87ee16236cb3554380b586b03bd909e5c73a778c69a9d|/usr/local/libexec/suiba-paper-export.py|755'
-  'controller.py|fa197a768f0f15a73eebfe25117a429d7919e69caee217946f8ceae9499fb3bd|/usr/local/libexec/suiba-paper-check.py|755'
+  'narration-runtime.py|4d7adb247d342467b0c927659ed8b7261ccd5e8468865b9e7d0f9406b8788156|/usr/local/libexec/suiba-narration-runtime.py|755'
+  'suiba-narration-runtime|003bc04d3768349d1895250b13099c543076683602f51ee388e5374bd3f3cb82|/usr/local/sbin/suiba-narration-runtime|755'
+  'suiba-narration-runtime.sudoers|d6b0c3ad56d1af8b916ddb1a58d870656b95fe004944d392fdd0068e45281f06|/etc/sudoers.d/suiba-narration-runtime|440'
+  'shadow-runtime.py|b01865234bff5f271b163c97e4023fb3cd1a2582511806a5b8606f4c9d301c8b|/usr/local/libexec/suiba-shadow-runtime.py|755'
+  'suiba-shadow-runtime|4a058c1f881c028ebdb573890e540175a0d10ed5cc534b1c5ff2d48c3cdae201|/usr/local/sbin/suiba-shadow-runtime|755'
+  'suiba-shadow-runtime.sudoers|39c85055fc1fd995853e06004eafc071727575e0ebfa61de53d06e1573c0bc2e|/etc/sudoers.d/suiba-shadow-runtime|440'
+  'memwal-runtime.py|fe44e69329cf53c16d18873c845c03a910169277cfc443a3b9247ea53be4b75e|/usr/local/libexec/suiba-memwal-runtime.py|755'
+  'suiba-memwal-runtime|523f942e7105d945f85d398713b07b1d30b0d4bde605ae34e44683f6d64edf93|/usr/local/sbin/suiba-memwal-runtime|755'
+  'suiba-memwal-runtime.sudoers|7edfbd82b607b46f600c2d90a04fcfc2dd71f3344681b72620f0ebd3d3470af1|/etc/sudoers.d/suiba-memwal-runtime|440'
+  'export_snapshot.py|330e78f1d2cea4b8bd56e698efe146808685f923b45d9b5b74caa061f8e18d81|/usr/local/libexec/suiba-paper-export.py|755'
+  'controller.py|035293508ab5f6d15b88bcd74bbfcbec227c7d20b229be8f074426275002120b|/usr/local/libexec/suiba-paper-check.py|755'
   'suiba-paper-check|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-check|755'
   'suiba-paper-check.sudoers|54d64fdadf0b38749008c112fc12761e03f633538e526ebe6f37eb4b1ec38607|/etc/sudoers.d/suiba-paper-check|440'
   'suiba-paper-observe|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-observe|755'
   'suiba-paper-observe.sudoers|6a725a0f8ab853c2f8db4fe176e30ea8a4d337112a0f9ec3f0cea337bdfaabe4|/etc/sudoers.d/suiba-paper-observe|440'
+  'suiba-needrestart.conf|0d0ff8114a4c713321cd6082c98a663a02785fcfdf0ebd13fb54d97722de1cc6|/etc/needrestart/conf.d/suiba.conf|644'
   'suiba-paper-check.service|44efe8db2b1c569fd8c2176002acc76b724d6d4c66fa1df1babb988e63f60e95|/etc/systemd/system/suiba-paper-check.service|644'
   'suiba-prod.service|042b393fd872481faffa17d09e57fe7c7a2d57ddb931d609655f4cf29f6ddb02|/etc/systemd/system/suiba-prod.service|644'
-  'watchdog.py|7042e7e198fa4b24a33ee61791b093ca91db0ba64129d5a988489330e5eb1822|/usr/local/libexec/suiba-prod-watchdog.py|755'
+  'watchdog.py|096cecdea46b724a3e06a26caf4190bf52c4ff455d9331aa0fcc0277ab09d392|/usr/local/libexec/suiba-prod-watchdog.py|755'
   'suiba-prod-watchdog.service|88ac174a834219b34d23ee6864ce4c8f676e7b0a72e970ea82c12c1d125f1b0d|/etc/systemd/system/suiba-prod-watchdog.service|644'
   'suiba-prod-watchdog.timer|43e893738a839eb12cfd0fe8fa8b464bcb25e751d2a3ee115b7558e9d70a02cf|/etc/systemd/system/suiba-prod-watchdog.timer|644'
   'suiba-paper-check-cutoff.service|8b40feb7b662796763e53eb6114083233d240d49229027ccea3104c7a628bd96|/etc/systemd/system/suiba-paper-check-cutoff.service|644'
@@ -116,9 +132,23 @@ python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/watchdog
 visudo -cf "$tmp/suiba-paper-check.sudoers" >/dev/null || fail 'sudoers の構文検証に失敗'
 visudo -cf "$tmp/suiba-paper-observe.sudoers" >/dev/null || fail 'observe sudoers の構文検証に失敗'
 
+visudo -cf "$tmp/suiba-narration-runtime.sudoers" >/dev/null || fail 'narration sudoers の構文検証に失敗'
+python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/narration-runtime.py" || fail 'narration helper の構文検証に失敗'
+visudo -cf "$tmp/suiba-shadow-runtime.sudoers" >/dev/null || fail 'shadow sudoers の構文検証に失敗'
+python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/shadow-runtime.py" || fail 'shadow helper の構文検証に失敗'
+visudo -cf "$tmp/suiba-memwal-runtime.sudoers" >/dev/null || fail 'memwal sudoers の構文検証に失敗'
+python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$tmp/memwal-runtime.py" || fail 'memwal helper の構文検証に失敗'
+
 echo '== 3/5 配置（旧ファイルはバックアップ） =='
+install -d -o root -g root -m 755 /etc/needrestart/conf.d || fail 'needrestart 設定ディレクトリを作れません'
 for entry in "${FILES[@]}"; do
   IFS='|' read -r name sha target mode <<< "$entry"
+  if [[ $name == suiba-needrestart.conf && -e $target ]]; then
+    printf '%s  %s\n' "$sha" "$target" | sha256sum -c - >/dev/null ||
+      fail "既存の needrestart 設定が想定と違います: $target"
+    echo "変更なし: $target"
+    continue
+  fi
   if [[ -e $target ]]; then
     cp -a "$target" "$target.bak-$stamp"
     echo "バックアップ: $target.bak-$stamp"

@@ -1,0 +1,42 @@
+name: SuiBa shadow runtime configuration
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type UPDATE-SHADOW-RUNTIME (does not restart production)"
+        required: true
+        type: string
+      enabled:
+        description: "Explicit shadow flag for the next release/start"
+        required: true
+        type: choice
+        default: 'false'
+        options:
+          - 'false'
+          - 'true'
+permissions:
+  contents: read
+concurrency:
+  group: suiba-production-control
+  cancel-in-progress: false
+jobs:
+  shadow-runtime:
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'UPDATE-SHADOW-RUNTIME' && vars.SUIBA_PROD_CONTROL_ENABLED == 'true'
+    environment: sakura-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Update only shadow runtime variables through the fixed helper
+        env:
+          SHADOW_RUNTIME_CONFIRMATION: ${{ inputs.confirmation }}
+          SUIBA_SHADOW_ENABLED: ${{ inputs.enabled }}
+          SUIBA_SHADOW_API_KEY: ${{ secrets.SUIBA_SHADOW_API_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash sui-ai-trading-bot/docker/ssh-shadow-runtime.sh

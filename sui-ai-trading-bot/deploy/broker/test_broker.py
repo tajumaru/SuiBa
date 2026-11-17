@@ -81,6 +81,62 @@ class FakeDocker:
         return ''
 
 
+class ImageCleanupTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='suiba-image-cleanup-', dir='/var/lib')
+        self.state = Path(self.temp.name)
+        self.images = ['sha256:'+character*64 for character in 'cdef']
+        for sequence, image in enumerate(self.images, 1):
+            folder = self.state/(str(sequence)*32)
+            folder.mkdir(mode=0o700)
+            b.atomic(folder/'receipt.json', {
+                'sequence': sequence, 'sha': str(sequence)*40, 'image_id': image,
+                'operation': 'deploy', 'status': 'prepared_stopped',
+                'transaction': folder.name, 'backup': folder.name+'.tar'})
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def docker(self, referenced=(), fail_remove=()):
+        calls = []
+        containers = {f'container-{index}': image for index, image in enumerate(referenced)}
+
+        def call(args, **_kwargs):
+            calls.append(args)
+            if args[:3] == ['ps', '-aq', '--no-trunc']:
+                return ' '.join(containers)
+            if args[:3] == ['inspect', '--format', '{{.Image}}']:
+                return containers[args[-1]]
+            if args[:2] == ['image', 'rm']:
+                if args[-1] in fail_remove:
+                    raise b.Rejected('DOCKER_OPERATION_FAILED')
+                return args[-1]
+            raise AssertionError(args)
+
+        return unittest.mock.Mock(call=call), calls
+
+    def test_keeps_current_and_previous_and_removes_only_older_receipts(self):
+        docker, calls = self.docker()
+        result = b.cleanup_release_images(docker, self.state)
+        removed = {args[-1] for args in calls if args[:2] == ['image', 'rm']}
+        self.assertEqual(removed, set(self.images[:2]))
+        self.assertTrue(set(self.images[2:]).isdisjoint(removed))
+        self.assertEqual(result, {'status': 'completed', 'deleted': 2})
+
+    def test_never_removes_image_referenced_by_stopped_or_running_container(self):
+        docker, calls = self.docker(referenced=self.images[:1])
+        result = b.cleanup_release_images(docker, self.state)
+        removed = {args[-1] for args in calls if args[:2] == ['image', 'rm']}
+        self.assertNotIn(self.images[0], removed)
+        self.assertEqual(result['deleted'], 1)
+
+    def test_cleanup_failure_is_reported_without_raising(self):
+        docker, _ = self.docker(fail_remove=self.images[:1])
+        result = b.cleanup_release_images(docker, self.state)
+        self.assertEqual(result['status'], 'partial')
+        self.assertEqual(result['deleted'], 1)
+
+
 class BrokerTests(unittest.TestCase):
     def test_paper_session_blocks_deploy_after_controller_lock_is_gone(self):
         with tempfile.TemporaryDirectory(prefix='paper-session-', dir='/var/lib') as root:
@@ -639,6 +695,21 @@ class BrokerTests(unittest.TestCase):
                 self.assertNotIn('up', a)
                 self.assertNotIn('start', a)
         self.assertFalse(list(self.state.glob('*/image.tar.gz')))
+
+    def test_cleanup_failure_is_recorded_but_deploy_stays_successful(self):
+        original = self.docker.call
+        def call(args, **kwargs):
+            if args == ['ps', '-aq', '--no-trunc']:
+                raise b.Rejected('DOCKER_OPERATION_FAILED')
+            return original(args, **kwargs)
+        self.docker.call = call
+        result = self.broker.execute(self.req, 1001)
+        self.assertEqual(result['status'], 'prepared_stopped')
+        self.assertEqual(result['image_cleanup'], {
+            'status': 'failed', 'deleted': 0})
+        ledger = json.loads((self.state/'ledger.json').read_text())
+        self.assertEqual(ledger['status'], 'prepared_stopped')
+        self.assertEqual(ledger['image_cleanup']['status'], 'failed')
 
     def test_request_rejects_extra_fields_paths_commands_and_duplicate_json(self):
         for raw in [b'{}', b'{"operation":"start","sha":"'+SHA.encode()+b'"}',

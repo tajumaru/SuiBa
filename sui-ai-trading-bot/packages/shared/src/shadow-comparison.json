@@ -1,0 +1,13 @@
+{
+  "coreConditions": ["emaUp", "rsiRecovery", "histogramImproving"],
+  "volumeGate": {
+    "requiredTrue": ["latestVolumePositive", "previousVolumePositive"],
+    "requiredFalse": ["volumeChangeExceeded"]
+  },
+  "groups": [
+    { "key": "ai_only", "action": "BUY", "ruleBuy": false },
+    { "key": "rule_only", "action": "WAIT", "ruleBuy": true },
+    { "key": "both_buy", "action": "BUY", "ruleBuy": true },
+    { "key": "both_wait", "action": "WAIT", "ruleBuy": false }
+  ]
+}

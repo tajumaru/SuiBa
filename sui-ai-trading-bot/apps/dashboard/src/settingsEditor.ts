@@ -1,4 +1,4 @@
-import type { Settings } from "../../../packages/shared/src/index.ts";
+import { defaults, type Settings } from "../../../packages/shared/src/index.ts";
 import {
   applyHardPreset,
   applySafePreset,
@@ -8,6 +8,10 @@ export type Mode = "safe" | "hard" | "custom";
 export const sameSettings = (a: Settings, b: Settings) =>
   (Object.keys(a) as (keyof Settings)[]).every((key) =>
     Object.is(a[key], b[key]),
+  );
+export const defaultDifferentKeys = (saved: Settings) =>
+  (Object.keys(defaults) as (keyof Settings)[]).filter(
+    (key) => !Object.is(saved[key], defaults[key]),
   );
 export type EditorState = {
   saved: Settings;

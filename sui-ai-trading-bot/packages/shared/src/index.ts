@@ -77,6 +77,12 @@ export function tradingPair(value: unknown): TradingPair {
 }
 export const USDC =
   "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC";
+// PAPER quotes use the measured book impact without an additional fixed haircut.
+// maxSlippage remains the independent safety ceiling for quote validation.
+export const PAPER_SLIPPAGE_RATE = 0;
+export const PAPER_FEE_RATE = 0.001;
+// Estimated mainnet DeepBook swap gas per fill, denominated in USDC.
+export const PAPER_GAS_USDC = 0.005;
 export function coin(type: string): typeof SUI | typeof WAL | typeof USDC {
   const normalized = normalizeStructTag(type);
   for (const allowed of [SUI, WAL, USDC] as const)
@@ -383,8 +389,8 @@ export const defaults: Settings = {
   stopLossPct: 0.02,
   takeProfitPct: 0.04,
   maxVolumeChange: 4,
-  feeRate: 0.003,
-  gasUsdc: 0.03,
+  feeRate: PAPER_FEE_RATE,
+  gasUsdc: PAPER_GAS_USDC,
   profitGuardEnabled: true,
   minNetProfitUsdc: 0.05,
   minNetProfitPct: 0.01,

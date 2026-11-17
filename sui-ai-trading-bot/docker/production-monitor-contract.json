@@ -1,5 +1,8 @@
 {
   "watchdog_max_age": 900,
+  "shape_kinds": ["null", "boolean", "integer", "number", "string", "array", "object", "other"],
+  "detail_checks": ["production_status", "status", "status.keys", "requires_review", "run", "run.stopped", "run.sha", "watchdog", "watchdog.code", "worker", "shadow", "failure"],
+  "detail_expected": ["valid", "object", "boolean", "present", "watchdog", "watchdog_code", "null", "not_started_status", "running_status", "production_run", "worker_or_unreachable", "null_when_stopped", "shadow_or_null", "timestamp_or_null", "sha40_or_null", "failure_summary"],
   "host_reasons": [
     "REVIEW_REQUIRED",
     "RUN_FAILED",
@@ -31,7 +34,12 @@
     "HOST_DISK_LOW_OR_UNKNOWN",
     "BACKUP_UNCONFIRMED",
     "STATUS_UNAVAILABLE",
-    "STATUS_INVALID"
+    "STATUS_INVALID",
+    "PAPER_RECOVERY_FLAPPING",
+    "NETWORK_PAUSE_OVER_ONE_HOUR",
+    "NETWORK_RECOVERY_FLAPPING",
+    "SHADOW_DECISION_STALE",
+    "SHADOW_ERROR_RATE_HIGH"
   ],
   "monitor_reasons": [
     "PROD_STATUS_UNAVAILABLE",

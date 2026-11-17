@@ -27,9 +27,16 @@ CONTRACT = json.loads((HERE/'production-monitor-contract.json').read_text(encodi
 STATUS_SCRIPT = HERE/'ssh-prod-status.sh'
 ATTEMPTS = 7
 INTERVAL_SECONDS = 15
-REPORT_KEYS = {'at', 'verdict', 'reasons', 'run_id', 'prod_state', 'watchdog_at'}
+REPORT_KEYS = {'at', 'verdict', 'reasons', 'run_id', 'prod_state', 'watchdog_at', 'detail'}
 FAILURE_STATUSES = ('in_progress', 'completed', 'failed_requires_review')
 CODE_PATTERN = re.compile(r'[A-Za-z][A-Za-z0-9_]{0,63}')
+
+
+def valid_detail(value):
+    return (value is None or type(value) is dict and set(value) == {'check', 'expected', 'actual'} and
+            value['check'] in CONTRACT['detail_checks'] and
+            value['expected'] in CONTRACT['detail_expected'] and
+            value['actual'] in CONTRACT['shape_kinds'])
 
 
 def valid_failure(value):
@@ -56,6 +63,11 @@ def parse_report(value):
     failure is the validated summary, or None when the record carries
     no failure evidence."""
     if type(value) is not dict or not REPORT_KEYS <= set(value) <= REPORT_KEYS | {'failure'}:
+        return None
+    if not valid_detail(value['detail']):
+        return None
+    if (value['detail'] is not None) != any(
+            code in value.get('reasons', ()) for code in ('PROD_STATUS_INVALID', 'STATUS_INVALID')):
         return None
     if value['prod_state'] not in CONTRACT['prod_states']:
         return None

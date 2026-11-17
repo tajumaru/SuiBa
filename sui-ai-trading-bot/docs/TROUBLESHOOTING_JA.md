@@ -52,3 +52,8 @@ minimumCycleSpacingMs 30000 / maxEpisodeMs 180000 / maxFailures 9）。
 - ホストの状態確認は GitHub Actions の SSH 読み取りチェック
   （`suiba-ssh-preflight`）で行い、Tera Term での手作業確認に
   戻さない。設置済みブローカーの sha256 もそこで照合できる。
+- 新版が悪く旧版へ戻すときは、本番を停止した状態で
+  ROLLBACK-PROD（`suiba-production-control`、対象リリースの SHA を
+  指定）が使える。archive は CI が対象コミットから再作成し、
+  broker が現 DB の backup を取って旧版を未起動で用意する。
+  開始は START-PROD で別途判断する。DB の巻き戻しは行わない。

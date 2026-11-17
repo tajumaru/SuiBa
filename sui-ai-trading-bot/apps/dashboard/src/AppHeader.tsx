@@ -1,7 +1,7 @@
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { AgentHeaderAvatar } from "./AgentNarration.tsx";
 import { presetName } from "./settingsPresets.ts";
-import type { AgentPose } from "./agentNarration.ts";
+import type { AgentPose, PointSmileCause } from "./agentNarration.ts";
 import type { ErrorShout } from "./errorShout.ts";
 
 type State = BotSnapshot;
@@ -19,6 +19,7 @@ export function AppHeader({
   control,
   logout,
   agentPose,
+  pointSmileCause,
   buyCelebration,
   shout,
   agentName,
@@ -31,6 +32,7 @@ export function AppHeader({
   control: (command: string) => Promise<string | null>;
   logout: () => void;
   agentPose: AgentPose;
+  pointSmileCause: PointSmileCause;
   buyCelebration: boolean;
   shout: ErrorShout | null;
   agentName: string;
@@ -72,6 +74,7 @@ export function AppHeader({
       {token && (
         <AgentHeaderAvatar
           pose={agentPose}
+          pointSmileCause={pointSmileCause}
           celebrating={buyCelebration}
           shout={shout}
           hardMode={data != null && presetName(data.settings) === "hard"}

@@ -54,10 +54,12 @@ export function MonthlyReportCard({
   pair,
   trades,
   orders,
+  cumulativeRoundTrips,
 }: {
   pair: string;
   trades: readonly Fill[];
   orders: Record<string, unknown>[];
+  cumulativeRoundTrips?: number;
 }) {
   const scope = pair === "WAL_USDC" ? "WAL" : "SUI";
   const [view, setView] = useState<"current" | "prev">("current");
@@ -127,6 +129,20 @@ export function MonthlyReportCard({
                 {report.winRatePct != null
                   ? `${report.winRatePct}%（${report.wins}/${report.closed}）`
                   : "―"}
+              </dd>
+            </div>
+            <div>
+              <dt>往復</dt>
+              <dd>
+                {view === "current" ? "今月" : "先月"}{" "}
+                {report.roundTrips != null
+                  ? `${report.roundTrips}件`
+                  : "集計できない（記録は直近200件まで）"}
+                （累計
+                {cumulativeRoundTrips != null
+                  ? `${cumulativeRoundTrips}件`
+                  : "集計できない"}
+                ）
               </dd>
             </div>
             <div>

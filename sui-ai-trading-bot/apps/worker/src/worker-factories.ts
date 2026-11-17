@@ -1,3 +1,4 @@
+import { OpenAIShadowAdapter } from "./shadow-openai.ts";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { BotEngine } from "./engine.ts";
@@ -11,9 +12,11 @@ import { CetusRouter } from "../../../packages/dex-router/src/index.ts";
 import { WalPaperRouter } from "../../../packages/dex-router/src/pair-router.ts";
 import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
+import { paperRecoveryLimits } from "../../../packages/shared/src/paper-recovery.ts";
 import type { BotDatabase } from "../../../packages/database/src/index.ts";
 import type { TradingPair } from "../../../packages/shared/src/index.ts";
 import type { WorkerContext } from "./worker-context.ts";
+import { NarrationGenerator } from "./narration-generator.ts";
 
 /**
  * The worker's factories, extracted from the boot script: the
@@ -62,6 +65,8 @@ export function createEngine(
         () => ctx.bookSamplers[selected].currentLevels(),
         () => (selected === "SUI_USDC" ? ctx.longTermSampler.current() : null),
         () => ctx.paperCheck.ordersAllowed(selected),
+        new OpenAIShadowAdapter(), // OFF is still enforced by ShadowRecorder.
+        ctx.selectionDb, // Worker-wide JST budget survives pair switches.
       ),
     };
   } catch (error) {
@@ -85,6 +90,21 @@ export function validationHeartbeat(ctx: WorkerContext, final = false) {
       ctx.validation.report(now, true),
     );
     ctx.lastExportAt = now;
+  }
+}
+
+export function generateNarrationSafely(ctx: WorkerContext) {
+  try {
+    return new NarrationGenerator(ctx.db, ctx.pair, ctx.engine).generate();
+  } catch (error) {
+    // Narration is deliberately outside the trading/safety failure path. Its
+    // cursor remains uncommitted, so the next generation point replays it.
+    ctx.engine.monitor.event("ERROR", "NARRATION_GENERATION_FAILED");
+    console.warn(JSON.stringify({
+      event: "NARRATION_GENERATION_FAILED",
+      reason: error instanceof Error ? error.message : "UNKNOWN_FAILURE",
+    }));
+    return 0;
   }
 }
 
@@ -119,9 +139,31 @@ export const createScheduler = (ctx: WorkerContext) =>
       } finally {
         ctx.activeTick = undefined;
       }
+      generateNarrationSafely(ctx);
+      const maintenance = setImmediate(() => {
+        try {
+          ctx.db.maintainRetentionChunk();
+          ctx.db.maintainNarrationRetentionChunk(ctx.pair);
+        } catch {
+          console.warn(
+            JSON.stringify({
+              event: "DATABASE_RETENTION_FAILED",
+              databaseHealth: ctx.db.health(),
+            }),
+          );
+        }
+      });
+      maintenance.unref();
     },
     () => ({
-      intervalMs: ctx.db.settings().intervalMs,
+      // Recovery uses the normal acquisition/validation/Sui/ledger diagnostic;
+      // only its cadence changes while trading is safely paused.
+      intervalMs:
+        ctx.engine.monitor.safety().resumePending &&
+        !ctx.db.runtime().error &&
+        !ctx.db.runtime().emergency
+          ? paperRecoveryLimits.probeIntervalMs
+          : ctx.db.settings().intervalMs,
       deepbook:
         ctx.pair === "WAL_USDC" ||
         ctx.marketMode === "deepbook" ||

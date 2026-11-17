@@ -1,4 +1,4 @@
-import { dateTime, number, label } from "./presentation.ts";
+import { dateTime, fixed4, label } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
 import { firstFilledBuy } from "./firstFill.ts";
 
@@ -12,8 +12,12 @@ export function OrderHistory({
   if (!orders.length) return <p>注文はまだありません。</p>;
   const first = firstFilledBuy(orders);
   return (
-    <div className="scroll history-scroll">
-      <table className="history-table" role="table" aria-label="注文履歴">
+    <div className="scroll history-scroll order-history-scroll">
+      <table
+        className="history-table order-history-table"
+        role="table"
+        aria-label="注文履歴"
+      >
         <thead>
           <tr>
             <th>日時（日本時間）</th>
@@ -37,10 +41,10 @@ export function OrderHistory({
                     <span className="first-fill-meta">
                       {[
                         first.amountIn !== null
-                          ? `${number(first.amountIn)} USDC`
+                          ? `${fixed4(first.amountIn)} USDC`
                           : null,
                         first.referencePrice !== null
-                          ? `見積もり価格 ${number(first.referencePrice, 4)}`
+                          ? `見積もり価格 ${fixed4(String(first.referencePrice))}`
                           : null,
                       ]
                         .filter(Boolean)

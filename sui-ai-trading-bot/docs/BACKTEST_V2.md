@@ -44,19 +44,19 @@ GET `/api/backtest` は本数・範囲・最新レポート、POSTは次の設�
   "trainEnd": 1790872500,
   "initialUsdc": 100,
   "maxOrder": 5,
-  "slippage": 0.003,
+  "slippage": 0,
   "spread": 0.001,
   "impact": 0.001,
   "dexFeeRate": 0.003,
   "additionalFeeRate": 0,
-  "gasUsdc": 0.03,
+  "gasUsdc": 0.005,
   "participation": 0.001,
   "minNetProfitUsdc": 0.05,
   "minNetProfitPct": 0.01
 }
 ```
 
-設定の率はfractionです。最大注文5 USDC、slippage/impact各0.3%、ガス上限1 USDCなどの制約をスキーマで検証します。日次買付20 USDC・日次損失1%・保有20%のRiskEngine制限も維持します。`gasUsdc:null` は不明費用の試験用で、ON/OFFとも取引を拒否します。
+設定の率はfractionです。最大注文5 USDC、slippageの既定0（上限0.3%）・impact上限0.3%、ガス上限1 USDCなどの制約をスキーマで検証します。日次買付20 USDC・日次損失1%・保有20%のRiskEngine制限も維持します。`gasUsdc:null` は不明費用の試験用で、ON/OFFとも取引を拒否します。
 
 ## 時系列・比較の公平性
 

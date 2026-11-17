@@ -23,6 +23,7 @@ export type NarrationKind =
   | "priceLine" // the buy-run line declared — RSI's target price, called out loud
   | "priceLineReached" // the price touched the declared buy-run line
   | "sellLine" // the sell lines declared — take-profit / stop-loss prices of the open position
+  | "sellLineCrossing" // a forecast path newly meets an open position's sell line
   | "sleepTalk" // a mutter from the sleeping character, built from recorded facts
   | "alert" // a 速報 breaking in on a sudden price / volume move
   | "chatUser" // a comment the user typed to the character
@@ -38,6 +39,7 @@ export type NarrationKind =
   | "forecastTouchNear" // the touch line was nearly reached before time ran out
   | "bookWall" // an order-book wall appeared / vanished / was breached
   | "forecastCalib" // the cone's width learned from its scored record
+  | "memory" // a display-only historical situation statistic, optionally with recall
   | "greeting" // the incoming character's handover line on a character switch
   | "status"; // feed-initialised status line
 
@@ -69,6 +71,7 @@ export interface NarrationEntry {
    * the serial watches their pairing cannot be recovered
    * reliably from the texts alone. */
   forecastOrigin?: number;
+  sellLineSide?: "tp" | "sl";
 }
 
 /**
@@ -190,6 +193,11 @@ export interface NarrationState {
    * stop-loss prices derived from the recorded entry price and the
    * strategy's percentages, declared once per position. */
   sellLines: { tp: number; sl: number } | null;
+  sellLineCrossingState: Record<"tp" | "sl", {
+    present: boolean;
+    absentSince: number | null;
+    lastCalledAt: number | null;
+  }>;
   /** Cumulative session score of declared watches (see WatchScore). */
   watchScore: WatchScore;
   /** The same settlements split by watched condition (see
@@ -261,6 +269,14 @@ export interface NarrationState {
   /** Scored-record count of the newest cone calibration the
    * feed has taken in (told or quietly adopted). */
   lastCalibScoredAt: number;
+  forecastCalibEventIds: string[];
+  /** Last memory narration per regime × entry kind; display-only cooldowns. */
+  memoryCooldowns: Record<string, number>;
+  /** Device-local rollout boundary for the scratch seal. Entries already in
+   * the feed before this instant stay readable. Optional for legacy saves. */
+  memorySealEnabledAt?: number;
+  /** Memory entry ids whose device-local seals have been opened. */
+  openedMemorySealIds?: string[];
 }
 
 /** One JST month of feed-side tallies for the monthly report.
@@ -325,6 +341,7 @@ export function trimNarrationEntries(
 }
 export const MAX_SEEN_KEYS = 200;
 export const DECISION_FRESH_MS = 360_000;
+const MEMORY_SEAL_ENABLED_AT = Date.now();
 
 export function freshDecision(dec: DecisionTelemetry | null | undefined, now: number) {
   return (
@@ -350,6 +367,10 @@ export function emptyNarrationState(): NarrationState {
     lastNearMiss: null,
     priceLine: null,
     sellLines: null,
+    sellLineCrossingState: {
+      tp: { present: false, absentSince: null, lastCalledAt: null },
+      sl: { present: false, absentSince: null, lastCalledAt: null },
+    },
     sleepingSince: null,
     lastSleepTalkAt: null,
     lastSleepTalkText: null,
@@ -383,6 +404,10 @@ export function emptyNarrationState(): NarrationState {
     forecastTouchSettled: {},
     lastForecastCallAt: null,
     lastCalibScoredAt: 0,
+    forecastCalibEventIds: [],
+    memoryCooldowns: {},
+    memorySealEnabledAt: MEMORY_SEAL_ENABLED_AT,
+    openedMemorySealIds: [],
   };
 }
 
@@ -471,4 +496,4 @@ export interface SpikeAlert {
   text: string;
 }
 
-export type EntryDraft = Omit<NarrationEntry, "id">;
+export type EntryDraft = Omit<NarrationEntry, "id"> & { id?: string };

@@ -26,17 +26,30 @@ def healthy(now=2000):
     status = {'run': {'id': 'a'*32, 'status': 'in_progress', 'started': 1000000,
                      'stopped': None, 'sha': 'e'*40, 'stage': 'monitoring', 'admitted': True},
               'controller_alive': True, 'requires_review': False,
-              'worker': {'running': True, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True, 'paper': True}}
-    watch = {'at': int(now)-1, 'verdict': 'ok', 'reasons': [], 'run_id': 'a'*32}
+              'shadow': {'total': 4, 'aiOnlyBuy': 1, 'errors': 1, 'lastDecisionAt': int(now*1000)-1000},
+              'worker': {'running': True, 'maintenance': False, 'databaseHealthy': True, 'ledgerOk': True,
+                         'paper': True, 'hasPosition': False, 'networkPause': None, 'networkStopReason': None}}
+    watch = {'at': int(now)-1, 'verdict': 'ok', 'reasons': [], 'run_id': 'a'*32,
+             'shadow': status['shadow']}
     return status, watch
 
 
 class ShapeTests(unittest.TestCase):
+    def test_host_stop_codes_pass_through_the_monitor(self):
+        for code in ('EXTERNAL_STOP', 'WORKER_OOM', 'WORKER_EXITED', 'WORKER_EXITED_CLEAN', 'UNKNOWN'):
+            with self.subTest(code=code):
+                status, watch = healthy()
+                status['run'].update(status='failed_requires_review', stage='monitoring')
+                status.update(controller_alive=False, worker=None, requires_review=True)
+                status['failure'] = {'status': 'failed_requires_review', 'stage': 'monitoring',
+                                     'code': code, 'http_status': None, 'backup': 'unconfirmed'}
+                self.assertEqual(combine(status, watch, 2000)['failure'], status['failure'])
+
     def test_current_consistent_observations_are_normal(self):
         status, watch = healthy()
         result = combine(status, watch, 2000)
         self.assertEqual(result, {'at': 2000, 'verdict': 'ok', 'reasons': [], 'run_id': 'a'*32,
-                                  'prod_state': 'in_progress', 'watchdog_at': 1999})
+                                  'prod_state': 'in_progress', 'watchdog_at': 1999, 'detail': None})
         status['run'].update(status='completed', stage='stopped', stopped=1900000)
         status.update(controller_alive=False, worker=None)
         self.assertEqual(combine(status, watch, 2000)['verdict'], 'ok')
@@ -61,10 +74,29 @@ class ShapeTests(unittest.TestCase):
             bad = copy.deepcopy(status); mutate(bad)
             result = combine(bad, watch, 2000)
             self.assertEqual(result['reasons'], ['PROD_STATUS_INVALID'])
+            self.assertEqual(set(result['detail']), {'check', 'expected', 'actual'})
             self.assertNotIn('SECRET_FIXTURE', json.dumps(result))
         for bad in ({**watch, 'reasons': ['SECRET_FIXTURE'], 'verdict': 'attention'},
                     {**watch, 'at': True}, {**watch, 'verdict': 'attention'}, {**watch, 'extra': 'SECRET_FIXTURE'}):
             self.assertIn('PROD_STATUS_INVALID', combine(status, bad, 2000)['reasons'])
+
+    def test_invalid_shape_detail_names_check_and_shape_kinds_only(self):
+        status, watch = healthy()
+        status['requires_review'] = 'SECRET_FIXTURE'
+        result = combine(status, watch, 2000)
+        self.assertEqual(result['reasons'], ['PROD_STATUS_INVALID'])
+        self.assertEqual(result['detail'], {
+            'check': 'requires_review', 'expected': 'boolean', 'actual': 'string'})
+        status, watch = healthy()
+        self.assertIsNone(combine(status, watch, 2000)['detail'])
+
+    def test_host_shape_detail_uses_the_same_closed_shape(self):
+        status, watch = healthy()
+        watch.update(verdict='attention', reasons=['STATUS_INVALID'], run_id=None,
+                     detail={'check': 'run', 'expected': 'production_run', 'actual': 'string'})
+        result = combine(status, watch, 2000)
+        self.assertIn('STATUS_INVALID', result['reasons'])
+        self.assertEqual(result['detail'], watch['detail'])
 
     def test_stale_future_and_different_run_records_require_review(self):
         status, watch = healthy()
@@ -74,7 +106,7 @@ class ShapeTests(unittest.TestCase):
             self.assertTrue(result['watchdog_at'] is None or result['watchdog_at'] <= 2060)
         self.assertEqual(combine(status, {**watch, 'at': 1100}, 2000)['verdict'], 'ok')
         self.assertIn('WATCHDOG_RUN_MISMATCH', combine(status, {**watch, 'run_id': 'b'*32}, 2000)['reasons'])
-        self.assertIn('STATUS_INCONSISTENT', combine(status, {'at': 2000, 'run_id': None, 'verdict': 'not_started', 'reasons': []}, 2000)['reasons'])
+        self.assertIn('STATUS_INCONSISTENT', combine(status, {'at': 2000, 'run_id': None, 'verdict': 'not_started', 'reasons': [], 'shadow': status['shadow']}, 2000)['reasons'])
 
     def test_live_status_can_raise_attention_even_if_last_watchdog_was_normal(self):
         status, watch = healthy()
@@ -91,6 +123,22 @@ class ShapeTests(unittest.TestCase):
         status.update(controller_alive=False, worker=None, requires_review=True)
         failure = {'status': 'failed_requires_review', 'stage': 'worker-readiness',
                    'code': 'BACKUP_UNCONFIRMED', 'http_status': 503, 'backup': 'unconfirmed'}
+        status['failure'] = failure
+        result = combine(status, watch, 2000)
+        self.assertEqual(result['verdict'], 'attention')
+        self.assertTrue({'REVIEW_REQUIRED', 'RUN_FAILED'} <= set(result['reasons']))
+        self.assertEqual(result['failure'], failure)
+
+    def test_midrun_failure_summary_is_projected_into_the_report(self):
+        # The mid-run shape the close-out now persists: stage
+        # monitoring (the session ran for hours), the worker's
+        # own stop reason as the code, no HTTP status. It passes
+        # the same strict projection unchanged.
+        status, watch = healthy()
+        status['run'].update(status='failed_requires_review', stage='monitoring')
+        status.update(controller_alive=False, worker=None, requires_review=True)
+        failure = {'status': 'failed_requires_review', 'stage': 'monitoring',
+                   'code': 'UPSTREAM_HTTP_500', 'http_status': None, 'backup': 'unconfirmed'}
         status['failure'] = failure
         result = combine(status, watch, 2000)
         self.assertEqual(result['verdict'], 'attention')

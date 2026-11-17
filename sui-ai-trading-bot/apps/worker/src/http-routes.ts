@@ -1,3 +1,4 @@
+import { importForecast } from "./forecast.ts";
 import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { resolve, extname } from "node:path";
@@ -30,6 +31,13 @@ import {
 import { comparisonOptionsSchema } from "../../../packages/backtest-engine/src/index.ts";
 import type { WorkerContext } from "./worker-context.ts";
 import { PredecessorReset } from "./predecessor-reset.ts";
+import { shadowTodaySummary } from "./shadow-summary.ts";
+import {
+  memwalConfig,
+  narrationEpisode,
+  startMemwalFlusher,
+} from "./memwal.ts";
+import { startLiquidationCollector } from "./liquidation-collector.ts";
 
 /**
  * The HTTP request handler, extracted from the worker boot:
@@ -140,8 +148,13 @@ export function createRequestHandler(ctx: WorkerContext) {
     }
     const bearer = ctx.browserSessions.bearer(req);
     const session = ctx.browserSessions.valid(req.headers.cookie);
-    if (!bearer && !session) {
+    const readonlyBearer = ctx.browserSessions.readonlyBearer(req);
+    if (!bearer && !session && !readonlyBearer) {
       send(401, { error: "UNAUTHORIZED" });
+      return;
+    }
+    if (req.method !== "GET" && !bearer && !session && readonlyBearer) {
+      send(403, { error: "FORBIDDEN" });
       return;
     }
     if (req.method !== "GET" && !bearer && !sessionMutationAllowed(req)) {
@@ -180,11 +193,21 @@ export function createRequestHandler(ctx: WorkerContext) {
         lockSha256: build?.lockSha256 ?? null,
         databaseHealthy: ctx.db.health().healthy,
         ledgerOk: ctx.engine.monitor.ledger().ok,
+        hasPosition: ctx.db.portfolio().sui > 0,
         paperCheck: ctx.paperCheck.status(),
         resetScope: ctx.predecessorReset.status(),
+        shadow:
+          process.env.SUIBA_SHADOW_ENABLED === "true"
+            ? shadowTodaySummary(ctx.db)
+            : null,
+        narration: {
+          enabled: process.env.SUIBA_NARRATION_GENERATION_ENABLED === "true",
+          counts: ctx.db.narrationCounts(ctx.pair),
+        },
         ...(() => {
+          const safety = ctx.engine.monitor.safetySnapshot();
           const readiness = {
-            connectivity: ctx.engine.monitor.safety().connectivity === "HEALTHY",
+            connectivity: safety.connectivity === "HEALTHY",
             apiAccess: !apiAccess.blocked(),
             emergencyClear: !ctx.db.runtime().emergency,
             runtimeClear: !ctx.db.runtime().error,
@@ -195,6 +218,11 @@ export function createRequestHandler(ctx: WorkerContext) {
           return {
             readiness,
             startReady: Object.values(readiness).every(Boolean),
+            networkPause:
+              safety.resumePending && safety.pause != null
+                ? safety.pause
+                : null,
+            networkStopReason: safety.lastStopReason,
           };
         })(),
       });
@@ -205,6 +233,48 @@ export function createRequestHandler(ctx: WorkerContext) {
         selected: ctx.pair,
         pairs: Object.keys(tradingPairs),
         mode: "PAPER",
+      });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/narration") {
+      const pair = url.searchParams.get("pair");
+      if (pair !== "SUI_USDC" && pair !== "WAL_USDC") {
+        send(400, { error: "INVALID_NARRATION_PAIR" });
+        return;
+      }
+      if (pair !== ctx.pair) {
+        send(409, { error: "PAIR_CHANGED" });
+        return;
+      }
+      const sinceValue = url.searchParams.get("since");
+      const limitValue = url.searchParams.get("limit");
+      const since = sinceValue === null ? undefined : Number(sinceValue);
+      const limit = limitValue === null ? 100 : Number(limitValue);
+      if (
+        (since !== undefined && (!Number.isSafeInteger(since) || since < 0)) ||
+        !Number.isSafeInteger(limit) || limit < 1 || limit > 200
+      ) {
+        send(400, { error: "INVALID_NARRATION_CURSOR" });
+        return;
+      }
+      const result = timeAggregation(() =>
+        ctx.db.narrationEntries(pair, since, limit),
+      );
+      if (result.expired) {
+        send(410, {
+          error: "NARRATION_CURSOR_EXPIRED",
+          oldestAvailable: result.oldestAvailable,
+        });
+        return;
+      }
+      send(200, {
+        schema: 1,
+        pair,
+        entries: result.entries,
+        nextSince: result.entries.at(-1)?.seq ?? since ?? null,
+        hasMore: result.hasMore,
+        oldestAvailable: result.oldestAvailable,
+        generatedAt: Date.now(),
       });
       return;
     }
@@ -294,6 +364,15 @@ export function createRequestHandler(ctx: WorkerContext) {
         suiHealth: { ...ctx.sui.status },
         suiReads: { ...ctx.sui.readStatus },
         suiObservations: ctx.db.history("sui_observations", 50),
+        memwal: memwalConfig()
+          ? { enabled: true, ...ctx.db.memwalStatus() }
+          : { enabled: false, pending: 0, lastSuccessAt: null },
+        situationMemory: ctx.db.get("situation_memory") ?? null,
+        narration: {
+          enabled: process.env.SUIBA_NARRATION_GENERATION_ENABLED === "true",
+          counts: ctx.db.narrationCounts(ctx.pair),
+        },
+        liquidation: ctx.liquidation?.status() ?? null,
         ...(ctx.validation
           ? { validation: timeAggregation(() => ctx.validation!.report()) }
           : {}),
@@ -343,7 +422,7 @@ export function createRequestHandler(ctx: WorkerContext) {
     let text = "";
     for await (const chunk of req) {
       text += chunk;
-      if (text.length > 16384) {
+      if (text.length > (url.pathname === "/api/forecast/import" ? 600000 : 16384)) {
         send(413, {});
         return;
       }
@@ -357,6 +436,43 @@ export function createRequestHandler(ctx: WorkerContext) {
         send(409, { error: "DEPLOYMENT_MAINTENANCE" });
         return;
       }
+    }
+    if (url.pathname === "/api/forecast/import") {
+      try {
+        send(200, importForecast(ctx.db, ctx.pair, body, Date.now()));
+      } catch (error) {
+        if (error instanceof Error && error.message === "INVALID_FORECAST_MIGRATION")
+          send(400, { error: error.message });
+        else throw error;
+      }
+      return;
+    }
+    if (url.pathname === "/api/memwal/narration") {
+      if (!memwalConfig()) {
+        send(200, { queued: false });
+        return;
+      }
+      const kind = body.kind;
+      if (
+        !["watchHit", "nearMiss", "review"].includes(kind) ||
+        typeof body.id !== "string" ||
+        body.id.length > 100 ||
+        typeof body.at !== "number" ||
+        !Number.isFinite(body.at)
+      ) {
+        send(400, { error: "INVALID_MEMWAL_EPISODE" });
+        return;
+      }
+      ctx.db.transaction(() =>
+        ctx.db.enqueueMemwal(
+          "narration",
+          narrationEpisode({ at: body.at, kind, pair: ctx.pair }),
+          body.id,
+          body.at,
+        ),
+      );
+      send(200, { queued: true });
+      return;
     }
     if (url.pathname === "/api/paper-check/arm") {
       if (
@@ -444,6 +560,8 @@ export function createRequestHandler(ctx: WorkerContext) {
         ctx.validation?.closed();
         ctx.db.set("api_cooldowns", apiAccess.snapshot());
         ctx.sui.close();
+        ctx.memwal?.stop();
+        ctx.liquidation?.stop();
         ctx.db.close();
         ctx.pair = parsed;
         ctx.db = nextDb;
@@ -470,6 +588,13 @@ export function createRequestHandler(ctx: WorkerContext) {
         ctx.selectionDb.set("selected_pair", ctx.pair);
         ctx.chartHistory = createChartHistory(ctx);
         ctx.dashboard = new DashboardService(ctx.engine, ctx.db);
+        ctx.memwal = startMemwalFlusher(
+          ctx.db,
+          process.env,
+          ctx.generateNarration,
+        );
+        ctx.liquidation =
+          ctx.pair === "SUI_USDC" ? startLiquidationCollector(ctx.db) : null;
         ctx.scheduler = createScheduler(ctx);
         ctx.scheduler.start();
         ctx.switching = false;

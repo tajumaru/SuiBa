@@ -31,6 +31,8 @@ test("modern feed keeps status prompt, caches charts and recovers failed channel
   await page.clock.install();
   await page.route("**/api/**", async (route) => {
     const u = new URL(route.request().url());
+    if (u.pathname === "/api/auth/session")
+      return route.fulfill({ json: { authenticated: true } });
     if (u.pathname === "/api/dashboard/summary") {
       summaryCalls++;
       return route.fulfill({
@@ -51,6 +53,8 @@ test("modern feed keeps status prompt, caches charts and recovers failed channel
       recordCalls++;
       return route.fulfill({ json: service.records() });
     }
+    if (u.pathname === "/api/dashboard/long-term")
+      return route.fulfill({ json: service.longTerm() });
     if (u.pathname === "/api/operations") {
       operationsCalls++;
       return route.fulfill({ json: operations });
@@ -63,8 +67,6 @@ test("modern feed keeps status prompt, caches charts and recovers failed channel
   });
   const readyStart = performance.now();
   await page.goto("/");
-  await page.getByLabel("管理トークン").fill("test-only");
-  await page.getByRole("button", { name: "接続", exact: true }).click();
   await expect(
     page.getByRole("region", { name: "エージェント実況", exact: true }),
   ).toBeVisible();
@@ -72,7 +74,7 @@ test("modern feed keeps status prompt, caches charts and recovers failed channel
     .getByRole("button", { name: "ダッシュボード", exact: true })
     .click();
   await expect(
-    page.getByRole("region", { name: "通信とPAPER注文の状態", exact: true }),
+    page.getByRole("region", { name: "Workerの状態", exact: true }),
   ).toBeVisible();
   await expect.poll(() => frameCalls).toBe(1);
   await expect.poll(() => recordCalls).toBe(1);
@@ -105,9 +107,10 @@ test("modern feed keeps status prompt, caches charts and recovers failed channel
   ).toHaveCount(0);
   fail = true;
   await page.clock.runFor(11000);
-  await expect(page.getByRole("alert")).toContainText("HTTP_503");
+  await expect(page.locator(".connection-notice")).toContainText("再接続しています");
   fail = false;
-  await page.clock.runFor(11000);
+  await page.clock.runFor(32000);
+  await expect(page.locator(".connection-notice")).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(
     page.getByRole("img", { name: /SUI\/USDC 現在価格/ }),

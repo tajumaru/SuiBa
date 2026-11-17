@@ -1,15 +1,12 @@
 import { chartGapQuality } from "../../../packages/shared/src/chart-gap-quality.ts";
-import { candleHoverLines, hoverLineWidth } from "./chartHover.ts";
+import { candleHoverLines } from "./chartHover.ts";
 import {
   answerGhost,
   crossingMarksFor,
   forecastGeometry,
 } from "./chartOverlayGeometry.ts";
 import { candleGeometry } from "./candleGeometry.ts";
-import {
-  chartForecast,
-  FORECAST_BARS,
-} from "./chartForecast.ts";
+import { type ChartForecast, FORECAST_BARS } from "./chartForecast.ts";
 import type { ForecastAnswerCheck } from "./forecastLog.ts";
 import { chartSeries } from "./chartIndicators.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
@@ -33,6 +30,7 @@ export interface PriceChartProps {
   /** Learned cone-width scale (forecastCalib); the drawn cone
    * and the recorded one must use the same scale. */
   forecastBandScale?: number;
+  forecast?: ChartForecast | null;
   bookImbalance?: number | null;
   /** The open position's real sell lines (same prices the
    * ticker counts down to), for forecast crossing marks. */
@@ -55,8 +53,7 @@ export function usePriceChartModel({
   historyApi,
   forecastScoreText,
   forecastTouchText,
-  forecastBandScale = 1,
-  bookImbalance,
+  forecast,
   sellLines,
   answerCheck,
   answerDefaultOn = false,
@@ -125,16 +122,8 @@ export function usePriceChartModel({
   // latest view; panning into the past hides it. Display only:
   // it never feeds the bot or the indicators.
   const fc = useMemo(
-    () =>
-      anchor == null
-        ? chartForecast(
-            data.candles,
-            FORECAST_BARS,
-            bookImbalance ?? null,
-            forecastBandScale,
-          )
-        : null,
-    [data, anchor, bookImbalance, forecastBandScale],
+    () => anchor == null ? forecast ?? null : null,
+    [anchor, forecast],
   );
   const first = data.candles[0]?.timestamp ?? 0,
     available = latestEnd - first,
@@ -210,33 +199,20 @@ export function usePriceChartModel({
   // Where the outlook meets the position's sell lines, if it
   // does: geometry over the sketch, labelled as such in place.
   const crossingMarks =
-    fc && sellLines ? crossingMarksFor(fc, sellLines, x, y, tf) : [];
+    fc && sellLines && latest
+      ? crossingMarksFor(fc, sellLines, latest, x, y, tf)
+      : [];
   const geometry = useMemo(
     () => candleGeometry(c, x, y, dx),
     [visible, w, min, max, tf],
   );
   const chosen = c.find((b) => b.timestamp === selected) ?? c.at(-1);
-  // In-chart readout for the hovered/tapped candle. Only while
+  // Above-chart readout for the hovered/tapped candle. Only while
   // a candle is actually selected — the default "latest" state
   // keeps the chart clean.
   const hoverLines =
     selected != null && chosen ? candleHoverLines(chosen) : null;
   const hoverCx = chosen ? x(chosen.timestamp + tf / 2) : 0;
-  const hoverBoxW = hoverLines
-    ? Math.max(hoverLineWidth(hoverLines.main), hoverLineWidth(hoverLines.sub)) +
-      16
-    : 0;
-  const hoverBoxX = hoverLines
-    ? Math.min(
-        Math.max(
-          left,
-          hoverCx + 10 + hoverBoxW <= right
-            ? hoverCx + 10
-            : hoverCx - 10 - hoverBoxW,
-        ),
-        Math.max(left, right - hoverBoxW),
-      )
-    : 0;
   const pick = (clientX: number) => {
     if (!svg.current || !c.length) return;
     const rect = svg.current.getBoundingClientRect(),
@@ -395,8 +371,6 @@ export function usePriceChartModel({
     chosen,
     hoverLines,
     hoverCx,
-    hoverBoxW,
-    hoverBoxX,
     zoom,
     move,
     loadHistory,
