@@ -29,7 +29,7 @@
     "@cetusprotocol/aggregator-sdk": "1.7.5",
     "@mysten-incubation/memwal": "0.1.14",
     "@mysten/deepbook-v3": "2.8.0",
-    "@mysten/seal": "1.1.3",
+    "@mysten/seal": "1.5.1",
     "@mysten/sui": "2.37.0",
     "@mysten/walrus": "1.1.7",
     "decimal.js": "^10.6.0",
