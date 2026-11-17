@@ -108,10 +108,11 @@ def fetch_candles(decisions):
 
 
 def load_candles(raw):
-    close, high, low = {}, {}, {}
+    close, high, low, open_price = {}, {}, {}, {}
     for c in raw:
         t = int(c[0]) // 1000
-        high[t], low[t], close[t] = float(c[2]), float(c[3]), float(c[4])
+        open_price[t], high[t], low[t], close[t] = (
+            float(c[1]), float(c[2]), float(c[3]), float(c[4]))
     ordered = sorted(close)
     # EMA50 over the close series, for the regime tag.
     ema, value = {}, None
@@ -128,7 +129,7 @@ def load_candles(raw):
     for idx, t in enumerate(ordered):
         gap[t] = None if e20[idx] is None or e50[idx] is None \
             else (e50[idx] - e20[idx]) / closes[idx]
-    return close, high, low, ordered, ema, gap
+    return close, high, low, ordered, ema, gap, open_price
 
 
 def shared_ema(values, period):
@@ -347,7 +348,7 @@ def analyze_forecast_bias(forecasts, candles, timeframe=300):
     Bounds are inclusive, matching the worker's forecast score. Requiring a
     later candle ensures the final horizon candle has closed.
     """
-    close, _, _, ordered, ema, _ = candles
+    close, _, _, ordered, ema, _, _ = candles
     latest = ordered[-1] if ordered else None
     rows = []
     for forecast in forecasts:
@@ -404,7 +405,7 @@ def forward_return(d, hours, candles):
 
 def dip_rebound_events(candles):
     """Worker-compatible -3%/4h dip events with a three-candle re-arm."""
-    close, _, _, ordered, _, _ = candles
+    close, _, _, ordered, _, _, _ = candles
     events, armed, misses, previous = [], True, 0, None
     for timestamp in ordered:
         if previous is not None and timestamp != previous + 300:
@@ -494,7 +495,7 @@ def analyze_scenes(decisions, shadow_rows, candles, liquidation_buckets=None):
             scenes.append({"label": label, "net": stat, "overall": overall,
                            "delta": stat["mean"] - overall["mean"]})
 
-    close, _, _, ordered, _, _ = candles
+    close, high, low, ordered, _, _, open_price = candles
     events = dip_rebound_events(candles)
     dip_values = [((close[t + 24 * 3600] / close[t] - 1) * 100
                    - DIP_REBOUND_COST_PCT)
@@ -510,6 +511,28 @@ def analyze_scenes(decisions, shadow_rows, candles, liquidation_buckets=None):
             scenes.append({"label": "dip-rebound", "net": stat,
                            "overall": overall,
                            "delta": stat["mean"] - overall["mean"]})
+    for label, is_event in (
+            ("wick-lower", lambda t, span: (
+                min(open_price[t], close[t]) - low[t]) / span >= 0.5),
+            ("wick-upper", lambda t, span: (
+                high[t] - max(open_price[t], close[t])) / span >= 0.5)):
+        wick_events = [t for t in ordered
+                       if high[t] > low[t] and is_event(t, high[t] - low[t])]
+        wick_values = [((close[t + 4 * 3600] / close[t] - 1) * 100
+                        - ROUND_TRIP_COST_PCT)
+                       for t in wick_events
+                       if t + 4 * 3600 in close and close[t] > 0]
+        if wick_values:
+            first, last = min(wick_events), max(wick_events)
+            baseline = [((close[t + 4 * 3600] / close[t] - 1) * 100
+                         - ROUND_TRIP_COST_PCT)
+                        for t in ordered if first <= t <= last
+                        and t + 4 * 3600 in close and close[t] > 0]
+            stat, overall = summarize(wick_values), summarize(baseline)
+            if overall:
+                scenes.append({"label": label, "net": stat,
+                               "overall": overall,
+                               "delta": stat["mean"] - overall["mean"]})
     liquidation_events = liquidation_spike_events(
         candles, liquidation_buckets or [])
     liquidation_values = [
@@ -532,7 +555,7 @@ def analyze_scenes(decisions, shadow_rows, candles, liquidation_buckets=None):
 
 
 def virtual_touch(d, candles, hours=24):
-    _, high, low, ordered, _, _ = candles
+    _, high, low, ordered, _, _, _ = candles
     up, dn = d["price"] * 1.015, d["price"] * 0.99
     for t in ordered:
         if t <= d["cts"]:
@@ -550,7 +573,7 @@ def virtual_touch(d, candles, hours=24):
 
 def simulate_exits(decisions, candles, tp_pct, sl_pct, hours=EXIT_HOURS):
     """Sequential single-position first-touch simulation."""
-    close, high, low, ordered, _, _ = candles
+    close, high, low, ordered, _, _, _ = candles
     candidates = sorted((d for d in decisions if d.get("cts") is not None and d.get("price")),
                         key=lambda d: d["cts"])
     trades, busy_until = [], None
@@ -711,7 +734,7 @@ def analyze_learning(decisions, candles):
 
 
 def analyze(decisions, candles):
-    close, high, low, ordered, ema, gap = candles
+    close, high, low, ordered, ema, gap, _ = candles
     for d in decisions:
         d["regime"] = regime_at(ema, ordered, d["cts"]) if d["cts"] else "unknown"
         d["gapShrink"] = gap_shrinking_at(gap, ordered, d["cts"]) if d["cts"] else False

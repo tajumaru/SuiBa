@@ -68,7 +68,8 @@ def candles_with_close_at(marks):
         value = close[t] if value is None else value + (2 / 51) * (close[t] - value)
         ema[t] = value
     gap = {t: 0.0 for t in ordered}
-    return close, high, low, ordered, ema, gap
+    open_price = dict(close)
+    return close, high, low, ordered, ema, gap, open_price
 
 
 def trending_candles(step):
@@ -86,7 +87,8 @@ def trending_candles(step):
         value = close[t] if value is None else value + (2 / 51) * (close[t] - value)
         ema[t] = value
     gap = {t: 0.0 for t in ordered}
-    return close, high, low, ordered, ema, gap
+    open_price = dict(close)
+    return close, high, low, ordered, ema, gap, open_price
 
 
 def decision(missing=None, price=1.00, cts=BASE, cond_extra=None, cur=None, prev=None):
@@ -138,7 +140,8 @@ class AnalyzeTests(unittest.TestCase):
         close[BASE] = .97
         close[BASE + 24 * 3600] = .98
         ordered = sorted(close)
-        candles = (close, dict(close), dict(close), ordered, dict(close), {})
+        candles = (close, dict(close), dict(close), ordered, dict(close), {},
+                   dict(close))
         buckets = [{"bucketAt": BASE, "longUsd": 100_000}]
         self.assertEqual(rr.liquidation_spike_events(candles, buckets), [BASE])
         scenes = rr.analyze_scenes([], [], candles, buckets)
@@ -151,6 +154,48 @@ class AnalyzeTests(unittest.TestCase):
     def test_liquidation_loader_accepts_old_extract_without_table(self):
         with tempfile.NamedTemporaryFile(suffix=".sqlite") as db:
             self.assertEqual(rr.load_liquidation_buckets(db.name), [])
+
+    def test_wick_scenes_use_half_range_boundary_and_four_hour_delta(self):
+        stamps = [BASE + offset for offset in range(0, 1801, 300)]
+        close = {stamp: 1.0 for stamp in stamps}
+        returns = (10, 5, -10, 2, 6, -2, 0)
+        close.update({stamp + 14400: 1 + returns[index] / 100
+                      for index, stamp in enumerate(stamps)})
+        high = dict(close)
+        low = dict(close)
+        open_price = dict(close)
+        # Each event is exactly 0.5; its opposite wick is only 0.25.
+        for index in (0, 2):
+            open_price[stamps[index]], high[stamps[index]], low[stamps[index]] = (
+                1.1, 1.2, .8)
+        for index in (3, 5):
+            open_price[stamps[index]], high[stamps[index]], low[stamps[index]] = (
+                .9, 1.2, .8)
+        # Zero range must not become an event.
+        open_price[stamps[1]] = high[stamps[1]] = low[stamps[1]] = 1.0
+        ordered = sorted(close)
+        candles = (close, high, low, ordered, dict(close), {}, open_price)
+
+        scenes = rr.analyze_scenes([], [], candles)
+        lower = next(scene for scene in scenes if scene["label"] == "wick-lower")
+        upper = next(scene for scene in scenes if scene["label"] == "wick-upper")
+        self.assertEqual((lower["net"]["n"], upper["net"]["n"]), (2, 2))
+        self.assertAlmostEqual(lower["net"]["mean"], -.6)
+        self.assertAlmostEqual(upper["net"]["mean"], -.6)
+        lower_baseline = ((10 - .6) + (5 - .6) + (-10 - .6)) / 3
+        upper_baseline = ((2 - .6) + (6 - .6) + (-2 - .6)) / 3
+        self.assertAlmostEqual(lower["delta"], -.6 - lower_baseline)
+        self.assertAlmostEqual(upper["delta"], -.6 - upper_baseline)
+
+    def test_wick_scenes_are_absent_without_samples(self):
+        close = {BASE: 1.0, BASE + 14400: 1.1}
+        candles = (close, {BASE: 1.0, BASE + 14400: 1.1},
+                   {BASE: .9, BASE + 14400: 1.1}, sorted(close),
+                   dict(close), {}, {BASE: .9, BASE + 14400: 1.1})
+        labels = [scene["label"]
+                  for scene in rr.analyze_scenes([], [], candles)]
+        self.assertNotIn("wick-lower", labels)
+        self.assertNotIn("wick-upper", labels)
 
 
 class ExitGridTests(unittest.TestCase):
@@ -737,7 +782,7 @@ class ShadowReviewTests(unittest.TestCase):
             rows = [self.shadow(i, cts=c1 if i<15 else c2) for i in range(30)]
             db = self.public_db(tmp, rules, rows)
             candles = candles_with_close_at({c1+14400:1.02})
-            close, high, low, ordered, ema, _ = candles
+            close, high, low, ordered, ema, _, _ = candles
             # Sufficient history for two real mechanical regime tags; the
             # second candidate group is sideways, the first is upward.
             earlier = c1-86400
