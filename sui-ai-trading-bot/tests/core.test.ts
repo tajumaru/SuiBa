@@ -23,6 +23,7 @@ import { backtest } from "../packages/paper-trading/src/backtest.ts";
 import { RuleBasedStrategy } from "../packages/strategy-engine/src/index.ts";
 import { BotEngine } from "../apps/worker/src/engine.ts";
 import type { DexRouter } from "../packages/shared/src/index.ts";
+import type { ExecutionAdapter } from "../apps/worker/src/execution-adapter.ts";
 const now = 1800000000000;
 const quote: QuoteResult = {
   id: "q",
@@ -316,6 +317,7 @@ describe("worker execution boundaries", () => {
   function setup(
     onQuote?: (db: BotDatabase) => void,
     onValidate?: (db: BotDatabase, call: number, q: QuoteResult) => void,
+    executionAdapter?: ExecutionAdapter,
   ) {
     const db = new BotDatabase(":memory:");
     db.set("runtime", {
@@ -356,14 +358,30 @@ describe("worker execution boundaries", () => {
         return true;
       },
     };
-    const engine = new BotEngine(db, { candles: async () => c }, router, {
-      health: async () => ({
-        healthy: true,
-        checkedAt: Date.now(),
-        failures: 0,
-      }),
-      status: { healthy: true, checkedAt: Date.now(), failures: 0 },
-    });
+    const engine = new BotEngine(
+      db,
+      { candles: async () => c },
+      router,
+      {
+        health: async () => ({
+          healthy: true,
+          checkedAt: Date.now(),
+          failures: 0,
+        }),
+        status: { healthy: true, checkedAt: Date.now(), failures: 0 },
+      },
+      "SUI_USDC",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executionAdapter,
+    );
     return { db, engine, calls: () => calls };
   }
   it("blocks a quote that was in flight when emergency stop was pressed", async () => {
@@ -417,6 +435,27 @@ describe("worker execution boundaries", () => {
     await t.engine.tick();
     expect(t.calls()).toBe(1);
     expect(t.db.history("paper_trades")).toHaveLength(1);
+    t.db.close();
+  });
+  it("routes an approved REAL decision to the execution adapter without a PAPER fill", async () => {
+    const intents: unknown[] = [];
+    const adapter: ExecutionAdapter = {
+      kind: "REAL_TRADECAP",
+      acceptStop: () => undefined,
+      execute: async (intent) => {
+        intents.push(intent);
+        return { status: "SUBMITTED", digest: "real-digest" };
+      },
+    };
+    const t = setup(undefined, undefined, adapter);
+    await t.engine.tick();
+    expect(intents).toHaveLength(1);
+    expect(t.db.history("paper_trades")).toHaveLength(0);
+    expect(
+      t.db
+        .history<{ outcome: string }>("cycle_audits")
+        .some((row) => row.outcome === "REAL_SUBMITTED"),
+    ).toBe(true);
     t.db.close();
   });
   it("fails safely on upstream error", async () => {

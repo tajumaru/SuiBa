@@ -17,6 +17,7 @@ import type { BotDatabase } from "../../../packages/database/src/index.ts";
 import type { TradingPair } from "../../../packages/shared/src/index.ts";
 import type { WorkerContext } from "./worker-context.ts";
 import { NarrationGenerator } from "./narration-generator.ts";
+import { createRealTradeCapExecutionAdapter } from "./real/runtime.ts";
 
 /**
  * The worker's factories, extracted from the boot script: the
@@ -31,6 +32,8 @@ export function createEngine(
   database: BotDatabase,
   selected: TradingPair,
 ) {
+  if (process.env.MODE === "REAL_TRADECAP" && selected !== "SUI_USDC")
+    throw Error("REAL_PAIR_FORBIDDEN");
   const client = new ReadOnlySuiClient(ctx.suiGrpcEndpoints.primary, {
     onObservation: (event) =>
       database.append("sui_observations", randomUUID(), event, event.at),
@@ -58,7 +61,10 @@ export function createEngine(
         selected === "WAL_USDC" ? new WalPaperRouter(router, deep) : router,
         client,
         selected,
-        () => ctx.stopping || ctx.deploymentGate.blocked() || ctx.paperCheck.expired(),
+        () =>
+          ctx.stopping ||
+          ctx.deploymentGate.blocked() ||
+          ctx.paperCheck.expired(),
         () => ctx.chainSampler.current(),
         () => ctx.bookSamplers[selected].current(),
         () => ctx.btcSampler.current(),
@@ -67,6 +73,9 @@ export function createEngine(
         () => ctx.paperCheck.ordersAllowed(selected),
         new OpenAIShadowAdapter(), // OFF is still enforced by ShadowRecorder.
         ctx.selectionDb, // Worker-wide JST budget survives pair switches.
+        process.env.MODE === "REAL_TRADECAP"
+          ? createRealTradeCapExecutionAdapter(process.env)
+          : undefined,
       ),
     };
   } catch (error) {
@@ -100,10 +109,12 @@ export function generateNarrationSafely(ctx: WorkerContext) {
     // Narration is deliberately outside the trading/safety failure path. Its
     // cursor remains uncommitted, so the next generation point replays it.
     ctx.engine.monitor.event("ERROR", "NARRATION_GENERATION_FAILED");
-    console.warn(JSON.stringify({
-      event: "NARRATION_GENERATION_FAILED",
-      reason: error instanceof Error ? error.message : "UNKNOWN_FAILURE",
-    }));
+    console.warn(
+      JSON.stringify({
+        event: "NARRATION_GENERATION_FAILED",
+        reason: error instanceof Error ? error.message : "UNKNOWN_FAILURE",
+      }),
+    );
     return 0;
   }
 }
@@ -173,7 +184,8 @@ export const createScheduler = (ctx: WorkerContext) =>
       healthy: ctx.engine.marketStatus()?.healthy ?? false,
       blocked: apiAccess.blocked(),
     }),
-    (plan) => ctx.engine.monitor.scheduled(plan?.at ?? null, plan?.reason ?? null),
+    (plan) =>
+      ctx.engine.monitor.scheduled(plan?.at ?? null, plan?.reason ?? null),
     () => {
       console.error(
         JSON.stringify({
