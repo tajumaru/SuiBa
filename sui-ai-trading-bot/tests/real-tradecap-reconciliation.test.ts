@@ -143,8 +143,9 @@ describe("REAL TradeCap read-only reconciliation", () => {
     expect(() =>
       realConfigFromEnv({ ...env, DATABASE_PATH: "data/bot.sqlite" }),
     ).toThrow("PAPER_DATABASE_PATH_FORBIDDEN_IN_REAL");
-    expect(() =>
-      realConfigFromEnv({ ...env, REAL_SIGNING_ENABLED: "true" }),
-    ).toThrow();
+    expect(
+      realConfigFromEnv({ ...env, REAL_SIGNING_ENABLED: "true" }).config
+        .signingEnabled,
+    ).toBe(true);
   });
 });

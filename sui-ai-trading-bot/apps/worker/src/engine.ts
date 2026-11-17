@@ -1,4 +1,8 @@
-import { ShadowRecorder, type ShadowAdapter, type ShadowBudget } from "./shadow.ts";
+import {
+  ShadowRecorder,
+  type ShadowAdapter,
+  type ShadowBudget,
+} from "./shadow.ts";
 import { advanceForecast } from "./forecast.ts";
 import { quoteBookReason } from "../../../packages/market-data/src/quote-book.ts";
 import type { MarketDataProvider } from "../../../packages/market-data/src/provider.ts";
@@ -53,6 +57,7 @@ import { equity } from "../../../packages/portfolio/src/index.ts";
 import { validateCandles } from "../../../packages/market-data/src/index.ts";
 import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
 import type { ValidationRecorder } from "./validation.ts";
+import type { ExecutionAdapter } from "./execution-adapter.ts";
 
 /** The dashboard-facing snapshot contract: one definition for
  * every consumer, so adding a snapshot field has a single
@@ -64,6 +69,9 @@ export class BotEngine {
   private readonly shadow: ShadowRecorder;
   marketStatus() {
     return this.market.status?.() ?? null;
+  }
+  acceptExecutionStop(reason: string) {
+    this.executionAdapter?.acceptStop(reason);
   }
   private busy = false;
   private paper = new PaperTrading();
@@ -85,8 +93,14 @@ export class BotEngine {
     private readonly sessionOrdersAllowed: () => boolean = () => true,
     shadowAdapter?: ShadowAdapter,
     shadowBudget?: ShadowBudget,
+    private readonly executionAdapter?: ExecutionAdapter,
   ) {
-    this.shadow = new ShadowRecorder(db, shadowAdapter, undefined, shadowBudget);
+    this.shadow = new ShadowRecorder(
+      db,
+      shadowAdapter,
+      undefined,
+      shadowBudget,
+    );
     const portfolio = db.portfolio();
     const baseCoin = tradingPairs[pair].base;
     if (portfolio.baseCoin && portfolio.baseCoin !== baseCoin)
@@ -137,52 +151,50 @@ export class BotEngine {
       /* Display-grade telemetry; a recording fault changes nothing. */
     }
   }
-  private async acquireFrames(cycle: CycleEvidence, began: number, now: number) {
-      const recovering = this.monitor.safety().connectivity !== "HEALTHY";
-      let frames: Record<number, Candle[]>;
-      try {
-        frames = await this.monitor.acquisition(
-          async () => {
-            await this.monitor.request("HEALTH", () =>
-              this.sui.health(recovering),
-            );
-            if (this.market.frames) return this.market.frames(now);
-            const result: Record<number, Candle[]> = {};
-            for (const tf of [300, 900, 3600] as const)
-              result[tf] = await this.market.candles(tf, now);
-            return result;
-          },
-          cycle.cycleId,
-        );
-      } finally {
-        this.drainIndexerLatency();
-      }
-      if (this.market.frames)
+  private async acquireFrames(
+    cycle: CycleEvidence,
+    began: number,
+    now: number,
+  ) {
+    const recovering = this.monitor.safety().connectivity !== "HEALTHY";
+    let frames: Record<number, Candle[]>;
+    try {
+      frames = await this.monitor.acquisition(async () => {
+        await this.monitor.request("HEALTH", () => this.sui.health(recovering));
+        if (this.market.frames) return this.market.frames(now);
+        const result: Record<number, Candle[]> = {};
         for (const tf of [300, 900, 3600] as const)
-          validateCandles(frames[tf], tf, Date.now());
-      const source = frames[300][0].source;
-      if (
-        source.startsWith("DeepBook:") &&
-        !source.startsWith(`DeepBook:${this.pair}:USDC`)
+          result[tf] = await this.market.candles(tf, now);
+        return result;
+      }, cycle.cycleId);
+    } finally {
+      this.drainIndexerLatency();
+    }
+    if (this.market.frames)
+      for (const tf of [300, 900, 3600] as const)
+        validateCandles(frames[tf], tf, Date.now());
+    const source = frames[300][0].source;
+    if (
+      source.startsWith("DeepBook:") &&
+      !source.startsWith(`DeepBook:${this.pair}:USDC`)
+    )
+      throw Error("MARKET_PAIR_MISMATCH");
+    if (
+      Object.values(frames).some((rows) =>
+        rows.some((x) => x.source !== source),
       )
-        throw Error("MARKET_PAIR_MISMATCH");
-      if (
-        Object.values(frames).some((rows) =>
-          rows.some((x) => x.source !== source),
-        )
-      )
-        throw new Error("MARKET_PAIR_MISMATCH");
-      const previousSource =
-        this.db.get<string>("market_source") ??
-        this.db.candles().at(-1)?.source;
-      for (const rows of Object.values(frames)) this.db.saveCandles(rows);
-      this.db.set("market_source", source);
-      if (previousSource && previousSource !== source) {
-        this.db.set("price", null);
-        this.db.set("indicators", null);
-        this.db.set("profitGuard", null);
-        throw new Error("MARKET_SOURCE_CHANGED");
-      }
+    )
+      throw new Error("MARKET_PAIR_MISMATCH");
+    const previousSource =
+      this.db.get<string>("market_source") ?? this.db.candles().at(-1)?.source;
+    for (const rows of Object.values(frames)) this.db.saveCandles(rows);
+    this.db.set("market_source", source);
+    if (previousSource && previousSource !== source) {
+      this.db.set("price", null);
+      this.db.set("indicators", null);
+      this.db.set("profitGuard", null);
+      throw new Error("MARKET_SOURCE_CHANGED");
+    }
     return frames;
   }
 
@@ -199,130 +211,137 @@ export class BotEngine {
     cycle: CycleEvidence,
     cycleToken: number,
   ) {
-      let recoveryTransition = false;
-      if (this.monitor.safety().connectivity !== "HEALTHY") {
-        const status = this.marketStatus();
-        this.market.assertReady?.(Date.now());
-        const qualities = status?.quality;
-        // DeepBook keeps its strict proof (fresh quality, book
-        // and indexer lag). The GeckoTerminal route has no such
-        // evidence; its proof is that this cycle's frames were
-        // fetched and validated inside acquisition, plus the
-        // monitor's own stall gate inside the recovery check,
-        // which refuses resumption while market data is stale.
-        const complete =
-          status != null &&
-          status.healthy &&
-          !status.fallback &&
-          (status.source === "GeckoTerminal" ||
-            (status.source === "DeepBook" &&
-              [300, 900, 3600].every(
-                (tf) =>
-                  qualities?.[tf] &&
-                  qualities[tf].unresolved === 0 &&
-                  qualities[tf].fetchedAt >= began,
-              ) &&
-              status.bookAt != null &&
-              Date.now() - status.bookAt <= 10000 &&
-              status.diagnostics?.indexerLagMs != null &&
-              status.diagnostics.indexerLagMs <= 60000));
-        recoveryTransition = this.monitor.recoveryCycle({
-          market: complete,
-          sui: this.sui.status.healthy && this.sui.status.checkedAt >= began,
-        });
-      }
-      let p = this.db.portfolio();
-      if (p.day !== dayKey(now)) {
-        p = {
-          ...p,
-          day: dayKey(now),
-          dayStartEquity: equity(p, price),
-          dailyBought: 0,
-        };
-        this.db.set("portfolio", p);
-      }
-      const s = this.db.settings(),
-        runtime = this.db.runtime(),
-        current = calculate(c),
-        previous = calculate(c.slice(0, -1));
-      const reg = new StrategyRegistry();
-      reg.register("rule-based", new RuleBasedStrategy(s));
-      const decision = await reg.get(s.strategy).analyze({
-        candles: c,
-        current,
-        previous,
-        entryPrice: p.sui > 0 ? p.costBasis / p.sui : null,
-        now,
+    let recoveryTransition = false;
+    if (this.monitor.safety().connectivity !== "HEALTHY") {
+      const status = this.marketStatus();
+      this.market.assertReady?.(Date.now());
+      const qualities = status?.quality;
+      // DeepBook keeps its strict proof (fresh quality, book
+      // and indexer lag). The GeckoTerminal route has no such
+      // evidence; its proof is that this cycle's frames were
+      // fetched and validated inside acquisition, plus the
+      // monitor's own stall gate inside the recovery check,
+      // which refuses resumption while market data is stale.
+      const complete =
+        status != null &&
+        status.healthy &&
+        !status.fallback &&
+        (status.source === "GeckoTerminal" ||
+          (status.source === "DeepBook" &&
+            [300, 900, 3600].every(
+              (tf) =>
+                qualities?.[tf] &&
+                qualities[tf].unresolved === 0 &&
+                qualities[tf].fetchedAt >= began,
+            ) &&
+            status.bookAt != null &&
+            Date.now() - status.bookAt <= 10000 &&
+            status.diagnostics?.indexerLagMs != null &&
+            status.diagnostics.indexerLagMs <= 60000));
+      recoveryTransition = this.monitor.recoveryCycle({
+        market: complete,
+        sui: this.sui.status.healthy && this.sui.status.checkedAt >= began,
       });
-      cycle.analysis = {
-        cycleId: cycle.cycleId,
-        runningAtStart: cycle.runningAtStart,
-        runningAtAnalysis: this.db.runtime().running,
-        ordersAllowedAtAnalysis:
-          !recoveryTransition && this.monitor.ordersAllowed(cycleToken),
-        generationAtStart: cycleToken,
-        generationAtAnalysis: this.monitor.safety().generation,
-        connectivityAtAnalysis: this.monitor.safety().connectivity,
+    }
+    let p = this.db.portfolio();
+    if (p.day !== dayKey(now)) {
+      p = {
+        ...p,
+        day: dayKey(now),
+        dayStartEquity: equity(p, price),
+        dailyBought: 0,
       };
-      decision.analysisContext = cycle.analysis;
-      cycle.outcome = "ANALYZED";
-      this.db.recordAnalysis(cycle.cycleId, decision, current, now);
-      this.shadow.offer(() => ({
-        cycleId: cycle.cycleId, pair: this.pair, now, candles: c,
-        decision, portfolio: p, settings: s, market: this.marketStatus(),
-        healthy: !recoveryTransition && this.monitor.safety().connectivity === "HEALTHY"
-          && this.marketStatus()?.healthy === true,
-      }));
-      this.monitor.analysis();
-      this.db.set("price", price);
-      this.db.append(
-        "portfolio_snapshots",
-        randomUUID(),
-        { timestamp: now, equity: equity(p, price) },
-        now,
-      );
-      this.monitor.valuation(price, now);
-      let sellPreview: QuoteResult | null = null;
-      if (p.sui > 0) {
-        try {
-          sellPreview = await this.getQuote({
-            from: tradingPairs[this.pair].base,
-            to: USDC,
-            amountIn: atomic(
-              Math.min(p.sui, s.maxOrder / price),
-              tradingPairs[this.pair].base,
-            ),
-            slippage: PAPER_SLIPPAGE_RATE,
-            referencePrice: price,
-          });
-          if (!(await this.router.validateQuote(sellPreview)))
-            sellPreview = null;
-        } catch {
-          sellPreview = null;
-        }
-        const costs = sellPreview
-          ? paperCosts(sellPreview, this.db.settings())
-          : {
-              additionalFeeUsdc: null,
-              gasUsdc: null,
-              dexFeeUsdc: null,
-              source: "PAPER_MODEL" as const,
-            };
-        this.db.recordProfit(
-          evaluateSell({
-            baseCoin: tradingPairs[this.pair].base,
-            position: positionOf(p),
-            quote: sellPreview,
-            costs,
-            purpose:
-              decision.action === "SELL"
-                ? (decision.sellPurpose ?? "TAKE_PROFIT")
-                : "TAKE_PROFIT",
-            config: profitConfigOf(this.db.settings()),
-            now: Date.now(),
-          }),
-        );
+      this.db.set("portfolio", p);
+    }
+    const s = this.db.settings(),
+      runtime = this.db.runtime(),
+      current = calculate(c),
+      previous = calculate(c.slice(0, -1));
+    const reg = new StrategyRegistry();
+    reg.register("rule-based", new RuleBasedStrategy(s));
+    const decision = await reg.get(s.strategy).analyze({
+      candles: c,
+      current,
+      previous,
+      entryPrice: p.sui > 0 ? p.costBasis / p.sui : null,
+      now,
+    });
+    cycle.analysis = {
+      cycleId: cycle.cycleId,
+      runningAtStart: cycle.runningAtStart,
+      runningAtAnalysis: this.db.runtime().running,
+      ordersAllowedAtAnalysis:
+        !recoveryTransition && this.monitor.ordersAllowed(cycleToken),
+      generationAtStart: cycleToken,
+      generationAtAnalysis: this.monitor.safety().generation,
+      connectivityAtAnalysis: this.monitor.safety().connectivity,
+    };
+    decision.analysisContext = cycle.analysis;
+    cycle.outcome = "ANALYZED";
+    this.db.recordAnalysis(cycle.cycleId, decision, current, now);
+    this.shadow.offer(() => ({
+      cycleId: cycle.cycleId,
+      pair: this.pair,
+      now,
+      candles: c,
+      decision,
+      portfolio: p,
+      settings: s,
+      market: this.marketStatus(),
+      healthy:
+        !recoveryTransition &&
+        this.monitor.safety().connectivity === "HEALTHY" &&
+        this.marketStatus()?.healthy === true,
+    }));
+    this.monitor.analysis();
+    this.db.set("price", price);
+    this.db.append(
+      "portfolio_snapshots",
+      randomUUID(),
+      { timestamp: now, equity: equity(p, price) },
+      now,
+    );
+    this.monitor.valuation(price, now);
+    let sellPreview: QuoteResult | null = null;
+    if (p.sui > 0) {
+      try {
+        sellPreview = await this.getQuote({
+          from: tradingPairs[this.pair].base,
+          to: USDC,
+          amountIn: atomic(
+            Math.min(p.sui, s.maxOrder / price),
+            tradingPairs[this.pair].base,
+          ),
+          slippage: PAPER_SLIPPAGE_RATE,
+          referencePrice: price,
+        });
+        if (!(await this.router.validateQuote(sellPreview))) sellPreview = null;
+      } catch {
+        sellPreview = null;
       }
+      const costs = sellPreview
+        ? paperCosts(sellPreview, this.db.settings())
+        : {
+            additionalFeeUsdc: null,
+            gasUsdc: null,
+            dexFeeUsdc: null,
+            source: "PAPER_MODEL" as const,
+          };
+      this.db.recordProfit(
+        evaluateSell({
+          baseCoin: tradingPairs[this.pair].base,
+          position: positionOf(p),
+          quote: sellPreview,
+          costs,
+          purpose:
+            decision.action === "SELL"
+              ? (decision.sellPurpose ?? "TAKE_PROFIT")
+              : "TAKE_PROFIT",
+          config: profitConfigOf(this.db.settings()),
+          now: Date.now(),
+        }),
+      );
+    }
     return { recoveryTransition, p, s, runtime, decision, sellPreview };
   }
 
@@ -341,31 +360,31 @@ export class BotEngine {
     cycle: CycleEvidence,
     cycleToken: number,
   ): boolean {
-      if (recoveryTransition) {
-        cycle.outcome = "RECOVERY_CONFIRMATION";
-        return true;
-      }
-      if (
-        this.deploymentStopped() ||
-        !this.sessionOrdersAllowed() ||
-        !this.monitor.ordersAllowed(cycleToken) ||
-        !runtime.running ||
-        runtime.emergency ||
-        runtime.error
-      ) {
-        cycle.outcome = "SAFETY_GATE";
-        return true;
-      }
-      if (runtime.lastCandle === last.timestamp) {
-        cycle.outcome = "ALREADY_PROCESSED_CANDLE";
-        return true;
-      }
-      if (decision.action === "WAIT") {
-        cycle.outcome = "STRATEGY_WAIT";
-        this.monitor.wait(now);
-        this.db.set("runtime", { ...runtime, lastCandle: last.timestamp });
-        return true;
-      }
+    if (recoveryTransition) {
+      cycle.outcome = "RECOVERY_CONFIRMATION";
+      return true;
+    }
+    if (
+      this.deploymentStopped() ||
+      !this.sessionOrdersAllowed() ||
+      !this.monitor.ordersAllowed(cycleToken) ||
+      !runtime.running ||
+      runtime.emergency ||
+      runtime.error
+    ) {
+      cycle.outcome = "SAFETY_GATE";
+      return true;
+    }
+    if (runtime.lastCandle === last.timestamp) {
+      cycle.outcome = "ALREADY_PROCESSED_CANDLE";
+      return true;
+    }
+    if (decision.action === "WAIT") {
+      cycle.outcome = "STRATEGY_WAIT";
+      this.monitor.wait(now);
+      this.db.set("runtime", { ...runtime, lastCandle: last.timestamp });
+      return true;
+    }
     return false;
   }
 
@@ -392,92 +411,94 @@ export class BotEngine {
         reverse: QuoteResult | null;
       }
   > {
-      const side = decision.action,
-        id = `paper:${last.source}:300:${last.timestamp}:${side}`,
-        amount =
-          side === "BUY" ? s.maxOrder : Math.min(p.sui, s.maxOrder / price);
-      const audit: CandidateAudit = {
-        id: randomUUID(),
-        orderId: id,
-        timestamp: now,
-        createdAt: now,
-        side,
-        requestedInputAtomic: atomic(
-          amount,
-          side === "BUY" ? USDC : tradingPairs[this.pair].base,
-        ),
-        quantityAtomic: null,
-        quotePriceUsdc: null,
-        quoteExpiresAt: null,
-        acquisitionCostUsdc: numericText(p.costBasisUsdc ?? p.costBasis),
-        expectedSaleUsdc: null,
-        saleModel: null,
-        dexFeeUsdc: null,
-        gasUsdc: null,
-        additionalFeeUsdc: null,
-        buyGasUsdc: null,
-        netProfitUsdc: null,
-        minProfitUsdc: String(s.minNetProfitUsdc),
-        minProfitPct: String(s.minNetProfitPct),
-        profitGuard: { evaluated: false, allowed: null, reason: null },
-        risk: { status: "NOT_EVALUATED", reasons: [] },
-        finalAction: "PENDING",
-        reasons: [],
-      };
-      this.db.putCandidate(audit);
-      cycle.outcome = "CANDIDATE";
-      if (amount <= 0) {
-        this.monitor.finishCandidate({
-          ...audit,
-          finalAction: "WAIT",
-          reasons: ["NO_POSITION"],
-        });
-        this.reject(id, ["NO_POSITION"], decision, now, last.timestamp);
-        return { proceed: false as const, audit };
-      }
-      const q =
-        side === "SELL" && sellPreview
-          ? sellPreview
-          : await this.getQuote({
-              from: side === "BUY" ? USDC : tradingPairs[this.pair].base,
-              to: side === "BUY" ? tradingPairs[this.pair].base : USDC,
-              amountIn: atomic(
-                amount,
-                side === "BUY" ? USDC : tradingPairs[this.pair].base,
-              ),
-              slippage: PAPER_SLIPPAGE_RATE,
-              referencePrice: price,
-            });
-      const quantity = side === "BUY" ? q.minAmountOut : q.amountIn;
-      audit.quantityAtomic = /^\d+$/.test(quantity) ? quantity : null;
-      audit.quoteExpiresAt = Number.isFinite(q.expiresAt) ? q.expiresAt : null;
-      try {
-        audit.quotePriceUsdc = numericText(
-          new Decimal(side === "BUY" ? q.amountIn : q.minAmountOut)
-            .div(1e6)
-            .div(new Decimal(quantity).div(1e9))
-            .toString(),
-        );
-      } catch {}
-      let reverse: QuoteResult | null = null;
-      if (side === "BUY") {
-        try {
-          reverse = await this.getQuote({
-            from: tradingPairs[this.pair].base,
-            to: USDC,
-            amountIn: q.minAmountOut,
+    const side = decision.action,
+      id = this.executionAdapter
+        ? `real:testnet:${last.timestamp}:${side}:${randomUUID()}`
+        : `paper:${last.source}:300:${last.timestamp}:${side}`,
+      amount =
+        side === "BUY" ? s.maxOrder : Math.min(p.sui, s.maxOrder / price);
+    const audit: CandidateAudit = {
+      id: randomUUID(),
+      orderId: id,
+      timestamp: now,
+      createdAt: now,
+      side,
+      requestedInputAtomic: atomic(
+        amount,
+        side === "BUY" ? USDC : tradingPairs[this.pair].base,
+      ),
+      quantityAtomic: null,
+      quotePriceUsdc: null,
+      quoteExpiresAt: null,
+      acquisitionCostUsdc: numericText(p.costBasisUsdc ?? p.costBasis),
+      expectedSaleUsdc: null,
+      saleModel: null,
+      dexFeeUsdc: null,
+      gasUsdc: null,
+      additionalFeeUsdc: null,
+      buyGasUsdc: null,
+      netProfitUsdc: null,
+      minProfitUsdc: String(s.minNetProfitUsdc),
+      minProfitPct: String(s.minNetProfitPct),
+      profitGuard: { evaluated: false, allowed: null, reason: null },
+      risk: { status: "NOT_EVALUATED", reasons: [] },
+      finalAction: "PENDING",
+      reasons: [],
+    };
+    this.db.putCandidate(audit);
+    cycle.outcome = "CANDIDATE";
+    if (amount <= 0) {
+      this.monitor.finishCandidate({
+        ...audit,
+        finalAction: "WAIT",
+        reasons: ["NO_POSITION"],
+      });
+      this.reject(id, ["NO_POSITION"], decision, now, last.timestamp);
+      return { proceed: false as const, audit };
+    }
+    const q =
+      side === "SELL" && sellPreview
+        ? sellPreview
+        : await this.getQuote({
+            from: side === "BUY" ? USDC : tradingPairs[this.pair].base,
+            to: side === "BUY" ? tradingPairs[this.pair].base : USDC,
+            amountIn: atomic(
+              amount,
+              side === "BUY" ? USDC : tradingPairs[this.pair].base,
+            ),
             slippage: PAPER_SLIPPAGE_RATE,
             referencePrice: price,
           });
-          audit.reverseQuoteExpiresAt = Number.isFinite(reverse.expiresAt)
-            ? reverse.expiresAt
-            : null;
-          if (!(await this.router.validateQuote(reverse))) reverse = null;
-        } catch {
-          reverse = null;
-        }
+    const quantity = side === "BUY" ? q.minAmountOut : q.amountIn;
+    audit.quantityAtomic = /^\d+$/.test(quantity) ? quantity : null;
+    audit.quoteExpiresAt = Number.isFinite(q.expiresAt) ? q.expiresAt : null;
+    try {
+      audit.quotePriceUsdc = numericText(
+        new Decimal(side === "BUY" ? q.amountIn : q.minAmountOut)
+          .div(1e6)
+          .div(new Decimal(quantity).div(1e9))
+          .toString(),
+      );
+    } catch {}
+    let reverse: QuoteResult | null = null;
+    if (side === "BUY") {
+      try {
+        reverse = await this.getQuote({
+          from: tradingPairs[this.pair].base,
+          to: USDC,
+          amountIn: q.minAmountOut,
+          slippage: PAPER_SLIPPAGE_RATE,
+          referencePrice: price,
+        });
+        audit.reverseQuoteExpiresAt = Number.isFinite(reverse.expiresAt)
+          ? reverse.expiresAt
+          : null;
+        if (!(await this.router.validateQuote(reverse))) reverse = null;
+      } catch {
+        reverse = null;
       }
-      await this.market.refreshForOrder?.();
+    }
+    await this.market.refreshForOrder?.();
     return { proceed: true, audit, q, reverse };
   }
 
@@ -504,126 +525,125 @@ export class BotEngine {
     profitAt: (at: number) => ProfitReport;
     validQuote: boolean;
   } | null> {
-      const validQuote = await this.router.validateQuote(q);
-      const fresh = Date.now();
-      const executionSettings = this.db.settings();
-      const costs = paperCosts(q, executionSettings);
-      const profitAt = (at: number) =>
-        side === "SELL"
-          ? evaluateSell({
-              baseCoin: tradingPairs[this.pair].base,
-              position: positionOf(p),
-              quote: q,
+    const validQuote = await this.router.validateQuote(q);
+    const fresh = Date.now();
+    const executionSettings = this.db.settings();
+    const costs = paperCosts(q, executionSettings);
+    const profitAt = (at: number) =>
+      side === "SELL"
+        ? evaluateSell({
+            baseCoin: tradingPairs[this.pair].base,
+            position: positionOf(p),
+            quote: q,
+            costs,
+            purpose: decision.sellPurpose ?? "TAKE_PROFIT",
+            config: profitConfigOf(executionSettings),
+            now: at,
+          })
+        : evaluateBuy({
+            baseCoin: tradingPairs[this.pair].base,
+            buyQuote: q,
+            sellQuote: reverse,
+            buyCosts: costs,
+            sellCosts: reverse
+              ? paperCosts(reverse, executionSettings)
+              : {
+                  additionalFeeUsdc: null,
+                  gasUsdc: null,
+                  dexFeeUsdc: null,
+                  source: "PAPER_MODEL",
+                },
+            config: profitConfigOf(executionSettings),
+            now: at,
+            maxExitUsdc: String(executionSettings.maxOrder),
+            strategyTargetPrice: strategyExitPrice(
+              positionOf(p),
+              q,
               costs,
-              purpose: decision.sellPurpose ?? "TAKE_PROFIT",
-              config: profitConfigOf(executionSettings),
-              now: at,
-            })
-          : evaluateBuy({
-              baseCoin: tradingPairs[this.pair].base,
-              buyQuote: q,
-              sellQuote: reverse,
-              buyCosts: costs,
-              sellCosts: reverse
-                ? paperCosts(reverse, executionSettings)
-                : {
-                    additionalFeeUsdc: null,
-                    gasUsdc: null,
-                    dexFeeUsdc: null,
-                    source: "PAPER_MODEL",
-                  },
-              config: profitConfigOf(executionSettings),
-              now: at,
-              maxExitUsdc: String(executionSettings.maxOrder),
-              strategyTargetPrice: strategyExitPrice(
-                positionOf(p),
-                q,
-                costs,
-                executionSettings.takeProfitPct,
-              ),
-            });
-      const profit = profitAt(fresh);
-      this.db.recordProfit(profit, decision);
-      Object.assign(audit, {
-        timestamp: fresh,
-        acquisitionCostUsdc: profit.allocatedCostUsdc,
-        netProfitUsdc: profit.netProfitUsdc,
-        minProfitUsdc: profit.minProfitUsdc,
-        minProfitPct: profit.minProfitPct,
-        dexFeeUsdc: costs.dexFeeUsdc,
-        gasUsdc: costs.gasUsdc,
-        additionalFeeUsdc: costs.additionalFeeUsdc,
-        buyGasUsdc: profit.buyCosts?.gasUsdc ?? null,
-        profitGuard: {
-          evaluated: true,
-          allowed: profit.allowed,
-          reason: profit.reason,
-        },
-      });
-      try {
-        audit.expectedSaleUsdc =
-          side === "SELL"
-            ? new Decimal(q.minAmountOut).div(1e6).toString()
-            : reverse && profit.targetPrice
-              ? new Decimal(reverse.minAmountOut)
-                  .div(1e6)
-                  .mul(profit.targetPrice)
-                  .div(q.referencePrice)
-                  .toDecimalPlaces(6, Decimal.ROUND_FLOOR)
-                  .toString()
-              : null;
-        audit.saleModel =
-          side === "SELL" ? "CURRENT_QUOTE" : "PROJECTED_TARGET";
-        if (audit.reverseQuoteExpiresAt != null && audit.quoteExpiresAt != null)
-          audit.quoteExpiresAt = Math.min(
-            audit.quoteExpiresAt,
-            audit.reverseQuoteExpiresAt,
-          );
-        if (
-          side === "BUY" &&
-          profit.targetPrice &&
-          profit.costs?.additionalFeeUsdc != null &&
-          profit.costs.gasUsdc != null
-        ) {
-          const D = Decimal.clone({ precision: 60 }),
-            factor = new D(profit.targetPrice).div(q.referencePrice);
-          const chunks = D.max(
-            1,
-            new D(q.minAmountOut)
-              .div(1e9)
-              .mul(profit.targetPrice)
-              .div(executionSettings.maxOrder)
-              .ceil(),
-          );
-          audit.projectedSaleFeeUsdc = new D(profit.costs.additionalFeeUsdc)
-            .mul(factor)
-            .div(chunks)
-            .toDecimalPlaces(6, D.ROUND_CEIL)
-            .mul(chunks)
-            .toString();
-          audit.projectedSaleGasUsdc = new D(profit.costs.gasUsdc)
-            .mul(chunks)
-            .toString();
-        } else if (side === "SELL") {
-          audit.projectedSaleFeeUsdc = costs.additionalFeeUsdc;
-          audit.projectedSaleGasUsdc = costs.gasUsdc;
-        }
-      } catch {}
-      if (!profit.allowed) {
-        this.monitor.finishCandidate({
-          ...audit,
-          finalAction: "WAIT",
-          reasons: [profit.reason],
-        });
-        this.reject(
-          id,
-          [`PROFIT_GUARD_${profit.reason}`],
-          decision,
-          fresh,
-          last.timestamp,
+              executionSettings.takeProfitPct,
+            ),
+          });
+    const profit = profitAt(fresh);
+    this.db.recordProfit(profit, decision);
+    Object.assign(audit, {
+      timestamp: fresh,
+      acquisitionCostUsdc: profit.allocatedCostUsdc,
+      netProfitUsdc: profit.netProfitUsdc,
+      minProfitUsdc: profit.minProfitUsdc,
+      minProfitPct: profit.minProfitPct,
+      dexFeeUsdc: costs.dexFeeUsdc,
+      gasUsdc: costs.gasUsdc,
+      additionalFeeUsdc: costs.additionalFeeUsdc,
+      buyGasUsdc: profit.buyCosts?.gasUsdc ?? null,
+      profitGuard: {
+        evaluated: true,
+        allowed: profit.allowed,
+        reason: profit.reason,
+      },
+    });
+    try {
+      audit.expectedSaleUsdc =
+        side === "SELL"
+          ? new Decimal(q.minAmountOut).div(1e6).toString()
+          : reverse && profit.targetPrice
+            ? new Decimal(reverse.minAmountOut)
+                .div(1e6)
+                .mul(profit.targetPrice)
+                .div(q.referencePrice)
+                .toDecimalPlaces(6, Decimal.ROUND_FLOOR)
+                .toString()
+            : null;
+      audit.saleModel = side === "SELL" ? "CURRENT_QUOTE" : "PROJECTED_TARGET";
+      if (audit.reverseQuoteExpiresAt != null && audit.quoteExpiresAt != null)
+        audit.quoteExpiresAt = Math.min(
+          audit.quoteExpiresAt,
+          audit.reverseQuoteExpiresAt,
         );
-        return null;
+      if (
+        side === "BUY" &&
+        profit.targetPrice &&
+        profit.costs?.additionalFeeUsdc != null &&
+        profit.costs.gasUsdc != null
+      ) {
+        const D = Decimal.clone({ precision: 60 }),
+          factor = new D(profit.targetPrice).div(q.referencePrice);
+        const chunks = D.max(
+          1,
+          new D(q.minAmountOut)
+            .div(1e9)
+            .mul(profit.targetPrice)
+            .div(executionSettings.maxOrder)
+            .ceil(),
+        );
+        audit.projectedSaleFeeUsdc = new D(profit.costs.additionalFeeUsdc)
+          .mul(factor)
+          .div(chunks)
+          .toDecimalPlaces(6, D.ROUND_CEIL)
+          .mul(chunks)
+          .toString();
+        audit.projectedSaleGasUsdc = new D(profit.costs.gasUsdc)
+          .mul(chunks)
+          .toString();
+      } else if (side === "SELL") {
+        audit.projectedSaleFeeUsdc = costs.additionalFeeUsdc;
+        audit.projectedSaleGasUsdc = costs.gasUsdc;
       }
+    } catch {}
+    if (!profit.allowed) {
+      this.monitor.finishCandidate({
+        ...audit,
+        finalAction: "WAIT",
+        reasons: [profit.reason],
+      });
+      this.reject(
+        id,
+        [`PROFIT_GUARD_${profit.reason}`],
+        decision,
+        fresh,
+        last.timestamp,
+      );
+      return null;
+    }
     return { fresh, executionSettings, costs, profit, profitAt, validQuote };
   }
 
@@ -653,169 +673,215 @@ export class BotEngine {
     cycleToken: number,
     fillState: { committed: boolean },
   ): Promise<void> {
-      const reasons = assessRisk({
+    const reasons = assessRisk({
+      side,
+      quote: q,
+      portfolio: p,
+      runtime: this.db.runtime(),
+      settings: executionSettings,
+      price,
+      marketClosedAt: (last.timestamp + 300) * 1000,
+      now: fresh,
+      duplicate: this.db.hasOrder(id),
+      pending: 0,
+    });
+    if (!validQuote) reasons.push("QUOTE_INVALID");
+    const bookReason = quoteBookReason(
+      q,
+      this.marketStatus(),
+      executionSettings.maxSlippage,
+      Date.now(),
+    );
+    if (bookReason) reasons.push(bookReason);
+    audit.risk = { status: reasons.length ? "REJECTED" : "ALLOWED", reasons };
+    if (reasons.length) {
+      this.monitor.finishCandidate({
+        ...audit,
+        finalAction: "WAIT",
+        reasons,
+      });
+      this.reject(id, reasons, decision, fresh, last.timestamp);
+      return;
+    }
+    if (!(await this.router.validateQuote(q))) throw new Error("QUOTE_EXPIRED");
+    const executionNow = Date.now();
+    const finalRuntime = this.db.runtime();
+    if (
+      this.deploymentStopped() ||
+      !this.monitor.ordersAllowed(cycleToken) ||
+      !finalRuntime.running ||
+      finalRuntime.emergency ||
+      finalRuntime.error
+    ) {
+      const reasons = [
+        finalRuntime.error ??
+          (finalRuntime.emergency ? "EMERGENCY_STOP" : "BOT_STOPPED"),
+      ];
+      this.monitor.finishCandidate({
+        ...audit,
+        risk: { status: "REJECTED", reasons },
+        finalAction: "WAIT",
+        reasons,
+      });
+      this.reject(id, reasons, decision, executionNow, last.timestamp);
+      return;
+    }
+    if (apiAccess.blocked()) throw new Error("API_BACKOFF");
+    validateCandles(c, 300, executionNow);
+    if (
+      q.expiresAt <= executionNow ||
+      (reverse && reverse.expiresAt <= executionNow)
+    )
+      throw new Error("QUOTE_EXPIRED");
+    this.market.assertReady?.(executionNow);
+    if (!this.monitor.ledger().ok)
+      throw new Error("PAPER_RECONCILIATION_FAILED");
+    const contextChanged =
+      JSON.stringify(this.db.settings()) !==
+        JSON.stringify(executionSettings) ||
+      JSON.stringify(this.db.portfolio()) !== JSON.stringify(p);
+    const finalProfit = profitAt(executionNow);
+    const finalReasons = assessRisk({
+      side,
+      quote: q,
+      portfolio: this.db.portfolio(),
+      runtime: this.db.runtime(),
+      settings: this.db.settings(),
+      price,
+      marketClosedAt: (last.timestamp + 300) * 1000,
+      now: executionNow,
+      duplicate: this.db.hasOrder(id),
+      pending: 0,
+    });
+    if (contextChanged) finalReasons.push("EXECUTION_CONTEXT_CHANGED");
+    if (!finalProfit.allowed)
+      finalReasons.push("PROFIT_GUARD_" + finalProfit.reason);
+    if (finalReasons.length) {
+      this.monitor.finishCandidate({
+        ...audit,
+        finalAction: "WAIT",
+        reasons: finalReasons,
+        risk: { status: "REJECTED", reasons: finalReasons },
+      });
+      this.reject(id, finalReasons, decision, executionNow, last.timestamp);
+      return;
+    }
+    if (this.deploymentStopped() || !this.sessionOrdersAllowed()) {
+      const reasons = ["DEPLOYMENT_MAINTENANCE"];
+      this.monitor.finishCandidate({
+        ...audit,
+        finalAction: "WAIT",
+        reasons,
+        risk: { status: "REJECTED", reasons },
+      });
+      this.reject(id, reasons, decision, executionNow, last.timestamp);
+      return;
+    }
+    if (this.executionAdapter) {
+      const result = await this.executionAdapter.execute({
+        orderId: id,
+        candidateId: audit.id,
         side,
         quote: q,
         portfolio: p,
-        runtime: this.db.runtime(),
         settings: executionSettings,
-        price,
-        marketClosedAt: (last.timestamp + 300) * 1000,
-        now: fresh,
-        duplicate: this.db.hasOrder(id),
-        pending: 0,
-      });
-      if (!validQuote) reasons.push("QUOTE_INVALID");
-      const bookReason = quoteBookReason(
-        q,
-        this.marketStatus(),
-        executionSettings.maxSlippage,
-        Date.now(),
-      );
-      if (bookReason) reasons.push(bookReason);
-      audit.risk = { status: reasons.length ? "REJECTED" : "ALLOWED", reasons };
-      if (reasons.length) {
-        this.monitor.finishCandidate({
-          ...audit,
-          finalAction: "WAIT",
-          reasons,
-        });
-        this.reject(id, reasons, decision, fresh, last.timestamp);
-        return;
-      }
-      if (!(await this.router.validateQuote(q)))
-        throw new Error("QUOTE_EXPIRED");
-      const executionNow = Date.now();
-      const finalRuntime = this.db.runtime();
-      if (
-        this.deploymentStopped() ||
-        !this.monitor.ordersAllowed(cycleToken) ||
-        !finalRuntime.running ||
-        finalRuntime.emergency ||
-        finalRuntime.error
-      ) {
-        const reasons = [
-          finalRuntime.error ??
-            (finalRuntime.emergency ? "EMERGENCY_STOP" : "BOT_STOPPED"),
-        ];
-        this.monitor.finishCandidate({
-          ...audit,
-          risk: { status: "REJECTED", reasons },
-          finalAction: "WAIT",
-          reasons,
-        });
-        this.reject(id, reasons, decision, executionNow, last.timestamp);
-        return;
-      }
-      if (apiAccess.blocked()) throw new Error("API_BACKOFF");
-      validateCandles(c, 300, executionNow);
-      if (
-        q.expiresAt <= executionNow ||
-        (reverse && reverse.expiresAt <= executionNow)
-      )
-        throw new Error("QUOTE_EXPIRED");
-      this.market.assertReady?.(executionNow);
-      if (!this.monitor.ledger().ok)
-        throw new Error("PAPER_RECONCILIATION_FAILED");
-      const contextChanged =
-        JSON.stringify(this.db.settings()) !==
-          JSON.stringify(executionSettings) ||
-        JSON.stringify(this.db.portfolio()) !== JSON.stringify(p);
-      const finalProfit = profitAt(executionNow);
-      const finalReasons = assessRisk({
-        side,
-        quote: q,
-        portfolio: this.db.portfolio(),
-        runtime: this.db.runtime(),
-        settings: this.db.settings(),
-        price,
-        marketClosedAt: (last.timestamp + 300) * 1000,
+        profitGuard: profit,
+        markPrice: price,
         now: executionNow,
-        duplicate: this.db.hasOrder(id),
-        pending: 0,
+        candleTimestamp: last.timestamp,
       });
-      if (contextChanged) finalReasons.push("EXECUTION_CONTEXT_CHANGED");
-      if (!finalProfit.allowed)
-        finalReasons.push("PROFIT_GUARD_" + finalProfit.reason);
-      if (finalReasons.length) {
+      if (result.status === "REJECTED") {
         this.monitor.finishCandidate({
           ...audit,
           finalAction: "WAIT",
-          reasons: finalReasons,
-          risk: { status: "REJECTED", reasons: finalReasons },
+          reasons: [result.errorCode],
         });
-        this.reject(id, finalReasons, decision, executionNow, last.timestamp);
+        this.reject(
+          id,
+          [result.errorCode],
+          decision,
+          executionNow,
+          last.timestamp,
+        );
+        cycle.outcome = "CANDIDATE_REJECTED";
         return;
       }
-      if (this.deploymentStopped() || !this.sessionOrdersAllowed()) {
-        const reasons = ["DEPLOYMENT_MAINTENANCE"];
+      if (result.status === "UNKNOWN") {
         this.monitor.finishCandidate({
           ...audit,
           finalAction: "WAIT",
-          reasons,
-          risk: { status: "REJECTED", reasons },
+          reasons: [result.errorCode],
         });
-        this.reject(id, reasons, decision, executionNow, last.timestamp);
+        fillState.committed = true;
+        cycle.outcome = "REAL_UNKNOWN";
         return;
       }
-      const fill = this.paper.fill(
-        id,
-        side,
-        q,
-        p,
-        executionSettings,
-        executionNow,
-      );
-      const check = reconcileFill(
-        p,
-        fill.portfolio,
-        fill.trade,
-        q,
-        price,
-        executionSettings,
-      );
-      if (!check.ok) {
-        this.db.append("paper_checks", randomUUID(), check, fresh);
-        throw new Error("PAPER_RECONCILIATION_FAILED");
-      }
-      if (!this.sessionOrdersAllowed())
-        throw Error("PAPER_CHECK_LEASE_EXPIRED");
-      this.db.commitFill(
-        id,
-        { id, side, status: "FILLED", quote: q, profitGuard: profit },
-        fill.portfolio,
-        fill.trade,
-        { ...this.db.runtime(), lastCandle: last.timestamp },
-        {
-          audit: { ...audit, finalAction: side, reasons: [] },
-          check,
-          markPrice: price,
-          validation: this.validation?.fill(
-            this.marketStatus(),
-            last.source,
-            c,
-            audit.quoteExpiresAt ?? q.expiresAt,
-            audit.risk.status === "ALLOWED",
-            audit.profitGuard.allowed === true,
-            executionNow,
-          ),
-        },
-      );
+      this.monitor.finishCandidate({
+        ...audit,
+        finalAction: side,
+        reasons: [],
+      });
       fillState.committed = true;
-      cycle.outcome = "FILLED";
-      this.monitor.filled(fresh);
-      const persisted = reconcileFill(
-        p,
-        this.db.portfolio(),
-        fill.trade,
-        q,
-        price,
-        executionSettings,
-      );
-      if (!persisted.ok) {
-        this.db.append("paper_checks", randomUUID(), persisted, fresh);
-        throw new Error("PAPER_RECONCILIATION_FAILED");
-      }
+      cycle.outcome = "REAL_SUBMITTED";
+      return;
+    }
+    const fill = this.paper.fill(
+      id,
+      side,
+      q,
+      p,
+      executionSettings,
+      executionNow,
+    );
+    const check = reconcileFill(
+      p,
+      fill.portfolio,
+      fill.trade,
+      q,
+      price,
+      executionSettings,
+    );
+    if (!check.ok) {
+      this.db.append("paper_checks", randomUUID(), check, fresh);
+      throw new Error("PAPER_RECONCILIATION_FAILED");
+    }
+    if (!this.sessionOrdersAllowed()) throw Error("PAPER_CHECK_LEASE_EXPIRED");
+    this.db.commitFill(
+      id,
+      { id, side, status: "FILLED", quote: q, profitGuard: profit },
+      fill.portfolio,
+      fill.trade,
+      { ...this.db.runtime(), lastCandle: last.timestamp },
+      {
+        audit: { ...audit, finalAction: side, reasons: [] },
+        check,
+        markPrice: price,
+        validation: this.validation?.fill(
+          this.marketStatus(),
+          last.source,
+          c,
+          audit.quoteExpiresAt ?? q.expiresAt,
+          audit.risk.status === "ALLOWED",
+          audit.profitGuard.allowed === true,
+          executionNow,
+        ),
+      },
+    );
+    fillState.committed = true;
+    cycle.outcome = "FILLED";
+    this.monitor.filled(fresh);
+    const persisted = reconcileFill(
+      p,
+      this.db.portfolio(),
+      fill.trade,
+      q,
+      price,
+      executionSettings,
+    );
+    if (!persisted.ok) {
+      this.db.append("paper_checks", randomUUID(), persisted, fresh);
+      throw new Error("PAPER_RECONCILIATION_FAILED");
+    }
   }
 
   async tick() {
@@ -856,14 +922,20 @@ export class BotEngine {
       // Forecast failures must never change trading or safety decisions.
       try {
         advanceForecast(
-          this.db, this.pair, c,
+          this.db,
+          this.pair,
+          c,
           this.market.bookImbalance?.(now) ?? this.bookImbalanceSource(),
-          now, frames,
+          now,
+          frames,
         );
         this.db.set("forecast_error", null);
       } catch {
         try {
-          this.db.set("forecast_error", { at: now, code: "FORECAST_UPDATE_FAILED" });
+          this.db.set("forecast_error", {
+            at: now,
+            code: "FORECAST_UPDATE_FAILED",
+          });
         } catch {}
       }
       this.monitor.market((last.timestamp + 300) * 1000);

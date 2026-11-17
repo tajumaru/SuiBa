@@ -403,7 +403,7 @@ export const realTradeCapConfigSchema = z
     grpcUrl: z.string().url(),
     maxOrderDbusdc: z.number().positive().max(1).default(0.1),
     orderType: z.enum(["MARKET", "IOC_LIMIT"]).default("IOC_LIMIT"),
-    signingEnabled: z.literal(false).default(false),
+    signingEnabled: z.boolean().default(false),
   })
   .strict();
 export type RealTradeCapConfig = z.infer<typeof realTradeCapConfigSchema>;
