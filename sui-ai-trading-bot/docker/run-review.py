@@ -183,6 +183,28 @@ def regime_at(ema, ordered, cts):
     return "range"
 
 
+def aggregate_hourly_candles(candles):
+    """Aggregate complete clock hours from twelve fetched 5-minute candles."""
+    close, high, low, ordered, _, _, open_price = candles
+    buckets = {}
+    for timestamp in ordered:
+        hour = timestamp - timestamp % 3600
+        buckets.setdefault(hour, []).append(timestamp)
+    hourly_open, hourly_high, hourly_low, hourly_close = {}, {}, {}, {}
+    for hour, timestamps in buckets.items():
+        timestamps.sort()
+        if (len(timestamps) != 12
+                or timestamps != list(range(hour, hour + 3600, 300))):
+            continue
+        hourly_open[hour] = open_price[timestamps[0]]
+        hourly_high[hour] = max(high[t] for t in timestamps)
+        hourly_low[hour] = min(low[t] for t in timestamps)
+        hourly_close[hour] = close[timestamps[-1]]
+    hourly_ordered = sorted(hourly_close)
+    return (hourly_open, hourly_high, hourly_low, hourly_close,
+            hourly_ordered)
+
+
 def filter_window(decisions, since=None, until=None):
     return [d for d in decisions
             if (since is None or d["cts"] >= since)
@@ -511,28 +533,10 @@ def analyze_scenes(decisions, shadow_rows, candles, liquidation_buckets=None):
             scenes.append({"label": "dip-rebound", "net": stat,
                            "overall": overall,
                            "delta": stat["mean"] - overall["mean"]})
-    for label, is_event in (
-            ("wick-lower", lambda t, span: (
-                min(open_price[t], close[t]) - low[t]) / span >= 0.5),
-            ("wick-upper", lambda t, span: (
-                high[t] - max(open_price[t], close[t])) / span >= 0.5)):
-        wick_events = [t for t in ordered
-                       if high[t] > low[t] and is_event(t, high[t] - low[t])]
-        wick_values = [((close[t + 4 * 3600] / close[t] - 1) * 100
-                        - ROUND_TRIP_COST_PCT)
-                       for t in wick_events
-                       if t + 4 * 3600 in close and close[t] > 0]
-        if wick_values:
-            first, last = min(wick_events), max(wick_events)
-            baseline = [((close[t + 4 * 3600] / close[t] - 1) * 100
-                         - ROUND_TRIP_COST_PCT)
-                        for t in ordered if first <= t <= last
-                        and t + 4 * 3600 in close and close[t] > 0]
-            stat, overall = summarize(wick_values), summarize(baseline)
-            if overall:
-                scenes.append({"label": label, "net": stat,
-                               "overall": overall,
-                               "delta": stat["mean"] - overall["mean"]})
+    add_wick_scenes(scenes, open_price, high, low, close, ordered, "",
+                    candles[4], ordered)
+    hourly = aggregate_hourly_candles(candles)
+    add_wick_scenes(scenes, *hourly, "-1h", candles[4], ordered)
     liquidation_events = liquidation_spike_events(
         candles, liquidation_buckets or [])
     liquidation_values = [
@@ -552,6 +556,57 @@ def analyze_scenes(decisions, shadow_rows, candles, liquidation_buckets=None):
                            "overall": overall,
                            "delta": stat["mean"] - overall["mean"]})
     return scenes
+
+
+def add_wick_scenes(scenes, open_price, high, low, close, ordered, suffix,
+                    regime_ema, regime_ordered):
+    """Append overall and same-regime wick scenes for one timeframe."""
+    regimes = ("up", "down", "range")
+
+    def net_return(timestamp):
+        future = timestamp + 4 * 3600
+        if future not in close or close[timestamp] <= 0:
+            return None
+        return ((close[future] / close[timestamp] - 1) * 100
+                - ROUND_TRIP_COST_PCT)
+
+    for name, is_event in (
+            ("wick-lower", lambda t, span: (
+                min(open_price[t], close[t]) - low[t]) / span >= 0.5),
+            ("wick-upper", lambda t, span: (
+                high[t] - max(open_price[t], close[t])) / span >= 0.5)):
+        events = [t for t in ordered
+                  if high[t] > low[t] and is_event(t, high[t] - low[t])]
+        values = [(t, net_return(t)) for t in events]
+        values = [(t, value) for t, value in values if value is not None]
+        if not values:
+            continue
+        first, last = min(events), max(events)
+        baseline = [(t, net_return(t)) for t in ordered
+                    if first <= t <= last]
+        baseline = [(t, value) for t, value in baseline if value is not None]
+        stat = summarize([value for _, value in values])
+        overall = summarize([value for _, value in baseline])
+        if overall:
+            label = f"{name}{suffix}"
+            scenes.append({"label": label, "net": stat,
+                           "overall": overall,
+                           "delta": stat["mean"] - overall["mean"]})
+            for regime in regimes:
+                regime_values = [value for t, value in values
+                                 if regime_at(regime_ema, regime_ordered, t)
+                                 == regime]
+                regime_baseline = [value for t, value in baseline
+                                   if regime_at(regime_ema, regime_ordered, t)
+                                   == regime]
+                regime_stat = summarize(regime_values)
+                regime_overall = summarize(regime_baseline)
+                if regime_stat and regime_overall:
+                    scenes.append({
+                        "label": f"{regime}:{label}", "net": regime_stat,
+                        "overall": regime_overall,
+                        "delta": regime_stat["mean"] - regime_overall["mean"],
+                    })
 
 
 def virtual_touch(d, candles, hours=24):

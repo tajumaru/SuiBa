@@ -197,6 +197,83 @@ class AnalyzeTests(unittest.TestCase):
         self.assertNotIn("wick-lower", labels)
         self.assertNotIn("wick-upper", labels)
 
+    def test_hourly_aggregation_uses_ohlc_and_drops_incomplete_hours(self):
+        stamps = [BASE + offset for offset in range(0, 3600, 300)]
+        incomplete = [BASE + 3600 + offset for offset in range(0, 3300, 300)]
+        ordered = stamps + incomplete
+        close = {t: 1 + index / 100 for index, t in enumerate(ordered)}
+        high = {t: close[t] + .2 for t in ordered}
+        low = {t: close[t] - .2 for t in ordered}
+        open_price = {t: close[t] - .1 for t in ordered}
+        candles = (close, high, low, ordered, dict(close), {}, open_price)
+
+        result = rr.aggregate_hourly_candles(candles)
+
+        self.assertEqual(result[4], [BASE])
+        self.assertEqual(result[0][BASE], open_price[BASE])
+        self.assertEqual(result[1][BASE], max(high[t] for t in stamps))
+        self.assertEqual(result[2][BASE], min(low[t] for t in stamps))
+        self.assertEqual(result[3][BASE], close[stamps[-1]])
+
+    def test_hourly_wick_scene_uses_four_hour_return_and_baseline(self):
+        ordered = list(range(BASE, BASE + 7 * 3600, 300))
+        close = {t: 1.0 for t in ordered}
+        high, low, open_price = dict(close), dict(close), dict(close)
+        hour_closes = {4: 1.10, 5: 1.05, 6: .90}
+        for hour, value in hour_closes.items():
+            close[BASE + (hour + 1) * 3600 - 300] = value
+        for hour in (0, 2):
+            first = BASE + hour * 3600
+            open_price[first], high[first], low[first] = 1.1, 1.2, .8
+        candles = (close, high, low, ordered, dict(close), {}, open_price)
+
+        scenes = rr.analyze_scenes([], [], candles)
+        scene = next(item for item in scenes
+                     if item["label"] == "wick-lower-1h")
+
+        expected_baseline = ((10 - .6) + (5 - .6) + (-10 - .6)) / 3
+        self.assertEqual(scene["net"]["n"], 2)
+        self.assertAlmostEqual(scene["net"]["mean"], -.6)
+        self.assertAlmostEqual(scene["delta"], -.6 - expected_baseline)
+
+    def test_wick_regime_scene_uses_matching_regime_baseline(self):
+        past = BASE - 86400
+        ordered = list(range(past, BASE + 4 * 3600 + 601, 300))
+        close = {t: 1.0 for t in ordered}
+        high, low, open_price = dict(close), dict(close), dict(close)
+        for stamp in (BASE, BASE + 600):
+            open_price[stamp], high[stamp], low[stamp] = 1.1, 1.2, .8
+        close[BASE + 4 * 3600] = 1.10
+        close[BASE + 4 * 3600 + 300] = 2.00
+        close[BASE + 4 * 3600 + 600] = .90
+        ema = {t: 1.0 for t in ordered}
+        ema[BASE] = ema[BASE + 600] = 1.01
+        ema[BASE + 300] = .99
+        scenes = []
+
+        rr.add_wick_scenes(scenes, open_price, high, low, close, ordered, "",
+                           ema, ordered)
+        scene = next(item for item in scenes
+                     if item["label"] == "up:wick-lower")
+
+        self.assertEqual(scene["net"]["n"], 2)
+        self.assertEqual(scene["overall"]["n"], 2)
+        self.assertAlmostEqual(scene["delta"], 0)
+
+    def test_unknown_wick_regime_does_not_create_breakdown(self):
+        ordered = [BASE, BASE + 4 * 3600]
+        close = {BASE: 1.0, BASE + 4 * 3600: 1.1}
+        scenes = []
+        rr.add_wick_scenes(
+            scenes, {BASE: 1.1, BASE + 4 * 3600: 1.1},
+            {BASE: 1.2, BASE + 4 * 3600: 1.1},
+            {BASE: .8, BASE + 4 * 3600: 1.1}, close, ordered, "",
+            dict(close), ordered)
+
+        labels = [scene["label"] for scene in scenes]
+        self.assertIn("wick-lower", labels)
+        self.assertFalse(any(label.endswith(":wick-lower") for label in labels))
+
 
 class ExitGridTests(unittest.TestCase):
     def candles(self, bars):
