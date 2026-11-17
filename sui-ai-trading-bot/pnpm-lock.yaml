@@ -14,6 +14,9 @@ importers:
       '@mysten-incubation/memwal':
         specifier: 0.1.14
         version: 0.1.14(@mysten/seal@1.1.3(@mysten/sui@2.37.0(typescript@6.0.3)))(@mysten/sui@2.37.0(typescript@6.0.3))(@mysten/walrus@1.1.7(@mysten/sui@2.37.0(typescript@6.0.3)))(zod@4.6.7)
+      '@mysten/deepbook-v3':
+        specifier: 2.8.0
+        version: 2.8.0(@mysten/sui@2.37.0(typescript@6.0.3))
       '@mysten/seal':
         specifier: 1.1.3
         version: 1.1.3(@mysten/sui@2.37.0(typescript@6.0.3))
@@ -478,6 +481,12 @@ packages:
   '@mysten/bcs@2.1.4':
     resolution: {integrity: sha512-ksfm0HGy82iDcuLaf4kAduaeTNqALH8D8WCdxxwU/L2Gpk4SnqoC7D8R4qMoMpCSkh56CFVG3Tme343Iz2P8PA==}
 
+  '@mysten/deepbook-v3@2.8.0':
+    resolution: {integrity: sha512-lwzjLU8kkWXwiD7FvvRNPCZbzj5EuubZjOHMVRDK55v9f3AEXcMayuGODuE8w6r8r6cjMAPcyff7AF8XXtJSKA==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      '@mysten/sui': ^2.37.0
+
   '@mysten/seal@1.1.3':
     resolution: {integrity: sha512-HS54mkWEkd6ENl4U94jorwYzahTSSxWiFiDKbYFw+SFEIc4HoqSg2dULKI1WUi6nw8eWYcw/XobeNOlm3Ss5CQ==}
     peerDependencies:
@@ -783,6 +792,12 @@ packages:
 
   asynckit@0.4.0:
     resolution: {integrity: sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==}
+
+  axios-retry@4.5.0:
+    resolution: {integrity: sha512-aR99oXhpEDGo0UuAlYcn2iGRds30k366Zfa05XWScR9QaQD4JYiP3/1Qt1u7YlefUOK+cn0CcwoL1oefavQUlQ==}
+    deprecated: axios-retry is no longer maintained. See https://github.com/softonic/axios-retry for alternatives.
+    peerDependencies:
+      axios: 0.x || 1.x
 
   axios@1.20.0:
     resolution: {integrity: sha512-r8aOh8j9cGKpgQAqpzrUHnSIc6a59Y3Xf/cv8sy1DrHCkZHzQGEuoq1tARk6qSyDdtQGSDgpb9kFlruzPvrgwg==}
@@ -1155,6 +1170,10 @@ packages:
   is-glob@4.0.3:
     resolution: {integrity: sha512-xelSayHH36ZgE7ZWhli7pW34hNbNl8Ojv5KVmkJD4hBdD3th8Tfk9vYasLM+mXWOZhFkgZfxhLSnrwRr4elSSg==}
     engines: {node: '>=0.10.0'}
+
+  is-retry-allowed@2.2.0:
+    resolution: {integrity: sha512-XVm7LOeLpTW4jV19QSH38vkswxoLud8sQ57YwJVTPWdiaI9I8keEhGFpBlslyVsgdQy4Opg8QOLb8YRgsyZiQg==}
+    engines: {node: '>=10'}
 
   isexe@2.0.0:
     resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
@@ -1945,6 +1964,17 @@ snapshots:
       '@mysten/utils': 0.4.2
       '@scure/base': 2.4.0
 
+  '@mysten/deepbook-v3@2.8.0(@mysten/sui@2.37.0(typescript@6.0.3))':
+    dependencies:
+      '@mysten/bcs': 2.1.4
+      '@mysten/sui': 2.37.0(typescript@6.0.3)
+      '@noble/hashes': 2.4.0
+      axios: 1.20.0
+      axios-retry: 4.5.0(axios@1.20.0)
+    transitivePeerDependencies:
+      - debug
+      - supports-color
+
   '@mysten/seal@1.1.3(@mysten/sui@2.37.0(typescript@6.0.3))':
     dependencies:
       '@mysten/bcs': 2.1.4
@@ -2273,6 +2303,11 @@ snapshots:
   assertion-error@2.0.1: {}
 
   asynckit@0.4.0: {}
+
+  axios-retry@4.5.0(axios@1.20.0):
+    dependencies:
+      axios: 1.20.0
+      is-retry-allowed: 2.2.0
 
   axios@1.20.0:
     dependencies:
@@ -2655,6 +2690,8 @@ snapshots:
   is-glob@4.0.3:
     dependencies:
       is-extglob: 2.1.1
+
+  is-retry-allowed@2.2.0: {}
 
   isexe@2.0.0: {}
 

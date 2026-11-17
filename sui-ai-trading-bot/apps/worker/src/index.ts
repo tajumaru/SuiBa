@@ -39,6 +39,12 @@ import {
 import { resolveSuiGrpcEndpoints } from "./suiEndpoints.ts";
 import { startMemwalFlusher } from "./memwal.ts";
 import { startLiquidationCollector } from "./liquidation-collector.ts";
+if (process.env.MODE === "REAL_TRADECAP") {
+  await import("./real/index.ts").then(({ startRealReadOnly }) =>
+    startRealReadOnly(),
+  );
+  process.exit(0);
+}
 if (process.env.MODE && process.env.MODE !== "PAPER")
   throw new Error("ONLY_PAPER_SUPPORTED");
 if (
