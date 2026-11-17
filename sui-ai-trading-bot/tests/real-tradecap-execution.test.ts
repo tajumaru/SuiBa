@@ -57,7 +57,7 @@ const fixtures = (
   },
   signer: {
     address: identity.signerAddress,
-    sign: vi.fn(async () => new Uint8Array([9])),
+    sign: vi.fn(async () => "bot-signature"),
   },
   sender: { send },
 });

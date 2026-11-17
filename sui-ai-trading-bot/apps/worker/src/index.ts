@@ -39,13 +39,7 @@ import {
 import { resolveSuiGrpcEndpoints } from "./suiEndpoints.ts";
 import { startMemwalFlusher } from "./memwal.ts";
 import { startLiquidationCollector } from "./liquidation-collector.ts";
-if (process.env.MODE === "REAL_TRADECAP") {
-  await import("./real/index.ts").then(({ startRealReadOnly }) =>
-    startRealReadOnly(),
-  );
-  process.exit(0);
-}
-if (process.env.MODE && process.env.MODE !== "PAPER")
+if (process.env.MODE && !["PAPER", "REAL_TRADECAP"].includes(process.env.MODE))
   throw new Error("ONLY_PAPER_SUPPORTED");
 if (
   process.env.SUIBA_NARRATION_GENERATION_ENABLED !== undefined &&
@@ -68,9 +62,11 @@ const reconstruction = process.env.DEEPBOOK_RECONSTRUCT_CANDLES ?? "off";
 if (!["off", "verified"].includes(reconstruction))
   throw new Error("INVALID_DEEPBOOK_RECONSTRUCTION");
 const validationEnabled = assertValidationProfile(process.env);
-const instanceLock = acquireInstanceLock(
-  process.env.DATABASE_PATH ?? "data/bot.sqlite",
-);
+const strategyDatabasePath =
+  process.env.MODE === "REAL_TRADECAP"
+    ? `${process.env.REAL_DATABASE_PATH ?? "data/real-tradecap-testnet.sqlite"}.engine.sqlite`
+    : (process.env.DATABASE_PATH ?? "data/bot.sqlite");
+const instanceLock = acquireInstanceLock(strategyDatabasePath);
 // This connection intentionally stays open until exit, never before thread exit.
 const rootDatabasePath = instanceLock.root;
 if (![undefined, "0", "1"].includes(process.env.REQUIRE_EXISTING_DATABASE))

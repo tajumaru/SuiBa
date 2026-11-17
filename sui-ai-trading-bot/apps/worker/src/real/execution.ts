@@ -12,10 +12,10 @@ export interface RealTransactionBuilder {
 }
 export interface RealBotSigner {
   address: string;
-  sign(bytes: Uint8Array): Promise<Uint8Array>;
+  sign(bytes: Uint8Array): Promise<string>;
 }
 export interface RealSender {
-  send(bytes: Uint8Array, signature: Uint8Array): Promise<RealEffects>;
+  send(bytes: Uint8Array, signature: string): Promise<RealEffects>;
 }
 export interface RealExecutionIntent {
   internalOrderId: string;
@@ -53,6 +53,9 @@ export class RealTradeCapExecutor {
   }
   execute(intent: RealExecutionIntent) {
     return this.serial(() => this.submit("PLACE", intent));
+  }
+  acceptStop() {
+    this.db.acceptStop(this.identity);
   }
   cancel(intent: RealCancelIntent) {
     if (intent.confirmedFailedPreviousCancel !== true)

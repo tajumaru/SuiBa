@@ -20,6 +20,7 @@ it("has no circular source imports or transaction execution/signing entrypoints"
     const content = readFileSync(file, "utf8");
     const realTransactionBuilders = new Set([
       resolve("apps/worker/src/real/deepbook-execution.ts"),
+      resolve("apps/worker/src/real/runtime.ts"),
     ]);
     if (!realTransactionBuilders.has(file))
       expect(content, file).not.toMatch(
