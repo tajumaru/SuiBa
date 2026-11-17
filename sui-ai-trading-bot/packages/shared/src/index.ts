@@ -135,12 +135,7 @@ export interface Indicators {
  * apps/worker/src/market-weather.ts for the bands and their
  * measured calibration). Display only; it feeds no decision.
  */
-export type MarketWeatherKind =
-  | "clear"
-  | "sunny"
-  | "cloudy"
-  | "rain"
-  | "storm";
+export type MarketWeatherKind = "clear" | "sunny" | "cloudy" | "rain" | "storm";
 export interface MarketWeather {
   kind: MarketWeatherKind;
   /** Close-to-close change over the last 24 hours, in %. */
@@ -395,6 +390,23 @@ export const defaults: Settings = {
   minNetProfitUsdc: 0.05,
   minNetProfitPct: 0.01,
 };
+export const realTradeCapConfigSchema = z
+  .object({
+    network: z.literal("testnet"),
+    balanceManagerId: z.string().regex(/^0x[0-9a-f]{64}$/),
+    poolKey: z.literal("SUI_DBUSDC"),
+    tradeCapId: z.string().regex(/^0x[0-9a-f]{64}$/),
+    signerAddress: z.string().regex(/^0x[0-9a-f]{64}$/),
+    sessionId: z.string().min(1).max(128),
+    indexerUrl: z.string().url(),
+    graphqlUrl: z.string().url(),
+    grpcUrl: z.string().url(),
+    maxOrderDbusdc: z.number().positive().max(1).default(0.1),
+    orderType: z.enum(["MARKET", "IOC_LIMIT"]).default("IOC_LIMIT"),
+    signingEnabled: z.literal(false).default(false),
+  })
+  .strict();
+export type RealTradeCapConfig = z.infer<typeof realTradeCapConfigSchema>;
 export const dayKey = (now: number) => new Date(now).toISOString().slice(0, 10); // UTC trading day
 export async function bounded<T>(fn: () => Promise<T>, ms = 10000): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;

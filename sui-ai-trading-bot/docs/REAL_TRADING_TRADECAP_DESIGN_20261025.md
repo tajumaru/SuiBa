@@ -237,7 +237,7 @@ fetchOnchainState(): Promise<AdapterOnchainState>;
 | tx はチェーンに届いたが失敗した／注文が拒否された | digest を記録し REJECTED を返す | 候補は不成立として終了する。ポジション・帳簿は変更しない。失敗の事実は real_orders と運用表示に残す |
 | 送信の成否自体が証明できない（応答喪失、finality 待ち上限超過） | UNKNOWN を返す。digest が分かれば記録する（「届いていないことが証明できる場合のみ REJECTED、証明できなければ UNKNOWN」が振り分けの規則） | real_orders は RECONCILING に残る。新規発注は §5.1.3 のゲートで止まる。後続サイクルの照合（§5.1.6）が解決を試みる |
 | 約定後の二重突き合わせ不一致（§6.3） | その約定を確定扱いにせず RECONCILING に入れる | 照合経路で解決を試みる。解決しなければ HALTED（次行） |
-| 照合で説明できない差分（§6.5-3） | ―（照合経路の判定） | REAL を HALTED にする。新規発注のみを止める REAL 側のラッチとし、engine の runtime.error（ハードストップ）とは別軸に置く（§7.2 の「REAL の enabled と緊急停止は別軸」と同じ考え方。ラッチの置き場は実装時に確定）。解除は手動確認のみ |
+| 照合で説明できない差分（§6.5-3） | ―（照合経路の判定） | REAL を HALTED にする。新規発注のみを止める REAL 側のラッチとし、engine の runtime.error（ハードストップ）とは別軸に置く。解除は §11.9.2 の独立証拠・完全な履歴・分解残高一致を満たす再判定と明示承認に限る。同定不能の恒久禁止は手動確認、通常 readiness、reset、session／BM 差替えでは解除しない |
 | アダプタ内部の整合性異常（記録の破損、必須 digest の欠落等） | throw する | tick の既存分類でハードストップする（PAPER で `PAPER_RECONCILIATION_FAILED` が fill 区間の throw から failCycle するのと同じ経路）。既存の意味論の再利用であり、新しい停止条件ではない |
 | 上流 API の 429／500 | アダプタの外部読み取りも既存の apiAccess の計数に載せ、即時ハードストップを継承する（接続方法は実装時に確定） | 既存の経路（apiAccess.onRateLimit → monitor.stop）がそのまま効く |
 
@@ -245,7 +245,7 @@ fetchOnchainState(): Promise<AdapterOnchainState>;
 
 - 冪等性：何度呼んでも安全とする。未約定が無ければ `NOTHING_OPEN` を成功として返す。RECONCILING 中のレコードがあっても呼べる（キャンセルはオンチェーンの未約定に対して効くものであり、UNKNOWN の解決そのものは照合の仕事として残る）。
 - 戻り値（CancelResult）：`status`（`"CANCELLED_ALL" | "PARTIAL" | "FAILED" | "NOTHING_OPEN"`）、`targets`（呼び出し時点でオンチェーンに存在した未約定件数）、`cancelled`（finality まで確認できた件数）、`digests`、`remainingOrderIds`（PARTIAL／FAILED 時の残件の onchainOrderId）、`errorCode`。
-- 部分失敗とリトライ（§6.6）：キャンセル tx の失敗はアダプタ内で bounded にリトライする（回数・間隔は実装時に確定）。それでも残る場合は成功扱いにせず PARTIAL／FAILED と残件 ID を返し、呼び出し側が監査記録と運用画面に「未約定が残っている可能性」を明示する。後続サイクルの定期照合（§5.1.6）が残件の有無を再確認する。
+- 応答喪失は失敗と確定せず UNKNOWN とし、履歴上の cancel effects・競合 fill・返却／清算・ガスを照合する。無条件 retry はしない。確定失敗かつ残件を一意に同定できた場合だけ、別承認を得た bounded 復旧操作を検討する。なお Phase 1 の停止ラッチ中は取消専用署名も禁止し、必要な取消はオーナー自身のウォレットで行う（§11.9.2／S3）。
 - digest：キャンセル tx の digest はすべて記録し、対象注文の real_orders レコードと監査に紐づける（§8.1）。
 - 呼び出し位置：
   1. **緊急停止時**：制御経路が runtime.emergency をラッチする地点（現行 http-routes の emergency 処理）から、engine 経由でアダプタに指示する。HTTP 応答をチェーンの finality 待ちでブロックしないため、呼び出しは非同期に発行し、完了結果は監査記録＋運用表示に反映する。あわせて次サイクルの定期照合で残件ゼロを確認する（§7.2-2 の「結果（成功／失敗／対象件数）を残す」の担保）。
@@ -396,7 +396,7 @@ INTENT（候補・監査記録済み）
 
 - 注文種別：当面は**成行相当の即時執行**を基本とする。現行戦略は「その足で約定する」前提の PAPER fill と意味を揃えるため、SDK の `placeMarketOrder`、または価格上限付き指値（IOC）を用いる。どちらにするかは Phase 1 で約定性とスリッページ実績を見て決める（§11）。
 - 価格保護：市場価格（DeepBook 板の mid / 直近約定）から現行 `maxSlippage` を超える約定が見込まれる場合は発注しない。指値を使う場合は価格リミットに同条件を埋め込む。
-- 送信前に内部注文レコードを `SUBMITTING` で DB に書き、送信直後に **tx digest** を必須記録する。digest のない REAL 注文は「存在しない」扱いにせず、§6.5 の照合対象にする。
+- 署名済み tx bytes を得た後、ネットワーク送信より前に、**tx digest と tx bytes hash**、内部注文 ID、数値の client order ID、identity（network／BM／pool／Cap／署名者／session）を `SUBMITTING` として同期 FULL の DB transaction で耐久記録する。この commit が完了しなければ送信しない。送信結果が不明なレコードは「存在しない」扱いにせず、§6.5 の履歴照合対象にする。
 
 ### 6.3 約定確認
 
@@ -412,16 +412,16 @@ INTENT（候補・監査記録済み）
 
 Sui の tx は原子的であり、「送信したのに結果が分からない」のは主に**応答喪失**の場合である。手順：
 
-1. digest が記録済みなら `getTransactionBlock(digest)` で確定状態を取得し、状態機械を進める。
-2. digest が不明（送信直後のクラッシュ等）なら、オンチェーンの未約定一覧（`accountOpenOrders`）と BM 残高を DB の未終端レコードと突き合わせ、差分が説明できる範囲で状態を復元する。
-3. 説明できない差分がある場合は **REAL を HALTED**（新規発注停止、要手動確認）にし、運用画面に事象を表示する。推測で DB を書き換えない。
-4. サイクル毎の定期照合：DB 上の保有量・現金相当と BM 残高（SUI/USDC/DEEP）を比較し、不一致なら HALTED。PAPER の `reconcileFill` 思想のオンチェーン版。
+1. 最後の照合点（checkpoint cursor＋hash）から DeepBook Indexer と Sui GraphQL の履歴を欠落なく全ページ取得する。現在の open orders は残件確認にだけ使い、消えた約定／取消の推定には使わない。
+2. 送信前レコードの digest、内部／client 注文 ID と identity を、tx effects、注文配置／部分約定／取消、入出金／返却／清算の履歴へ突き合わせる。not found や timeout だけで失敗へ終端せず、後から実行され得ない独立証拠が得られるまで UNKNOWN を維持する。
+3. chain＋digest＋event sequence を一意キーとして、注文状態、部分約定と取消残量、費用、原価配分、残高、cursor を原子的かつ冪等に反映する。identity 不一致は別ラッチへ隔離し、帳簿へ混ぜない。説明できない差分は **REAL を HALTED** とし、推測で DB を書き換えない。
+4. available、注文ロック、決済済み未請求を資産の atomic unit ごとに分け、DEEP の available／拘束／支払実績、Bot wallet のガス用 SUI／支出も別区分で検算する。BM available だけから総資産や約定を推定しない。同定不能はローカル台帳へ恒久禁止として保持する（§11.9.2）。
 
 ### 6.6 キャンセル
 
 - 個別キャンセル：`cancelOrder`（onchain order_id 指定）。
 - 一括キャンセル：`cancelAllOrders`（プール＋BM 指定）。緊急停止時（§7.2）と Worker 終了時に呼ぶ。
-- キャンセルも tx であり digest を記録する。キャンセル失敗（通信異常等）はリトライし、最終的に失敗したら「未約定が残っている可能性」を運用画面に明示する。
+- キャンセルも発注と同じ送信前永続化を行う。応答喪失は UNKNOWN として §6.5 の履歴で競合 fill と取消残量を別々に確定し、無条件に再送しない。Phase 1 では停止ラッチ中の Bot 署名（取消専用を含む）を許可しない。
 
 ---
 
