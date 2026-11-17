@@ -22,6 +22,7 @@ import json
 import hashlib
 import math
 import os
+import re
 import sqlite3
 import statistics
 import sys
@@ -47,6 +48,17 @@ CAUTION_MAX_MEAN_4H = -0.30
 # higher; exports omit the live settings, hence the default is used.
 FEE_RATE_PER_SIDE = 0.003
 ROUND_TRIP_COST_PCT = 2 * FEE_RATE_PER_SIDE * 100  # 0.6%
+RISK_REASON_LABELS = {
+    "INVALID_STATE_OR_QUOTE": "状態または見積もり不正", "INVALID_AMOUNT": "数量不正",
+    "BOT_STOPPED": "Bot停止中", "COIN_DIRECTION": "通貨方向不一致",
+    "COIN_NOT_ALLOWED": "対象外通貨", "INVALID_NUMBERS": "数値不正",
+    "MAX_ORDER": "1注文の上限", "INSUFFICIENT_BALANCE": "残高不足",
+    "DAILY_BUY_LIMIT": "1日の購入上限", "DAILY_LOSS_LIMIT": "1日の損失上限",
+    "MAX_HOLDING": "保有比率上限", "SLIPPAGE_OR_IMPACT": "スリッページまたは価格影響",
+    "NO_LIQUIDITY": "流動性なし", "QUOTE_EXPIRED": "見積もり期限切れ",
+    "STALE_MARKET": "市場データ遅延", "DUPLICATE_ORDER": "重複注文",
+    "CONCURRENT_ORDER": "同時注文あり",
+}
 TAKE_PROFIT_PCT = 1.5
 STOP_LOSS_PCT = 1.0
 EXIT_TPS = (1.0, 1.5, 2.0, 2.5, 3.0)
@@ -364,6 +376,51 @@ def load_decisions(db_path):
             "cur": inp.get("current") or {}, "prev": inp.get("previous") or {},
         })
     return decisions, orders, trades
+
+
+def load_risk_blocked_buys(db_path):
+    """Load public rejected BUY candidates and their embedded candle key."""
+    conn = sqlite3.connect(db_path)
+    try:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='operation_candidates'").fetchone():
+            return []
+        rows = conn.execute("SELECT timestamp, json FROM operation_candidates ORDER BY timestamp").fetchall()
+    finally:
+        conn.close()
+    out = []
+    for at, js in rows:
+        try:
+            row = json.loads(js)
+        except (TypeError, ValueError):
+            continue
+        risk = row.get("risk") or {}
+        if row.get("side") != "BUY" or risk.get("status") != "REJECTED":
+            continue
+        match = re.fullmatch(r"paper:.*:300:(\d+):(BUY|SELL)", row.get("orderId") or "")
+        cts = int(match.group(1)) if match and match.group(2) == "BUY" else None
+        reasons = risk.get("reasons")
+        out.append({"cts": cts, "at": at // 1000, "side": "BUY",
+                    "reasons": reasons if type(reasons) is list else []})
+    return out
+
+
+def analyze_risk_blocked_buys(candidates, decisions, candles):
+    by_key = {(d.get("cts"), d.get("action")): d for d in decisions}
+    buckets = {}
+    unmatched = 0
+    for candidate in candidates:
+        decision = by_key.get((candidate.get("cts"), candidate.get("side")))
+        if decision is None:
+            unmatched += 1
+        for reason in candidate["reasons"]:
+            bucket = buckets.setdefault(reason, {"count": 0, "decisions": []})
+            bucket["count"] += 1
+            if decision is not None:
+                bucket["decisions"].append(decision)
+    for bucket in buckets.values():
+        bucket["net4"] = summarize_net(
+            [forward_return(d, 4, candles) for d in bucket.pop("decisions")])
+    return {"count": len(candidates), "unmatched": unmatched, "buckets": buckets}
 
 
 def load_forecasts(db_path):
@@ -817,7 +874,7 @@ def analyze_learning(decisions, candles):
     return {"grids": grids, "forward": forward, "baseline": baseline}
 
 
-def analyze(decisions, candles):
+def analyze(decisions, candles, risk_blocked_candidates=None):
     close, high, low, ordered, ema, gap, _ = candles
     for d in decisions:
         d["regime"] = regime_at(ema, ordered, d["cts"]) if d["cts"] else "unknown"
@@ -875,6 +932,19 @@ def analyze(decisions, candles):
             flags.append({"kind": "variant",
                           "text": f"バリアント「{v['label']}」（発火 n={s['n']}）は正味 +4h 平均 "
                                   f"{s['mean']:+.2f}%（プラス率 {s['pos']:.0f}%）— 採用候補として判断材料が揃った"})
+    risk_blocked = analyze_risk_blocked_buys(
+        risk_blocked_candidates or [], decisions, candles)
+    for reason, bucket in risk_blocked["buckets"].items():
+        s = bucket["net4"]
+        label = RISK_REASON_LABELS.get(reason, reason)
+        if s and s["n"] >= FLAG_MIN_SAMPLES and s["mean"] >= FLAG_MIN_MEAN_4H:
+            flags.append({"kind": "candidate",
+                          "text": f"{label}で見送った買い（n={s['n']}）は正味 +4h 平均 {s['mean']:+.2f}%"
+                                  " — 制限が機会を逃している側の証拠"})
+        elif s and s["n"] >= FLAG_MIN_SAMPLES and s["mean"] <= CAUTION_MAX_MEAN_4H:
+            flags.append({"kind": "caution",
+                          "text": f"{label}で見送った買い（n={s['n']}）は正味 +4h 平均 {s['mean']:+.2f}%"
+                                  " — 制限が守っている側の証拠"})
     def grouped(key, order):
         out = {}
         for name in order:
@@ -901,6 +971,7 @@ def analyze(decisions, candles):
             "flags": flags, "prices": prices, "span": span, "regimes": regimes,
             "variants": variants, "vols": vols,
             "learning": learning,
+            "riskBlockedBuys": risk_blocked,
             "actions": Counter(d["action"] for d in decisions),
             "rules": Counter(d["rule"] for d in decisions)}
 
@@ -1234,6 +1305,21 @@ def render(result, decisions_count, orders, trades, generated_at, shadow=None,
                          f"{fmt_stat(v['net'][4])} | {fmt_stat(v['net'][24])} | "
                          f"{t.get('tp_first', 0)}/{t.get('sl_first', 0)} |")
     lines += render_learning(result["learning"])
+    blocked = result["riskBlockedBuys"]
+    lines += ["", "## リスクで見送った買い", "",
+              "1候補に複数の理由がある場合は、理由ごとに1件として集計。+4h は往復コスト控除後。", ""]
+    if not blocked["count"]:
+        lines.append("- 記録なし")
+    else:
+        lines += ["| 理由 | 見送り件数 | 正味 +4h 平均 | プラス率 | n |",
+                  "|---|---:|---:|---:|---:|"]
+        for reason, bucket in blocked["buckets"].items():
+            stat = bucket["net4"]
+            label = RISK_REASON_LABELS.get(reason, reason)
+            lines.append(f"| {label}（{reason}） | {bucket['count']} | "
+                         f"{stat['mean']:+.2f}% | {stat['pos']:.1f}% | {stat['n']} |" if stat else
+                         f"| {label}（{reason}） | {bucket['count']} | — | — | 0 |")
+        lines.append(f"- 結合不能: {blocked['unmatched']} 件")
     lines += ["", "## 局面別の内訳（EMA50 の24h傾き：上昇 ≥+0.5%／下降 ≤−0.5%／横ばい）", ""]
     labels = {"up": "上昇", "down": "下降", "range": "横ばい", "unknown": "不明"}
     for name, r in result["regimes"].items():
@@ -1311,6 +1397,7 @@ def main(argv):
         else:
             i += 1
     decisions, orders, trades = load_decisions(db)
+    risk_blocked_candidates = load_risk_blocked_buys(db)
     forecasts = load_forecasts(db)
     undetermined = False
     if window == "last-session":
@@ -1324,6 +1411,9 @@ def main(argv):
         forecasts = [f for f in forecasts
                      if (since is None or f["origin"] >= since)
                      and (until is None or f["origin"] <= until)]
+        risk_blocked_candidates = [c for c in risk_blocked_candidates
+                                   if (since is None or c["at"] >= since)
+                                   and (until is None or c["at"] <= until)]
     if undetermined or (window == "last-session" and not decisions):
         if out:
             with open(out, "w") as fh:
@@ -1339,7 +1429,7 @@ def main(argv):
         raw = fetch_candles(candle_sources)
     candles = load_candles(raw)
     shadow_rows = filter_window(load_shadow_decisions(db), since, until)
-    result = analyze(decisions, candles)
+    result = analyze(decisions, candles, risk_blocked_candidates)
     liquidation_buckets = load_liquidation_buckets(db)
     result["scenes"] = analyze_scenes(
         decisions, shadow_rows, candles, liquidation_buckets)
