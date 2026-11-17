@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { defaults } from "../packages/shared/src/index.ts";
 import {
   createEditor,
+  defaultDifferentKeys,
   settingsEditor,
   sameSettings,
 } from "../apps/dashboard/src/settingsEditor.ts";
@@ -9,6 +10,26 @@ import {
   applyHardPreset,
   applySafePreset,
 } from "../apps/dashboard/src/settingsPresets.ts";
+
+describe("defaultDifferentKeys", () => {
+  it("returns no keys when every saved value matches the defaults", () => {
+    expect(defaultDifferentKeys(defaults)).toEqual([]);
+  });
+  it("returns the key for one differing saved value", () => {
+    expect(defaultDifferentKeys({ ...defaults, feeRate: 0.009 })).toEqual([
+      "feeRate",
+    ]);
+  });
+  it("returns all keys for multiple differing saved values", () => {
+    expect(
+      defaultDifferentKeys({
+        ...defaults,
+        maxOrder: 3,
+        profitGuardEnabled: false,
+      }),
+    ).toEqual(["maxOrder", "profitGuardEnabled"]);
+  });
+});
 
 describe("Settings 1.1 editor state", () => {
   it("does not change persisted custom settings on initial display or preset selection", () => {

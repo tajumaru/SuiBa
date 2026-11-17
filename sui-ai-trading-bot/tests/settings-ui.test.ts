@@ -128,6 +128,7 @@ describe("かんたん設定", () => {
     ).toEqual(new Set(Object.keys(defaults)));
     const html = renderToStaticMarkup(
       React.createElement(AdvancedSettings, {
+        saved: defaults,
         draft: defaults,
         setDraft: () => {},
       }),
@@ -145,11 +146,28 @@ describe("かんたん設定", () => {
     expect(html.match(/checked=""/g)).toHaveLength(1);
     const on = renderToStaticMarkup(
       React.createElement(AdvancedSettings, {
+        saved: defaults,
         draft: { ...defaults, emaGapShrinkEnabled: true },
         setDraft: () => {},
       }),
     );
     expect(on.match(/checked=""/g)).toHaveLength(2);
+  });
+  it("marks saved differences even when the draft already uses the default", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AdvancedSettings, {
+        saved: {
+          ...defaults,
+          feeRate: 0.009,
+          profitGuardEnabled: false,
+        },
+        draft: defaults,
+        setDraft: () => {},
+      }),
+    );
+    expect(html).toContain("既定と異なる（既定:");
+    expect(html.match(/既定に戻す/g)).toHaveLength(2);
+    expect(html).toContain("既定: 有効");
   });
 });
 
@@ -201,6 +219,23 @@ it.each([defaults, { ...defaults, maxOrder: 3, gasUsdc: 0.08 }])(
     expect(control).not.toHaveBeenCalled();
   },
 );
+
+it("summarizes the number of saved values that differ from defaults", () => {
+  const data = {
+    settings: { ...defaults, maxOrder: 3, gasUsdc: 0.08 },
+    runtime: { running: false, emergency: false, error: null },
+    profitGuard: null,
+  } as unknown as Parameters<typeof SettingsPage>[0]["data"];
+  const html = renderToStaticMarkup(
+    React.createElement(SettingsPage, {
+      data,
+      api: vi.fn(),
+      control: vi.fn(),
+      onSaved: async () => {},
+    }),
+  );
+  expect(html).toContain("既定と異なる項目: 2件");
+});
 
 describe("ハードモード preset", () => {
   it("identifies hard settings and applies only the hard bundle", () => {

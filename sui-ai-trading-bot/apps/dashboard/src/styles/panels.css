@@ -110,6 +110,39 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
+.settings-field,
+.settings-toggle {
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--line);
+}
+.settings-field-label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.settings-default-diff {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  color: var(--gold);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.settings-default-reset {
+  font-size: 12px;
+}
+.settings-default-summary {
+  color: var(--gold);
+  font-weight: 600;
+}
+.settings-toggle {
+  margin-top: 12px;
+}
+.settings-toggle small {
+  display: block;
+}
 /* Three style cards (safe / hard / custom) share one row even on
    narrow screens; the settings grid keeps its two columns. */
 .preset-cards {
