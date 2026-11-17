@@ -24,7 +24,7 @@ class WorkflowTests(unittest.TestCase):
     def test_only_a_confirmation_input_and_no_schedule(self):
         self.assertIn('workflow_dispatch:', self.source)
         self.assertNotIn('schedule:', self.source)
-        self.assertIn('Type START-PROD, STOP-PROD or ROLLBACK-PROD', self.source)
+        self.assertIn('Type START-PROD, STOP-PROD, ROLLBACK-PROD or RESTART-PROD', self.source)
         self.assertEqual(self.source.count('inputs:'), 1)
         # The rollback target rides in its own optional input; the
         # confirmation word alone never names a release.
@@ -45,7 +45,7 @@ class WorkflowTests(unittest.TestCase):
     def test_both_jobs_are_gated_approved_and_serialized(self):
         self.assertIn('group: suiba-production-control', self.source)
         self.assertIn('cancel-in-progress: false', self.source)
-        self.assertEqual(self.source.count('environment: sakura-vps'), 3)
+        self.assertEqual(self.source.count('environment: sakura-vps'), 4)
         self.assertNotIn('sakura-vps-observe', self.source)
         for name, word, wrapper, env_name in (
                 ('prod-start', 'START-PROD', 'ssh-prod-start.sh', 'PROD_START_CONFIRMATION'),
@@ -59,7 +59,8 @@ class WorkflowTests(unittest.TestCase):
             expression = re.search(r'    if: (.+)\n', block).group(1)
             for enabled in ('true', 'false', ''):
                 for ref in ('refs/heads/main', 'refs/heads/feature'):
-                    for confirmation in (word, 'START-PROD' if word == 'STOP-PROD' else 'STOP-PROD', 'wrong', ''):
+                    for confirmation in (word, 'START-PROD' if word == 'STOP-PROD' else 'STOP-PROD',
+                                         'RESTART-PROD', 'wrong', ''):
                         expr = expression
                         context = {'vars.SUIBA_PROD_CONTROL_ENABLED': enabled, 'github.ref': ref,
                                    'inputs.confirmation': confirmation}
@@ -71,6 +72,36 @@ class WorkflowTests(unittest.TestCase):
                         actual = eval(compile(tree, '<workflow-gate>', 'eval'), {'__builtins__': {}})
                         expected = enabled == 'true' and ref == 'refs/heads/main' and confirmation == word
                         self.assertEqual(actual, expected, (name, enabled, ref, confirmation))
+
+    def test_restart_is_gated_and_runs_stop_then_start_with_literal_confirmations(self):
+        block = job_block(self.source, 'prod-restart')
+        self.assertIn('environment: sakura-vps', block)
+        self.assertIn('timeout-minutes: 16', block)
+        self.assertNotIn('if: always()', block)
+        markers = ('ssh-prod-stop.sh', 'PROD_FOLLOWUP_MODE: stop',
+                   'ssh-prod-start.sh', 'PROD_FOLLOWUP_MODE: start')
+        self.assertEqual([block.index(marker) for marker in markers],
+                         sorted(block.index(marker) for marker in markers))
+        self.assertIn('id: stop', block)
+        self.assertIn("if: steps.stop.outputs.outcome == 'completed'", block)
+        self.assertIn('PROD_STOP_CONFIRMATION: STOP-PROD', block)
+        self.assertIn('PROD_START_CONFIRMATION: START-PROD', block)
+        self.assertNotIn('PROD_STOP_CONFIRMATION: ${{ inputs.confirmation }}', block)
+        self.assertNotIn('PROD_START_CONFIRMATION: ${{ inputs.confirmation }}', block)
+        self.assertEqual(
+            block.count('run: python3 sui-ai-trading-bot/docker/production-followup.py'), 2)
+        for secret in ('VPS_HOST', 'VPS_USER', 'VPS_PORT', 'VPS_SSH_KEY', 'VPS_KNOWN_HOSTS'):
+            self.assertEqual(block.count(f'{secret}: ${{{{ secrets.{secret} }}}}'), 4)
+        for enabled in ('true', 'false', ''):
+            for ref in ('refs/heads/main', 'refs/heads/feature'):
+                for confirmation in ('RESTART-PROD', 'START-PROD', 'STOP-PROD',
+                                     'ROLLBACK-PROD', 'wrong', ''):
+                    context = {'vars.SUIBA_PROD_CONTROL_ENABLED': enabled,
+                               'github.ref': ref, 'inputs.confirmation': confirmation}
+                    self.assert_gate(block, context,
+                                     lambda c: c['vars.SUIBA_PROD_CONTROL_ENABLED'] == 'true'
+                                     and c['github.ref'] == 'refs/heads/main'
+                                     and c['inputs.confirmation'] == 'RESTART-PROD')
 
     def test_followup_steps_surface_failure_detail(self):
         start = job_block(self.source, 'prod-start')
@@ -100,7 +131,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('name: vps-rollback', block)
         for enabled in ('true', 'false', ''):
             for ref in ('refs/heads/main', 'refs/heads/feature'):
-                for confirmation in ('ROLLBACK-PROD', 'START-PROD', 'wrong', ''):
+                for confirmation in ('ROLLBACK-PROD', 'START-PROD', 'RESTART-PROD', 'wrong', ''):
                     context = {'vars.SUIBA_PROD_CONTROL_ENABLED': enabled, 'github.ref': ref,
                                'inputs.confirmation': confirmation}
                     self.assert_gate(block, context,
@@ -124,7 +155,7 @@ class WorkflowTests(unittest.TestCase):
         for control in ('true', 'false', ''):
             for broker in ('true', 'false', ''):
                 for ref in ('refs/heads/main', 'refs/heads/feature'):
-                    for confirmation in ('ROLLBACK-PROD', 'STOP-PROD', 'wrong', ''):
+                    for confirmation in ('ROLLBACK-PROD', 'STOP-PROD', 'RESTART-PROD', 'wrong', ''):
                         context = {'vars.SUIBA_PROD_CONTROL_ENABLED': control,
                                    'vars.SUIBA_BROKER_ENABLED': broker, 'github.ref': ref,
                                    'inputs.confirmation': confirmation}
