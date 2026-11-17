@@ -565,6 +565,64 @@ class FetchLimitTests(unittest.TestCase):
         self.assertEqual(rr.compute_limit(decisions), 10000)
 
 
+class FetchCandlesTests(unittest.TestCase):
+    @staticmethod
+    def page(start_ms, count=2000):
+        return [[start_ms + i * 300_000, "1", "1", "1", "1"]
+                for i in range(count)]
+
+    @staticmethod
+    def response(candles):
+        return io.StringIO(json.dumps({"candles": candles}))
+
+    def test_pages_backward_passes_end_time_and_deduplicates_boundary(self):
+        newest = self.page(10_000_000_000)
+        older = self.page(9_400_000_000)
+        older[-1] = newest[0]
+        short = self.page(9_100_000_000, 2)
+        with patch.object(rr.urllib.request, "urlopen", side_effect=[
+                self.response(newest), self.response(older), self.response(short)]) as urlopen:
+            result = rr.fetch_candles([])
+        self.assertIn("end_time=9999999999", urlopen.call_args_list[1].args[0].full_url)
+        self.assertEqual(len(result), 4001)
+        self.assertEqual(len({int(c[0]) for c in result}), len(result))
+
+    def test_stops_when_target_is_reached(self):
+        latest_ms = 20_000_000_000
+        first = self.page(latest_ms - 1_999 * 300_000)
+        target_ms = latest_ms - 30 * 86400 * 1000
+        second = self.page(target_ms - 300_000)
+        with patch.object(rr.urllib.request, "urlopen", side_effect=[
+                self.response(first), self.response(second)]) as urlopen:
+            rr.fetch_candles([])
+        self.assertEqual(urlopen.call_count, 2)
+
+    def test_stops_after_short_page(self):
+        with patch.object(rr.urllib.request, "urlopen", return_value=
+                          self.response(self.page(10_000_000_000, 10))) as urlopen:
+            rr.fetch_candles([])
+        self.assertEqual(urlopen.call_count, 1)
+
+    def test_stops_at_ten_pages(self):
+        repeated_page = self.page(50_000_000_000)
+        pages = [self.response(repeated_page) for _ in range(10)]
+        decisions = [{"cts": BASE}, {"cts": BASE + 300 * 10000}]
+        with patch.object(rr.urllib.request, "urlopen", side_effect=pages) as urlopen:
+            result = rr.fetch_candles(decisions)
+        self.assertEqual(urlopen.call_count, 10)
+        self.assertEqual(len(result), 2000)
+
+    def test_later_page_failure_returns_collected_candles(self):
+        first = self.page(10_000_000_000)
+        stderr = io.StringIO()
+        with patch.object(rr.urllib.request, "urlopen", side_effect=[
+                self.response(first), OSError("indexer unavailable")]), \
+                contextlib.redirect_stderr(stderr):
+            result = rr.fetch_candles([])
+        self.assertEqual(result, first)
+        self.assertIn("note: candle history page 2 failed", stderr.getvalue())
+
+
 class LoadDecisionsTests(unittest.TestCase):
     def test_loads_evidence_and_counts(self):
         with tempfile.TemporaryDirectory() as tmp:

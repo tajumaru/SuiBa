@@ -101,10 +101,39 @@ def compute_limit(decisions):
 
 
 def fetch_candles(decisions):
-    url = f"{INDEXER}?interval=5m&limit={compute_limit(decisions)}"
-    req = urllib.request.Request(url, headers={"User-Agent": "suiba-run-review/1"})
-    with urllib.request.urlopen(req, timeout=60) as res:
-        return json.load(res)["candles"]
+    chunk = 2000
+    by_timestamp = {}
+    end_ms = None
+    target_ms = None
+    for page in range(10):
+        url = f"{INDEXER}?interval=5m&limit={chunk}"
+        if end_ms is not None:
+            url += f"&end_time={end_ms}"
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "suiba-run-review/1"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as res:
+                raw = json.load(res)["candles"]
+        except Exception as exc:
+            if page == 0:
+                raise
+            print(f"note: candle history page {page + 1} failed: {exc}",
+                  file=sys.stderr)
+            break
+        if not raw:
+            break
+        for candle in raw:
+            by_timestamp[int(candle[0])] = candle
+        timestamps = [int(candle[0]) for candle in raw]
+        if target_ms is None:
+            latest_ms = max(timestamps)
+            coverage_s = max(compute_limit(decisions) * 300, 30 * 86400)
+            target_ms = latest_ms - coverage_s * 1000
+        earliest_ms = min(by_timestamp)
+        if earliest_ms <= target_ms or len(raw) < chunk:
+            break
+        end_ms = min(timestamps) - 1
+    return [by_timestamp[timestamp] for timestamp in sorted(by_timestamp)]
 
 
 def load_candles(raw):
