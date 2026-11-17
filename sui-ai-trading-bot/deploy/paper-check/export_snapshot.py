@@ -42,6 +42,12 @@ CONSECUTIVE_API_ERRORS MARKET_SOURCE_CHANGED MARKET_PAIR_MISMATCH VALIDATION_REC
 DATABASE_UNAVAILABLE PROCESS_RESTART_INTERRUPTED PROCESS_RESTART_STOPPED
 PAPER_NETWORK_PAUSED PAPER_NETWORK_RECOVERED
 EXTERNAL_STOP WORKER_OOM WORKER_EXITED WORKER_EXITED_CLEAN UNKNOWN'''.split())
+RISK_STATUSES = frozenset(('NOT_EVALUATED', 'ALLOWED', 'REJECTED'))
+# Keep this allowlist in sync when packages/risk-engine adds a reason code.
+RISK_REASON_CODES = frozenset('''INVALID_STATE_OR_QUOTE INVALID_AMOUNT BOT_STOPPED
+COIN_DIRECTION COIN_NOT_ALLOWED INVALID_NUMBERS MAX_ORDER INSUFFICIENT_BALANCE
+DAILY_BUY_LIMIT DAILY_LOSS_LIMIT MAX_HOLDING SLIPPAGE_OR_IMPACT NO_LIQUIDITY
+QUOTE_EXPIRED STALE_MARKET DUPLICATE_ORDER CONCURRENT_ORDER'''.split())
 EPISODE_OUTCOMES = frozenset(('RECOVERED', 'EXHAUSTED', 'STOPPED', 'INTERRUPTED'))
 TALLY_KEY = re.compile(r'[A-Za-z][A-Za-z0-9 ]{0,31}/[A-Z][A-Z0-9_]{0,63}')
 SHADOW_PROMPT_VERSION = re.compile(r'shadow-[a-z0-9]+(?:-[a-z0-9]+)*-v[1-9][0-9]{0,5}')
@@ -154,8 +160,20 @@ def sanitize(table, value, public=False):
         if type(model) is str and SHADOW_MODEL.fullmatch(model): out['model'] = model
         # Only the owner-approved model family is public; arbitrary strings remain private.
     elif table == 'operation_candidates':
+        # Candidate order IDs are a public join key only in the paper namespace.
+        out.pop('orderId', None)
+        order_id = value.get('orderId')
+        if type(order_id) is str and len(order_id) <= 1024 and order_id.startswith('paper:'):
+            out['orderId'] = order_id
         if value.get('side') in ('BUY', 'SELL'): out['side'] = value['side']
         if value.get('finalAction') in ('PENDING', 'BUY', 'SELL', 'WAIT', 'SAFE_STOP'): out['finalAction'] = value['finalAction']
+        risk = value.get('risk')
+        if type(risk) is dict and risk.get('status') in RISK_STATUSES:
+            out['risk'] = {'status': risk['status']}
+            reasons = risk.get('reasons')
+            if type(reasons) is list:
+                out['risk']['reasons'] = [reason for reason in reasons
+                                          if type(reason) is str and reason in RISK_REASON_CODES]
         out.update(decimal_fields(value, ('requestedInputAtomic', 'quantityAtomic', 'quotePriceUsdc', 'expectedSaleUsdc', 'netProfitUsdc', 'dexFeeUsdc', 'gasUsdc', 'additionalFeeUsdc', 'buyGasUsdc')))
         out.update(numeric_fields(value, ('quoteExpiresAt', 'reverseQuoteExpiresAt')))
     elif table == 'paper_orders':

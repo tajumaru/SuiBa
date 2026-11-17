@@ -106,6 +106,39 @@ def decision(missing=None, price=1.00, cts=BASE, cond_extra=None, cur=None, prev
 
 
 class AnalyzeTests(unittest.TestCase):
+    def test_risk_blocked_buys_are_scored_by_reason_and_flagged(self):
+        decisions = []
+        candidates = []
+        marks = {}
+        for i in range(30):
+            cts = BASE + i * 300
+            d = decision(cts=cts)
+            d["action"] = "BUY"
+            decisions.append(d)
+            candidates.append({"cts": cts, "side": "BUY",
+                               "reasons": ["DAILY_BUY_LIMIT", "MAX_ORDER"]})
+            marks[cts + 4 * 3600] = 1.012
+        candidates.append({"cts": BASE + 999999, "side": "BUY",
+                           "reasons": ["DAILY_BUY_LIMIT"]})
+        result = rr.analyze(decisions, candles_with_close_at(marks), candidates)
+        blocked = result["riskBlockedBuys"]
+        self.assertEqual(blocked["unmatched"], 1)
+        self.assertEqual(blocked["buckets"]["DAILY_BUY_LIMIT"]["count"], 31)
+        self.assertEqual(blocked["buckets"]["DAILY_BUY_LIMIT"]["net4"]["n"], 30)
+        self.assertTrue(any(f["kind"] == "candidate" and "1日の購入上限" in f["text"]
+                            for f in result["flags"]))
+        text = rr.render(result, 30, 0, 0, datetime.now(timezone.utc))
+        section = text.split("## リスクで見送った買い", 1)[1].split("## 局面別の内訳", 1)[0]
+        self.assertIn("複数の理由", section)
+        self.assertIn("1日の購入上限（DAILY_BUY_LIMIT）", section)
+        self.assertIn("結合不能: 1 件", section)
+
+    def test_risk_blocked_buy_section_says_no_records(self):
+        result = rr.analyze([decision()], candles_with_close_at({}))
+        text = rr.render(result, 1, 0, 0, datetime.now(timezone.utc))
+        section = text.split("## リスクで見送った買い", 1)[1].split("## 局面別の内訳", 1)[0]
+        self.assertIn("- 記録なし", section)
+
     def test_candidate_flag_fires_for_missing_emaup(self):
         candles = candles_with_close_at({BASE + 4 * 3600: 1.012})
         result = rr.analyze([decision(missing="emaUp") for _ in range(31)], candles)
@@ -644,6 +677,24 @@ class LoadDecisionsTests(unittest.TestCase):
             self.assertEqual(decisions[0]["met"], 2)
             self.assertEqual((orders, trades), (0, 0))
 
+    def test_loads_only_rejected_buy_candidates_with_embedded_candle_key(self):
+        with tempfile.NamedTemporaryFile(suffix=".sqlite") as db:
+            conn = sqlite3.connect(db.name)
+            conn.execute("CREATE TABLE operation_candidates (timestamp INTEGER, json TEXT)")
+            rows = [
+                {"orderId": f"paper:deepbook:300:{BASE}:BUY", "side": "BUY",
+                 "risk": {"status": "REJECTED", "reasons": ["DAILY_BUY_LIMIT"]}},
+                {"orderId": f"paper:deepbook:300:{BASE}:SELL", "side": "SELL",
+                 "risk": {"status": "REJECTED", "reasons": ["MAX_ORDER"]}},
+            ]
+            conn.executemany("INSERT INTO operation_candidates VALUES (?, ?)",
+                             [(BASE * 1000, json.dumps(row)) for row in rows])
+            conn.commit()
+            conn.close()
+            self.assertEqual(rr.load_risk_blocked_buys(db.name), [{
+                "cts": BASE, "at": BASE, "side": "BUY",
+                "reasons": ["DAILY_BUY_LIMIT"]}])
+
 
 def decision_json(cts, price=1.0):
     return {"action": "WAIT", "evidence": {
@@ -991,7 +1042,7 @@ class ShadowReviewTests(unittest.TestCase):
             self.assertEqual(result,empty_result)
             self.assertEqual(empty_text.split("\n## AI 影運用",1)[0], legacy_existing)
             # Main report contract, including the observational learning block.
-            self.assertEqual(hashlib.sha256(legacy_existing.encode()).hexdigest(), "a52e30f6b594c9f1f8e178e981ab6ee0b03aad3c300a39315b6b743dfc8d0cc9")
+        self.assertEqual(hashlib.sha256(legacy_existing.encode()).hexdigest(), "e9fb6f0f99fce8dd85ec7139a8ae656fc813ec92c7a9c9363d89827c99eee184")
 
     def test_real_s1_sanitize_and_indexer_path_feed_shadow_without_changing_existing_fetch(self):
         from unittest.mock import patch

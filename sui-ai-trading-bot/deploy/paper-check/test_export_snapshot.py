@@ -122,7 +122,11 @@ class ExportTests(unittest.TestCase):
                     'thresholds': {'oversold': 30, 'secret': SECRET}, 'conditions': {'emaUp': True, SECRET: True},
                     'inputs': {'price': 1, 'current': {'rsi': 40, 'secret': SECRET}}}},
             'technical_indicators': {'rsi': 40, 'secret': SECRET},
-            'operation_candidates': {'orderId': 'order-'+SECRET, 'side': 'BUY', 'finalAction': 'BUY', 'minProfitUsdc': '0.12345', 'requestedInputAtomic': '1000000', 'reason': SECRET},
+            'operation_candidates': {'orderId': 'paper:deepbook:300:123:BUY', 'side': 'BUY',
+                'finalAction': 'WAIT', 'minProfitUsdc': '0.12345',
+                'requestedInputAtomic': '1000000', 'reason': SECRET,
+                'risk': {'status': 'REJECTED',
+                         'reasons': ['DAILY_BUY_LIMIT', SECRET, 3]}},
             'paper_orders': {'side': 'BUY', 'status': 'FILLED', 'quote': {'amountIn': '1000000', 'route': [SECRET], 'headers': {'Authorization': SECRET}}},
             'paper_trades': {'orderId': 'order-'+SECRET, 'side': 'SELL', 'fee': 0.01, 'realizedProfitUsdc': '1.2', 'costs': {'gasUsdc': '0.01', 'secret': SECRET}},
             'operation_events': {'kind': 'STOP', 'code': SECRET, 'payload': SECRET},
@@ -182,7 +186,9 @@ class ExportTests(unittest.TestCase):
                                             'up': [1.01, 1.02], 'lo': [.99, .98]})
                 candidate = json.loads(db.execute('SELECT json FROM operation_candidates').fetchone()[0])
                 self.assertNotIn('minProfitUsdc', candidate)
-                self.assertEqual(candidate['orderId'], db.execute('SELECT id FROM paper_orders').fetchone()[0])
+                self.assertEqual(candidate['orderId'], 'paper:deepbook:300:123:BUY')
+                self.assertEqual(candidate['risk'], {
+                    'status': 'REJECTED', 'reasons': ['DAILY_BUY_LIMIT']})
                 self.assertEqual(json.loads(db.execute('SELECT json FROM operation_events').fetchone()[0])['code'], 'REDACTED')
                 self.assertEqual(
                     db.execute('PRAGMA table_info(liquidation_buckets)').fetchall(),
@@ -199,6 +205,20 @@ class ExportTests(unittest.TestCase):
             self.assertEqual(manifest['window']['to'] - manifest['window']['from'], e.WINDOW_MS)
             self.assertLessEqual(manifest['window']['from'], NOW_MS)
             self.assertGreaterEqual(manifest['window']['to'], NOW_MS)
+
+    def test_candidate_risk_and_order_id_use_closed_allowlists(self):
+        clean = e.sanitize('operation_candidates', {
+            'orderId': 'paper:source:300:123:BUY',
+            'risk': {'status': 'ALLOWED',
+                     'reasons': ['MAX_ORDER', 'NOT_A_REAL_REASON']}})
+        self.assertEqual(clean, {
+            'orderId': 'paper:source:300:123:BUY',
+            'risk': {'status': 'ALLOWED', 'reasons': ['MAX_ORDER']}})
+        rejected = e.sanitize('operation_candidates', {
+            'orderId': 'live:source:300:123:BUY',
+            'risk': {'status': 'UNKNOWN', 'reasons': ['MAX_ORDER']}})
+        self.assertNotIn('orderId', rejected)
+        self.assertNotIn('risk', rejected)
 
     def test_export_keeps_window_rows_and_excludes_older_history_under_row_limit(self):
         with tempfile.TemporaryDirectory() as tmp:
