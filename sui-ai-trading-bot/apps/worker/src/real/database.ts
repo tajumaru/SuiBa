@@ -2,7 +2,12 @@ import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { dirname } from "node:path";
 import { mkdirSync } from "node:fs";
-import type { RealHistoryEvent, RealIdentity } from "./types.ts";
+import type {
+  RealEffects,
+  RealHistoryEvent,
+  RealIdentity,
+  RealOperation,
+} from "./types.ts";
 
 const identityKey = (identity: RealIdentity) =>
   [
@@ -27,7 +32,9 @@ export class RealTradeCapDatabase {
       CREATE TABLE IF NOT EXISTS real_submission_intents(
         digest TEXT PRIMARY KEY, tx_bytes_hash TEXT NOT NULL, internal_order_id TEXT NOT NULL,
         client_order_id TEXT NOT NULL, identity_key TEXT NOT NULL, intent_json TEXT NOT NULL,
-        persisted_at INTEGER NOT NULL, sent_at INTEGER,
+        persisted_at INTEGER NOT NULL, sent_at INTEGER, operation TEXT NOT NULL DEFAULT 'PLACE',
+        target_order_id TEXT, generation INTEGER NOT NULL DEFAULT 0,
+        state TEXT NOT NULL DEFAULT 'SUBMITTING', terminal_at INTEGER,
         FOREIGN KEY(identity_key) REFERENCES real_identity(identity_key)
       );
       CREATE TABLE IF NOT EXISTS real_ledger(
@@ -50,7 +57,32 @@ export class RealTradeCapDatabase {
         available_atomic TEXT NOT NULL DEFAULT '0', order_locked_atomic TEXT NOT NULL DEFAULT '0',
         settled_unclaimed_atomic TEXT NOT NULL DEFAULT '0', fee_atomic TEXT NOT NULL DEFAULT '0',
         gas_mist TEXT NOT NULL DEFAULT '0', PRIMARY KEY(identity_key,asset)
+      );
+      CREATE TABLE IF NOT EXISTS real_control(
+        identity_key TEXT PRIMARY KEY, halted INTEGER NOT NULL DEFAULT 1,
+        generation INTEGER NOT NULL DEFAULT 0, stop_accepted_at INTEGER,
+        host_stopped_at INTEGER, chain_stopped_at INTEGER,
+        approval_json TEXT, approved_at INTEGER
       );`);
+    const submissionColumns = new Set(
+      (
+        this.db.prepare("PRAGMA table_info(real_submission_intents)").all() as {
+          name: string;
+        }[]
+      ).map((row) => row.name),
+    );
+    for (const [name, definition] of [
+      ["operation", "TEXT NOT NULL DEFAULT 'PLACE'"],
+      ["target_order_id", "TEXT"],
+      ["generation", "INTEGER NOT NULL DEFAULT 0"],
+      ["state", "TEXT NOT NULL DEFAULT 'SUBMITTING'"],
+      ["terminal_at", "INTEGER"],
+    ] as const) {
+      if (!submissionColumns.has(name))
+        this.db.exec(
+          `ALTER TABLE real_submission_intents ADD COLUMN ${name} ${definition}`,
+        );
+    }
   }
 
   registerIdentity(identity: RealIdentity, now = Date.now()) {
@@ -72,6 +104,9 @@ export class RealTradeCapDatabase {
     clientOrderId: string;
     identity: RealIdentity;
     intent: unknown;
+    operation?: RealOperation;
+    targetOrderId?: string;
+    generation?: number;
     now?: number;
   }) {
     if (!/^\d+$/.test(input.clientOrderId))
@@ -81,8 +116,9 @@ export class RealTradeCapDatabase {
     this.db
       .prepare(
         `INSERT INTO real_submission_intents
-      (digest,tx_bytes_hash,internal_order_id,client_order_id,identity_key,intent_json,persisted_at)
-      VALUES(?,?,?,?,?,?,?)`,
+      (digest,tx_bytes_hash,internal_order_id,client_order_id,identity_key,intent_json,persisted_at,
+       operation,target_order_id,generation)
+      VALUES(?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
         input.digest,
@@ -92,8 +128,153 @@ export class RealTradeCapDatabase {
         key,
         JSON.stringify(input.intent),
         input.now ?? Date.now(),
+        input.operation ?? "PLACE",
+        input.targetOrderId ?? null,
+        input.generation ?? this.control(input.identity).generation,
       );
     return hash;
+  }
+
+  control(identity: RealIdentity) {
+    const key = this.registerIdentity(identity);
+    this.db
+      .prepare(
+        `INSERT INTO real_control(identity_key) VALUES(?)
+      ON CONFLICT(identity_key) DO NOTHING`,
+      )
+      .run(key);
+    return this.db
+      .prepare(
+        `SELECT halted,generation,stop_accepted_at AS stopAcceptedAt,
+      host_stopped_at AS hostStoppedAt,chain_stopped_at AS chainStoppedAt,
+      approval_json AS approvalJson,approved_at AS approvedAt
+      FROM real_control WHERE identity_key=?`,
+      )
+      .get(key) as {
+      halted: number;
+      generation: number;
+      stopAcceptedAt: number | null;
+      hostStoppedAt: number | null;
+      chainStoppedAt: number | null;
+      approvalJson: string | null;
+      approvedAt: number | null;
+    };
+  }
+
+  acceptStop(identity: RealIdentity, now = Date.now()) {
+    const current = this.control(identity);
+    this.db
+      .prepare(
+        `UPDATE real_control SET halted=1,generation=?,stop_accepted_at=?,
+      approval_json=NULL,approved_at=NULL WHERE identity_key=?`,
+      )
+      .run(current.generation + 1, now, identityKey(identity));
+    return current.generation + 1;
+  }
+
+  markHostStopped(identity: RealIdentity, now = Date.now()) {
+    this.control(identity);
+    this.db
+      .prepare("UPDATE real_control SET host_stopped_at=? WHERE identity_key=?")
+      .run(now, identityKey(identity));
+  }
+
+  markChainStopped(identity: RealIdentity, now = Date.now()) {
+    this.control(identity);
+    this.db
+      .prepare(
+        "UPDATE real_control SET chain_stopped_at=? WHERE identity_key=?",
+      )
+      .run(now, identityKey(identity));
+  }
+
+  approveResume(
+    identity: RealIdentity,
+    evidence: Record<string, unknown>,
+    now = Date.now(),
+  ) {
+    if (this.latchInfo(identity, "REAL_UNIDENTIFIABLE_PREDECESSOR")?.permanent)
+      throw Error("REAL_UNIDENTIFIABLE_PREDECESSOR");
+    const required = [
+      "checkpoint",
+      "checkpointHash",
+      "identityKey",
+      "ownerApproval",
+    ];
+    if (required.some((key) => !evidence[key]))
+      throw Error("REAL_RESUME_APPROVAL_INCOMPLETE");
+    this.control(identity);
+    this.db
+      .prepare(
+        "UPDATE real_control SET approval_json=?,approved_at=? WHERE identity_key=?",
+      )
+      .run(JSON.stringify(evidence), now, identityKey(identity));
+  }
+
+  openSigningGate(identity: RealIdentity, checks: Record<string, boolean>) {
+    const required = [
+      "allTransactionsTerminal",
+      "historyComplete",
+      "ledgerIdempotent",
+      "balancesExplained",
+      "noOpenOrders",
+      "identityMatches",
+      "capValid",
+      "gasSufficient",
+      "deepSufficient",
+      "riskAllowed",
+      "profitGuardAllowed",
+      "marketHealthy",
+    ];
+    const control = this.control(identity);
+    if (!control.approvalJson || required.some((key) => checks[key] !== true))
+      throw Error("REAL_RESUME_GATE_CLOSED");
+    this.db
+      .prepare("UPDATE real_control SET halted=0 WHERE identity_key=?")
+      .run(identityKey(identity));
+  }
+
+  assertMaySign(identity: RealIdentity, generation: number) {
+    const state = this.control(identity);
+    if (state.halted || state.generation !== generation)
+      throw Error("REAL_SIGNING_HALTED");
+  }
+
+  markSent(digest: string, now = Date.now()) {
+    this.db
+      .prepare("UPDATE real_submission_intents SET sent_at=? WHERE digest=?")
+      .run(now, digest);
+  }
+  markSubmission(
+    digest: string,
+    state: "UNKNOWN" | "SUCCEEDED" | "FAILED",
+    now = Date.now(),
+  ) {
+    this.db
+      .prepare(
+        `UPDATE real_submission_intents SET state=?,terminal_at=? WHERE digest=?`,
+      )
+      .run(state, state === "UNKNOWN" ? null : now, digest);
+  }
+  hasNonTerminalSubmission(identity: RealIdentity) {
+    return !!this.db
+      .prepare(
+        `SELECT 1 FROM real_submission_intents
+      WHERE identity_key=? AND state IN ('SUBMITTING','UNKNOWN') LIMIT 1`,
+      )
+      .get(identityKey(identity));
+  }
+
+  applyEffects(identity: RealIdentity, effects: RealEffects) {
+    this.applyPage(identity, effects.events, {
+      cursor: this.checkpoint()?.cursor ?? null,
+      checkpoint: effects.checkpoint,
+      checkpointHash: effects.checkpointHash,
+    });
+    this.markSubmission(
+      effects.digest,
+      effects.success ? "SUCCEEDED" : "FAILED",
+    );
   }
 
   checkpoint() {

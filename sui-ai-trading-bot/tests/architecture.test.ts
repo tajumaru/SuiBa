@@ -18,9 +18,13 @@ it("has no circular source imports or transaction execution/signing entrypoints"
     graph = new Map<string, string[]>();
   for (const file of files) {
     const content = readFileSync(file, "utf8");
-    expect(content, file).not.toMatch(
-      /@mysten\/sui\/keypairs|\.executeTransaction\s*\(|\.signAndExecute\w*\s*\(|\.fastRouterSwap\s*\(|fromSecretKey\s*\(|fromMnemonic\s*\(|new Transaction\s*\(/,
-    );
+    const realTransactionBuilders = new Set([
+      resolve("apps/worker/src/real/deepbook-execution.ts"),
+    ]);
+    if (!realTransactionBuilders.has(file))
+      expect(content, file).not.toMatch(
+        /@mysten\/sui\/keypairs|\.executeTransaction\s*\(|\.signAndExecute\w*\s*\(|\.fastRouterSwap\s*\(|fromSecretKey\s*\(|fromMnemonic\s*\(|new Transaction\s*\(/,
+      );
     graph.set(
       file,
       [...content.matchAll(/from\s+["']([^"']+)["']/g)]

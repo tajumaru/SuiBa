@@ -53,3 +53,22 @@ export interface RealBalanceSnapshot {
   settledUnclaimed: Record<"SUI" | "DBUSDC" | "DEEP", string>;
   gasSuiMist: string;
 }
+
+export type RealOperation = "PLACE" | "CANCEL";
+export type RealSubmissionState =
+  "SUBMITTING" | "UNKNOWN" | "SUCCEEDED" | "FAILED";
+
+export interface RealBuiltTransaction {
+  bytes: Uint8Array;
+  digest: string;
+}
+
+export interface RealEffects {
+  digest: string;
+  success: boolean;
+  checkpoint: string;
+  checkpointHash: string;
+  events: RealHistoryEvent[];
+  onchainOrderId?: string;
+  errorCode?: string;
+}
