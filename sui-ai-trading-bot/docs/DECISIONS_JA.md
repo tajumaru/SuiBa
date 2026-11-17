@@ -446,3 +446,15 @@ S1で保留した model の公開exportは、決定済みの `gpt-5.4-nano` の�
 これにより Phase 1 の開始が決定した。Bot用 testnet アドレス
 （0xaeb740ece5c2435c1d4215a762353eef869730c3f32eaa29a88f7f17fd1a840c）の資金準備も
 同日完了している（残高53 SUI、公式蛇口ドリップは上限100 SUIまで継続）。
+
+## 2026-11-18 本番復旧操作に RESTART-PROD を追加する
+
+同日朝、上流 HTTP 500 で本番が `failed_requires_review` になった後、START-PROD は前ランの
+fault を理由に即時拒否され、復旧には STOP-PROD（closeout）→ START-PROD の2操作と2回の
+承認が必要になった。STOP の実行忘れを防ぎ、復旧時の承認を1回にするため、production
+control に RESTART-PROD を追加する。
+
+RESTART-PROD は1つの承認付きジョブ内で STOP → START の順序を固定する。STOP とその
+follow-up が成功した場合だけ START へ進み、closeout できない場合は既定のステップ失敗
+意味論により開始せずジョブを失敗させる。既存の START-PROD、STOP-PROD、ROLLBACK-PROD
+の挙動と gate、本番の開始・停止セマンティクスは変更しない。

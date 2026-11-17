@@ -195,10 +195,10 @@ class WorkflowTests(unittest.TestCase):
 class LegacyWorkflowTests(unittest.TestCase):
     """The standalone paths keep their own approvals and gates."""
 
-    def test_control_workflow_keeps_three_environment_approvals(self):
+    def test_control_workflow_keeps_four_environment_approvals(self):
         source = CONTROL.read_text(encoding='utf-8')
-        self.assertEqual(source.count('environment: sakura-vps'), 3)
-        self.assertIn('Type START-PROD, STOP-PROD or ROLLBACK-PROD', source)
+        self.assertEqual(source.count('environment: sakura-vps'), 4)
+        self.assertIn('Type START-PROD, STOP-PROD, ROLLBACK-PROD or RESTART-PROD', source)
 
     def test_vps_workflow_keeps_its_deploy_approval(self):
         source = VPS.read_text(encoding='utf-8')
