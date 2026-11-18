@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { balanceEvidence, resumeReal } from "../scripts/real-resume.ts";
+import { describe, expect, it, vi } from "vitest";
+import {
+  balanceEvidence,
+  ENGINE_CHECKS_MAX_AGE_MS,
+  readEngineChecks,
+  resumeReal,
+} from "../scripts/real-resume.ts";
 import { RealTradeCapDatabase } from "../apps/worker/src/real/database.ts";
+import { tradeCapValid } from "../apps/worker/src/real/cap-valid.ts";
 import type { RealIdentity } from "../apps/worker/src/real/types.ts";
 const identity: RealIdentity = {
   network: "testnet",
@@ -10,6 +16,119 @@ const identity: RealIdentity = {
   signerAddress: `0x${"3".repeat(64)}`,
   sessionId: "s",
 };
+
+const response = (value: unknown, ok = true) =>
+  ({ ok, json: async () => value }) as Response;
+
+describe("TradeCap chain proof", () => {
+  const object = (
+    owner = identity.signerAddress,
+    manager = identity.balanceManagerId,
+  ) => ({
+    data: {
+      object: {
+        owner: { __typename: "AddressOwner", address: { address: owner } },
+        contents: {
+          type: { repr: "0xdee9::balance_manager::TradeCap" },
+          json: { id: identity.tradeCapId, balance_manager_id: manager },
+        },
+      },
+    },
+  });
+  const valid = (value: unknown) =>
+    tradeCapValid(
+      "https://graphql.test",
+      identity,
+      vi.fn<typeof fetch>().mockResolvedValue(response(value)),
+    );
+
+  it("is true only when existence, owner, and manager proofs all hold", async () => {
+    await expect(valid(object())).resolves.toBe(true);
+    await expect(valid({ data: { object: null } })).resolves.toBe(false);
+    await expect(valid(object(`0x${"4".repeat(64)}`))).resolves.toBe(false);
+    await expect(
+      valid(object(identity.signerAddress, `0x${"5".repeat(64)}`)),
+    ).resolves.toBe(false);
+  });
+
+  it("fails closed on read failure", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new Error("offline"));
+    await expect(
+      tradeCapValid("https://graphql.test", identity, request),
+    ).resolves.toBe(false);
+  });
+});
+
+describe("durable REAL engine checks", () => {
+  const record = (
+    db: RealTradeCapDatabase,
+    overrides: Partial<
+      Parameters<RealTradeCapDatabase["persistEngineChecks"]>[0]
+    > = {},
+  ) =>
+    db.persistEngineChecks({
+      identity,
+      recordedAt: 10_000,
+      risk: "ALLOWED",
+      profitGuard: "ALLOWED",
+      market: "HEALTHY",
+      ...overrides,
+    });
+
+  it("allows only a fresh affirmatively non-blocking record", () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    record(db);
+    expect(readEngineChecks(db, identity, 10_001)).toEqual({
+      riskAllowed: true,
+      profitGuardAllowed: true,
+      marketHealthy: true,
+    });
+    db.close();
+  });
+
+  it("fails closed for absent, stale, blocking, and mismatched identity records", () => {
+    const absent = new RealTradeCapDatabase(":memory:");
+    expect(readEngineChecks(absent, identity, 10_001)).toEqual({
+      riskAllowed: false,
+      profitGuardAllowed: false,
+      marketHealthy: false,
+    });
+    absent.close();
+
+    const stale = new RealTradeCapDatabase(":memory:");
+    record(stale);
+    expect(
+      Object.values(
+        readEngineChecks(
+          stale,
+          identity,
+          10_000 + ENGINE_CHECKS_MAX_AGE_MS + 1,
+        ),
+      ),
+    ).toEqual([false, false, false]);
+    stale.close();
+
+    const blocking = new RealTradeCapDatabase(":memory:");
+    record(blocking, {
+      risk: "REJECTED",
+      profitGuard: "BLOCKED",
+      market: "UNHEALTHY",
+    });
+    expect(Object.values(readEngineChecks(blocking, identity, 10_001))).toEqual(
+      [false, false, false],
+    );
+    blocking.close();
+
+    const mismatch = new RealTradeCapDatabase(":memory:");
+    record(mismatch, { identity: { ...identity, sessionId: "other" } });
+    expect(Object.values(readEngineChecks(mismatch, identity, 10_001))).toEqual(
+      [false, false, false],
+    );
+    mismatch.close();
+  });
+});
 
 it("reports zero and nonzero balance differences", () => {
   const snapshot = {
@@ -115,6 +234,25 @@ describe("REAL resume", () => {
     expect(approved.opened).toBe(true);
     deps.db.close();
   });
+  it.each(["cap", "engine"] as const)(
+    "keeps the gate closed when the %s producer is false",
+    async (producer) => {
+      const deps = setup();
+      if (producer === "cap") deps.capValid = async () => false;
+      else
+        deps.engineChecks = async () => ({
+          riskAllowed: false,
+          profitGuardAllowed: true,
+          marketHealthy: true,
+        });
+      const result = await resumeReal(deps, {
+        approve: true,
+        ownerApproval: "reviewed",
+      });
+      expect(result.opened).toBe(false);
+      deps.db.close();
+    },
+  );
   it("rejects a permanent latch", async () => {
     const deps = setup();
     deps.db.latch(identity, "REAL_UNIDENTIFIABLE_PREDECESSOR", "x", true);

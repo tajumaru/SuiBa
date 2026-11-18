@@ -6,6 +6,7 @@ import type {
   RealEffects,
   RealHistoryEvent,
   RealIdentity,
+  RealEngineChecksRecord,
   RealOperation,
 } from "./types.ts";
 
@@ -63,6 +64,10 @@ export class RealTradeCapDatabase {
         generation INTEGER NOT NULL DEFAULT 0, stop_accepted_at INTEGER,
         host_stopped_at INTEGER, chain_stopped_at INTEGER,
         approval_json TEXT, approved_at INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS real_engine_checks(
+        identity_key TEXT PRIMARY KEY, recorded_at INTEGER NOT NULL, record_json TEXT NOT NULL,
+        FOREIGN KEY(identity_key) REFERENCES real_identity(identity_key)
       );`);
     const submissionColumns = new Set(
       (
@@ -454,6 +459,32 @@ export class RealTradeCapDatabase {
       .prepare("SELECT json FROM real_identity WHERE identity_key=?")
       .get(key) as { json: string } | undefined;
     return row?.json === JSON.stringify(identity);
+  }
+  persistEngineChecks(record: RealEngineChecksRecord) {
+    const key = this.registerIdentity(record.identity, record.recordedAt);
+    this.db
+      .prepare(
+        `INSERT INTO real_engine_checks VALUES(?,?,?)
+        ON CONFLICT(identity_key) DO UPDATE SET
+        recorded_at=excluded.recorded_at,record_json=excluded.record_json`,
+      )
+      .run(key, record.recordedAt, JSON.stringify(record));
+  }
+  latestEngineChecks(identity: RealIdentity) {
+    const row = this.db
+      .prepare(
+        `SELECT recorded_at AS recordedAt,record_json AS recordJson
+        FROM real_engine_checks WHERE identity_key=?`,
+      )
+      .get(identityKey(identity)) as
+      { recordedAt: number; recordJson: string } | undefined;
+    if (!row) return undefined;
+    try {
+      const record = JSON.parse(row.recordJson) as RealEngineChecksRecord;
+      return record.recordedAt === row.recordedAt ? record : undefined;
+    } catch {
+      return undefined;
+    }
   }
   close() {
     this.db.close();

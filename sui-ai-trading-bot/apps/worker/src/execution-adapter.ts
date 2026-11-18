@@ -5,6 +5,7 @@ import type {
 } from "../../../packages/shared/src/index.ts";
 import type { CandidateAudit } from "../../../packages/shared/src/operations.ts";
 import type { ProfitReport } from "../../../packages/profit-guard/src/index.ts";
+import type { RealEngineChecksRecord } from "./real/types.ts";
 
 export interface ExecutionIntent {
   orderId: string;
@@ -28,6 +29,7 @@ export interface ExecutionAdapter {
   readonly kind: "REAL_TRADECAP";
   execute(intent: ExecutionIntent): Promise<ExecutionResult>;
   acceptStop(reason: string): void;
+  recordEngineChecks(record: Omit<RealEngineChecksRecord, "identity">): void;
 }
 
 export interface EngineExecutionAudit {

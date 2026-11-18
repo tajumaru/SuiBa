@@ -442,6 +442,7 @@ describe("worker execution boundaries", () => {
     const adapter: ExecutionAdapter = {
       kind: "REAL_TRADECAP",
       acceptStop: () => undefined,
+      recordEngineChecks: () => undefined,
       execute: async (intent) => {
         intents.push(intent);
         return { status: "SUBMITTED", digest: "real-digest" };
