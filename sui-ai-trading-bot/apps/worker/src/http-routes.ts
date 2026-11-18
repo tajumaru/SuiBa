@@ -407,7 +407,10 @@ export function createRequestHandler(ctx: WorkerContext) {
           send(400, { error: "READ_ONLY_ADDRESS_UNSET" });
           return;
         }
-        const { USDC } = await import("../../../packages/shared/src/index.ts");
+        const { DBUSDC, USDC } =
+          await import("../../../packages/shared/src/index.ts");
+        const quote =
+          ctx.suiGrpcEndpoints.network === "testnet" ? DBUSDC : USDC;
         send(
           200,
           await Promise.all([
@@ -415,7 +418,7 @@ export function createRequestHandler(ctx: WorkerContext) {
               process.env.READ_ONLY_ADDRESS,
               tradingPairs[ctx.pair].base,
             ),
-            ctx.sui.balance(process.env.READ_ONLY_ADDRESS, USDC),
+            ctx.sui.balance(process.env.READ_ONLY_ADDRESS, quote),
           ]),
         );
         return;

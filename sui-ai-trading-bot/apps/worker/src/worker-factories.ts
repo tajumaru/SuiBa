@@ -14,7 +14,11 @@ import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
 import { paperRecoveryLimits } from "../../../packages/shared/src/paper-recovery.ts";
 import type { BotDatabase } from "../../../packages/database/src/index.ts";
-import type { TradingPair } from "../../../packages/shared/src/index.ts";
+import {
+  DBUSDC,
+  USDC,
+  type TradingPair,
+} from "../../../packages/shared/src/index.ts";
 import type { WorkerContext } from "./worker-context.ts";
 import { NarrationGenerator } from "./narration-generator.ts";
 import { createRealTradeCapExecutionAdapter } from "./real/runtime.ts";
@@ -35,6 +39,8 @@ export function createEngine(
   if (process.env.MODE === "REAL_TRADECAP" && selected !== "SUI_USDC")
     throw Error("REAL_PAIR_FORBIDDEN");
   const client = new ReadOnlySuiClient(ctx.suiGrpcEndpoints.primary, {
+    network: ctx.suiGrpcEndpoints.network,
+    quoteCoin: ctx.suiGrpcEndpoints.network === "testnet" ? DBUSDC : USDC,
     onObservation: (event) =>
       database.append("sui_observations", randomUUID(), event, event.at),
     fallbackUrls: ctx.suiGrpcEndpoints.fallbacks,

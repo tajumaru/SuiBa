@@ -18,7 +18,7 @@ import {
   type NetworkTrace,
 } from "./diagnostics.ts";
 import { isValidSuiAddress, isValidTransactionDigest } from "@mysten/sui/utils";
-import { coin, decimals, SUI, USDC } from "../../shared/src/index.ts";
+import { coin, DBUSDC, decimals, SUI, USDC } from "../../shared/src/index.ts";
 export interface SuiObservation {
   transportId: string;
   layer: "HTTP" | "GRPC" | "METADATA" | "READ" | "HEALTH";
@@ -27,7 +27,7 @@ export interface SuiObservation {
   rpcId?: string;
   healthId?: string;
   cycleId?: string;
-  coin?: "SUI" | "USDC";
+  coin?: "SUI" | "USDC" | "DBUSDC";
   at: number;
   elapsedMs: number;
   success: boolean;
@@ -46,10 +46,13 @@ type ReadContext = {
   rpcId?: string;
   healthId?: string;
   cycleId?: string;
-  coin?: "SUI" | "USDC";
+  coin?: "SUI" | "USDC" | "DBUSDC";
   pending: Promise<void>[];
 };
 export interface SuiClientOptions {
+  /** Chain identity and quote coin used by the complete health observation. */
+  network?: "mainnet" | "testnet";
+  quoteCoin?: typeof USDC | typeof DBUSDC;
   /** Must persist synchronously; async callbacks fail closed without awaiting I/O. */
   onObservation?: (event: SuiObservation) => void;
   /** Test/embedding hook; no dispatcher, protocol or retry changes by default. */
@@ -94,6 +97,8 @@ export class ReadOnlySuiClient {
   private readonly endpoints: string[];
   private activeEndpoint = 0;
   private readonly transportId = randomUUID();
+  readonly network: "mainnet" | "testnet";
+  private readonly quoteCoin: typeof USDC | typeof DBUSDC;
   private pendingHealth?: {
     promise: Promise<HealthStatus>;
     fresh: boolean;
@@ -119,6 +124,8 @@ export class ReadOnlySuiClient {
     url = "https://fullnode.mainnet.sui.io:443",
     private options: SuiClientOptions = {},
   ) {
+    this.network = options.network ?? "mainnet";
+    this.quoteCoin = options.quoteCoin ?? USDC;
     const endpoints = [url, ...(options.fallbackUrls ?? [])].filter(
       (u, i, a) => a.indexOf(u) === i,
     );
@@ -183,7 +190,7 @@ export class ReadOnlySuiClient {
       });
     };
     this.client = new SuiGrpcClient({
-      network: "mainnet",
+      network: this.network,
       transport,
     });
   }
@@ -376,7 +383,14 @@ export class ReadOnlySuiClient {
       requestId: randomUUID(),
       healthId: this.scope.getStore()?.healthId,
       cycleId: budget?.cycleId,
-      coin: type === SUI ? "SUI" : type === USDC ? "USDC" : undefined,
+      coin:
+        type === SUI
+          ? "SUI"
+          : type === USDC
+            ? "USDC"
+            : type === DBUSDC
+              ? "DBUSDC"
+              : undefined,
       pending: [],
     };
     return this.scope.run(context, async () => {
@@ -517,7 +531,7 @@ export class ReadOnlySuiClient {
     const promise = this.scope.run(context, async () => {
       const results = await Promise.allSettled([
         this.metadata(SUI),
-        this.metadata(USDC),
+        this.metadata(this.quoteCoin),
       ]);
       const success =
         results.every((r) => r.status === "fulfilled") &&
