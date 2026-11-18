@@ -51,7 +51,7 @@ export async function tradeCapValid(
     return (
       object.owner?.__typename === "AddressOwner" &&
       sameAddress(object.owner.address?.address, identity.signerAddress) &&
-      object.contents?.type?.repr.endsWith("::balance_manager::TradeCap") ===
+      object.contents?.type?.repr?.endsWith("::balance_manager::TradeCap") ===
         true &&
       sameAddress(fields.balance_manager_id, identity.balanceManagerId)
     );
