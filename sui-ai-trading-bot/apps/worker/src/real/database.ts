@@ -412,6 +412,13 @@ export class RealTradeCapDatabase {
       ).n,
     );
   }
+  ledgerEvents(identity: RealIdentity) {
+    return (
+      this.db
+        .prepare("SELECT event_json AS eventJson FROM real_ledger WHERE identity_key=? ORDER BY applied_at")
+        .all(identityKey(identity)) as { eventJson: string }[]
+    ).map((row) => JSON.parse(row.eventJson) as RealHistoryEvent);
+  }
   close() {
     this.db.close();
   }
