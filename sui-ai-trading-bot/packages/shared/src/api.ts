@@ -482,7 +482,12 @@ export class ApiAccess {
             if (s.exhausted) this.onRateLimit(api);
             recordFailure();
             if (s.exhausted) throw new Error("API_RETRIES_EXHAUSTED");
-            if (delay > apiLimits.maxRetryWaitMs - retryWaitMs) {
+            // A caller read budget must be able to abort a bounded server
+            // cooldown before the process-wide retry cap rejects it.
+            if (
+              !budget &&
+              delay > apiLimits.maxRetryWaitMs - retryWaitMs
+            ) {
               s.exhausted = true;
               this.onRateLimit(api);
               throw new Error("API_RETRIES_EXHAUSTED");
