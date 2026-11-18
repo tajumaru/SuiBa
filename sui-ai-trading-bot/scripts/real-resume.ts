@@ -4,6 +4,7 @@ import { IndexerGraphqlHistorySource } from "../apps/worker/src/real/history-sou
 import { RealReconciler } from "../apps/worker/src/real/reconciler.ts";
 import { createDeepBookReadOnly } from "../apps/worker/src/real/read-only.ts";
 import { tradeCapValid } from "../apps/worker/src/real/cap-valid.ts";
+import { isMainModule } from "./is-main-module.ts";
 import type {
   RealHistoryEvent,
   RealIdentity,
@@ -245,5 +246,5 @@ export async function runResume(env: NodeJS.ProcessEnv, argv: string[]) {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`)
+if (isMainModule(import.meta.url, process.argv[1]))
   await runResume(process.env, process.argv.slice(2));
