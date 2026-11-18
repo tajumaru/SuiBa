@@ -10,6 +10,7 @@ import {
 export const apiLimits = {
   timeoutMs: 10000,
   maxWaitMs: 60000,
+  maxRetryWaitMs: 30000,
   maxRetries: 2,
   baseMs: 1000,
 };
@@ -311,6 +312,7 @@ export class ApiAccess {
         // it does not create a detached timer or bypass the order gate.
         const probing = s.circuitUntil !== null;
         if (probing) await this.wait(s.circuitUntil!);
+        let retryWaitMs = 0;
         for (let attempt = 0; ; attempt++) {
           this.controller.signal.throwIfAborted();
           budget?.signal.throwIfAborted();
@@ -453,14 +455,18 @@ export class ApiAccess {
                 attempt >= Math.min(2, policy.maxTransientRetries ?? 0)
               )
                 throw error;
-              s.nextRetryAt = Date.now() + retryDelay(attempt, null);
+              const delay = retryDelay(attempt, null);
+              s.nextRetryAt = Date.now() + delay;
+              if (delay > apiLimits.maxRetryWaitMs - retryWaitMs) throw error;
+              retryWaitMs += delay;
               await this.wait(s.nextRetryAt);
               continue;
             }
             s.rateLimits++;
             this.caches.clear();
             const after = retryAfter(error.after);
-            s.nextRetryAt = Date.now() + retryDelay(attempt, after);
+            const delay = retryDelay(attempt, after);
+            s.nextRetryAt = Date.now() + delay;
             // A long server cooldown is honored by refusing automatic retries.
             if (after !== null && after > apiLimits.maxWaitMs)
               s.nextRetryAt = Date.now() + after;
@@ -476,6 +482,17 @@ export class ApiAccess {
             if (s.exhausted) this.onRateLimit(api);
             recordFailure();
             if (s.exhausted) throw new Error("API_RETRIES_EXHAUSTED");
+            // A caller read budget must be able to abort a bounded server
+            // cooldown before the process-wide retry cap rejects it.
+            if (
+              !budget &&
+              delay > apiLimits.maxRetryWaitMs - retryWaitMs
+            ) {
+              s.exhausted = true;
+              this.onRateLimit(api);
+              throw new Error("API_RETRIES_EXHAUSTED");
+            }
+            retryWaitMs += delay;
             await this.wait(s.nextRetryAt);
           }
         }
