@@ -12,7 +12,10 @@ import {
 import { sdkRequests } from "../packages/shared/src/sdk-requests.ts";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { OperationMonitor } from "../apps/worker/src/operations.ts";
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 const flush = async () => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 };
@@ -127,6 +130,103 @@ it("limits retries to two and requires explicit reset after exhaustion", async (
   a.reset();
   expect(await a.run("GeckoTerminal", "x", async () => 1)).toBe(1);
 });
+it("spaces 429 transport retries exponentially before succeeding", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(0);
+  vi.spyOn(Math, "random").mockReturnValue(0);
+  const attempts: number[] = [];
+  const transport = vi.fn(async () => {
+    attempts.push(Date.now());
+    if (attempts.length < 3) return new Response(null, { status: 429 });
+    return Response.json({ ok: true });
+  });
+  const pending = apiFetch(
+    "Retry spacing test",
+    "https://example.com/spaced",
+    undefined,
+    0,
+    { transport },
+  );
+  await flush();
+  expect(attempts).toEqual([Date.now()]);
+  await vi.advanceTimersByTimeAsync(999);
+  expect(attempts).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(attempts).toEqual([0, 1000]);
+  await vi.advanceTimersByTimeAsync(1999);
+  expect(attempts).toHaveLength(2);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(await (await pending).json()).toEqual({ ok: true });
+  expect(attempts).toEqual([0, 1000, 3000]);
+});
+it("gives Retry-After precedence over exponential retry spacing", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(0);
+  vi.spyOn(Math, "random").mockReturnValue(0);
+  const a = new ApiAccess();
+  const attempts: number[] = [];
+  const pending = a.run("Cetus", "retry-after", async () => {
+    attempts.push(Date.now());
+    if (attempts.length === 1) throw new RateLimited("5");
+    return 42;
+  });
+  await flush();
+  await vi.advanceTimersByTimeAsync(4999);
+  expect(attempts).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(await pending).toBe(42);
+  expect(attempts).toEqual([0, 5000]);
+});
+it("keeps exhausted 429 errors and cumulative retry waits bounded", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(0);
+  vi.spyOn(Math, "random").mockReturnValue(0);
+  const a = new ApiAccess();
+  const attempts: number[] = [];
+  const pending = expect(
+    a.run("GeckoTerminal", "bounded", async () => {
+      attempts.push(Date.now());
+      throw new RateLimited();
+    }),
+  ).rejects.toThrow("API_RETRIES_EXHAUSTED");
+  await vi.runAllTimersAsync();
+  await pending;
+  expect(attempts).toEqual([0, 1000, 3000]);
+  expect(attempts.at(-1)! - attempts[0]!).toBeLessThanOrEqual(
+    apiLimits.maxRetryWaitMs,
+  );
+});
+it("stops before a retry would exceed the cumulative wait cap", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(0);
+  vi.spyOn(Math, "random").mockReturnValue(0);
+  const a = new ApiAccess();
+  const attempts: number[] = [];
+  const pending = expect(
+    a.run("Cetus", "wait-cap", async () => {
+      attempts.push(Date.now());
+      throw new RateLimited("20");
+    }),
+  ).rejects.toThrow("API_RETRIES_EXHAUSTED");
+  await vi.runAllTimersAsync();
+  await pending;
+  expect(attempts).toEqual([0, 20000]);
+  expect(attempts.at(-1)! - attempts[0]!).toBeLessThanOrEqual(
+    apiLimits.maxRetryWaitMs,
+  );
+});
+it("surfaces a non-retryable failure immediately without waiting", async () => {
+  vi.useFakeTimers();
+  const a = new ApiAccess();
+  const transport = vi.fn(async () => {
+    throw new Error("UPSTREAM_HTTP_404");
+  });
+  await expect(a.run("GeckoTerminal", "not-found", transport)).rejects.toThrow(
+    "UPSTREAM_HTTP_404",
+  );
+  expect(transport).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+});
 it("does not shorten a long Retry-After and does not retry automatically", async () => {
   vi.useFakeTimers();
   const a = new ApiAccess();
@@ -208,7 +308,7 @@ it("cancels a retry wait immediately during shutdown", async () => {
   vi.useFakeTimers();
   const a = new ApiAccess();
   const fn = vi.fn(async () => {
-    throw new RateLimited("30");
+    throw new RateLimited("20");
   });
   const pending = expect(a.run("Cetus", "q", fn)).rejects.toThrow(
     "API_CANCELLED",
