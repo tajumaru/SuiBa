@@ -1,7 +1,10 @@
 import "dotenv/config";
 
 import { realConfigFromEnv } from "../apps/worker/src/real/config.ts";
-import { RealTradeCapDatabase } from "../apps/worker/src/real/database.ts";
+import {
+  RealTradeCapDatabase,
+  type RealBalanceBaseline,
+} from "../apps/worker/src/real/database.ts";
 import { IndexerGraphqlHistorySource } from "../apps/worker/src/real/history-source.ts";
 import { RealReconciler } from "../apps/worker/src/real/reconciler.ts";
 import { createDeepBookReadOnly } from "../apps/worker/src/real/read-only.ts";
@@ -54,6 +57,7 @@ export function balanceEvidence(
     botGasSuiMist: string;
     decimals?: Partial<Record<Asset, number>>;
   },
+  baseline?: RealBalanceBaseline,
 ) {
   const differences: Record<string, string> = {};
   let validDecimals = true;
@@ -64,13 +68,28 @@ export function balanceEvidence(
     )
       validDecimals = false;
     const row = rows.find((candidate) => candidate.asset === asset) ?? {};
+    const offset = baseline?.ledgerOffsets?.[asset];
+    const delta = (value: string | undefined, start: string | undefined) =>
+      BigInt(value ?? "0") - BigInt(start ?? "0");
     const expected = {
-      available: BigInt(row.availableAtomic ?? "0"),
-      locked: BigInt(row.orderLockedAtomic ?? "0"),
-      settled: BigInt(row.settledUnclaimedAtomic ?? "0"),
-      owed: 0n,
-      fee: BigInt(row.feeAtomic ?? "0"),
-      gas: BigInt(row.gasMist ?? "0"),
+      available:
+        BigInt(baseline?.assets[asset].availableAtomic ?? "0") +
+        delta(row.availableAtomic, offset?.availableAtomic),
+      locked:
+        BigInt(baseline?.assets[asset].lockedAtomic ?? "0") +
+        delta(row.orderLockedAtomic, offset?.lockedAtomic),
+      settled:
+        BigInt(baseline?.assets[asset].settledUnclaimedAtomic ?? "0") +
+        delta(row.settledUnclaimedAtomic, offset?.settledUnclaimedAtomic),
+      owed: BigInt(baseline?.assets[asset].owedAtomic ?? "0"),
+      fee: baseline ? delta(row.feeAtomic, offset?.feeAtomic) : 0n,
+      gas:
+        asset !== "SUI"
+          ? 0n
+          : baseline
+            ? BigInt(baseline.botGasSuiMist) -
+              delta(row.gasMist, offset?.gasMist)
+            : BigInt(row.gasMist ?? "0"),
     };
     const actual = {
       available: atomic(
@@ -89,7 +108,9 @@ export function balanceEvidence(
         (snapshot.owedBalances?.[asset] ?? 0) as number | string,
         PHASE1_DECIMALS[asset],
       ),
-      fee: 0n,
+      // Fees are already represented in the available balance event deltas;
+      // this metadata component must therefore agree with that same ledger.
+      fee: delta(row.feeAtomic, offset?.feeAtomic),
       gas: asset === "SUI" ? BigInt(snapshot.botGasSuiMist) : 0n,
     };
     for (const key of Object.keys(expected) as Array<keyof typeof expected>)
@@ -122,7 +143,10 @@ export interface ResumeDependencies {
     riskAllowed: boolean;
     profitGuardAllowed: boolean;
     marketHealthy: boolean;
+    record?: { risk: string; profitGuard: string; market: string };
+    ageMs?: number;
   }>;
+  reportBeforeBaseline?(report: unknown): void;
 }
 
 export function readEngineChecks(
@@ -134,20 +158,80 @@ export function readEngineChecks(
     riskAllowed: false,
     profitGuardAllowed: false,
     marketHealthy: false,
+    record: undefined,
+    ageMs: undefined,
   };
   const record = db.latestEngineChecks(identity);
+  if (!record) return denied;
+  const details = {
+    record: {
+      risk: record.risk,
+      profitGuard: record.profitGuard,
+      market: record.market,
+    },
+    ageMs: now - record.recordedAt,
+  };
   if (
-    !record ||
     JSON.stringify(record.identity) !== JSON.stringify(identity) ||
     !Number.isFinite(record.recordedAt) ||
     record.recordedAt > now ||
     now - record.recordedAt > ENGINE_CHECKS_MAX_AGE_MS
   )
-    return denied;
+    return { ...denied, ...details };
   return {
-    riskAllowed: record.risk === "ALLOWED",
-    profitGuardAllowed: record.profitGuard === "ALLOWED",
+    riskAllowed: record.risk === "ALLOWED" || record.risk === "NOT_EVALUATED",
+    profitGuardAllowed:
+      record.profitGuard === "ALLOWED" ||
+      record.profitGuard === "NOT_EVALUATED",
     marketHealthy: record.market === "HEALTHY",
+    ...details,
+  };
+}
+
+function baselineFromSnapshot(
+  snapshot: Awaited<ReturnType<ResumeDependencies["snapshot"]>>,
+  rows: Array<Record<string, string>>,
+): Omit<RealBalanceBaseline, "recordedAt"> {
+  return {
+    assets: Object.fromEntries(
+      (Object.keys(PHASE1_DECIMALS) as Asset[]).map((asset) => [
+        asset,
+        {
+          availableAtomic: atomic(
+            snapshot.balances[asset] as number | string,
+            PHASE1_DECIMALS[asset],
+          ).toString(),
+          lockedAtomic: atomic(
+            (snapshot.locked[asset] ?? 0) as number | string,
+            PHASE1_DECIMALS[asset],
+          ).toString(),
+          settledUnclaimedAtomic: atomic(
+            (snapshot.settledUnclaimed[asset] ?? 0) as number | string,
+            PHASE1_DECIMALS[asset],
+          ).toString(),
+          owedAtomic: atomic(
+            (snapshot.owedBalances?.[asset] ?? 0) as number | string,
+            PHASE1_DECIMALS[asset],
+          ).toString(),
+        },
+      ]),
+    ) as RealBalanceBaseline["assets"],
+    botGasSuiMist: snapshot.botGasSuiMist,
+    ledgerOffsets: Object.fromEntries(
+      (Object.keys(PHASE1_DECIMALS) as Asset[]).map((asset) => {
+        const row = rows.find((candidate) => candidate.asset === asset) ?? {};
+        return [
+          asset,
+          {
+            availableAtomic: row.availableAtomic ?? "0",
+            lockedAtomic: row.orderLockedAtomic ?? "0",
+            settledUnclaimedAtomic: row.settledUnclaimedAtomic ?? "0",
+            feeAtomic: row.feeAtomic ?? "0",
+            gasMist: row.gasMist ?? "0",
+          },
+        ];
+      }),
+    ) as NonNullable<RealBalanceBaseline["ledgerOffsets"]>,
   };
 }
 
@@ -173,9 +257,11 @@ export async function resumeReal(
     deps.db.applyPage(deps.identity, events as RealHistoryEvent[], checkpoint);
   const ledgerIdempotent = deps.db.ledgerCount() === before;
   const snapshot = await deps.snapshot();
-  const balances = balanceEvidence(
+  const previousBaseline = deps.db.balanceBaseline(deps.identity);
+  let balances = balanceEvidence(
     deps.db.balanceLedger(deps.identity),
     snapshot,
+    previousBaseline,
   );
   const engine = await deps.engineChecks();
   const minGas = options.minBotGasSui;
@@ -204,12 +290,41 @@ export async function resumeReal(
       minDeep === undefined
         ? Number(snapshot.balances.DEEP) > 0
         : Number(snapshot.balances.DEEP) >= minDeep,
-    ...engine,
+    riskAllowed: engine.riskAllowed,
+    profitGuardAllowed: engine.profitGuardAllowed,
+    marketHealthy: engine.marketHealthy,
   };
   let opened = false;
+  let baselineAction: "recorded" | "re-recorded" | undefined;
+  let attestedDifferences: Record<string, string> | undefined;
   if (options.approve) {
     if (!options.ownerApproval) throw Error("REAL_OWNER_APPROVAL_REQUIRED");
-    if (Object.values(checks).every(Boolean) && checkpoint) {
+    const otherChecksPass = Object.entries(checks).every(
+      ([name, passed]) => name === "balancesExplained" || passed,
+    );
+    if (otherChecksPass && checkpoint) {
+      if (!previousBaseline || !balances.explained) {
+        deps.reportBeforeBaseline?.({
+          checks,
+          evidence: { balances },
+          baseline: {
+            action: previousBaseline ? "re-recorded" : "recorded",
+            previousDifferences: balances.differences,
+          },
+        });
+        attestedDifferences = { ...balances.differences };
+        deps.db.recordBalanceBaseline(
+          deps.identity,
+          baselineFromSnapshot(snapshot, deps.db.balanceLedger(deps.identity)),
+        );
+        baselineAction = previousBaseline ? "re-recorded" : "recorded";
+        balances = balanceEvidence(
+          deps.db.balanceLedger(deps.identity),
+          snapshot,
+          deps.db.balanceBaseline(deps.identity),
+        );
+        checks.balancesExplained = balances.explained;
+      }
       deps.db.approveResume(deps.identity, {
         checkpoint: checkpoint.checkpoint,
         checkpointHash: checkpoint.checkpointHash,
@@ -243,6 +358,11 @@ export async function resumeReal(
       reconciliation: {
         pages: reconciliation.pages,
         events: reconciliation.events,
+      },
+      engineChecks: { record: engine.record, ageMs: engine.ageMs },
+      baseline: {
+        action: baselineAction,
+        previousDifferences: attestedDifferences,
       },
     },
     evidence: { reconciliation, balances },
@@ -286,6 +406,7 @@ export async function runResume(env: NodeJS.ProcessEnv, argv: string[]) {
         snapshot: () => reader.snapshot(),
         capValid: () => tradeCapEvidence(config.graphqlUrl, identity),
         engineChecks: async () => readEngineChecks(db, identity),
+        reportBeforeBaseline: (report) => console.info(JSON.stringify(report)),
       },
       {
         approve: argv.includes("--approve"),

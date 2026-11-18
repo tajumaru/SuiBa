@@ -128,7 +128,24 @@ describe("durable REAL engine checks", () => {
   it("allows only a fresh affirmatively non-blocking record", () => {
     const db = new RealTradeCapDatabase(":memory:");
     record(db);
-    expect(readEngineChecks(db, identity, 10_001)).toEqual({
+    expect(readEngineChecks(db, identity, 10_001)).toMatchObject({
+      riskAllowed: true,
+      profitGuardAllowed: true,
+      marketHealthy: true,
+      record: {
+        risk: "ALLOWED",
+        profitGuard: "ALLOWED",
+        market: "HEALTHY",
+      },
+      ageMs: 1,
+    });
+    db.close();
+  });
+
+  it("treats NOT_EVALUATED as not blocked", () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    record(db, { risk: "NOT_EVALUATED", profitGuard: "NOT_EVALUATED" });
+    expect(readEngineChecks(db, identity, 10_001)).toMatchObject({
       riskAllowed: true,
       profitGuardAllowed: true,
       marketHealthy: true,
@@ -136,9 +153,23 @@ describe("durable REAL engine checks", () => {
     db.close();
   });
 
+  it("fails closed for unknown verdict strings", () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    record(db, {
+      risk: "SURPRISE" as "ALLOWED",
+      profitGuard: "SURPRISE" as "ALLOWED",
+    });
+    expect(readEngineChecks(db, identity, 10_001)).toMatchObject({
+      riskAllowed: false,
+      profitGuardAllowed: false,
+      marketHealthy: true,
+    });
+    db.close();
+  });
+
   it("fails closed for absent, stale, blocking, and mismatched identity records", () => {
     const absent = new RealTradeCapDatabase(":memory:");
-    expect(readEngineChecks(absent, identity, 10_001)).toEqual({
+    expect(readEngineChecks(absent, identity, 10_001)).toMatchObject({
       riskAllowed: false,
       profitGuardAllowed: false,
       marketHealthy: false,
@@ -148,14 +179,12 @@ describe("durable REAL engine checks", () => {
     const stale = new RealTradeCapDatabase(":memory:");
     record(stale);
     expect(
-      Object.values(
-        readEngineChecks(
-          stale,
-          identity,
-          10_000 + ENGINE_CHECKS_MAX_AGE_MS + 1,
-        ),
-      ),
-    ).toEqual([false, false, false]);
+      readEngineChecks(stale, identity, 10_000 + ENGINE_CHECKS_MAX_AGE_MS + 1),
+    ).toMatchObject({
+      riskAllowed: false,
+      profitGuardAllowed: false,
+      marketHealthy: false,
+    });
     stale.close();
 
     const blocking = new RealTradeCapDatabase(":memory:");
@@ -164,16 +193,20 @@ describe("durable REAL engine checks", () => {
       profitGuard: "BLOCKED",
       market: "UNHEALTHY",
     });
-    expect(Object.values(readEngineChecks(blocking, identity, 10_001))).toEqual(
-      [false, false, false],
-    );
+    expect(readEngineChecks(blocking, identity, 10_001)).toMatchObject({
+      riskAllowed: false,
+      profitGuardAllowed: false,
+      marketHealthy: false,
+    });
     blocking.close();
 
     const mismatch = new RealTradeCapDatabase(":memory:");
     record(mismatch, { identity: { ...identity, sessionId: "other" } });
-    expect(Object.values(readEngineChecks(mismatch, identity, 10_001))).toEqual(
-      [false, false, false],
-    );
+    expect(readEngineChecks(mismatch, identity, 10_001)).toMatchObject({
+      riskAllowed: false,
+      profitGuardAllowed: false,
+      marketHealthy: false,
+    });
     mismatch.close();
   });
 });
@@ -290,6 +323,54 @@ describe("REAL measured balance fixtures", () => {
       "REAL_BALANCE_INVALID",
     );
   });
+
+  it("keeps fee metadata coherent and subtracts bot gas from the baseline", () => {
+    const evidence = balanceEvidence(
+      [
+        {
+          asset: "SUI",
+          availableAtomic: "10",
+          orderLockedAtomic: "0",
+          settledUnclaimedAtomic: "0",
+          feeAtomic: "7",
+          gasMist: "5",
+        },
+      ],
+      {
+        balances: { SUI: "0.00000011", DBUSDC: "0", DEEP: "0" },
+        locked: {},
+        settledUnclaimed: {},
+        botGasSuiMist: "95",
+      },
+      {
+        assets: {
+          SUI: {
+            availableAtomic: "100",
+            lockedAtomic: "0",
+            settledUnclaimedAtomic: "0",
+            owedAtomic: "0",
+          },
+          DBUSDC: {
+            availableAtomic: "0",
+            lockedAtomic: "0",
+            settledUnclaimedAtomic: "0",
+            owedAtomic: "0",
+          },
+          DEEP: {
+            availableAtomic: "0",
+            lockedAtomic: "0",
+            settledUnclaimedAtomic: "0",
+            owedAtomic: "0",
+          },
+        },
+        botGasSuiMist: "100",
+        recordedAt: 1,
+      },
+    );
+    expect(evidence.differences["SUI.fee"]).toBe("0");
+    expect(evidence.differences["SUI.gas"]).toBe("0");
+    expect(evidence.explained).toBe(true);
+  });
 });
 
 describe("REAL resume", () => {
@@ -397,6 +478,84 @@ describe("REAL resume", () => {
     await expect(resumeReal(deps, { approve: false })).rejects.toThrow(
       "REAL_UNIDENTIFIABLE_PREDECESSOR",
     );
+    expect(deps.db.balanceBaseline(identity)).toBeUndefined();
     deps.db.close();
+  });
+
+  it("baselines a funded manager, detects withdrawal, and re-baselines after reporting", async () => {
+    const deps = setup();
+    let snapshot = {
+      balances: { SUI: "5", DBUSDC: "9.89", DEEP: "114" },
+      openOrderIds: [] as never[],
+      locked: {},
+      settledUnclaimed: {},
+      botGasSuiMist: "5000000000",
+    };
+    deps.snapshot = async () => snapshot;
+    const reports: unknown[] = [];
+    Object.assign(deps, {
+      reportBeforeBaseline: (report: unknown) => reports.push(report),
+    });
+
+    const first = await resumeReal(deps, {
+      approve: true,
+      ownerApproval: "starting capital attested",
+    });
+    expect(first.opened).toBe(true);
+    expect(first.details.baseline.action).toBe("recorded");
+    expect(first.evidence.balances.explained).toBe(true);
+    expect(reports).toHaveLength(1);
+
+    expect(
+      (await resumeReal(deps, { approve: false })).checks.balancesExplained,
+    ).toBe(true);
+    snapshot = {
+      ...snapshot,
+      balances: { ...snapshot.balances, DBUSDC: "8.89" },
+    };
+    expect(
+      (await resumeReal(deps, { approve: false })).checks.balancesExplained,
+    ).toBe(false);
+
+    const second = await resumeReal(deps, {
+      approve: true,
+      ownerApproval: "withdrawal attested",
+    });
+    expect(second.details.baseline).toMatchObject({
+      action: "re-recorded",
+      previousDifferences: { "DBUSDC.available": "-1000000" },
+    });
+    expect(second.evidence.balances.explained).toBe(true);
+    expect(reports).toHaveLength(2);
+    deps.db.close();
+  });
+
+  it("isolates baselines by full REAL identity", () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    const other = { ...identity, sessionId: "other" };
+    const assets = {
+      SUI: {
+        availableAtomic: "1",
+        lockedAtomic: "0",
+        settledUnclaimedAtomic: "0",
+        owedAtomic: "0",
+      },
+      DBUSDC: {
+        availableAtomic: "2",
+        lockedAtomic: "0",
+        settledUnclaimedAtomic: "0",
+        owedAtomic: "0",
+      },
+      DEEP: {
+        availableAtomic: "3",
+        lockedAtomic: "0",
+        settledUnclaimedAtomic: "0",
+        owedAtomic: "0",
+      },
+    };
+    db.recordBalanceBaseline(identity, { assets, botGasSuiMist: "4" }, 5);
+    expect(db.balanceBaseline(identity)?.botGasSuiMist).toBe("4");
+    expect(db.balanceBaseline(other)).toBeUndefined();
+    db.close();
   });
 });
