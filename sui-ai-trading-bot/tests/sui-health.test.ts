@@ -3,7 +3,7 @@ import {
   ReadOnlySuiClient,
   type SuiObservation,
 } from "../packages/sui-client/src/index.ts";
-import { SUI, USDC, decimals } from "../packages/shared/src/index.ts";
+import { DBUSDC, SUI, USDC, decimals } from "../packages/shared/src/index.ts";
 import { withReadBudget } from "../packages/shared/src/read-budget-node.ts";
 const clients: ReadOnlySuiClient[] = [];
 afterEach(() => {
@@ -18,9 +18,12 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-function fixture() {
+function fixture(
+  options: ConstructorParameters<typeof ReadOnlySuiClient>[1] = {},
+) {
   const events: SuiObservation[] = [];
   const c = new ReadOnlySuiClient(undefined, {
+    ...options,
     onObservation: (e) => events.push(e),
     fetch: async () => {
       throw Error("EXTERNAL_NETWORK_FORBIDDEN");
@@ -40,6 +43,23 @@ function fixture() {
   return { c, metadata, balance, events };
 }
 const owner = "0x" + "1".repeat(64);
+it("binds the SDK network label and complete health coin set to testnet", async () => {
+  const { c, metadata, events } = fixture({
+    network: "testnet",
+    quoteCoin: DBUSDC,
+  });
+
+  await c.health();
+
+  expect(c.network).toBe("testnet");
+  expect(metadata.mock.calls.map(([request]) => request.coinType)).toEqual([
+    SUI,
+    DBUSDC,
+  ]);
+  expect(events.some((event) => event.coin === "DBUSDC" && event.success)).toBe(
+    true,
+  );
+});
 it("only complete SUI+USDC health updates health cache; ordinary reads cannot renew its TTL", async () => {
   let now = 100000;
   vi.spyOn(Date, "now").mockImplementation(() => now);

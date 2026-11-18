@@ -77,19 +77,26 @@ export function tradingPair(value: unknown): TradingPair {
 }
 export const USDC =
   "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC";
+export const DBUSDC =
+  "0xf7152c05930480cd740d7311b5b8b45c6f488e3a53a11c3f74a6fac36a52e0d7::DBUSDC::DBUSDC";
 // PAPER quotes use the measured book impact without an additional fixed haircut.
 // maxSlippage remains the independent safety ceiling for quote validation.
 export const PAPER_SLIPPAGE_RATE = 0;
 export const PAPER_FEE_RATE = 0.001;
 // Estimated mainnet DeepBook swap gas per fill, denominated in USDC.
 export const PAPER_GAS_USDC = 0.005;
-export function coin(type: string): typeof SUI | typeof WAL | typeof USDC {
+export function coin(
+  type: string,
+): typeof SUI | typeof WAL | typeof USDC | typeof DBUSDC {
   const normalized = normalizeStructTag(type);
-  for (const allowed of [SUI, WAL, USDC] as const)
+  for (const allowed of [SUI, WAL, USDC, DBUSDC] as const)
     if (normalizeStructTag(allowed) === normalized) return allowed;
   throw new Error("COIN_NOT_ALLOWED");
 }
-export const decimals = (type: string) => (coin(type) === USDC ? 6 : 9);
+export const decimals = (type: string) => {
+  const normalized = coin(type);
+  return normalized === USDC || normalized === DBUSDC ? 6 : 9;
+};
 export const atomic = (amount: string | number, type: string) =>
   new Decimal(amount)
     .mul(new Decimal(10).pow(decimals(type)))
