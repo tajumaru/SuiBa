@@ -123,3 +123,27 @@ Phase 1 は受け入れ試験の通過だけでなく、**§5.4 の初期値を�
   - 約定率とスリッページ（注文種別ごとの比較、§11 #3 の判断材料を兼ねる）
   - DEEP フロートの消費ペース（Phase 2 で BM に常備する DEEP 量の目安）
 - Phase 2 ではプールが `SUI_USDC` に変わり、BM と Cap は mainnet で新規に作り直す（testnet の BM・Cap は流用できない、設計書 §10）。本書の §2〜§4 の手順は、資産入手の経路（faucet／form が使えないこと）を除き mainnet でも同じ順で踏む。
+
+## 7. PR-3 swap と証跡チェックリスト
+
+Bot 鍵は testnet 専用のままとし、秘密鍵やリカバリーフレーズをチャット、Codex、画面共有、証跡ファイルへ渡さない。
+
+swap は既定で dry-run であり、SDK が板から求めた見込み取得量、許容スリッページ（既定 50 bps）を差し引いて小数6桁で切り捨てた `minOut`、入力トークン払いの手数料見込みを表示する。`REAL_SWAP_MAX_SUI` は小額実験用 placeholder で、運用金額の決定ではない。
+
+```powershell
+$env:REAL_SWAP_AMOUNT_SUI="1"; $env:REAL_SWAP_MAX_SUI="10"
+pnpm real:swap -- --target=DBUSDC
+pnpm real:swap -- --target=DEEP
+pnpm real:swap -- --target=DBUSDC --execute
+pnpm real:swap -- --target=DEEP --execute
+```
+
+`--execute` のときだけ署名・送信する。送信前に digest と tx bytes hash が `REAL_SWAP_EVIDENCE_PATH`（既定 `data/real-swap-evidence.jsonl`）へ flush され、送信後に digest が標準出力と同ファイルへ残る。GraphQL の残高は数秒遅れるため、残高を次の操作条件に使う場合は待って再読する。
+
+一巡後、`data/real-phase1-evidence.json` に次のキーと digest 配列を記録する：`balanceManagerCreated`、`tradeCapIssued`、`depositSui`、`depositDbusdc`、`depositDeep`、`orderPlaced`、`orderFilled`、`orderCancelled`、`stopResumeS1`〜`stopResumeS4`、`killSwitchRevoked`、`killSwitchCancelled`、`killSwitchWithdrawn`。
+
+```powershell
+pnpm real:evidence
+```
+
+CLI は REAL 台帳と read-only の Indexer／Sui GraphQL 履歴を突合し、各項目を「あり／なし」で出す。全項目が「あり」になるまで Phase 1 完了としない。
