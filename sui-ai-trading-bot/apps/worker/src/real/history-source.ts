@@ -9,12 +9,18 @@ interface GraphNode {
   digest: string;
   effects?: {
     checkpoint?: { sequenceNumber?: string; digest?: string };
-    gasEffects?: { gasSummary?: { netGasUsage?: string } };
+    gasEffects?: {
+      gasSummary?: {
+        computationCost?: string;
+        storageCost?: string;
+        storageRebate?: string;
+      };
+    };
   };
 }
 interface HistoryResponse {
   data?: {
-    transactionBlocks?: {
+    transactions?: {
       nodes?: GraphNode[];
       pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
     };
@@ -22,10 +28,14 @@ interface HistoryResponse {
 }
 interface SubmissionResponse {
   data?: {
-    transactionBlock?: {
+    transaction?: {
       effects?: { status?: string | { success?: boolean; error?: unknown } };
     } | null;
   };
+}
+interface GraphqlEnvelope {
+  data?: unknown;
+  errors?: unknown[];
 }
 interface IndexedOrder {
   order_id: string;
@@ -42,7 +52,10 @@ const post = async (url: string, body: unknown) => {
     body: JSON.stringify(body),
   });
   if (!response.ok) throw Error(`REAL_HISTORY_HTTP_${response.status}`);
-  return response.json() as Promise<HistoryResponse>;
+  const payload = (await response.json()) as GraphqlEnvelope;
+  if (payload.errors?.length) throw Error("REAL_HISTORY_GRAPHQL_ERRORS");
+  if (!payload.data) throw Error("REAL_HISTORY_GRAPHQL_DATA_MISSING");
+  return payload as HistoryResponse;
 };
 const get = async <T>(url: string) => {
   const response = await fetch(url, {
@@ -51,6 +64,36 @@ const get = async <T>(url: string) => {
   if (!response.ok) throw Error(`REAL_HISTORY_HTTP_${response.status}`);
   return response.json() as Promise<T>;
 };
+
+export const HISTORY_QUERY = `query TradeCapEffects($after: String, $address: SuiAddress!) {
+  transactions(after: $after, filter: { affectedObject: $address }) {
+    pageInfo { hasNextPage endCursor }
+    nodes { digest effects { status timestamp checkpoint { sequenceNumber digest } gasEffects {
+      gasSummary { computationCost storageCost storageRebate }
+    } } }
+  }
+}`;
+
+export const SUBMISSION_QUERY = `query Submission($digest: String!) {
+  transaction(digest: $digest) { effects { status } }
+}`;
+
+export function netGasUsage(
+  summary:
+    | {
+        computationCost?: string;
+        storageCost?: string;
+        storageRebate?: string;
+      }
+    | undefined,
+): string {
+  if (!summary) throw Error("REAL_HISTORY_GAS_SUMMARY_MISSING");
+  return (
+    BigInt(summary.computationCost ?? "0") +
+    BigInt(summary.storageCost ?? "0") -
+    BigInt(summary.storageRebate ?? "0")
+  ).toString();
+}
 
 /** History transport deliberately accepts only normalized, paginated records.
  * The endpoint adapters are read-only and preserve checkpoint/event cursors. */
@@ -77,14 +120,13 @@ export class IndexerGraphqlHistorySource implements RealHistorySource {
     const [indexedOrders, graphql] = await Promise.all([
       get<IndexedOrder[]>(orderUrl.toString()),
       post(this.graphqlUrl, {
-        query: `query TradeCapEffects($after: String, $address: SuiAddress!) {
-        transactionBlocks(after: $after, filter: { affectedAddress: $address }) {
-          pageInfo { hasNextPage endCursor } nodes { digest effects { status timestamp checkpoint { sequenceNumber digest } } }
-        } }`,
+        query: HISTORY_QUERY,
         variables: { after: cursor, address: this.identity.balanceManagerId },
       }),
     ]);
-    const effects = graphql.data?.transactionBlocks?.nodes ?? [];
+    const connection = graphql.data?.transactions;
+    if (!connection) throw Error("REAL_HISTORY_TRANSACTIONS_MISSING");
+    const effects = connection.nodes ?? [];
     const normalized: RealHistoryEvent[] = [
       ...indexedOrders.map((order) => ({
         chain: "sui:testnet" as const,
@@ -111,13 +153,11 @@ export class IndexerGraphqlHistorySource implements RealHistorySource {
         kind: "TX_EFFECTS" as const,
         identity: this.identity,
         asset: "SUI" as const,
-        gasMist: String(
-          node.effects?.gasEffects?.gasSummary?.netGasUsage ?? "0",
-        ),
+        gasMist: String(netGasUsage(node.effects?.gasEffects?.gasSummary)),
         raw: node,
       })),
     ];
-    const pageInfo = graphql.data?.transactionBlocks?.pageInfo;
+    const pageInfo = connection.pageInfo;
     const nextCursor = pageInfo?.hasNextPage
       ? (pageInfo.endCursor ?? null)
       : null;
@@ -133,10 +173,10 @@ export class IndexerGraphqlHistorySource implements RealHistorySource {
 
   async submissionStatus(digest: string) {
     const response = (await post(this.graphqlUrl, {
-      query: `query Submission($digest: String!) { transactionBlock(digest: $digest) { effects { status } } }`,
+      query: SUBMISSION_QUERY,
       variables: { digest },
     })) as SubmissionResponse;
-    const raw = response.data?.transactionBlock?.effects?.status;
+    const raw = response.data?.transaction?.effects?.status;
     if (typeof raw === "object" && raw !== null && raw.success === true)
       return "SUCCEEDED" as const;
     if (typeof raw === "object" && raw !== null && raw.success === false)

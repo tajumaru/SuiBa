@@ -13,6 +13,7 @@ export class RealReconciler {
     let cursor = stored?.cursor ?? null;
     let checkpoint = stored;
     let pages = 0;
+    let events = 0;
     for (;;) {
       const page = await this.source.page(cursor);
       if (
@@ -44,6 +45,7 @@ export class RealReconciler {
         checkpointHash: page.checkpointHash,
       });
       pages++;
+      events += page.events.length;
       if (page.nextCursor === null) {
         for (const submission of this.db.nonTerminalSubmissions(
           this.identity,
@@ -55,7 +57,7 @@ export class RealReconciler {
         }
         return {
           pages,
-          events: this.db.ledgerCount(),
+          events,
           nextCursor: null as null,
         };
       }

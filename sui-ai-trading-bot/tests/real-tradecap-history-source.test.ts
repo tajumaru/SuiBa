@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { IndexerGraphqlHistorySource } from "../apps/worker/src/real/history-source.ts";
+import {
+  HISTORY_QUERY,
+  IndexerGraphqlHistorySource,
+  SUBMISSION_QUERY,
+  netGasUsage,
+} from "../apps/worker/src/real/history-source.ts";
 import type { RealIdentity } from "../apps/worker/src/real/types.ts";
 
 const identity: RealIdentity = {
@@ -27,7 +32,7 @@ describe("REAL history source", () => {
             graphqlCall === 1
               ? {
                   data: {
-                    transactionBlocks: {
+                    transactions: {
                       nodes: [
                         {
                           digest: "tx",
@@ -36,7 +41,13 @@ describe("REAL history source", () => {
                               sequenceNumber: "100",
                               digest: "h100",
                             },
-                            gasEffects: { gasSummary: { netGasUsage: "7" } },
+                            gasEffects: {
+                              gasSummary: {
+                                computationCost: "5",
+                                storageCost: "4",
+                                storageRebate: "2",
+                              },
+                            },
                           },
                         },
                       ],
@@ -46,7 +57,7 @@ describe("REAL history source", () => {
                 }
               : {
                   data: {
-                    transactionBlocks: {
+                    transactions: {
                       nodes: [],
                       pageInfo: { hasNextPage: false, endCursor: null },
                     },
@@ -69,4 +80,41 @@ describe("REAL history source", () => {
     });
     expect(empty).toMatchObject({ checkpoint: "100", checkpointHash: "h100" });
   });
+
+  it("uses live transaction fields and computes net gas components", () => {
+    expect(HISTORY_QUERY).toContain("transactions(");
+    expect(HISTORY_QUERY).toContain("affectedObject: $address");
+    expect(HISTORY_QUERY).toContain(
+      "computationCost storageCost storageRebate",
+    );
+    expect(HISTORY_QUERY).not.toContain("transactionBlocks");
+    expect(SUBMISSION_QUERY).toContain("transaction(digest: $digest)");
+    expect(
+      netGasUsage({
+        computationCost: "100",
+        storageCost: "40",
+        storageRebate: "25",
+      }),
+    ).toBe("115");
+  });
+
+  it.each([{ errors: [{ message: "schema drift" }] }, {}])(
+    "throws instead of treating an invalid GraphQL response as empty",
+    async (payload) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | URL) =>
+          String(input).includes("/orders/")
+            ? ({ ok: true, json: async () => [] } as Response)
+            : ({ ok: true, json: async () => payload } as Response),
+        ),
+      );
+      const source = new IndexerGraphqlHistorySource(
+        "https://indexer.invalid",
+        "https://graphql.invalid",
+        identity,
+      );
+      await expect(source.page(null)).rejects.toThrow(/REAL_HISTORY_GRAPHQL/);
+    },
+  );
 });

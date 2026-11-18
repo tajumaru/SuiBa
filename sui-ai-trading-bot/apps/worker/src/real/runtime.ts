@@ -69,7 +69,10 @@ export function createRealTradeCapExecutionAdapter(
         if (!checkpointResponse.ok) throw Error("REAL_EFFECTS_INCOMPLETE");
         const checkpointJson = (await checkpointResponse.json()) as {
           data?: { checkpoint?: { digest?: string } };
+          errors?: unknown[];
         };
+        if (checkpointJson.errors?.length || !checkpointJson.data)
+          throw Error("REAL_EFFECTS_INCOMPLETE");
         const checkpointHash = checkpointJson.data?.checkpoint?.digest;
         if (!checkpointHash) throw Error("REAL_EFFECTS_INCOMPLETE");
         return {
