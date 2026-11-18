@@ -8,6 +8,38 @@ type AccountReader = {
   account(poolKey: string, managerKey: string): Promise<AccountInfo>;
 };
 
+type Asset = "SUI" | "DBUSDC" | "DEEP";
+type PoolRelativeBalances = { base: number; quote: number; deep: number };
+
+const poolAssets = (poolKey: string) => {
+  if (poolKey === "SUI_DBUSDC")
+    return { base: "SUI", quote: "DBUSDC", deep: "DEEP" } as const;
+  throw Error("REAL_POOL_ASSET_MAPPING_UNSUPPORTED");
+};
+
+export function remapPoolBalances(
+  poolKey: string,
+  values: PoolRelativeBalances,
+): Record<Asset, number> {
+  const assets = poolAssets(poolKey);
+  return {
+    [assets.base]: values.base,
+    [assets.quote]: values.quote,
+    [assets.deep]: values.deep,
+  } as Record<Asset, number>;
+}
+
+export function unwrapManagerBalance(value: unknown): number {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("balance" in value) ||
+    typeof value.balance !== "number"
+  )
+    throw Error("REAL_BALANCE_INVALID");
+  return value.balance;
+}
+
 const EMPTY_ACCOUNT: AccountInfo = {
   epoch: "0",
   open_orders: { contents: [] },
@@ -89,12 +121,21 @@ export function createDeepBookReadOnly(
         data?: { address?: { balance?: { totalBalance?: string } } };
       };
       return {
-        balances: { SUI: suiBalance, DBUSDC: dbusdcBalance, DEEP: deepBalance },
+        balances: {
+          SUI: unwrapManagerBalance(suiBalance),
+          DBUSDC: unwrapManagerBalance(dbusdcBalance),
+          DEEP: unwrapManagerBalance(deepBalance),
+        },
         openOrderIds,
         orderDetails,
         book,
-        locked,
-        settledUnclaimed: account,
+        locked: remapPoolBalances(config.poolKey, locked),
+        settledUnclaimed: remapPoolBalances(
+          config.poolKey,
+          account.settled_balances,
+        ),
+        owedBalances: remapPoolBalances(config.poolKey, account.owed_balances),
+        accountInfo: account,
         tradeParams,
         botGasSuiMist: gas.data?.address?.balance?.totalBalance ?? "0",
       };
