@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  atomic,
   balanceEvidence,
   ENGINE_CHECKS_MAX_AGE_MS,
   readEngineChecks,
@@ -7,6 +8,10 @@ import {
 } from "../scripts/real-resume.ts";
 import { RealTradeCapDatabase } from "../apps/worker/src/real/database.ts";
 import { tradeCapValid } from "../apps/worker/src/real/cap-valid.ts";
+import {
+  remapPoolBalances,
+  unwrapManagerBalance,
+} from "../apps/worker/src/real/read-only.ts";
 import type { RealIdentity } from "../apps/worker/src/real/types.ts";
 const identity: RealIdentity = {
   network: "testnet",
@@ -148,7 +153,7 @@ it("reports zero and nonzero balance differences", () => {
     },
     {
       asset: "DEEP",
-      availableAtomic: "1000000000",
+      availableAtomic: "1000000",
       orderLockedAtomic: "0",
       settledUnclaimedAtomic: "0",
       feeAtomic: "0",
@@ -162,6 +167,86 @@ it("reports zero and nonzero balance differences", () => {
       balances: { ...snapshot.balances, DEEP: "2" },
     }).explained,
   ).toBe(false);
+});
+
+describe("REAL measured balance fixtures", () => {
+  const rows = [
+    {
+      asset: "SUI",
+      availableAtomic: "5000000000",
+      orderLockedAtomic: "1250000000",
+      settledUnclaimedAtomic: "0",
+      feeAtomic: "0",
+      gasMist: "0",
+    },
+    {
+      asset: "DBUSDC",
+      availableAtomic: "9890000",
+      orderLockedAtomic: "0",
+      settledUnclaimedAtomic: "250000",
+      feeAtomic: "0",
+      gasMist: "0",
+    },
+    {
+      asset: "DEEP",
+      availableAtomic: "114000000",
+      orderLockedAtomic: "0",
+      settledUnclaimedAtomic: "0",
+      feeAtomic: "0",
+      gasMist: "0",
+    },
+  ];
+  const sdkBalances = {
+    SUI: { coinType: "SUI", balance: 5 },
+    DBUSDC: { coinType: "DBUSDC", balance: 9.89 },
+    DEEP: { coinType: "DEEP", balance: 114 },
+  };
+  const snapshot = {
+    balances: {
+      SUI: unwrapManagerBalance(sdkBalances.SUI),
+      DBUSDC: unwrapManagerBalance(sdkBalances.DBUSDC),
+      DEEP: unwrapManagerBalance(sdkBalances.DEEP),
+    },
+    locked: remapPoolBalances("SUI_DBUSDC", {
+      base: 1.25,
+      quote: 0,
+      deep: 0,
+    }),
+    settledUnclaimed: remapPoolBalances("SUI_DBUSDC", {
+      base: 0,
+      quote: 0.25,
+      deep: 0,
+    }),
+    owedBalances: { SUI: 0, DBUSDC: 0, DEEP: 0 },
+    botGasSuiMist: "0",
+  };
+
+  it("matches coin-atomic ledger rows with locked base and settled quote", () => {
+    const evidence = balanceEvidence(rows, snapshot);
+    expect(evidence.explained).toBe(true);
+    expect(evidence.differences["SUI.locked"]).toBe("0");
+    expect(evidence.differences["DBUSDC.settled"]).toBe("0");
+  });
+
+  it("uses the 1e6 DEEP coin scale and surfaces owed balances", () => {
+    expect(balanceEvidence(rows, snapshot).differences["DEEP.available"]).toBe(
+      "0",
+    );
+    expect(
+      balanceEvidence(rows, {
+        ...snapshot,
+        owedBalances: { ...snapshot.owedBalances, DEEP: 1 },
+      }).explained,
+    ).toBe(false);
+  });
+
+  it("converts numeric float artifacts exactly and rejects malformed values", () => {
+    expect(atomic(0.30000000000000004, 6)).toBe(300000n);
+    expect(() => atomic("abc", 6)).toThrow("REAL_BALANCE_INVALID");
+    expect(() => atomic({ balance: 1 } as unknown as string, 6)).toThrow(
+      "REAL_BALANCE_INVALID",
+    );
+  });
 });
 
 describe("REAL resume", () => {
@@ -190,7 +275,7 @@ describe("REAL resume", () => {
           kind: "ASSET_MOVED",
           identity,
           asset: "DEEP",
-          availableAtomicDelta: "1000000000",
+          availableAtomicDelta: "1000000",
           raw: {},
         },
       ],

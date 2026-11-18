@@ -12,13 +12,25 @@ import type {
   RealIdentity,
 } from "../apps/worker/src/real/types.ts";
 
-// Sui framework SUI and DeepBook testnet DEEP use 9 decimals; DBUSDC uses 6.
-// These are Phase 1 comparison constants and must match on-chain metadata.
-export const PHASE1_DECIMALS = { SUI: 9, DBUSDC: 6, DEEP: 9 } as const;
+// Coin decimals used for Phase 1 ledger comparisons: SUI has 9; DBUSDC and
+// DEEP have 6. DeepBook's internal DEEP scalar (1e9) is not the coin scalar.
+export const PHASE1_DECIMALS = { SUI: 9, DBUSDC: 6, DEEP: 6 } as const;
 export const ENGINE_CHECKS_MAX_AGE_MS = 2 * 60 * 1000;
 type Asset = keyof typeof PHASE1_DECIMALS;
-const atomic = (value: unknown, decimals: number) => {
-  const text = String(value ?? "0");
+export const atomic = (value: number | string, decimals: number) => {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value < 0) throw Error("REAL_BALANCE_INVALID");
+    const scaled = value * 10 ** decimals;
+    const rounded = Math.round(scaled);
+    if (
+      !Number.isSafeInteger(rounded) ||
+      Math.abs(scaled - rounded) >
+        Number.EPSILON * Math.max(1, Math.abs(scaled)) * 8
+    )
+      throw Error("REAL_BALANCE_PRECISION_INVALID");
+    return BigInt(rounded);
+  }
+  const text = value;
   if (!/^\d+(\.\d+)?$/.test(text)) throw Error("REAL_BALANCE_INVALID");
   const [whole, fraction = ""] = text.split(".");
   if (fraction.length > decimals) throw Error("REAL_BALANCE_PRECISION_INVALID");
@@ -34,6 +46,7 @@ export function balanceEvidence(
     balances: Record<Asset, unknown>;
     locked: Partial<Record<Asset, unknown>>;
     settledUnclaimed: Partial<Record<Asset, unknown>>;
+    owedBalances?: Partial<Record<Asset, unknown>>;
     botGasSuiMist: string;
     decimals?: Partial<Record<Asset, number>>;
   },
@@ -51,14 +64,25 @@ export function balanceEvidence(
       available: BigInt(row.availableAtomic ?? "0"),
       locked: BigInt(row.orderLockedAtomic ?? "0"),
       settled: BigInt(row.settledUnclaimedAtomic ?? "0"),
+      owed: 0n,
       fee: BigInt(row.feeAtomic ?? "0"),
       gas: BigInt(row.gasMist ?? "0"),
     };
     const actual = {
-      available: atomic(snapshot.balances[asset], PHASE1_DECIMALS[asset]),
-      locked: atomic(snapshot.locked[asset] ?? 0, PHASE1_DECIMALS[asset]),
+      available: atomic(
+        snapshot.balances[asset] as number | string,
+        PHASE1_DECIMALS[asset],
+      ),
+      locked: atomic(
+        (snapshot.locked[asset] ?? 0) as number | string,
+        PHASE1_DECIMALS[asset],
+      ),
       settled: atomic(
-        snapshot.settledUnclaimed[asset] ?? 0,
+        (snapshot.settledUnclaimed[asset] ?? 0) as number | string,
+        PHASE1_DECIMALS[asset],
+      ),
+      owed: atomic(
+        (snapshot.owedBalances?.[asset] ?? 0) as number | string,
         PHASE1_DECIMALS[asset],
       ),
       fee: 0n,
@@ -85,6 +109,7 @@ export interface ResumeDependencies {
     openOrderIds: unknown[];
     locked: Partial<Record<Asset, unknown>>;
     settledUnclaimed: Partial<Record<Asset, unknown>>;
+    owedBalances?: Partial<Record<Asset, unknown>>;
     botGasSuiMist: string;
     decimals?: Partial<Record<Asset, number>>;
   }>;
@@ -162,7 +187,7 @@ export async function resumeReal(
     gasSufficient:
       minGas === undefined
         ? BigInt(snapshot.botGasSuiMist) > 0n
-        : atomic(String(minGas), PHASE1_DECIMALS.SUI) <=
+        : atomic(minGas, PHASE1_DECIMALS.SUI) <=
           BigInt(snapshot.botGasSuiMist),
     deepSufficient:
       minDeep === undefined
@@ -213,16 +238,7 @@ export async function runResume(env: NodeJS.ProcessEnv, argv: string[]) {
         db,
         identity,
         reconcile: () => reconciler.reconcileAllPages(),
-        snapshot: async () => {
-          const value = await reader.snapshot();
-          return {
-            ...value,
-            locked: value.locked as Partial<Record<Asset, unknown>>,
-            settledUnclaimed: value.settledUnclaimed as Partial<
-              Record<Asset, unknown>
-            >,
-          };
-        },
+        snapshot: () => reader.snapshot(),
         capValid: () => tradeCapValid(config.graphqlUrl, identity),
         engineChecks: async () => readEngineChecks(db, identity),
       },

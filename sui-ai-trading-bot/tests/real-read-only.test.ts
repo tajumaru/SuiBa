@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { AccountInfo } from "@mysten/deepbook-v3";
-import { resolveAccount } from "../apps/worker/src/real/read-only.ts";
+import {
+  remapPoolBalances,
+  resolveAccount,
+  unwrapManagerBalance,
+} from "../apps/worker/src/real/read-only.ts";
 
 const account: AccountInfo = {
   epoch: "7",
@@ -59,6 +63,23 @@ describe("REAL read-only account resolution", () => {
         "SUI_DBUSDC",
       ),
     ).resolves.toBe(account);
+  });
+});
+
+describe("REAL SDK snapshot normalization", () => {
+  it("unwraps SDK manager balances and maps pool-relative balances", () => {
+    expect(unwrapManagerBalance({ coinType: "SUI", balance: 5 })).toBe(5);
+    expect(remapPoolBalances("SUI_DBUSDC", { base: 1, quote: 2, deep: 3 }))
+      .toEqual({ SUI: 1, DBUSDC: 2, DEEP: 3 });
+  });
+
+  it("fails closed for malformed balances and unmapped pools", () => {
+    expect(() => unwrapManagerBalance({ balance: "5" })).toThrow(
+      "REAL_BALANCE_INVALID",
+    );
+    expect(() =>
+      remapPoolBalances("UNKNOWN", { base: 1, quote: 2, deep: 3 }),
+    ).toThrow("REAL_POOL_ASSET_MAPPING_UNSUPPORTED");
   });
 });
 
