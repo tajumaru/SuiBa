@@ -7,8 +7,14 @@ import {
   resumeReal,
 } from "../scripts/real-resume.ts";
 import { RealTradeCapDatabase } from "../apps/worker/src/real/database.ts";
-import { tradeCapValid } from "../apps/worker/src/real/cap-valid.ts";
 import {
+  TRADE_CAP_QUERY,
+  tradeCapEvidence,
+  tradeCapValid,
+} from "../apps/worker/src/real/cap-valid.ts";
+import {
+  GAS_BALANCE_QUERY,
+  graphqlGasBalance,
   remapPoolBalances,
   unwrapManagerBalance,
 } from "../apps/worker/src/real/read-only.ts";
@@ -33,9 +39,11 @@ describe("TradeCap chain proof", () => {
     data: {
       object: {
         owner: { __typename: "AddressOwner", address: { address: owner } },
-        contents: {
-          type: { repr: "0xdee9::balance_manager::TradeCap" },
-          json: { id: identity.tradeCapId, balance_manager_id: manager },
+        asMoveObject: {
+          contents: {
+            type: { repr: "0xdee9::balance_manager::TradeCap" },
+            json: { id: identity.tradeCapId, balance_manager_id: manager },
+          },
         },
       },
     },
@@ -64,6 +72,41 @@ describe("TradeCap chain proof", () => {
       tradeCapValid("https://graphql.test", identity, request),
     ).resolves.toBe(false);
   });
+
+  it("uses the live Move-object shape and surfaces query errors", async () => {
+    expect(TRADE_CAP_QUERY).toContain("asMoveObject { contents");
+    expect(TRADE_CAP_QUERY).not.toMatch(/\n\s+contents \{/);
+    await expect(
+      tradeCapEvidence(
+        "https://graphql.test",
+        identity,
+        vi
+          .fn<typeof fetch>()
+          .mockResolvedValue(
+            response({ errors: [{ message: "schema drift" }] }),
+          ),
+      ),
+    ).resolves.toMatchObject({ valid: false, queryErrored: true });
+  });
+});
+
+describe("REAL gas GraphQL response", () => {
+  it("uses coinType and accepts the live totalBalance string", () => {
+    expect(GAS_BALANCE_QUERY).toContain('balance(coinType: "0x2::sui::SUI")');
+    expect(GAS_BALANCE_QUERY).not.toContain("balance(type:");
+    expect(
+      graphqlGasBalance({
+        data: { address: { balance: { totalBalance: "54069098983" } } },
+      }),
+    ).toBe("54069098983");
+  });
+
+  it.each([{ errors: [{ message: "schema drift" }] }, {}])(
+    "throws instead of converting invalid GraphQL data to zero",
+    (payload) => {
+      expect(() => graphqlGasBalance(payload)).toThrow(/REAL_GRAPHQL/);
+    },
+  );
 });
 
 describe("durable REAL engine checks", () => {
@@ -316,6 +359,16 @@ describe("REAL resume", () => {
         Object.keys(approved.checks).map((key) => [key, true]),
       ),
     );
+    expect(approved.details).toMatchObject({
+      capValid: { queryErrored: false, failedConjuncts: [] },
+      gasSufficient: {
+        actualMist: "1",
+        actualSui: "0.000000001",
+        thresholdMist: "1",
+        thresholdSui: "0.000000001",
+      },
+      reconciliation: { pages: 1, events: 0 },
+    });
     expect(approved.opened).toBe(true);
     deps.db.close();
   });

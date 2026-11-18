@@ -11,6 +11,25 @@ type AccountReader = {
 type Asset = "SUI" | "DBUSDC" | "DEEP";
 type PoolRelativeBalances = { base: number; quote: number; deep: number };
 
+export const GAS_BALANCE_QUERY = `query GasBalance($address: SuiAddress!) { address(address: $address) {
+  balance(coinType: "0x2::sui::SUI") { totalBalance }
+} }`;
+
+export function graphqlGasBalance(payload: unknown): string {
+  if (typeof payload !== "object" || payload === null)
+    throw Error("REAL_GRAPHQL_DATA_MISSING");
+  const result = payload as {
+    data?: { address?: { balance?: { totalBalance?: unknown } } };
+    errors?: unknown[];
+  };
+  if (result.errors?.length) throw Error("REAL_GRAPHQL_ERRORS");
+  if (!result.data) throw Error("REAL_GRAPHQL_DATA_MISSING");
+  const total = result.data.address?.balance?.totalBalance;
+  if (typeof total !== "string" || !/^\d+$/.test(total))
+    throw Error("REAL_GRAPHQL_GAS_BALANCE_INVALID");
+  return total;
+}
+
 const poolAssets = (poolKey: string) => {
   if (poolKey === "SUI_DBUSDC")
     return { base: "SUI", quote: "DBUSDC", deep: "DEEP" } as const;
@@ -109,17 +128,13 @@ export function createDeepBookReadOnly(
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          query: `query GasBalance($address: SuiAddress!) { address(address: $address) {
-            balance(type: "0x2::sui::SUI") { totalBalance }
-          } }`,
+          query: GAS_BALANCE_QUERY,
           variables: { address: config.signerAddress },
         }),
       });
       if (!gasResponse.ok)
         throw Error(`REAL_GRAPHQL_HTTP_${gasResponse.status}`);
-      const gas = (await gasResponse.json()) as {
-        data?: { address?: { balance?: { totalBalance?: string } } };
-      };
+      const botGasSuiMist = graphqlGasBalance(await gasResponse.json());
       return {
         balances: {
           SUI: unwrapManagerBalance(suiBalance),
@@ -137,7 +152,7 @@ export function createDeepBookReadOnly(
         owedBalances: remapPoolBalances(config.poolKey, account.owed_balances),
         accountInfo: account,
         tradeParams,
-        botGasSuiMist: gas.data?.address?.balance?.totalBalance ?? "0",
+        botGasSuiMist,
       };
     },
   };

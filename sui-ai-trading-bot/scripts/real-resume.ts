@@ -5,7 +5,10 @@ import { RealTradeCapDatabase } from "../apps/worker/src/real/database.ts";
 import { IndexerGraphqlHistorySource } from "../apps/worker/src/real/history-source.ts";
 import { RealReconciler } from "../apps/worker/src/real/reconciler.ts";
 import { createDeepBookReadOnly } from "../apps/worker/src/real/read-only.ts";
-import { tradeCapValid } from "../apps/worker/src/real/cap-valid.ts";
+import {
+  tradeCapEvidence,
+  type TradeCapEvidence,
+} from "../apps/worker/src/real/cap-valid.ts";
 import { isMainModule } from "./is-main-module.ts";
 import type {
   RealHistoryEvent,
@@ -19,7 +22,8 @@ export const ENGINE_CHECKS_MAX_AGE_MS = 2 * 60 * 1000;
 type Asset = keyof typeof PHASE1_DECIMALS;
 export const atomic = (value: number | string, decimals: number) => {
   if (typeof value === "number") {
-    if (!Number.isFinite(value) || value < 0) throw Error("REAL_BALANCE_INVALID");
+    if (!Number.isFinite(value) || value < 0)
+      throw Error("REAL_BALANCE_INVALID");
     const scaled = value * 10 ** decimals;
     const rounded = Math.round(scaled);
     if (
@@ -113,7 +117,7 @@ export interface ResumeDependencies {
     botGasSuiMist: string;
     decimals?: Partial<Record<Asset, number>>;
   }>;
-  capValid(): Promise<boolean>;
+  capValid(): Promise<boolean | TradeCapEvidence>;
   engineChecks(): Promise<{
     riskAllowed: boolean;
     profitGuardAllowed: boolean;
@@ -176,6 +180,17 @@ export async function resumeReal(
   const engine = await deps.engineChecks();
   const minGas = options.minBotGasSui;
   const minDeep = options.minDeep;
+  const capResult = await deps.capValid();
+  const cap =
+    typeof capResult === "boolean"
+      ? {
+          valid: capResult,
+          queryErrored: false,
+          conjuncts: undefined,
+        }
+      : capResult;
+  const minGasMist =
+    minGas === undefined ? 1n : atomic(minGas, PHASE1_DECIMALS.SUI);
   const checks = {
     allTransactionsTerminal: !deps.db.hasNonTerminalSubmission(deps.identity),
     historyComplete: reconciliation.nextCursor === null,
@@ -183,12 +198,8 @@ export async function resumeReal(
     balancesExplained: balances.explained,
     noOpenOrders: snapshot.openOrderIds.length === 0,
     identityMatches: deps.db.identityRegistered(deps.identity),
-    capValid: await deps.capValid(),
-    gasSufficient:
-      minGas === undefined
-        ? BigInt(snapshot.botGasSuiMist) > 0n
-        : atomic(minGas, PHASE1_DECIMALS.SUI) <=
-          BigInt(snapshot.botGasSuiMist),
+    capValid: cap.valid,
+    gasSufficient: minGasMist <= BigInt(snapshot.botGasSuiMist),
     deepSufficient:
       minDeep === undefined
         ? Number(snapshot.balances.DEEP) > 0
@@ -209,7 +220,41 @@ export async function resumeReal(
       opened = true;
     }
   }
-  return { checks, evidence: { reconciliation, balances }, opened };
+  return {
+    checks,
+    details: {
+      capValid: {
+        queryErrored: cap.queryErrored,
+        failedConjuncts: cap.conjuncts
+          ? Object.entries(cap.conjuncts)
+              .filter(([, passed]) => !passed)
+              .map(([name]) => name)
+          : cap.valid
+            ? []
+            : ["unspecified"],
+        conjuncts: cap.conjuncts,
+      },
+      gasSufficient: {
+        actualMist: snapshot.botGasSuiMist,
+        actualSui: formatMistAsSui(snapshot.botGasSuiMist),
+        thresholdMist: minGasMist.toString(),
+        thresholdSui: formatMistAsSui(minGasMist.toString()),
+      },
+      reconciliation: {
+        pages: reconciliation.pages,
+        events: reconciliation.events,
+      },
+    },
+    evidence: { reconciliation, balances },
+    opened,
+  };
+}
+
+export function formatMistAsSui(mist: string): string {
+  const padded = mist.padStart(PHASE1_DECIMALS.SUI + 1, "0");
+  const split = padded.length - PHASE1_DECIMALS.SUI;
+  const fraction = padded.slice(split).replace(/0+$/, "");
+  return `${padded.slice(0, split)}${fraction ? `.${fraction}` : ""}`;
 }
 
 export async function runResume(env: NodeJS.ProcessEnv, argv: string[]) {
@@ -239,7 +284,7 @@ export async function runResume(env: NodeJS.ProcessEnv, argv: string[]) {
         identity,
         reconcile: () => reconciler.reconcileAllPages(),
         snapshot: () => reader.snapshot(),
-        capValid: () => tradeCapValid(config.graphqlUrl, identity),
+        capValid: () => tradeCapEvidence(config.graphqlUrl, identity),
         engineChecks: async () => readEngineChecks(db, identity),
       },
       {
