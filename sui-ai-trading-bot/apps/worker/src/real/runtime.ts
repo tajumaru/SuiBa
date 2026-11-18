@@ -5,12 +5,51 @@ import { RealTradeCapDatabase } from "./database.ts";
 import { createDeepBookTransactionBuilder } from "./deepbook-execution.ts";
 import { RealTradeCapExecutor } from "./execution.ts";
 import { RealTradeCapExecutionAdapter } from "./adapter.ts";
+import { tradeCapValid } from "./cap-valid.ts";
+import { IndexerGraphqlHistorySource } from "./history-source.ts";
+import { createDeepBookReadOnly } from "./read-only.ts";
 import type { RealEffects, RealIdentity } from "./types.ts";
+
+type LiveProbeName = "snapshot" | "cap" | "history";
+
+const reason = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
+
+export async function runRealLiveProbe(input: {
+  snapshot(): Promise<unknown>;
+  capValid(): Promise<boolean>;
+  historyPage(): Promise<unknown>;
+}) {
+  const probe = async (name: LiveProbeName, read: () => Promise<unknown>) => {
+    try {
+      await read();
+    } catch (error) {
+      console.error(
+        `REAL_LIVE_PROBE_FAILED probe=${name} reason=${reason(error)}`,
+      );
+      throw Error(`REAL_LIVE_PROBE_FAILED probe=${name}`);
+    }
+  };
+  await probe("snapshot", input.snapshot);
+  await probe("cap", async () => {
+    if (!(await input.capValid())) throw Error("TRADE_CAP_INVALID");
+  });
+  await probe("history", input.historyPage);
+  console.info("REAL live probe passed: snapshot, cap, history");
+}
+
+export async function continueAfterRealLiveProbe<T>(
+  runtime: { liveProbe(): Promise<void> } | undefined,
+  continueStartup: () => T,
+) {
+  await runtime?.liveProbe();
+  return continueStartup();
+}
 
 /** Constructs the REAL-only execution boundary. No PAPER key or sender is
  * accepted here. The persisted control row remains halted across restart until
  * the complete resume gate has independently opened it. */
-export function createRealTradeCapExecutionAdapter(
+export function createRealTradeCapRuntime(
   env: NodeJS.ProcessEnv = process.env,
 ) {
   const { path, config } = realConfigFromEnv(env);
@@ -96,5 +135,25 @@ export function createRealTradeCapExecutionAdapter(
       },
     },
   );
-  return new RealTradeCapExecutionAdapter(executor, config);
+  const executionAdapter = new RealTradeCapExecutionAdapter(executor, config);
+  const reader = createDeepBookReadOnly(config, config.grpcUrl);
+  const history = new IndexerGraphqlHistorySource(
+    config.indexerUrl,
+    config.graphqlUrl,
+    identity,
+    db.checkpoint(),
+  );
+  return {
+    executionAdapter,
+    liveProbe: () =>
+      runRealLiveProbe({
+        snapshot: () => reader.snapshot(),
+        capValid: () => tradeCapValid(config.graphqlUrl, identity),
+        historyPage: () => history.page(null),
+      }),
+  };
 }
+
+export const createRealTradeCapExecutionAdapter = (
+  env: NodeJS.ProcessEnv = process.env,
+) => createRealTradeCapRuntime(env).executionAdapter;

@@ -40,6 +40,10 @@ import { resolveSuiGrpcEndpoints } from "./suiEndpoints.ts";
 import { startMemwalFlusher } from "./memwal.ts";
 import { startLiquidationCollector } from "./liquidation-collector.ts";
 import { startRealReadOnly } from "./real/index.ts";
+import {
+  continueAfterRealLiveProbe,
+  createRealTradeCapRuntime,
+} from "./real/runtime.ts";
 if (
   process.env.MODE &&
   !["PAPER", "REAL_TRADECAP", "REAL_READONLY"].includes(process.env.MODE)
@@ -134,7 +138,13 @@ const ctx = new WorkerContext({
   db,
   samplers: startDisplaySamplers(suiGrpcEndpoints),
 });
-const created = createEngine(ctx, db, pair);
+const realRuntime =
+  process.env.MODE === "REAL_TRADECAP"
+    ? createRealTradeCapRuntime(process.env)
+    : undefined;
+const created = await continueAfterRealLiveProbe(realRuntime, () =>
+  createEngine(ctx, db, pair, realRuntime?.executionAdapter),
+);
 ctx.sui = created.sui;
 ctx.engine = created.engine;
 const generateNarration = () => generateNarrationSafely(ctx);
