@@ -12,6 +12,7 @@ import { Chart } from "./IndicatorChart.tsx";
 import type { SettingsApi } from "./settingsPresets.ts";
 import type { ForecastAnswerCheck } from "./forecastLog.ts";
 import type { ShareCardInput } from "./shareCard.ts";
+import type { NarrationShadowDiagnostics } from "./narrationShadow.ts";
 
 type State = BotSnapshot;
 const money = (v: number | null | undefined) => number(v, 4);
@@ -72,6 +73,7 @@ export function OverviewTab({
   forecastAnswer,
   shareCard,
   sellLines,
+  narrationShadow,
 }: {
   data: State;
   operations?: OperationsSnapshot | null;
@@ -85,6 +87,7 @@ export function OverviewTab({
   forecastAnswer: ForecastAnswerCheck | null;
   shareCard: ShareCardInput | null;
   sellLines: { tp: number; sl: number } | null;
+  narrationShadow?: NarrationShadowDiagnostics | null;
 }) {
   return (
                   <div className="overview-tab">
@@ -227,6 +230,12 @@ export function OverviewTab({
                         ))}
                       </div>
                     </details>
+                    {import.meta.env.DEV && narrationShadow && (
+                      <details className="overview-details">
+                        <summary>開発診断：実況 read shadow</summary>
+                        <pre>{JSON.stringify(narrationShadow, null, 2)}</pre>
+                      </details>
+                    )}
                   </div>
   );
 }

@@ -29,6 +29,8 @@ import { usePrefersReducedMotion } from "./usePrefersReducedMotion.ts";
 import { useFeedScroll } from "./useFeedScroll.ts";
 import { useAgentChat } from "./useAgentChat.ts";
 import { AgentChatComposer } from "./AgentChatComposer.tsx";
+import { useNarrationShadow, type NarrationShadowDiagnostics } from "./narrationShadow.ts";
+import type { SettingsApi } from "./settingsPresets.ts";
 
 export function AgentNarrationFeed({
   data,
@@ -48,6 +50,9 @@ export function AgentNarrationFeed({
   onListeningChange,
   onSpeakingChange,
   onMemwalEpisode,
+  api,
+  pair,
+  onShadowDiagnostics,
 }: {
   data: OperationsSnapshot;
   stale: boolean;
@@ -101,6 +106,10 @@ export function AgentNarrationFeed({
    * the avatar mid-speech. */
   onSpeakingChange?: (speaking: boolean) => void;
   onMemwalEpisode?: (entry: NarrationEntry) => void;
+  /** Stage-2 read shadow: comparison only; it never supplies rendered entries. */
+  api?: SettingsApi;
+  pair?: "SUI_USDC" | "WAL_USDC";
+  onShadowDiagnostics?: (diagnostics: NarrationShadowDiagnostics) => void;
 }) {
   const character = useAgentCharacter();
   const displayName = agentDisplayName(agentName, character);
@@ -129,6 +138,7 @@ export function AgentNarrationFeed({
   // advance effect can diff entries before and after and spot a
   // buy fill that is genuinely new to this session.
   const narrationRef = useRef(narration);
+  useNarrationShadow(api, pair, narration.entries, onShadowDiagnostics);
   // A character switch is greeted by the incoming character:
   // one handover line in the feed, in their own voice. The
   // first mount only records who is speaking — no greeting for
