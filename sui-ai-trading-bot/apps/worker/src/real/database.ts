@@ -10,6 +10,30 @@ import type {
   RealOperation,
 } from "./types.ts";
 
+export interface RealBalanceBaseline {
+  assets: Record<
+    "SUI" | "DBUSDC" | "DEEP",
+    {
+      availableAtomic: string;
+      lockedAtomic: string;
+      settledUnclaimedAtomic: string;
+      owedAtomic: string;
+    }
+  >;
+  botGasSuiMist: string;
+  ledgerOffsets?: Record<
+    "SUI" | "DBUSDC" | "DEEP",
+    {
+      availableAtomic: string;
+      lockedAtomic: string;
+      settledUnclaimedAtomic: string;
+      feeAtomic: string;
+      gasMist: string;
+    }
+  >;
+  recordedAt: number;
+}
+
 const identityKey = (identity: RealIdentity) =>
   [
     identity.network,
@@ -67,6 +91,10 @@ export class RealTradeCapDatabase {
       );
       CREATE TABLE IF NOT EXISTS real_engine_checks(
         identity_key TEXT PRIMARY KEY, recorded_at INTEGER NOT NULL, record_json TEXT NOT NULL,
+        FOREIGN KEY(identity_key) REFERENCES real_identity(identity_key)
+      );
+      CREATE TABLE IF NOT EXISTS real_balance_baseline(
+        identity_key TEXT PRIMARY KEY, baseline_json TEXT NOT NULL, recorded_at INTEGER NOT NULL,
         FOREIGN KEY(identity_key) REFERENCES real_identity(identity_key)
       );`);
     const submissionColumns = new Set(
@@ -415,10 +443,23 @@ export class RealTradeCapDatabase {
         add("order_locked_atomic", event.orderLockedAtomicDelta),
         add("settled_unclaimed_atomic", event.settledUnclaimedAtomicDelta),
         add("fee_atomic", event.feeAtomic),
-        add("gas_mist", event.gasMist),
+        add(
+          "gas_mist",
+          event.gasMist && this.isBotSubmission(key, event.digest)
+            ? event.gasMist
+            : undefined,
+        ),
         key,
         asset,
       );
+  }
+
+  private isBotSubmission(key: string, digest: string) {
+    return !!this.db
+      .prepare(
+        "SELECT 1 FROM real_submission_intents WHERE identity_key=? AND digest=?",
+      )
+      .get(key, digest);
   }
 
   ledgerCount() {
@@ -449,6 +490,40 @@ export class RealTradeCapDatabase {
         FROM real_balance_ledger WHERE identity_key=? ORDER BY asset`,
       )
       .all(identityKey(identity)) as Array<Record<string, string>>;
+  }
+  balanceBaseline(identity: RealIdentity) {
+    const row = this.db
+      .prepare(
+        `SELECT baseline_json AS baselineJson,recorded_at AS recordedAt
+        FROM real_balance_baseline WHERE identity_key=?`,
+      )
+      .get(identityKey(identity)) as
+      { baselineJson: string; recordedAt: number } | undefined;
+    if (!row) return undefined;
+    try {
+      const baseline = JSON.parse(row.baselineJson) as RealBalanceBaseline;
+      return baseline.recordedAt === row.recordedAt ? baseline : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  recordBalanceBaseline(
+    identity: RealIdentity,
+    baseline: Omit<RealBalanceBaseline, "recordedAt">,
+    now = Date.now(),
+  ) {
+    if (this.latchInfo(identity, "REAL_UNIDENTIFIABLE_PREDECESSOR")?.permanent)
+      throw Error("REAL_UNIDENTIFIABLE_PREDECESSOR");
+    const key = this.registerIdentity(identity, now);
+    const value: RealBalanceBaseline = { ...baseline, recordedAt: now };
+    this.db
+      .prepare(
+        `INSERT INTO real_balance_baseline VALUES(?,?,?)
+        ON CONFLICT(identity_key) DO UPDATE SET
+        baseline_json=excluded.baseline_json,recorded_at=excluded.recorded_at`,
+      )
+      .run(key, JSON.stringify(value), now);
+    return value;
   }
   identityKey(identity: RealIdentity) {
     return identityKey(identity);

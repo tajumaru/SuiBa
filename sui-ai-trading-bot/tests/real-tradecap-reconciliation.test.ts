@@ -91,6 +91,38 @@ describe("REAL TradeCap read-only reconciliation", () => {
     db.close();
   });
 
+  it("charges gas only for a digest persisted as this bot's submission", () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    db.persistBeforeSend({
+      digest: "bot-digest",
+      txBytes: new Uint8Array([1]),
+      internalOrderId: "o1",
+      clientOrderId: "1",
+      identity: id(),
+      intent: {},
+    });
+    db.applyPage(
+      id(),
+      [
+        {
+          ...event("TX_EFFECTS", "bot-gas"),
+          digest: "bot-digest",
+          gasMist: "5",
+        },
+        {
+          ...event("TX_EFFECTS", "owner-gas"),
+          digest: "owner-digest",
+          gasMist: "99",
+        },
+      ],
+      { cursor: null, checkpoint: "42", checkpointHash: "h42" },
+    );
+    expect(
+      db.balanceLedger(id()).find((row) => row.asset === "SUI")?.gasMist,
+    ).toBe("5");
+    db.close();
+  });
+
   it("runs the read-only reconciliation loop with a fixture source", async () => {
     const db = new RealTradeCapDatabase(":memory:");
     const result = await reconcileRealReadOnlyOnce({
