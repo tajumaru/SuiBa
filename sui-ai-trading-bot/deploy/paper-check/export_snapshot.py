@@ -165,6 +165,11 @@ def sanitize(table, value, public=False):
         order_id = value.get('orderId')
         if type(order_id) is str and len(order_id) <= 1024 and order_id.startswith('paper:'):
             out['orderId'] = order_id
+        elif public and type(order_id) is str and re.fullmatch(r'h:[a-f0-9]{64}', order_id):
+            # Extracts built by a producer that predates the raw paper join
+            # key carry the hashed form instead; it is the standard public
+            # form for every other id, so validation keeps it as-is.
+            out['orderId'] = order_id
         if value.get('side') in ('BUY', 'SELL'): out['side'] = value['side']
         if value.get('finalAction') in ('PENDING', 'BUY', 'SELL', 'WAIT', 'SAFE_STOP'): out['finalAction'] = value['finalAction']
         risk = value.get('risk')
