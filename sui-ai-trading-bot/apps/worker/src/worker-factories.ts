@@ -21,7 +21,7 @@ import {
 } from "../../../packages/shared/src/index.ts";
 import type { WorkerContext } from "./worker-context.ts";
 import { NarrationGenerator } from "./narration-generator.ts";
-import { createRealTradeCapExecutionAdapter } from "./real/runtime.ts";
+import type { RealTradeCapExecutionAdapter } from "./real/adapter.ts";
 
 /**
  * The worker's factories, extracted from the boot script: the
@@ -35,6 +35,7 @@ export function createEngine(
   ctx: WorkerContext,
   database: BotDatabase,
   selected: TradingPair,
+  realExecutionAdapter?: RealTradeCapExecutionAdapter,
 ) {
   if (process.env.MODE === "REAL_TRADECAP" && selected !== "SUI_USDC")
     throw Error("REAL_PAIR_FORBIDDEN");
@@ -80,7 +81,10 @@ export function createEngine(
         new OpenAIShadowAdapter(), // OFF is still enforced by ShadowRecorder.
         ctx.selectionDb, // Worker-wide JST budget survives pair switches.
         process.env.MODE === "REAL_TRADECAP"
-          ? createRealTradeCapExecutionAdapter(process.env)
+          ? (realExecutionAdapter ??
+              (() => {
+                throw Error("REAL_RUNTIME_REQUIRED");
+              })())
           : undefined,
       ),
     };
