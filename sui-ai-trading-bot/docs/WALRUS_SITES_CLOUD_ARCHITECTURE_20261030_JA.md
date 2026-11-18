@@ -151,7 +151,7 @@ NodeをインストールするのはクラウドとCIだけ。フロントの�
 
 `market-data/deepbook.ts` は公式Indexerからpool/market/ローソク足等を取得し、ペア/coin、lot/min-size、遅延などを検証する。`deepbook-transport.ts` は固定origin・GETのみ、HTTP/2再利用、GOAWAY時の再接続、8秒上限を持つ。`shared/api.ts` の一般上限は10秒、maxWait 60秒、maxRetries 2、circuit 3失敗で30–60秒。移行で値を緩めない。
 
-SUIの既定providerはGeckoTerminal、WALはDeepBook固定。`auto` はSUIの系列fallbackを許すため、DeepBook検証をする段階は明示的にstrictを選ぶ。異なるソースの足を無表示で混ぜない。再構成はoff/verifiedの既存条件を守り、欠損を捏造しない。indexer成功HTTPとデータ鮮度は別に評価する。[DeepBook Indexer公式](https://www.docs.sui.io/onchain-finance/deepbook/deepbookv3/deepbookv3-indexer)
+SUIの既定providerはDeepBook（verified再構成）、WALはDeepBook固定。`auto` はSUIの系列fallbackを許すため、strict運用では選ばない。異なるソースの足を無表示で混ぜない。再構成はoff/verifiedの既存条件を守り、根拠のない欠損を捏造しない。indexer成功HTTPとデータ鮮度は別に評価する。[DeepBook Indexer公式](https://www.docs.sui.io/onchain-finance/deepbook/deepbookv3/deepbookv3-indexer)
 
 クラウド候補地でDNS/TCP/TLS/HTTP2再利用、p50/p95/p99、timeout、429、indexer lag、閉足時刻、cycle duration、event-loop遅延を測る。バックテストや履歴転送が監視を圧迫しないか同時負荷を試験。公開IndexerのSLA・独占rate limitは未確認なので保証しない。複数ブラウザのpollで市場取得を増やさず、workerで共有した結果を配信する。
 

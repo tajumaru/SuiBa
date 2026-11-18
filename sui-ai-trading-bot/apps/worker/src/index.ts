@@ -44,6 +44,7 @@ import {
   continueAfterRealLiveProbe,
   createRealTradeCapRuntime,
 } from "./real/runtime.ts";
+import { resolveMarketConfig } from "./market-config.ts";
 if (
   process.env.MODE &&
   !["PAPER", "REAL_TRADECAP", "REAL_READONLY"].includes(process.env.MODE)
@@ -67,12 +68,7 @@ const browserSessions = new BrowserSessions(
   token,
   process.env.SUIBA_READONLY_TOKEN || undefined,
 );
-const marketMode = process.env.MARKET_DATA_PROVIDER ?? "geckoterminal";
-if (!["geckoterminal", "deepbook", "auto"].includes(marketMode))
-  throw new Error("INVALID_MARKET_DATA_PROVIDER");
-const reconstruction = process.env.DEEPBOOK_RECONSTRUCT_CANDLES ?? "off";
-if (!["off", "verified"].includes(reconstruction))
-  throw new Error("INVALID_DEEPBOOK_RECONSTRUCTION");
+const { marketMode, reconstruction } = resolveMarketConfig(process.env);
 const validationEnabled = assertValidationProfile(process.env);
 const strategyDatabasePath =
   process.env.MODE === "REAL_TRADECAP"

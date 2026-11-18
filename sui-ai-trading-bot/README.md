@@ -51,7 +51,7 @@ Docker DesktopのLinuxコンテナでビルド・Compose起動・再起動後の
 
 ## データと仮想約定の意味
 
-履歴ソースは[GeckoTerminal Public API](https://apiguide.geckoterminal.com/)のSuiプールOHLCVです。対象2トークンをメタデータで照合し、24時間取引高が最大のペアを選択します。`MARKET_POOL`で固定も可能です。1プールの履歴であり、Sui DEX市場全体の統合足ではありません。`currency=token` とSUI側の `token` を指定し、価格はNative USDC建てで取得します。出典は各足に保存します。Public APIはBetaで、利用上限・提供範囲・可用性は保証されません。
+履歴ソースの既定はDeepBook IndexerのSUI/Native USDCプールOHLCVで、公式Indexerの根拠が揃う欠損足は既定でverified再構成します。`MARKET_DATA_PROVIDER=geckoterminal`を明示した場合は[GeckoTerminal Public API](https://apiguide.geckoterminal.com/)を使用し、対象2トークンをメタデータで照合して24時間取引高が最大のペアを選択します。`MARKET_POOL`で固定も可能です。いずれも1プールの履歴であり、Sui DEX市場全体の統合足ではありません。出典は各足に保存します。
 
 見積もりは[Cetus公式Aggregator V3 SDK](https://github.com/CetusProtocol/aggregator)の `findRouters`（exact input）のみを使います。SUIまたはWALとUSDCの双方向に対応し、最適ルート選択はAggregatorに委ねます。Aftermath独自アダプターは未実装です。SDKには実行機能も含まれますが、このアプリから呼び出すのは見積もりだけです。
 
@@ -109,7 +109,7 @@ EMAはSMAで初期化、RSI14とATR14はWilder平滑化。MACDはEMA12−EMA26 /
 
 Profit Guardは初期状態で有効です（最低純利益0.05 USDC・最低利益率1%）。Settingsで変更できます。計算・制約は[設計資料](docs/PROFIT_GUARD.md)を参照してください。
 
-DeepBookの実測、Provider設定、品質条件と検証結果は[DeepBook Provider検証](docs/DEEPBOOK_PROVIDER_VALIDATION.md)を参照してください。既定の取得元はGeckoTerminalのままです。
+DeepBookの実測、Provider設定、品質条件と検証結果は[DeepBook Provider検証](docs/DEEPBOOK_PROVIDER_VALIDATION.md)を参照してください。既定の取得元はDeepBook、再構成はverifiedです。
 
 ## DeepBook 24時間PAPER検証専用環境
 
