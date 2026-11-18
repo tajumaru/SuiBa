@@ -6,6 +6,7 @@ import { deepbook } from "@mysten/deepbook-v3";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { GrpcWebFetchTransport, SuiGrpcClient } from "@mysten/sui/grpc";
 import { Transaction } from "@mysten/sui/transactions";
+import { isMainModule } from "./is-main-module.ts";
 
 export type SwapTarget = "DBUSDC" | "DEEP";
 export interface SwapPlan {
@@ -214,5 +215,5 @@ export async function runSwap(
   return { plan, digest };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`)
+if (isMainModule(import.meta.url, process.argv[1]))
   await runSwap(process.env, process.argv.slice(2));

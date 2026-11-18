@@ -3,6 +3,7 @@ import { realConfigFromEnv } from "../apps/worker/src/real/config.ts";
 import { RealTradeCapDatabase } from "../apps/worker/src/real/database.ts";
 import { IndexerGraphqlHistorySource } from "../apps/worker/src/real/history-source.ts";
 import type { RealHistoryEvent, RealIdentity } from "../apps/worker/src/real/types.ts";
+import { isMainModule } from "./is-main-module.ts";
 
 export const evidenceKeys = [
   "balanceManagerCreated", "tradeCapIssued", "depositSui", "depositDbusdc", "depositDeep",
@@ -37,7 +38,7 @@ async function readAll(source: IndexerGraphqlHistorySource) {
   return events;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url, process.argv[1])) {
   const { path, config } = realConfigFromEnv(process.env);
   const identity: RealIdentity = {
     network: config.network, balanceManagerId: config.balanceManagerId, poolKey: config.poolKey,
