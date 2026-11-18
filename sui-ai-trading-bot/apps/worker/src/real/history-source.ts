@@ -20,6 +20,13 @@ interface HistoryResponse {
     };
   };
 }
+interface SubmissionResponse {
+  data?: {
+    transactionBlock?: {
+      effects?: { status?: string | { success?: boolean; error?: unknown } };
+    } | null;
+  };
+}
 interface IndexedOrder {
   order_id: string;
   current_status: "Placed" | "Canceled" | "Filled";
@@ -48,11 +55,17 @@ const get = async <T>(url: string) => {
 /** History transport deliberately accepts only normalized, paginated records.
  * The endpoint adapters are read-only and preserve checkpoint/event cursors. */
 export class IndexerGraphqlHistorySource implements RealHistorySource {
+  private lastCheckpoint: string;
+  private lastCheckpointHash: string;
   constructor(
     private readonly indexerUrl: string,
     private readonly graphqlUrl: string,
     private readonly identity: RealIdentity,
-  ) {}
+    initial?: { checkpoint: string; checkpointHash: string },
+  ) {
+    this.lastCheckpoint = initial?.checkpoint ?? "0";
+    this.lastCheckpointHash = initial?.checkpointHash ?? "GENESIS";
+  }
 
   async page(cursor: string | null): Promise<HistoryPage> {
     const orderUrl = new URL(
@@ -90,13 +103,14 @@ export class IndexerGraphqlHistorySource implements RealHistorySource {
         remainingAtomic: String(order.remaining_quantity),
         raw: order,
       })),
-      ...effects.map((node, index) => ({
+      ...effects.map((node) => ({
         chain: "sui:testnet" as const,
         checkpoint: String(node.effects?.checkpoint?.sequenceNumber ?? "0"),
         digest: node.digest,
-        eventSequence: `effects:${index}`,
+        eventSequence: "effects:0",
         kind: "TX_EFFECTS" as const,
         identity: this.identity,
+        asset: "SUI" as const,
         gasMist: String(
           node.effects?.gasEffects?.gasSummary?.netGasUsage ?? "0",
         ),
@@ -107,12 +121,31 @@ export class IndexerGraphqlHistorySource implements RealHistorySource {
     const nextCursor = pageInfo?.hasNextPage
       ? (pageInfo.endCursor ?? null)
       : null;
-    const checkpoint = String(
-      effects.at(-1)?.effects?.checkpoint?.sequenceNumber ?? "0",
-    );
-    const checkpointHash = String(
-      effects.at(-1)?.effects?.checkpoint?.digest ?? "GENESIS",
-    );
+    const finalCheckpoint = effects.at(-1)?.effects?.checkpoint;
+    if (finalCheckpoint?.sequenceNumber !== undefined)
+      this.lastCheckpoint = String(finalCheckpoint.sequenceNumber);
+    if (finalCheckpoint?.digest)
+      this.lastCheckpointHash = finalCheckpoint.digest;
+    const checkpoint = this.lastCheckpoint;
+    const checkpointHash = this.lastCheckpointHash;
     return { events: normalized, nextCursor, checkpoint, checkpointHash };
+  }
+
+  async submissionStatus(digest: string) {
+    const response = (await post(this.graphqlUrl, {
+      query: `query Submission($digest: String!) { transactionBlock(digest: $digest) { effects { status } } }`,
+      variables: { digest },
+    })) as SubmissionResponse;
+    const raw = response.data?.transactionBlock?.effects?.status;
+    if (typeof raw === "object" && raw !== null && raw.success === true)
+      return "SUCCEEDED" as const;
+    if (typeof raw === "object" && raw !== null && raw.success === false)
+      return "FAILED" as const;
+    const status = typeof raw === "string" ? raw.toUpperCase() : undefined;
+    return status === "SUCCESS" || status === "SUCCEEDED"
+      ? ("SUCCEEDED" as const)
+      : status === "FAILURE" || status === "FAILED"
+        ? ("FAILED" as const)
+        : null;
   }
 }

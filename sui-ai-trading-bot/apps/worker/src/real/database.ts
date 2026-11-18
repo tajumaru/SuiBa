@@ -212,6 +212,8 @@ export class RealTradeCapDatabase {
   }
 
   openSigningGate(identity: RealIdentity, checks: Record<string, boolean>) {
+    if (this.latchInfo(identity, "REAL_UNIDENTIFIABLE_PREDECESSOR")?.permanent)
+      throw Error("REAL_UNIDENTIFIABLE_PREDECESSOR");
     const required = [
       "allTransactionsTerminal",
       "historyComplete",
@@ -263,6 +265,17 @@ export class RealTradeCapDatabase {
       WHERE identity_key=? AND state IN ('SUBMITTING','UNKNOWN') LIMIT 1`,
       )
       .get(identityKey(identity));
+  }
+  nonTerminalSubmissions(identity: RealIdentity) {
+    return this.db
+      .prepare(
+        `SELECT digest,state FROM real_submission_intents
+        WHERE identity_key=? AND state IN ('SUBMITTING','UNKNOWN') ORDER BY persisted_at`,
+      )
+      .all(identityKey(identity)) as {
+      digest: string;
+      state: "SUBMITTING" | "UNKNOWN";
+    }[];
   }
 
   applyEffects(identity: RealIdentity, effects: RealEffects) {
@@ -415,9 +428,32 @@ export class RealTradeCapDatabase {
   ledgerEvents(identity: RealIdentity) {
     return (
       this.db
-        .prepare("SELECT event_json AS eventJson FROM real_ledger WHERE identity_key=? ORDER BY applied_at")
+        .prepare(
+          "SELECT event_json AS eventJson FROM real_ledger WHERE identity_key=? ORDER BY applied_at",
+        )
         .all(identityKey(identity)) as { eventJson: string }[]
     ).map((row) => JSON.parse(row.eventJson) as RealHistoryEvent);
+  }
+  balanceLedger(identity: RealIdentity) {
+    return this.db
+      .prepare(
+        `SELECT asset,available_atomic AS availableAtomic,
+        order_locked_atomic AS orderLockedAtomic,
+        settled_unclaimed_atomic AS settledUnclaimedAtomic,
+        fee_atomic AS feeAtomic,gas_mist AS gasMist
+        FROM real_balance_ledger WHERE identity_key=? ORDER BY asset`,
+      )
+      .all(identityKey(identity)) as Array<Record<string, string>>;
+  }
+  identityKey(identity: RealIdentity) {
+    return identityKey(identity);
+  }
+  identityRegistered(identity: RealIdentity) {
+    const key = identityKey(identity);
+    const row = this.db
+      .prepare("SELECT json FROM real_identity WHERE identity_key=?")
+      .get(key) as { json: string } | undefined;
+    return row?.json === JSON.stringify(identity);
   }
   close() {
     this.db.close();

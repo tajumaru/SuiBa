@@ -48,6 +48,8 @@ export function createDeepBookTransactionBuilder(
   };
   return {
     async place(input: RealExecutionIntent) {
+      if (config.orderType === "MARKET")
+        throw Error("REAL_ORDER_TYPE_UNSUPPORTED");
       const order = limit(input.intent);
       const tx = new Transaction();
       tx.add(

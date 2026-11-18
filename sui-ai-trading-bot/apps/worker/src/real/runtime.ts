@@ -58,11 +58,25 @@ export function createRealTradeCapExecutionAdapter(
         const transaction =
           finalized.Transaction ?? finalized.FailedTransaction;
         if (!transaction?.checkpoint) throw Error("REAL_EFFECTS_INCOMPLETE");
+        const checkpointResponse = await fetch(config.graphqlUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            query: `query Checkpoint($sequence: UInt53!) { checkpoint(sequenceNumber: $sequence) { digest } }`,
+            variables: { sequence: Number(transaction.checkpoint) },
+          }),
+        });
+        if (!checkpointResponse.ok) throw Error("REAL_EFFECTS_INCOMPLETE");
+        const checkpointJson = (await checkpointResponse.json()) as {
+          data?: { checkpoint?: { digest?: string } };
+        };
+        const checkpointHash = checkpointJson.data?.checkpoint?.digest;
+        if (!checkpointHash) throw Error("REAL_EFFECTS_INCOMPLETE");
         return {
           digest: transaction.digest,
           success: transaction.status.success,
           checkpoint: transaction.checkpoint,
-          checkpointHash: transaction.digest,
+          checkpointHash,
           events: [
             {
               chain: "sui:testnet",
@@ -79,5 +93,5 @@ export function createRealTradeCapExecutionAdapter(
       },
     },
   );
-  return new RealTradeCapExecutionAdapter(executor);
+  return new RealTradeCapExecutionAdapter(executor, config);
 }

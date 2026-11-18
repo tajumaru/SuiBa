@@ -39,8 +39,16 @@ import {
 import { resolveSuiGrpcEndpoints } from "./suiEndpoints.ts";
 import { startMemwalFlusher } from "./memwal.ts";
 import { startLiquidationCollector } from "./liquidation-collector.ts";
-if (process.env.MODE && !["PAPER", "REAL_TRADECAP"].includes(process.env.MODE))
-  throw new Error("ONLY_PAPER_SUPPORTED");
+import { startRealReadOnly } from "./real/index.ts";
+if (
+  process.env.MODE &&
+  !["PAPER", "REAL_TRADECAP", "REAL_READONLY"].includes(process.env.MODE)
+)
+  throw new Error("UNSUPPORTED_EXECUTION_MODE");
+if (process.env.MODE === "REAL_READONLY") {
+  await startRealReadOnly();
+  process.exit(0);
+}
 if (
   process.env.SUIBA_NARRATION_GENERATION_ENABLED !== undefined &&
   !["true", "false"].includes(process.env.SUIBA_NARRATION_GENERATION_ENABLED)

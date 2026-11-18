@@ -44,6 +44,7 @@ export interface HistoryPage {
 
 export interface RealHistorySource {
   page(cursor: string | null): Promise<HistoryPage>;
+  submissionStatus?(digest: string): Promise<"SUCCEEDED" | "FAILED" | null>;
 }
 
 export interface RealBalanceSnapshot {
