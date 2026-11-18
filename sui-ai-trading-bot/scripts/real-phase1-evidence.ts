@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 import { readFileSync } from "node:fs";
 import { realConfigFromEnv } from "../apps/worker/src/real/config.ts";
 import { RealTradeCapDatabase } from "../apps/worker/src/real/database.ts";
