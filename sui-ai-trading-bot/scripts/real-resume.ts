@@ -149,6 +149,35 @@ export interface ResumeDependencies {
   reportBeforeBaseline?(report: unknown): void;
 }
 
+type ResumeChecks = Record<
+  | "allTransactionsTerminal"
+  | "historyComplete"
+  | "ledgerIdempotent"
+  | "balancesExplained"
+  | "noOpenOrders"
+  | "identityMatches"
+  | "capValid"
+  | "gasSufficient"
+  | "deepSufficient"
+  | "riskAllowed"
+  | "profitGuardAllowed"
+  | "marketHealthy",
+  boolean
+>;
+
+class OwnerApprovalRequiredError extends Error {
+  constructor(
+    readonly checks: ResumeChecks,
+    readonly capDetails: { queryErrored: boolean; failedConjuncts: string[] },
+    readonly gasDetails: {
+      actualSui: string;
+      thresholdSui: string;
+    },
+  ) {
+    super("REAL_OWNER_APPROVAL_REQUIRED");
+  }
+}
+
 export function readEngineChecks(
   db: RealTradeCapDatabase,
   identity: RealIdentity,
@@ -298,7 +327,24 @@ export async function resumeReal(
   let baselineAction: "recorded" | "re-recorded" | undefined;
   let attestedDifferences: Record<string, string> | undefined;
   if (options.approve) {
-    if (!options.ownerApproval) throw Error("REAL_OWNER_APPROVAL_REQUIRED");
+    if (!options.ownerApproval)
+      throw new OwnerApprovalRequiredError(
+        checks,
+        {
+          queryErrored: cap.queryErrored,
+          failedConjuncts: cap.conjuncts
+            ? Object.entries(cap.conjuncts)
+                .filter(([, passed]) => !passed)
+                .map(([name]) => name)
+            : cap.valid
+              ? []
+              : ["unspecified"],
+        },
+        {
+          actualSui: formatMistAsSui(snapshot.botGasSuiMist),
+          thresholdSui: formatMistAsSui(minGasMist.toString()),
+        },
+      );
     const otherChecksPass = Object.entries(checks).every(
       ([name, passed]) => name === "balancesExplained" || passed,
     );
@@ -377,6 +423,81 @@ export function formatMistAsSui(mist: string): string {
   return `${padded.slice(0, split)}${fraction ? `.${fraction}` : ""}`;
 }
 
+type ResumeResult = Awaited<ReturnType<typeof resumeReal>>;
+type ResumeSnapshot = Awaited<ReturnType<ResumeDependencies["snapshot"]>>;
+
+const CHECK_LABELS: Record<keyof ResumeResult["checks"], string> = {
+  allTransactionsTerminal: "取引の後片付け",
+  historyComplete: "履歴の取得",
+  ledgerIdempotent: "台帳の照合",
+  balancesExplained: "残高の説明",
+  noOpenOrders: "未約定の注文",
+  identityMatches: "本人確認",
+  capValid: "取引許可証（TradeCap）",
+  gasSufficient: "ガス代の残高",
+  deepSufficient: "手数料用の DEEP",
+  riskAllowed: "リスク判定",
+  profitGuardAllowed: "利益ガード",
+  marketHealthy: "相場の健全性",
+};
+
+function failedCheckReason(
+  name: keyof ResumeResult["checks"],
+  details: {
+    capValid: { queryErrored: boolean; failedConjuncts: string[] };
+    gasSufficient: { actualSui: string; thresholdSui: string };
+  },
+): string {
+  const reasons: Record<keyof ResumeResult["checks"], string> = {
+    allTransactionsTerminal: "送信済みの取引に未確定のものがあります",
+    historyComplete: "チェーンの履歴を最後まで読めていません",
+    ledgerIdempotent: "台帳の再計算で件数が変わりました",
+    balancesExplained:
+      "残高と台帳が合いません（開始残高の記録か、差分の確認が必要です）",
+    noOpenOrders: "まだ約定していない注文が残っています",
+    identityMatches: "この台帳は別の Bot／口座のものです",
+    capValid: `許可証が見つからないか、Bot のものではありません（${
+      details.capValid.queryErrored
+        ? "照会エラー"
+        : `不一致：${details.capValid.failedConjuncts.join("、")}`
+    }）`,
+    gasSufficient: `Bot の SUI 残高が不足しています（実績 ${details.gasSufficient.actualSui} SUI／必要 ${details.gasSufficient.thresholdSui} SUI）`,
+    deepSufficient: "DEEP の残高が不足しています",
+    riskAllowed: "リスク判定が取引を止めています",
+    profitGuardAllowed: "利益ガードが取引を止めています",
+    marketHealthy: "相場データが古いか取得できていません",
+  };
+  return reasons[name];
+}
+
+export function plainResumeLines(
+  result: ResumeResult,
+  options: { approve: boolean; snapshot?: ResumeSnapshot },
+): string[] {
+  const failed = (
+    Object.keys(result.checks) as Array<keyof typeof result.checks>
+  ).filter((name) => !result.checks[name]);
+  const lines = [
+    result.opened
+      ? "判定：開きました"
+      : failed.length === 0 && !options.approve
+        ? "判定：開けます（全チェックOK）"
+        : "判定：開けません",
+    ...failed.map(
+      (name) =>
+        `・${CHECK_LABELS[name]}：${failedCheckReason(name, result.details)}`,
+    ),
+  ];
+  if (result.details.baseline.action && options.snapshot) {
+    const action =
+      result.details.baseline.action === "recorded" ? "記録" : "再記録";
+    lines.push(
+      `開始残高を${action}しました（SUI ${String(options.snapshot.balances.SUI)}、DBUSDC ${String(options.snapshot.balances.DBUSDC)}、DEEP ${String(options.snapshot.balances.DEEP)}、Bot ガス ${formatMistAsSui(options.snapshot.botGasSuiMist)} SUI）`,
+    );
+  }
+  return lines;
+}
+
 export async function runResume(env: NodeJS.ProcessEnv, argv: string[]) {
   const { path, config } = realConfigFromEnv(env);
   const identity: RealIdentity = {
@@ -397,19 +518,23 @@ export async function runResume(env: NodeJS.ProcessEnv, argv: string[]) {
   );
   const reconciler = new RealReconciler(db, identity, source);
   const reader = createDeepBookReadOnly(config, config.grpcUrl);
+  const approve = argv.includes("--approve");
+  const bufferedJson: string[] = [];
+  let snapshot: ResumeSnapshot | undefined;
   try {
     const result = await resumeReal(
       {
         db,
         identity,
         reconcile: () => reconciler.reconcileAllPages(),
-        snapshot: () => reader.snapshot(),
+        snapshot: async () => (snapshot = await reader.snapshot()),
         capValid: () => tradeCapEvidence(config.graphqlUrl, identity),
         engineChecks: async () => readEngineChecks(db, identity),
-        reportBeforeBaseline: (report) => console.info(JSON.stringify(report)),
+        reportBeforeBaseline: (report) =>
+          bufferedJson.push(JSON.stringify(report)),
       },
       {
-        approve: argv.includes("--approve"),
+        approve,
         ownerApproval: argv
           .find((arg) => arg.startsWith("--reason="))
           ?.slice(9),
@@ -423,8 +548,33 @@ export async function runResume(env: NodeJS.ProcessEnv, argv: string[]) {
             : Number(env.REAL_MIN_DEEP),
       },
     );
+    for (const line of plainResumeLines(result, { approve, snapshot }))
+      console.info(line);
+    for (const json of bufferedJson) console.info(json);
     console.info(JSON.stringify(result));
     return result;
+  } catch (error) {
+    if (error instanceof OwnerApprovalRequiredError) {
+      const failed = (
+        Object.keys(error.checks) as Array<keyof ResumeChecks>
+      ).filter((name) => !error.checks[name]);
+      console.info("判定：開けません");
+      for (const name of failed)
+        console.info(
+          `・${CHECK_LABELS[name]}：${failedCheckReason(name, {
+            capValid: error.capDetails,
+            gasSufficient: error.gasDetails,
+          })}`,
+        );
+    }
+    if (
+      error instanceof Error &&
+      error.message === "REAL_UNIDENTIFIABLE_PREDECESSOR"
+    )
+      console.info(
+        "判定：開けません・前任の Bot を特定できないため、恒久的に再開できません",
+      );
+    throw error;
   } finally {
     db.close();
   }
