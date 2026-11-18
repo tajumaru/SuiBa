@@ -3,6 +3,7 @@ import {
   atomic,
   balanceEvidence,
   ENGINE_CHECKS_MAX_AGE_MS,
+  plainResumeLines,
   readEngineChecks,
   resumeReal,
 } from "../scripts/real-resume.ts";
@@ -430,7 +431,6 @@ describe("REAL resume", () => {
   };
   it("does not open without --approve and opens when every check is true", async () => {
     const deps = setup();
-    expect((await resumeReal(deps, { approve: false })).opened).toBe(false);
     const approved = await resumeReal(deps, {
       approve: true,
       ownerApproval: "reviewed",
@@ -451,6 +451,34 @@ describe("REAL resume", () => {
       reconciliation: { pages: 1, events: 0 },
     });
     expect(approved.opened).toBe(true);
+    const jsonBeforePlainLines = JSON.stringify(approved);
+    expect(plainResumeLines(approved, { approve: true })[0]).toBe(
+      "判定：開きました",
+    );
+    expect(JSON.stringify(approved)).toBe(jsonBeforePlainLines);
+    const dryRun = await resumeReal(deps, { approve: false });
+    expect(dryRun.opened).toBe(false);
+    expect(plainResumeLines(dryRun, { approve: false })).toEqual([
+      "判定：開けます（全チェックOK）",
+    ]);
+    deps.db.close();
+  });
+  it("names only the failed balance and TradeCap checks", async () => {
+    const deps = setup();
+    deps.snapshot = async () => ({
+      balances: { SUI: "1", DBUSDC: "0", DEEP: "1" },
+      openOrderIds: [],
+      locked: {},
+      settledUnclaimed: {},
+      botGasSuiMist: "1",
+    });
+    deps.capValid = async () => false;
+    const result = await resumeReal(deps, { approve: false });
+    const lines = plainResumeLines(result, { approve: false });
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toBe("判定：開けません");
+    expect(lines[1]).toMatch(/^・残高の説明：/);
+    expect(lines[2]).toMatch(/^・取引許可証（TradeCap）：/);
     deps.db.close();
   });
   it.each(["cap", "engine"] as const)(
@@ -505,6 +533,9 @@ describe("REAL resume", () => {
     expect(first.details.baseline.action).toBe("recorded");
     expect(first.evidence.balances.explained).toBe(true);
     expect(reports).toHaveLength(1);
+    expect(plainResumeLines(first, { approve: true, snapshot })).toContain(
+      "開始残高を記録しました（SUI 5、DBUSDC 9.89、DEEP 114、Bot ガス 5 SUI）",
+    );
 
     expect(
       (await resumeReal(deps, { approve: false })).checks.balancesExplained,
