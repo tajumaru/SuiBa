@@ -9,6 +9,7 @@
   "scripts": {
     "release:linux": "node --import tsx scripts/linux-paper-release.ts",
     "real:swap": "node --import tsx scripts/real-swap.ts",
+    "real:owner-order": "node --import tsx scripts/real-owner-order.ts",
     "real:evidence": "node --import tsx scripts/real-phase1-evidence.ts",
     "real:resume": "node --import tsx scripts/real-resume.ts",
     "maintenance": "node --import tsx scripts/paper-maintenance.ts",

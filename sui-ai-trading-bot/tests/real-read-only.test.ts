@@ -69,8 +69,9 @@ describe("REAL read-only account resolution", () => {
 describe("REAL SDK snapshot normalization", () => {
   it("unwraps SDK manager balances and maps pool-relative balances", () => {
     expect(unwrapManagerBalance({ coinType: "SUI", balance: 5 })).toBe(5);
-    expect(remapPoolBalances("SUI_DBUSDC", { base: 1, quote: 2, deep: 3 }))
-      .toEqual({ SUI: 1, DBUSDC: 2, DEEP: 3 });
+    expect(
+      remapPoolBalances("SUI_DBUSDC", { base: 1, quote: 2, deep: 3 }),
+    ).toEqual({ SUI: 1, DBUSDC: 2, DEEP: 3 });
   });
 
   it("fails closed for malformed balances and unmapped pools", () => {
@@ -89,6 +90,7 @@ it("loads repo-root dotenv before every REAL CLI dependency", () => {
     "real-swap.ts",
     "real-phase1-evidence.ts",
     "real-owner-cli.ts",
+    "real-owner-order.ts",
   ]) {
     const source = readFileSync(
       new URL(`../scripts/${script}`, import.meta.url),
