@@ -60,6 +60,14 @@ class ExportTests(unittest.TestCase):
             with self.subTest(code=code):
                 self.assertEqual(e.sanitize('operation_events', {'kind': 'STOP', 'code': code})['code'], code)
 
+    def test_audited_operation_codes_survive_the_public_event_export(self):
+        audited = (e.SAFE_FAILURE_CODES | e.REQUEST_EVENT_CODES |
+                   e.HTTP_EVENT_CODES | e.OPERATION_EVENT_CODES)
+        for code in audited:
+            with self.subTest(code=code):
+                out = e.sanitize('operation_events', {'kind': 'ERROR', 'code': code})
+                self.assertEqual(out['code'], code)
+
     def test_shadow_sanitize(self):
         raw = {'cycleId': 'private-cycle', 'status': 'OK', 'action': 'BUY',
                'confidence': .8, 'model': SECRET, 'promptVersion': 'shadow-s1-v1',
