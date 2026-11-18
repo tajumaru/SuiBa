@@ -7,6 +7,14 @@ export interface RealIdentity {
   sessionId: string;
 }
 
+export interface RealEngineChecksRecord {
+  identity: RealIdentity;
+  recordedAt: number;
+  risk: "ALLOWED" | "REJECTED" | "NOT_EVALUATED";
+  profitGuard: "ALLOWED" | "BLOCKED" | "NOT_EVALUATED";
+  market: "HEALTHY" | "UNHEALTHY" | "UNKNOWN";
+}
+
 export type RealEventKind =
   | "TX_EFFECTS"
   | "ORDER_PLACED"

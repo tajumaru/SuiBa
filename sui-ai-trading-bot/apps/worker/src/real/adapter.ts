@@ -25,6 +25,12 @@ export class RealTradeCapExecutionAdapter implements ExecutionAdapter {
     this.executor.acceptStop();
   }
 
+  recordEngineChecks(
+    record: Parameters<RealTradeCapExecutor["recordEngineChecks"]>[0],
+  ) {
+    this.executor.recordEngineChecks(record);
+  }
+
   async execute(intent: ExecutionIntent): Promise<ExecutionResult> {
     const quantityAtomic =
       intent.side === "BUY" ? intent.quote.minAmountOut : intent.quote.amountIn;

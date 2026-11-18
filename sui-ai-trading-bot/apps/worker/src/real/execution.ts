@@ -3,6 +3,7 @@ import type {
   RealIdentity,
   RealOperation,
   RealBuiltTransaction,
+  RealEngineChecksRecord,
 } from "./types.ts";
 import { RealTradeCapDatabase } from "./database.ts";
 
@@ -56,6 +57,9 @@ export class RealTradeCapExecutor {
   }
   acceptStop() {
     this.db.acceptStop(this.identity);
+  }
+  recordEngineChecks(record: Omit<RealEngineChecksRecord, "identity">) {
+    this.db.persistEngineChecks({ ...record, identity: this.identity });
   }
   cancel(intent: RealCancelIntent) {
     if (intent.confirmedFailedPreviousCancel !== true)

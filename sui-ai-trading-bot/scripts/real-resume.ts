@@ -3,6 +3,7 @@ import { RealTradeCapDatabase } from "../apps/worker/src/real/database.ts";
 import { IndexerGraphqlHistorySource } from "../apps/worker/src/real/history-source.ts";
 import { RealReconciler } from "../apps/worker/src/real/reconciler.ts";
 import { createDeepBookReadOnly } from "../apps/worker/src/real/read-only.ts";
+import { tradeCapValid } from "../apps/worker/src/real/cap-valid.ts";
 import type {
   RealHistoryEvent,
   RealIdentity,
@@ -11,6 +12,7 @@ import type {
 // Sui framework SUI and DeepBook testnet DEEP use 9 decimals; DBUSDC uses 6.
 // These are Phase 1 comparison constants and must match on-chain metadata.
 export const PHASE1_DECIMALS = { SUI: 9, DBUSDC: 6, DEEP: 9 } as const;
+export const ENGINE_CHECKS_MAX_AGE_MS = 2 * 60 * 1000;
 type Asset = keyof typeof PHASE1_DECIMALS;
 const atomic = (value: unknown, decimals: number) => {
   const text = String(value ?? "0");
@@ -89,6 +91,32 @@ export interface ResumeDependencies {
     profitGuardAllowed: boolean;
     marketHealthy: boolean;
   }>;
+}
+
+export function readEngineChecks(
+  db: RealTradeCapDatabase,
+  identity: RealIdentity,
+  now = Date.now(),
+) {
+  const denied = {
+    riskAllowed: false,
+    profitGuardAllowed: false,
+    marketHealthy: false,
+  };
+  const record = db.latestEngineChecks(identity);
+  if (
+    !record ||
+    JSON.stringify(record.identity) !== JSON.stringify(identity) ||
+    !Number.isFinite(record.recordedAt) ||
+    record.recordedAt > now ||
+    now - record.recordedAt > ENGINE_CHECKS_MAX_AGE_MS
+  )
+    return denied;
+  return {
+    riskAllowed: record.risk === "ALLOWED",
+    profitGuardAllowed: record.profitGuard === "ALLOWED",
+    marketHealthy: record.market === "HEALTHY",
+  };
 }
 
 export async function resumeReal(
@@ -192,14 +220,8 @@ export async function runResume(env: NodeJS.ProcessEnv, argv: string[]) {
             >,
           };
         },
-        // SDK 2.8.0 does not expose all three required owner/cap/revocation proofs.
-        capValid: async () => false,
-        // Engine DB records do not currently provide these three durable decisions.
-        engineChecks: async () => ({
-          riskAllowed: false,
-          profitGuardAllowed: false,
-          marketHealthy: false,
-        }),
+        capValid: () => tradeCapValid(config.graphqlUrl, identity),
+        engineChecks: async () => readEngineChecks(db, identity),
       },
       {
         approve: argv.includes("--approve"),

@@ -1055,6 +1055,25 @@ export class BotEngine {
       if (quality) this.db.set("market_quality", quality);
       if (!this.monitor.shuttingDown) this.monitor.healthy();
       try {
+        if (this.executionAdapter) {
+          const marketHealthy = this.marketStatus()?.healthy;
+          this.executionAdapter.recordEngineChecks({
+            recordedAt: Date.now(),
+            risk: audit?.risk.status ?? "NOT_EVALUATED",
+            profitGuard:
+              audit?.profitGuard.evaluated === true
+                ? audit.profitGuard.allowed === true
+                  ? "ALLOWED"
+                  : "BLOCKED"
+                : "NOT_EVALUATED",
+            market:
+              marketHealthy === true
+                ? "HEALTHY"
+                : marketHealthy === false
+                  ? "UNHEALTHY"
+                  : "UNKNOWN",
+          });
+        }
         if (audit && !fillState.committed && !measuredError)
           cycle.outcome = "CANDIDATE_REJECTED";
         this.db.append(
