@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
