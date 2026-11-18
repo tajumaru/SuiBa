@@ -22,14 +22,14 @@
 
 ### 1.3 用語
 
-| 用語 | 意味 |
-|---|---|
-| BalanceManager (BM) | DeepBook v3 の共有オブジェクト。取引資金を保持し、全プール共通で使える |
-| TradeCap | BM に対する「売買のみ」権限オブジェクト。発行・移転・失効が可能（§2） |
-| TradeProof | 発注時に必要な一時証明。オーナーは `generate_proof_as_owner`、TradeCap 保有者は `generate_proof_as_trader` で生成 |
-| Bot アドレス | Worker が鍵を保持する小さなウォレット。TradeCap の保有先であり、取引 tx の署名者 |
-| オーナー | 田嶋のウォレット。BM の所有者。入金・出金・Cap 発行・Cap 失効の権限を持つ |
-| 執行アダプタ | 戦略・リスク層の後段で注文を実際に執行する部品。PAPER / REAL(TradeCap) / 将来の REAL(Bot資金) を差し替える境界（§5.1、§9） |
+| 用語                | 意味                                                                                                                       |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| BalanceManager (BM) | DeepBook v3 の共有オブジェクト。取引資金を保持し、全プール共通で使える                                                     |
+| TradeCap            | BM に対する「売買のみ」権限オブジェクト。発行・移転・失効が可能（§2）                                                      |
+| TradeProof          | 発注時に必要な一時証明。オーナーは `generate_proof_as_owner`、TradeCap 保有者は `generate_proof_as_trader` で生成          |
+| Bot アドレス        | Worker が鍵を保持する小さなウォレット。TradeCap の保有先であり、取引 tx の署名者                                           |
+| オーナー            | 田嶋のウォレット。BM の所有者。入金・出金・Cap 発行・Cap 失効の権限を持つ                                                  |
+| 執行アダプタ        | 戦略・リスク層の後段で注文を実際に執行する部品。PAPER / REAL(TradeCap) / 将来の REAL(Bot資金) を差し替える境界（§5.1、§9） |
 
 ---
 
@@ -47,8 +47,10 @@
 - Move に `revoke_trade_cap(balance_manager, trade_cap_id: &ID, ctx)` が存在し、**オーナーのみ**呼べる。BM の `allow_listed` から対象 Cap の ID を除去する。以後、その Cap での `generate_proof_as_trader` は `validate_trader` で失敗し、発注できなくなる。
 - TS SDK にも `balanceManager.revokeTradeCap(managerKey, tradeCapId)` ヘルパーがある。
 - つまり本方式の kill switch は二段構えにできる：
+
 1. **Cap 失効**（`revoke_trade_cap`）：Bot の売買権限だけを即時に剥がす。資金は BM に残る。
 2. **資金退避**（オーナーが BM から全額出金）：失効と併せて行えば、万一 Cap が残っていても掴む資金がない。
+
 - 失効はオーナー署名の tx で行うため、ダッシュボード（dapp-kit 経由）またはウォレットアプリ単体でも実行できる。**Worker の生死に依存しない**点が重要（Worker が暴走・停止不能でもオーナー側で止められる）。
 
 ### 2.3 プールと手数料
@@ -71,18 +73,18 @@
 
 ### 2.5 既存リポジトリの現状（差し込み箇所の特定）
 
-| 対象 | 現状 | REAL 化での扱い |
-|---|---|---|
-| 注文執行 | `apps/worker/src/engine.ts` の `BotEngine` が `private paper = new PaperTrading()` を**直に保持**し、約定計算 `this.paper.fill(...)`（`executeFill` 内、engine.ts:748）を同期的に呼ぶ。置換範囲は最終ゲートを含む `executeFill` 全体（engine.ts:623〜806、確定 `db.commitFill` は 770 行）とする。`TradingExecutor` インターフェースは `packages/paper-trading/src/index.ts` に定義（`mode: "PAPER"` リテラル、同期・純関数） | REAL は非同期・オンチェーン状態依存のため、この interface には乗らない。§5.1 の執行アダプタ抽象を新設し、PAPER は既存経路をそのままアダプタ内に包む |
-| 候補・監査 | 執行前に `db.putCandidate(audit)` で候補（ProfitGuard 評価・リスク評価）を記録する仕組みが既にある（engine.ts:281〜） | REAL でも同一の候補記録を前段に使う。執行段だけが変わる |
-| 安全ゲート | サイクル冒頭で `monitor.ordersAllowed()`／`runtime.running`／`runtime.emergency`／`runtime.error` を検査し `SAFETY_GATE` で打ち切る（engine.ts:255〜266） | REAL ではサイクル冒頭に加え、**署名前の最終チェック**としても同じ条件を再検査する（§7.2） |
-| クォート | `packages/dex-router/src/index.ts` の `CetusRouter`（`DexRouter`）が PAPER の価格付けに使われる。市場データ読み取りは `packages/market-data/src/deepbook.ts` の `DeepBookMarketData`（Indexer の orderbook 等） | REAL の執行価格・スリッページ保護は DeepBook プール自身の状態（板・mid・`getQuoteQuantityOut` 相当）から取る。Cetus クォートは PAPER 専用のまま |
-| 記録 | `packages/database/src/index.ts` の `BotDatabase`。汎用 JSON テーブル `paper_orders`／`paper_trades`／`paper_checks` に id キーで格納し、`commitFill` がトランザクションで確定する | REAL は新規テーブル `real_orders`／`real_trades` を分ける（§8.1）。`commitFill` 相当の確定処理も REAL 用を別に作る |
-| 注文 id | PAPER は `paper:{source}:300:{candleTimestamp}:{side}`（engine.ts:278） | REAL は `real:{network}:{candleTimestamp}:{side}:{nonce}` 形式とし、tx digest とは別に内部相関 id を持つ（§6.2） |
-| 設定 | `packages/shared/src/index.ts` の `settingsSchema`（zod `.strict()`、line 234〜）と `defaults`。PAPER 上限は既に小さい（`maxOrder` ≤ 5 USDC、`dailyBuyLimit` ≤ 20 等） | REAL 設定は Settings に混ぜず、独立した `realTradingSchema` を shared に追加し、DB の別キーで保持する（§5.3） |
-| Worker 配線 | `apps/worker/src/index.ts` が `new BotEngine(db, MarketSelection, new CetusRouter(), ReadOnlySuiClient)` を構築。各種設定は環境変数（`DATABASE_PATH`、`SUI_GRPC_URL` 等） | Bot 鍵も環境変数パターンに倣う（§5.2）。ただし鍵はログ・スナップショット・API に絶対に含めない |
-| Sui クライアント | `packages/sui-client` の `ReadOnlySuiClient`（`@mysten/sui` の `SuiGrpcClient`＋gRPC-Web fetch トランスポート） | DeepBook SDK の公式例も `SuiGrpcClient` ＋ `$extend(deepbook(...))` であり互換。署名・実行には書き込み可能なクライアントを Worker 内に別途持つ |
-| モード表示 | `apps/worker/src/operations.ts` に `mode: "PAPER"` リテラルが複数箇所（167/229/243/263/987 行付近） | スナップショットの mode を実モードから導出するよう変更が必要（§8.3） |
+| 対象             | 現状                                                                                                                                                                                                                                                                                                                                                                                                                          | REAL 化での扱い                                                                                                                                     |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 注文執行         | `apps/worker/src/engine.ts` の `BotEngine` が `private paper = new PaperTrading()` を**直に保持**し、約定計算 `this.paper.fill(...)`（`executeFill` 内、engine.ts:748）を同期的に呼ぶ。置換範囲は最終ゲートを含む `executeFill` 全体（engine.ts:623〜806、確定 `db.commitFill` は 770 行）とする。`TradingExecutor` インターフェースは `packages/paper-trading/src/index.ts` に定義（`mode: "PAPER"` リテラル、同期・純関数） | REAL は非同期・オンチェーン状態依存のため、この interface には乗らない。§5.1 の執行アダプタ抽象を新設し、PAPER は既存経路をそのままアダプタ内に包む |
+| 候補・監査       | 執行前に `db.putCandidate(audit)` で候補（ProfitGuard 評価・リスク評価）を記録する仕組みが既にある（engine.ts:281〜）                                                                                                                                                                                                                                                                                                         | REAL でも同一の候補記録を前段に使う。執行段だけが変わる                                                                                             |
+| 安全ゲート       | サイクル冒頭で `monitor.ordersAllowed()`／`runtime.running`／`runtime.emergency`／`runtime.error` を検査し `SAFETY_GATE` で打ち切る（engine.ts:255〜266）                                                                                                                                                                                                                                                                     | REAL ではサイクル冒頭に加え、**署名前の最終チェック**としても同じ条件を再検査する（§7.2）                                                           |
+| クォート         | `packages/dex-router/src/index.ts` の `CetusRouter`（`DexRouter`）が PAPER の価格付けに使われる。市場データ読み取りは `packages/market-data/src/deepbook.ts` の `DeepBookMarketData`（Indexer の orderbook 等）                                                                                                                                                                                                               | REAL の執行価格・スリッページ保護は DeepBook プール自身の状態（板・mid・`getQuoteQuantityOut` 相当）から取る。Cetus クォートは PAPER 専用のまま     |
+| 記録             | `packages/database/src/index.ts` の `BotDatabase`。汎用 JSON テーブル `paper_orders`／`paper_trades`／`paper_checks` に id キーで格納し、`commitFill` がトランザクションで確定する                                                                                                                                                                                                                                            | REAL は新規テーブル `real_orders`／`real_trades` を分ける（§8.1）。`commitFill` 相当の確定処理も REAL 用を別に作る                                  |
+| 注文 id          | PAPER は `paper:{source}:300:{candleTimestamp}:{side}`（engine.ts:278）                                                                                                                                                                                                                                                                                                                                                       | REAL は `real:{network}:{candleTimestamp}:{side}:{nonce}` 形式とし、tx digest とは別に内部相関 id を持つ（§6.2）                                    |
+| 設定             | `packages/shared/src/index.ts` の `settingsSchema`（zod `.strict()`、line 234〜）と `defaults`。PAPER 上限は既に小さい（`maxOrder` ≤ 5 USDC、`dailyBuyLimit` ≤ 20 等）                                                                                                                                                                                                                                                        | REAL 設定は Settings に混ぜず、独立した `realTradingSchema` を shared に追加し、DB の別キーで保持する（§5.3）                                       |
+| Worker 配線      | `apps/worker/src/index.ts` が `new BotEngine(db, MarketSelection, new CetusRouter(), ReadOnlySuiClient)` を構築。各種設定は環境変数（`DATABASE_PATH`、`SUI_GRPC_URL` 等）                                                                                                                                                                                                                                                     | Bot 鍵も環境変数パターンに倣う（§5.2）。ただし鍵はログ・スナップショット・API に絶対に含めない                                                      |
+| Sui クライアント | `packages/sui-client` の `ReadOnlySuiClient`（`@mysten/sui` の `SuiGrpcClient`＋gRPC-Web fetch トランスポート）                                                                                                                                                                                                                                                                                                               | DeepBook SDK の公式例も `SuiGrpcClient` ＋ `$extend(deepbook(...))` であり互換。署名・実行には書き込み可能なクライアントを Worker 内に別途持つ      |
+| モード表示       | `apps/worker/src/operations.ts` に `mode: "PAPER"` リテラルが複数箇所（167/229/243/263/987 行付近）                                                                                                                                                                                                                                                                                                                           | スナップショットの mode を実モードから導出するよう変更が必要（§8.3）                                                                                |
 
 ---
 
@@ -131,18 +133,19 @@ BalanceManager（資金：田嶋） ── Pool SUI_USDC
 3. 入金：取引資金（USDC、必要なら SUI）と手数料用 DEEP を BM へ `deposit`（オーナーのみ可能）。DEEP は手数料の DEEP 払い（§2.3、2026-11-10 決定）の原資であり、任意の入金ではない。
 4. TradeCap 発行と Bot への移転：`mint_trade_cap` で Cap を発行し、Bot アドレスへ移転する。**2026-11-10 に SDK ソースで確認し、同一 PTB 内で発行＋`transferObjects` まで完結させる（1 tx）と決定した**（§11 #5）。SDK ヘルパー `mintTradeCap` は Transaction を受けて move call を追加し Cap のハンドルを返す tx ビルダーであり、同一 tx 内で移転まで組める。
 5. Worker 側に BM ID と TradeCap ID を登録（§5.3 の REAL 設定）。Worker は起動時にオンチェーンで次を検証し、1 つでも崩れていたら REAL を有効化しない（フェイルクローズ）：
+
 - BM の `owner` が登録済みオーナーアドレスと一致する
 - TradeCap が Bot アドレスに存在し、その Cap が当該 BM のものである
 - Cap が失効していない（proof 生成の devInspect 相当で検証可能）
 
 ### 4.2 日常のオーナー操作
 
-| 操作 | 実行者 | 備考 |
-|---|---|---|
-| 入金・出金 | オーナー（ダッシュボード署名） | 出金はいつでも可能。出金すると Bot は残高不足で自然に止まる |
-| Cap 失効 | オーナー（ダッシュボード署名、またはウォレット単体） | §2.2。緊急時の第一手 |
-| Cap 再発行 | オーナー | 失効後に再開する場合。古い Cap ID は REAL 設定から除去する |
-| Bot へガス補充 | オーナー（通常送金） | Bot アドレス宛に SUI を送るだけ |
+| 操作           | 実行者                                               | 備考                                                        |
+| -------------- | ---------------------------------------------------- | ----------------------------------------------------------- |
+| 入金・出金     | オーナー（ダッシュボード署名）                       | 出金はいつでも可能。出金すると Bot は残高不足で自然に止まる |
+| Cap 失効       | オーナー（ダッシュボード署名、またはウォレット単体） | §2.2。緊急時の第一手                                        |
+| Cap 再発行     | オーナー                                             | 失効後に再開する場合。古い Cap ID は REAL 設定から除去する  |
+| Bot へガス補充 | オーナー（通常送金）                                 | Bot アドレス宛に SUI を送るだけ                             |
 
 ---
 
@@ -155,13 +158,13 @@ BalanceManager（資金：田嶋） ── Pool SUI_USDC
 ```ts
 // 概念定義（実装時の型設計の指針）
 interface ExecutionAdapter {
-readonly kind: "PAPER" | "REAL_TRADECAP" | "REAL_BOT_WALLET";
-// 候補（監査記録済み）を受け取り、執行結果を返す。REAL 系は非同期。
-execute(intent: ExecutionIntent): Promise<ExecutionResult>;
-// 緊急停止時：未約定注文の一括キャンセル
-cancelAllOpenOrders(reason: string): Promise<CancelResult>;
-// 照合用：オンチェーンの現在状態（残高・未約定）を取得
-fetchOnchainState(): Promise<AdapterOnchainState>;
+  readonly kind: "PAPER" | "REAL_TRADECAP" | "REAL_BOT_WALLET";
+  // 候補（監査記録済み）を受け取り、執行結果を返す。REAL 系は非同期。
+  execute(intent: ExecutionIntent): Promise<ExecutionResult>;
+  // 緊急停止時：未約定注文の一括キャンセル
+  cancelAllOpenOrders(reason: string): Promise<CancelResult>;
+  // 照合用：オンチェーンの現在状態（残高・未約定）を取得
+  fetchOnchainState(): Promise<AdapterOnchainState>;
 }
 ```
 
@@ -173,18 +176,18 @@ fetchOnchainState(): Promise<AdapterOnchainState>;
 
 `ExecutionIntent`（engine → アダプタ）は、`executeFill` が現在 fill 呼び出し地点で手にしている値の写しとする。アダプタが判断材料を新たに集めることはしない：
 
-| フィールド | 内容 | PAPER 側の対応 |
-|---|---|---|
-| orderId | 内部注文 id。engine が候補生成時に採番して渡す（アダプタは採番しない） | `paper:{source}:300:{candleTimestamp}:{side}`（候補生成時、engine.ts:367）。REAL は §6.2 の `real:{network}:{candleTimestamp}:{side}:{nonce}` 形式で engine が採番する |
-| candidateId | 候補の相関 id（§8.1 の「候補 id」との対応用） | `CandidateAudit.id`。orderId とは別に保持される |
-| side | `"BUY" \| "SELL"` | decision.action |
-| quote | `QuoteResult`（amountIn／minAmountOut は atomic 文字列、expiresAt、slippage、priceImpact を含む） | CetusRouter のクォートそのもの。REAL では執行価格そのものではなく、価格保護（§6.2）の基準として使う |
-| portfolio | `Portfolio`（執行直前の DB 帳簿） | fill の遷移元 `p`。REAL では上限・保有比率の評価材料として読む（実残高の正は BM 側、§7.1-4） |
-| settings | `Settings`（executeFill で確定した executionSettings のスナップショット） | 同左 |
-| costs | `Costs`（additionalFeeUsdc／gasUsdc） | `paperCosts` の出力。§5.4.4 の入力契約で確定した値。null の場合は前段で候補が棄却され、intent 自体が作られない（§5.4.5） |
-| profitGuard | `ProfitReport`（評価結果） | `commitFill` が注文レコードに保持する profit と同じもの。§8.1 の記録（評価の写し）用 |
-| markPrice | 照合の基準価格（number） | `reconcileFill` の mark 引数（そのサイクルの price） |
-| now | 執行時刻（epoch ミリ秒） | executionNow |
+| フィールド  | 内容                                                                                              | PAPER 側の対応                                                                                                                                                         |
+| ----------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| orderId     | 内部注文 id。engine が候補生成時に採番して渡す（アダプタは採番しない）                            | `paper:{source}:300:{candleTimestamp}:{side}`（候補生成時、engine.ts:367）。REAL は §6.2 の `real:{network}:{candleTimestamp}:{side}:{nonce}` 形式で engine が採番する |
+| candidateId | 候補の相関 id（§8.1 の「候補 id」との対応用）                                                     | `CandidateAudit.id`。orderId とは別に保持される                                                                                                                        |
+| side        | `"BUY" \| "SELL"`                                                                                 | decision.action                                                                                                                                                        |
+| quote       | `QuoteResult`（amountIn／minAmountOut は atomic 文字列、expiresAt、slippage、priceImpact を含む） | CetusRouter のクォートそのもの。REAL では執行価格そのものではなく、価格保護（§6.2）の基準として使う                                                                    |
+| portfolio   | `Portfolio`（執行直前の DB 帳簿）                                                                 | fill の遷移元 `p`。REAL では上限・保有比率の評価材料として読む（実残高の正は BM 側、§7.1-4）                                                                           |
+| settings    | `Settings`（executeFill で確定した executionSettings のスナップショット）                         | 同左                                                                                                                                                                   |
+| costs       | `Costs`（additionalFeeUsdc／gasUsdc）                                                             | `paperCosts` の出力。§5.4.4 の入力契約で確定した値。null の場合は前段で候補が棄却され、intent 自体が作られない（§5.4.5）                                               |
+| profitGuard | `ProfitReport`（評価結果）                                                                        | `commitFill` が注文レコードに保持する profit と同じもの。§8.1 の記録（評価の写し）用                                                                                   |
+| markPrice   | 照合の基準価格（number）                                                                          | `reconcileFill` の mark 引数（そのサイクルの price）                                                                                                                   |
+| now         | 執行時刻（epoch ミリ秒）                                                                          | executionNow                                                                                                                                                           |
 
 `ExecutionResult`（アダプタ → engine）は、§6.1 の状態機械のうち execute() が責任を持つ範囲の結果とする：
 
@@ -230,27 +233,25 @@ fetchOnchainState(): Promise<AdapterOnchainState>;
 
 原則：想定内の執行結果（チェーン側の失敗・応答喪失・残高不足等）は ExecutionResult として返し、例外にしない。例外は「帳簿の整合性が疑われる場合」に限って throw し、tick の既存の例外分類（ハードストップ／エピソード経路）にそのまま載せる。**新しい停止条件は作らない。** 本表は REAL アダプタの扱いであり、PaperAdapter は現行の throw をそのまま保持する（§5.1.2）。
 
-| 事象 | アダプタの扱い | engine／安全機構側の扱い |
-|---|---|---|
-| 送信前検査の不成立（BM 残高不足、ガス不足 §7.4、DEEP フロートの下限割れ §5.4.2、価格保護 §6.2、上限 §7.1） | execute() が REJECTED を返す（例外にしない） | 候補は棄却。real_orders に REJECTED と理由を記録し、現行の reject 経路（risk_events）にも残す。failCycle はしない（§5.4.5／§7.4 の「候補を棄却する・発注を停止する」方針） |
-| コスト見積もり不能（§5.4.5） | intent が作られないため execute() には届かない | 前段で候補棄却（現行方針のまま） |
-| tx はチェーンに届いたが失敗した／注文が拒否された | digest を記録し REJECTED を返す | 候補は不成立として終了する。ポジション・帳簿は変更しない。失敗の事実は real_orders と運用表示に残す |
-| 送信の成否自体が証明できない（応答喪失、finality 待ち上限超過） | UNKNOWN を返す。digest が分かれば記録する（「届いていないことが証明できる場合のみ REJECTED、証明できなければ UNKNOWN」が振り分けの規則） | real_orders は RECONCILING に残る。新規発注は §5.1.3 のゲートで止まる。後続サイクルの照合（§5.1.6）が解決を試みる |
-| 約定後の二重突き合わせ不一致（§6.3） | その約定を確定扱いにせず RECONCILING に入れる | 照合経路で解決を試みる。解決しなければ HALTED（次行） |
-| 照合で説明できない差分（§6.5-3） | ―（照合経路の判定） | REAL を HALTED にする。新規発注のみを止める REAL 側のラッチとし、engine の runtime.error（ハードストップ）とは別軸に置く。解除は §11.9.2 の独立証拠・完全な履歴・分解残高一致を満たす再判定と明示承認に限る。同定不能の恒久禁止は手動確認、通常 readiness、reset、session／BM 差替えでは解除しない |
-| アダプタ内部の整合性異常（記録の破損、必須 digest の欠落等） | throw する | tick の既存分類でハードストップする（PAPER で `PAPER_RECONCILIATION_FAILED` が fill 区間の throw から failCycle するのと同じ経路）。既存の意味論の再利用であり、新しい停止条件ではない |
-| 上流 API の 429／500 | アダプタの外部読み取りも既存の apiAccess の計数に載せ、即時ハードストップを継承する（接続方法は実装時に確定） | 既存の経路（apiAccess.onRateLimit → monitor.stop）がそのまま効く |
+| 事象                                                                                                       | アダプタの扱い                                                                                                                           | engine／安全機構側の扱い                                                                                                                                                                                                                                                                           |
+| ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 送信前検査の不成立（BM 残高不足、ガス不足 §7.4、DEEP フロートの下限割れ §5.4.2、価格保護 §6.2、上限 §7.1） | execute() が REJECTED を返す（例外にしない）                                                                                             | 候補は棄却。real_orders に REJECTED と理由を記録し、現行の reject 経路（risk_events）にも残す。failCycle はしない（§5.4.5／§7.4 の「候補を棄却する・発注を停止する」方針）                                                                                                                         |
+| コスト見積もり不能（§5.4.5）                                                                               | intent が作られないため execute() には届かない                                                                                           | 前段で候補棄却（現行方針のまま）                                                                                                                                                                                                                                                                   |
+| tx はチェーンに届いたが失敗した／注文が拒否された                                                          | digest を記録し REJECTED を返す                                                                                                          | 候補は不成立として終了する。ポジション・帳簿は変更しない。失敗の事実は real_orders と運用表示に残す                                                                                                                                                                                                |
+| 送信の成否自体が証明できない（応答喪失、finality 待ち上限超過）                                            | UNKNOWN を返す。digest が分かれば記録する（「届いていないことが証明できる場合のみ REJECTED、証明できなければ UNKNOWN」が振り分けの規則） | real_orders は RECONCILING に残る。新規発注は §5.1.3 のゲートで止まる。後続サイクルの照合（§5.1.6）が解決を試みる                                                                                                                                                                                  |
+| 約定後の二重突き合わせ不一致（§6.3）                                                                       | その約定を確定扱いにせず RECONCILING に入れる                                                                                            | 照合経路で解決を試みる。解決しなければ HALTED（次行）                                                                                                                                                                                                                                              |
+| 照合で説明できない差分（§6.5-3）                                                                           | ―（照合経路の判定）                                                                                                                      | REAL を HALTED にする。新規発注のみを止める REAL 側のラッチとし、engine の runtime.error（ハードストップ）とは別軸に置く。解除は §11.9.2 の独立証拠・完全な履歴・分解残高一致を満たす再判定と明示承認に限る。同定不能の恒久禁止は手動確認、通常 readiness、reset、session／BM 差替えでは解除しない |
+| アダプタ内部の整合性異常（記録の破損、必須 digest の欠落等）                                               | throw する                                                                                                                               | tick の既存分類でハードストップする（PAPER で `PAPER_RECONCILIATION_FAILED` が fill 区間の throw から failCycle するのと同じ経路）。既存の意味論の再利用であり、新しい停止条件ではない                                                                                                             |
+| 上流 API の 429／500                                                                                       | アダプタの外部読み取りも既存の apiAccess の計数に載せ、即時ハードストップを継承する（接続方法は実装時に確定）                            | 既存の経路（apiAccess.onRateLimit → monitor.stop）がそのまま効く                                                                                                                                                                                                                                   |
 
 #### 5.1.5 cancelAllOpenOrders の契約
 
 - 冪等性：何度呼んでも安全とする。未約定が無ければ `NOTHING_OPEN` を成功として返す。RECONCILING 中のレコードがあっても呼べる（キャンセルはオンチェーンの未約定に対して効くものであり、UNKNOWN の解決そのものは照合の仕事として残る）。
 - 戻り値（CancelResult）：`status`（`"CANCELLED_ALL" | "PARTIAL" | "FAILED" | "NOTHING_OPEN"`）、`targets`（呼び出し時点でオンチェーンに存在した未約定件数）、`cancelled`（finality まで確認できた件数）、`digests`、`remainingOrderIds`（PARTIAL／FAILED 時の残件の onchainOrderId）、`errorCode`。
 - 応答喪失は失敗と確定せず UNKNOWN とし、履歴上の cancel effects・競合 fill・返却／清算・ガスを照合する。無条件 retry はしない。確定失敗かつ残件を一意に同定できた場合だけ、別承認を得た bounded 復旧操作を検討する。なお Phase 1 の停止ラッチ中は取消専用署名も禁止し、必要な取消はオーナー自身のウォレットで行う（§11.9.2／S3）。
+- Phase 1 では Bot の `cancelAllOpenOrders` を緊急停止時・Worker 終了時に呼ばない。必要な一括取消はオーナーが `real-owner-cli.ts cancel-all` を自身のウォレットから実行する。
 - digest：キャンセル tx の digest はすべて記録し、対象注文の real_orders レコードと監査に紐づける（§8.1）。
-- 呼び出し位置：
-  1. **緊急停止時**：制御経路が runtime.emergency をラッチする地点（現行 http-routes の emergency 処理）から、engine 経由でアダプタに指示する。HTTP 応答をチェーンの finality 待ちでブロックしないため、呼び出しは非同期に発行し、完了結果は監査記録＋運用表示に反映する。あわせて次サイクルの定期照合で残件ゼロを確認する（§7.2-2 の「結果（成功／失敗／対象件数）を残す」の担保）。
-  2. **Worker 終了時**：スケジューラ停止の後段、プロセス終了前に呼ぶ（§6.6）。終了処理を無期限に止めないため finality 待ちには上限を設け、上限超過分は「残っている可能性」として記録して終了する。
-  3. PaperAdapter では no-op（§5.1.2）。
+- 呼び出し位置：Phase 1 の Bot 制御経路からは呼ばない。停止後の必要な取消はオーナー CLI に限定する。PaperAdapter では従来どおり no-op（§5.1.2）。
 - `reason` 引数（例：EMERGENCY_STOP、WORKER_SHUTDOWN）は監査記録にそのまま残す。
 
 #### 5.1.6 fetchOnchainState と定期照合の接続
@@ -260,8 +261,9 @@ fetchOnchainState(): Promise<AdapterOnchainState>;
   1. 未終端 real_orders（RECONCILING を含む）の回収：§6.5 の手順（digest があれば確定状態の取得、無ければ未約定一覧と BM 残高の突き合わせ）で終端へ進める。
   2. 定期照合（§6.5-4）：DB 帳簿の保有量・現金相当と BM 残高（SUI／USDC）を比較する。DEEP 残高は §5.4.2 のフロート監視にも使う。不一致が説明できなければ HALTED（§5.1.4）。
   3. Bot ガス残高の確認（§7.4）。
-  
+
   照合が完了するまで、そのサイクルは執行段に進まない（安全ゲートで打ち切る現行の作法に倣う）。
+
 - 突き合わせの独立性：PAPER の `reconcileFill` が「executor を呼ばず独立の遷移式で検算する」のと同じく、照合はアダプタの自己申告ではなく、オンチェーン状態（fetchOnchainState）と DB 記録の独立した突き合わせとして実装する。DB 側の対象は real_orders の未終端レコードと、real_trades から積み上げた保有量・現金相当の帳簿。
 - 起動時：最初のサイクルの前に同じ照合を 1 回実行し、前回プロセスの未終端レコードを回収してから執行を有効にする（§6.5-2 の復元はこの段で行う）。
 - PAPER：fetchOnchainState は DB 由来の状態を返し、定期照合は現行の台帳チェックに帰着する（§5.1.2）。なお現行の `OperationMonitor.ordersAllowed` には PAPER 前提（mode の検査）が含まれており、REAL 時の monitor の扱いは実装時に確定する。
@@ -275,8 +277,9 @@ fetchOnchainState(): Promise<AdapterOnchainState>;
   3. Cap が失効していない（proof 生成の devInspect 相当で検証）。
   4. network と poolKey の整合（§5.3 のスキーマ前提の再確認）。
   5. 起動時照合（§5.1.6）が完了し、説明できない差分が無い。
-  
+
   項目 1〜3 のいずれかが崩れたら REAL を有効化しない（フェイルクローズ、§4.1-5）。ガス残高（§7.4）と手数料パラメータの初回読み取り（§5.4.1）は有効化の可否ではなく「新規注文の可否」として扱い、不足すれば §5.4.5 の枠組みで候補棄却側に倒れる。
+
 - 検証結果は Bot アドレスのみを含む形でログ・起動時表示に出す（鍵そのものは出さない、§5.2）。
 
 #### 5.1.8 テスト方針
@@ -293,7 +296,7 @@ fetchOnchainState(): Promise<AdapterOnchainState>;
 
 ### 5.2 Bot 鍵の管理
 
-- Bot 鍵は環境変数（例：`SUIBA_BOT_PRIVATE_KEY`、`suiprivkey1…` 形式）で Worker にだけ渡す。既存の環境変数パターンに倣うが、次を必須とする：
+- Bot 鍵は環境変数（設計時の例：`SUIBA_BOT_PRIVATE_KEY`。Phase 1 実装では `REAL_BOT_PRIVATE_KEY`、`suiprivkey1…` 形式）で Worker にだけ渡す。既存の環境変数パターンに倣うが、次を必須とする：
 - ログ、スナップショット、運用 API、DB、例外メッセージに鍵（およびその断片）を含めない。起動時検証のログは Bot アドレスのみ出す。
 - `.env` ファイルを使う場合は権限 600 とし、リポジトリに含めない（`.gitignore` 確認を実装チェックリストに入れる）。
 - 鍵の生成は田嶋がウォレットアプリ等で行い、Bot アドレスをダッシュボードの REAL 設定画面に登録する（Worker が鍵を生成・表示する UI は作らない）。
@@ -304,20 +307,22 @@ fetchOnchainState(): Promise<AdapterOnchainState>;
 
 ```ts
 // 案（金額系フィールドの既定値は §11 の要判断のため、ここでは型と上限だけ示す）
-realTradingSchema = z.object({
-enabled: z.boolean(), // 既定 false（オプトイン）
-network: z.enum(["testnet", "mainnet"]),
-executionSource: z.literal("TRADECAP"), // 将来 "BOT_WALLET" を追加（§9）
-ownerAddress: SuiAddress,
-balanceManagerId: ObjectId,
-tradeCapId: ObjectId,
-botAddress: SuiAddress,
-poolKey: z.enum(["SUI_DBUSDC", "SUI_USDC"]), // network と整合させる
-maxOrderUsdc: Decimal上限つき, // REAL 専用・1回の上限（値は要判断）
-dailyRealLimitUsdc: Decimal上限つき, // REAL 専用・1日の上限（値は要判断）
-payWithDeep: z.literal(true), // 手数料は DEEP 払い固定（§2.3、2026-11-10 決定）。Phase 1 プロファイルでは必須であり、運用者が切り替える項目ではない
-minBotGasSui: Decimal, // ガス不足とみなす閾値（値は要判断）
-}).strict()
+realTradingSchema = z
+  .object({
+    enabled: z.boolean(), // 既定 false（オプトイン）
+    network: z.enum(["testnet", "mainnet"]),
+    executionSource: z.literal("TRADECAP"), // 将来 "BOT_WALLET" を追加（§9）
+    ownerAddress: SuiAddress,
+    balanceManagerId: ObjectId,
+    tradeCapId: ObjectId,
+    botAddress: SuiAddress,
+    poolKey: z.enum(["SUI_DBUSDC", "SUI_USDC"]), // network と整合させる
+    maxOrderUsdc: Decimal上限つき, // REAL 専用・1回の上限（値は要判断）
+    dailyRealLimitUsdc: Decimal上限つき, // REAL 専用・1日の上限（値は要判断）
+    payWithDeep: z.literal(true), // 手数料は DEEP 払い固定（§2.3、2026-11-10 決定）。Phase 1 プロファイルでは必須であり、運用者が切り替える項目ではない
+    minBotGasSui: Decimal, // ガス不足とみなす閾値（値は要判断）
+  })
+  .strict();
 ```
 
 - REAL 上限は PAPER の `maxOrder`／`dailyBuyLimit` とは**独立**に効かせる（REAL の実績を PAPER の上限消費に数えない、逆も同じ）。
@@ -329,7 +334,7 @@ minBotGasSui: Decimal, // ガス不足とみなす閾値（値は要判断）
 - REAL の ProfitGuard は、現行 PAPER の想定コスト（`feeRate`、`gasUsdc` の固定値）ではなく：
 - プール手数料：`poolTradeParams` の実レート（DEEP 払い前提のため、入力資産払いの +25% は適用しない）
 - ガス：直近の実績ガス（SUI 建て）× SUI/USDC レート
-で見積もる。見積もり不能な場合は候補を棄却する（フェイルクローズ）。
+  で見積もる。見積もり不能な場合は候補を棄却する（フェイルクローズ）。
 - 戦略・ProfitGuard の判定ロジック自体は PAPER と共通のものをそのまま使う。
 
 #### 5.4.1 手数料レートの取得とキャッシュ
@@ -355,11 +360,11 @@ minBotGasSui: Decimal, // ガス不足とみなす閾値（値は要判断）
 
 #### 5.4.4 PAPER との対応（入力契約）
 
-| ProfitGuard 入力 | PAPER | REAL |
-|---|---|---|
-| additionalFeeUsdc | 想定元本 × feeRate（固定 0.003） | 想定元本 × プール実 taker レート（DEEP 払い固定のため ×1.0） |
-| gasUsdc | 固定 0.03 | 直近実績の中央値（§5.4.3） |
-| null（見積もり不能） | 候補を棄却 | 同じ（§5.4.5） |
+| ProfitGuard 入力     | PAPER                            | REAL                                                         |
+| -------------------- | -------------------------------- | ------------------------------------------------------------ |
+| additionalFeeUsdc    | 想定元本 × feeRate（固定 0.003） | 想定元本 × プール実 taker レート（DEEP 払い固定のため ×1.0） |
+| gasUsdc              | 固定 0.03                        | 直近実績の中央値（§5.4.3）                                   |
+| null（見積もり不能） | 候補を棄却                       | 同じ（§5.4.5）                                               |
 
 - 見積もりは常に taker レートで行う（最悪側）。§11 #3 の注文種別が指値（maker 約定）になっても、実コストが見積もり以下になるだけであり、ProfitGuard は保守側に倒れたまま使える。
 - stakeRequired は読み取るが、ステーク割引は前提にしないため判定には使わない。割引が実際に効いた場合は実コストの下振れとして扱う。
@@ -420,7 +425,7 @@ Sui の tx は原子的であり、「送信したのに結果が分からない
 ### 6.6 キャンセル
 
 - 個別キャンセル：`cancelOrder`（onchain order_id 指定）。
-- 一括キャンセル：`cancelAllOrders`（プール＋BM 指定）。緊急停止時（§7.2）と Worker 終了時に呼ぶ。
+- 一括キャンセル：Phase 1 では Bot は緊急停止時・Worker 終了時とも `cancelAllOrders` を呼ばない。必要な取消はオーナーが自身のウォレットから `real-owner-cli.ts cancel-all` を実行する（§11.9 決定 (5)）。
 - キャンセルも発注と同じ送信前永続化を行う。応答喪失は UNKNOWN として §6.5 の履歴で競合 fill と取消残量を別々に確定し、無条件に再送しない。Phase 1 では停止ラッチ中の Bot 署名（取消専用を含む）を許可しない。
 
 ---
@@ -437,8 +442,9 @@ Sui の tx は原子的であり、「送信したのに結果が分からない
 ### 7.2 緊急停止時の実注文の扱い
 
 - 既存の緊急停止（`runtime.emergency`）は REAL でも最優先で効かせる：
+
 1. 新規発注の即時停止（サイクル冒頭ゲート＋署名前チェックの二重化、§2.5）。
-2. **未約定注文の一括キャンセル**（§6.6）をアダプタに指示する。結果（成功／失敗／対象件数）を監査記録と運用画面に残す。
+2. Phase 1 では Bot 署名による一括キャンセルを指示しない。必要な未約定注文の取消は、停止ラッチとは独立したオーナーのウォレットから `real-owner-cli.ts cancel-all` で行う（§11.9 決定 (5)）。
 3. 緊急停止の解除は従来通り手動操作のみ。解除しても REAL が自動で再有効化されることはない（REAL 設定の `enabled` と緊急停止は別軸とし、両方そろって初めて発注できる）。
 
 ### 7.3 通信異常時
@@ -482,12 +488,12 @@ Sui の tx は原子的であり、「送信したのに結果が分からない
 
 現行の PAPER 前提文言と、その扱い：
 
-| 箇所 | 現行 | REAL 有効時の方針 |
-|---|---|---|
-| ヘッダーバッジ（`apps/dashboard/src/main.tsx:339`） | 「PAPER（仮想売買）専用」 | モード連動にする。PAPER 時は現行文言。REAL 有効時は「REAL（実売買）モード」等の警告色バッジに切替 |
-| 実況の注記（`apps/dashboard/src/AgentNarration.tsx:317`） | 「表示はPAPER（仮想売買）の記録で、実売買は行いません」 | モードに応じて文面を出し分ける。REAL 時は「実売買の記録を含みます」旨の正確な注記にする |
-| バックテスト比較（`BacktestComparison.tsx:266`） | 「PAPER（仮想売買）専用」 | バックテスト自体は常に PAPER 相当なので文言は維持（REAL の実績とは無関係である旨は現行通りで正しい） |
-| Worker スナップショット（`apps/worker/src/operations.ts` の `mode: "PAPER"` リテラル群） | 固定で PAPER | 実モード（アダプタ種別＋network）から導出して返すよう変更する |
+| 箇所                                                                                     | 現行                                                    | REAL 有効時の方針                                                                                    |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| ヘッダーバッジ（`apps/dashboard/src/main.tsx:339`）                                      | 「PAPER（仮想売買）専用」                               | モード連動にする。PAPER 時は現行文言。REAL 有効時は「REAL（実売買）モード」等の警告色バッジに切替    |
+| 実況の注記（`apps/dashboard/src/AgentNarration.tsx:317`）                                | 「表示はPAPER（仮想売買）の記録で、実売買は行いません」 | モードに応じて文面を出し分ける。REAL 時は「実売買の記録を含みます」旨の正確な注記にする              |
+| バックテスト比較（`BacktestComparison.tsx:266`）                                         | 「PAPER（仮想売買）専用」                               | バックテスト自体は常に PAPER 相当なので文言は維持（REAL の実績とは無関係である旨は現行通りで正しい） |
+| Worker スナップショット（`apps/worker/src/operations.ts` の `mode: "PAPER"` リテラル群） | 固定で PAPER                                            | 実モード（アダプタ種別＋network）から導出して返すよう変更する                                        |
 
 - REAL の有効化・無効化は、通常の設定保存とは別の**専用操作＋確認表示**（対象 BM・Bot アドレス・上限額の読み合わせ）とする（§5.3）。
 - REAL 有効中は、ダッシュボードの全タブで現在のモードが一目で分かる状態を維持する（バッジ常駐）。「実は REAL だった」に気づけない UI にしない。
@@ -515,24 +521,24 @@ TradeCap は「オブジェクト」であり、誰かが保有し、その保�
 
 **できる**。§5.1 の執行アダプタ抽象の下に `RealBotWalletAdapter` を追加し、Bot アドレス自身の残高（SUI/USDC のコインオブジェクト）で DeepBook の swap／発注を行う構成である。併用時の分離方法は次の通り：
 
-| 分離軸 | 方式 |
-|---|---|
-| モード分離 | 注文は 1 件ごとに単一のアダプタで執行する。`realTradingSchema.executionSource` で有効な執行元を排他選択し、**初期実装では同時有効化を禁止**する（両方有効は将来拡張。その場合も「戦略シグナル→どのアダプタか」の振り分け規則を明示しない限り有効化しない） |
-| 上限の分離 | アダプタ別に 1 回上限・日次上限を持ち、別々に集計する。さらに両アダプタ合算の日次上限を上位に置く（二重の天井） |
-| 記録の分離 | `real_orders`／`real_trades` に `executionSource` を必須項目として記録し、集計・履歴表示で混ぜない（§8.1） |
-| 残高照合の分離 | TradeCap 経路は BM 残高と照合。Bot 資金経路は Bot アドレスのコイン残高と照合。照合先を取り違えないよう、アダプタごとに `fetchOnchainState` を実装する（§5.1） |
-| 資金の分離 | Bot ウォレットに取引資金を入れるのは方式1 有効時のみ。TradeCap 単独運用時はガス用 SUI 以外を入れない運用ルールを明記する（誤送金検知のため、Bot 残高に USDC 等があれば運用画面に注意表示する） |
+| 分離軸         | 方式                                                                                                                                                                                                                                                       |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| モード分離     | 注文は 1 件ごとに単一のアダプタで執行する。`realTradingSchema.executionSource` で有効な執行元を排他選択し、**初期実装では同時有効化を禁止**する（両方有効は将来拡張。その場合も「戦略シグナル→どのアダプタか」の振り分け規則を明示しない限り有効化しない） |
+| 上限の分離     | アダプタ別に 1 回上限・日次上限を持ち、別々に集計する。さらに両アダプタ合算の日次上限を上位に置く（二重の天井）                                                                                                                                            |
+| 記録の分離     | `real_orders`／`real_trades` に `executionSource` を必須項目として記録し、集計・履歴表示で混ぜない（§8.1）                                                                                                                                                 |
+| 残高照合の分離 | TradeCap 経路は BM 残高と照合。Bot 資金経路は Bot アドレスのコイン残高と照合。照合先を取り違えないよう、アダプタごとに `fetchOnchainState` を実装する（§5.1）                                                                                              |
+| 資金の分離     | Bot ウォレットに取引資金を入れるのは方式1 有効時のみ。TradeCap 単独運用時はガス用 SUI 以外を入れない運用ルールを明記する（誤送金検知のため、Bot 残高に USDC 等があれば運用画面に注意表示する）                                                             |
 
 ### 9.3 リスク差分（組み合わせ時）
 
-| 観点 | TradeCap 経路（主軸） | Bot 資金経路（方式1そのもの） |
-|---|---|---|
-| 鍵漏洩時の最大被害 | BM 内資金への不利な取引まで。出金不可。オーナーウォレット本体は無事 | **Bot ウォレット内全額の直接送金が可能**（鍵＝全権）。被害は即時・全額になりうる |
-| 止める手段 | `revoke_trade_cap` で権限剥奪＋出金で退避（Worker が死んでも可能） | 鍵自体が全権のため、止めるには資金を別アドレスへ移すしかない（Bot プロセスとの競合になる） |
-| 資金の置き場 | オーナー配下の BM（オーナーが常時管理） | Bot ウォレット（サーバー常駐の鍵の管理下） |
-| ガス | Bot アドレスの SUI（両経路で共通に必要） | 同左（取引資金とガスが同一ウォレットに混在する点に注意） |
-| 監査 | digest＋BM イベントで追跡可能 | digest＋コイン移動で追跡可能（同等） |
-| 実装の単純さ | Cap の発行・失効・検証ぶん複雑 | 単純（通常のウォレット取引） |
+| 観点               | TradeCap 経路（主軸）                                               | Bot 資金経路（方式1そのもの）                                                              |
+| ------------------ | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| 鍵漏洩時の最大被害 | BM 内資金への不利な取引まで。出金不可。オーナーウォレット本体は無事 | **Bot ウォレット内全額の直接送金が可能**（鍵＝全権）。被害は即時・全額になりうる           |
+| 止める手段         | `revoke_trade_cap` で権限剥奪＋出金で退避（Worker が死んでも可能）  | 鍵自体が全権のため、止めるには資金を別アドレスへ移すしかない（Bot プロセスとの競合になる） |
+| 資金の置き場       | オーナー配下の BM（オーナーが常時管理）                             | Bot ウォレット（サーバー常駐の鍵の管理下）                                                 |
+| ガス               | Bot アドレスの SUI（両経路で共通に必要）                            | 同左（取引資金とガスが同一ウォレットに混在する点に注意）                                   |
+| 監査               | digest＋BM イベントで追跡可能                                       | digest＋コイン移動で追跡可能（同等）                                                       |
+| 実装の単純さ       | Cap の発行・失効・検証ぶん複雑                                      | 単純（通常のウォレット取引）                                                               |
 
 ### 9.4 推奨
 
@@ -585,17 +591,17 @@ Phase 1 の完了条件は上記 1〜10 の証跡（digest 一覧）が残るこ
 
 ## 11. 要判断事項（田嶋の決定が必要）
 
-| # | 事項 | 備考 |
-|---|---|---|
-| 1 | Phase 2 の投入額と、REAL の 1 回上限・日次上限・スキーマのハードキャップ値 | 金額は本書では決めない。Phase 1 の実績を見て決める想定 |
-| 2 | 手数料の支払い方：DEEP 常備（安い）vs 入力資産払い（+25%、DEEP 不要） | **決定済み（2026-11-10）**：DEEP 常備（DEEP 払い、ステーク割引は前提にしない）。コスト設計値は taker 10 bps／回・往復 0.2%、実装時に poolTradeParams の実値で確定（§2.3） |
-| 3 | 注文種別：成行相当（placeMarketOrder）vs 価格上限付き IOC 指値 | §6.2。Phase 1 の約定・スリッページ実績で決める |
-| 4 | REAL 設定画面の置き場所（運用検証タブ配下／戦略タブの設定セグメント内） | オーナー操作と Worker 制御の画面上の距離感の判断 |
-| 5 | TradeCap 発行と移転を 1 tx にまとめるか 2 段にするか | **決定済み（2026-11-10）**：1 tx（同一 PTB で発行＋移転）。SDK の `mintTradeCap` が tx ビルダーであり同一 tx で組めることをソースで確認（§4.1） |
-| 6 | REAL の成績集計（成績表・振り返り）への含め方 | §8.2。分離が前提だが、表示の粒度は判断が要る |
-| 7 | Phase 2 の稼働時間帯の限定有無 | 初期の安全策として |
-| 8 | Bot 鍵の生成・保管方法の最終確認（ウォレットアプリで生成し env へ、等） | §5.2 の運用手順の確定 |
-| 9 | 停止安全性（安全に止められる条件）と再開前の照合範囲 | Phase 1 手順に先立って決める。保有ゼロでも、未約定注文・送信結果が未確定の取引があれば停止後に状態が変わり得るため、「いつ安全に止められるか」と、再開前にオンチェーンの注文・約定状態とローカル DB をどこまで突合するかを定める（§6.5 の照合の前提になる）。2026-11-12 の分離調査（下記の決定）でも、単一イメージ構成では worker 更新時にこの問題が残ることが確認された |
+| #   | 事項                                                                       | 備考                                                                                                                                                                                                                                                                                                                                                                     |
+| --- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Phase 2 の投入額と、REAL の 1 回上限・日次上限・スキーマのハードキャップ値 | 金額は本書では決めない。Phase 1 の実績を見て決める想定                                                                                                                                                                                                                                                                                                                   |
+| 2   | 手数料の支払い方：DEEP 常備（安い）vs 入力資産払い（+25%、DEEP 不要）      | **決定済み（2026-11-10）**：DEEP 常備（DEEP 払い、ステーク割引は前提にしない）。コスト設計値は taker 10 bps／回・往復 0.2%、実装時に poolTradeParams の実値で確定（§2.3）                                                                                                                                                                                                |
+| 3   | 注文種別：成行相当（placeMarketOrder）vs 価格上限付き IOC 指値             | §6.2。Phase 1 の約定・スリッページ実績で決める                                                                                                                                                                                                                                                                                                                           |
+| 4   | REAL 設定画面の置き場所（運用検証タブ配下／戦略タブの設定セグメント内）    | オーナー操作と Worker 制御の画面上の距離感の判断                                                                                                                                                                                                                                                                                                                         |
+| 5   | TradeCap 発行と移転を 1 tx にまとめるか 2 段にするか                       | **決定済み（2026-11-10）**：1 tx（同一 PTB で発行＋移転）。SDK の `mintTradeCap` が tx ビルダーであり同一 tx で組めることをソースで確認（§4.1）                                                                                                                                                                                                                          |
+| 6   | REAL の成績集計（成績表・振り返り）への含め方                              | §8.2。分離が前提だが、表示の粒度は判断が要る                                                                                                                                                                                                                                                                                                                             |
+| 7   | Phase 2 の稼働時間帯の限定有無                                             | 初期の安全策として                                                                                                                                                                                                                                                                                                                                                       |
+| 8   | Bot 鍵の生成・保管方法の最終確認（ウォレットアプリで生成し env へ、等）    | §5.2 の運用手順の確定                                                                                                                                                                                                                                                                                                                                                    |
+| 9   | 停止安全性（安全に止められる条件）と再開前の照合範囲                       | Phase 1 手順に先立って決める。保有ゼロでも、未約定注文・送信結果が未確定の取引があれば停止後に状態が変わり得るため、「いつ安全に止められるか」と、再開前にオンチェーンの注文・約定状態とローカル DB をどこまで突合するかを定める（§6.5 の照合の前提になる）。2026-11-12 の分離調査（下記の決定）でも、単一イメージ構成では worker 更新時にこの問題が残ることが確認された |
 
 画面と Bot の分離（2026-11-12 決定済み）：ダッシュボードと Bot の分離を調査し、結論は C（分離せず、現行の単一イメージを維持）。本設計は単一イメージを前提に進める。再検討の条件は「UI だけが理由の切替が、安全な窓待ちで繰り返し遅れる実績が出た場合」で、その場合の第一候補は A（静的ファイルのみ別配信）。B（独立コンテナ）の追加要件は現状なし。
 
@@ -630,12 +636,12 @@ mainnet の再開許可へ流用しない。実行先はオーナーの Windows 
 
 #### 11.9.1 判定する状態を分ける
 
-| 判定 | 必要な証拠と意味 |
-|---|---|
-| 停止受理 | 新規注文の受付・署名・送信を禁止する REAL 専用ラッチが永続化され、旧世代のキュー／署名者を排他制御した証拠。注文結果が UNKNOWN でも受理する。照合完了を待って停止要求を拒否／保留しない |
-| ホスト停止確認 | 対象セッション・プロセス／コンテナの終了を確認。終了コード 0、非 OOM、DB 検証等はこの層の材料。チェーン上の注文結果や残件ゼロを証明しない |
-| チェーン上の停止確認 | 未確定送信をすべて同定・終端確認し、履歴と台帳を照合し、未約定残件と未解明差分がない。ホストが停止済みでもここは未確認になり得る |
-| 署名再開許可 | 後述の共通再開ゲートを全て満たし、対象 identity と照合証拠に結びついたオーナーの明示再開承認がある。通常 readiness やプロセス再起動だけでは許可しない |
+| 判定                 | 必要な証拠と意味                                                                                                                                                                        |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 停止受理             | 新規注文の受付・署名・送信を禁止する REAL 専用ラッチが永続化され、旧世代のキュー／署名者を排他制御した証拠。注文結果が UNKNOWN でも受理する。照合完了を待って停止要求を拒否／保留しない |
+| ホスト停止確認       | 対象セッション・プロセス／コンテナの終了を確認。終了コード 0、非 OOM、DB 検証等はこの層の材料。チェーン上の注文結果や残件ゼロを証明しない                                               |
+| チェーン上の停止確認 | 未確定送信をすべて同定・終端確認し、履歴と台帳を照合し、未約定残件と未解明差分がない。ホストが停止済みでもここは未確認になり得る                                                        |
+| 署名再開許可         | 後述の共通再開ゲートを全て満たし、対象 identity と照合証拠に結びついたオーナーの明示再開承認がある。通常 readiness やプロセス再起動だけでは許可しない                                   |
 
 停止受理の制御経路自体が壊れている場合は「停止要求済み・受理未確認」と記録する。
 ホスト強制終了や §7.5 のオーナーによる失効は封じ込め手段であり、受理／照合成功へ
@@ -709,12 +715,12 @@ REAL の新規注文署名を禁止する。照合のための読み取り専用
 ホスト終了の成否にかかわらずチェーン上の停止確認は未完了、署名再開は不可。
 再開条件は行固有の条件に加え、§11.9.2 の全共通ゲートを満たすこと。
 
-| ケース | 持っている証拠／それだけでは分からないこと | 停止可否 | 再開可否・前提条件 | 照合手順 |
-|---|---|---|---|---|
-| S1：終了コード 0 だが送信注文の結果不明 | 対象ホストの正常終了、DB 検証、前任 session、送信前レコード／digest（存在する場合）。終了コードは約定・取消・未送信の証明ではない | 可。新規署名停止を受理し、ホスト停止と UNKNOWN を別記録。正常終了でもチェーン確認済み扱いにしない | 現時点不可。各 tx の終端、部分約定を含む履歴・台帳・分解残高一致、残件ゼロを確認後のみ審査可。digest/ID 欠落時は履歴から一意同定できなければ恒久禁止 | 最終照合点から履歴取得→digest と内部/client ID・BM/poolを突合→effects／約定／取消等を冪等反映→open orders と分解残高を再確認。not found なら UNKNOWN 継続、元注文を新 tx で再送しない |
-| S2：OOM／強制終了の後に約定していた | OOM/kill のホスト証拠、送信前レコード、停止後の確定 fill/effects。ローカル DB は未反映／部分反映の可能性。ホスト終了時刻は chain の取引終了時刻ではない | 可。プロセス終了を記録し、再起動しても署名 gate は閉鎖。既存注文は残り得る | 現時点不可。停止後の全 fill・費用・残注文を回収し、約定は帳簿へ一度だけ反映。残注文があれば別承認の取消とその終端確認が必要。DB が壊れた場合も履歴と正当な基点から復元できるまで不可 | 保存レコード＋最後の照合点から停止後まで走査→fill IDごとの適用済み確認→部分約定／残数量／DEEP・gasを反映→残件取消の結果照合→資産全区分を検算。OOM という理由で約定を破棄／ゼロ扱いしない |
-| S3：キャンセル応答喪失 | 元 order ID、cancel intent／送信前 digest、応答不在。取消待ちの間に部分／全約定した可能性がある。open orders から消えた事実だけでは取消成功といえない | 可。新規署名停止を維持し、cancel UNKNOWN を残す。応答待ちを停止受理の条件にしない | 現時点不可。cancel tx と競合 fill の確定結果、取消された残数量・返却／清算、ガスを同定し残件ゼロを確認後のみ審査可。取消成功でも既約定分は残す | cancel digest effects／取消・fill履歴を確認→部分約定と取消残量を別計上→現在の注文状態と残高分解を検算。未解決なら待機／HALTED。新 cancel tx の無条件retryはせず、確定失敗かつ残件同定後のみ別承認のbounded復旧操作を検討 |
-| S4：前任証拠の BM が現設定と異なる | 前任 manifest/tx の BM=A、現設定 BM=B。同じ network、同じ残高でも同一口座の証明にはならない。証拠の誤結合／設定変更／別セッションの可能性 | 可。identity 不一致をラッチし、新規署名を拒否。どちらを取消対象にするか推測しない | 現時点不可。A の責務と履歴を解決し、B の設定来歴・Cap・残高を別途検証し、再開対象を明示承認する必要。A の同定不能が残るなら当該前任経路は恒久禁止。B への設定変更だけで解除しない | A/B の証拠を隔離→network/BM/Cap/signer/sessionの対応を原本で確認→A の履歴と残件・資産を照合／封じ込め→B の独立した基点・設定変更証拠を検証。A の約定をBへ転記せず、設定を黙ってAへ戻さない |
+| ケース                                  | 持っている証拠／それだけでは分からないこと                                                                                                              | 停止可否                                                                                          | 再開可否・前提条件                                                                                                                                                                   | 照合手順                                                                                                                                                                                                                 |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| S1：終了コード 0 だが送信注文の結果不明 | 対象ホストの正常終了、DB 検証、前任 session、送信前レコード／digest（存在する場合）。終了コードは約定・取消・未送信の証明ではない                       | 可。新規署名停止を受理し、ホスト停止と UNKNOWN を別記録。正常終了でもチェーン確認済み扱いにしない | 現時点不可。各 tx の終端、部分約定を含む履歴・台帳・分解残高一致、残件ゼロを確認後のみ審査可。digest/ID 欠落時は履歴から一意同定できなければ恒久禁止                                 | 最終照合点から履歴取得→digest と内部/client ID・BM/poolを突合→effects／約定／取消等を冪等反映→open orders と分解残高を再確認。not found なら UNKNOWN 継続、元注文を新 tx で再送しない                                    |
+| S2：OOM／強制終了の後に約定していた     | OOM/kill のホスト証拠、送信前レコード、停止後の確定 fill/effects。ローカル DB は未反映／部分反映の可能性。ホスト終了時刻は chain の取引終了時刻ではない | 可。プロセス終了を記録し、再起動しても署名 gate は閉鎖。既存注文は残り得る                        | 現時点不可。停止後の全 fill・費用・残注文を回収し、約定は帳簿へ一度だけ反映。残注文があれば別承認の取消とその終端確認が必要。DB が壊れた場合も履歴と正当な基点から復元できるまで不可 | 保存レコード＋最後の照合点から停止後まで走査→fill IDごとの適用済み確認→部分約定／残数量／DEEP・gasを反映→残件取消の結果照合→資産全区分を検算。OOM という理由で約定を破棄／ゼロ扱いしない                                 |
+| S3：キャンセル応答喪失                  | 元 order ID、cancel intent／送信前 digest、応答不在。取消待ちの間に部分／全約定した可能性がある。open orders から消えた事実だけでは取消成功といえない   | 可。新規署名停止を維持し、cancel UNKNOWN を残す。応答待ちを停止受理の条件にしない                 | 現時点不可。cancel tx と競合 fill の確定結果、取消された残数量・返却／清算、ガスを同定し残件ゼロを確認後のみ審査可。取消成功でも既約定分は残す                                       | cancel digest effects／取消・fill履歴を確認→部分約定と取消残量を別計上→現在の注文状態と残高分解を検算。未解決なら待機／HALTED。新 cancel tx の無条件retryはせず、確定失敗かつ残件同定後のみ別承認のbounded復旧操作を検討 |
+| S4：前任証拠の BM が現設定と異なる      | 前任 manifest/tx の BM=A、現設定 BM=B。同じ network、同じ残高でも同一口座の証明にはならない。証拠の誤結合／設定変更／別セッションの可能性               | 可。identity 不一致をラッチし、新規署名を拒否。どちらを取消対象にするか推測しない                 | 現時点不可。A の責務と履歴を解決し、B の設定来歴・Cap・残高を別途検証し、再開対象を明示承認する必要。A の同定不能が残るなら当該前任経路は恒久禁止。B への設定変更だけで解除しない    | A/B の証拠を隔離→network/BM/Cap/signer/sessionの対応を原本で確認→A の履歴と残件・資産を照合／封じ込め→B の独立した基点・設定変更証拠を検証。A の約定をBへ転記せず、設定を黙ってAへ戻さない                               |
 
 #### 11.9.4 反証・受入条件と未決事項（2026-11-18 決着）
 
@@ -732,14 +738,14 @@ indexer 遅延、旧署名者と停止の競合も検証対象とする。特に
 未決事項は 2026-11-18 に本節冒頭の決定内容（7項目）の通り決着した。
 下表は判断材料の記録として残す：
 
-| 未決事項 | 採否判断に必要な証拠／仕様 |
-|---|---|
-| #9 全体の採否・停止レシート | 停止受理の原子境界、世代 fence、旧署名者失効の証明、ホスト停止とchain未確認の返却／表示契約。R3/F-10との状態分離 |
-| 履歴／finality の取得契約 | 使用するSDK/API版、確定checkpointと履歴cursor、ページ完全性／indexer追随の検証、未到達txが将来実行されない根拠、取得不能時の保全手順 |
-| 台帳と分解残高 | 各応答のavailable/locked/settled区分、同時点snapshot、atomic unit、fill/event一意キー、原子的cursor更新、入出金・清算・DEEP・gasの検算規則 |
-| 復旧操作と承認 | 署名停止中の取消専用権限、期限・回数・費用上限、元tx確認前の再送禁止、承認対象hashと再照合の失効条件。#1の金額を本表で決めない |
-| 同定不能の責務管理 | 追加証拠による再判定のレビュー経路、復元不能時の恒久禁止の保持先、旧BM封じ込めと新規運用を分離する場合の別設計 |
-| Phase 1 実行先 | testnet専用DB・鍵・承認・監視と単一イメージの対応、4ケースの証跡様式。画面分離やPAPER control変更で代替しない |
+| 未決事項                    | 採否判断に必要な証拠／仕様                                                                                                                 |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| #9 全体の採否・停止レシート | 停止受理の原子境界、世代 fence、旧署名者失効の証明、ホスト停止とchain未確認の返却／表示契約。R3/F-10との状態分離                           |
+| 履歴／finality の取得契約   | 使用するSDK/API版、確定checkpointと履歴cursor、ページ完全性／indexer追随の検証、未到達txが将来実行されない根拠、取得不能時の保全手順       |
+| 台帳と分解残高              | 各応答のavailable/locked/settled区分、同時点snapshot、atomic unit、fill/event一意キー、原子的cursor更新、入出金・清算・DEEP・gasの検算規則 |
+| 復旧操作と承認              | 署名停止中の取消専用権限、期限・回数・費用上限、元tx確認前の再送禁止、承認対象hashと再照合の失効条件。#1の金額を本表で決めない             |
+| 同定不能の責務管理          | 追加証拠による再判定のレビュー経路、復元不能時の恒久禁止の保持先、旧BM封じ込めと新規運用を分離する場合の別設計                             |
+| Phase 1 実行先              | testnet専用DB・鍵・承認・監視と単一イメージの対応、4ケースの証跡様式。画面分離やPAPER control変更で代替しない                              |
 
 根拠と提案の区別：R3 の host/DB close-out は
 `docs/PROD_START_TOKEN_FIX_DESIGN_JA.md` R3、F-10 は
@@ -758,18 +764,18 @@ indexer 遅延、旧署名者と停止の競合も検証対象とする。特に
 
 ## 12. リスク一覧
 
-| リスク | 内容 | 緩和策（本設計内） |
-|---|---|---|
-| Bot 鍵の漏洩 | BM 資金の不利な取引による流出（出金は不可） | §7.1 上限、§7.5 失効＋退避、BM は少額に保つ |
-| Worker の暴走・バグ | 意図しない発注の連打 | 直列化キュー、上限の多層化、署名前チェック、HALTED 状態 |
-| 約定不明のまま再発注 | 二重発注・状態の不整合 | §6.5 照合完了まで次を出さない。digest 必須記録 |
-| Equivocation | 共有 BM／owned Cap の版数競合で tx 失敗 | 送信の単一キュー化（§6.4）。失敗はリトライ可能だが連打しない |
-| 通信基盤の不安定さ | 既知の gRPC 遅延（Windows 検証で観測）が実注文では約定確認の遅延に直結 | finality 確認を必須化し、タイムアウトは「失敗」ではなく UNKNOWN→照合へ回す |
-| ProfitGuard の過小見積もり | 実ガス・実手数料が想定を超え、薄利で約定する | §5.4 実値ベースの見積り、見積り不能時は棄却 |
-| スキーマ移行ミス | REAL 設定の追加で既存 Settings 読み込みが壊れる | REAL 設定は別キー・別スキーマで分離（§5.3）。既存 `settingsSchema` は不変更を原則とする |
-| 表示の誤認 | PAPER と思い込んで REAL 稼働に気づかない | §8.3 モードバッジ常駐＋有効化の専用確認操作 |
-| DeepBook 側の変更 | SDK／コントラクトのバージョン更新で挙動が変わる | SDK バージョン固定、Phase 1 を testnet で常設の回帰手順として維持 |
-| 法規制・税務 | 実売買の損益は記録・申告の対象になりうる | 本書の範囲外。`real_trades` の実績記録（digest・日時・損益材料）は将来の集計に使える形で残す |
+| リスク                     | 内容                                                                   | 緩和策（本設計内）                                                                           |
+| -------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Bot 鍵の漏洩               | BM 資金の不利な取引による流出（出金は不可）                            | §7.1 上限、§7.5 失効＋退避、BM は少額に保つ                                                  |
+| Worker の暴走・バグ        | 意図しない発注の連打                                                   | 直列化キュー、上限の多層化、署名前チェック、HALTED 状態                                      |
+| 約定不明のまま再発注       | 二重発注・状態の不整合                                                 | §6.5 照合完了まで次を出さない。digest 必須記録                                               |
+| Equivocation               | 共有 BM／owned Cap の版数競合で tx 失敗                                | 送信の単一キュー化（§6.4）。失敗はリトライ可能だが連打しない                                 |
+| 通信基盤の不安定さ         | 既知の gRPC 遅延（Windows 検証で観測）が実注文では約定確認の遅延に直結 | finality 確認を必須化し、タイムアウトは「失敗」ではなく UNKNOWN→照合へ回す                   |
+| ProfitGuard の過小見積もり | 実ガス・実手数料が想定を超え、薄利で約定する                           | §5.4 実値ベースの見積り、見積り不能時は棄却                                                  |
+| スキーマ移行ミス           | REAL 設定の追加で既存 Settings 読み込みが壊れる                        | REAL 設定は別キー・別スキーマで分離（§5.3）。既存 `settingsSchema` は不変更を原則とする      |
+| 表示の誤認                 | PAPER と思い込んで REAL 稼働に気づかない                               | §8.3 モードバッジ常駐＋有効化の専用確認操作                                                  |
+| DeepBook 側の変更          | SDK／コントラクトのバージョン更新で挙動が変わる                        | SDK バージョン固定、Phase 1 を testnet で常設の回帰手順として維持                            |
+| 法規制・税務               | 実売買の損益は記録・申告の対象になりうる                               | 本書の範囲外。`real_trades` の実績記録（digest・日時・損益材料）は将来の集計に使える形で残す |
 
 ---
 

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { RealTradeCapDatabase } from "../apps/worker/src/real/database.ts";
 import { RealTradeCapExecutor } from "../apps/worker/src/real/execution.ts";
+import { RealTradeCapExecutionAdapter } from "../apps/worker/src/real/adapter.ts";
+import { createDeepBookTransactionBuilder } from "../apps/worker/src/real/deepbook-execution.ts";
 import type { RealIdentity } from "../apps/worker/src/real/types.ts";
 
 const identity: RealIdentity = {
@@ -176,6 +178,83 @@ describe("REAL TradeCap execution and stop/resume gate", () => {
       }),
     ).toThrow("REAL_UNIDENTIFIABLE_PREDECESSOR");
     db.close();
+  });
+
+  it("rechecks a permanent latch when opening after approval", () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    db.approveResume(identity, {
+      checkpoint: "1",
+      checkpointHash: "h",
+      identityKey: "x",
+      ownerApproval: "yes",
+    });
+    db.latch(identity, "REAL_UNIDENTIFIABLE_PREDECESSOR", "late", true);
+    expect(() => db.openSigningGate(identity, checks)).toThrow(
+      "REAL_UNIDENTIFIABLE_PREDECESSOR",
+    );
+    db.close();
+  });
+
+  it("rejects an order above the REAL cap before build, sign, or send", async () => {
+    const executor = {
+      execute: vi.fn(),
+      acceptStop: vi.fn(),
+    } as unknown as RealTradeCapExecutor;
+    const adapter = new RealTradeCapExecutionAdapter(executor, {
+      maxOrderDbusdc: 0.1,
+    });
+    const result = await adapter.execute({
+      orderId: "o",
+      side: "BUY",
+      markPrice: 2,
+      candleTimestamp: 1,
+      quote: { minAmountOut: "50000001", amountIn: "1", expiresAt: 2 },
+    } as never);
+    expect(result).toEqual({
+      status: "REJECTED",
+      errorCode: "REAL_MAX_ORDER_EXCEEDED",
+    });
+    expect(executor.execute).not.toHaveBeenCalled();
+  });
+
+  it("allows an order exactly at the REAL cap", async () => {
+    const executor = {
+      execute: vi.fn(async () => ({ status: "SUCCEEDED", digest: "d" })),
+      acceptStop: vi.fn(),
+    } as unknown as RealTradeCapExecutor;
+    const adapter = new RealTradeCapExecutionAdapter(executor, {
+      maxOrderDbusdc: 0.1,
+    });
+    await expect(
+      adapter.execute({
+        orderId: "o",
+        side: "BUY",
+        markPrice: 2,
+        candleTimestamp: 1,
+        quote: { minAmountOut: "50000000", amountIn: "1", expiresAt: 2 },
+      } as never),
+    ).resolves.toEqual({ status: "SUBMITTED", digest: "d" });
+  });
+
+  it("fails explicitly when MARKET is configured", async () => {
+    const client = { $extend: () => ({}) } as never;
+    const builder = createDeepBookTransactionBuilder(client, {
+      network: "testnet",
+      balanceManagerId: identity.balanceManagerId,
+      poolKey: identity.poolKey,
+      tradeCapId: identity.tradeCapId,
+      signerAddress: identity.signerAddress,
+      sessionId: identity.sessionId,
+      indexerUrl: "https://indexer.invalid",
+      graphqlUrl: "https://graphql.invalid",
+      grpcUrl: "https://grpc.invalid",
+      maxOrderDbusdc: 0.1,
+      orderType: "MARKET",
+      signingEnabled: true,
+    });
+    await expect(builder.place(intent)).rejects.toThrow(
+      "REAL_ORDER_TYPE_UNSUPPORTED",
+    );
   });
 
   it("applies duplicate effects only once", () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { RealTradeCapDatabase } from "../apps/worker/src/real/database.ts";
 import { RealReconciler } from "../apps/worker/src/real/reconciler.ts";
 import { realConfigFromEnv } from "../apps/worker/src/real/config.ts";
+import { reconcileRealReadOnlyOnce } from "../apps/worker/src/real/index.ts";
 import type {
   HistoryPage,
   RealHistoryEvent,
@@ -90,6 +91,25 @@ describe("REAL TradeCap read-only reconciliation", () => {
     db.close();
   });
 
+  it("runs the read-only reconciliation loop with a fixture source", async () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    const result = await reconcileRealReadOnlyOnce({
+      db,
+      identity: id(),
+      source: source([
+        {
+          events: [event("TX_EFFECTS", "0")],
+          nextCursor: null,
+          checkpoint: "42",
+          checkpointHash: "h42",
+        },
+      ]),
+      snapshot: async () => ({ openOrderIds: [] }),
+    });
+    expect(result).toMatchObject({ pages: 1, events: 1, openOrders: 0 });
+    db.close();
+  });
+
   it("S3 keeps cancel effects and competing fills as separate idempotency keys", () => {
     const db = new RealTradeCapDatabase(":memory:");
     const fill = {
@@ -147,5 +167,117 @@ describe("REAL TradeCap read-only reconciliation", () => {
       realConfigFromEnv({ ...env, REAL_SIGNING_ENABLED: "true" }).config
         .signingEnabled,
     ).toBe(true);
+  });
+
+  it("resolves UNKNOWN only when the chain confirms a terminal status", async () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    db.persistBeforeSend({
+      digest: "confirmed",
+      txBytes: new Uint8Array([1]),
+      internalOrderId: "o1",
+      clientOrderId: "1",
+      identity: id(),
+      intent: {},
+    });
+    db.markSubmission("confirmed", "UNKNOWN");
+    await new RealReconciler(db, id(), {
+      ...source([
+        {
+          events: [],
+          nextCursor: null,
+          checkpoint: "42",
+          checkpointHash: "h42",
+        },
+      ]),
+      submissionStatus: async () => "SUCCEEDED" as const,
+    }).reconcileAllPages();
+    expect(db.hasNonTerminalSubmission(id())).toBe(false);
+    db.close();
+  });
+
+  it("keeps UNKNOWN when finality cannot be established", async () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    db.persistBeforeSend({
+      digest: "missing",
+      txBytes: new Uint8Array([1]),
+      internalOrderId: "o1",
+      clientOrderId: "1",
+      identity: id(),
+      intent: {},
+    });
+    db.markSubmission("missing", "UNKNOWN");
+    await new RealReconciler(db, id(), {
+      ...source([
+        {
+          events: [],
+          nextCursor: null,
+          checkpoint: "42",
+          checkpointHash: "h42",
+        },
+      ]),
+      submissionStatus: async () => null,
+    }).reconcileAllPages();
+    expect(db.hasNonTerminalSubmission(id())).toBe(true);
+    db.close();
+  });
+
+  it("latches and throws on checkpoint regression", async () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    db.applyPage(id(), [], {
+      cursor: null,
+      checkpoint: "100",
+      checkpointHash: "h100",
+    });
+    await expect(
+      new RealReconciler(
+        db,
+        id(),
+        source([
+          {
+            events: [],
+            nextCursor: null,
+            checkpoint: "99",
+            checkpointHash: "h99",
+          },
+        ]),
+      ).reconcileAllPages(),
+    ).rejects.toThrow("REAL_CHECKPOINT_REGRESSION");
+    expect(db.latchInfo(id(), "REAL_CHECKPOINT_REGRESSION")).toBeTruthy();
+    db.close();
+  });
+
+  it("accepts sender effects and the same checkpoint history hash", async () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    db.persistBeforeSend({
+      digest: "d",
+      txBytes: new Uint8Array([1]),
+      internalOrderId: "o",
+      clientOrderId: "1",
+      identity: id(),
+      intent: {},
+    });
+    db.applyEffects(id(), {
+      digest: "d",
+      success: true,
+      checkpoint: "50",
+      checkpointHash: "true-hash",
+      events: [],
+    });
+    await expect(
+      new RealReconciler(
+        db,
+        id(),
+        source([
+          {
+            events: [],
+            nextCursor: null,
+            checkpoint: "50",
+            checkpointHash: "true-hash",
+          },
+        ]),
+      ).reconcileAllPages(),
+    ).resolves.toMatchObject({ pages: 1 });
+    expect(db.checkpoint()?.checkpointHash).toBe("true-hash");
+    db.close();
   });
 });

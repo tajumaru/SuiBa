@@ -4,6 +4,9 @@ import { readFileSync } from "node:fs";
 import { resolve, extname } from "node:path";
 import { gzip } from "node:zlib";
 import type { IncomingMessage, ServerResponse } from "node:http";
+
+export const deploymentMode = (mode = process.env.MODE) =>
+  mode === "REAL_TRADECAP" || mode === "REAL_READONLY" ? mode : "PAPER";
 import { DashboardService, acceptsGzip } from "./dashboard-feed.ts";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
 import { ValidationRecorder } from "./validation.ts";
@@ -99,7 +102,7 @@ export function createRequestHandler(ctx: WorkerContext) {
           Date.now() - ctx.engine.monitor.state().lastHeartbeatAt < 45000;
         send(healthy ? 200 : 503, {
           status: healthy ? "ok" : "stale",
-          mode: "PAPER",
+          mode: deploymentMode(),
         });
         return;
       }
@@ -187,7 +190,7 @@ export function createRequestHandler(ctx: WorkerContext) {
           lockSha256: string;
         }>("runtime_build");
         send(200, {
-          mode: "PAPER",
+          mode: deploymentMode(),
           maintenance: ctx.stopping || ctx.deploymentGate.blocked(),
           running: ctx.db.runtime().running,
           revision: build?.declaredSha ?? null,
@@ -233,7 +236,7 @@ export function createRequestHandler(ctx: WorkerContext) {
         send(200, {
           selected: ctx.pair,
           pairs: Object.keys(tradingPairs),
-          mode: "PAPER",
+          mode: deploymentMode(),
         });
         return;
       }
@@ -358,7 +361,7 @@ export function createRequestHandler(ctx: WorkerContext) {
           // (wrong pair, provider or paper-check token) should be
           // visible in the app, not only in host-side checks.
           environment: {
-            mode: "PAPER",
+            mode: deploymentMode(),
             pair: ctx.engine.pair,
             provider: ctx.engine.marketStatus()?.source ?? null,
             paperCheck: ctx.paperCheck.status(),

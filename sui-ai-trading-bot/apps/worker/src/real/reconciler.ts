@@ -27,14 +27,38 @@ export class RealReconciler {
         );
         throw Error("REAL_CHECKPOINT_HASH_MISMATCH");
       }
+      if (
+        checkpoint &&
+        BigInt(page.checkpoint) < BigInt(checkpoint.checkpoint)
+      ) {
+        this.db.latch(
+          this.identity,
+          "REAL_CHECKPOINT_REGRESSION",
+          `${checkpoint.checkpoint}:${page.checkpoint}`,
+        );
+        throw Error("REAL_CHECKPOINT_REGRESSION");
+      }
       this.db.applyPage(this.identity, page.events, {
         cursor: page.nextCursor,
         checkpoint: page.checkpoint,
         checkpointHash: page.checkpointHash,
       });
       pages++;
-      if (page.nextCursor === null)
-        return { pages, events: this.db.ledgerCount() };
+      if (page.nextCursor === null) {
+        for (const submission of this.db.nonTerminalSubmissions(
+          this.identity,
+        )) {
+          const status = await this.source.submissionStatus?.(
+            submission.digest,
+          );
+          if (status) this.db.markSubmission(submission.digest, status);
+        }
+        return {
+          pages,
+          events: this.db.ledgerCount(),
+          nextCursor: null as null,
+        };
+      }
       if (page.nextCursor === cursor)
         throw Error("REAL_RECONCILIATION_CURSOR_STALLED");
       cursor = page.nextCursor;
