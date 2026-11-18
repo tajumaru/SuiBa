@@ -30,6 +30,7 @@ export function operationReason(code: string): string {
     REQUEST_REJECTED: "入力値または運用状態を確認してください",
     UPSTREAM_HTTP_502: "外部APIの中継先に接続できません",
     NATIVE_USDC_POOL_NOT_FOUND: "ネイティブUSDCの取引プールが見つかりません",
+    MIN_ORDER_SIZE: "注文数量が最小取引数量に届いていません",
     INSUFFICIENT_CANDLES: "判定に必要な確定足が不足しています",
     INVALID_CANDLE: "市場データに不正な価格または出来高があります",
     CANDLE_GAP: "市場データに欠損または重複があります",
@@ -53,15 +54,23 @@ export function operationReason(code: string): string {
     PROCESS_RESTART_STOPPED: "再起動のため停止。開始は手動です",
     PROCESS_SHUTDOWN: "プロセス終了による停止",
     PROCESS_RESTART_INTERRUPTED: "処理中に再起動したため約定せず停止",
+    PROCESS_SHUTDOWN_CANCELLED: "終了処理のため進行中の取得を中断しました",
     MANUAL_START: "手動でPAPER運用を開始",
     MANUAL_STOP: "手動で停止",
     MANUAL_RESET: "停止状態を手動で解除",
     EMERGENCY_STOP: "緊急停止",
+    EMERGENCY_CLEARED: "緊急停止状態を解除しました",
     MARKET_FETCH_IN_PROGRESS:
       "市場データ取得が完了していません。状態を確認してください",
     EXECUTION_CONTEXT_CHANGED:
       "注文確認中に設定または残高が変わったため見送りました",
     PAPER_RECOVERY_EXHAUSTED: "通信復旧の時間または失敗回数が上限に達しました",
+    PAPER_RECOVERY_FLAPPING:
+      "短時間に通信の停止と復旧が繰り返されたため停止しました",
+    PAPER_RECOVERY_READ_FAILED:
+      "通信復旧中の安全状態を読み取れないため停止しました",
+    PAPER_ORDER_STATE_UNKNOWN:
+      "通信復旧中の注文状態を確認できないため停止しました",
     PAPER_RECOVERY_REQUIRED: "通信と市場データの安全確認が必要です",
     RESET_REQUIRED: "停止状態が解除されていないため開始できません",
     HEALTH_CHECK_REQUIRED: "Sui接続の状態確認が正常でないため開始できません",
@@ -74,6 +83,8 @@ export function operationReason(code: string): string {
     QUOTE_EXPIRED: "価格見積もりの期限が切れています",
     QUOTE_UNAVAILABLE: "価格見積もりを取得できません",
     QUOTE_INVALID: "価格見積もりの安全性を確認できません",
+    INVALID_STATE_OR_QUOTE: "運用状態または価格見積もりの内容が不正です",
+    INVALID_AMOUNT: "価格見積もりの取引数量が不正です",
     UNKNOWN_COSTS: "ガス代または手数料が不明です",
     INVALID_POSITION: "保有数量または取得原価が不正です",
     INSUFFICIENT_POSITION: "売却数量が保有数量を超えています",
@@ -100,6 +111,9 @@ export function operationReason(code: string): string {
     DUPLICATE_ORDER: "重複注文・約定を防止しました",
     PAPER_RECONCILIATION_FAILED:
       "残高または損益の照合で不整合を検出したため停止",
+    DATABASE_UNAVAILABLE: "運用データベースを読み書きできません",
+    VALIDATION_RECORD_FAILED: "運用検証記録の保存に失敗しました",
+    UNKNOWN_FAILURE: "処理の失敗理由を特定できませんでした",
     CONSECUTIVE_API_ERRORS: "APIの連続エラーを検出しました",
     SUI_READ_FAILED: "Suiの読み取りAPIに接続できません",
     BOT_STOPPED: "ボットが停止しているため見送り",
@@ -111,6 +125,8 @@ export function operationReason(code: string): string {
     UNKNOWN_COST_BASIS: "取得原価を確認できません",
     DATA_OR_EXECUTION_FAILURE:
       "データ取得またはPAPER処理でエラーが発生しました",
+    DEPLOYMENT_MAINTENANCE: "配置メンテナンス中のため取引を見送りました",
+    NARRATION_GENERATION_FAILED: "実況メッセージの生成に失敗しました",
   };
   if (labels[code]) return labels[code];
   // Order records prefix the profit check's reason; use the same plain label.
@@ -118,6 +134,16 @@ export function operationReason(code: string): string {
     const reason = code.slice("PROFIT_GUARD_".length);
     if (labels[reason]) return labels[reason];
   }
+  // Request events prefix the safe failure with their request class; use the
+  // same specific plain label as the underlying failure.
+  for (const prefix of ["QUOTE_", "MARKET_", "HEALTH_"]) {
+    if (code.startsWith(prefix)) {
+      const reason = code.slice(prefix.length);
+      if (labels[reason]) return labels[reason];
+    }
+  }
+  const upstreamHttp = /^UPSTREAM_HTTP_(\d{3})$/.exec(code);
+  if (upstreamHttp) return `外部APIがHTTP ${upstreamHttp[1]}を返しました`;
   if (code.startsWith("QUOTE_"))
     return "価格見積もりの取得・検証に失敗しました";
   if (code.startsWith("MARKET_")) return "市場データの取得・検証に失敗しました";

@@ -50,7 +50,7 @@ FILES=(
   'memwal-runtime.py|fe44e69329cf53c16d18873c845c03a910169277cfc443a3b9247ea53be4b75e|/usr/local/libexec/suiba-memwal-runtime.py|755'
   'suiba-memwal-runtime|523f942e7105d945f85d398713b07b1d30b0d4bde605ae34e44683f6d64edf93|/usr/local/sbin/suiba-memwal-runtime|755'
   'suiba-memwal-runtime.sudoers|7edfbd82b607b46f600c2d90a04fcfc2dd71f3344681b72620f0ebd3d3470af1|/etc/sudoers.d/suiba-memwal-runtime|440'
-  'export_snapshot.py|2f5b45389384f9ac47e4c1c2301f467020acf99c0d9f122007b5394e99397418|/usr/local/libexec/suiba-paper-export.py|755'
+  'export_snapshot.py|2d576c49c73e20a4d20c9a6f53abd1333b796c630a82943ec07e8d9df04df78c|/usr/local/libexec/suiba-paper-export.py|755'
   'controller.py|035293508ab5f6d15b88bcd74bbfcbec227c7d20b229be8f074426275002120b|/usr/local/libexec/suiba-paper-check.py|755'
   'suiba-paper-check|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-check|755'
   'suiba-paper-check.sudoers|54d64fdadf0b38749008c112fc12761e03f633538e526ebe6f37eb4b1ec38607|/etc/sudoers.d/suiba-paper-check|440'
