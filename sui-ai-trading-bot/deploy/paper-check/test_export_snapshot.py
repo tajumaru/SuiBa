@@ -220,6 +220,19 @@ class ExportTests(unittest.TestCase):
         self.assertNotIn('orderId', rejected)
         self.assertNotIn('risk', rejected)
 
+    def test_hashed_candidate_order_id_survives_public_validation(self):
+        # Extracts built by a producer that predates the raw paper join key
+        # carry the hashed order id form; public validation must keep it,
+        # or every such package is rejected as EXPORT_PACKAGE_INVALID.
+        hashed = 'h:' + 'a' * 64
+        produced = e.sanitize('operation_candidates', {
+            'orderId': 'paper:source:300:123:BUY', 'side': 'BUY'})
+        self.assertEqual(produced['orderId'], 'paper:source:300:123:BUY')
+        legacy = {'orderId': hashed, 'side': 'BUY'}
+        self.assertEqual(e.sanitize('operation_candidates', legacy, public=True), legacy)
+        # The hashed form is validation-only: producing from it drops it.
+        self.assertNotIn('orderId', e.sanitize('operation_candidates', legacy))
+
     def test_export_keeps_window_rows_and_excludes_older_history_under_row_limit(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
