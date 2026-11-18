@@ -52,6 +52,7 @@ import {
   type PointSmileCause,
 } from "./agentNarration.ts";
 import { NAV_SHORT_LABELS, NavTabIcon } from "./navTabs.tsx";
+import type { NarrationShadowDiagnostics } from "./narrationShadow.ts";
 /* Secondary tabs load on first open, keeping the initial
  * bundle to the shell, the live feed and the overview. */
 const StrategyTab = lazy(() =>
@@ -123,6 +124,8 @@ function App() {
     // the tab closes, so the bar never starts past an open editor.
     [startBlocked, setStartBlocked] = useState<string[]>([]);
   const [receivedAt, setReceivedAt] = useState<number | null>(null);
+  const [narrationShadow, setNarrationShadow] =
+    useState<NarrationShadowDiagnostics | null>(null);
   const [disconnected, setDisconnected] = useState(false);
   const [connection] = useState(() => new ConnectionRecovery(setDisconnected));
   const [now, setNow] = useState(() => Date.now());
@@ -255,7 +258,7 @@ function App() {
   const pairRef = useRef<State["pair"] | undefined>(undefined);
   pairRef.current = data?.pair;
   const api = useCallback(
-    async (path: string, body?: unknown, primary = false) => {
+    async (path: string, body?: unknown, primary = false, silent = false) => {
       if (!body && !primary && !connection.canReadAuxiliary)
         throw new ConnectionUnavailable();
       try {
@@ -272,13 +275,13 @@ function App() {
           body: body ? JSON.stringify(body) : undefined,
         });
         if (!r.ok) {
-          if ([502, 503, 504].includes(r.status)) connection.fail();
-          if (r.status === 401) {
+          if (!silent && [502, 503, 504].includes(r.status)) connection.fail();
+          if (!silent && r.status === 401) {
             setToken("");
             setData(null);
           }
           const body = await r.json().catch(() => ({}));
-          if (body.error === "PAIR_CHANGED") window.location.reload();
+          if (!silent && body.error === "PAIR_CHANGED") window.location.reload();
           throw new Error(
             typeof body.error === "string" ? body.error : `HTTP_${r.status}`,
           );
@@ -290,16 +293,20 @@ function App() {
           responsePair &&
           responsePair !== pairRef.current
         ) {
-          window.location.reload();
+          if (!silent) window.location.reload();
           throw Error("PAIR_CHANGED");
         }
         return value;
       } catch (e) {
-        if (isConnectionFailure(e)) connection.fail();
+        if (!silent && isConnectionFailure(e)) connection.fail();
         throw e;
       }
     },
     [token, connection],
+  );
+  const narrationShadowApi = useCallback(
+    (path: string, body?: unknown) => api(path, body, false, true),
+    [api],
   );
   const mirrorNarrationEpisode = useCallback(
     (entry: import("./agentNarration.ts").NarrationEntry) => {
@@ -612,6 +619,9 @@ function App() {
                       onListeningChange={setVoiceListening}
                       onSpeakingChange={setAgentSpeaking}
                       onMemwalEpisode={mirrorNarrationEpisode}
+                      api={narrationShadowApi}
+                      pair={data.pair}
+                      onShadowDiagnostics={setNarrationShadow}
                     />
                   ) : (
                     <p role="status">
@@ -639,6 +649,7 @@ function App() {
                         ? sellLinesOf(operations.data.decision)
                         : null
                     }
+                    narrationShadow={narrationShadow}
                   />
                 )}
                 {activeTab === "Strategy" && (
