@@ -9,8 +9,9 @@ import type {
 
 /**
  * Display-only order-book imbalance sampling for pairs whose
- * trading path does not fetch the DeepBook book (the SUI pair's
- * default GeckoTerminal route). Like chainInfo.ts, this is a
+ * trading path does not fetch the DeepBook book (the SUI pair
+ * when explicitly configured for GeckoTerminal). Like chainInfo.ts,
+ * this is a
  * fully separate read: a plain fetch against the public
  * DeepBook indexer that never goes through the trading client's
  * apiAccess layer, never throws, and whose only consumer is

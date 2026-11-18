@@ -458,3 +458,7 @@ RESTART-PROD は1つの承認付きジョブ内で STOP → START の順序を�
 follow-up が成功した場合だけ START へ進み、closeout できない場合は既定のステップ失敗
 意味論により開始せずジョブを失敗させる。既存の START-PROD、STOP-PROD、ROLLBACK-PROD
 の挙動と gate、本番の開始・停止セマンティクスは変更しない。
+
+## 2026-11-18 相場データの既定を DeepBook＋verified に変更
+
+ローカル実行で既定だったGeckoTerminal無料APIがHTTP 429を繰り返し、testnet Botを安全停止させた。何も指定しない環境を本番の安定構成と揃えるため、`MARKET_DATA_PROVIDER`の既定を`deepbook`、`DEEPBOOK_RECONSTRUCT_CANDLES`の既定を`verified`へ変更する。DeepBook Indexerの欠損足は公式Indexerの根拠がある場合だけ再構成し、未解決の欠損による全取得失敗を避ける。明示的な環境変数は引き続き優先し、GeckoTerminal provider、`auto`、取得・再試行・キャッシュのロジックは変更しない。

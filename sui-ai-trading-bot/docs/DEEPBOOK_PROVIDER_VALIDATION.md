@@ -3,7 +3,7 @@
 ## 結論
 
 main af96282を基準に、導入済みdeepbook-sdk / deepbook-overviewを使用した。実注文、署名、資金移動は行っていない。
-DeepBookはSUI/Native USDCの板とOHLCVを取得できる。ただし5分足は欠損があり、現状の既存安全条件では単独運用に採用できない。既定のGeckoTerminalを維持し、明示設定でstrict DeepBookまたは全時間足単位の代替取得を試せるようにした。
+DeepBookはSUI/Native USDCの板とOHLCVを取得できる。ただし5分足には欠損があるため、公式Indexerの根拠を要求するverified再構成と組み合わせる。2026-11-18に既定をstrict DeepBook＋verifiedへ変更した。GeckoTerminalと全時間足単位の代替取得は明示設定で引き続き選択できる。
 
 ## Phase 1: 追加の実測
 
@@ -66,8 +66,8 @@ SDKの読み取りはSui RPC上のシミュレーション。Indexer RESTは別�
 
 .envのMARKET_DATA_PROVIDER:
 
-- geckoterminal: 従来互換、既定値。DeepBookへアクセスしない。
-- deepbook: DeepBookのみ。品質不合格なら停止。
+- geckoterminal: 従来互換。DeepBookへアクセスしない。
+- deepbook: 既定値。DeepBookのみで、品質不合格なら停止。
 - auto: DeepBookを最初に検証し、対象障害時はGeckoTerminalで5分/15分/1時間の全系列を取り直す。
 
 市場間のローソク足補完、時間足ごとのProvider混在、midを見積もり価格として流用する変更はない。売買の市場価格は既存どおり確定5分足close、見積もりはCetus、Profit Guard / RiskEngine / Paper Ledgerはそのまま通る。
