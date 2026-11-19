@@ -86,6 +86,7 @@ export function createEngine(
                 throw Error("REAL_RUNTIME_REQUIRED");
               })())
           : undefined,
+        () => ctx.fxRateSampler.current(),
       ),
     };
   } catch (error) {

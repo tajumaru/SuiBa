@@ -18,6 +18,7 @@ import type { DisplaySamplers } from "./display-samplers.ts";
 import { PredecessorReset } from "./predecessor-reset.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
 import type { LiquidationCollector } from "./liquidation-collector.ts";
+import type { FxRateSampler } from "./fx-rate.ts";
 
 export interface WorkerContextInit {
   browserSessions: BrowserSessions;
@@ -62,6 +63,7 @@ export class WorkerContext {
   readonly btcSampler: BtcSampler;
   readonly longTermSampler: LongTermSampler;
   readonly bookSamplers: Record<TradingPair, BookImbalanceSampler>;
+  readonly fxRateSampler: FxRateSampler;
   readonly chainTimer: ReturnType<typeof setInterval>;
   pair: TradingPair;
   db: BotDatabase;
@@ -99,6 +101,7 @@ export class WorkerContext {
     this.btcSampler = init.samplers.btcSampler;
     this.longTermSampler = init.samplers.longTermSampler;
     this.bookSamplers = init.samplers.bookSamplers;
+    this.fxRateSampler = init.samplers.fxRateSampler;
     this.chainTimer = init.samplers.chainTimer;
     this.pair = init.pair;
     this.db = init.db;

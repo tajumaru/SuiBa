@@ -8,12 +8,17 @@ import {
 } from "./bookInfo.ts";
 import type { TradingPair } from "../../../packages/shared/src/index.ts";
 import type { resolveSuiGrpcEndpoints } from "./suiEndpoints.ts";
+import {
+  createUsdJpyFetcher,
+  FxRateSampler,
+} from "./fx-rate.ts";
 
 export interface DisplaySamplers {
   chainSampler: ChainSampler;
   btcSampler: BtcSampler;
   longTermSampler: LongTermSampler;
   bookSamplers: Record<TradingPair, BookImbalanceSampler>;
+  fxRateSampler: FxRateSampler;
   chainTimer: ReturnType<typeof setInterval>;
 }
 
@@ -59,6 +64,17 @@ export function startDisplaySamplers(
   void pollBtc();
   const btcTimer = setInterval(() => void pollBtc(), 60000);
   btcTimer.unref();
+  // Display-only USD/JPY conversion. A failed poll leaves the last good
+  // in-memory value untouched and cannot affect any trading path.
+  const fxRateSampler = new FxRateSampler();
+  const fetchUsdJpy = createUsdJpyFetcher();
+  const pollUsdJpy = async () => {
+    const rate = await fetchUsdJpy();
+    if (rate != null) fxRateSampler.observe(rate);
+  };
+  void pollUsdJpy();
+  const fxTimer = setInterval(() => void pollUsdJpy(), 3600 * 1000);
+  fxTimer.unref();
   // Display-only long-term daily candles for the dashboard's
   // level map (see longTerm.ts). Six hours is plenty for a
   // series that changes once a day; a failure keeps the last
@@ -90,5 +106,12 @@ export function startDisplaySamplers(
   void pollBooks();
   const bookTimer = setInterval(() => void pollBooks(), 45000);
   bookTimer.unref();
-  return { chainSampler, btcSampler, longTermSampler, bookSamplers, chainTimer };
+  return {
+    chainSampler,
+    btcSampler,
+    longTermSampler,
+    bookSamplers,
+    fxRateSampler,
+    chainTimer,
+  };
 }

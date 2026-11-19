@@ -33,6 +33,7 @@ import {
 } from "../../../packages/shared/src/operations.ts";
 import type { AccountingCheck } from "../../../packages/paper-trading/src/reconciliation.ts";
 import type { Fill } from "../../../packages/paper-trading/src/index.ts";
+import type { FxRate } from "./fx-rate.ts";
 import {
   buildDecisionTelemetry,
   computeLedger,
@@ -430,6 +431,7 @@ export class OperationMonitor {
     now = Date.now(),
     private monotonicNow: () => number = () => performance.now(),
     private readonly mode: string = "PAPER",
+    private readonly fxRateSource: () => FxRate | null = () => null,
   ) {
     if (!db.get("operation_state"))
       db.set("operation_state", {
@@ -1117,6 +1119,7 @@ export class OperationMonitor {
       timing: this.timing(now),
       decision,
       apis: apiAccess.snapshot(now),
+      fx: this.fxRateSource(),
       mode: "PAPER" as const,
       workerBuild: workerBuild(),
       status:
