@@ -437,7 +437,7 @@ const CHECK_LABELS: Record<keyof ResumeResult["checks"], string> = {
   gasSufficient: "ガス代の残高",
   deepSufficient: "手数料用の DEEP",
   riskAllowed: "リスク判定",
-  profitGuardAllowed: "利益ガード",
+  profitGuardAllowed: "ProfitGuard",
   marketHealthy: "相場の健全性",
 };
 
@@ -464,7 +464,7 @@ function failedCheckReason(
     gasSufficient: `Bot の SUI 残高が不足しています（実績 ${details.gasSufficient.actualSui} SUI／必要 ${details.gasSufficient.thresholdSui} SUI）`,
     deepSufficient: "DEEP の残高が不足しています",
     riskAllowed: "リスク判定が取引を止めています",
-    profitGuardAllowed: "利益ガードが取引を止めています",
+    profitGuardAllowed: "ProfitGuardが取引を止めています",
     marketHealthy: "相場データが古いか取得できていません",
   };
   return reasons[name];

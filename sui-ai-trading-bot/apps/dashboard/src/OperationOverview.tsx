@@ -108,7 +108,7 @@ export function noTradeReasons(
   )
     reasons.push("データ取得に問題がある（現在の通信・鮮度）");
   if (r.profitGuardSkipped > 0)
-    reasons.push(`利益保護で見送り：期間内 ${r.profitGuardSkipped}件`);
+    reasons.push(`ProfitGuardで見送り：期間内 ${r.profitGuardSkipped}件`);
   if (r.riskSkipped > 0)
     reasons.push(`リスク制限で見送り：期間内 ${r.riskSkipped}件`);
   if (

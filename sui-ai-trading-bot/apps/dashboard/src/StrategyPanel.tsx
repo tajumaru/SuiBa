@@ -627,7 +627,7 @@ export function StrategyPanel({
             ))}
             {group.id === "profit-guard" && (
               <details className="strategy-pg-details">
-                <summary>利益保護の詳細（コスト内訳・見積もり）</summary>
+                <summary>ProfitGuardの詳細（コスト内訳・見積もり）</summary>
                 <ProfitGuardPanel data={data} />
               </details>
             )}

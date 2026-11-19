@@ -18,7 +18,7 @@ const profitGuardReasonText: Record<string, string> = {
   UNKNOWN_COSTS: "ガス代または追加手数料が不明・不正です",
   INVALID_POSITION: "保有数量または取得原価が不正です",
   INSUFFICIENT_POSITION: "売却数量が保有数量を超えています",
-  INVALID_PROFIT_CONFIG: "利益保護の設定値が不正です",
+  INVALID_PROFIT_CONFIG: "ProfitGuardの設定値が不正です",
   MINIMUM_NET_PROFIT_MET: "最低純利益額・利益率を満たしています",
   MINIMUM_NET_PROFIT_NOT_MET: operationReason("MINIMUM_NET_PROFIT_NOT_MET"),
   PROTECTIVE_EXIT_PROFIT_BYPASS:
@@ -39,9 +39,9 @@ const profitGuardReasonText: Record<string, string> = {
 export function ProfitGuardSummary({ data }: { data: State }) {
   const r = data.profitGuard;
   return (
-    <section aria-label="利益保護の要約">
+    <section aria-label="ProfitGuardの要約">
       <p className="panel-meta">
-        利益保護：{data.settings.profitGuardEnabled ? "有効" : "無効"}
+        ProfitGuard：{data.settings.profitGuardEnabled ? "有効" : "無効"}
         {r
           ? ` · 直近の判定：${profitGuardReasonText[r.reason] ?? "利益判定の安全性を確認できません"}`
           : " · 判定データはまだありません"}
@@ -64,7 +64,7 @@ export function ProfitGuardPanel({ data }: { data: State }) {
     stale = r?.validUntil != null && Date.now() >= r.validUntil;
   return (
     <section>
-      <h3>利益保護 · コスト控除後の利益</h3>
+      <h3>ProfitGuard · コスト控除後の利益</h3>
       <div className="cards">
         <div>
           <small>現在の保有分の取得原価</small>

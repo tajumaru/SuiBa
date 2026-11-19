@@ -254,7 +254,7 @@ describe("strategy view: parameter groups and scales", () => {
     expect(STRATEGY_PARAM_GROUPS.map((g) => g.title)).toEqual([
       "買い条件",
       "売り・リスク",
-      "ProfitGuard（利益保護）",
+      "ProfitGuard",
     ]);
   });
 

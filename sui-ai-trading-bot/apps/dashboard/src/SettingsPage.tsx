@@ -93,7 +93,7 @@ export const fields: Field[] = [
     label: "利確の目安",
     unit: "%",
     scale: 100,
-    help: "取得価格からの上昇割合。最大30%。利益保護も確認します。",
+    help: "取得価格からの上昇割合。最大30%。ProfitGuardも確認します。",
   },
   {
     key: "maxVolumeChange",
@@ -293,7 +293,7 @@ export function AdvancedSettings(props: {
       <Inputs {...props} items={fields.slice(2)} />
       {toggle(
         "profitGuardEnabled",
-        "利益保護を有効にする",
+        "ProfitGuardを有効にする",
         "利益条件の設定です。見積もり・費用・数量の検証とリスク制限は常に適用されます。",
       )}
       {toggle(
@@ -324,7 +324,7 @@ export function SettingsChanges({
         const field = fields.find((f) => f.key === key);
         const boolLabel =
           key === "profitGuardEnabled"
-            ? "利益保護"
+            ? "ProfitGuard"
             : key === "emaGapShrinkEnabled"
               ? "EMAの差の縮小"
               : "戦略";

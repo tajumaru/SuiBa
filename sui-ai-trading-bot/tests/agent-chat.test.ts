@@ -99,7 +99,7 @@ describe("agent chat replies", () => {
         } as Partial<DecisionTelemetry>),
       }),
     );
-    expect(all.text).toContain("利益保護");
+    expect(all.text).toContain("ProfitGuard");
     const holding = agentReply(
       "なんで買わないの？",
       ctx({
