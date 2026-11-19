@@ -67,6 +67,7 @@ export const timeText = (at: number) =>
 export function AgentFeedEntryRow({
   entry,
   justBought = false,
+  animateIn = false,
   onPromptChip,
   speakerName = "キャラ",
   memorySealed = false,
@@ -75,6 +76,8 @@ export function AgentFeedEntryRow({
 }: {
   entry: NarrationEntry;
   justBought?: boolean;
+  /** Plays the one-shot entrance for an entry newly added to the live edge. */
+  animateIn?: boolean;
   /** Tapping the suggested question on a chatPrompt entry asks it. */
   onPromptChip?: (chip: string) => void;
   /** The character's display name, for its speak-up tag. */
@@ -89,7 +92,7 @@ export function AgentFeedEntryRow({
   const buy = isBuyTradeEntry(entry);
   return (
     <div
-      className={`agent-feed-entry ${entry.kind}${entry.kind === "sellLineCrossing" ? ` crossing-${entry.sellLineSide}` : ""}${buy ? " buy" : ""}${justBought ? " just-bought" : ""}${entry.mono ? " mono" : ""}${entry.kind === "memory" && memorySealed ? " sealed-memory" : ""}`}
+      className={`agent-feed-entry ${entry.kind}${entry.kind === "sellLineCrossing" ? ` crossing-${entry.sellLineSide}` : ""}${buy ? " buy" : ""}${justBought ? " just-bought" : ""}${animateIn ? " animate-in" : ""}${entry.mono ? " mono" : ""}${entry.kind === "memory" && memorySealed ? " sealed-memory" : ""}`}
     >
       {entry.kind === "memory" && (
         <img

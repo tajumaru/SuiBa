@@ -1,11 +1,27 @@
 import type { OperationsSnapshot } from "./operationsTypes.ts";
-import type { AgentPose, NarrationEntry, NarrationState, PointSmileCause } from "./agentNarration.ts";
+import type {
+  AgentPose,
+  NarrationEntry,
+  NarrationState,
+  PointSmileCause,
+} from "./agentNarration.ts";
 import { agentDisplayName } from "./agentName.ts";
 import { greetingText } from "./narration/voice.ts";
 import { useAgentCharacter } from "./agentCharacter.ts";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { persistNarration, restoreNarration } from "./narrationStorage.ts";
-import { BUY_CELEBRATION_MS, CELEBRATION_FRESH_MS, advanceNarration, agentPoseDetails, currentConditionChips, currentWatch, currentWatchScore, findNewBuyEntry, isBuyTradeEntry, trimNarrationEntries } from "./agentNarration.ts";
+import {
+  BUY_CELEBRATION_MS,
+  CELEBRATION_FRESH_MS,
+  advanceNarration,
+  agentPoseDetails,
+  currentConditionChips,
+  currentWatch,
+  currentWatchScore,
+  findNewBuyEntry,
+  isBuyTradeEntry,
+  trimNarrationEntries,
+} from "./agentNarration.ts";
 import { botVital } from "./botVital.ts";
 import {
   appendHighlights,
@@ -29,8 +45,29 @@ import { usePrefersReducedMotion } from "./usePrefersReducedMotion.ts";
 import { useFeedScroll } from "./useFeedScroll.ts";
 import { useAgentChat } from "./useAgentChat.ts";
 import { AgentChatComposer } from "./AgentChatComposer.tsx";
-import { useNarrationShadow, type NarrationShadowDiagnostics } from "./narrationShadow.ts";
+import {
+  useNarrationShadow,
+  type NarrationShadowDiagnostics,
+} from "./narrationShadow.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
+
+export function findNewLatestEntryIds(
+  previousIds: ReadonlySet<string>,
+  entries: readonly NarrationEntry[],
+  initialLoadComplete = true,
+) {
+  if (!initialLoadComplete) return new Set<string>();
+  let latestPreviousIndex = -1;
+  entries.forEach((entry, index) => {
+    if (previousIds.has(entry.id)) latestPreviousIndex = index;
+  });
+  return new Set(
+    entries
+      .slice(latestPreviousIndex + 1)
+      .filter((entry) => !previousIds.has(entry.id))
+      .map((entry) => entry.id),
+  );
+}
 
 export function AgentNarrationFeed({
   data,
@@ -72,7 +109,10 @@ export function AgentNarrationFeed({
   } | null;
   /** The newest cone-calibration change (display-only), told
    * once by the feed when it is fresh. */
-  calibEvent?: import("./forecastCalib.ts").CalibEvent | import("./forecastCalib.ts").CalibEvent[] | null;
+  calibEvent?:
+    | import("./forecastCalib.ts").CalibEvent
+    | import("./forecastCalib.ts").CalibEvent[]
+    | null;
   /** The engine's newest fills, threaded to the narration
    * advance so a finished month's report can be priced and
    * posted. Display/record only. */
@@ -315,9 +355,27 @@ export function AgentNarrationFeed({
       persist(withPrompt);
       setNarration(withPrompt);
     }
-  }, [data, stale, onCelebrate, onMemwalEpisode, trades, btc, forecasts, book, pairLabel, calibEvent, character, hardMode]);
+  }, [
+    data,
+    stale,
+    onCelebrate,
+    onMemwalEpisode,
+    trades,
+    btc,
+    forecasts,
+    book,
+    pairLabel,
+    calibEvent,
+    character,
+    hardMode,
+  ]);
   const vital = botVital(data, stale, now, receivedAt);
-  const { pose, pointSmileCause } = agentPoseDetails(narration, data, vital, now);
+  const { pose, pointSmileCause } = agentPoseDetails(
+    narration,
+    data,
+    vital,
+    now,
+  );
   // While a chat reply is fresh, the character turns to the user
   // with the smile pose (from the base poses only — pointing, the
   // blue line and the rest keep their meaning).
@@ -363,6 +421,24 @@ export function AgentNarrationFeed({
     loadHighlights(pairLabel),
   );
   const [replay, setReplay] = useState<Highlight | null>(null);
+  // The restored first render establishes the baseline. On later renders,
+  // only IDs added beyond the previous newest entry are live arrivals;
+  // older history inserted before that edge must stay still. Once marked,
+  // an ID keeps its class so unrelated renders cannot restart the animation.
+  const previousEntryIdsRef = useRef<Set<string> | null>(null);
+  const initialLoadCompleteRef = useRef(narration.initialized);
+  const animatedEntryIdsRef = useRef(new Set<string>());
+  const currentEntryIds = new Set(narration.entries.map((entry) => entry.id));
+  if (previousEntryIdsRef.current != null) {
+    for (const id of findNewLatestEntryIds(
+      previousEntryIdsRef.current,
+      narration.entries,
+      initialLoadCompleteRef.current,
+    ))
+      animatedEntryIdsRef.current.add(id);
+  }
+  previousEntryIdsRef.current = currentEntryIds;
+  initialLoadCompleteRef.current = narration.initialized;
   // The chat bar is fixed to the screen bottom (see style.css);
   // while this tab is on screen it raises the corner avatar chip
   // above itself via page-level classes (the line-mode pattern).
@@ -526,6 +602,7 @@ export function AgentNarrationFeed({
                 }
                 onOpenMemorySeal={openMemorySeal}
                 justBought={celebration?.entryId === entry.id}
+                animateIn={animatedEntryIdsRef.current.has(entry.id)}
                 onPromptChip={submitChat}
                 speakerName={displayName}
                 onReplay={highlight ? () => setReplay(highlight) : undefined}
@@ -534,7 +611,10 @@ export function AgentNarrationFeed({
           })
         )}
         {chatThinking && (
-          <article className="agent-feed-entry chatReply thinking" role="status">
+          <article
+            className="agent-feed-entry chatReply thinking"
+            role="status"
+          >
             <span className="agent-feed-entry-tag reply">返信</span>
             <p>考え中…</p>
           </article>
