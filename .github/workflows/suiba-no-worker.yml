@@ -316,6 +316,11 @@ jobs:
           sudo /usr/bin/python3 -I deploy/paper-check/verify_run.py suiba-no-worker:${{ github.sha }} ${{ matrix.scenarios }}
       - name: Report that this matrix leg is not needed
         if: needs.changes.outputs.heavy != 'true'
+        # The checkout step above is skipped on this path, so the job's
+        # default working directory (sui-ai-trading-bot) does not exist
+        # yet and the shell cannot start there. Report from the
+        # workspace root instead.
+        working-directory: ${{ github.workspace }}
         run: echo "No heavy-suite inputs changed; ${{ matrix.name }} reports success without running Docker."
   docker-suites:
     # Aggregator for the split heavy jobs above: keeps the single
