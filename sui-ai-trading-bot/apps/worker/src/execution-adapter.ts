@@ -6,6 +6,7 @@ import type {
 import type { CandidateAudit } from "../../../packages/shared/src/operations.ts";
 import type { ProfitReport } from "../../../packages/profit-guard/src/index.ts";
 import type { RealEngineChecksRecord } from "./real/types.ts";
+import type { RealFeeEstimate } from "./real/fee-cache.ts";
 
 export interface ExecutionIntent {
   orderId: string;
@@ -27,6 +28,10 @@ export type ExecutionResult =
 
 export interface ExecutionAdapter {
   readonly kind: "REAL_TRADECAP";
+  feeEstimate(
+    side: "BUY" | "SELL",
+    currentEpoch: number | null,
+  ): Promise<RealFeeEstimate>;
   execute(intent: ExecutionIntent): Promise<ExecutionResult>;
   acceptStop(reason: string): void;
   recordEngineChecks(record: Omit<RealEngineChecksRecord, "identity">): void;

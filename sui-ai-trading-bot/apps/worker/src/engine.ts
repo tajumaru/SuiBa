@@ -39,6 +39,7 @@ import {
   evaluateSell,
   evaluateBuy,
   paperCosts,
+  realCosts,
   positionOf,
   strategyExitPrice,
   type ProfitReport,
@@ -319,8 +320,11 @@ export class BotEngine {
       } catch {
         sellPreview = null;
       }
-      const costs = sellPreview
-        ? paperCosts(sellPreview, this.db.settings())
+      const sellFee = sellPreview
+        ? await this.costsFor(sellPreview, "SELL", this.db.settings())
+        : null;
+      const costs = sellFee
+        ? sellFee.costs
         : {
             additionalFeeUsdc: null,
             gasUsdc: null,
@@ -528,7 +532,8 @@ export class BotEngine {
     const validQuote = await this.router.validateQuote(q);
     const fresh = Date.now();
     const executionSettings = this.db.settings();
-    const costs = paperCosts(q, executionSettings);
+    const fee = await this.costsFor(q, side, executionSettings);
+    const costs = fee.costs;
     const profitAt = (at: number) =>
       side === "SELL"
         ? evaluateSell({
@@ -546,7 +551,13 @@ export class BotEngine {
             sellQuote: reverse,
             buyCosts: costs,
             sellCosts: reverse
-              ? paperCosts(reverse, executionSettings)
+              ? this.executionAdapter
+                ? realCosts(
+                    reverse,
+                    fee.estimate!.takerFee,
+                    executionSettings.gasUsdc,
+                  )
+                : paperCosts(reverse, executionSettings)
               : {
                   additionalFeeUsdc: null,
                   gasUsdc: null,
@@ -556,12 +567,15 @@ export class BotEngine {
             config: profitConfigOf(executionSettings),
             now: at,
             maxExitUsdc: String(executionSettings.maxOrder),
-            strategyTargetPrice: strategyExitPrice(
-              positionOf(p),
-              q,
-              costs,
-              executionSettings.takeProfitPct,
-            ),
+            strategyTargetPrice:
+              costs.additionalFeeUsdc !== null && costs.gasUsdc !== null
+                ? strategyExitPrice(
+                    positionOf(p),
+                    q,
+                    costs,
+                    executionSettings.takeProfitPct,
+                  )
+                : undefined,
           });
     const profit = profitAt(fresh);
     this.db.recordProfit(profit, decision);
@@ -574,6 +588,15 @@ export class BotEngine {
       dexFeeUsdc: costs.dexFeeUsdc,
       gasUsdc: costs.gasUsdc,
       additionalFeeUsdc: costs.additionalFeeUsdc,
+      ...(fee.estimate
+        ? {
+            feeRate: fee.estimate.takerFee,
+            feeSource: fee.estimate.source,
+            feeParamsStale: fee.estimate.stale,
+            feeParamsEpoch: fee.estimate.epoch,
+            feeParamsReadAt: fee.estimate.readAt,
+          }
+        : {}),
       buyGasUsdc: profit.buyCosts?.gasUsdc ?? null,
       profitGuard: {
         evaluated: true,
@@ -645,6 +668,21 @@ export class BotEngine {
       return null;
     }
     return { fresh, executionSettings, costs, profit, profitAt, validQuote };
+  }
+
+  private async costsFor(
+    quote: QuoteResult,
+    side: "BUY" | "SELL",
+    settings: Settings,
+  ) {
+    if (!this.executionAdapter)
+      return { costs: paperCosts(quote, settings), estimate: null };
+    const epoch = this.chainInfoSource()?.epoch ?? null;
+    const estimate = await this.executionAdapter.feeEstimate(side, epoch);
+    return {
+      costs: realCosts(quote, estimate.takerFee, settings.gasUsdc),
+      estimate,
+    };
   }
 
   /**

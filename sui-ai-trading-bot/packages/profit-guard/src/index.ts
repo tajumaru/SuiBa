@@ -129,6 +129,26 @@ export function paperCosts(
     source: "PAPER_MODEL",
   };
 }
+
+/** REAL fee input. feeRate is the normalized SDK value (for example 10 bps is
+ * 0.001); it must not be divided by FLOAT_SCALAR again. */
+export function realCosts(
+  q: QuoteResult,
+  feeRate: number | null,
+  gasUsdc: number,
+): Costs {
+  const usdc =
+    coin(q.from) === USDC
+      ? new D(q.amountIn).div(1e6)
+      : new D(q.minAmountOut).div(1e6);
+  return {
+    additionalFeeUsdc:
+      feeRate === null ? null : expense(usdc.mul(feeRate).toString()),
+    gasUsdc: Number.isFinite(gasUsdc) ? expense(String(gasUsdc)) : null,
+    dexFeeUsdc: q.dexFeeUsdc ?? null,
+    source: "LIVE_ACTUAL",
+  };
+}
 function report(
   config: ProfitConfig,
   now: number,

@@ -9,6 +9,7 @@ import { tradeCapValid } from "./cap-valid.ts";
 import { IndexerGraphqlHistorySource } from "./history-source.ts";
 import { createDeepBookReadOnly } from "./read-only.ts";
 import type { RealEffects, RealIdentity } from "./types.ts";
+import { RealFeeCache } from "./fee-cache.ts";
 
 type LiveProbeName = "snapshot" | "cap" | "history";
 
@@ -135,8 +136,13 @@ export function createRealTradeCapRuntime(
       },
     },
   );
-  const executionAdapter = new RealTradeCapExecutionAdapter(executor, config);
   const reader = createDeepBookReadOnly(config, config.grpcUrl);
+  const feeCache = new RealFeeCache(() => reader.snapshot());
+  const executionAdapter = new RealTradeCapExecutionAdapter(
+    executor,
+    config,
+    feeCache,
+  );
   const history = new IndexerGraphqlHistorySource(
     config.indexerUrl,
     config.graphqlUrl,
@@ -147,7 +153,11 @@ export function createRealTradeCapRuntime(
     executionAdapter,
     liveProbe: () =>
       runRealLiveProbe({
-        snapshot: () => reader.snapshot(),
+        snapshot: async () => {
+          const snapshot = await reader.snapshot();
+          feeCache.observe(snapshot);
+          return snapshot;
+        },
         capValid: () => tradeCapValid(config.graphqlUrl, identity),
         historyPage: () => history.page(null),
       }),
