@@ -25,7 +25,7 @@ LIQUIDATION_ROW_LIMIT = WINDOW_MS // (5 * 60 * 1000) + 1
 # limits with more than 2x headroom.
 JSON_TABLES = ('forecast_records', 'shadow_decisions', 'strategy_decisions', 'technical_indicators', 'operation_candidates',
                'paper_orders', 'paper_trades', 'operation_events', 'cycle_audits')
-TABLES = JSON_TABLES + ('liquidation_buckets',)
+TABLES = JSON_TABLES + ('liquidation_buckets', 'narration_entries')
 DATABASES = {'bot.sqlite': 'SUI_USDC.sqlite', 'bot.sqlite.WAL_USDC.sqlite': 'WAL_USDC.sqlite'}
 ERROR_CODES = frozenset(('EXPORT_BACKUP_MISSING', 'EXPORT_MANIFEST_MISMATCH', 'EXPORT_ARCHIVE_INVALID',
     'EXPORT_LIMIT_EXCEEDED', 'EXPORT_DATABASE_INVALID', 'EXPORT_RUN_INVALID', 'EXPORT_PACKAGE_INVALID',
@@ -70,6 +70,10 @@ EPISODE_OUTCOMES = frozenset(('RECOVERED', 'EXHAUSTED', 'STOPPED', 'INTERRUPTED'
 TALLY_KEY = re.compile(r'[A-Za-z][A-Za-z0-9 ]{0,31}/[A-Z][A-Z0-9_]{0,63}')
 SHADOW_PROMPT_VERSION = re.compile(r'shadow-[a-z0-9]+(?:-[a-z0-9]+)*-v[1-9][0-9]{0,5}')
 SHADOW_MODEL = re.compile(r'gpt-5\.4-(?:nano|mini)')
+NARRATION_KINDS = frozenset('''cycle trade rejection stop start warning recovery nearMiss watchHit
+reach superReach priceLine priceLineReached sellLine sellLineCrossing review alert monthlyReport
+epoch btc forecastCall forecastHit forecastMiss forecastTouch forecastTouchNear bookWall
+forecastCalib memory'''.split())
 
 
 class ExportError(RuntimeError):
@@ -349,6 +353,32 @@ def _package(root, seen, run, scope, source_sha256, deadline):
                         (bucket_at, long_usd))
                     count += 1
                 counts['liquidation_buckets'] = count
+            if 'narration_entries' in names:
+                # Narration text and its source metadata remain private. Keep
+                # only the three fields needed to count kinds and audit cursor
+                # continuity, using the same 14-day event-time window.
+                destination.execute(
+                    'CREATE TABLE narration_entries('
+                    'seq INTEGER PRIMARY KEY,kind TEXT NOT NULL,occurred_at INTEGER NOT NULL)')
+                pair = target.removesuffix('.sqlite')
+                count = 0
+                for seq, kind, occurred_at in source.execute(
+                        'SELECT seq,kind,occurred_at FROM narration_entries '
+                        'WHERE pair=? AND occurred_at BETWEEN ? AND ? '
+                        'ORDER BY occurred_at,seq',
+                        (pair, window_from, window_to)):
+                    total_rows += 1
+                    check(total_rows <= ROW_LIMIT and time.monotonic() < deadline,
+                          'EXPORT_LIMIT_EXCEEDED')
+                    check(type(seq) is int and 0 < seq <= 2**53 and
+                          kind in NARRATION_KINDS and
+                          type(occurred_at) is int and 0 <= occurred_at <= 2**53,
+                          'EXPORT_DATABASE_INVALID')
+                    destination.execute(
+                        'INSERT INTO narration_entries VALUES(?,?,?)',
+                        (seq, kind, occurred_at))
+                    count += 1
+                counts['narration_entries'] = count
             destination.commit()
         except (sqlite3.Error, ValueError, TypeError): raise ExportError('EXPORT_DATABASE_INVALID') from None
         finally:

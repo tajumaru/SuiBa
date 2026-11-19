@@ -54,6 +54,26 @@ def unpack(package, destination):
                     if any(kind != 'table' or table not in TABLES for table, kind in schema): raise ValueError()
                     if type(item['rows']) is not dict or {t for t, _ in schema} != set(item['rows']): raise ValueError()
                     for table, _ in schema:
+                        if table == 'narration_entries':
+                            if [r[1] for r in db.execute(
+                                    'PRAGMA table_info(narration_entries)')] != [
+                                        'seq', 'kind', 'occurred_at']:
+                                raise ValueError()
+                            count = 0
+                            for seq, kind, occurred_at in db.execute(
+                                    'SELECT seq,kind,occurred_at FROM narration_entries'):
+                                if (type(seq) is not int or not 0 < seq <= 2**53 or
+                                        kind not in scope['NARRATION_KINDS'] or
+                                        type(occurred_at) is not int or
+                                        not window['from'] <= occurred_at <= window['to']):
+                                    raise ValueError()
+                                count += 1
+                                if count > scope['ROW_LIMIT']:
+                                    raise ValueError()
+                            if (type(item['rows'][table]) is not int or
+                                    count != item['rows'][table]):
+                                raise ValueError()
+                            continue
                         if table == 'liquidation_buckets':
                             if [r[1] for r in db.execute(
                                     'PRAGMA table_info(liquidation_buckets)')] != [
