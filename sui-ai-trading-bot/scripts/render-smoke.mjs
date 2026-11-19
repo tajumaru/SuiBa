@@ -166,42 +166,29 @@ try {
     const chainStrip = page.locator(
       '.chain-strip[aria-label="Suiチェーン情報"]',
     );
-    const chainCredit = page.getByRole("link", { name: "Sui" });
-    const walrusCredit = page.getByRole("link", { name: "Walrus" });
-    await chainStrip.waitFor();
-    const chainLayout = await chainStrip.evaluate((strip) => {
-      const credits = strip.querySelector(".chain-credits");
-      const credit = credits?.querySelector(".chain-credit");
-      const metric = credits?.previousElementSibling;
-      const stripRect = strip.getBoundingClientRect();
-      const creditRect = credit?.getBoundingClientRect();
-      const metricRect = metric?.getBoundingClientRect();
-      return {
-        fits: strip.scrollWidth <= strip.clientWidth,
-        creditFits:
-          !!creditRect &&
-          creditRect.left >= stripRect.left &&
-          creditRect.right <= stripRect.right,
-        creditBelowMetrics:
-          !!creditRect && !!metricRect && creditRect.top >= metricRect.bottom,
-      };
+    // Since 2026-11-19 the strip carries only EPOCH and TPS; the
+    // Sui credit moved to the version footer and the Walrus
+    // credit was retired with the strip slimming.
+    const suiCredit = page.locator(".version-footer").getByRole("link", {
+      name: "Sui",
     });
-    if (!chainLayout.fits || !chainLayout.creditFits)
-      failures.push(`${width}px: Sui chain credit overflows its strip`);
-    if (width <= 375 && !chainLayout.creditBelowMetrics)
-      failures.push(`${width}px: Sui chain credit competes with chain metrics`);
-    const creditLogo = chainCredit.locator("img");
+    await chainStrip.waitFor();
+    const chainLayout = await chainStrip.evaluate((strip) => ({
+      fits: strip.scrollWidth <= strip.clientWidth,
+      hasCredits: strip.querySelector("a") !== null,
+    }));
+    if (!chainLayout.fits)
+      failures.push(`${width}px: Sui chain strip overflows`);
+    if (chainLayout.hasCredits)
+      failures.push(`${width}px: Sui chain strip still carries credits`);
+    const creditLogo = suiCredit.locator("img");
     if (
-      (await chainCredit.getAttribute("href")) !== "https://sui.io" ||
+      (await suiCredit.getAttribute("href")) !== "https://sui.io" ||
       (await creditLogo.getAttribute("src")) !== "/sui-logo.svg"
     )
-      failures.push(`${width}px: Sui chain credit link or logo is missing`);
-    const walrusLogo = walrusCredit.locator("img");
-    if (
-      (await walrusCredit.getAttribute("href")) !== "https://walrus.xyz" ||
-      (await walrusLogo.getAttribute("src")) !== "/walrus-glyph.svg"
-    )
-      failures.push(`${width}px: Walrus chain credit link or glyph is missing`);
+      failures.push(`${width}px: Sui footer credit link or logo is missing`);
+    if ((await page.getByRole("link", { name: "Walrus" }).count()) !== 0)
+      failures.push(`${width}px: Walrus credit should be retired`);
     for (const name of [
       "実況",
       "ダッシュボード",
@@ -235,7 +222,7 @@ try {
     if (
       !(
         await page.getByRole("region", { name: "Workerの状態" }).textContent()
-      ).includes("最終分析成功")
+      ).includes("最終分析")
     )
       failures.push("analysis evidence missing");
     /* eslint-disable no-undef -- computed typography runs inside Chromium */

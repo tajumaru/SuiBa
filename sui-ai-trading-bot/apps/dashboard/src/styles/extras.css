@@ -398,48 +398,6 @@
   color: #e8f5ef;
   font-weight: 600;
 }
-.chain-credits {
-  display: inline-flex;
-  gap: 16px;
-  align-items: center;
-  margin-left: auto;
-}
-.chain-credit {
-  display: inline-flex;
-  gap: 5px;
-  align-items: center;
-  color: var(--faint);
-  font-size: 10px;
-  letter-spacing: 0.02em;
-  line-height: 1;
-  opacity: 0.72;
-  text-decoration: none;
-  white-space: nowrap;
-}
-.chain-credit:hover,
-.chain-credit:focus-visible {
-  color: var(--text);
-  opacity: 1;
-}
-.chain-credit:focus-visible {
-  outline: 1px solid var(--mint);
-  outline-offset: 3px;
-}
-.chain-credit img {
-  width: 8px;
-  height: 10px;
-}
-.chain-credit-walrus img {
-  width: 11px;
-  height: 11px;
-}
-@media (max-width: 640px) {
-  .chain-credits {
-    flex-basis: 100%;
-    justify-content: flex-end;
-  }
-}
-
 /* Highlights: entry replay affordance + the replay sheet. */
 .agent-feed-replay-button {
   margin-left: auto;
@@ -1152,6 +1110,33 @@
 }
 .version-skew {
   color: var(--gold);
+}
+.version-footer-sui {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  margin-left: 10px;
+  color: var(--faint);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  opacity: 0.72;
+  text-decoration: none;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.version-footer-sui:hover,
+.version-footer-sui:focus-visible {
+  color: var(--text);
+  opacity: 1;
+}
+.version-footer-sui:focus-visible {
+  outline: 1px solid var(--mint);
+  outline-offset: 3px;
+}
+.version-footer-sui img {
+  width: 8px;
+  height: 10px;
 }
 /* The browser cannot infer why the worker is unreachable. Keep the outage
    separate from Bot safety, and label retained values even while scrolled. */

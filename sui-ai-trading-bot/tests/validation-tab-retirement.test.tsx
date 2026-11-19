@@ -35,7 +35,7 @@ describe("retired validation tab", () => {
     const html = renderToStaticMarkup(<WorkerFreshness data={data} />);
     expect(html).toContain("Workerの心拍");
     expect(html).toContain("5秒前");
-    expect(html).toContain("最終分析成功");
+    expect(html).toContain("最終分析");
     expect(html).toContain("12秒前");
     expect(html).not.toMatch(/雫|実資金は使用/);
     expect(

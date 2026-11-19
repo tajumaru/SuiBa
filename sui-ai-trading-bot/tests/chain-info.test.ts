@@ -36,7 +36,7 @@ describe("ChainSampler", () => {
   });
 });
 describe("ChainStrip", () => {
-  it("renders the chain vitals and hides itself before the first sample", () => {
+  it("renders only epoch and TPS and hides itself before the first sample", () => {
     const html = renderToStaticMarkup(
       React.createElement(ChainStrip, {
         chain: { epoch: 1024, checkpoint: 182394551, tps: 1208, gasMist: 1000, epochStartMs: Date.now() - 3600000, epochDurationMs: 86400000, validators: 108, at: 1 },
@@ -44,26 +44,15 @@ describe("ChainStrip", () => {
     );
     expect(html).toContain("SUI CHAIN");
     expect(html).toContain("1,024");
-    expect(html).toContain("182,394,551");
     expect(html).toContain("1,208");
-    expect(html).toContain("GAS");
-    expect(html).toContain("1,000 MIST");
-    expect(html).toContain("NEXT EPOCH");
-    expect(html).toContain("（目安）");
-    expect(html).toContain("VALIDATORS");
-    expect(html).toContain("108");
-    expect(html).toContain("Built on Sui");
-    expect(html).toContain('href="https://sui.io"');
-    expect(html).toContain('target="_blank"');
-    expect(html).toContain('rel="noreferrer"');
-    expect(html).toContain('aria-label="Sui"');
-    expect(html).toContain('src="/sui-logo.svg"');
-    expect(html).toContain('alt="Sui"');
-    expect(html).toContain("Memory on Walrus");
-    expect(html).toContain('href="https://walrus.xyz"');
-    expect(html).toContain('aria-label="Walrus"');
-    expect(html).toContain('src="/walrus-glyph.svg"');
-    expect(html).toContain('alt="Walrus"');
+    // Slimmed 2026-11-19: the fuller vitals and the credits left
+    // the strip (the Sui credit moved to the version footer).
+    expect(html).not.toContain("182,394,551");
+    expect(html).not.toContain("GAS");
+    expect(html).not.toContain("NEXT EPOCH");
+    expect(html).not.toContain("VALIDATORS");
+    expect(html).not.toContain("Built on Sui");
+    expect(html).not.toContain("Memory on Walrus");
     expect(
       renderToStaticMarkup(React.createElement(ChainStrip, { chain: null })),
     ).toBe("");
