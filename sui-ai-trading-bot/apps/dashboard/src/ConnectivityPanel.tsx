@@ -158,7 +158,7 @@ export function ConnectivityDetails({
           全時間足と板が新しく欠損がないこと、Suiへの接続、残高・保有数量・注文と約定の整合性、通信の待機終了を確認します。
           正常確認は{safety.limits.healthyCycles}周期以上、
           {safety.limits.minimumHealthyMs / 1000}秒以上続く必要があります。
-          注文直前にもリスク制限と利益保護を確認します。
+          注文直前にもリスク制限とProfitGuardを確認します。
         </dd>
         <dt>復旧待機の理由</dt>
         <dd>

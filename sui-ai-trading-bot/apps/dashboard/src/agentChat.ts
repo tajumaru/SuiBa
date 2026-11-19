@@ -187,7 +187,7 @@ function whyNotBuying(ctx: AgentChatContext): string {
     return "もう買って持ってるよ。いまは売りラインを見張ってるところ。";
   const p = piecesOf(dec);
   if (p.missing.length === 0)
-    return "条件は全部揃ってる。あとは利益保護の判定待ち — 手数料を引いて残る利益が基準に届けば買うよ。";
+    return "条件は全部揃ってる。あとはProfitGuardの判定待ち — 手数料を引いて残る利益が基準に届けば買うよ。";
   const metText = p.met.length > 0 ? `${p.met.join("と")}は揃ってる。` : "";
   return vary(ctx, [
     `${metText}あと${p.missing.join("と")}が足りないから、まだ買わないよ。`,
@@ -205,7 +205,7 @@ function whatsMissing(ctx: AgentChatContext): string {
     return "買い条件はもう済んでるよ。いま足りないのは、売りラインへ届く値動きのほう。";
   const p = piecesOf(dec);
   if (p.missing.length === 0)
-    return "条件は全部揃ってるよ。足りないのは利益保護のゴーサインだけ。";
+    return "条件は全部揃ってるよ。足りないのはProfitGuardのゴーサインだけ。";
   const parts = [...p.missing];
   if (!p.rsi && dec.rsi > dec.oversold) {
     // The distance rides inside the piece name as a noun
@@ -303,7 +303,7 @@ function nextHighlight(ctx: AgentChatContext): string {
     const p = piecesOf(dec);
     if (p.missing.length > 0)
       return `${p.missing.join("と")}が揃うかどうかが次の見どころ。`;
-    return "条件は揃ってるから、利益保護の判定が見どころ。";
+    return "条件は揃ってるから、ProfitGuardの判定が見どころ。";
   }
   return "様子が掴めたら、近づいてる条件から見どころを言うね。";
 }

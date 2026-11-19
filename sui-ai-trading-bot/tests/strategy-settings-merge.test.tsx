@@ -101,13 +101,13 @@ describe("merged strategy tab content", () => {
   it("shows the profit-guard state once, with the toggle in the editor", () => {
     // State: the strategy view's ProfitGuard card and its detail
     // disclosure are the single status surface.
-    expect(html).toContain("ProfitGuard（利益保護）");
-    expect(html.match(/利益保護の詳細（コスト内訳・見積もり）/g)).toHaveLength(
+    expect(html).toContain("ProfitGuard");
+    expect(html.match(/ProfitGuardの詳細（コスト内訳・見積もり）/g)).toHaveLength(
       1,
     );
     // The duplicated summary that used to sit in the saved-settings
     // block is gone, and the edit toggle appears exactly once.
     expect(html).not.toContain("最後の判定");
-    expect(html.match(/利益保護を有効にする/g)).toHaveLength(1);
+    expect(html.match(/ProfitGuardを有効にする/g)).toHaveLength(1);
   });
 });

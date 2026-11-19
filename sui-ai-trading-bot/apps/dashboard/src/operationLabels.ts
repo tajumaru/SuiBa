@@ -89,7 +89,7 @@ export function operationReason(code: string): string {
     INVALID_POSITION: "保有数量または取得原価が不正です",
     INSUFFICIENT_POSITION: "売却数量が保有数量を超えています",
     NO_POSITION: "売却できる保有数量がありません",
-    INVALID_PROFIT_CONFIG: "利益保護の設定が不正です",
+    INVALID_PROFIT_CONFIG: "ProfitGuardの設定が不正です",
     PROFIT_DATA_UNKNOWN: "利益計算に必要な情報が不足しています",
     MINIMUM_NET_PROFIT_NOT_MET:
       "手数料を払うと、十分に儲からないので見送りました",

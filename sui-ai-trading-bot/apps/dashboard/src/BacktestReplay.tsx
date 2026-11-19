@@ -214,8 +214,8 @@ export function BacktestReplay({ result }: { result: ComparisonResult }) {
             value={mode}
             onChange={(e) => setMode(e.target.value as ReplayMode)}
           >
-            <option value="on">利益保護あり</option>
-            <option value="off">利益保護なし</option>
+            <option value="on">ProfitGuardあり</option>
+            <option value="off">ProfitGuardなし</option>
           </select>
         </label>
         <div className="controls" role="group" aria-label="再生操作">

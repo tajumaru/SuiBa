@@ -105,11 +105,11 @@ describe("strategy panel: diagram-first layout", () => {
     // Grouped parameter cards replace the flat settings list.
     expect(html).toContain("買い条件");
     expect(html).toContain("売り・リスク");
-    expect(html).toContain("ProfitGuard（利益保護）");
+    expect(html).toContain("ProfitGuard");
     expect(html).toContain("RSIの買い基準");
     expect(html).toContain("出来高変化の上限");
     expect(html).toContain("最低純利益");
-    expect(html).toContain("利益保護の詳細（コスト内訳・見積もり）");
+    expect(html).toContain("ProfitGuardの詳細（コスト内訳・見積もり）");
     expect(html).toContain("DeepSeek：未実装（拡張用インターフェースのみ）");
     // No editable inputs on this read-only tab.
     expect(html).not.toContain("<input");

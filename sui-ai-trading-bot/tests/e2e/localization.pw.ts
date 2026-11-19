@@ -179,7 +179,7 @@ test("Japanese screens preserve actions, ratios and epochs across all viewports"
   const localValue = await startField.inputValue();
   await startField.fill(localValue); // exercise the Japan time -> epoch conversion
   await page
-    .getByRole("button", { name: "同じ条件で利益保護の有効／無効を比較" })
+    .getByRole("button", { name: "同じ条件でProfitGuardの有効／無効を比較" })
     .click();
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0].start).toBe(result.options.start);

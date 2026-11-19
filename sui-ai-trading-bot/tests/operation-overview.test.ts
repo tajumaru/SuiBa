@@ -59,9 +59,9 @@ describe("operation overview evidence", () => {
     d.reports[0].profitGuardSkipped = 2;
     d.reports[0].riskSkipped = 1;
     const r = noTradeReasons(d, 24);
-    expect(r.some((x) => x.includes("利益保護"))).toBe(true);
+    expect(r.some((x) => x.includes("ProfitGuard"))).toBe(true);
     expect(r.some((x) => x.includes("リスク制限"))).toBe(true);
-    expect(noTradeReasons(d, 168).some((x) => x.includes("利益保護"))).toBe(
+    expect(noTradeReasons(d, 168).some((x) => x.includes("ProfitGuard"))).toBe(
       false,
     );
     d.reports[0].tradeCount = 1;

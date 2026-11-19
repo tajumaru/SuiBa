@@ -85,7 +85,7 @@ describe("dashboard dedup: profit guard detail lives on the strategy tab", () =>
     const html = renderSummary(true, {
       reason: "MINIMUM_NET_PROFIT_NOT_MET",
     });
-    expect(html).toContain("利益保護：有効");
+    expect(html).toContain("ProfitGuard：有効");
     expect(html).toContain(
       "直近の判定：手数料を払うと、十分に儲からないので見送りました",
     );
@@ -96,7 +96,7 @@ describe("dashboard dedup: profit guard detail lives on the strategy tab", () =>
 
   it("shows just the state when disabled and no verdict exists", () => {
     const html = renderSummary(false, null);
-    expect(html).toContain("利益保護：無効");
+    expect(html).toContain("ProfitGuard：無効");
     expect(html).toContain("判定データはまだありません");
   });
 

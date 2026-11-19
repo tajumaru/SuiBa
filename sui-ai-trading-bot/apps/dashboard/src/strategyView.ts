@@ -385,7 +385,7 @@ export const STRATEGY_PARAM_GROUPS: readonly StrategyParamGroup[] = [
   },
   {
     id: "profit-guard",
-    title: "ProfitGuard（利益保護）",
+    title: "ProfitGuard",
     description: "コストを引いても利益が残る時だけ売る仕組み",
     params: [
       { key: "minNetProfitUsdc", bar: true, domain: null },

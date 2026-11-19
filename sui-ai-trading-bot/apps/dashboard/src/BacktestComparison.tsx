@@ -68,8 +68,8 @@ function Lines({
       role="img"
       aria-label={
         drawdown
-          ? "利益保護の有効・無効別の最大下落率比較"
-          : "利益保護の有効・無効別の資産推移比較"
+          ? "ProfitGuardの有効・無効別の最大下落率比較"
+          : "ProfitGuardの有効・無効別の資産推移比較"
       }
     >
       <text x="10" y="18" fill="#8fa7b9" fontSize="12">
@@ -111,7 +111,7 @@ function Points({ result }: { result: ComparisonResult }) {
     <svg
       viewBox="0 0 1000 220"
       role="img"
-      aria-label="価格と買い・売り・利益保護による見送り地点"
+      aria-label="価格と買い・売り・ProfitGuardによる見送り地点"
     >
       <polyline
         fill="none"
@@ -139,7 +139,7 @@ function Points({ result }: { result: ComparisonResult }) {
               fill={k ? "#43dfb2" : "#70b9ff"}
             >
               <title>
-                {k ? "利益保護あり" : "利益保護なし"} · {dateTime(e.timestamp)}{" "}
+                {k ? "ProfitGuardあり" : "ProfitGuardなし"} · {dateTime(e.timestamp)}{" "}
                 · {e.reasons.map(reason).join("、")}
               </title>
               {e.trade ? (e.trade.side === "BUY" ? "▲" : "▼") : "W"}
@@ -301,12 +301,12 @@ export function BacktestComparison({
       <section>
         <h3>バックテスト比較 · PAPER（仮想売買）専用</h3>
         <p className="compare-meta">
-          利益保護あり／なしを、同じ過去相場で走らせて比べます。
+          ProfitGuardあり／なしを、同じ過去相場で走らせて比べます。
         </p>
         <p className="compare-meta">{available}</p>
         {dataset && <small>データ：{dataset}</small>}
         <small>
-          過去の確定足から作る仮想モデルです。Cetus・DeepBookの過去の実約定価格は再現しません。利益保護あり／なしは、同じ相場・同じ費用・次足始値の条件でそれぞれ計算します。
+          過去の確定足から作る仮想モデルです。Cetus・DeepBookの過去の実約定価格は再現しません。ProfitGuardあり／なしは、同じ相場・同じ費用・次足始値の条件でそれぞれ計算します。
         </small>
         <p className="compare-meta">
           期間を3つ入れて、比較ボタンを押します。
@@ -381,7 +381,7 @@ export function BacktestComparison({
             ))}
           </div>
           <button disabled={busy}>
-            {busy ? "比較を計算中…" : "同じ条件で利益保護の有効／無効を比較"}
+            {busy ? "比較を計算中…" : "同じ条件でProfitGuardの有効／無効を比較"}
           </button>
         </form>
         {error && (
@@ -395,7 +395,7 @@ export function BacktestComparison({
       {result && (
         <>
           <section>
-            <h3>比較結果 · 利益保護なしは青 / 利益保護ありは緑</h3>
+            <h3>比較結果 · ProfitGuardなしは青 / ProfitGuardありは緑</h3>
             <p className="compare-meta">
               検証モデル：過去の確定足と設定した費用に基づく仮想売買
             </p>
@@ -428,8 +428,8 @@ export function BacktestComparison({
                 <thead>
                   <tr>
                     <th>指標</th>
-                    <th>利益保護なし</th>
-                    <th>利益保護あり</th>
+                    <th>ProfitGuardなし</th>
+                    <th>ProfitGuardあり</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -478,8 +478,8 @@ export function BacktestComparison({
               value={mode}
               onChange={(e) => setMode(e.target.value as "on" | "off")}
             >
-              <option value="on">利益保護あり</option>
-              <option value="off">利益保護なし</option>
+              <option value="on">ProfitGuardあり</option>
+              <option value="off">ProfitGuardなし</option>
             </select>
             <p className="compare-meta">
               シグナルは前足の確定後、約定候補は次足始値です。すべての見送り・拒否を含みます。
