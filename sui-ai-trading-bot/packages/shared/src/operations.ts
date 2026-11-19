@@ -1,8 +1,5 @@
 import type { ApiFailure } from "./http-errors.ts";
-import type {
-  EpisodeSummary,
-  PaperRecoveryProof,
-} from "./paper-recovery.ts";
+import type { EpisodeSummary, PaperRecoveryProof } from "./paper-recovery.ts";
 export interface CandidateAudit {
   id: string;
   orderId: string;
@@ -22,6 +19,11 @@ export interface CandidateAudit {
   dexFeeUsdc: string | null;
   gasUsdc: string | null;
   additionalFeeUsdc: string | null;
+  feeRate?: number | null;
+  feeSource?: "POOL_ACTUAL" | "DESIGN_ASSUMPTION" | "UNAVAILABLE";
+  feeParamsStale?: boolean;
+  feeParamsEpoch?: number | null;
+  feeParamsReadAt?: number | null;
   buyGasUsdc: string | null;
   netProfitUsdc: string | null;
   minProfitUsdc: string;

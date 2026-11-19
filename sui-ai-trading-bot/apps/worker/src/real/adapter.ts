@@ -6,6 +6,7 @@ import type {
 } from "../execution-adapter.ts";
 import { RealTradeCapExecutor } from "./execution.ts";
 import type { RealTradeCapConfig } from "../../../../packages/shared/src/index.ts";
+import { RealFeeCache } from "./fee-cache.ts";
 
 const SUI_ATOMIC = new Decimal(1_000_000_000);
 
@@ -19,7 +20,13 @@ export class RealTradeCapExecutionAdapter implements ExecutionAdapter {
     private readonly config: Pick<RealTradeCapConfig, "maxOrderDbusdc"> = {
       maxOrderDbusdc: Infinity,
     },
+    private readonly fees?: RealFeeCache,
   ) {}
+
+  feeEstimate(side: "BUY" | "SELL", currentEpoch: number | null) {
+    if (!this.fees) throw Error("REAL_FEE_CACHE_REQUIRED");
+    return this.fees.estimate(side, currentEpoch);
+  }
 
   acceptStop() {
     this.executor.acceptStop();

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { ema, rsi, calculate } from "../packages/indicators/src/index.ts";
 import {
   coin,
@@ -441,6 +441,13 @@ describe("worker execution boundaries", () => {
     const intents: unknown[] = [];
     const adapter: ExecutionAdapter = {
       kind: "REAL_TRADECAP",
+      feeEstimate: async (_side, epoch) => ({
+        takerFee: 0.001,
+        source: "POOL_ACTUAL",
+        stale: false,
+        epoch,
+        readAt: Date.now(),
+      }),
       acceptStop: () => undefined,
       recordEngineChecks: () => undefined,
       execute: async (intent) => {
@@ -457,6 +464,96 @@ describe("worker execution boundaries", () => {
         .history<{ outcome: string }>("cycle_audits")
         .some((row) => row.outcome === "REAL_SUBMITTED"),
     ).toBe(true);
+    t.db.close();
+  });
+  it("fails a REAL BUY closed when the first fee read is unavailable", async () => {
+    const execute = vi.fn();
+    const adapter: ExecutionAdapter = {
+      kind: "REAL_TRADECAP",
+      feeEstimate: async (_side, epoch) => ({
+        takerFee: null,
+        source: "UNAVAILABLE",
+        stale: true,
+        epoch,
+        readAt: null,
+      }),
+      acceptStop: () => undefined,
+      recordEngineChecks: () => undefined,
+      execute,
+    };
+    const analyze = vi
+      .spyOn(RuleBasedStrategy.prototype, "analyze")
+      .mockResolvedValue({
+        action: "BUY",
+        confidence: 0.8,
+        reason: "fixture buy",
+        stopLossPct: 0.02,
+        takeProfitPct: 0.04,
+        timestamp: new Date().toISOString(),
+      });
+    const t = setup(undefined, undefined, adapter);
+    t.db.set("portfolio", initialPortfolio());
+    try {
+      await t.engine.tick();
+      expect(execute).not.toHaveBeenCalled();
+      expect(t.db.history("paper_trades")).toHaveLength(0);
+      expect(
+        t.db.history<{
+          side: string;
+          finalAction: string;
+          feeSource: string;
+          feeParamsStale: boolean;
+          profitGuard: { allowed: boolean; reason: string };
+        }>("operation_candidates")[0],
+      ).toMatchObject({
+        side: "BUY",
+        finalAction: "WAIT",
+        feeSource: "UNAVAILABLE",
+        feeParamsStale: true,
+        profitGuard: { allowed: false, reason: "PROFIT_DATA_UNKNOWN" },
+      });
+    } finally {
+      analyze.mockRestore();
+      t.db.close();
+    }
+  });
+  it("allows a REAL SELL with the delegated 10 bps fallback and audits it", async () => {
+    const execute = vi.fn(async () => ({
+      status: "SUBMITTED" as const,
+      digest: "real-fallback-digest",
+    }));
+    const adapter: ExecutionAdapter = {
+      kind: "REAL_TRADECAP",
+      feeEstimate: async (_side, epoch) => ({
+        takerFee: 0.001,
+        source: "DESIGN_ASSUMPTION",
+        stale: true,
+        epoch,
+        readAt: null,
+      }),
+      acceptStop: () => undefined,
+      recordEngineChecks: () => undefined,
+      execute,
+    };
+    const t = setup(undefined, undefined, adapter);
+    await t.engine.tick();
+    expect(execute).toHaveBeenCalledOnce();
+    expect(t.db.history("paper_trades")).toHaveLength(0);
+    expect(
+      t.db.history<{
+        side: string;
+        finalAction: string;
+        feeRate: number;
+        feeSource: string;
+        feeParamsStale: boolean;
+      }>("operation_candidates")[0],
+    ).toMatchObject({
+      side: "SELL",
+      finalAction: "SELL",
+      feeRate: 0.001,
+      feeSource: "DESIGN_ASSUMPTION",
+      feeParamsStale: true,
+    });
     t.db.close();
   });
   it("fails safely on upstream error", async () => {

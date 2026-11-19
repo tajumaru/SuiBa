@@ -121,7 +121,10 @@ export function createDeepBookReadOnly(
         client.deepbook.getLevel2TicksFromMid(config.poolKey, 50),
         client.deepbook.lockedBalance(config.poolKey, "PHASE1"),
         resolveAccount(client.deepbook, config.poolKey),
-        client.deepbook.poolTradeParams(config.poolKey),
+        // Fee discovery is fail-closed for entries in the engine, but must not
+        // make the whole balance/open-order snapshot unavailable: exits have a
+        // separately audited last-known/assumption fallback.
+        client.deepbook.poolTradeParams(config.poolKey).catch(() => null),
       ]);
       // SDK 2.8.0 returns normalized values. Do not divide these again.
       const gasResponse = await fetch(config.graphqlUrl, {
