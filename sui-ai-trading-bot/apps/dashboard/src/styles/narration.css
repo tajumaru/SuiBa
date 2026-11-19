@@ -731,7 +731,8 @@
 .agent-feed-entry.memory.sealed-memory {
   min-height: 140px;
 }
-.agent-feed-entry.memory > :not(.agent-feed-memory-bg):not(.agent-feed-memory-seal) {
+.agent-feed-entry.memory
+  > :not(.agent-feed-memory-bg):not(.agent-feed-memory-seal) {
   position: relative;
   z-index: 1;
 }
@@ -988,8 +989,26 @@
   color: var(--gold);
 }
 @media (prefers-reduced-motion: no-preference) {
+  .agent-feed-entry.animate-in {
+    animation: agent-feed-entry-slide-in 0.42s ease-out both;
+  }
   .agent-feed-entry.just-bought {
     animation: agent-feed-buy-pulse 1.6s ease-out;
+  }
+  .agent-feed-entry.animate-in.just-bought {
+    animation:
+      agent-feed-entry-slide-in 0.42s ease-out both,
+      agent-feed-buy-pulse 1.6s ease-out;
+  }
+  @keyframes agent-feed-entry-slide-in {
+    from {
+      transform: translateY(-6px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
   }
   @keyframes agent-feed-buy-pulse {
     0% {

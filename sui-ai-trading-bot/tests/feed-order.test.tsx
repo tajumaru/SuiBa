@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readNarrationFeed } from "./helpers/source";
 import { AgentNarrationFeed } from "../apps/dashboard/src/AgentNarration.tsx";
+import { findNewLatestEntryIds } from "../apps/dashboard/src/AgentNarrationFeed.tsx";
 import { AgentFeedEntryRow } from "../apps/dashboard/src/AgentFeedEntryRow.tsx";
 import type { OperationsSnapshot } from "../apps/dashboard/src/operationsTypes.ts";
 import {
@@ -36,6 +37,54 @@ afterEach(() => {
 });
 
 describe("narration feed: message order", () => {
+  it("marks only IDs newly added at the live edge", () => {
+    const older = {
+      id: "narration:0",
+      at: 0,
+      kind: "cycle",
+      text: "履歴",
+    } satisfies NarrationEntry;
+    const existing = {
+      id: "narration:1",
+      at: 1,
+      kind: "cycle",
+      text: "既存",
+    } satisfies NarrationEntry;
+    const fresh = {
+      id: "narration:2",
+      at: 2,
+      kind: "cycle",
+      text: "新着",
+    } satisfies NarrationEntry;
+
+    expect([
+      ...findNewLatestEntryIds(new Set([existing.id]), [
+        older,
+        existing,
+        fresh,
+      ]),
+    ]).toEqual([fresh.id]);
+    expect([
+      ...findNewLatestEntryIds(new Set(), [existing, fresh], false),
+    ]).toEqual([]);
+  });
+
+  it("adds the entrance hook only when a row is marked as new", () => {
+    const entry = {
+      id: "narration:2",
+      at: 2,
+      kind: "cycle",
+      text: "新着",
+    } satisfies NarrationEntry;
+    const initial = renderToStaticMarkup(<AgentFeedEntryRow entry={entry} />);
+    const fresh = renderToStaticMarkup(
+      <AgentFeedEntryRow entry={entry} animateIn />,
+    );
+
+    expect(initial).not.toContain("animate-in");
+    expect(fresh).toContain("animate-in");
+  });
+
   it("renders the Walrus background only for memory entries", () => {
     const memory: NarrationEntry = {
       id: "narration:1",
