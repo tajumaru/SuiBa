@@ -110,6 +110,20 @@ function setup(action: "BUY" | "SELL" | "WAIT" = "BUY") {
 afterEach(() => vi.restoreAllMocks());
 
 describe("PAPER operation monitor", () => {
+  it("records the canonical regime in decision evidence", async () => {
+    const t = setup("WAIT");
+    vi.mocked(RuleBasedStrategy.prototype.analyze).mockRestore();
+    try {
+      await t.engine.tick();
+      expect(
+        t.db.history<TradingDecision>("strategy_decisions")[0]?.evidence
+          ?.regime,
+      ).toBe("unknown");
+    } finally {
+      t.db.close();
+    }
+  });
+
   it("records fresh market data and WAIT once per closed candle with no fictitious orders", async () => {
     const t = setup("WAIT");
     await t.engine.tick();

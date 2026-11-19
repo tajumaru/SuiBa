@@ -179,6 +179,8 @@ export interface StrategyEvidence {
   };
   conditions: Record<string, boolean>;
   selectedRule: string;
+  /** Close-seeded EMA50 regime at this decision's five-minute candle. */
+  regime?: "up" | "down" | "range" | "unknown";
   /** Display-only derivation recorded with the decision: when every
    * buy condition except RSI already held and no position was open,
    * the next candle's close at which RSI would reach the oversold

@@ -123,6 +123,9 @@ class ExportTests(unittest.TestCase):
             'forecast_records': {'pair': 'SUI_USDC', 'origin': NOW_MS // 1000,
                 'startClose': 1, 'dir': 'up', 'up': [1.01, 1.02], 'lo': [.99, .98],
                 'mid': [1, 1.01], 'touch': {'line': SECRET}},
+            'forecast_calibrations': {'id': 'forecast-calib:'+SECRET, 'pair': 'SUI_USDC',
+                'at': NOW_MS, 'previousScale': 1, 'scale': 1.05, 'scored': 30,
+                'totalScored': 40, 'coveragePct': 70, 'widened': True},
             'shadow_decisions': {'cycleId': 'cycle', 'status': 'OK', 'action': 'BUY', 'model': SECRET, 'promptVersion': 'shadow-s1-v1', 'rationale': {'text': SECRET, 'refs': []}},
             'strategy_decisions': {'action': 'BUY', 'reason': SECRET, 'apiKey': SECRET, 'stopLossPct': 0.12345,
                 'analysisContext': {'cycleId': 'cycle', 'runningAtAnalysis': True},
@@ -245,6 +248,11 @@ class ExportTests(unittest.TestCase):
             self.assertGreaterEqual(manifest['window']['to'], NOW_MS)
             self.assertEqual(
                 manifest['files']['SUI_USDC.sqlite']['rows']['narration_entries'], 3)
+            self.assertEqual(manifest['files']['SUI_USDC.sqlite']['rows']['forecast_calibrations'], 1)
+            self.assertEqual(manifest['aggregates'], {
+                'shadowByVersion': {'shadow-s1-v1': {'total': 1, 'aiOnlyBuy': 1, 'errors': 0}},
+                'paperRoundTrips': 1, 'paperRealizedPnlUsdc': 1.2,
+                'narrationEntries': 3, 'forecastCalibrations': 1})
 
     def test_candidate_risk_and_order_id_use_closed_allowlists(self):
         clean = e.sanitize('operation_candidates', {

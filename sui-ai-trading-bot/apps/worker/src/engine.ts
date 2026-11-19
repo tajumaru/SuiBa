@@ -60,6 +60,7 @@ import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
 import type { ValidationRecorder } from "./validation.ts";
 import type { ExecutionAdapter } from "./execution-adapter.ts";
 import type { FxRate } from "./fx-rate.ts";
+import { situationRegimeAt } from "./situation-memory.ts";
 
 /** The dashboard-facing snapshot contract: one definition for
  * every consumer, so adding a snapshot field has a single
@@ -287,6 +288,17 @@ export class BotEngine {
     };
     decision.analysisContext = cycle.analysis;
     cycle.outcome = "ANALYZED";
+    if (decision.evidence) {
+      try {
+        decision.evidence.regime = situationRegimeAt(
+          c,
+          decision.evidence.candleTimestamp,
+        );
+      } catch {
+        // Optional telemetry must never interrupt or fail a trading cycle.
+        decision.evidence.regime = "unknown";
+      }
+    }
     this.db.recordAnalysis(cycle.cycleId, decision, current, now);
     this.shadow.offer(() => ({
       cycleId: cycle.cycleId,
