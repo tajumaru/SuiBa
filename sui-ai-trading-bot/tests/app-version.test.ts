@@ -67,6 +67,10 @@ it("renders the banner with the new build and the footer with this build", () =>
   expect(banner).toContain("再読み込み");
   const footer = renderToStaticMarkup(React.createElement(VersionFooter));
   expect(footer).toContain("Potario 画面 dev");
+  // The Sui credit moved here from the chain strip (2026-11-19).
+  expect(footer).toContain("Built on Sui");
+  expect(footer).toContain('href="https://sui.io"');
+  expect(footer).toContain('src="/sui-logo.svg"');
 });
 
 it("flags a skew only between two different real build stamps", () => {

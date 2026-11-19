@@ -47,6 +47,12 @@ export function WorkerFreshness({
         {status}
         {stale ? "（最新情報を取得できません）" : ""}
       </p>
+      {/* One line since 2026-11-19 (owner: the overview carried
+          too much information): the heartbeat carries the full
+          timestamp, the last successful analysis rides along as
+          an age only — when analysis stalls its age grows while
+          the heartbeat stays fresh, so the failure signal stays
+          visible without a second near-identical timestamp. */}
       <dl>
         <dt>Workerの心拍</dt>
         <dd>
@@ -56,13 +62,9 @@ export function WorkerFreshness({
               （{vital.heartbeatSecondsAgo}秒前）
             </span>
           )}
-        </dd>
-        <dt>最終分析成功</dt>
-        <dd>
-          {data ? dateTime(data.timing.lastAnalysisAt) : "未取得"}
           {vital?.lastAnalysisSecondsAgo != null && (
             <span className="worker-freshness-age">
-              （{vital.lastAnalysisSecondsAgo}秒前）
+              ・最終分析 {vital.lastAnalysisSecondsAgo}秒前
             </span>
           )}
         </dd>

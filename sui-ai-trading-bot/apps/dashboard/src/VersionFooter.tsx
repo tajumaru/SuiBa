@@ -38,6 +38,19 @@ export function VersionFooter({
       {versionSkew(APP_BUILD, workerBuild) && (
         <span className="version-skew"> ・ 版がズレています</span>
       )}
+      {/* The Sui credit lives here since 2026-11-19: the chain
+          strip was slimmed to two numbers, and the owner still
+          wanted the Sui mark somewhere on the page. */}
+      <a
+        className="version-footer-sui"
+        href="https://sui.io"
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Sui"
+      >
+        <img src="/sui-logo.svg" alt="Sui" />
+        <span>Built on Sui</span>
+      </a>
     </footer>
   );
 }

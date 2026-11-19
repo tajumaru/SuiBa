@@ -32,7 +32,7 @@ test("five tabs retain freshness, stop history and shared header start/stop", as
     .click();
   await expect(
     page.getByRole("region", { name: "Workerの状態" }),
-  ).toContainText("最終分析成功");
+  ).toContainText("最終分析");
   await expect(
     page.getByRole("region", { name: "Workerの状態" }),
   ).toContainText("Workerの心拍");
