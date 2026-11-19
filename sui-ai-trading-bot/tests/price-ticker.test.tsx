@@ -6,6 +6,7 @@ import { readAppShell } from "./helpers/source";
 import type { BotEngine } from "../apps/worker/src/engine.ts";
 import {
   PriceTicker,
+  RsiGauge,
   referenceTicker,
   changeTone,
   formatChangePct,
@@ -252,6 +253,40 @@ describe("price ticker rendering", () => {
   });
 });
 
+describe("RSI oversold gauge", () => {
+  it("places an RSI above the line to its right and shows the one-decimal distance", () => {
+    const html = renderToStaticMarkup(<RsiGauge rsi={47.6} oversold={45} />);
+    expect(html).toContain("売られすぎメーター（RSI）");
+    expect(html).toContain('class="rsi-gauge is-above"');
+    expect(html).toContain('x1="135.8"');
+    expect(html).toContain('cx="143.184"');
+    expect(html).toContain("いま 47.6");
+    expect(html).toContain("いま：線の少し上。線まで あと 2.6");
+  });
+
+  it("places an RSI at or below the line to its left and shows the recovery state", () => {
+    const html = renderToStaticMarkup(<RsiGauge rsi={28.4} oversold={30} />);
+    expect(html).toContain('class="rsi-gauge is-below"');
+    expect(html).toContain('x1="93.2"');
+    expect(html).toContain('cx="88.656"');
+    expect(html).toContain("線の下。");
+    expect(html).toContain("ここから戻して線を上抜けると買い");
+  });
+
+  it("uses an oversold setting of 30 for the line and label", () => {
+    const html = renderToStaticMarkup(<RsiGauge rsi={42} oversold={30} />);
+    expect(html).toContain("買いの線 30");
+    expect(html).toContain('x1="93.2"');
+    expect(html).not.toContain("買いの線 45");
+  });
+
+  it("renders nothing when RSI is unavailable", () => {
+    expect(renderToStaticMarkup(<RsiGauge rsi={null} oversold={45} />)).toBe(
+      "",
+    );
+  });
+});
+
 describe("price ticker wiring and style", () => {
   it("rides directly under the operation bar, inside the snapshot block", () => {
     const barAt = shell.indexOf("<OperationBar");
@@ -265,6 +300,8 @@ describe("price ticker wiring and style", () => {
     expect(tickerAt).toBeLessThan(shell.indexOf('activeTab === "Overview"'));
     expect(shell).toContain("price={data.price}");
     expect(shell).toContain("candlesByTimeframe={data.candlesByTimeframe}");
+    expect(shell).toContain("rsi={data.indicators?.rsi ?? null}");
+    expect(shell).toContain("oversold={data.settings.oversold}");
   });
 
   it("is styled like the operation bar, one line, sparkline shrinks first", () => {
