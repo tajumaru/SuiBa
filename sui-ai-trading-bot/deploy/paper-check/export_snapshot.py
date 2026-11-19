@@ -10,6 +10,7 @@ import tarfile
 import tempfile
 import time
 import zipfile
+from decimal import Decimal, InvalidOperation
 
 ARCHIVE_LIMIT = 512 * 1024**2
 EXPORT_LIMIT = 256 * 1024**2
@@ -21,9 +22,9 @@ LIQUIDATION_ROW_LIMIT = WINDOW_MS // (5 * 60 * 1000) + 1
 # The limits remain bounded by the 14-day window and the worker's maximum
 # write cadence. At the minimum 30-second cycle interval, even a deliberately
 # conservative one-row-per-cycle fixture for every event table (plus the two
-# cycle audit rows and the separately capped shadow calls) stays below these
-# limits with more than 2x headroom.
-JSON_TABLES = ('forecast_records', 'shadow_decisions', 'strategy_decisions', 'technical_indicators', 'operation_candidates',
+# cycle audit rows, small calibration-event stream, and separately capped
+# shadow calls) stays below these limits with more than 2x headroom.
+JSON_TABLES = ('forecast_records', 'forecast_calibrations', 'shadow_decisions', 'strategy_decisions', 'technical_indicators', 'operation_candidates',
                'paper_orders', 'paper_trades', 'operation_events', 'cycle_audits')
 TABLES = JSON_TABLES + ('liquidation_buckets', 'narration_entries')
 DATABASES = {'bot.sqlite': 'SUI_USDC.sqlite', 'bot.sqlite.WAL_USDC.sqlite': 'WAL_USDC.sqlite'}
@@ -125,6 +126,11 @@ def sanitize(table, value, public=False):
             if (type(points) is list and 1 <= len(points) <= 48
                     and all(number(point) and point > 0 for point in points)):
                 out[key] = points
+    elif table == 'forecast_calibrations':
+        if value.get('pair') in ('SUI_USDC', 'WAL_USDC'): out['pair'] = value['pair']
+        out.update(numeric_fields(value, ('at', 'previousScale', 'scale', 'scored',
+                                          'totalScored', 'coveragePct')))
+        if type(value.get('widened')) is bool: out['widened'] = value['widened']
     elif table == 'strategy_decisions':
         if value.get('action') in ('BUY', 'SELL', 'WAIT'): out['action'] = value['action']
         out.update(numeric_fields(value, ('confidence',)))
@@ -140,6 +146,8 @@ def sanitize(table, value, public=False):
             if type(e.get('conditions')) is dict:
                 evidence['conditions'] = {k: v for k, v in e['conditions'].items() if k in CONDITIONS and type(v) is bool}
             if e.get('selectedRule') in RULES: evidence['selectedRule'] = e['selectedRule']
+            if e.get('regime') in ('up', 'down', 'range', 'unknown'):
+                evidence['regime'] = e['regime']
             # thresholds, stopLossPct, takeProfitPct and free-text reason are settings/text, not public data.
             out['evidence'] = evidence
         ctx = value.get('analysisContext')
@@ -298,6 +306,9 @@ def _unpack_archive(stream, root, deadline):
 def _package(root, seen, run, scope, source_sha256, deadline):
     result = io.BytesIO()
     files, total_rows = {}, 0
+    aggregates = {'shadowByVersion': {}, 'paperRoundTrips': 0,
+                  'paperRealizedPnlUsdc': Decimal(0), 'narrationEntries': 0,
+                  'forecastCalibrations': 0}
     window_to = int(time.time() * 1000)
     window_from = window_to - WINDOW_MS
     for name, target in DATABASES.items():
@@ -309,6 +320,48 @@ def _package(root, seen, run, scope, source_sha256, deadline):
         try:
             source.execute('PRAGMA query_only=ON')
             names = {r[0] for r in source.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            # Canonical unsanitized source aggregates:
+            # shadowByVersion: shadow_decisions grouped by promptVersion; total=row count,
+            # aiOnlyBuy=action 'BUY' and ruleAction not 'BUY', errors=status 'ERROR'.
+            # paperRoundTrips: completed round trips are paper_trades rows whose side is 'SELL'.
+            # paperRealizedPnlUsdc: sum realizedProfitUsdc over every paper_trades row.
+            # narrationEntries and forecastCalibrations: source-table row counts.
+            if 'shadow_decisions' in names:
+                for version, total, ai_only_buy, errors in source.execute(
+                        "SELECT json_extract(json,'$.promptVersion'),count(*),"
+                        "sum(CASE WHEN json_extract(json,'$.action')='BUY' AND "
+                        "coalesce(json_extract(json,'$.ruleAction'),'')!='BUY' "
+                        "THEN 1 ELSE 0 END),"
+                        "sum(CASE WHEN json_extract(json,'$.status')='ERROR' "
+                        "THEN 1 ELSE 0 END) "
+                        "FROM shadow_decisions GROUP BY json_extract(json,'$.promptVersion')"):
+                    # Legacy/malformed versions share a non-sensitive bucket;
+                    # arbitrary raw strings must not become public manifest keys.
+                    if type(version) is not str or not SHADOW_PROMPT_VERSION.fullmatch(version):
+                        version = 'unknown'
+                    current = aggregates['shadowByVersion'].setdefault(
+                        version, {'total': 0, 'aiOnlyBuy': 0, 'errors': 0})
+                    current['total'] += total
+                    current['aiOnlyBuy'] += ai_only_buy
+                    current['errors'] += errors
+            if 'paper_trades' in names:
+                for raw, in source.execute('SELECT json FROM paper_trades'):
+                    trade = json.loads(raw)
+                    check(type(trade) is dict, 'EXPORT_DATABASE_INVALID')
+                    if trade.get('side') == 'SELL': aggregates['paperRoundTrips'] += 1
+                    realized = trade.get('realizedProfitUsdc')
+                    if realized is not None:
+                        try: amount = Decimal(str(realized))
+                        except InvalidOperation: raise ExportError('EXPORT_DATABASE_INVALID') from None
+                        check(amount.is_finite(), 'EXPORT_DATABASE_INVALID')
+                        aggregates['paperRealizedPnlUsdc'] += amount
+            if 'narration_entries' in names:
+                aggregates['narrationEntries'] += source.execute(
+                    'SELECT count(*) FROM narration_entries').fetchone()[0]
+            if 'forecast_calibrations' in names:
+                aggregates['forecastCalibrations'] += source.execute(
+                    'SELECT count(*) FROM forecast_calibrations').fetchone()[0]
+            check(time.monotonic() < deadline, 'EXPORT_LIMIT_EXCEEDED')
             for table in JSON_TABLES:
                 check(time.monotonic() < deadline, 'EXPORT_LIMIT_EXCEEDED')
                 if table not in names: continue
@@ -387,9 +440,12 @@ def _package(root, seen, run, scope, source_sha256, deadline):
         data = (root/target).read_bytes()
         check(len(data) <= EXPORT_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
         files[target] = {'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data), 'rows': counts}
+    realized = aggregates['paperRealizedPnlUsdc']
+    aggregates['paperRealizedPnlUsdc'] = int(realized) if realized == realized.to_integral() else float(realized)
     manifest = {'version': 2, 'scope': scope, 'public': True,
                 'window': {'from': window_from, 'to': window_to},
                 'run': run, 'sourceArchiveSha256': source_sha256, 'files': files,
+                'aggregates': aggregates,
                 'omitted': ['settings', 'runtime', 'auth', 'market_candles', 'portfolio_snapshots', 'thresholds', 'free_text', 'raw_ids']}
     check(sum(v['bytes'] for v in files.values()) <= EXPORT_LIMIT, 'EXPORT_LIMIT_EXCEEDED')
     with zipfile.ZipFile(result, 'w', compression=zipfile.ZIP_DEFLATED) as archive:

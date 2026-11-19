@@ -5,6 +5,7 @@ import {
   dipReboundEvents,
   liquidationSpike,
   aggregateLiquidationSpikeMemory,
+  situationRegimeAt,
 } from "../apps/worker/src/situation-memory.ts";
 import {
   memoryNarration,
@@ -90,6 +91,21 @@ function decision(timestamp: number): TradingDecision {
 }
 
 describe("situation memory statistic", () => {
+  it.each([
+    ["up", 0.01],
+    ["down", -0.01],
+    ["range", 0],
+  ] as const)("classifies a %s EMA50 slope", (expected, step) => {
+    const candles = Array.from({ length: 289 }, (_, i) =>
+      candle(START + i * 300, 100 * (1 + step) ** i),
+    );
+    expect(situationRegimeAt(candles, candles.at(-1)!.timestamp)).toBe(expected);
+  });
+
+  it("classifies insufficient history as unknown", () => {
+    expect(situationRegimeAt([candle(START)], START)).toBe("unknown");
+  });
+
   it("matches the review's regime bucket and cost-deducted exact +4h yardstick", () => {
     const candles: Candle[] = [];
     for (let t = START - 86400; t <= START + 7 * 3600; t += 300)

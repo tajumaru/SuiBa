@@ -72,7 +72,7 @@ type ShadowRow = {
   snapshot?: { evaluatedAt?: number; candle?: { close?: number } };
 };
 
-function regimes(candles: readonly Candle[]) {
+export function regimes(candles: readonly Candle[]) {
   const ordered = [...candles]
     .filter((c) => c.timeframe === 300 && Number.isFinite(c.close))
     .sort((a, b) => a.timestamp - b.timestamp);
@@ -113,6 +113,14 @@ function regimes(candles: readonly Candle[]) {
       return slope >= 0.5 ? "up" : slope <= -0.5 ? "down" : "range";
     },
   };
+}
+
+/** Classifies one decision time with the daily review's canonical regime series. */
+export function situationRegimeAt(
+  candles: readonly Candle[],
+  timestamp: number,
+): SituationRegime {
+  return regimes(candles).at(timestamp);
 }
 
 function ruleKind(decision: TradingDecision): SituationKind | null {
