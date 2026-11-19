@@ -554,6 +554,12 @@ section svg {
   stroke: #0e1626;
   stroke-width: 2;
 }
+.rsi-gauge-pulse {
+  fill: none;
+  stroke: var(--mint);
+  stroke-width: 2;
+  opacity: 0;
+}
 .rsi-gauge-ends {
   display: flex;
   justify-content: space-between;
@@ -675,6 +681,37 @@ section svg {
    ticker carries the glow class and pulses gold once. Under
    reduced motion the class changes nothing at all. */
 @media (prefers-reduced-motion: no-preference) {
+  .rsi-gauge-dot,
+  .rsi-gauge-pulse {
+    transition: cx 0.6s ease;
+  }
+  .rsi-gauge.is-near .rsi-gauge-pulse {
+    animation: rsi-gauge-pulse 1.6s ease-out infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .rsi-gauge.is-below .rsi-gauge-line {
+    animation: rsi-gauge-line-flash 1.2s ease-in-out infinite;
+  }
+  @keyframes rsi-gauge-pulse {
+    0% {
+      opacity: 0.55;
+      transform: scale(0.75);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.8);
+    }
+  }
+  @keyframes rsi-gauge-line-flash {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
   .price-ticker-bar.glow {
     animation: price-ticker-glow 1.6s ease-out;
   }

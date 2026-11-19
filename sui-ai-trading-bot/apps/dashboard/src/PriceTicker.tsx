@@ -38,6 +38,7 @@ export function RsiGauge({
   const lineX = x(oversold);
   const rsiX = x(rsi);
   const below = rsi <= oversold;
+  const near = Math.abs(rsi - oversold) <= 5;
   const current = rsi.toFixed(1);
   const distance = (rsi - oversold).toFixed(1);
   const labelAnchor = (value: number) =>
@@ -45,7 +46,9 @@ export function RsiGauge({
 
   return (
     <section
-      className={`rsi-gauge${below ? " is-below" : " is-above"}`}
+      className={`rsi-gauge${below ? " is-below" : " is-above"}${
+        near ? " is-near" : ""
+      }`}
       aria-label={`売られすぎメーター。現在のRSI ${current}、買いの線 ${oversold}`}
     >
       <h2>売られすぎメーター（RSI）</h2>
@@ -86,6 +89,9 @@ export function RsiGauge({
         >
           買いの線 {oversold}
         </text>
+        {near && (
+          <circle className="rsi-gauge-pulse" cx={rsiX} cy="21" r="7" />
+        )}
         <circle className="rsi-gauge-dot" cx={rsiX} cy="21" r="5" />
         <text
           className="rsi-gauge-current-label"
