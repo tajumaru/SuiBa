@@ -150,6 +150,21 @@ class ExportTests(unittest.TestCase):
                    'event_count INTEGER,updated_at INTEGER)')
         db.execute('INSERT INTO liquidation_buckets VALUES(?,?,?,?,?)',
                    (NOW_MS // 1000, 125000, 9000, 7, NOW_MS))
+        db.execute('CREATE TABLE narration_entries('
+                   'seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,'
+                   'pair TEXT NOT NULL,source_key TEXT NOT NULL,kind TEXT NOT NULL,'
+                   'occurred_at INTEGER NOT NULL,created_at INTEGER NOT NULL,json TEXT NOT NULL)')
+        narration = (
+            ('narration-1', 'cycle', NOW_MS - 3000, 'known narration body '+SECRET),
+            ('narration-2', 'trade', NOW_MS - 2000, 'trade narration body'),
+            ('narration-3', 'cycle', NOW_MS - 1000, 'latest narration body'),
+        )
+        db.executemany(
+            'INSERT INTO narration_entries(id,pair,source_key,kind,occurred_at,created_at,json) '
+            'VALUES(?,?,?,?,?,?,?)',
+            ((row_id, 'SUI_USDC', 'source-'+row_id, kind, occurred_at, NOW_MS,
+              json.dumps({'text': text, 'read': True, 'audio': SECRET}))
+             for row_id, kind, occurred_at, text in narration))
         db.commit()
         if not wal: db.close()
         stream = io.BytesIO()
@@ -205,6 +220,21 @@ class ExportTests(unittest.TestCase):
                 self.assertEqual(
                     db.execute('SELECT * FROM liquidation_buckets').fetchall(),
                     [(NOW_MS // 1000, 125000.0)])
+                narration_columns = [row[1] for row in
+                    db.execute('PRAGMA table_info(narration_entries)').fetchall()]
+                self.assertEqual(narration_columns, ['seq', 'kind', 'occurred_at'])
+                narration = db.execute(
+                    'SELECT seq,kind,occurred_at FROM narration_entries ORDER BY seq').fetchall()
+                self.assertEqual(narration, [
+                    (1, 'cycle', NOW_MS - 3000),
+                    (2, 'trade', NOW_MS - 2000),
+                    (3, 'cycle', NOW_MS - 1000),
+                ])
+                self.assertEqual(dict(db.execute(
+                    'SELECT kind,count(*) FROM narration_entries GROUP BY kind')),
+                    {'cycle': 2, 'trade': 1})
+                self.assertEqual([row[0] for row in narration],
+                                 list(range(narration[0][0], narration[-1][0] + 1)))
             finally: db.close()
             manifest = json.loads((output/'manifest.json').read_text())
             self.assertEqual(manifest['scope'], 'PRE_RUN_BACKUP_PUBLIC_EXTRACT')
@@ -213,6 +243,8 @@ class ExportTests(unittest.TestCase):
             self.assertEqual(manifest['window']['to'] - manifest['window']['from'], e.WINDOW_MS)
             self.assertLessEqual(manifest['window']['from'], NOW_MS)
             self.assertGreaterEqual(manifest['window']['to'], NOW_MS)
+            self.assertEqual(
+                manifest['files']['SUI_USDC.sqlite']['rows']['narration_entries'], 3)
 
     def test_candidate_risk_and_order_id_use_closed_allowlists(self):
         clean = e.sanitize('operation_candidates', {
