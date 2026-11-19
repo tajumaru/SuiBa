@@ -577,6 +577,8 @@ function App() {
                   marketData={data.marketData}
                   now={now}
                   candlesByTimeframe={data.candlesByTimeframe}
+                  rsi={data.indicators?.rsi ?? null}
+                  oversold={data.settings.oversold}
                   glow={buyCelebration}
                   linePrice={operations.data?.decision?.rsiLinePrice ?? null}
                   sellLines={

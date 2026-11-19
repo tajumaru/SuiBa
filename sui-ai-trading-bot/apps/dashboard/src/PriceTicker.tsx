@@ -11,6 +11,114 @@ const TIMEFRAMES = [3600, 900, 300] as const;
 const SPARK_WIDTH = 80;
 const SPARK_HEIGHT = 24;
 const SPARK_MAX_POINTS = 40;
+const RSI_GAUGE_WIDTH = 300;
+const RSI_GAUGE_INSET = 8;
+
+export function RsiGauge({
+  rsi,
+  oversold,
+}: {
+  rsi: number | null | undefined;
+  oversold: number;
+}) {
+  if (
+    rsi == null ||
+    !Number.isFinite(rsi) ||
+    rsi < 0 ||
+    rsi > 100 ||
+    !Number.isFinite(oversold) ||
+    oversold < 0 ||
+    oversold > 100
+  )
+    return null;
+
+  const span = RSI_GAUGE_WIDTH - RSI_GAUGE_INSET * 2;
+  const x = (value: number) =>
+    Math.round((RSI_GAUGE_INSET + (value / 100) * span) * 1000) / 1000;
+  const lineX = x(oversold);
+  const rsiX = x(rsi);
+  const below = rsi <= oversold;
+  const near = Math.abs(rsi - oversold) <= 5;
+  const current = rsi.toFixed(1);
+  const distance = (rsi - oversold).toFixed(1);
+  const labelAnchor = (value: number) =>
+    value <= 18 ? "start" : value >= 82 ? "end" : "middle";
+
+  return (
+    <section
+      className={`rsi-gauge${below ? " is-below" : " is-above"}${
+        near ? " is-near" : ""
+      }`}
+      aria-label={`売られすぎメーター。現在のRSI ${current}、買いの線 ${oversold}`}
+    >
+      <h2>売られすぎメーター（RSI）</h2>
+      <svg
+        className="rsi-gauge-chart"
+        viewBox={`0 0 ${RSI_GAUGE_WIDTH} 50`}
+        role="img"
+        aria-label={`0から100のうち、買いの線は${oversold}、現在は${current}`}
+      >
+        <rect
+          className="rsi-gauge-track"
+          x="8"
+          y="17"
+          width="284"
+          height="8"
+          rx="4"
+        />
+        <rect
+          className="rsi-gauge-zone"
+          x={RSI_GAUGE_INSET}
+          y="17"
+          width={Math.max(0, lineX - RSI_GAUGE_INSET)}
+          height="8"
+          rx="4"
+        />
+        <line
+          className="rsi-gauge-line"
+          x1={lineX}
+          x2={lineX}
+          y1="12"
+          y2="30"
+        />
+        <text
+          className="rsi-gauge-line-label"
+          x={lineX}
+          y="9"
+          textAnchor={labelAnchor(oversold)}
+        >
+          買いの線 {oversold}
+        </text>
+        {near && (
+          <circle className="rsi-gauge-pulse" cx={rsiX} cy="21" r="7" />
+        )}
+        <circle className="rsi-gauge-dot" cx={rsiX} cy="21" r="5" />
+        <text
+          className="rsi-gauge-current-label"
+          x={rsiX}
+          y="43"
+          textAnchor={labelAnchor(rsi)}
+        >
+          いま {current}
+        </text>
+      </svg>
+      <div className="rsi-gauge-ends" aria-hidden="true">
+        <span>売られすぎ</span>
+        <span>買われすぎ</span>
+      </div>
+      <p className="rsi-gauge-state">
+        {below ? (
+          <>
+            いま：<strong>線の下。</strong>
+            <strong>ここから戻して線を上抜けると買い</strong>
+          </>
+        ) : (
+          <>いま：線の少し上。線まで あと {distance}</>
+        )}
+      </p>
+    </section>
+  );
+}
 
 /**
  * The one-line SUI/USDC price ticker that rides under the
@@ -247,6 +355,8 @@ export function PriceTicker({
   now = Date.now(),
   pairDisabled = false,
   onPairSwitch,
+  rsi = null,
+  oversold = 30,
 }: {
   marketData?: State["marketData"];
   now?: number;
@@ -258,6 +368,10 @@ export function PriceTicker({
    * interactive and reachable. */
   pairDisabled?: boolean;
   onPairSwitch?: (pair: State["pair"]) => void;
+  /** Current RSI and the active saved oversold setting. The gauge
+   * fails closed when RSI is unavailable. */
+  rsi?: number | null;
+  oversold?: number;
   price: State["price"];
   candlesByTimeframe: Frames;
   /** Buy celebration: while true the ticker carries the glow
@@ -482,6 +596,7 @@ export function PriceTicker({
           </span>
         ))}
       </div>
+      <RsiGauge rsi={rsi} oversold={oversold} />
     </div>
   );
 }

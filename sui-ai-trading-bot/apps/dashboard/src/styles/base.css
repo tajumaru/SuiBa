@@ -509,6 +509,75 @@ section svg {
   min-width: 24px;
   height: 24px;
 }
+/* The saved RSI buy line and the current reading, kept beside the
+   ticker as a compact position diagram. Text repeats the state so
+   colour is never the only signal. */
+.rsi-gauge {
+  flex: 0 1 300px;
+  min-width: 230px;
+  color: #dce8e3;
+  font-variant-numeric: tabular-nums;
+}
+.rsi-gauge h2 {
+  margin: 0 0 1px;
+  color: #c8d6e2;
+  font-size: 11px;
+  font-weight: 600;
+}
+.rsi-gauge-chart {
+  display: block;
+  width: 100%;
+  height: 50px;
+  overflow: visible;
+}
+.rsi-gauge-track {
+  fill: #26364b;
+}
+.rsi-gauge-zone {
+  fill: var(--mint);
+  opacity: 0.28;
+}
+.rsi-gauge-line {
+  stroke: var(--gold);
+  stroke-width: 2;
+}
+.rsi-gauge-line-label,
+.rsi-gauge-current-label {
+  fill: #c8d6e2;
+  font-size: 10px;
+}
+.rsi-gauge-line-label {
+  fill: var(--gold);
+}
+.rsi-gauge-dot {
+  fill: var(--mint);
+  stroke: #0e1626;
+  stroke-width: 2;
+}
+.rsi-gauge-pulse {
+  fill: none;
+  stroke: var(--mint);
+  stroke-width: 2;
+  opacity: 0;
+}
+.rsi-gauge-ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: -4px;
+  color: #9fb2c8;
+  font-size: 9px;
+}
+.rsi-gauge-state {
+  margin: 2px 0 0;
+  color: #dce8e3;
+  font-size: 10.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.rsi-gauge-state strong {
+  color: var(--gold);
+  font-weight: 700;
+}
 /* The buy-run line pill rides at the ticker's right end: gold
    while it counts down, green once the price reaches the line. */
 .price-ticker-line {
@@ -563,6 +632,7 @@ section svg {
    little each. */
 @media (max-width: 480px) {
   .price-ticker-bar {
+    flex-wrap: wrap;
     gap: 7px;
     padding: 8px 10px;
   }
@@ -599,11 +669,49 @@ section svg {
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .rsi-gauge {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+  .rsi-gauge-state {
+    white-space: normal;
+  }
 }
 /* Buy celebration: while the celebration window is open the
    ticker carries the glow class and pulses gold once. Under
    reduced motion the class changes nothing at all. */
 @media (prefers-reduced-motion: no-preference) {
+  .rsi-gauge-dot,
+  .rsi-gauge-pulse {
+    transition: cx 0.6s ease;
+  }
+  .rsi-gauge.is-near .rsi-gauge-pulse {
+    animation: rsi-gauge-pulse 1.6s ease-out infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .rsi-gauge.is-below .rsi-gauge-line {
+    animation: rsi-gauge-line-flash 1.2s ease-in-out infinite;
+  }
+  @keyframes rsi-gauge-pulse {
+    0% {
+      opacity: 0.55;
+      transform: scale(0.75);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.8);
+    }
+  }
+  @keyframes rsi-gauge-line-flash {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
   .price-ticker-bar.glow {
     animation: price-ticker-glow 1.6s ease-out;
   }
