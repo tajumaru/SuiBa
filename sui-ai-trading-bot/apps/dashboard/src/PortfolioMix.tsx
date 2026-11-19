@@ -3,6 +3,7 @@ import {
   priceText,
   signedMoney,
 } from "./portfolioMix.ts";
+import { JpyAmount } from "./JpyAmount.tsx";
 
 /**
  * "資産の中身" — the overview block under the cards that shows
@@ -19,12 +20,14 @@ export function PortfolioMix({
   price,
   costBasis,
   baseSymbol,
+  usdJpy = null,
 }: {
   usdc: number;
   baseQty: number;
   price: number | null;
   costBasis: number;
   baseSymbol: string;
+  usdJpy?: number | null;
 }) {
   const m = portfolioMixModel({ usdc, baseQty, price, costBasis });
   if (!m || price === null) return null;
@@ -55,6 +58,7 @@ export function PortfolioMix({
             <>
               {money(m.baseQty)} 枚 × ${priceText(price)} ={" "}
               <span className="pm-eq">{money(m.baseValue)} USDC</span>
+              <JpyAmount usdc={m.baseValue} usdJpy={usdJpy} />
               {m.gain !== null && (
                 <>
                   （取得 {money(m.costBasis)} →{" "}

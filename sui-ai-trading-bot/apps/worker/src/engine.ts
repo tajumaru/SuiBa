@@ -59,6 +59,7 @@ import { validateCandles } from "../../../packages/market-data/src/index.ts";
 import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
 import type { ValidationRecorder } from "./validation.ts";
 import type { ExecutionAdapter } from "./execution-adapter.ts";
+import type { FxRate } from "./fx-rate.ts";
 
 /** The dashboard-facing snapshot contract: one definition for
  * every consumer, so adding a snapshot field has a single
@@ -95,6 +96,7 @@ export class BotEngine {
     shadowAdapter?: ShadowAdapter,
     shadowBudget?: ShadowBudget,
     private readonly executionAdapter?: ExecutionAdapter,
+    fxRateSource: () => FxRate | null = () => null,
   ) {
     this.shadow = new ShadowRecorder(
       db,
@@ -107,7 +109,13 @@ export class BotEngine {
     if (portfolio.baseCoin && portfolio.baseCoin !== baseCoin)
       throw Error("MARKET_PAIR_MISMATCH");
     db.set("portfolio", { ...portfolio, baseCoin });
-    this.monitor = new OperationMonitor(db);
+    this.monitor = new OperationMonitor(
+      db,
+      undefined,
+      undefined,
+      undefined,
+      fxRateSource,
+    );
     this.activateApiHooks();
   }
   activateApiHooks() {

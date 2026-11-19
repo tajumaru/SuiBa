@@ -13,6 +13,7 @@ import type { SettingsApi } from "./settingsPresets.ts";
 import type { ForecastAnswerCheck } from "./forecastLog.ts";
 import type { ShareCardInput } from "./shareCard.ts";
 import type { NarrationShadowDiagnostics } from "./narrationShadow.ts";
+import { JpyAmount } from "./JpyAmount.tsx";
 
 type State = BotSnapshot;
 const money = (v: number | null | undefined) => number(v, 4);
@@ -89,6 +90,7 @@ export function OverviewTab({
   sellLines: { tp: number; sl: number } | null;
   narrationShadow?: NarrationShadowDiagnostics | null;
 }) {
+  const usdJpy = operations?.fx?.usdJpy ?? null;
   return (
                   <div className="overview-tab">
                     <WorkerFreshness data={operations ?? null} stale={operationsStale} />
@@ -107,6 +109,12 @@ export function OverviewTab({
                           <small>{label}</small>
                           <h2>
                             {money(value as number | null)} <em>{unit}</em>
+                            {label === "累計損益" && (
+                              <JpyAmount
+                                usdc={value as number | null}
+                                usdJpy={usdJpy}
+                              />
+                            )}
                           </h2>
                           {label === "累計損益" && (
                             <PnlBreakdownLine
@@ -133,6 +141,7 @@ export function OverviewTab({
                       price={data.price}
                       costBasis={data.portfolio.costBasis}
                       baseSymbol={data.pair === "WAL_USDC" ? "WAL" : "SUI"}
+                      usdJpy={usdJpy}
                     />
                     <EquityCurve points={data.equityCurve} />
                     <ActivityGrass orders={data.orders} />
@@ -207,6 +216,12 @@ export function OverviewTab({
                             <small>{label}</small>
                             <h2>
                               {money(value as number | null)} <em>{unit}</em>
+                              {label === "日次損益（日本時間09:00から）" && (
+                                <JpyAmount
+                                  usdc={value as number | null}
+                                  usdJpy={usdJpy}
+                                />
+                              )}
                             </h2>
                           </section>
                         ))}

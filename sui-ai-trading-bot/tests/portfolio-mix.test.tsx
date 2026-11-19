@@ -77,6 +77,7 @@ describe("PortfolioMix", () => {
         price={1}
         costBasis={9.6}
         baseSymbol="SUI"
+        usdJpy={150}
       />,
     );
     expect(html).toContain("資産の中身");
@@ -84,6 +85,7 @@ describe("PortfolioMix", () => {
     expect(html).toContain("10.00 枚 × $1.0000");
     expect(html).toContain("取得 9.60");
     expect(html).toContain("+0.40");
+    expect(html).toContain("≈ ¥1,500");
   });
 
   it("shows a bare zero holding and the pair's own symbol", () => {

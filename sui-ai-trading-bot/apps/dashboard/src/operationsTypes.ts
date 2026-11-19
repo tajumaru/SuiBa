@@ -12,6 +12,7 @@ export interface EnvironmentInfo {
   maintenance: boolean;
 }
 export type OperationsSnapshot = ReturnType<OperationMonitor["snapshot"]> & {
+  fx: { usdJpy: number; asOf: number } | null;
   validation?: ValidationReport;
   /** Absent when the running worker predates the environment block. */
   environment?: EnvironmentInfo;
