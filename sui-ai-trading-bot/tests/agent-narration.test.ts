@@ -2894,7 +2894,7 @@ describe("buy-run line narration", () => {
       e.text.includes("じわじわ来てる"),
     );
     expect(murmurs).toHaveLength(1);
-    expect(murmurs[0].text).toBe("ラインまで あと-1.4%。じわじわ来てる");
+    expect(murmurs[0].text).toBe("ラインまで あと1.4%。じわじわ来てる");
     const reached = ofKind(state, "priceLineReached");
     expect(reached).toHaveLength(1);
     expect(reached[0].text).toBe("届いた！2.1 USDCタッチ。あとはRSIの反発待ち");
