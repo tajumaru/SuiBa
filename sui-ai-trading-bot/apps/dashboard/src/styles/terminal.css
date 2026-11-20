@@ -209,6 +209,12 @@ h2 {
   border-bottom-color: #2e5a8f;
   box-shadow: 0 10px 34px -12px rgba(77, 162, 255, 0.5);
 }
+header.header-testnet {
+  background-image: none;
+  background-color: color-mix(in srgb, var(--gold) 12%, var(--panel));
+  border-bottom-color: var(--gold);
+  box-shadow: 0 10px 24px -18px var(--gold);
+}
 .line-mode section,
 .line-mode .agent-feed {
   background: #04101f;

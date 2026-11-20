@@ -345,6 +345,53 @@ try {
       );
     await page.screenshot({ path: `render-smoke-monthly-${width}.png` });
   }
+  const header = page.locator("header").filter({ hasText: "Potario" });
+  await header.getByText("MAINNET", { exact: true }).waitFor();
+  const headerBackground = () =>
+    // eslint-disable-next-line no-undef -- runs inside Chromium
+    header.evaluate((el) => getComputedStyle(el).backgroundColor);
+  const reloadOverview = async () => {
+    await page.reload();
+    await page.locator(".boot-screen").waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "ダッシュボード", exact: true }).click();
+  };
+  const mainnetBackground = await headerBackground();
+  const assets = page.getByRole("region", { name: "資産の中身", exact: true });
+  fixture.state.price = 2;
+  await reloadOverview();
+  await assets.getByText("99.19（現金）", { exact: false }).waitFor();
+  await page.getByText("累計損益", { exact: true }).waitFor();
+  await page.getByText("資産の推移", { exact: true }).waitFor();
+
+  fixture.state.mode = "REAL";
+  fixture.state.network = "testnet";
+  fixture.state.realBalances = { SUI: 3, DBUSDC: 12, DEEP: 22 };
+  await reloadOverview();
+  const testnet = header.getByText("TESTNET", { exact: true });
+  const realBadge = header.getByText("REAL（実売買）", { exact: true });
+  await assets.getByText("≈ 18.00 DBUSDC", { exact: true }).waitFor();
+  await assets.getByText("DEEP 22", { exact: true }).waitFor();
+  if (await page.getByText("累計損益", { exact: true }).count())
+    failures.push("REAL shows PAPER cumulative PnL");
+  if (await page.getByText("資産の推移", { exact: true }).count())
+    failures.push("REAL shows PAPER asset history");
+  if ((await headerBackground()) === mainnetBackground)
+    failures.push("TESTNET header background matches MAINNET");
+  for (const width of [320, 375, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    const [envBox, modeBox] = await Promise.all([
+      testnet.boundingBox(),
+      realBadge.boundingBox(),
+    ]);
+    if (!envBox || !modeBox || modeBox.x + modeBox.width > envBox.x ||
+        envBox.x + envBox.width > width)
+      failures.push(`${width}px: network and trading mode badges do not fit`);
+  }
+  delete fixture.state.realBalances;
+  await reloadOverview();
+  await assets.getByText("残高を確認できません", { exact: true }).waitFor();
+  if (await assets.getByText("99.19", { exact: false }).count())
+    failures.push("REAL with unavailable balances shows PAPER cash");
   console.log(
     `five-tab render: 320/375/1280px, header start/stop passed on loopback port ${port}`,
   );

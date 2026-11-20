@@ -46,7 +46,7 @@ import {
   type ProfitReport,
 } from "../../../packages/profit-guard/src/index.ts";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
-import { buildSnapshot } from "./engine-snapshot.ts";
+import { buildSnapshot, type SnapshotSources } from "./engine-snapshot.ts";
 export { downsampleEquityCurve } from "./engine-snapshot.ts";
 import { calculate } from "../../../packages/indicators/src/index.ts";
 import {
@@ -99,6 +99,9 @@ export class BotEngine {
     shadowBudget?: ShadowBudget,
     private readonly executionAdapter?: ExecutionAdapter,
     fxRateSource: () => FxRate | null = () => null,
+    private readonly snapshotDisplay: Pick<SnapshotSources, "network" | "realBalances"> = {
+      network: "mainnet",
+    },
   ) {
     this.shadow = new ShadowRecorder(
       db,
@@ -1211,6 +1214,8 @@ export class BotEngine {
   snapshot(options: { light?: boolean } = {}) {
     return buildSnapshot(
       {
+        ...this.snapshotDisplay,
+        mode: this.executionAdapter ? "REAL" : "PAPER",
         pair: this.pair,
         db: this.db,
         monitor: this.monitor,

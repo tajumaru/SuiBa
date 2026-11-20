@@ -139,7 +139,7 @@ const realRuntime =
     ? createRealTradeCapRuntime(process.env)
     : undefined;
 const created = await continueAfterRealLiveProbe(realRuntime, () =>
-  createEngine(ctx, db, pair, realRuntime?.executionAdapter),
+  createEngine(ctx, db, pair, realRuntime),
 );
 ctx.sui = created.sui;
 ctx.engine = created.engine;

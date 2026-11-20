@@ -340,7 +340,7 @@ describe("slim two-row header (design A)", () => {
     "utf8",
   );
   const header = main.slice(
-    main.indexOf("<header>"),
+    main.search(/<header\b/),
     main.indexOf("</header>"),
   );
   const rowMain = header.slice(

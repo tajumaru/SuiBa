@@ -100,27 +100,54 @@ export function createDeepBookReadOnly(
       },
     }),
   );
+  const balanceReads = () => [
+    client.deepbook.checkManagerBalance("PHASE1", "SUI"),
+    client.deepbook.checkManagerBalance("PHASE1", "DBUSDC"),
+    client.deepbook.checkManagerBalance("PHASE1", "DEEP"),
+    client.deepbook.lockedBalance(config.poolKey, "PHASE1"),
+    resolveAccount(client.deepbook, config.poolKey),
+  ] as const;
+  type Reads = ReturnType<typeof balanceReads>;
+  const balanceParts = (
+    [suiBalance, dbusdcBalance, deepBalance, locked, account]: [
+      Awaited<Reads[0]>,
+      Awaited<Reads[1]>,
+      Awaited<Reads[2]>,
+      Awaited<Reads[3]>,
+      AccountInfo,
+    ],
+  ) => ({
+    balances: {
+      SUI: unwrapManagerBalance(suiBalance),
+      DBUSDC: unwrapManagerBalance(dbusdcBalance),
+      DEEP: unwrapManagerBalance(deepBalance),
+    },
+    locked: remapPoolBalances(config.poolKey, locked),
+    settledUnclaimed: remapPoolBalances(
+      config.poolKey,
+      account.settled_balances,
+    ),
+  });
   return {
+    async readBalances() {
+      return balanceParts(await Promise.all(balanceReads()));
+    },
     async snapshot() {
       const [
         suiBalance,
         dbusdcBalance,
         deepBalance,
+        locked,
+        account,
         openOrderIds,
         orderDetails,
         book,
-        locked,
-        account,
         tradeParams,
       ] = await Promise.all([
-        client.deepbook.checkManagerBalance("PHASE1", "SUI"),
-        client.deepbook.checkManagerBalance("PHASE1", "DBUSDC"),
-        client.deepbook.checkManagerBalance("PHASE1", "DEEP"),
+        ...balanceReads(),
         client.deepbook.accountOpenOrders(config.poolKey, "PHASE1"),
         client.deepbook.getAccountOrderDetails(config.poolKey, "PHASE1"),
         client.deepbook.getLevel2TicksFromMid(config.poolKey, 50),
-        client.deepbook.lockedBalance(config.poolKey, "PHASE1"),
-        resolveAccount(client.deepbook, config.poolKey),
         // Fee discovery is fail-closed for entries in the engine, but must not
         // make the whole balance/open-order snapshot unavailable: exits have a
         // separately audited last-known/assumption fallback.
@@ -139,19 +166,10 @@ export function createDeepBookReadOnly(
         throw Error(`REAL_GRAPHQL_HTTP_${gasResponse.status}`);
       const botGasSuiMist = graphqlGasBalance(await gasResponse.json());
       return {
-        balances: {
-          SUI: unwrapManagerBalance(suiBalance),
-          DBUSDC: unwrapManagerBalance(dbusdcBalance),
-          DEEP: unwrapManagerBalance(deepBalance),
-        },
+        ...balanceParts([suiBalance, dbusdcBalance, deepBalance, locked, account]),
         openOrderIds,
         orderDetails,
         book,
-        locked: remapPoolBalances(config.poolKey, locked),
-        settledUnclaimed: remapPoolBalances(
-          config.poolKey,
-          account.settled_balances,
-        ),
         owedBalances: remapPoolBalances(config.poolKey, account.owed_balances),
         accountInfo: account,
         tradeParams,

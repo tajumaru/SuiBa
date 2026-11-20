@@ -25,6 +25,7 @@ import {
   type EquityAttribution,
   type ValuationPoint,
 } from "./equity-attribution.ts";
+import type { RealBalances } from "./real/display-balances.ts";
 import { shadowTodaySummary } from "./shadow-summary.ts";
 
 /**
@@ -66,6 +67,9 @@ export function downsampleEquityCurve(
  * mutates the engine.
  */
 export interface SnapshotSources {
+  mode: "PAPER" | "REAL";
+  network: "testnet" | "mainnet";
+  realBalances?: () => RealBalances | undefined;
   pair: TradingPair;
   db: BotDatabase;
   monitor: OperationMonitor;
@@ -99,7 +103,10 @@ export function buildSnapshot(
         .reverse(),
       values = snapshots.map((x) => x.equity),
       indicators = src.db.get<Indicators>("indicators") ?? null;
+    const realBalances = src.mode === "REAL" ? src.realBalances?.() : undefined;
     return {
+      network: src.network,
+      ...(realBalances ? { realBalances } : {}),
       pair: src.pair,
       party: Object.fromEntries(
         src.db.partyRecords().map(({ member, count }) => [member, partyLevel(member, count)]),
@@ -121,7 +128,7 @@ export function buildSnapshot(
       longTermDaily: src.longTermDaily(),
       marketData: src.market.status?.() ?? null,
       marketQuality: src.db.get("market_quality") ?? null,
-      mode: "PAPER",
+      mode: src.mode,
       runtime: src.db.runtime(),
       safety: src.monitor.safetySnapshot(),
       connection: src.sui.status,
