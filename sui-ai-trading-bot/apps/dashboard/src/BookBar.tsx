@@ -108,20 +108,33 @@ function BookWave({
     }
     let shown = targetRef.current;
     let last = performance.now();
+    // Thermal budget (owner's iPhone heat concern, 2026-11-20):
+    // the slosh is slow, so ~30fps draws read identically to
+    // 60fps, and nothing is drawn while the bar is off-screen.
+    let lastDraw = 0;
+    let onScreen = true;
     const loop = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       const target = Math.max(-1, Math.min(1, targetRef.current));
       shown += (target - shown) * Math.min(1, dt * 3.2);
-      if (!document.hidden) draw(now / 1000, shown);
+      if (onScreen && !document.hidden && now - lastDraw >= 33) {
+        lastDraw = now;
+        draw(now / 1000, shown);
+      }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     const ro = new ResizeObserver(resize);
     ro.observe(canvas);
+    const io = new IntersectionObserver((entries) => {
+      onScreen = entries[0]?.isIntersecting ?? true;
+    });
+    io.observe(canvas);
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      io.disconnect();
     };
   }, [reduced]);
   return (

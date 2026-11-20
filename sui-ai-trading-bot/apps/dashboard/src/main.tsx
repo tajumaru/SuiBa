@@ -120,7 +120,11 @@ function App() {
   const [checking, setChecking] = useState(false);
   useEffect(() => {
     const update = () => setNow(Date.now());
-    const timer = window.setInterval(update, 1000);
+    // 5s, not 1s: every tick re-renders the whole app, and the
+    // freshness windows this drives are 30s+ (VITAL_RECEIPT_FRESH_MS).
+    // A 1s tick was a steady heat/battery cost on phones
+    // (owner's iPhone heat concern, 2026-11-20).
+    const timer = window.setInterval(update, 5000);
     window.addEventListener("pageshow", update);
     document.addEventListener("visibilitychange", update);
     return () => {
