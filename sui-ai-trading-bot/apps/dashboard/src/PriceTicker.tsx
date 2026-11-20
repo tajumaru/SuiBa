@@ -420,8 +420,19 @@ export function PriceTicker({
     price > 0
       ? {
           reached: price <= linePrice,
-          pct: ((linePrice / price - 1) * 100).toFixed(1),
-          text: formatTickerPrice(linePrice),
+          // Position wording (owner, 2026-11-20): the pill states
+          // how far ABOVE the line the price sits, as an unsigned
+          // distance — a signed "あと−0.1%" read as nonsense.
+          pct: Math.abs((linePrice / price - 1) * 100).toFixed(1),
+          // Same decimal places as the price next to it, so the
+          // two numbers compare at a glance ($0.6940 beside
+          // $0.6946, not $0.694).
+          text:
+            linePrice >= 1000
+              ? formatTickerPrice(linePrice)
+              : `$${linePrice.toFixed(
+                  Math.max(2, (priceText.split(".")[1] ?? "").length),
+                )}`,
         }
       : null;
   const sell =
@@ -471,7 +482,7 @@ export function PriceTicker({
     (line
       ? line.reached
         ? `、買い走りライン ${line.text} に到達、反発待ち`
-        : `、買い走りライン ${line.text} まであと${line.pct}%`
+        : `、買い走りライン ${line.text}、いま${line.pct}% 上`
       : "") +
     (sell
       ? sell.reached
@@ -577,7 +588,7 @@ export function PriceTicker({
         ) : (
           <span className="price-ticker-line buy" aria-hidden="true">
             <span className="price-ticker-line-prefix">買い走り</span>
-            ライン {line.text} あと{line.pct}%
+            ライン {line.text} ／ いま {line.pct}% 上
           </span>
         ))}
       {sell &&
