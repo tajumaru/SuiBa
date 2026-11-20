@@ -111,12 +111,12 @@ export function PriceChart(props: PriceChartProps) {
       </p>
       {fc && (
         <p className="chart-forecast-note">
-          これから{number((fc.points.length * tf) / 3600, 1)}時間の予測：
-          見通しは{fc.directionWord}、振れ幅 ±{number(fc.bandPct * 100, 1)}
-          %。模式の見通しです。トレンドと値幅（ATR）から伸ばしたもので、実際の価格ではありません。
+          この先{number((fc.points.length * tf) / 3600, 1)}時間の目安：
+          {fc.directionWord}、動きは ±{number(fc.bandPct * 100, 1)}
+          % くらい。計算で出した目安で、実際の価格ではありません。
           {fc.bookTiltPct !== 0 &&
-            `板の偏り（${fc.bookTiltPct > 0 ? "買い優勢" : "売り優勢"}）も少し反映しています。`}
-          {fc.touch && `タッチラインの確率は、同じような予測の実測です。`}
+            `${fc.bookTiltPct > 0 ? "買い" : "売り"}板が厚めなのも少し加味。`}
+          {fc.touch && `タッチラインの確率は、過去の似た予測が当たった割合です。`}
         </p>
       )}
       {fc && tf === 300 && forecastScoreText && (
