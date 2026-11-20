@@ -97,36 +97,25 @@ export function OverviewTab({
                     <ShadowTodayLine summary={data.shadowToday} />
                     {/* 仮想総資産と保有のカードは資産の中身
                         (PortfolioMix) と同じ数字の二重表示だったため
-                        2026-11-20 に撤去（オーナー指摘）。残すのは
-                        中身側に出ない累計損益と本日の取引だけ。 */}
+                        2026-11-20 に撤去（オーナー指摘）。本日の取引も
+                        単独カードだと 0 件の日に枠だけ大きいため、
+                        同日さらに累計損益カードの1行へ統合した。 */}
                     <div className="cards">
-                      {[
-                        ["累計損益", data.pnl, "USDC"],
-                        [
-                          "本日の取引（日本時間09:00から）",
-                          data.todayTrades,
-                          "件",
-                        ],
-                      ].map(([label, value, unit]) => (
-                        <section key={String(label)}>
-                          <small>{label}</small>
-                          <h2>
-                            {money(value as number | null)} <em>{unit}</em>
-                            {label === "累計損益" && (
-                              <JpyAmount
-                                usdc={value as number | null}
-                                usdJpy={usdJpy}
-                              />
-                            )}
-                          </h2>
-                          {label === "累計損益" && (
-                            <PnlBreakdownLine
-                              totals={operations?.accounting.totals}
-                              stale={operationsStale}
-                            />
-                          )}
-                        </section>
-                      ))}
+                      <section className="overview-pnl-card">
+                        <small>累計損益</small>
+                        <h2>
+                          {money(data.pnl)} <em>USDC</em>
+                          <JpyAmount usdc={data.pnl} usdJpy={usdJpy} />
+                        </h2>
+                        <PnlBreakdownLine
+                          totals={operations?.accounting.totals}
+                          stale={operationsStale}
+                        />
+                        <p className="overview-sub">
+                          本日の取引（日本時間09:00から）{" "}
+                          {money(data.todayTrades)} 件
+                        </p>
+                      </section>
                     </div>
                     <PortfolioMix
                       usdc={data.portfolio.usdc}

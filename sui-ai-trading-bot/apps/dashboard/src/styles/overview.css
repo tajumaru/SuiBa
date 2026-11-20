@@ -7,6 +7,9 @@
 .overview-tab .cards {
   gap: 10px;
 }
+.overview-tab .overview-pnl-card {
+  grid-column: 1 / -1;
+}
 .overview-tab h2 {
   font-size: 20px;
   margin: 2px 0 0;
