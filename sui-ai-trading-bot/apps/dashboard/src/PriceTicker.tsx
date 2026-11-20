@@ -31,6 +31,11 @@ export function RsiGauge({
     oversold > 100
   )
     return null;
+  // Always-on was noise (owner's call 2026-11-20): the meter
+  // exists to watch the buy line, so it renders only when RSI
+  // is at/below the line or within 5 above it — the zone where
+  // a recovery cross is actually in reach.
+  if (rsi > oversold + 5) return null;
 
   const span = RSI_GAUGE_WIDTH - RSI_GAUGE_INSET * 2;
   const x = (value: number) =>
@@ -91,6 +96,14 @@ export function RsiGauge({
         </text>
         {near && (
           <circle className="rsi-gauge-pulse" cx={rsiX} cy="21" r="7" />
+        )}
+        {near && (
+          <circle
+            className="rsi-gauge-pulse rsi-gauge-pulse-delay"
+            cx={rsiX}
+            cy="21"
+            r="7"
+          />
         )}
         <circle className="rsi-gauge-dot" cx={rsiX} cy="21" r="5" />
         <text

@@ -276,13 +276,20 @@ describe("RSI oversold gauge", () => {
   });
 
   it("uses an oversold setting of 30 for the line and label", () => {
-    const html = renderToStaticMarkup(<RsiGauge rsi={42} oversold={30} />);
-    expect(html).toContain('class="rsi-gauge is-above"');
-    expect(html).not.toContain("is-near");
-    expect(html).not.toContain("rsi-gauge-pulse");
+    const html = renderToStaticMarkup(<RsiGauge rsi={34} oversold={30} />);
+    expect(html).toContain('class="rsi-gauge is-above is-near"');
     expect(html).toContain("買いの線 30");
     expect(html).toContain('x1="93.2"');
     expect(html).not.toContain("買いの線 45");
+  });
+
+  it("renders nothing while RSI is far above the line", () => {
+    expect(renderToStaticMarkup(<RsiGauge rsi={62} oversold={45} />)).toBe(
+      "",
+    );
+    expect(renderToStaticMarkup(<RsiGauge rsi={42} oversold={30} />)).toBe(
+      "",
+    );
   });
 
   it("renders nothing when RSI is unavailable", () => {
