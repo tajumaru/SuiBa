@@ -2363,9 +2363,21 @@ describe("agent narration: watch score and review", () => {
       hits: 0,
       misses: 0,
       inProgress: 1,
+      ended: 0,
       kindStats: emptyWatchKindStats(),
       specialty: null,
     });
+    // Silent ends are derived so the strip always adds up:
+    // 6 declared, 2 hits, 1 miss, one live watch → 2 ended.
+    const withEnded = currentWatchScore(
+      {
+        ...state,
+        watchScore: { declared: 6, hits: 2, misses: 1, unreviewed: 0 },
+      },
+      d1.decision,
+      NOW,
+    );
+    expect(withEnded?.ended).toBe(2);
     expect(currentWatchScore(state, null, NOW)).toBeNull();
     const stale = {
       ...d1.decision!,

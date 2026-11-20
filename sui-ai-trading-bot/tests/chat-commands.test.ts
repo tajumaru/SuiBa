@@ -97,6 +97,7 @@ describe("chat commands", () => {
         score: {
           declared: 7,
           inProgress: 1,
+          ended: 0,
           hits: 4,
           misses: 2,
           kindStats: {

@@ -561,6 +561,12 @@ export function AgentNarrationFeed({
             <small>外れ</small>
             {score.misses}
           </span>
+          {score.ended > 0 && (
+            <span className="agent-feed-score-item end">
+              <small>終了</small>
+              {score.ended}
+            </span>
+          )}
         </div>
       )}
       {score?.specialty && (
