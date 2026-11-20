@@ -76,14 +76,6 @@
     padding: 16px;
   }
 }
-.validation-diagnostics {
-  margin-top: 12px;
-  border-top: 1px solid #647180;
-}
-.deepbook-validation :is(p, small) {
-  font-size: 13px;
-  line-height: 1.7;
-}
 .operation-hero.stopped {
   color: #bac4cc;
 }

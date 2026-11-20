@@ -294,11 +294,6 @@ select {
     0 0 0 1px var(--mint),
     0 0 18px -6px rgba(67, 223, 178, 0.5);
 }
-.validation-overview, .validation-progress, .validation-metric {
-  background: var(--feed-bg);
-  border-color: var(--pine);
-  border-radius: 4px;
-}
 summary {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
