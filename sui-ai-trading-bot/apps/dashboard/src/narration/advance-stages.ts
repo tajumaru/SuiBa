@@ -564,7 +564,7 @@ if (dec && (work.lastDecisionAt == null || dec.evaluatedAt > work.lastDecisionAt
         work.drafts.push({
           at: dec.evaluatedAt,
           kind: "cycle",
-          text: `ラインまで あと${((line / dec.price - 1) * 100).toFixed(1)}%。じわじわ来てる`,
+          text: `ラインまで あと${Math.abs((line / dec.price - 1) * 100).toFixed(1)}%。じわじわ来てる`,
         });
       }
     } else if (!work.priceLine && line != null) {
