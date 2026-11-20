@@ -37,7 +37,6 @@ import {
 import { useUpdateCheck } from "./appVersion.ts";
 import { UpdateBanner, VersionFooter } from "./VersionFooter.tsx";
 
-import { BookBar } from "./BookBar.tsx";
 import {
   loadAgentName,
   sanitizeAgentName,
@@ -522,6 +521,7 @@ function App() {
                   candlesByTimeframe={data.candlesByTimeframe}
                   rsi={data.indicators?.rsi ?? null}
                   oversold={data.settings.oversold}
+                  bookImbalance={data.bookImbalance}
                   glow={buyCelebration}
                   linePrice={operations.data?.decision?.rsiLinePrice ?? null}
                   sellLines={
@@ -530,9 +530,6 @@ function App() {
                       : null
                   }
                 />
-                {/* The order book's lean, same sample that
-                    tilts the model outlook (display only). */}
-                <BookBar imbalance={data.bookImbalance} />
                 {/* The narration tab stays mounted (only hidden) so
                     the feed history accumulated from snapshot diffs
                     survives tab switches. */}

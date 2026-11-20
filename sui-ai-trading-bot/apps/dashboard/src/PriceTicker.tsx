@@ -1,5 +1,6 @@
 import React from "react";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
+import { BookBar } from "./BookBar.tsx";
 
 type State = BotSnapshot;
 type Frames = State["candlesByTimeframe"];
@@ -357,6 +358,7 @@ export function PriceTicker({
   onPairSwitch,
   rsi = null,
   oversold = 30,
+  bookImbalance = null,
 }: {
   marketData?: State["marketData"];
   now?: number;
@@ -372,6 +374,10 @@ export function PriceTicker({
    * fails closed when RSI is unavailable. */
   rsi?: number | null;
   oversold?: number;
+  /** The order book's lean, integrated under the price inside
+   * this panel (owner's call 2026-11-20) instead of living in
+   * its own strip below. Null hides the meter. */
+  bookImbalance?: number | null;
   price: State["price"];
   candlesByTimeframe: Frames;
   /** Buy celebration: while true the ticker carries the glow
@@ -607,6 +613,7 @@ export function PriceTicker({
           </span>
         ))}
       </div>
+      <BookBar imbalance={bookImbalance} />
       <RsiGauge rsi={rsi} oversold={oversold} />
     </div>
   );
