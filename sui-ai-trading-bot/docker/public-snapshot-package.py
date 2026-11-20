@@ -25,7 +25,7 @@ def unpack(package, destination):
         if sum(e.file_size for e in entries) > LIMIT+65536: raise ValueError()
         if archive.getinfo('manifest.json').file_size > 65536: raise ValueError()
         manifest = json.loads(archive.read('manifest.json'))
-        if (type(manifest) is not dict or set(manifest) != {'version', 'scope', 'public', 'window', 'run', 'sourceArchiveSha256', 'files', 'aggregates', 'omitted'} or
+        if (type(manifest) is not dict or set(manifest) not in ({'version', 'scope', 'public', 'window', 'run', 'sourceArchiveSha256', 'files', 'omitted'}, {'version', 'scope', 'public', 'window', 'run', 'sourceArchiveSha256', 'files', 'aggregates', 'omitted'}) or
                 type(manifest['version']) is not int or manifest['version'] != 2 or manifest['public'] is not True or
                 manifest['scope'] not in ('PRE_RUN_BACKUP_PUBLIC_EXTRACT', 'PROD_LIVE_PUBLIC_EXTRACT') or
                 type(manifest['sourceArchiveSha256']) is not str or not re.fullmatch(r'[a-f0-9]{64}', manifest['sourceArchiveSha256'])): raise ValueError()
@@ -35,25 +35,30 @@ def unpack(package, destination):
                 window['from'] < 0 or window['to'] > 2**53 or
                 window['to'] - window['from'] != scope['WINDOW_MS']): raise ValueError()
         if manifest['omitted'] != ['settings', 'runtime', 'auth', 'market_candles', 'portfolio_snapshots', 'thresholds', 'free_text', 'raw_ids']: raise ValueError()
-        aggregates = manifest['aggregates']
-        if (type(aggregates) is not dict or set(aggregates) != {
-                'shadowByVersion', 'paperRoundTrips', 'paperRealizedPnlUsdc',
-                'narrationEntries', 'forecastCalibrations'}): raise ValueError()
-        if (type(aggregates['paperRoundTrips']) is not int or
-                type(aggregates['narrationEntries']) is not int or
-                type(aggregates['forecastCalibrations']) is not int or
-                min(aggregates['paperRoundTrips'], aggregates['narrationEntries'],
-                    aggregates['forecastCalibrations']) < 0 or
-                not scope['number'](aggregates['paperRealizedPnlUsdc'])): raise ValueError()
-        shadow = aggregates['shadowByVersion']
-        if type(shadow) is not dict: raise ValueError()
-        for version, counts in shadow.items():
-            if (type(version) is not str or not 0 < len(version) <= 80 or
-                    type(counts) is not dict or
-                    set(counts) != {'total', 'aiOnlyBuy', 'errors'} or
-                    any(type(value) is not int or value < 0 for value in counts.values()) or
-                    counts['aiOnlyBuy'] > counts['total'] or
-                    counts['errors'] > counts['total']): raise ValueError()
+        # 'aggregates' is emitted by the host-installed export program, which
+        # only updates when setup-paper-check.sh is re-run on the host. Until
+        # then, manifests without it are the legacy shape and stay valid;
+        # when present, its shape is validated exactly.
+        if 'aggregates' in manifest:
+            aggregates = manifest['aggregates']
+            if (type(aggregates) is not dict or set(aggregates) != {
+                    'shadowByVersion', 'paperRoundTrips', 'paperRealizedPnlUsdc',
+                    'narrationEntries', 'forecastCalibrations'}): raise ValueError()
+            if (type(aggregates['paperRoundTrips']) is not int or
+                    type(aggregates['narrationEntries']) is not int or
+                    type(aggregates['forecastCalibrations']) is not int or
+                    min(aggregates['paperRoundTrips'], aggregates['narrationEntries'],
+                        aggregates['forecastCalibrations']) < 0 or
+                    not scope['number'](aggregates['paperRealizedPnlUsdc'])): raise ValueError()
+            shadow = aggregates['shadowByVersion']
+            if type(shadow) is not dict: raise ValueError()
+            for version, counts in shadow.items():
+                if (type(version) is not str or not 0 < len(version) <= 80 or
+                        type(counts) is not dict or
+                        set(counts) != {'total', 'aiOnlyBuy', 'errors'} or
+                        any(type(value) is not int or value < 0 for value in counts.values()) or
+                        counts['aiOnlyBuy'] > counts['total'] or
+                        counts['errors'] > counts['total']): raise ValueError()
         run_check = scope['public_prod_run'] if manifest['scope'] == 'PROD_LIVE_PUBLIC_EXTRACT' else scope['public_run']
         if run_check(manifest['run']) != manifest['run']: raise ValueError()
         files = manifest['files']

@@ -254,6 +254,30 @@ class ExportTests(unittest.TestCase):
                 'paperRoundTrips': 1, 'paperRealizedPnlUsdc': 1.2,
                 'narrationEntries': 3, 'forecastCalibrations': 1})
 
+    def test_legacy_manifest_without_aggregates_is_accepted(self):
+        # The host-installed export program gains 'aggregates' only when
+        # setup-paper-check.sh is re-run; packages from the older installed
+        # program carry the legacy manifest shape and must stay valid.
+        with tempfile.TemporaryDirectory() as tmp:
+            raw, record = self.fixture(tmp)
+            package = e.build_export(io.BytesIO(raw), record)
+            source = zipfile.ZipFile(io.BytesIO(package))
+            legacy = io.BytesIO()
+            with zipfile.ZipFile(legacy, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+                for name in source.namelist():
+                    data = source.read(name)
+                    if name == 'manifest.json':
+                        manifest = json.loads(data)
+                        del manifest['aggregates']
+                        data = json.dumps(manifest, sort_keys=True,
+                                          separators=(',', ':')).encode()
+                    archive.writestr(name, data)
+            zip_path = Path(tmp)/'legacy.zip'; zip_path.write_bytes(legacy.getvalue())
+            output = Path(tmp)/'legacy'
+            self.assertEqual(client.unpack(zip_path, output), 1)
+            manifest = json.loads((output/'manifest.json').read_text())
+            self.assertNotIn('aggregates', manifest)
+
     def test_candidate_risk_and_order_id_use_closed_allowlists(self):
         clean = e.sanitize('operation_candidates', {
             'orderId': 'paper:source:300:123:BUY',
