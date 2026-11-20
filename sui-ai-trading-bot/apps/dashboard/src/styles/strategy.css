@@ -13,15 +13,6 @@
   padding: 8px 20px;
   white-space: nowrap;
 }
-
-/* Strategy tab (diagram-first): condition cards fed by the recorded
-   decision evidence, a result panel, and grouped parameter cards with
-   scale bars whose ranges come from the shared settings schema. */
-.strategy-lead {
-  color: var(--dim);
-  margin: 0 0 14px;
-  font-size: 13px;
-}
 .strategy-flow {
   display: grid;
   grid-template-columns: 1fr 44px 300px;
