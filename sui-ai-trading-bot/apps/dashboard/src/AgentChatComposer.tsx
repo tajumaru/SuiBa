@@ -157,8 +157,26 @@ export function AgentChatComposer({
               🎤
             </button>
           )}
-          <button type="submit" disabled={chatThinking}>
-            送信
+          <button
+            type="submit"
+            className="agent-chat-send"
+            aria-label="送信"
+            disabled={chatThinking}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 19V5" />
+              <path d="m5 12 7-7 7 7" />
+            </svg>
           </button>
         </form>
         <button
