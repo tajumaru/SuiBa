@@ -15,11 +15,15 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--feed-bg);
-  border: 1px solid #2b4a5f;
+  /* Lifted surface: the form used to share --feed-bg with the
+     feed behind it and blended into the entries (owner report
+     2026-11-20). A raised fill plus the avatar-frame green
+     border keeps it readable as an input. */
+  background: #0d2318;
+  border: 1px solid #2e7a5f;
   border-radius: 999px;
   padding: 4px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
 }
 .agent-chat-form:focus-within {
   border-color: var(--mint);

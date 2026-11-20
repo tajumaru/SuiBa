@@ -167,7 +167,10 @@ h2 {
 }
 .agent-chat-form input {
   border-color: var(--pine);
-  background: var(--feed-bg);
+  /* Transparent so the form's lifted surface shows through;
+     the old --feed-bg fill cut a same-as-feed rectangle into
+     the raised pill. */
+  background: transparent;
 }
 
 /* Stuck dock (scrolled): the avatar shrinks and the status
