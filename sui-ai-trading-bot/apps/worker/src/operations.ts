@@ -18,6 +18,7 @@ import { randomUUID } from "node:crypto";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
 import {
   safeFailure,
+  safeFailureDetail,
   type QuoteResult,
   type TradingDecision,
 } from "../../../packages/shared/src/index.ts";
@@ -555,6 +556,7 @@ export class OperationMonitor {
     details?: MarketStallDetails,
     recoveryProof?: PaperRecoveryProof,
     episode?: EpisodeSummary,
+    failureDetail?: string,
   ) {
     this.db.append(
       "operation_events",
@@ -567,6 +569,7 @@ export class OperationMonitor {
         ...(details ? { details } : {}),
         ...(recoveryProof ? { recoveryProof } : {}),
         ...(episode ? { episode } : {}),
+        ...(failureDetail ? { failureDetail } : {}),
       } satisfies OperationEvent,
       now,
     );
@@ -847,7 +850,16 @@ export class OperationMonitor {
           apiErrors: s.apiErrors + 1,
           consecutiveErrors: s.consecutiveErrors + 1,
         });
-      this.event("ERROR", `${kind}_${reason}`);
+      this.event(
+        "ERROR",
+        `${kind}_${reason}`,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        safeFailureDetail(error),
+      );
       if (
         !marketGuard &&
         !this.softFailureThisCycle &&

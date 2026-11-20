@@ -102,8 +102,16 @@ export function buildDiagnosticReport(
   if (data.events.length === 0) lines.push("- 記録なし");
   for (const e of data.events)
     lines.push(
-      `- [${iso(e.timestamp)}] ${e.kind} ${e.code}${e.fatal ? " (fatal)" : ""}${e.episode ? ` — episode: ${episodeSummaryText(e.episode)}` : ""}${e.apiFailure ? ` — apiFailure: ${e.apiFailure.api}/${e.apiFailure.code}` : ""}`,
+      `- [${iso(e.timestamp)}] ${e.kind} ${e.code}${e.fatal ? " (fatal)" : ""}${e.episode ? ` — episode: ${episodeSummaryText(e.episode)}` : ""}${e.apiFailure ? ` — apiFailure: ${e.apiFailure.api}/${e.apiFailure.code}` : ""}${e.failureDetail ? ` — failureDetail: ${e.failureDetail}` : ""}`,
     );
+  const failedCandidates = data.candidates?.filter((c) => c.failureDetail);
+  if (failedCandidates?.length) {
+    lines.push("", "## 取引候補の失敗詳細");
+    for (const c of failedCandidates)
+      lines.push(
+        `- [${iso(c.timestamp)}] ${c.side} ${c.finalAction} ${c.reasons.join("、")} — failureDetail: ${c.failureDetail}`,
+      );
+  }
   lines.push(
     "",
     "## 生データ（safety / timing）",

@@ -50,6 +50,30 @@ export function safeFailure(error: unknown) {
     ? error.message
     : "DATA_OR_EXECUTION_FAILURE";
 }
+// Keep only bounded, scrubbed message text for failure diagnostics.
+export function safeFailureDetail(error: unknown): string {
+  if (!(error instanceof Error) || !error.message.trim()) return "";
+
+  const scrub = (message: string) =>
+    message
+      .replace(/https?:\/\/\S+/gi, " ")
+      .replace(/0x[0-9a-f]{32,}/gi, " ")
+      .replace(
+        /((?:token|key|secret|password|authorization)\s*[:=]\s*)(?:bearer\s+)?\S+/gi,
+        "$1[redacted]",
+      )
+      .replace(/\bbearer\s+\S+/gi, "Bearer [redacted]")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const message = scrub(error.message);
+  const cause = error.cause instanceof Error ? scrub(error.cause.message) : "";
+  return [message, cause]
+    .filter(Boolean)
+    .join(" | cause: ")
+    .slice(0, 240)
+    .trimEnd();
+}
 export const SUI = "0x2::sui::SUI";
 export const WAL =
   "0x356a26eb9e012a68958082340d4c4116e7f55615cf27affcff209cf0ae544f59::wal::WAL";

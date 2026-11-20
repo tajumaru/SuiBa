@@ -128,6 +128,7 @@ function compactCycleAudit(value: Record<string, unknown>) {
     "outcome",
     "action",
     "error",
+    "failureDetail",
     "candidateId",
     "orderId",
   ] as const;
