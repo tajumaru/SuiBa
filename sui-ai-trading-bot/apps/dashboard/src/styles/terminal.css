@@ -110,21 +110,8 @@ h2 {
 .agent-feed-watch {
   border-radius: 4px;
 }
-.agent-chat-chips button {
-  border-radius: 4px;
-}
 .agent-chat-form {
   align-items: center;
-}
-.agent-chat-form::before {
-  content: ">";
-  color: var(--mint);
-  font-weight: 700;
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-}
-.agent-chat-form input {
-  border-radius: 4px;
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
 /* Terminal finish (from the real-device screenshot): pull the
@@ -516,7 +503,7 @@ summary {
     bottom: calc(122px + env(safe-area-inset-bottom, 0px));
   }
   html.chat-bar-open .agent-avatar-dock.stuck {
-    bottom: calc(228px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(162px + env(safe-area-inset-bottom, 0px));
   }
 }
 @media (min-width: 601px) {
@@ -524,7 +511,7 @@ summary {
     bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   }
   html.chat-bar-open .agent-avatar-dock.stuck {
-    bottom: calc(170px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(104px + env(safe-area-inset-bottom, 0px));
   }
 }
 /* "Back to the latest" jump for the message-order feed: while
@@ -559,11 +546,11 @@ summary {
     bottom: calc(136px + env(safe-area-inset-bottom, 0px));
   }
   html.chat-bar-open .agent-feed-jump {
-    bottom: calc(242px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(176px + env(safe-area-inset-bottom, 0px));
   }
 }
 @media (min-width: 601px) {
   html.chat-bar-open .agent-feed-jump {
-    bottom: calc(184px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(120px + env(safe-area-inset-bottom, 0px));
   }
 }

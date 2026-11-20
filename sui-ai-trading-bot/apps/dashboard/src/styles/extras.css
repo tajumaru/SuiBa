@@ -204,8 +204,8 @@
   }
 }
 
-/* Spoken-replies toggle, sitting with the question chips. */
-.agent-chat-chips .agent-voice-toggle.on {
+/* Spoken-replies toggle, sitting in the composer form. */
+.agent-voice-toggle.on {
   border-color: var(--mint);
   color: var(--mint);
 }
