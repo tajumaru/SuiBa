@@ -95,9 +95,12 @@ export function OverviewTab({
                   <div className="overview-tab">
                     <WorkerFreshness data={operations ?? null} stale={operationsStale} />
                     <ShadowTodayLine summary={data.shadowToday} />
+                    {/* 仮想総資産と保有のカードは資産の中身
+                        (PortfolioMix) と同じ数字の二重表示だったため
+                        2026-11-20 に撤去（オーナー指摘）。残すのは
+                        中身側に出ない累計損益と本日の取引だけ。 */}
                     <div className="cards">
                       {[
-                        ["仮想総資産", data.equity, "USDC"],
                         ["累計損益", data.pnl, "USDC"],
                         [
                           "本日の取引（日本時間09:00から）",
@@ -124,16 +127,6 @@ export function OverviewTab({
                           )}
                         </section>
                       ))}
-                      <section>
-                        <small>保有</small>
-                        <h2>
-                          {money(data.portfolio.sui)}{" "}
-                          <em>{data.pair === "WAL_USDC" ? "WAL" : "SUI"}</em>
-                        </h2>
-                        <p className="overview-sub">
-                          {money(data.portfolio.usdc)} USDC
-                        </p>
-                      </section>
                     </div>
                     <PortfolioMix
                       usdc={data.portfolio.usdc}
