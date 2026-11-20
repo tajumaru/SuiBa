@@ -1067,14 +1067,10 @@
     padding-bottom: 84px;
   }
 }
-.version-skew {
-  color: var(--gold);
-}
 .version-footer-sui {
   display: inline-flex;
   gap: 5px;
   align-items: center;
-  margin-left: 10px;
   color: var(--faint);
   font-size: 10px;
   letter-spacing: 0.02em;

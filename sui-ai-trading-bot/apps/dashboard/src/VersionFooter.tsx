@@ -1,9 +1,4 @@
-import {
-  APP_BUILD,
-  APP_SUBJECT,
-  versionSkew,
-  type ServedVersion,
-} from "./appVersion.ts";
+import type { ServedVersion } from "./appVersion.ts";
 
 /** Shown when the server is already serving a newer build than
  * the page in hand: the one tap reload lands on the new build. */
@@ -21,23 +16,15 @@ export function UpdateBanner({ served }: { served: ServedVersion }) {
   );
 }
 
-/** The running builds' identity, always visible at the page
- * foot: the screen's build next to the bot's, so a reflected
- * deploy — or a skew between the two — can be verified at a
- * glance. */
-export function VersionFooter({
-  workerBuild,
-}: {
-  workerBuild?: string | null;
-}) {
+/** The page foot carries only the Sui credit. The build stamps
+ * that used to sit next to it read "dev"/"unknown" in practice
+ * and carried no information, so the owner removed them
+ * (2026-11-20); build identity still travels in the diagnostic
+ * export, and the update banner above still names the new build
+ * when one is served. */
+export function VersionFooter() {
   return (
     <footer className="version-footer">
-      Potario 画面 {APP_BUILD}
-      {workerBuild ? ` ・ Bot ${workerBuild}` : ""}
-      {APP_SUBJECT ? ` ・ ${APP_SUBJECT}` : ""}
-      {versionSkew(APP_BUILD, workerBuild) && (
-        <span className="version-skew"> ・ 版がズレています</span>
-      )}
       {/* The Sui credit lives here since 2026-11-19: the chain
           strip was slimmed to two numbers, and the owner still
           wanted the Sui mark somewhere on the page. */}
