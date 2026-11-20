@@ -165,10 +165,6 @@ h2 {
   content: "> ";
   color: var(--mint);
 }
-.agent-chat-chips button {
-  background: var(--btn-bg);
-  border-color: var(--pine);
-}
 .agent-chat-form input {
   border-color: var(--pine);
   background: var(--feed-bg);
@@ -295,31 +291,10 @@ select {
     0 0 0 1px var(--mint),
     0 0 18px -6px rgba(67, 223, 178, 0.5);
 }
-.validation-overview,
-.validation-action,
-.validation-progress,
-.validation-metric {
+.validation-overview, .validation-progress, .validation-metric {
   background: var(--feed-bg);
   border-color: var(--pine);
   border-radius: 4px;
-}
-.operation-validation progress {
-  appearance: none;
-  height: 10px;
-}
-.operation-validation progress::-webkit-progress-bar {
-  background: var(--btn-bg);
-  border: 1px solid var(--pine);
-}
-.operation-validation progress::-webkit-progress-value {
-  background: repeating-linear-gradient(
-    90deg,
-    var(--mint) 0 6px,
-    transparent 6px 8px
-  );
-}
-.operation-validation progress::-moz-progress-bar {
-  background: var(--mint);
 }
 summary {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;

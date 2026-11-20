@@ -170,7 +170,6 @@
   width: auto;
   margin-right: 12px;
 }
-.profit-summary,
 .settings-review {
   padding: 16px;
   margin: 16px 0;
@@ -455,63 +454,6 @@
   width: 100%;
   margin: 0;
 }
-.operation-validation dl {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
-  gap: 12px;
-}
-.operation-validation dd {
-  margin: 0;
-  min-width: 0;
-}
-.operation-validation dt {
-  color: var(--dim);
-  min-width: 0;
-}
-.operation-reports {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-.operation-reports article {
-  padding: 12px;
-  border: 1px solid var(--steel);
-  border-radius: 8px;
-  min-width: 0;
-}
-.operation-candidate {
-  border-top: 1px solid var(--steel);
-  padding: 8px 0;
-}
-.operation-validation .cards > div {
-  min-width: 0;
-}
-@media (max-width: 700px) {
-  .operation-reports {
-    grid-template-columns: 1fr;
-  }
-  .operation-validation dl {
-    grid-template-columns: 1fr;
-    gap: 6px;
-  }
-  .operation-validation dd {
-    margin-bottom: 12px;
-  }
-  .operation-validation section {
-    padding: 12px;
-  }
-}
-
-.operation-validation pre {
-  max-width: 100%;
-  overflow-x: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.operation-validation progress {
-  max-width: 100%;
-  width: 100%;
-}
 /* DeepBook validation: summary first, technical evidence on demand. */
 .deepbook-validation {
   overflow-wrap: anywhere;
@@ -520,10 +462,7 @@
   margin: 0 0 12px;
   font-size: 14px;
 }
-.validation-overview,
-.validation-action,
-.validation-progress,
-.validation-metric {
+.validation-overview, .validation-progress, .validation-metric {
   padding: 12px;
   border: 1px solid var(--steel);
   border-radius: 10px;
@@ -552,13 +491,8 @@
 .validation-overview.danger .validation-session {
   color: #ff9c9c;
 }
-.validation-overview p:last-child,
-.validation-action p:last-child {
+.validation-overview p:last-child {
   margin-bottom: 0;
-}
-.validation-action {
-  margin-top: 16px;
-  background: #182537;
 }
 .validation-progress {
   margin: 20px 0;
@@ -668,10 +602,7 @@
   .validation-metrics {
     grid-template-columns: minmax(0, 1fr);
   }
-  .validation-overview,
-  .validation-action,
-  .validation-progress,
-  .validation-metric {
+  .validation-overview, .validation-progress, .validation-metric {
     padding: 16px;
   }
   .validation-value {
