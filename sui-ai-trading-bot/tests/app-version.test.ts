@@ -56,7 +56,7 @@ it("fetches version.json without cache and tolerates failure", async () => {
   expect(await fetchServedVersion(down)).toBeNull();
 });
 
-it("renders the banner with the new build and the footer with this build", () => {
+it("renders the banner with the new build and the footer with only the Sui credit", () => {
   const banner = renderToStaticMarkup(
     React.createElement(UpdateBanner, {
       served: { build: "bbb2222", subject: "新機能", builtAt: "" },
@@ -66,7 +66,10 @@ it("renders the banner with the new build and the footer with this build", () =>
   expect(banner).toContain("新機能");
   expect(banner).toContain("再読み込み");
   const footer = renderToStaticMarkup(React.createElement(VersionFooter));
-  expect(footer).toContain("Potario 画面 dev");
+  // The build stamps were removed from the footer (2026-11-20):
+  // they read "dev"/"unknown" in practice and said nothing.
+  expect(footer).not.toContain("画面 dev");
+  expect(footer).not.toContain("Bot ");
   // The Sui credit moved here from the chain strip (2026-11-19).
   expect(footer).toContain("Built on Sui");
   expect(footer).toContain('href="https://sui.io"');
@@ -80,10 +83,4 @@ it("flags a skew only between two different real build stamps", () => {
   expect(versionSkew("aaa1111", "unknown")).toBe(false);
   expect(versionSkew("aaa1111", null)).toBe(false);
   expect(versionSkew("aaa1111", undefined)).toBe(false);
-  const footer = renderToStaticMarkup(
-    React.createElement(VersionFooter, { workerBuild: "abc1234" }),
-  );
-  expect(footer).toContain("Bot abc1234");
-  // In tests the page build is "dev", so no skew warning renders.
-  expect(footer).not.toContain("版がズレています");
 });

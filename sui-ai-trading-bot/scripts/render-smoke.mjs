@@ -99,7 +99,7 @@ try {
     failures.push(
       `login.css not applied (.login-brand color = ${probe.brandColor})`,
     );
-  if (!probe.footerText.includes("Potario"))
+  if (!probe.footerText.includes("Built on Sui"))
     failures.push("version footer missing");
   if (probe.footerColor !== "rgb(143, 163, 176)")
     failures.push(
