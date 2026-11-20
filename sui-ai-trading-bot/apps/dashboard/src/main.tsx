@@ -196,8 +196,7 @@ function App() {
     forecastTouchLine,
     forecastCalib,
     forecastAnswer,
-    shareCard,
-  } = useForecastSuite(data, agentName);
+  } = useForecastSuite(data);
   const changeAgentName = (raw: string) => {
     const next = sanitizeAgentName(raw);
     saveAgentName(next);
@@ -584,7 +583,6 @@ function App() {
                     forecastTouchLine={forecastTouchLine}
                     forecastBandScale={forecastCalib.scale}
                     forecastAnswer={forecastAnswer}
-                    shareCard={shareCard}
                     sellLines={
                       operations.data?.decision
                         ? sellLinesOf(operations.data.decision)

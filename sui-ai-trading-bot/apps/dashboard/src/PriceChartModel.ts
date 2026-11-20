@@ -15,7 +15,6 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import type { Candle } from "../../../packages/shared/src/index.ts";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { chartData, chartWindow } from "./chartPresentation.ts";
-import type { ShareCardInput } from "./shareCard.ts";
 
 export interface PriceChartProps {
   pair?: BotSnapshot["pair"];
@@ -39,9 +38,6 @@ export interface PriceChartProps {
    * (the recorded cone laid over what actually happened). */
   answerCheck?: ForecastAnswerCheck | null;
   answerDefaultOn?: boolean;
-  /** Everything the share card needs, assembled by the shell
-   * from the live forecast and the recorded score. */
-  shareCard?: ShareCardInput | null;
 }
 
 export function usePriceChartModel({
@@ -57,12 +53,9 @@ export function usePriceChartModel({
   sellLines,
   answerCheck,
   answerDefaultOn = false,
-  shareCard,
 }: PriceChartProps) {
   const [gapTime, setGapTime] = useState<number | null>(null);
   const [answerOn, setAnswerOn] = useState(answerDefaultOn);
-  const [shareBusy, setShareBusy] = useState(false);
-  const [shareNote, setShareNote] = useState("");
   const [history, setHistory] = useState<HistoryResult | null>(null),
     [historyBusy, setHistoryBusy] = useState(false),
     [historyNotice, setHistoryNotice] = useState("");
@@ -324,14 +317,11 @@ export function usePriceChartModel({
     trades,
     forecastScoreText,
     forecastTouchText,
-    shareCard,
     answerCheck,
     historyApi,
     synchronized,
     tf,
     fc,
-    shareBusy,
-    shareNote,
     answerOn,
     historyBusy,
     historyNotice,
@@ -374,8 +364,6 @@ export function usePriceChartModel({
     zoom,
     move,
     loadHistory,
-    setShareBusy,
-    setShareNote,
     setAnswerOn,
     setGapTime,
     setAnchor,
