@@ -151,13 +151,6 @@ test("Japanese screens preserve actions, ratios and epochs across all viewports"
       "取引履歴",
       page.getByRole("heading", { name: "注文 / 拒否理由", exact: true }),
     ],
-    [
-      "バックテスト比較",
-      page.getByRole("heading", {
-        name: "バックテスト比較 · PAPER（仮想売買）専用",
-        exact: true,
-      }),
-    ],
   ] as const) {
     await page.getByRole("button", { name: tab, exact: true }).click();
     await expect(content).toBeVisible();

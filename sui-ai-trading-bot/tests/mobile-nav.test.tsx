@@ -15,13 +15,12 @@ const TABS: Array<{ tab: string; formal: string; short: string }> = [
   { tab: "Overview", formal: "ダッシュボード", short: "概要" },
   { tab: "Strategy", formal: "戦略", short: "戦略" },
   { tab: "Trading History", formal: "取引履歴", short: "履歴" },
-  { tab: "バックテスト比較", formal: "バックテスト比較", short: "比較" },
 ];
 
 const formalOf = (tab: string) => (label(tab) === "未確認" ? tab : label(tab));
 
 describe("mobile bottom tab bar metadata", () => {
-  it("covers exactly the five nav tabs", () => {
+  it("covers exactly the four nav tabs", () => {
     expect(Object.keys(NAV_SHORT_LABELS).sort()).toEqual(
       TABS.map((t) => t.tab).sort(),
     );
@@ -34,9 +33,9 @@ describe("mobile bottom tab bar metadata", () => {
       // Short labels must fit a five-item bottom bar.
       expect([...short].length).toBeLessThanOrEqual(2);
     }
-    // The three renamed tabs really are shortened; the rest keep
+    // The two renamed tabs really are shortened; the rest keep
     // their formal name as the short label.
-    for (const tab of ["Overview", "Trading History", "バックテスト比較"])
+    for (const tab of ["Overview", "Trading History"])
       expect(NAV_SHORT_LABELS[tab]).not.toBe(formalOf(tab));
     for (const tab of ["Live", "Strategy"])
       expect(NAV_SHORT_LABELS[tab]).toBe(formalOf(tab));

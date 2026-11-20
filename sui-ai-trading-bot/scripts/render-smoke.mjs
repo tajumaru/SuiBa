@@ -161,8 +161,8 @@ try {
   for (const width of [320, 375, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     const buttons = page.locator("nav button[aria-label]");
-    if ((await buttons.count()) !== 5)
-      failures.push(`${width}px: expected five tabs`);
+    if ((await buttons.count()) !== 4)
+      failures.push(`${width}px: expected four tabs`);
     const chainStrip = page.locator(
       '.worker-chain[aria-label="Suiチェーン情報"]',
     );
@@ -199,7 +199,6 @@ try {
       "ダッシュボード",
       "戦略",
       "取引履歴",
-      "バックテスト比較",
     ]) {
       await page.getByRole("button", { name, exact: true }).click();
       await page
