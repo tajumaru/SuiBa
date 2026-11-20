@@ -18,6 +18,11 @@
 - **判断済みの事項は `docs/DECISIONS_JA.md`**（見送り・保留・未決定の
   台帳。再提案しない）。**Bot が止まったときの手順は
   `docs/TROUBLESHOOTING_JA.md`**。
+- **PC 上の testnet Bot（実売買 Phase 1）の運用は
+  `docs/POTARIO_PC_OPERATIONS_JA.md` が正本**。再開は
+  `pnpm pc:resume -- --reason=<理由>`、状態確認は `pnpm pc:status`
+  （読み取り専用）を使い、手順を手で組み立て直さない。残高の正本は
+  real:resume の差分一覧で、/api/state の portfolio を残高として扱わない。
 
 ## リポジトリ地図
 
