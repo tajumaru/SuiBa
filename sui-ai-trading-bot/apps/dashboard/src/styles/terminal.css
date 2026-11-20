@@ -547,14 +547,15 @@ summary {
   transform: translateX(-50%);
   bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   z-index: 41;
-  padding: 8px 16px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
   border: 1px solid var(--mint);
-  border-radius: 999px;
+  border-radius: 50%;
   background: rgba(2, 10, 6, 0.95);
   color: var(--mint);
-  font-size: 13px;
-  font-weight: 700;
-  white-space: nowrap;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
   cursor: pointer;
 }
