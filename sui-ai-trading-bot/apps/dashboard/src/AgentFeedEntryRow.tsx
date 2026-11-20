@@ -90,9 +90,12 @@ export function AgentFeedEntryRow({
   onReplay?: () => void;
 }) {
   const buy = isBuyTradeEntry(entry);
+  const shield = entry.kind === "rejection" && entry.skill === "shield";
+  const forecastSkill =
+    entry.kind === "forecastCall" || entry.kind === "forecastHit" || entry.kind === "forecastCalib";
   return (
     <div
-      className={`agent-feed-entry ${entry.kind}${entry.kind === "sellLineCrossing" ? ` crossing-${entry.sellLineSide}` : ""}${buy ? " buy" : ""}${justBought ? " just-bought" : ""}${animateIn ? " animate-in" : ""}${entry.mono ? " mono" : ""}${entry.kind === "memory" && memorySealed ? " sealed-memory" : ""}`}
+      className={`agent-feed-entry ${entry.kind}${shield || entry.kind === "levelUp" ? " rpg-gold" : ""}${entry.kind === "sellLineCrossing" ? ` crossing-${entry.sellLineSide}` : ""}${buy ? " buy" : ""}${justBought ? " just-bought" : ""}${animateIn ? " animate-in" : ""}${entry.mono ? " mono" : ""}${entry.kind === "memory" && memorySealed ? " sealed-memory" : ""}`}
     >
       {entry.kind === "memory" && (
         <img
@@ -111,6 +114,11 @@ export function AgentFeedEntryRow({
       <time dateTime={new Date(entry.at).toISOString()}>
         {timeText(entry.at)}
       </time>
+      {shield && <span className="agent-feed-entry-tag rpg-gold">スキル発動 まもりの盾</span>}
+      {entry.kind === "levelUp" && (
+        <span className="agent-feed-entry-tag rpg-gold">レベルアップ</span>
+      )}
+      {forecastSkill && <span className="agent-feed-entry-tag rpg-forecast">さきよみ</span>}
       {entry.kind === "greeting" && (
         <span className="agent-feed-entry-tag">交代</span>
       )}

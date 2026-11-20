@@ -38,6 +38,7 @@ export const narrationStateSchema: z.ZodType<NarrationState> = z.object({
           "cycle",
           "trade",
           "rejection",
+          "levelUp",
           "stop",
           "start",
           "warning",
@@ -75,6 +76,7 @@ export const narrationStateSchema: z.ZodType<NarrationState> = z.object({
         topic: z.string().optional(),
         promptChip: z.string().optional(),
         forecastOrigin: number.optional(),
+        skill: z.literal("shield").optional(),
         sellLineSide: z.enum(["tp", "sl"]).optional(),
       }),
     )

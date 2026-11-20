@@ -1,3 +1,4 @@
+import { partyLevel, partyNames } from "../../../packages/shared/src/party.ts";
 import { createHash } from "node:crypto";
 import type { BotDatabase } from "../../../packages/database/src/index.ts";
 import type { TradingPair } from "../../../packages/shared/src/index.ts";
@@ -23,7 +24,7 @@ export const SERVER_NARRATION_KINDS = [
   "priceLineReached", "sellLine", "sellLineCrossing", "review", "alert",
   "monthlyReport",
   "epoch", "btc", "forecastCall", "forecastHit", "forecastMiss",
-  "forecastTouch", "forecastTouchNear", "bookWall", "forecastCalib", "memory",
+  "forecastTouch", "forecastTouchNear", "bookWall", "forecastCalib", "memory", "levelUp",
 ] as const satisfies readonly NarrationKind[];
 const serverKinds = new Set<NarrationKind>(SERVER_NARRATION_KINDS);
 export const NARRATION_STATE_VERSION = 2;
@@ -129,6 +130,17 @@ export class NarrationGenerator {
     const candidates = next.entries.filter(
       (entry) => !priorIds.has(entry.id) && serverKinds.has(entry.kind),
     );
+    const partyLevels = this.db.partyRecords().flatMap(({ member, count, notifiedLevel }) => {
+      const { level } = partyLevel(member, count);
+      if (level <= notifiedLevel) return [];
+      candidates.push({
+        id: `levelUp:${member}:${level}`,
+        at,
+        kind: "levelUp",
+        text: `${partyNames[member]}が Lv.${level} に上がった！`,
+      });
+      return [{ member, level }];
+    });
     const epoch = snapshot.chain?.epoch;
     if (Number.isSafeInteger(epoch) && epoch! >= 0 && stored.lastEpoch != null && epoch! > stored.lastEpoch) {
       candidates.push({
@@ -154,7 +166,8 @@ export class NarrationGenerator {
     const rows = candidates.map((entry) => {
       const event = operations.events.find((item) => item.timestamp === entry.at);
       const candidate = operations.candidates.find((item) => item.timestamp === entry.at);
-      const sourceFact = decisionKinds.has(entry.kind) && operations.decision
+      const sourceFact = entry.kind === "levelUp" ? entry.id
+        : decisionKinds.has(entry.kind) && operations.decision
         ? `decision:${operations.decision.evaluatedAt}:${operations.decision.candleTimestamp}`
         : ["trade", "rejection", "stop"].includes(entry.kind) && candidate
           ? candidateKey(candidate)
@@ -190,6 +203,7 @@ export class NarrationGenerator {
         createdAt: at,
         json: {
           text: entry.text,
+          ...(entry.skill ? { skill: entry.skill } : {}),
           ...(entry.side ? { side: entry.side } : {}),
           ...(entry.forecastOrigin == null ? {} : { forecastOrigin: entry.forecastOrigin }),
           ...(entry.sellLineSide ? { sellLineSide: entry.sellLineSide } : {}),
@@ -216,6 +230,7 @@ export class NarrationGenerator {
           createdAt: row.occurredAt,
         }];
       }) : [],
+      partyLevels,
     );
     return rows.length;
   }

@@ -398,12 +398,19 @@ for (const c of candidates) {
       text: `PAPERで${c.finalAction === "BUY" ? "買い" : "売り"}を記録したよ${fill ? `：${fill}` : ""}`,
     });
   } else if (c.finalAction === "WAIT") {
-    const reason = c.reasons[0]
-      ? operationReason(c.reasons[0])
-      : "条件を確認できなかった";
+    // The first check stores its raw reason, while an execution-time
+    // recheck can record a prefixed code alongside other gate reasons.
+    const guardReason = c.reasons.find((code) => code.startsWith("PROFIT_GUARD_")) ??
+      (c.profitGuard?.evaluated === true && c.profitGuard.allowed === false
+        ? c.profitGuard.reason
+        : null);
+    const shield = c.side === "BUY" && Boolean(guardReason);
+    const code = shield ? guardReason : c.reasons[0];
+    const reason = code ? operationReason(code) : "条件を確認できなかった";
     work.drafts.push({
       at: c.timestamp,
       kind: "rejection",
+      ...(shield ? { skill: "shield" as const } : {}),
       text: `${c.side === "BUY" ? "買い" : "売り"}シグナルは出たけど、見送ったよ（${reason}）`,
     });
   } else if (c.finalAction === "SAFE_STOP") {

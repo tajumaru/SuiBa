@@ -168,9 +168,10 @@ describe("narration database migration", () => {
 
 describe("server narration identity", () => {
   it("keeps the complete stage-1 set fixed and hashes facts independently of text", () => {
-    expect(SERVER_NARRATION_KINDS).toHaveLength(28);
-    expect(new Set(SERVER_NARRATION_KINDS).size).toBe(28);
+    expect(SERVER_NARRATION_KINDS).toHaveLength(29);
+    expect(new Set(SERVER_NARRATION_KINDS).size).toBe(29);
     expect(SERVER_NARRATION_KINDS).toEqual(expect.arrayContaining([
+      "levelUp",
       "nearMiss", "watchHit", "reach", "superReach", "priceLine",
       "priceLineReached", "sellLine", "sellLineCrossing", "review", "alert",
       "monthlyReport",
@@ -231,6 +232,34 @@ describe("server narration identity", () => {
     });
     expect(generator.generate()).toBe(0);
     expect(db.narrationEntries("SUI_USDC").entries).toHaveLength(1);
+  });
+
+  it("baselines the party silently and announces a new level once", () => {
+    vi.stubEnv("SUIBA_NARRATION_GENERATION_ENABLED", "true");
+    const db = new BotDatabase(":memory:");
+    databases.push(db);
+    const pair = "SUI_USDC";
+    const trade = (i: number) => db.append("paper_trades", `trade-${i}`, { pnl: 0 }, now);
+    for (let i = 0; i < 14; i++) trade(i);
+    db.refreshParty(0, "shadow-openai-nano-v5");
+    const monitor = new OperationMonitor(db);
+    const engine = {
+      monitor,
+      snapshot: () => ({
+        runtime: db.runtime(), forecast: { records: [], events: [] }, trades: [],
+        btc: null, candlesByTimeframe: { 300: [] }, bookLevels: null,
+        settings: db.settings(), chain: null,
+      }),
+    };
+    const generator = new NarrationGenerator(db, pair, engine as never, () => now);
+    expect(generator.generate()).toBe(0);
+    trade(14);
+    db.refreshParty(0, "shadow-openai-nano-v5");
+    expect(generator.generate()).toBe(1);
+    expect(new NarrationGenerator(db, pair, engine as never, () => now + 1).generate()).toBe(0);
+    expect(db.narrationEntries(pair).entries).toMatchObject([
+      { kind: "levelUp", json: { text: "主人公が Lv.3 に上がった！" } },
+    ]);
   });
 
   it("migrates a valid stage-1a state to version 2 without resetting it", () => {

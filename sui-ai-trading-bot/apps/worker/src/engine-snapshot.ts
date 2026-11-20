@@ -1,3 +1,4 @@
+import { partyLevel, type PartyMember } from "../../../packages/shared/src/party.ts";
 import { readForecast } from "./forecast.ts";
 import {
   dayKey,
@@ -100,6 +101,9 @@ export function buildSnapshot(
       indicators = src.db.get<Indicators>("indicators") ?? null;
     return {
       pair: src.pair,
+      party: Object.fromEntries(
+        src.db.partyRecords().map(({ member, count }) => [member, partyLevel(member, count)]),
+      ) as Partial<Record<PartyMember, ReturnType<typeof partyLevel>>>,
       forecast: readForecast(src.db, src.pair),
       forecastError: src.db.get("forecast_error") ?? null,
       chain: src.chainInfo(),
