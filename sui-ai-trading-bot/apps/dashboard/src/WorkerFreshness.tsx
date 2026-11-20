@@ -96,10 +96,18 @@ export function WorkerFreshness({
         <h3>Workerの状態</h3>
         <ChainReadout chain={chain} />
       </div>
-      <p role="status">
-        {status}
-        {stale ? "（最新情報を取得できません）" : ""}
-      </p>
+      {/* The status word only earns its place when something is
+          off (owner's call 2026-11-20): while the vital is alive
+          and the feed is fresh, the heartbeat age below already
+          proves the worker runs, and the header band says
+          正常稼働 too — so the line stays out. Stopped, stalled,
+          stale or still-loading states keep the word. */}
+      {!(vital?.state === "alive" && !stale) && (
+        <p role="status">
+          {status}
+          {stale ? "（最新情報を取得できません）" : ""}
+        </p>
+      )}
       {/* One line since 2026-11-19 (owner: the overview carried
           too much information): the heartbeat carries the full
           timestamp, the last successful analysis rides along as
