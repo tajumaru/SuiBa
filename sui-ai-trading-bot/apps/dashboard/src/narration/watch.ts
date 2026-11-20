@@ -679,6 +679,13 @@ export function currentWatchScore(
     hits: state.watchScore.hits,
     misses: state.watchScore.misses,
     inProgress: state.watch ? 1 : 0,
+    ended: Math.max(
+      0,
+      state.watchScore.declared -
+        state.watchScore.hits -
+        state.watchScore.misses -
+        (state.watch ? 1 : 0),
+    ),
     kindStats: state.watchKindStats,
     specialty: specialty
       ? { ...specialty, name: WATCH_NAME[specialty.key] }

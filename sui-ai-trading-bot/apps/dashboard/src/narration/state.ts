@@ -478,6 +478,13 @@ export interface WatchScoreDisplay {
   misses: number;
   /** 1 while a watch is live, otherwise 0. */
   inProgress: number;
+  /** Declarations that ended silently — the hunt closed (a
+   * position opened, the conditions completed) without the
+   * watched condition itself settling as a hit or a miss.
+   * Derived, not counted: declared − hits − misses − inProgress,
+   * so the strip always adds up (owner flagged the gap,
+   * 2026-11-20). */
+  ended: number;
   /** Settlements split by watched condition (see WatchKindStats). */
   kindStats: WatchKindStats;
   /** The character's specialty: the kind with the best hit rate

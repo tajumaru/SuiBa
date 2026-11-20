@@ -669,6 +669,9 @@
 .agent-feed-score-item.prog {
   color: #ffd166;
 }
+.agent-feed-score-item.end {
+  color: #9aafbf;
+}
 /* The specialty line under the score strip: the kind the record
    backs as the character's best, named only once it has settled
    at least SPECIALTY_MIN_JUDGED times. */
