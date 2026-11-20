@@ -368,16 +368,32 @@ summary {
    segment tabs, ledger-flavoured parameter cells, and the
    save-review changes as a - old / + new diff. Content and
    behaviour are unchanged. */
+/* One slim segmented bar (owner's pick 2026-11-20 over the
+   chunky two-button look): the container carries the frame,
+   the tabs split it evenly, and the active side gets the
+   bracket treatment the bottom nav uses. */
+.strategy-segments {
+  gap: 0;
+  border: 1px solid var(--pine);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--btn-bg);
+}
 .strategy-segments [role="tab"] {
-  border-radius: 3px;
-  border-color: var(--pine);
-  background: var(--feed-bg);
+  flex: 1;
+  border: none;
+  border-radius: 0;
+  padding: 9px 0;
+  background: transparent;
   color: #8fa9bd;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  text-align: center;
+}
+.strategy-segments [role="tab"] + [role="tab"] {
+  border-left: 1px solid var(--pine);
 }
 .strategy-segments [role="tab"].active {
   background: #0c2317;
-  border-color: var(--pine);
   color: var(--mint);
 }
 .strategy-segments [role="tab"].active::before {
