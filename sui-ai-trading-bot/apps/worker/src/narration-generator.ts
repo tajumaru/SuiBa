@@ -15,6 +15,7 @@ import { narrationStateSchema } from "../../dashboard/src/narrationStorage.ts";
 import type { BotEngine } from "./engine.ts";
 import type { SituationMemory } from "./situation-memory.ts";
 import { presetName } from "../../dashboard/src/settingsPresets.ts";
+import { memwalConfig, narrationEpisode } from "./memwal.ts";
 
 export const SERVER_NARRATION_KINDS = [
   "cycle", "trade", "rejection", "stop", "start", "warning", "recovery",
@@ -196,12 +197,26 @@ export class NarrationGenerator {
       };
     });
     const lastEpoch = Number.isSafeInteger(epoch) && epoch! >= 0 ? epoch! : stored.lastEpoch;
-    this.db.commitNarration(rows, {
-      pair: this.pair,
-      version: NARRATION_STATE_VERSION,
-      updatedAt: at,
-      json: { narration: next, lastEpoch } satisfies StoredState,
-    });
+    this.db.commitNarration(
+      rows,
+      {
+        pair: this.pair,
+        version: NARRATION_STATE_VERSION,
+        updatedAt: at,
+        json: { narration: next, lastEpoch } satisfies StoredState,
+      },
+      memwalConfig() ? rows.flatMap((row) => {
+        if (!(["watchHit", "nearMiss", "review"] as const).includes(
+          row.kind as "watchHit" | "nearMiss" | "review",
+        )) return [];
+        const kind = row.kind as "watchHit" | "nearMiss" | "review";
+        return [{
+          text: narrationEpisode({ at: row.occurredAt, kind, pair: this.pair }),
+          sourceId: `${this.pair}:${row.id}`,
+          createdAt: row.occurredAt,
+        }];
+      }) : [],
+    );
     return rows.length;
   }
 }

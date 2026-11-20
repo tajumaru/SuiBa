@@ -937,6 +937,11 @@ export class BotDatabase {
   commitNarration(
     entries: (Omit<NarrationEntry, "seq" | "json"> & { json: unknown })[],
     state: NarrationState,
+    memwalEntries: {
+      text: string;
+      sourceId: string;
+      createdAt: number;
+    }[] = [],
   ) {
     this.transaction(() => {
       for (const entry of entries)
@@ -947,6 +952,13 @@ export class BotDatabase {
         ).run(entry.id, entry.pair, entry.sourceKey, entry.kind,
           entry.occurredAt, entry.createdAt, JSON.stringify(entry.json));
       this.setNarrationState(state);
+      for (const entry of memwalEntries)
+        this.enqueueMemwal(
+          "narration",
+          entry.text,
+          entry.sourceId,
+          entry.createdAt,
+        );
     });
   }
   narrationCounts(pair: string): Record<string, number> {
