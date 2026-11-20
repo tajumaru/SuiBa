@@ -694,17 +694,37 @@ section svg {
     transform-box: fill-box;
     transform-origin: center;
   }
+  /* Second ring, half a cycle behind, so the near state reads
+     as a continuous ripple from the dot (owner's pick 2026-11-20:
+     "the dot ripples" over a glowing panel or breathing fill). */
+  .rsi-gauge.is-near .rsi-gauge-pulse-delay {
+    animation-delay: 0.8s;
+  }
+  .rsi-gauge.is-near .rsi-gauge-dot {
+    animation: rsi-gauge-dot-pulse 1.6s ease-in-out infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
   .rsi-gauge.is-below .rsi-gauge-line {
     animation: rsi-gauge-line-flash 1.2s ease-in-out infinite;
   }
   @keyframes rsi-gauge-pulse {
     0% {
-      opacity: 0.55;
-      transform: scale(0.75);
+      opacity: 0.8;
+      transform: scale(0.7);
     }
     100% {
       opacity: 0;
-      transform: scale(1.8);
+      transform: scale(2.6);
+    }
+  }
+  @keyframes rsi-gauge-dot-pulse {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.35);
     }
   }
   @keyframes rsi-gauge-line-flash {
