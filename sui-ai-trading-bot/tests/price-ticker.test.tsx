@@ -225,7 +225,7 @@ describe("price ticker rendering", () => {
     expect(html).toContain('aria-label="SUI/USDC 現在価格 —"');
   });
 
-  it("counts down to the buy-run line and flips at the touch", () => {
+  it("states the distance above the buy-run line and flips at the touch", () => {
     const down = renderToStaticMarkup(
       <PriceTicker
         price={0.9018}
@@ -235,8 +235,8 @@ describe("price ticker rendering", () => {
     );
     expect(down).toContain('class="price-ticker-line buy"');
     expect(down).toContain('price-ticker-line-prefix">買い走り');
-    expect(down).toContain("ライン $0.874 あと-3.1%");
-    expect(down).toContain("買い走りライン $0.874 まであと-3.1%");
+    expect(down).toContain("ライン $0.8740 ／ いま 3.1% 上");
+    expect(down).toContain("買い走りライン $0.8740、いま3.1% 上");
     const reached = renderToStaticMarkup(
       <PriceTicker
         price={0.8731}
