@@ -13,7 +13,6 @@ export const NAV_SHORT_LABELS: Record<string, string> = {
   Overview: "概要",
   Strategy: "戦略",
   "Trading History": "履歴",
-  バックテスト比較: "比較",
 };
 
 const ICON_BODY: Record<string, React.ReactNode> = {
@@ -49,14 +48,6 @@ const ICON_BODY: Record<string, React.ReactNode> = {
       <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6.3L3.5 8" />
       <path d="M3.5 3.5V8H8" />
       <path d="M12 8v4.2l2.6 2" />
-    </>
-  ),
-  // 比較 (バックテスト比較): two bars of different heights on a baseline.
-  バックテスト比較: (
-    <>
-      <path d="M4 20h16" />
-      <rect x="6.6" y="11.5" width="3.8" height="8.5" rx="0.9" />
-      <rect x="13.6" y="6.5" width="3.8" height="13.5" rx="0.9" />
     </>
   ),
 };

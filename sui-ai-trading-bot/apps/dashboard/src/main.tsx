@@ -61,11 +61,6 @@ const StrategyTab = lazy(() =>
 const HistoryTab = lazy(() =>
   import("./HistoryTab.tsx").then((m) => ({ default: m.HistoryTab })),
 );
-const BacktestComparison = lazy(() =>
-  import("./BacktestComparison.tsx").then((m) => ({
-    default: m.BacktestComparison,
-  })),
-);
 const tabFallback = (
   <p className="tab-loading" role="status">
     読み込み中…
@@ -73,13 +68,7 @@ const tabFallback = (
 );
 import { useIndicatorHistory } from "./indicatorHistory.ts";
 type State = BotSnapshot;
-const NAV_TABS = [
-  "Live",
-  "Overview",
-  "Strategy",
-  "Trading History",
-  "バックテスト比較",
-];
+const NAV_TABS = ["Live", "Overview", "Strategy", "Trading History"];
 function App() {
   const update = useUpdateCheck();
   const [restoringSession, setRestoringSession] = useState(true);
@@ -623,14 +612,6 @@ function App() {
                       orders={data.orders}
                       trades={data.trades}
                       candles={data.candlesByTimeframe[300]}
-                    />
-                  </Suspense>
-                )}
-                {activeTab === "バックテスト比較" && (
-                  <Suspense fallback={tabFallback}>
-                    <BacktestComparison
-                      token={token}
-                      settings={data.settings}
                     />
                   </Suspense>
                 )}
