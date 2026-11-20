@@ -36,7 +36,7 @@ import {
 
 import { useUpdateCheck } from "./appVersion.ts";
 import { UpdateBanner, VersionFooter } from "./VersionFooter.tsx";
-import { ChainStrip } from "./ChainStrip.tsx";
+
 import { BookBar } from "./BookBar.tsx";
 import {
   loadAgentName,
@@ -577,9 +577,6 @@ function App() {
                       : null
                   }
                 />
-                {/* The chain's own vital signs ride under the
-                    ticker on every tab (display only). */}
-                <ChainStrip chain={data.chain} />
                 {/* The order book's lean, same sample that
                     tilts the model outlook (display only). */}
                 <BookBar imbalance={data.bookImbalance} />

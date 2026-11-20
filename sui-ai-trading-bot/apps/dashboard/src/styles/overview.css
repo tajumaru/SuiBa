@@ -91,6 +91,29 @@
   font-size: 13px;
   line-height: 1.6;
 }
+/* Panel header row: the title left, the chain readout
+   (EPOCH · TPS) right — the readout moved here from its own
+   strip under the ticker (owner, 2026-11-20). */
+.worker-freshness-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.worker-freshness-head h3 {
+  margin: 0;
+}
+.worker-chain {
+  font-size: 12px;
+  color: var(--dim);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.worker-chain strong {
+  color: var(--text);
+  font-weight: 600;
+}
 .worker-freshness p {
   margin: 0 0 8px;
 }

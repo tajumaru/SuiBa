@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { botVital } from "./botVital.ts";
+import { ChainReadout } from "./ChainStrip.tsx";
+import type { ChainInfo } from "../../../packages/shared/src/index.ts";
 import type { OperationsSnapshot } from "./operationsTypes.ts";
 import { dateTime } from "./presentation.ts";
 
@@ -12,9 +14,13 @@ const SUI_MARK_PATH =
 export function WorkerFreshness({
   data,
   stale = false,
+  chain = null,
 }: {
   data: OperationsSnapshot | null;
   stale?: boolean;
+  /** The chain readout (epoch / TPS) rides in this panel's
+   * header since 2026-11-20 (owner's call). */
+  chain?: ChainInfo | null;
 }) {
   const [now, setNow] = useState(Date.now);
   const [receivedAt, setReceivedAt] = useState(Date.now);
@@ -86,7 +92,10 @@ export function WorkerFreshness({
           strokeDashoffset={0}
         />
       </svg>
-      <h3>Workerの状態</h3>
+      <div className="worker-freshness-head">
+        <h3>Workerの状態</h3>
+        <ChainReadout chain={chain} />
+      </div>
       <p role="status">
         {status}
         {stale ? "（最新情報を取得できません）" : ""}

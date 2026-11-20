@@ -93,7 +93,7 @@ export function OverviewTab({
   const usdJpy = operations?.fx?.usdJpy ?? null;
   return (
                   <div className="overview-tab">
-                    <WorkerFreshness data={operations ?? null} stale={operationsStale} />
+                    <WorkerFreshness data={operations ?? null} stale={operationsStale} chain={data.chain ?? null} />
                     <ShadowTodayLine summary={data.shadowToday} />
                     {/* 仮想総資産と保有のカードは資産の中身
                         (PortfolioMix) と同じ数字の二重表示だったため
