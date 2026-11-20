@@ -22,20 +22,54 @@
 }
 .agent-chat-form {
   display: flex;
+  align-items: center;
   gap: 8px;
+  background: var(--feed-bg);
+  border: 1px solid #2b4a5f;
+  border-radius: 999px;
+  padding: 4px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+.agent-chat-form:focus-within {
+  border-color: var(--mint);
 }
 .agent-chat-form input {
   flex: 1;
   min-width: 0;
-  border: 1px solid #2b4a5f;
-  border-radius: 10px;
+  border: none;
+  background: transparent;
   color: #e8f1f8;
-  padding: 8px 10px;
+  padding: 8px 6px 8px 14px;
   font-size: 14px;
+  outline: none;
 }
 .agent-chat-form button {
   flex: none;
   min-height: 36px;
+}
+.agent-chat-mic {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid #2b4a5f;
+  border-radius: 50%;
+  background: transparent;
+}
+.agent-chat-send {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--mint);
+  color: var(--feed-bg);
+}
+.agent-chat-send:disabled {
+  opacity: 0.5;
 }
 .agent-feed-entry-tag.user {
   background: #2b4a5f;
