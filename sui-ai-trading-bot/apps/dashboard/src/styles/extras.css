@@ -524,6 +524,16 @@
   color: #6fbcf0;
   font-weight: 700;
 }
+/* Integrated into the price ticker panel (2026-11-20): the
+   meter takes its own row under the price and drops its
+   standalone panel chrome — the ticker bar frames it. */
+.price-ticker-bar .book-bar {
+  flex-basis: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 2px 0 0;
+}
 .book-bar-track {
   position: relative;
   flex: 1;
