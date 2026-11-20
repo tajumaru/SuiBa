@@ -37,7 +37,6 @@ import { PredecessorReset } from "./predecessor-reset.ts";
 import { shadowTodaySummary } from "./shadow-summary.ts";
 import {
   memwalConfig,
-  narrationEpisode,
   startMemwalFlusher,
 } from "./memwal.ts";
 import { startLiquidationCollector } from "./liquidation-collector.ts";
@@ -464,33 +463,6 @@ export function createRequestHandler(ctx: WorkerContext) {
             send(400, { error: error.message });
           else throw error;
         }
-        return;
-      }
-      if (url.pathname === "/api/memwal/narration") {
-        if (!memwalConfig()) {
-          send(200, { queued: false });
-          return;
-        }
-        const kind = body.kind;
-        if (
-          !["watchHit", "nearMiss", "review"].includes(kind) ||
-          typeof body.id !== "string" ||
-          body.id.length > 100 ||
-          typeof body.at !== "number" ||
-          !Number.isFinite(body.at)
-        ) {
-          send(400, { error: "INVALID_MEMWAL_EPISODE" });
-          return;
-        }
-        ctx.db.transaction(() =>
-          ctx.db.enqueueMemwal(
-            "narration",
-            narrationEpisode({ at: body.at, kind, pair: ctx.pair }),
-            body.id,
-            body.at,
-          ),
-        );
-        send(200, { queued: true });
         return;
       }
       if (url.pathname === "/api/paper-check/arm") {

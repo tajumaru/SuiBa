@@ -217,6 +217,11 @@ GET /api/narration?pair=SUI_USDC&since=<seq>&limit=100
 | 3. 表示切替 | server entry を表示正本にし、端末生成は fallback として残す | 端末間一致、音声の過去一括再生なし、pair 分離 | feature flag で端末生成へ戻す。server table は保持 |
 | 4. 端末生成撤去 | 運用 kind の `advanceNarration` と旧 MemWal POST を撤去 | 一定観察期間で欠落・重複・cursor expired 復帰を確認 | 直前版へコード rollback。DB は前方互換で残す |
 
+第3段の表示切替は端末の localStorage キー
+`suiba.narration.server-display.enabled` で制御する。未設定を有効とし、緊急時は
+このキーを `"false"` にして画面を再読み込みすれば、その端末だけ従来の端末生成
+表示へ戻る。保存済みの端末実況は切替時にも削除しない。
+
 段階1の生成フラグは `SUIBA_NARRATION_GENERATION_ENABLED` とし、未設定または
 `false` を既定の停止状態とする。`true` への変更は48時間の影生成を開始する
 リリース判断時に別途行う。

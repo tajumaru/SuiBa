@@ -50,6 +50,10 @@ import {
   type NarrationShadowDiagnostics,
 } from "./narrationShadow.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
+import {
+  selectDisplayEntries,
+  useNarrationServerDisplay,
+} from "./narrationServerDisplay.ts";
 
 export function findNewLatestEntryIds(
   previousIds: ReadonlySet<string>,
@@ -86,7 +90,6 @@ export function AgentNarrationFeed({
   hardMode = false,
   onListeningChange,
   onSpeakingChange,
-  onMemwalEpisode,
   api,
   pair,
   onShadowDiagnostics,
@@ -145,7 +148,6 @@ export function AgentNarrationFeed({
   /** Reports speech-synthesis activity so the shell can show
    * the avatar mid-speech. */
   onSpeakingChange?: (speaking: boolean) => void;
-  onMemwalEpisode?: (entry: NarrationEntry) => void;
   /** Stage-2 read shadow: comparison only; it never supplies rendered entries. */
   api?: SettingsApi;
   pair?: "SUI_USDC" | "WAL_USDC";
@@ -179,6 +181,14 @@ export function AgentNarrationFeed({
   // buy fill that is genuinely new to this session.
   const narrationRef = useRef(narration);
   useNarrationShadow(api, pair, narration.entries, onShadowDiagnostics);
+  const serverDisplay = useNarrationServerDisplay(api, pair);
+  const displayEntries = selectDisplayEntries(
+    narration.entries,
+    serverDisplay.serverEntries,
+    serverDisplay.enabled,
+  );
+  const displayNarrationRef = useRef(narration);
+  displayNarrationRef.current = { ...narration, entries: displayEntries };
   // A character switch is greeted by the incoming character:
   // one handover line in the feed, in their own voice. The
   // first mount only records who is speaking — no greeting for
@@ -277,13 +287,6 @@ export function AgentNarrationFeed({
     const firstAdvance = !hasAdvancedRef.current;
     hasAdvancedRef.current = true;
     if (firstAdvance || !prev.initialized) return;
-    const priorIds = new Set(prev.entries.map((entry) => entry.id));
-    for (const entry of next.entries)
-      if (
-        !priorIds.has(entry.id) &&
-        ["watchHit", "nearMiss", "review"].includes(entry.kind)
-      )
-        onMemwalEpisode?.(entry);
     const hit = findNewBuyEntry(prev.entries, next.entries);
     if (hit && Math.abs(Date.now() - hit.at) <= CELEBRATION_FRESH_MS) {
       setCelebration({ entryId: hit.id, startedAt: Date.now() });
@@ -359,7 +362,6 @@ export function AgentNarrationFeed({
     data,
     stale,
     onCelebrate,
-    onMemwalEpisode,
     trades,
     btc,
     forecasts,
@@ -398,8 +400,8 @@ export function AgentNarrationFeed({
   const reducedMotion = usePrefersReducedMotion();
   const { jumpVisible, scrollToLatest, forceStick } = useFeedScroll({
     active,
-    entries: narration.entries,
-    narrationRef,
+    entries: displayEntries,
+    narrationRef: displayNarrationRef,
   });
   const chat = useAgentChat({
     narrationRef,
@@ -428,17 +430,18 @@ export function AgentNarrationFeed({
   const previousEntryIdsRef = useRef<Set<string> | null>(null);
   const initialLoadCompleteRef = useRef(narration.initialized);
   const animatedEntryIdsRef = useRef(new Set<string>());
-  const currentEntryIds = new Set(narration.entries.map((entry) => entry.id));
+  const currentEntryIds = new Set(displayEntries.map((entry) => entry.id));
   if (previousEntryIdsRef.current != null) {
     for (const id of findNewLatestEntryIds(
       previousEntryIdsRef.current,
-      narration.entries,
-      initialLoadCompleteRef.current,
+      displayEntries,
+      initialLoadCompleteRef.current && serverDisplay.initialLoadComplete,
     ))
       animatedEntryIdsRef.current.add(id);
   }
   previousEntryIdsRef.current = currentEntryIds;
-  initialLoadCompleteRef.current = narration.initialized;
+  initialLoadCompleteRef.current =
+    narration.initialized && serverDisplay.initialLoadComplete;
   // The chat bar is fixed to the screen bottom (see style.css);
   // while this tab is on screen it raises the corner avatar chip
   // above itself via page-level classes (the line-mode pattern).
@@ -574,10 +577,10 @@ export function AgentNarrationFeed({
       <AgentChatComposer
         chat={chat}
         displayName={displayName}
-        entries={narration.entries}
+        entries={displayEntries}
       />
       <div className="agent-feed-list">
-        {narration.entries.length === 0 ? (
+        {displayEntries.length === 0 ? (
           <p className="agent-feed-empty">
             実況を準備中です。Botの記録が届くと、ここに実況が流れます。
           </p>
@@ -587,7 +590,7 @@ export function AgentNarrationFeed({
           // list flows with the page (no inner scroll box); the
           // scroll management above keeps a reader who is at the
           // bottom at the latest entry.
-          narration.entries.map((entry) => {
+          displayEntries.map((entry) => {
             const highlight = highlights.find((item) => item.id === entry.id);
             return (
               <AgentFeedEntryRow

@@ -7,7 +7,7 @@ export const NARRATION_SHADOW_ENABLED_KEY =
 const CURSOR_KEY = "suiba.narration.shadow-read.cursor.v1";
 export const NARRATION_SHADOW_POLL_MS = 10_000;
 const MAX_BACKOFF_MS = 60_000;
-const DEVICE_ONLY_KINDS = new Set<NarrationKind>([
+export const DEVICE_ONLY_KINDS = new Set<NarrationKind>([
   "sleepTalk",
   "chatUser",
   "chatReply",

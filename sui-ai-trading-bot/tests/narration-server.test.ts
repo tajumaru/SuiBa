@@ -136,6 +136,34 @@ describe("narration database migration", () => {
     });
     expect(db.narrationEntries("SUI_USDC").entries).toHaveLength(1);
   });
+
+  it("queues a server narration mirror in the same commit only once", () => {
+    const db = new BotDatabase(":memory:");
+    databases.push(db);
+    const row = {
+      id: "watch-hit-1", pair: "SUI_USDC", sourceKey: "watch:1",
+      kind: "watchHit", occurredAt: now, createdAt: now + 1,
+      json: { text: "条件成立" },
+    };
+    const state = {
+      pair: "SUI_USDC", version: 2, updatedAt: now + 1,
+      json: { cursor: "watch:1" },
+    };
+    const mirror = {
+      text: `[narration/watchHit] ${new Date(now).toISOString()} SUI_USDC: 注目条件が成立した。`,
+      sourceId: "SUI_USDC:watch-hit-1",
+      createdAt: now,
+    };
+    db.commitNarration([row], state, [mirror]);
+    db.commitNarration([row], state, [mirror]);
+    expect(db.memwalPending(now + 5000)).toEqual([
+      expect.objectContaining({
+        kind: "narration",
+        text: mirror.text,
+        sourceId: mirror.sourceId,
+      }),
+    ]);
+  });
 });
 
 describe("server narration identity", () => {
