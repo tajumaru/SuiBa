@@ -25,14 +25,16 @@ describe("dashboard dedup: SUI price lives only in the ticker", () => {
   it("drops the SUI価格 card from the overview cards and merges the holdings into one card", () => {
     expect(overview).not.toContain("SUI価格");
     for (const label of [
-      "仮想総資産",
       "累計損益",
       "日次損益（日本時間09:00から）",
-      "保有",
       "本日の取引（日本時間09:00から）",
       "未実現損益",
     ])
       expect(overview).toContain(label);
+    // 仮想総資産と保有は資産の中身（PortfolioMix）と二重表示の
+    // ため 2026-11-20 にカードを撤去（オーナー指摘）。
+    expect(overview).not.toContain('"仮想総資産"');
+    expect(overview).not.toContain("<small>保有</small>");
   });
 });
 
