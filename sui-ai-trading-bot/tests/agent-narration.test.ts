@@ -727,6 +727,27 @@ describe("agent narration: trades and rejections from candidate audits", () => {
       "手数料を払うと、十分に儲からないので見送りました",
     );
   });
+  it("marks only a ProfitGuard rejection of a buy as the shield skill", () => {
+    const { db, monitor } = fixture();
+    const before = advanceNarration(
+      emptyNarrationState(), runningSnapshot(db, monitor, decision({})), "alive", NOW,
+    );
+    for (const side of ["BUY", "SELL"] as const) {
+      const next = runningSnapshot(db, monitor, decision({ evaluatedAt: NOW }));
+      next.candidates = [candidate({
+        side,
+        finalAction: "WAIT",
+        reasons: ["MINIMUM_NET_PROFIT_NOT_MET"],
+        profitGuard: { evaluated: true, allowed: false, reason: "MINIMUM_NET_PROFIT_NOT_MET" },
+        timestamp: NOW + 500,
+        createdAt: NOW + 500,
+      })];
+      const entry = advanceNarration(before, next, "alive", NOW + 500).entries.at(-1);
+      expect(entry?.kind).toBe("rejection");
+      expect(entry?.skill).toBe(side === "BUY" ? "shield" : undefined);
+    }
+  });
+
 });
 
 describe("agent narration: events", () => {

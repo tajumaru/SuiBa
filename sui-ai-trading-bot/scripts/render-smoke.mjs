@@ -123,6 +123,12 @@ try {
     ),
   );
   fixture.operations.safety.lastStopReason = "UPSTREAM_HTTP_500";
+  fixture.state.party = {
+    hero: { count: 23, level: 3, remaining: 7, progress: 8 / 15 },
+    forecast: { count: 287, level: 3, remaining: 13, progress: 137 / 150 },
+    shield: { count: 0, level: 1, remaining: 5, progress: 0 },
+    shadow: { count: 50, level: 2, remaining: 100, progress: 0 },
+  };
   fixture.state.chain = {
     epoch: 1024,
     checkpoint: 182394551,
@@ -177,6 +183,12 @@ try {
     await page
       .getByRole("button", { name: "ダッシュボード", exact: true })
       .click();
+    const party = page.getByRole("region", { name: "パーティ" });
+    await party.waitFor();
+    if ((await party.getByRole("progressbar").count()) !== 4 ||
+        !(await party.getByText("次のレベルまで あと13件").isVisible()) ||
+        !(await party.evaluate((section) => section.scrollWidth <= section.clientWidth)))
+      failures.push(`${width}px: party rows, progress bars or layout missing`);
     await chainStrip.waitFor();
     const chainLayout = await chainStrip.evaluate((strip) => ({
       fits: strip.scrollWidth <= strip.clientWidth,

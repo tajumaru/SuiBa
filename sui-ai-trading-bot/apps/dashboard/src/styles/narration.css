@@ -1025,3 +1025,20 @@
     }
   }
 }
+.agent-feed-entry.rpg-gold {
+  border-inline-start-color: var(--gold);
+}
+
+.agent-feed-entry.rpg-gold p,
+.agent-feed-entry-tag.rpg-gold {
+  color: var(--gold);
+}
+
+.agent-feed-entry-tag.rpg-forecast {
+  border-color: var(--pine);
+  color: var(--mint);
+}
+
+.agent-feed-entry-tag.rpg-gold {
+  border-color: var(--gold);
+}

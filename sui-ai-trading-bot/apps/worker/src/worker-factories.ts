@@ -20,6 +20,8 @@ import {
   type TradingPair,
 } from "../../../packages/shared/src/index.ts";
 import type { WorkerContext } from "./worker-context.ts";
+import { readForecast } from "./forecast.ts";
+import { SHADOW_PROMPT_VERSION } from "./shadow.ts";
 import { NarrationGenerator } from "./narration-generator.ts";
 import type { RealTradeCapExecutionAdapter } from "./real/adapter.ts";
 
@@ -148,8 +150,23 @@ export const createChartHistory = (ctx: WorkerContext) =>
     ctx.pair,
   );
 
-export const createScheduler = (ctx: WorkerContext) =>
-  new MarketScheduler(
+function refreshPartySafely(ctx: WorkerContext) {
+  try {
+    const forecast = readForecast(ctx.db, ctx.pair);
+    // The stored lifetime count uses the same eligibility as scoredRecords.
+    // Old saves can have a scored window without a lifetime count.
+    ctx.db.refreshParty(
+      Math.max(forecast.scoredTotal ?? 0, forecast.score?.scoredRecords ?? 0),
+      SHADOW_PROMPT_VERSION,
+    );
+  } catch {
+    console.warn(JSON.stringify({ event: "RPG_PARTY_REFRESH_FAILED" }));
+  }
+}
+
+export const createScheduler = (ctx: WorkerContext) => {
+  refreshPartySafely(ctx);
+  return new MarketScheduler(
     async () => {
       // Do not turn a restored predecessor cooldown into a new boot-cycle failure.
       // Orders remain stopped; only an explicitly scoped reset releases warmup.
@@ -161,6 +178,7 @@ export const createScheduler = (ctx: WorkerContext) =>
       } finally {
         ctx.activeTick = undefined;
       }
+      refreshPartySafely(ctx);
       generateNarrationSafely(ctx);
       const maintenance = setImmediate(() => {
         try {
@@ -207,3 +225,4 @@ export const createScheduler = (ctx: WorkerContext) =>
       process.exit(1);
     },
   );
+};

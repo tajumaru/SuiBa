@@ -17,6 +17,27 @@ import {
 import { initialPortfolio, type Fill } from "../../paper-trading/src/index.ts";
 import type { CandidateAudit } from "../../shared/src/operations.ts";
 import type { AccountingCheck } from "../../paper-trading/src/reconciliation.ts";
+import {
+  partyLevel,
+  partyMembers,
+  type PartyMember,
+} from "../../shared/src/party.ts";
+
+type PartyRecord = { member: PartyMember; count: number; notifiedLevel: number };
+
+function shieldRejection(json: string) {
+  return `json_extract(${json},'$.side') = 'BUY'
+    AND json_extract(${json},'$.finalAction') = 'WAIT'
+    AND (
+      (json_type(${json},'$.profitGuard.evaluated') = 'true'
+        AND json_type(${json},'$.profitGuard.allowed') = 'false')
+      OR EXISTS (
+        SELECT 1 FROM json_each(${json},'$.reasons')
+        WHERE type = 'text' AND value GLOB 'PROFIT_GUARD_*'
+      )
+    )`;
+}
+
 const eventTables = [
   "forecast_records",
   "forecast_answers",
@@ -361,6 +382,20 @@ export class BotDatabase {
     this.db.exec(
       "CREATE UNIQUE INDEX IF NOT EXISTS trade_order_unique ON paper_trades(id);",
     );
+    this.transaction(() => this.db.exec(`
+      CREATE TABLE IF NOT EXISTS rpg_party (
+        member TEXT PRIMARY KEY, count INTEGER NOT NULL, notifiedLevel INTEGER
+      );
+      INSERT OR IGNORE INTO rpg_party(member,count)
+        SELECT 'shield', (SELECT COUNT(*) FROM operation_candidates WHERE ${shieldRejection("json")})
+        WHERE NOT EXISTS (SELECT 1 FROM rpg_party WHERE member = 'shield');
+      CREATE TRIGGER IF NOT EXISTS rpg_shield_insert AFTER INSERT ON operation_candidates
+        WHEN ${shieldRejection("NEW.json")}
+        BEGIN UPDATE rpg_party SET count = count + 1 WHERE member = 'shield'; END;
+      CREATE TRIGGER IF NOT EXISTS rpg_shield_update AFTER UPDATE ON operation_candidates
+        WHEN (${shieldRejection("NEW.json")}) AND NOT COALESCE((${shieldRejection("OLD.json")}), 0)
+        BEGIN UPDATE rpg_party SET count = count + 1 WHERE member = 'shield'; END;
+    `));
     if (!this.get("runtime"))
       this.set("runtime", {
         running: false,
@@ -912,6 +947,44 @@ export class BotDatabase {
     });
     return decisions.length + audits.length;
   }
+  partyRecords(): PartyRecord[] {
+    return this.prepare(
+      "SELECT member,count,notifiedLevel FROM rpg_party WHERE notifiedLevel IS NOT NULL",
+    ).all() as PartyRecord[];
+  }
+
+  refreshParty(forecastCount: number, shadowVersion: string) {
+    return this.transaction(() => {
+      const counts = this.prepare(
+        `SELECT
+           (SELECT COUNT(*) FROM paper_trades
+            WHERE json_type(json,'$.pnl') IN ('integer','real')
+              AND ABS(json_extract(json,'$.pnl')) <= 1.7976931348623157e308) AS hero,
+           (SELECT count FROM rpg_party WHERE member = 'shield') AS shield,
+           ? AS forecast,
+           (SELECT COUNT(*) FROM shadow_decisions AS shadow
+            JOIN strategy_decisions AS rule ON rule.id = shadow.id
+            WHERE json_extract(shadow.json,'$.promptVersion') = ?
+              AND json_extract(shadow.json,'$.status') = 'OK'
+              AND json_extract(shadow.json,'$.action') IN ('BUY','WAIT')
+              AND json_type(shadow.json,'$.candleTimestamp') = 'integer'
+              AND json_extract(shadow.json,'$.candleTimestamp') = json_extract(rule.json,'$.evidence.candleTimestamp')
+              AND json_type(shadow.json,'$.price') IN ('integer','real')
+              AND json_extract(shadow.json,'$.price') > 0
+              AND json_extract(shadow.json,'$.price') <= 1.7976931348623157e308) AS shadow`,
+      ).get(forecastCount, shadowVersion) as Record<PartyMember, number>;
+      const save = this.prepare(
+        `INSERT INTO rpg_party(member,count,notifiedLevel) VALUES(?,?,?)
+         ON CONFLICT(member) DO UPDATE SET count = MAX(count,excluded.count),
+           notifiedLevel = COALESCE(notifiedLevel,excluded.notifiedLevel)
+         WHERE excluded.count > count OR notifiedLevel IS NULL`,
+      );
+      for (const member of partyMembers)
+        save.run(member, counts[member], partyLevel(member, counts[member]).level);
+      return this.partyRecords();
+    });
+  }
+
   appendNarrationEntry(input: Omit<NarrationEntry, "seq" | "json"> & { json: unknown }) {
     const result = this.prepare(
       `INSERT INTO narration_entries
@@ -943,8 +1016,13 @@ export class BotDatabase {
       sourceId: string;
       createdAt: number;
     }[] = [],
+    partyLevels: readonly { member: PartyMember; level: number }[] = [],
   ) {
     this.transaction(() => {
+      for (const { member, level } of partyLevels)
+        this.prepare(
+          "UPDATE rpg_party SET notifiedLevel = MAX(notifiedLevel, ?) WHERE member = ?",
+        ).run(level, member);
       for (const entry of entries)
         this.prepare(
           `INSERT INTO narration_entries

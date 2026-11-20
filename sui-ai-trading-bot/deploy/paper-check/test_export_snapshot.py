@@ -160,7 +160,7 @@ class ExportTests(unittest.TestCase):
         narration = (
             ('narration-1', 'cycle', NOW_MS - 3000, 'known narration body '+SECRET),
             ('narration-2', 'trade', NOW_MS - 2000, 'trade narration body'),
-            ('narration-3', 'cycle', NOW_MS - 1000, 'latest narration body'),
+            ('narration-3', 'levelUp', NOW_MS - 1000, 'latest narration body'),
         )
         db.executemany(
             'INSERT INTO narration_entries(id,pair,source_key,kind,occurred_at,created_at,json) '
@@ -231,11 +231,11 @@ class ExportTests(unittest.TestCase):
                 self.assertEqual(narration, [
                     (1, 'cycle', NOW_MS - 3000),
                     (2, 'trade', NOW_MS - 2000),
-                    (3, 'cycle', NOW_MS - 1000),
+                    (3, 'levelUp', NOW_MS - 1000),
                 ])
                 self.assertEqual(dict(db.execute(
                     'SELECT kind,count(*) FROM narration_entries GROUP BY kind')),
-                    {'cycle': 2, 'trade': 1})
+                    {'cycle': 1, 'trade': 1, 'levelUp': 1})
                 self.assertEqual([row[0] for row in narration],
                                  list(range(narration[0][0], narration[-1][0] + 1)))
             finally: db.close()

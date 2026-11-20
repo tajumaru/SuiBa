@@ -10,6 +10,7 @@ export type AgentPose =
 export type NarrationKind =
   | "cycle" // a strategy analysis cycle (WAIT / signal / position watch)
   | "trade" // a PAPER fill was recorded
+  | "levelUp"
   | "rejection" // a signal fired but a gate turned it down
   | "warning" // API failure, anomaly, degraded connectivity
   | "stop" // the bot stopped (manual or safety)
@@ -71,6 +72,7 @@ export interface NarrationEntry {
    * the serial watches their pairing cannot be recovered
    * reliably from the texts alone. */
   forecastOrigin?: number;
+  skill?: "shield";
   sellLineSide?: "tp" | "sl";
 }
 
