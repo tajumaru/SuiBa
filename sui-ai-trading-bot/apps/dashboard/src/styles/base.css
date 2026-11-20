@@ -42,6 +42,17 @@ input,
 select {
   max-width: 100%;
 }
+/* iOS Safari zooms the page when a focused form control renders
+   below 16px (owner report 2026-11-20: the chat input at 14px
+   zoomed the whole dashboard). Force 16px on small screens so
+   focus never rescales the layout; desktop keeps its sizes. */
+@media (max-width: 600px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
 summary {
   cursor: pointer;
   padding: 10px 0;
