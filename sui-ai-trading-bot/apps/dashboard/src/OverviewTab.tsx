@@ -11,7 +11,6 @@ import { LongTermChart } from "./LongTermChart.tsx";
 import { Chart } from "./IndicatorChart.tsx";
 import type { SettingsApi } from "./settingsPresets.ts";
 import type { ForecastAnswerCheck } from "./forecastLog.ts";
-import type { ShareCardInput } from "./shareCard.ts";
 import type { NarrationShadowDiagnostics } from "./narrationShadow.ts";
 import { JpyAmount } from "./JpyAmount.tsx";
 
@@ -72,7 +71,6 @@ export function OverviewTab({
   forecastTouchLine,
   forecastBandScale,
   forecastAnswer,
-  shareCard,
   sellLines,
   narrationShadow,
 }: {
@@ -86,7 +84,6 @@ export function OverviewTab({
   forecastTouchLine: string | null;
   forecastBandScale: number;
   forecastAnswer: ForecastAnswerCheck | null;
-  shareCard: ShareCardInput | null;
   sellLines: { tp: number; sl: number } | null;
   narrationShadow?: NarrationShadowDiagnostics | null;
 }) {
@@ -166,7 +163,6 @@ export function OverviewTab({
                         forecast={data.forecast?.cones[timeframe]}
                         forecastBandScale={forecastBandScale}
                         answerCheck={forecastAnswer}
-                        shareCard={shareCard}
                         bookImbalance={data.bookImbalance}
                         sellLines={sellLines}
                       />

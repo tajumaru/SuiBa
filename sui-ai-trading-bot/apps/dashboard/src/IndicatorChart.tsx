@@ -4,7 +4,6 @@ import type { BotSnapshot } from "../../worker/src/engine.ts";
 import type { ForecastAnswerCheck } from "./forecastLog.ts";
 import { PriceChart } from "./PriceChart.tsx";
 import { dateTime, label, number } from "./presentation.ts";
-import type { ShareCardInput } from "./shareCard.ts";
 
 type State = BotSnapshot;
 
@@ -145,7 +144,6 @@ export function Chart(props: {
   bookImbalance?: number | null;
   sellLines?: { tp: number; sl: number } | null;
   answerCheck?: ForecastAnswerCheck | null;
-  shareCard?: ShareCardInput | null;
 }) {
   return props.kind === "Price" ? (
     <PriceChart

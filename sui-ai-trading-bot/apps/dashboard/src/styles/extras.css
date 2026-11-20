@@ -932,34 +932,6 @@
   color: var(--mint);
 }
 
-/* Share-card row under the forecast score: one quiet button that
-   renders the live forecast as a postable image (see
-   shareCard.ts). Styled like the answer-check toggle. */
-.chart-share-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 4px 0 2px;
-}
-.chart-share-button {
-  background: #10222e;
-  border: 1px solid #254f61;
-  border-radius: 4px;
-  color: #9fd8c9;
-  font-size: 12px;
-  padding: 5px 12px;
-  cursor: pointer;
-}
-.chart-share-button:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-.chart-share-note {
-  margin: 0;
-  font-size: 12px;
-  color: var(--pink);
-}
-
 /* Portfolio composition ("資産の中身"): the cash/asset split
    under the overview cards. The segments slide as trades and
    price moves change the mix. */

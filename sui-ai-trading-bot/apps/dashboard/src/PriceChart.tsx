@@ -30,14 +30,11 @@ export function PriceChart(props: PriceChartProps) {
     trades,
     forecastScoreText,
     forecastTouchText,
-    shareCard,
     answerCheck,
     historyApi,
     synchronized,
     tf,
     fc,
-    shareBusy,
-    shareNote,
     answerOn,
     historyBusy,
     historyNotice,
@@ -79,8 +76,6 @@ export function PriceChart(props: PriceChartProps) {
     zoom,
     move,
     loadHistory,
-    setShareBusy,
-    setShareNote,
     setAnswerOn,
     setGapTime,
     setAnchor,
@@ -124,35 +119,6 @@ export function PriceChart(props: PriceChartProps) {
       )}
       {fc && tf === 300 && forecastTouchText && (
         <p className="chart-forecast-touch-status">{forecastTouchText}</p>
-      )}
-      {fc && tf === 300 && shareCard && (
-        <div className="chart-share-row">
-          <button
-            type="button"
-            className="chart-share-button"
-            disabled={shareBusy}
-            onClick={async () => {
-              setShareBusy(true);
-              setShareNote("");
-              try {
-                // The card builder (SVG template + PNG conversion)
-                // is used only by this tap, so it loads on demand
-                // instead of riding in the initial bundle.
-                const { createShareCardPng } = await import("./shareCard.ts");
-                await createShareCardPng(shareCard);
-              } catch (e) {
-                // Closing the share sheet is not a failure.
-                if ((e as Error)?.name !== "AbortError")
-                  setShareNote("カードを作れませんでした");
-              } finally {
-                setShareBusy(false);
-              }
-            }}
-          >
-            共有カードを作る
-          </button>
-          {shareNote && <p className="chart-share-note">{shareNote}</p>}
-        </div>
       )}
       {tf === 300 && answerCheck && (
         <div className="chart-answer-row">
