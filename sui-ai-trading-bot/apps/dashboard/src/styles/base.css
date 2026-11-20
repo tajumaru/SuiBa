@@ -176,6 +176,25 @@ header {
   border-bottom: 1px solid var(--pine);
   box-shadow: 0 10px 24px -18px rgba(67, 223, 178, 0.5);
 }
+.header-testnet strong::after,
+.header-testnet .header-badges .badge {
+  color: var(--gold);
+}
+.header-testnet .header-badges .badge {
+  background: var(--panel);
+  border-color: var(--gold);
+}
+.header-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+  margin-left: auto;
+}
+.header-badges .badge {
+  margin-left: 0;
+}
 header strong {
   letter-spacing: 0.06em;
 }

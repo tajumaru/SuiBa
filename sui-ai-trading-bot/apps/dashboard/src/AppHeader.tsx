@@ -40,12 +40,20 @@ export function AppHeader({
   voiceListening: boolean;
   agentSpeaking: boolean;
 }) {
+  const network = data?.network;
   return (
     <>
-      <header>
+      <header className={network === "testnet" ? "header-testnet" : undefined}>
         <div className="header-row header-row-main">
           <strong>◈ Potario</strong>
-          <span className="badge">PAPER（仮想売買）専用</span>
+          <div className="header-badges">
+            <span className="badge">
+              {data?.mode === "REAL" ? "REAL（実売買）" : "PAPER（仮想売買）専用"}
+            </span>
+            {(network === "testnet" || network === "mainnet") && (
+              <span className="badge">{network.toUpperCase()}</span>
+            )}
+          </div>
         </div>
         <div className="header-row header-row-sub">
           <button

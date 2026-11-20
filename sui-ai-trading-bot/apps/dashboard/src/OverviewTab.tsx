@@ -3,6 +3,7 @@ import type { OperationsSnapshot } from "./operationsTypes.ts";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { number, percent, label } from "./presentation.ts";
 import { PortfolioMix } from "./PortfolioMix.tsx";
+import { RealPortfolioMix } from "./RealPortfolioMix.tsx";
 import { EquityCurve } from "./EquityCurve.tsx";
 import { ActivityGrass } from "./ActivityGrass.tsx";
 import { MonthlyReportCard } from "./MonthlyReportCard.tsx";
@@ -112,6 +113,7 @@ export function OverviewTab({
   sellLines: { tp: number; sl: number } | null;
   narrationShadow?: NarrationShadowDiagnostics | null;
 }) {
+  const real = data.mode === "REAL";
   const usdJpy = operations?.fx?.usdJpy ?? null;
   return (
                   <div className="overview-tab">
@@ -122,32 +124,42 @@ export function OverviewTab({
                         2026-11-20 に撤去（オーナー指摘）。本日の取引も
                         単独カードだと 0 件の日に枠だけ大きいため、
                         同日さらに累計損益カードの1行へ統合した。 */}
-                    <div className="cards">
-                      <section className="overview-pnl-card">
-                        <small>累計損益</small>
-                        <h2>
-                          {money(data.pnl)} <em>USDC</em>
-                          <JpyAmount usdc={data.pnl} usdJpy={usdJpy} />
-                        </h2>
-                        <PnlBreakdownLine
-                          totals={operations?.accounting.totals}
-                          stale={operationsStale}
+                    {real ? (
+                      <RealPortfolioMix
+                        balances={data.realBalances}
+                        network={data.network}
+                        price={data.price}
+                      />
+                    ) : (
+                      <>
+                        <div className="cards">
+                          <section className="overview-pnl-card">
+                            <small>累計損益</small>
+                            <h2>
+                              {money(data.pnl)} <em>USDC</em>
+                              <JpyAmount usdc={data.pnl} usdJpy={usdJpy} />
+                            </h2>
+                            <PnlBreakdownLine
+                              totals={operations?.accounting.totals}
+                              stale={operationsStale}
+                            />
+                            <p className="overview-sub">
+                              本日の取引（日本時間09:00から）{" "}
+                              {money(data.todayTrades)} 件
+                            </p>
+                          </section>
+                        </div>
+                        <PortfolioMix
+                          usdc={data.portfolio.usdc}
+                          baseQty={data.portfolio.sui}
+                          price={data.price}
+                          costBasis={data.portfolio.costBasis}
+                          baseSymbol={data.pair === "WAL_USDC" ? "WAL" : "SUI"}
+                          usdJpy={usdJpy}
                         />
-                        <p className="overview-sub">
-                          本日の取引（日本時間09:00から）{" "}
-                          {money(data.todayTrades)} 件
-                        </p>
-                      </section>
-                    </div>
-                    <PortfolioMix
-                      usdc={data.portfolio.usdc}
-                      baseQty={data.portfolio.sui}
-                      price={data.price}
-                      costBasis={data.portfolio.costBasis}
-                      baseSymbol={data.pair === "WAL_USDC" ? "WAL" : "SUI"}
-                      usdJpy={usdJpy}
-                    />
-                    <EquityCurve points={data.equityCurve} />
+                        <EquityCurve points={data.equityCurve} />
+                      </>
+                    )}
                     <ActivityGrass orders={data.orders} />
                     <MonthlyReportCard
                       pair={data.pair}

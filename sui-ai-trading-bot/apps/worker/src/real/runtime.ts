@@ -7,6 +7,7 @@ import { RealTradeCapExecutor } from "./execution.ts";
 import { RealTradeCapExecutionAdapter } from "./adapter.ts";
 import { tradeCapValid } from "./cap-valid.ts";
 import { IndexerGraphqlHistorySource } from "./history-source.ts";
+import { cacheRealBalances } from "./display-balances.ts";
 import { createDeepBookReadOnly } from "./read-only.ts";
 import type { RealEffects, RealIdentity } from "./types.ts";
 import { RealFeeCache } from "./fee-cache.ts";
@@ -151,6 +152,7 @@ export function createRealTradeCapRuntime(
   );
   return {
     executionAdapter,
+    realBalances: cacheRealBalances(reader.readBalances),
     liveProbe: () =>
       runRealLiveProbe({
         snapshot: async () => {

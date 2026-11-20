@@ -69,7 +69,7 @@ describe("operation control safety and sequence", () => {
     "fetch",
     "recovery",
     "emergency",
-    "live",
+    "real",
   ])("blocks start for %s with a remedy", (kind) => {
     const f = ready();
     if (kind === "guard") f.state.settings.profitGuardEnabled = false;
@@ -85,7 +85,7 @@ describe("operation control safety and sequence", () => {
       f.operations.safety.resumePending = true;
     }
     if (kind === "emergency") f.state.runtime.emergency = true;
-    if (kind === "live") f.state.mode = "LIVE";
+    if (kind === "real") f.state.mode = "REAL";
     expect(
       validationControl(
         f.operations,
