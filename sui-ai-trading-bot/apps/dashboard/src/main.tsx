@@ -114,7 +114,6 @@ function App() {
     // Operation failures do not invalidate a successfully fetched state.
     // Start refusals are explained locally by the operation bar.
     [bannerError, setBannerError] = useState(""),
-    [pairBusy, setPairBusy] = useState(false),
     [channelError, setChannelError] = useState<string | null>(null),
     [tab, setTab] = useState("Live"),
     [timeframe, setTimeframe] = useState<300 | 900 | 3600>(300),
@@ -428,46 +427,6 @@ function App() {
       return code;
     }
   }
-  // Pair switching reloads the app: the pair scopes every request
-  // (see the X-SuiBa-Pair header in refresh), so a clean reload is
-  // the honest way to land on the other pair's state. A rejected
-  // switch keeps the specific reason in the banner.
-  async function switchPair(pair: string) {
-    setPairBusy(true);
-    setBannerError("");
-    // STOP_AND_WAIT_BEFORE_PAIR_SWITCH is the server's "not right
-    // now" gate: it also fires for purely transient collisions —
-    // this dashboard's own state poll in flight, an engine tick
-    // running, a short API backoff — which usually clear within a
-    // couple of seconds. Wait and retry a few times before
-    // bothering the user; the endpoint answers a no-op success
-    // when the pair is already selected, so retrying the same
-    // target can never switch twice.
-    for (let tries = 0; ; tries++) {
-      try {
-        await api("pairs", { pair });
-        window.location.reload();
-        return;
-      } catch (error) {
-        const code = error instanceof Error ? error.message : "";
-        if (code === "STOP_AND_WAIT_BEFORE_PAIR_SWITCH" && tries < 3) {
-          await new Promise((resolve) => setTimeout(resolve, 1500));
-          continue;
-        }
-        setBannerError(
-          code === "PAIR_POSITION_OPEN"
-            ? "未決済ポジションまたは未精算の原価が残っています。対象ペアで決済・会計確認を完了してから切り替えてください。"
-            : code === "PAIR_PENDING_WORK" || code === "PAIR_INVALID_LEDGER"
-              ? "未処理注文または会計の確認が必要です。履歴で停止理由と対象ペアを確認してください。"
-              : code === "STOP_AND_WAIT_BEFORE_PAIR_SWITCH"
-                ? "切り替えの準備が整いませんでした。市場データの取得が落ち着いてから、もう一度タップしてください。"
-                : "ペアを切り替えられません。売買を停止し、市場データ取得の完了後に再試行してください。",
-        );
-        setPairBusy(false);
-        return;
-      }
-    }
-  }
   return (
     <>
       {update && <UpdateBanner served={update} />}
@@ -559,10 +518,11 @@ function App() {
                     price plus the recorded candle frames — and
                     hides its change/sparkline until a frame can
                     ground them. */}
+                {/* The pair switch is hidden while only SUI runs
+                    (owner, 2026-11-20). The ticker still supports
+                    it; restoring is re-passing onPairSwitch here. */}
                 <PriceTicker
                   pair={data.pair}
-                  pairDisabled={pairBusy || data.runtime.running}
-                  onPairSwitch={(pair) => void switchPair(pair)}
                   price={data.price}
                   marketData={data.marketData}
                   now={now}
