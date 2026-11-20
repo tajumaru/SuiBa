@@ -19,6 +19,7 @@ import {
   USDC,
   dayKey,
   safeFailure,
+  safeFailureDetail,
   type BookLevels,
   type BtcInfo,
   type Candle,
@@ -953,6 +954,7 @@ export class BotEngine {
     let measuredFrames: Record<number, Candle[]> = {},
       measuredAction: string | null = null,
       measuredError: string | null = null;
+    let failureDetail = "";
     const cycleToken = this.monitor.beginCycle();
     const cycle: CycleEvidence = {
       cycleId: randomUUID(),
@@ -1076,6 +1078,8 @@ export class BotEngine {
         ].includes(error.message)
           ? error.message
           : safeFailure(error);
+      const detail = safeFailureDetail(error);
+      failureDetail = detail;
       const shutdownCancelled =
         !fillState.committed && this.monitor.isShutdownCancellation(error);
       measuredError = code;
@@ -1086,6 +1090,7 @@ export class BotEngine {
           timestamp: Date.now(),
           finalAction: "SAFE_STOP",
           reasons: [code],
+          ...(detail ? { failureDetail: detail } : {}),
         });
       this.db.set("decision", { action: "WAIT", reason: code, confidence: 0 });
       if (shutdownCancelled) {
@@ -1144,6 +1149,7 @@ export class BotEngine {
             runningAtEnd: this.db.runtime().running,
             action: measuredAction,
             error: measuredError,
+            ...(failureDetail ? { failureDetail } : {}),
             candidateId: audit?.id ?? null,
             orderId: audit?.orderId ?? null,
           },

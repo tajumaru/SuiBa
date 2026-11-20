@@ -277,7 +277,9 @@ describe("PAPER operation monitor", () => {
     for (let i = 0; i < 3; i++)
       await expect(
         m.request("QUOTE", async () => {
-          throw new Error("https://user:secret@example.invalid/?token=private");
+          throw new Error(
+            "Quote rejected https://user:secret@example.invalid/?token=private",
+          );
         }),
       ).rejects.toThrow();
     expect(db.runtime()).toMatchObject({
@@ -285,6 +287,13 @@ describe("PAPER operation monitor", () => {
       error: "CONSECUTIVE_API_ERRORS",
     });
     expect(m.snapshot().apiErrors).toBe(3);
+    expect(m.snapshot().events).toContainEqual(
+      expect.objectContaining({
+        kind: "ERROR",
+        code: "QUOTE_DATA_OR_EXECUTION_FAILURE",
+        failureDetail: "Quote rejected",
+      }),
+    );
     expect(m.snapshot().consecutiveErrors).toBe(3);
     expect(JSON.stringify(m.snapshot())).not.toContain("secret");
     expect(JSON.stringify(m.snapshot())).not.toContain("private");

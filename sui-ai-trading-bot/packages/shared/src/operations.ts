@@ -36,6 +36,7 @@ export interface CandidateAudit {
   risk: { status: "NOT_EVALUATED" | "ALLOWED" | "REJECTED"; reasons: string[] };
   finalAction: "PENDING" | "BUY" | "SELL" | "WAIT" | "SAFE_STOP";
   reasons: string[];
+  failureDetail?: string;
 }
 export interface MarketStallDetails {
   evaluatedAt: number;
@@ -59,6 +60,7 @@ export interface OperationEvent {
   kind: "WAIT" | "ERROR" | "ANOMALY" | "STOP" | "CONTROL" | "BOOT" | "API";
   code: string;
   fatal?: boolean;
+  failureDetail?: string;
   details?: MarketStallDetails;
   apiFailure?: ApiFailure;
   recoveryProof?: PaperRecoveryProof;

@@ -21,6 +21,7 @@ import { validateCandles } from "../packages/market-data/src/index.ts";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { backtest } from "../packages/paper-trading/src/backtest.ts";
 import { RuleBasedStrategy } from "../packages/strategy-engine/src/index.ts";
+import { buildDiagnosticReport } from "../apps/dashboard/src/diagnosticExport.ts";
 import { BotEngine } from "../apps/worker/src/engine.ts";
 import type { DexRouter } from "../packages/shared/src/index.ts";
 import type { ExecutionAdapter } from "../apps/worker/src/execution-adapter.ts";
@@ -555,6 +556,50 @@ describe("worker execution boundaries", () => {
       feeParamsStale: true,
     });
     t.db.close();
+  });
+  it("persists and exports scrubbed detail for an unclassified execution failure", async () => {
+    const execute = vi.fn(async () => {
+      throw new Error("Submission rejected https://example.invalid token=private", {
+        cause: new Error("Transaction expired"),
+      });
+    });
+    const adapter: ExecutionAdapter = {
+      kind: "REAL_TRADECAP",
+      feeEstimate: async (_side, epoch) => ({
+        takerFee: 0.001,
+        source: "DESIGN_ASSUMPTION",
+        stale: true,
+        epoch,
+        readAt: null,
+      }),
+      acceptStop: () => undefined,
+      recordEngineChecks: () => undefined,
+      execute,
+    };
+    const { db, engine } = setup(undefined, undefined, adapter);
+    try {
+      await engine.tick();
+      expect(execute).toHaveBeenCalledOnce();
+      const failureDetail =
+        "Submission rejected token=[redacted] | cause: Transaction expired";
+      expect(db.history("operation_candidates")[0]).toMatchObject({
+        finalAction: "SAFE_STOP",
+        reasons: ["DATA_OR_EXECUTION_FAILURE"],
+        failureDetail,
+      });
+      expect(db.history("cycle_audits")).toContainEqual(
+        expect.objectContaining({
+          phase: "END",
+          error: "DATA_OR_EXECUTION_FAILURE",
+          failureDetail,
+        }),
+      );
+      expect(buildDiagnosticReport(engine.monitor.snapshot())).toContain(
+        `SAFE_STOP DATA_OR_EXECUTION_FAILURE — failureDetail: ${failureDetail}`,
+      );
+    } finally {
+      db.close();
+    }
   });
   it("fails safely on upstream error", async () => {
     const db = new BotDatabase(":memory:");

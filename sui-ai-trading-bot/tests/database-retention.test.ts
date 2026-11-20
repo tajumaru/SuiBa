@@ -49,7 +49,9 @@ it("compacts only rows older than 30 days and never changes row counts", () => {
     {
       cycleId: "old",
       phase: "END",
-      outcome: "ANALYZED",
+      outcome: "FAILED",
+      error: "DATA_OR_EXECUTION_FAILURE",
+      failureDetail: "Submission rejected",
       candidateId: "candidate",
       orderId: "order",
       analysis: { bulky: "discarded" },
@@ -82,7 +84,9 @@ it("compacts only rows older than 30 days and never changes row counts", () => {
     _retention: 1,
     cycleId: "old",
     phase: "END",
-    outcome: "ANALYZED",
+    outcome: "FAILED",
+    error: "DATA_OR_EXECUTION_FAILURE",
+    failureDetail: "Submission rejected",
     candidateId: "candidate",
     orderId: "order",
   });
