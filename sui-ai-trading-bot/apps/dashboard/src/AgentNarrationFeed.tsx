@@ -574,11 +574,7 @@ export function AgentNarrationFeed({
           <HighlightReplay highlight={replay} onClose={() => setReplay(null)} />
         </Suspense>
       )}
-      <AgentChatComposer
-        chat={chat}
-        displayName={displayName}
-        entries={displayEntries}
-      />
+      <AgentChatComposer chat={chat} displayName={displayName} />
       <div className="agent-feed-list">
         {displayEntries.length === 0 ? (
           <p className="agent-feed-empty">
