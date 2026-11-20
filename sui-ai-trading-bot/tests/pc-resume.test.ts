@@ -65,6 +65,7 @@ function fixture(
       .mockResolvedValueOnce({ success: true, stdout: '{"opened":true}\n' }),
     wait: vi.fn(async (_ms: number) => {}),
     print: vi.fn(),
+    appendLog: vi.fn(async (_entry: string) => {}),
   };
   return {
     deps,
@@ -232,5 +233,33 @@ describe("pc:resume", () => {
     expect(deps.print).toHaveBeenCalledWith(
       expect.stringContaining("再開を確認できませんでした"),
     );
+  });
+
+  it("appends a success line to the ops log", async () => {
+    const { deps, run } = fixture();
+    expect(await run()).toBe(0);
+    expect(deps.appendLog).toHaveBeenCalledTimes(1);
+    expect(deps.appendLog).toHaveBeenCalledWith(
+      expect.stringContaining("pc:resume success reason=PC再開"),
+    );
+  });
+
+  it("appends a failure line to the ops log when a check fails", async () => {
+    const { deps, run } = fixture();
+    deps.runRealResume
+      .mockReset()
+      .mockResolvedValue(dryRun({ capValid: false }));
+    expect(await run()).toBe(1);
+    expect(deps.appendLog).toHaveBeenCalledTimes(1);
+    expect(deps.appendLog).toHaveBeenCalledWith(
+      expect.stringContaining("pc:resume failed reason=PC再開"),
+    );
+  });
+
+  it("ignores ops log write failures", async () => {
+    const { deps, run } = fixture();
+    deps.appendLog.mockRejectedValue(new Error("disk full"));
+    expect(await run()).toBe(0);
+    expect(deps.print).toHaveBeenCalledWith("再開しました");
   });
 });

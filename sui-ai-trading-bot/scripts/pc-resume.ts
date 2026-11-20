@@ -1,5 +1,5 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { appendFile, readFile } from "node:fs/promises";
 import { setTimeout as wait } from "node:timers/promises";
 import { promisify } from "node:util";
 import { parse } from "dotenv";
@@ -32,6 +32,7 @@ export type PcResumeDependencies = {
   runRealResume(args: string[]): Promise<{ success: boolean; stdout: string }>;
   wait(ms: number): Promise<unknown>;
   print(message: string): void;
+  appendLog?(entry: string): Promise<void>;
 };
 
 type ResumeResult = Awaited<ReturnType<typeof resumeReal>>;
@@ -104,36 +105,51 @@ export async function runPcResume(argv: string[], deps: PcResumeDependencies) {
     return 1;
   }
 
+  const log = async (entry: string) => {
+    try {
+      await deps.appendLog?.(entry);
+    } catch {
+      // 出来事ログは最善努力。書けなくても再開の結果は変えない。
+    }
+  };
   const token = await deps.readToken().catch(() => undefined);
   if (!token) {
-    deps.print("再開できませんでした。.env の管理用の鍵を確認してください。");
+    const message = "再開できませんでした。.env の管理用の鍵を確認してください。";
+    deps.print(message);
+    await log(
+      `${new Date().toISOString()} pc:resume failed reason=${reason} detail=${message}`,
+    );
     return 1;
   }
-  const fail = (message: string) => {
-    deps.print(message.replaceAll(token, "[伏字]"));
+  const fail = async (message: string) => {
+    const redacted = message.replaceAll(token, "[伏字]");
+    deps.print(redacted);
+    await log(
+      `${new Date().toISOString()} pc:resume failed reason=${reason} detail=${redacted.split(/\r?\n/)[0]}`,
+    );
     return 1;
   };
   const request = (path: string, control?: Control) =>
     deps.request(path, token, control).catch(() => undefined);
   const initial = await request("/api/state");
-  if (!initial) return fail("Botが応答しません");
+  if (!initial) return await fail("Botが応答しません");
   const state = initial.body as State | undefined;
   const running = state?.running ?? state?.runtime?.running;
   if (!ok(initial) || !state || typeof running !== "boolean")
-    return fail("再開できませんでした。Botの状態を確認できません。");
+    return await fail("再開できませんでした。Botの状態を確認できません。");
 
   let scope = state.resetScope;
   if (scope === undefined) {
     const deployment = await request("/api/deployment");
     if (!deployment || !ok(deployment))
-      return fail(
+      return await fail(
         "再開できませんでした。停止エラーを解除できるか確認できません。",
       );
     scope = (deployment.body as { resetScope?: ResetScope } | undefined)
       ?.resetScope;
   }
   if (typeof scope?.pending !== "boolean")
-    return fail(
+    return await fail(
       "再開できませんでした。停止エラーを解除できるか確認できません。",
     );
 
@@ -141,12 +157,12 @@ export async function runPcResume(argv: string[], deps: PcResumeDependencies) {
     const reply = await request("/api/control", command);
     if (reply && ok(reply)) return true;
     const error = (reply?.body as { error?: unknown } | undefined)?.error;
-    fail(typeof error === "string" ? `${failure}\n${error}` : failure);
+    await fail(typeof error === "string" ? `${failure}\n${error}` : failure);
     return false;
   };
   if (scope.pending) {
     if (scope.eligible !== true)
-      return fail(
+      return await fail(
         `再開できませんでした。停止エラーを解除できません。\n${scope.reason ?? "解除できない理由は不明です。"}`,
       );
     const { version, bootId, pair, generation, expectedError } = scope;
@@ -180,7 +196,7 @@ export async function runPcResume(argv: string[], deps: PcResumeDependencies) {
       await deps.wait(30_000);
       continue;
     }
-    return fail(
+    return await fail(
       [
         "再開できませんでした。再開前の確認を通過できません。",
         ...result.verdict,
@@ -193,7 +209,7 @@ export async function runPcResume(argv: string[], deps: PcResumeDependencies) {
     .runRealResume(["--", "--approve", `--reason=${reason}`])
     .catch(() => undefined);
   if (!approval?.success || parseResult(approval.stdout)?.opened !== true)
-    return fail("再開できませんでした。注文の許可を出す処理に失敗しました。");
+    return await fail("再開できませんでした。注文の許可を出す処理に失敗しました。");
 
   const final = await request("/api/state");
   const finalState = final?.body as State | undefined;
@@ -203,10 +219,13 @@ export async function runPcResume(argv: string[], deps: PcResumeDependencies) {
     (finalState?.running ?? finalState?.runtime?.running) !== true ||
     finalState?.safety?.ordersAllowed !== true
   )
-    return fail(
+    return await fail(
       "再開を確認できませんでした。Botの稼働と注文の許可を両方確認できません。",
     );
 
+  await log(
+    `${new Date().toISOString()} pc:resume success reason=${reason}`,
+  );
   deps.print("再開しました");
   return 0;
 }
@@ -251,5 +270,8 @@ if (isMainModule(import.meta.url, process.argv[1])) {
     },
     wait,
     print: console.log,
+    appendLog: async (entry) => {
+      await appendFile("data/pc-ops.log", `${entry}\n`);
+    },
   });
 }
