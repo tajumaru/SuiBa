@@ -475,14 +475,17 @@ export function forecastScoreText(
 ): string | null {
   if (recordCount === 0) return null;
   if (score.scoredRecords < MIN_SCORED_RECORDS || score.coveragePct == null)
-    return `予測の成績：集計中（判定 ${score.scoredRecords} 件、${MIN_SCORED_RECORDS} 件から表示）`;
+    return `予測の成績：集計中（判定 ${score.scoredRecords}件、${MIN_SCORED_RECORDS}件から表示）`;
   const direction =
     score.dirTotal >= MIN_SCORED_RECORDS && score.dirPct != null
-      ? `・方向の的中 ${score.dirPct}%（${score.dirTotal} 件）`
-      : "・方向は集計中";
+      ? `／方向的中 ${score.dirPct}%（${score.dirTotal}件）`
+      : "／方向は集計中";
   const touch =
     score.touchTotal >= MIN_SCORED_RECORDS
-      ? `・タッチ到達 ${score.touchHits}/${score.touchTotal} 件`
+      ? `／タッチ到達 ${score.touchHits}/${score.touchTotal}件`
       : "";
-  return `予測の成績：コーン収まり ${score.coveragePct}%（判定 ${score.scoredRecords} 件）${direction}${touch} ※Botの記録（移行分を含む）を集計`;
+  // Plain wording (owner's call 2026-11-20): no jargon (コーン),
+  // no provenance trivia (Botの記録・移行分) — the numbers and
+  // what they mean, nothing else.
+  return `予測の成績：幅に収まった ${score.coveragePct}%（${score.scoredRecords}件）${direction}${touch}`;
 }

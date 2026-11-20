@@ -209,11 +209,11 @@ describe("PriceChart forecast overlay", () => {
         candles: rising,
         trades: [],
         forecast: chartForecast(rising),
-        forecastScoreText: "予測の成績：コーン収まり 82%（判定 46 件）",
+        forecastScoreText: "予測の成績：幅に収まった 82%（46件）",
       }),
     );
     expect(withScore).toContain("chart-forecast-score");
-    expect(withScore).toContain("コーン収まり 82%");
+    expect(withScore).toContain("幅に収まった 82%");
     expect(render(rising)).not.toContain("chart-forecast-score");
   });
 });

@@ -181,7 +181,7 @@ export function advanceForecast(
         : null,
     scoreLine:
       line && step.calib.scale !== 1
-        ? `${line}（予測の幅は実績で学習中 ×${step.calib.scale.toFixed(2)}）`
+        ? `${line} ※幅は実績に合わせて調整中（いま ×${step.calib.scale.toFixed(2)}）`
         : line,
     events,
     updatedAt: now,
