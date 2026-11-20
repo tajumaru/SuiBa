@@ -129,8 +129,9 @@ describe("forecast log", () => {
         });
     }
     const text = forecastScoreText(scoreForecasts(recs, future), recs.length);
-    expect(text).toContain("コーン収まり 100%");
-    expect(text).toContain("Botの記録（移行分を含む）を集計");
+    expect(text).toContain("幅に収まった 100%");
+    expect(text).not.toContain("コーン");
+    expect(text).not.toContain("移行分");
   });
 
   it("round-trips through storage per pair and rejects junk", () => {
