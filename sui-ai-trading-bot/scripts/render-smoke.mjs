@@ -164,23 +164,28 @@ try {
     if ((await buttons.count()) !== 5)
       failures.push(`${width}px: expected five tabs`);
     const chainStrip = page.locator(
-      '.chain-strip[aria-label="Suiチェーン情報"]',
+      '.worker-chain[aria-label="Suiチェーン情報"]',
     );
-    // Since 2026-11-19 the strip carries only EPOCH and TPS; the
+    // Since 2026-11-19 the readout carries only EPOCH and TPS; the
     // Sui credit moved to the version footer and the Walrus
-    // credit was retired with the strip slimming.
+    // credit was retired with the strip slimming. Since
+    // 2026-11-20 the readout lives in the Worker panel header on
+    // the overview tab, so open that tab before probing it.
     const suiCredit = page.locator(".version-footer").getByRole("link", {
       name: "Sui",
     });
+    await page
+      .getByRole("button", { name: "ダッシュボード", exact: true })
+      .click();
     await chainStrip.waitFor();
     const chainLayout = await chainStrip.evaluate((strip) => ({
       fits: strip.scrollWidth <= strip.clientWidth,
       hasCredits: strip.querySelector("a") !== null,
     }));
     if (!chainLayout.fits)
-      failures.push(`${width}px: Sui chain strip overflows`);
+      failures.push(`${width}px: Sui chain readout overflows`);
     if (chainLayout.hasCredits)
-      failures.push(`${width}px: Sui chain strip still carries credits`);
+      failures.push(`${width}px: Sui chain readout still carries credits`);
     const creditLogo = suiCredit.locator("img");
     if (
       (await suiCredit.getAttribute("href")) !== "https://sui.io" ||

@@ -2,7 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ChainSampler } from "../apps/worker/src/chainInfo.ts";
-import { ChainStrip } from "../apps/dashboard/src/ChainStrip.tsx";
+import { ChainReadout } from "../apps/dashboard/src/ChainStrip.tsx";
 import { runChatCommand } from "../apps/dashboard/src/chatCommands.ts";
 import type { AgentChatContext } from "../apps/dashboard/src/agentChat.ts";
 
@@ -35,18 +35,18 @@ describe("ChainSampler", () => {
     expect(next.tps).toBeNull();
   });
 });
-describe("ChainStrip", () => {
+describe("ChainReadout", () => {
   it("renders only epoch and TPS and hides itself before the first sample", () => {
     const html = renderToStaticMarkup(
-      React.createElement(ChainStrip, {
+      React.createElement(ChainReadout, {
         chain: { epoch: 1024, checkpoint: 182394551, tps: 1208, gasMist: 1000, epochStartMs: Date.now() - 3600000, epochDurationMs: 86400000, validators: 108, at: 1 },
       }),
     );
-    expect(html).toContain("SUI CHAIN");
+    expect(html).toContain("EPOCH");
     expect(html).toContain("1,024");
     expect(html).toContain("1,208");
     // Slimmed 2026-11-19: the fuller vitals and the credits left
-    // the strip (the Sui credit moved to the version footer).
+    // the readout (the Sui credit moved to the version footer).
     expect(html).not.toContain("182,394,551");
     expect(html).not.toContain("GAS");
     expect(html).not.toContain("NEXT EPOCH");
@@ -54,10 +54,10 @@ describe("ChainStrip", () => {
     expect(html).not.toContain("Built on Sui");
     expect(html).not.toContain("Memory on Walrus");
     expect(
-      renderToStaticMarkup(React.createElement(ChainStrip, { chain: null })),
+      renderToStaticMarkup(React.createElement(ChainReadout, { chain: null })),
     ).toBe("");
     const noTps = renderToStaticMarkup(
-      React.createElement(ChainStrip, {
+      React.createElement(ChainReadout, {
         chain: { epoch: 1, checkpoint: 5, tps: null, gasMist: null, epochStartMs: null, epochDurationMs: null, validators: null, at: 1 },
       }),
     );
