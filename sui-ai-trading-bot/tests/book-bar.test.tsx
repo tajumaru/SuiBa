@@ -32,4 +32,9 @@ describe("BookBar", () => {
   it("hides itself without a sample", () => {
     expect(renderToStaticMarkup(<BookBar imbalance={null} />)).toBe("");
   });
+  it("hides itself while the book is balanced", () => {
+    expect(renderToStaticMarkup(<BookBar imbalance={0} />)).toBe("");
+    expect(renderToStaticMarkup(<BookBar imbalance={-0.04} />)).toBe("");
+    expect(renderToStaticMarkup(<BookBar imbalance={0.05} />)).toBe("");
+  });
 });

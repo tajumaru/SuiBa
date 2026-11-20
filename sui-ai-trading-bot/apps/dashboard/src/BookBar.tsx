@@ -149,6 +149,11 @@ function BookWave({
 export function BookBar({ imbalance }: { imbalance: number | null }) {
   if (imbalance == null || !Number.isFinite(imbalance)) return null;
   const m = bookBarModel(imbalance);
+  // Balanced is noise (owner's call 2026-11-20): the meter
+  // renders only while the book actually leans — the same
+  // buy/sell verdict the model already computes. A balanced
+  // book tilts nothing, so it shows nothing.
+  if (m.side === "even") return null;
   const v = Math.max(-1, Math.min(1, imbalance));
   return (
     <div className="book-bar" aria-label="板の偏り">
