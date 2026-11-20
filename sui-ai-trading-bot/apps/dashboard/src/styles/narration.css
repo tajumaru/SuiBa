@@ -67,6 +67,23 @@
   height: 100%;
   object-fit: cover;
 }
+/* Artwork placeholder (ArtworkImage): shown only when the pose image
+   fails to load even after one retry, so the frame is never silently
+   empty. Sized like the img it replaces in both avatar containers. */
+.agent-avatar-bob .agent-avatar-missing,
+.login-stage-art .agent-avatar-missing {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--pine);
+}
+.agent-avatar-missing svg {
+  width: 55%;
+  height: 55%;
+  fill: currentColor;
+  opacity: 0.55;
+}
 /* Second frame of the laptop pose (AgentAvatarArtwork): the same
    scene with the near hand's index finger raised, stacked exactly
    on the base frame. It rests invisible; only when motion is

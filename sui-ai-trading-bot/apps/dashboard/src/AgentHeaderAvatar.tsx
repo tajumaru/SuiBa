@@ -156,6 +156,58 @@ export const POSE_LABEL: Record<AgentPose, string> = {
  * crowd and the scream keep their own artwork — those are
  * separate states, not the working look.
  */
+/** The one retry URL for a failed artwork fetch: the same asset with
+ * a marker query, so a transient network failure (the tunnel path to
+ * the phone is lossy) gets a second chance without touching the
+ * fingerprinted filename. The static handler resolves by pathname,
+ * so the query is ignored server-side. */
+export function artworkRetrySrc(src: string): string {
+  return `${src}${src.includes("?") ? "&" : "?"}avatar-retry=1`;
+}
+
+/**
+ * An artwork image that never leaves the avatar frame silently
+ * empty. On the first load error it retries once with
+ * artworkRetrySrc; if that also fails it renders a quiet droplet
+ * placeholder (main artwork) or nothing (overlay frames, whose base
+ * frame still shows). The state pill carries the status text, so a
+ * placeholder never misstates the pose.
+ */
+export function ArtworkImage({
+  src,
+  className,
+  overlay = false,
+}: {
+  src: string;
+  className?: string;
+  overlay?: boolean;
+}) {
+  const [retried, setRetried] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setRetried(false);
+    setFailed(false);
+  }, [src]);
+  if (failed) {
+    if (overlay) return null;
+    return (
+      <span className="agent-avatar-missing" aria-hidden="true">
+        <svg viewBox="0 0 64 64" focusable="false">
+          <path d="M32 5C32 5 13 27 13 39a19 19 0 0 0 38 0C51 27 32 5 32 5Z" />
+        </svg>
+      </span>
+    );
+  }
+  return (
+    <img
+      className={className}
+      src={retried ? artworkRetrySrc(src) : src}
+      alt=""
+      onError={() => (retried ? setFailed(true) : setRetried(true))}
+    />
+  );
+}
+
 export function AgentAvatarArtwork({
   pose,
   hardMode = false,
@@ -167,9 +219,13 @@ export function AgentAvatarArtwork({
   const art = artworkFor(character, pose, hardMode);
   return (
     <>
-      <img src={art.main} alt="" />
+      <ArtworkImage src={art.main} />
       {art.typing && (
-        <img className="agent-avatar-typing" src={art.typing} alt="" />
+        <ArtworkImage
+          className="agent-avatar-typing"
+          src={art.typing}
+          overlay
+        />
       )}
     </>
   );
@@ -335,16 +391,14 @@ export function AgentHeaderAvatar({
       >
         <div className="agent-avatar-bob">
           {shouting ? (
-            <img
+            <ArtworkImage
               className="agent-avatar-scream"
               src={SCREAM_IMAGE[character]}
-              alt=""
             />
           ) : listening && !celebrating ? (
-            <img
+            <ArtworkImage
               className="agent-avatar-listen"
               src={LISTEN_IMAGE[character]}
-              alt=""
             />
           ) : speaking && !celebrating ? (
             <AgentAvatarArtwork pose="pointSmile" hardMode={artworkHard} />
