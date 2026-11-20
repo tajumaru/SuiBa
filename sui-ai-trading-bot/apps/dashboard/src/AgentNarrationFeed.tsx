@@ -242,7 +242,10 @@ export function AgentNarrationFeed({
 
   useEffect(() => {
     const update = () => setNow(Date.now());
-    const id = setInterval(update, 1000);
+    // 5s, not 1s: the freshness windows behind this clock are
+    // 30s+; a 1s tick re-rendered the feed every second and kept
+    // phones hot (owner's iPhone heat concern, 2026-11-20).
+    const id = setInterval(update, 5000);
     document.addEventListener("visibilitychange", update);
     window.addEventListener("pageshow", update);
     return () => {
