@@ -41,16 +41,26 @@ export function AppHeader({
   agentSpeaking: boolean;
 }) {
   const network = data?.network;
+  // The network badge names the execution network, so it only means
+  // something in REAL. In PAPER the worker's network is just the
+  // market-data source; showing MAINNET there reads as real trading.
+  const showNetwork =
+    data?.mode === "REAL" &&
+    (network === "testnet" || network === "mainnet");
   return (
     <>
-      <header className={network === "testnet" ? "header-testnet" : undefined}>
+      <header
+        className={
+          showNetwork && network === "testnet" ? "header-testnet" : undefined
+        }
+      >
         <div className="header-row header-row-main">
           <strong>◈ Potario</strong>
           <div className="header-badges">
             <span className="badge">
               {data?.mode === "REAL" ? "REAL（実売買）" : "PAPER（仮想売買）専用"}
             </span>
-            {(network === "testnet" || network === "mainnet") && (
+            {showNetwork && (
               <span className="badge">{network.toUpperCase()}</span>
             )}
           </div>
