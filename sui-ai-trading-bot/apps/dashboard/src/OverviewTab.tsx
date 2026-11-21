@@ -7,7 +7,6 @@ import { RealPortfolioMix } from "./RealPortfolioMix.tsx";
 import { EquityCurve } from "./EquityCurve.tsx";
 import { ActivityGrass } from "./ActivityGrass.tsx";
 import { MonthlyReportCard } from "./MonthlyReportCard.tsx";
-import { MarketWeatherCard } from "./MarketWeatherCard.tsx";
 import { LongTermChart } from "./LongTermChart.tsx";
 import { Chart } from "./IndicatorChart.tsx";
 import type { SettingsApi } from "./settingsPresets.ts";
@@ -56,14 +55,34 @@ export function PnlBreakdownLine({
 }
 
 /**
+ * The overview tab's two segments (owner, 2026-11-22): いま
+ * carries the live state (assets, today's shadow line, the
+ * price chart and the long-term map); ふりかえり carries the
+ * look-back trio he likes but found buried — the equity
+ * curve, the activity grass and the monthly report — plus
+ * the detailed-metrics fold. The stale-data note stays above
+ * the switch: it must show whichever segment is open.
+ */
+export type OverviewSegment = "now" | "review";
+
+const OVERVIEW_SEGMENTS: { id: OverviewSegment; label: string }[] = [
+  { id: "now", label: "いま" },
+  { id: "review", label: "ふりかえり" },
+];
+
+/**
  * The overview tab, extracted from App: asset cards, the
- * portfolio mix, the equity curve, the activity grass,
- * monthly report and market weather, the synchronized
- * price/RSI/MACD chart with
- * its forecast attachments, the long-term map, and the
+ * portfolio mix, the equity curve, the activity grass and
+ * the monthly report, the synchronized price/RSI/MACD chart
+ * with its forecast attachments, the long-term map, and the
  * detailed-metrics fold. Pure rendering over the snapshot.
+ * (The market weather card was retired 2026-11-22: its three
+ * numbers already live on the ticker and the conditions, and
+ * nothing acted on the grade.)
  */
 export function OverviewTab({
+  segment,
+  onSegmentChange,
   data,
   operations,
   operationsStale = false,
@@ -77,6 +96,8 @@ export function OverviewTab({
   sellLines,
   narrationShadow,
 }: {
+  segment: OverviewSegment;
+  onSegmentChange: (segment: OverviewSegment) => void;
   data: State;
   operations?: OperationsSnapshot | null;
   operationsStale?: boolean;
@@ -95,6 +116,32 @@ export function OverviewTab({
   return (
                   <div className="overview-tab">
                     <WorkerStaleNote data={operations ?? null} stale={operationsStale} />
+                    <div
+                      className="strategy-segments overview-segments"
+                      role="tablist"
+                      aria-label="概要ページの表示切替"
+                    >
+                      {OVERVIEW_SEGMENTS.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          role="tab"
+                          id={`overview-segment-${s.id}`}
+                          aria-selected={segment === s.id}
+                          aria-controls={`overview-segment-panel-${s.id}`}
+                          className={segment === s.id ? "active" : ""}
+                          onClick={() => onSegmentChange(s.id)}
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div
+                      role="tabpanel"
+                      id="overview-segment-panel-now"
+                      aria-labelledby="overview-segment-now"
+                      hidden={segment !== "now"}
+                    >
                     <ShadowTodayLine summary={data.shadowToday} />
                     {/* 仮想総資産と保有のカードは資産の中身
                         (PortfolioMix) と同じ数字の二重表示だったため
@@ -111,7 +158,6 @@ export function OverviewTab({
                         price={data.price}
                       />
                     ) : (
-                      <>
                         <section
                           className="overview-assets-card"
                           aria-label="資産"
@@ -152,19 +198,7 @@ export function OverviewTab({
                             </p>
                           </div>
                         </section>
-                        <EquityCurve points={data.equityCurve} />
-                      </>
                     )}
-                    <ActivityGrass orders={data.orders} />
-                    <MonthlyReportCard
-                      pair={data.pair}
-                      trades={data.trades}
-                      orders={data.orders}
-                      cumulativeRoundTrips={
-                        operations?.accounting.totals.roundTrips
-                      }
-                    />
-                    <MarketWeatherCard weather={data.weather} />
                     <label>
                       時間足
                       <select
@@ -211,6 +245,29 @@ export function OverviewTab({
                         />
                       </section>
                     )}
+                    {import.meta.env.DEV && narrationShadow && (
+                      <details className="overview-details">
+                        <summary>開発診断：実況 read shadow</summary>
+                        <pre>{JSON.stringify(narrationShadow, null, 2)}</pre>
+                      </details>
+                    )}
+                    </div>
+                    <div
+                      role="tabpanel"
+                      id="overview-segment-panel-review"
+                      aria-labelledby="overview-segment-review"
+                      hidden={segment !== "review"}
+                    >
+                    {!real && <EquityCurve points={data.equityCurve} />}
+                    <ActivityGrass orders={data.orders} />
+                    <MonthlyReportCard
+                      pair={data.pair}
+                      trades={data.trades}
+                      orders={data.orders}
+                      cumulativeRoundTrips={
+                        operations?.accounting.totals.roundTrips
+                      }
+                    />
                     <details className="overview-details">
                       <summary>詳細の数字</summary>
                       <div className="cards">
@@ -255,12 +312,7 @@ export function OverviewTab({
                         ))}
                       </div>
                     </details>
-                    {import.meta.env.DEV && narrationShadow && (
-                      <details className="overview-details">
-                        <summary>開発診断：実況 read shadow</summary>
-                        <pre>{JSON.stringify(narrationShadow, null, 2)}</pre>
-                      </details>
-                    )}
+                    </div>
                   </div>
   );
 }

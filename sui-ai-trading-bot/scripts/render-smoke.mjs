@@ -222,6 +222,9 @@ try {
     await page
       .getByRole("button", { name: "ダッシュボード", exact: true })
       .click();
+    // The curve lives in the overview's ふりかえり segment
+    // since 2026-11-22.
+    await page.locator("#overview-segment-review").click();
     const curve = page.getByRole("region", { name: "資産の推移" });
     await curve.waitFor();
     for (const range of ["24時間", "7日", "30日"]) {
@@ -342,6 +345,7 @@ try {
   await page
     .getByRole("button", { name: "ダッシュボード", exact: true })
     .click();
+  await page.locator("#overview-segment-review").click();
   for (const width of [320, 375, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     const monthly = page.getByRole("region", { name: "月報", exact: true });
@@ -389,6 +393,7 @@ try {
   await reloadOverview();
   await assets.getByText("99.19（現金）", { exact: false }).waitFor();
   await page.getByText("累計損益", { exact: true }).waitFor();
+  await page.locator("#overview-segment-review").click();
   await page.getByText("資産の推移", { exact: true }).waitFor();
 
   fixture.state.mode = "REAL";

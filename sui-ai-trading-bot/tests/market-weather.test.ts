@@ -1,12 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { renderToStaticMarkup } from "react-dom/server";
-import { createElement } from "react";
 import type {
   Candle,
   Indicators,
 } from "../packages/shared/src/index.ts";
 import { marketWeather } from "../apps/worker/src/market-weather.ts";
-import { MarketWeatherCard } from "../apps/dashboard/src/MarketWeatherCard.tsx";
 
 const T0 = 1790532000; // arbitrary epoch-second anchor
 const STEP = 300;
@@ -139,28 +136,5 @@ describe("marketWeather", () => {
     const wDown = marketWeather(down, indicators({ atr: 0.2 }));
     expect(wDown?.change24hPct).toBeCloseTo(-1.5, 9);
     expect(wDown?.kind).toBe("rain");
-  });
-});
-
-describe("MarketWeatherCard", () => {
-  it("renders the grade, the three evidence numbers and the note", () => {
-    const html = renderToStaticMarkup(
-      createElement(MarketWeatherCard, {
-        weather: { kind: "clear", change24hPct: 4.25, atrPct: 0.31, rsi: 61.6 },
-      }),
-    );
-    expect(html).toContain("相場の天気");
-    expect(html).toContain("快晴");
-    expect(html).toContain("+4.25%");
-    expect(html).toContain("0.31%");
-    expect(html).toContain("62");
-    expect(html).toContain("直近24時間の値動きからの機械判定");
-  });
-
-  it("renders nothing without a judgement", () => {
-    const html = renderToStaticMarkup(
-      createElement(MarketWeatherCard, { weather: null }),
-    );
-    expect(html).toBe("");
   });
 });
