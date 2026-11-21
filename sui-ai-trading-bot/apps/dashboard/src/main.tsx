@@ -22,7 +22,10 @@ import type { StrategySegment } from "./StrategyTab.tsx";
 import { useOperationsFeed } from "./operationsFeed.ts";
 import { useForecastMigration } from "./useForecastMigration.ts";
 import { useForecastSuite } from "./useForecastSuite.ts";
-import { OverviewTab } from "./OverviewTab.tsx";
+import {
+  OverviewTab,
+  type OverviewSegment,
+} from "./OverviewTab.tsx";
 import { AppHeader } from "./AppHeader.tsx";
 import { AgentNarrationFeed } from "./AgentNarration.tsx";
 import { presetName } from "./settingsPresets.ts";
@@ -154,6 +157,11 @@ function App() {
     useState<StrategySegment | null>(null);
   const strategySegment: StrategySegment =
     strategySegmentChoice ?? (tab === "Settings" ? "settings" : "rules");
+  // The overview tab's segment （いま/ふりかえり, 2026-11-22):
+  // lifted here like the strategy segment so it survives
+  // switching tabs.
+  const [overviewSegment, setOverviewSegment] =
+    useState<OverviewSegment>("now");
   const logout = async () => {
     try {
       const response = await fetch("/api/auth/session", {
@@ -571,6 +579,8 @@ function App() {
                 </div>
                 {activeTab === "Overview" && (
                   <OverviewTab
+                    segment={overviewSegment}
+                    onSegmentChange={setOverviewSegment}
                     operations={operations.data}
                     operationsStale={operations.stale}
                     data={data}
