@@ -181,9 +181,15 @@ try {
       name: "Sui",
     });
     // Since 2026-11-21 the party panel lives in the strategy
-    // tab's パーティ segment, not on the overview tab.
+    // tab's パーティ segment, not on the overview tab. The
+    // segment switch is dispatched as a DOM click: on later
+    // viewport passes the tab can sit under a fixed bar after
+    // auto-scroll and a real pointer click never lands (the
+    // switching logic itself is covered by unit tests).
     await page.getByRole("button", { name: "戦略", exact: true }).click();
-    await page.getByRole("tab", { name: "パーティ", exact: true }).click();
+    await page
+      .locator("#strategy-segment-party")
+      .evaluate((el) => el.click());
     const party = page.getByRole("region", { name: "パーティ" });
     await party.waitFor();
     if ((await party.getByRole("progressbar").count()) !== 4 ||
