@@ -2,7 +2,11 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { randomUUID } from "node:crypto";
 import { BotDatabase } from "../packages/database/src/index.ts";
-import { apiAccess, RateLimited } from "../packages/shared/src/api.ts";
+import {
+  apiAccess,
+  apiFetch,
+  RateLimited,
+} from "../packages/shared/src/api.ts";
 import { BotEngine } from "../apps/worker/src/engine.ts";
 import {
   PredecessorReset,
@@ -30,7 +34,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function fixture(error = "UPSTREAM_HTTP_429") {
+async function fixture(error: string | null = "UPSTREAM_HTTP_429") {
   const db = new BotDatabase(":memory:");
   db.set("runtime", { ...db.runtime(), error, running: false });
   const cooldown = {
@@ -39,7 +43,7 @@ async function fixture(error = "UPSTREAM_HTTP_429") {
     nextRetryAt: Date.now() + 3600000,
     circuitUntil: null,
   };
-  db.set("api_cooldowns", [cooldown]);
+  if (error) db.set("api_cooldowns", [cooldown]);
   const bootId = randomUUID();
   const predecessorReset = new PredecessorReset(
     db,
@@ -64,7 +68,7 @@ async function fixture(error = "UPSTREAM_HTTP_429") {
     { status: healthy, health: async () => healthy },
   );
   engine.monitor.boot();
-  apiAccess.restoreCooldowns([cooldown]);
+  if (error) apiAccess.restoreCooldowns([cooldown]);
   predecessorReset.activate(engine.monitor);
   const ctx = {
     db,
@@ -87,26 +91,33 @@ async function fixture(error = "UPSTREAM_HTTP_429") {
     sui: { status: healthy },
   } as unknown as WorkerContext;
   const handle = createRequestHandler(ctx);
+  let upstreamStatus = 500;
   const server = createServer((req, res) => {
+    if (req.url?.startsWith("/upstream/")) {
+      res.writeHead(req.url === "/upstream/read" ? upstreamStatus : 200);
+      res.end("{}");
+      return;
+    }
     void withApiTiming(() => handle(req, res));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   resources.push({ server, db });
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  async function request(command?: string, expectedReset?: unknown) {
-    const response = await fetch(
-      base + (command ? "/api/control" : "/api/deployment"),
-      {
-        method: command ? "POST" : "GET",
-        headers: { "Content-Type": "application/json" },
-        body: command
-          ? JSON.stringify({
-              command,
-              ...(expectedReset === undefined ? {} : { expectedReset }),
-            })
-          : undefined,
-      },
-    );
+  async function request(
+    command?: string,
+    expectedReset?: unknown,
+    path = "/api/deployment",
+  ) {
+    const response = await fetch(base + (command ? "/api/control" : path), {
+      method: command ? "POST" : "GET",
+      headers: { "Content-Type": "application/json" },
+      body: command
+        ? JSON.stringify({
+            command,
+            ...(expectedReset === undefined ? {} : { expectedReset }),
+          })
+        : undefined,
+    });
     return { status: response.status, value: await response.json() };
   }
   const state = (await request()).value;
@@ -118,6 +129,10 @@ async function fixture(error = "UPSTREAM_HTTP_429") {
   } = state.resetScope;
   return {
     ctx,
+    base,
+    recoverUpstream: () => {
+      upstreamStatus = 200;
+    },
     db,
     engine,
     predecessorReset,
@@ -256,4 +271,139 @@ it("holds predecessor-blocked warmup until the scoped reset, without starting or
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(tick).toHaveBeenCalledTimes(1);
   expect(t.db.runtime().running).toBe(false);
+});
+
+async function currentStop() {
+  const t = await fixture(null);
+  apiAccess.onAttempt = ({ failure }) => {
+    if (failure) t.engine.monitor.apiFailure(failure);
+  };
+  t.engine.monitor.beginCycle();
+  const read = (path = "read") =>
+    apiFetch("Test market", t.base + "/upstream/" + path);
+  await expect(read()).rejects.toThrow("UPSTREAM_HTTP_500");
+  t.engine.monitor.stop("UPSTREAM_HTTP_500");
+  const scope = async () => {
+    const state = await t.request(undefined, undefined, "/api/state");
+    expect(state.status).toBe(200);
+    return state.value.currentResetScope;
+  };
+  const recover = async () => {
+    t.recoverUpstream();
+    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    await read();
+  };
+  return { ...t, scope, read, recover };
+}
+
+function expectation({
+  version,
+  bootId,
+  pair,
+  generation,
+  expectedError,
+}: ResetExpectation) {
+  return { version, bootId, pair, generation, expectedError };
+}
+
+it("requires a later successful read of the failed route, then clears and audits without starting", async () => {
+  const t = await currentStop();
+  await t.read("different");
+  const waiting = await t.scope();
+  expect(waiting).toMatchObject({
+    pending: true,
+    eligible: false,
+    reason: "RESET_BUSY",
+  });
+  expect((await t.request("reset-current", expectation(waiting))).status).toBe(
+    409,
+  );
+  await t.recover();
+  const ready = await t.scope();
+  expect(ready).toMatchObject({ pending: true, eligible: true, reason: null });
+  expect((await t.request("reset-current", expectation(waiting))).status).toBe(
+    409,
+  );
+  expect((await t.request("reset-current", expectation(ready))).status).toBe(
+    200,
+  );
+  expect(t.db.runtime()).toMatchObject({ running: false, error: null });
+  expect(await t.scope()).toMatchObject({ pending: false, eligible: false });
+  expect(
+    t.db
+      .history<{ code: string }>("operation_events")
+      .filter((e) => e.code === "MANUAL_RESET"),
+  ).toHaveLength(1);
+  expect((await t.request("start")).status).toBe(200);
+});
+
+it.each(["wrong-error", "stale", "emergency", "running"])(
+  "refuses current reset in the %s case",
+  async (scenario) => {
+    const t = await currentStop();
+    await t.recover();
+    const expected = expectation(await t.scope());
+    if (scenario === "wrong-error")
+      expected.expectedError = "UPSTREAM_HTTP_429";
+    if (scenario === "stale") await t.request("stop");
+    if (scenario === "emergency") await t.request("emergency");
+    if (scenario === "running")
+      t.db.set("runtime", { ...t.db.runtime(), running: true });
+    const before = t.db.runtime();
+    expect(await t.request("reset-current", expected)).toMatchObject({
+      status: 409,
+      value: {
+        error:
+          scenario === "emergency"
+            ? "RESET_EMERGENCY_ACTIVE"
+            : scenario === "running"
+              ? "RESET_BUSY"
+              : "RESET_SCOPE_CHANGED",
+      },
+    });
+    expect(t.db.runtime()).toEqual(before);
+  },
+);
+
+it("never uses the current route to clear an inherited HTTP 500", async () => {
+  const t = await fixture("UPSTREAM_HTTP_500");
+  const state = await t.request(undefined, undefined, "/api/state");
+  expect(state.value.currentResetScope).toMatchObject({
+    pending: false,
+    eligible: false,
+  });
+  expect(
+    (
+      await t.request(
+        "reset-current",
+        expectation(state.value.currentResetScope),
+      )
+    ).status,
+  ).toBe(409);
+  expect(t.db.runtime().error).toBe("UPSTREAM_HTTP_500");
+});
+
+it("finishes connectivity checks before reset while keeping runtime stopped", async () => {
+  const t = await currentStop();
+  const monitor = t.engine.monitor;
+  t.db.set("paper_safety", { ...monitor.safety(), connectivity: "DEGRADED" });
+  await t.recover();
+  expect(await t.scope()).toMatchObject({ eligible: false });
+  const now = Date.now();
+  monitor.market(now, now);
+  monitor.beginCycle();
+  expect(monitor.recoveryCycle({ market: true, sui: true }, now + 1_000)).toBe(
+    false,
+  );
+  expect(monitor.safety().connectivity).toBe("RECOVERING");
+  monitor.beginCycle();
+  expect(monitor.recoveryCycle({ market: true, sui: true }, now + 62_000)).toBe(
+    false,
+  );
+  expect(monitor.safety().connectivity).toBe("HEALTHY");
+  expect(t.db.runtime()).toMatchObject({
+    running: false,
+    error: "UPSTREAM_HTTP_500",
+  });
+  expect(await t.scope()).toMatchObject({ eligible: true });
 });

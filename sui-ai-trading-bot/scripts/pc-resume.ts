@@ -17,11 +17,12 @@ type State = {
   runtime?: { running: boolean };
   safety?: { ordersAllowed: boolean };
   resetScope?: ResetScope;
+  currentResetScope?: ResetScope;
 };
 type Control =
   | { command: "start" }
   | {
-      command: "reset";
+      command: "reset" | "reset-current";
       expectedReset: ResetExpectation;
     };
 type Reply = { status: number; body?: unknown };
@@ -160,7 +161,11 @@ export async function runPcResume(argv: string[], deps: PcResumeDependencies) {
     await fail(typeof error === "string" ? `${failure}\n${error}` : failure);
     return false;
   };
-  if (scope.pending) {
+  const current = state.currentResetScope;
+  const resetCommand =
+    !scope.pending && current?.pending ? "reset-current" : "reset";
+  if (resetCommand === "reset-current") scope = current;
+  if (scope?.pending) {
     if (scope.eligible !== true)
       return await fail(
         `再開できませんでした。停止エラーを解除できません。\n${scope.reason ?? "解除できない理由は不明です。"}`,
@@ -169,7 +174,7 @@ export async function runPcResume(argv: string[], deps: PcResumeDependencies) {
     if (
       !(await control(
         {
-          command: "reset",
+          command: resetCommand,
           expectedReset: { version, bootId, pair, generation, expectedError },
         },
         "再開できませんでした。停止エラーの解除に失敗しました。",
