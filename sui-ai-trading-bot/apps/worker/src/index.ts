@@ -15,6 +15,7 @@ import { deepBookTransport } from "../../../packages/market-data/src/deepbook-tr
 import { DashboardService } from "./dashboard-feed.ts";
 import { startDisplaySamplers } from "./display-samplers.ts";
 import { WorkerContext } from "./worker-context.ts";
+import { startPerfTrace } from "./perf-trace.ts";
 import { createRequestHandler } from "./http-routes.ts";
 import {
   createChartHistory,
@@ -101,6 +102,10 @@ const deploymentGate = new DeploymentGate(rootDatabasePath);
 const paperCheck = new PaperCheckSession(process.env.PAPER_CHECK_MODE);
 const bootId = randomUUID();
 recordLifecycle(rootDatabasePath, bootId, "running");
+const perfTrace = startPerfTrace(dirname(rootDatabasePath));
+if (perfTrace)
+  BotDatabase.methodTimingSink = (method, elapsed) =>
+    perfTrace.recordSqlite(method, elapsed);
 const selectionDb = new BotDatabase(rootDatabasePath + ".pairs.sqlite");
 const pair = tradingPair(
   process.env.TRADING_PAIR ?? selectionDb.get("selected_pair") ?? "SUI_USDC",
@@ -125,6 +130,7 @@ const ctx = new WorkerContext({
   paperCheck,
   selectionDb,
   rootDatabasePath,
+  perfTrace,
   bootId,
   marketMode,
   reconstruction,

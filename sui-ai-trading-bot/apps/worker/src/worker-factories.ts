@@ -93,6 +93,7 @@ export function createEngine(
           network: ctx.suiGrpcEndpoints.network,
           realBalances: realRuntime?.realBalances,
         },
+        ctx.perfTrace,
       ),
     };
   } catch (error) {
@@ -176,11 +177,13 @@ export const createScheduler = (ctx: WorkerContext) => {
       // Orders remain stopped; only an explicitly scoped reset releases warmup.
       if (ctx.predecessorReset.awaitingReset()) return;
       ctx.chartHistory.cancel();
-      ctx.activeTick = ctx.engine.tick();
+      const finishCycle = ctx.perfTrace?.start("cycle");
       try {
+        ctx.activeTick = ctx.engine.tick();
         await ctx.activeTick;
       } finally {
         ctx.activeTick = undefined;
+        finishCycle?.();
       }
       refreshPartySafely(ctx);
       generateNarrationSafely(ctx);

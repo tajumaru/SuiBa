@@ -193,7 +193,87 @@ export interface SqlitePerfRecord {
   cycleId: string | null;
   cyclePhase: string | null;
 }
+// Timings are inclusive. A transaction and its nested writes can overlap.
+const timedMethods = [
+  "displayVersion",
+  "get",
+  "set",
+  "runtime",
+  "portfolio",
+  "settings",
+  "recordProfit",
+  "transaction",
+  "append",
+  "enqueueMemwal",
+  "memwalPending",
+  "memwalSent",
+  "memwalFailed",
+  "memwalStatus",
+  "reserveShadowCall",
+  "shadowLastCall",
+  "shadowLastDecision",
+  "history",
+  "orderHistory",
+  "hasOrder",
+  "visitRecoveryRecords",
+  "range",
+  "shadowRuleConditions",
+  "situationDecisionRows",
+  "displayValidationRows",
+  "before",
+  "putCandidate",
+  "operationCounts",
+  "pairSwitchBlocker",
+  "interruptPending",
+  "saveCandles",
+  "candles",
+  "addLiquidation",
+  "liquidationBuckets",
+  "recordLiquidationCoverage",
+  "liquidationCoverage",
+  "pruneLiquidations",
+  "recordAnalysis",
+  "maintainRetentionChunk",
+  "partyRecords",
+  "refreshParty",
+  "appendNarrationEntry",
+  "narrationState",
+  "setNarrationState",
+  "commitNarration",
+  "narrationCounts",
+  "narrationEntries",
+  "maintainNarrationRetentionChunk",
+  "commitFill",
+  "updateSettings",
+] as const satisfies readonly (keyof BotDatabase)[];
+
 export class BotDatabase {
+  static methodTimingSink:
+    | ((method: string, durationMs: number) => void)
+    | undefined;
+
+  private timeMethods(sink: NonNullable<typeof BotDatabase.methodTimingSink>) {
+    for (const name of timedMethods) {
+      const method = this[name];
+      Object.defineProperty(this, name, {
+        configurable: true,
+        writable: true,
+        value(this: BotDatabase, ...args: unknown[]) {
+          const start = performance.now();
+          try {
+            return Reflect.apply(method, this, args);
+          } finally {
+            try {
+              sink(name, performance.now() - start);
+            } catch {
+              // A recording failure must never affect the database call.
+            }
+          }
+        },
+      });
+    }
+  }
+
   private runtimeWriteRevision = 0;
   runtimeRevision() {
     return this.runtimeWriteRevision;
@@ -309,6 +389,8 @@ export class BotDatabase {
     return `${row.changes}:${row.data_version}:${this.transactionVersion}`;
   }
   constructor(path: string) {
+    if (BotDatabase.methodTimingSink)
+      this.timeMethods(BotDatabase.methodTimingSink);
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec(

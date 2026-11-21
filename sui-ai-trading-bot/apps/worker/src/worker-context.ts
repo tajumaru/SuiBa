@@ -20,12 +20,15 @@ import { apiAccess } from "../../../packages/shared/src/api.ts";
 import type { LiquidationCollector } from "./liquidation-collector.ts";
 import type { FxRateSampler } from "./fx-rate.ts";
 
+import type { PerfTrace } from "./perf-trace.ts";
+
 export interface WorkerContextInit {
   browserSessions: BrowserSessions;
   deploymentGate: DeploymentGate;
   paperCheck: PaperCheckSession;
   selectionDb: BotDatabase;
   rootDatabasePath: string;
+  perfTrace?: PerfTrace;
   bootId: string;
   marketMode: string;
   reconstruction: string;
@@ -52,6 +55,7 @@ export class WorkerContext {
   readonly deploymentGate: DeploymentGate;
   readonly paperCheck: PaperCheckSession;
   readonly selectionDb: BotDatabase;
+  readonly perfTrace?: PerfTrace;
   readonly rootDatabasePath: string;
   readonly bootId: string;
   readonly marketMode: string;
@@ -88,6 +92,7 @@ export class WorkerContext {
     this.paperCheck = init.paperCheck;
     this.selectionDb = init.selectionDb;
     this.rootDatabasePath = init.rootDatabasePath;
+    this.perfTrace = init.perfTrace;
     this.bootId = init.bootId;
     this.marketMode = init.marketMode;
     this.reconstruction = init.reconstruction;

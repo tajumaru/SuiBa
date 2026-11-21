@@ -58,6 +58,7 @@ import { PaperTrading } from "../../../packages/paper-trading/src/index.ts";
 import { equity } from "../../../packages/portfolio/src/index.ts";
 import { validateCandles } from "../../../packages/market-data/src/index.ts";
 import { ReadOnlySuiClient } from "../../../packages/sui-client/src/index.ts";
+import type { PerfTrace } from "./perf-trace.ts";
 import type { ValidationRecorder } from "./validation.ts";
 import type { ExecutionAdapter } from "./execution-adapter.ts";
 import type { FxRate } from "./fx-rate.ts";
@@ -102,6 +103,7 @@ export class BotEngine {
     private readonly snapshotDisplay: Pick<SnapshotSources, "network" | "realBalances"> = {
       network: "mainnet",
     },
+    private readonly perfTrace?: PerfTrace,
   ) {
     this.shadow = new ShadowRecorder(
       db,
@@ -120,6 +122,7 @@ export class BotEngine {
       undefined,
       undefined,
       fxRateSource,
+      perfTrace,
     );
     this.activateApiHooks();
   }
@@ -201,8 +204,13 @@ export class BotEngine {
       throw new Error("MARKET_PAIR_MISMATCH");
     const previousSource =
       this.db.get<string>("market_source") ?? this.db.candles().at(-1)?.source;
-    for (const rows of Object.values(frames)) this.db.saveCandles(rows);
-    this.db.set("market_source", source);
+    const finishSave = this.perfTrace?.start("saveCandles");
+    try {
+      for (const rows of Object.values(frames)) this.db.saveCandles(rows);
+      this.db.set("market_source", source);
+    } finally {
+      finishSave?.();
+    }
     if (previousSource && previousSource !== source) {
       this.db.set("price", null);
       this.db.set("indicators", null);
@@ -1004,8 +1012,22 @@ export class BotEngine {
       this.monitor.market((last.timestamp + 300) * 1000);
       if (this.db.runtime().running && !this.monitor.ledger().ok)
         throw new Error("PAPER_RECONCILIATION_FAILED");
+      const finishAnalysis = this.perfTrace?.start("analysis");
+      let analysis: Awaited<ReturnType<BotEngine["analyzeCycle"]>>;
+      try {
+        analysis = await this.analyzeCycle(
+          c,
+          price,
+          began,
+          now,
+          cycle,
+          cycleToken,
+        );
+      } finally {
+        finishAnalysis?.();
+      }
       const { recoveryTransition, p, s, runtime, decision, sellPreview } =
-        await this.analyzeCycle(c, price, began, now, cycle, cycleToken);
+        analysis;
       measuredAction = decision.action;
       if (
         this.gateStopsCycle(

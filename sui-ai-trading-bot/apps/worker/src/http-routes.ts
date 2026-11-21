@@ -61,6 +61,18 @@ export function createRequestHandler(ctx: WorkerContext) {
       "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'",
     );
     const url = new URL(req.url ?? "/", "http://localhost");
+    if (ctx.perfTrace && req.method === "GET" && url.pathname === "/api/state") {
+      const finishState = ctx.perfTrace.start("state");
+      const timing = currentApiTiming();
+      // "close" also runs after "finish" on successful responses.
+      const record = () => {
+        res.off("finish", record);
+        res.off("close", record);
+        finishState(timing, res.statusCode, res.writableFinished);
+      };
+      res.once("finish", record);
+      res.once("close", record);
+    }
     const send = (status: number, value: unknown) => {
       const timing = currentApiTiming()!;
       const jsonStart = performance.now();
@@ -346,10 +358,14 @@ export function createRequestHandler(ctx: WorkerContext) {
         return;
       }
       if (req.method === "GET" && url.pathname === "/api/state") {
-        send(
-          200,
-          timeAggregation(() => ctx.engine.snapshot()),
-        );
+        const finishSnapshot = ctx.perfTrace?.start("snapshot");
+        let snapshot;
+        try {
+          snapshot = timeAggregation(() => ctx.engine.snapshot());
+        } finally {
+          finishSnapshot?.();
+        }
+        send(200, snapshot);
         return;
       }
       if (req.method === "GET" && url.pathname === "/api/operations") {
@@ -379,6 +395,7 @@ export function createRequestHandler(ctx: WorkerContext) {
             counts: ctx.db.narrationCounts(ctx.pair),
           },
           liquidation: ctx.liquidation?.status() ?? null,
+          ...(ctx.perfTrace ? { perfTrace: ctx.perfTrace.summary() } : {}),
           ...(ctx.validation
             ? { validation: timeAggregation(() => ctx.validation!.report()) }
             : {}),
