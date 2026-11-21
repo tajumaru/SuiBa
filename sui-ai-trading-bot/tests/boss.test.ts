@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { readBoss, refreshBoss } from "../apps/worker/src/boss.ts";
+import { readBoss, readBossHistory, refreshBoss } from "../apps/worker/src/boss.ts";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import type { Candle } from "../packages/shared/src/index.ts";
 
@@ -102,6 +102,7 @@ describe("boss battle", () => {
     const path = join(dir, "bot.sqlite");
     const before = database(path);
     const started = opening(before);
+    expect(readBossHistory(before, pair)).toEqual([]);
     before.close();
     databases.delete(before);
 
@@ -127,15 +128,50 @@ describe("boss battle", () => {
       recovery: 1,
       outcome: { result: "endured" },
     });
-    expect(market(db, 115, [candle(end + 900, 115)], now + 900_000)).toEqual(
+    expect(readBossHistory(db, pair)).toEqual([
+      {
+        startedAt: now,
+        endedAt: now + 600_000,
+        type: "lightning",
+        name: "真・閃光の投げ売り",
+        strength: "真",
+        result: "endured",
+        drop: 0.07,
+        recovery: 1,
+      },
+    ]);
+    const history = readBossHistory(db, pair);
+    db.close();
+    databases.delete(db);
+
+    const reopened = database(path);
+    refreshBoss(reopened, pair, now + 600_000);
+    expect(readBossHistory(reopened, pair)).toEqual(history);
+    expect(market(reopened, 115, [candle(end + 900, 115)], now + 900_000)).toEqual(
       ended,
     );
     expect(
-      market(db, 85, [candle(end + 1200, 85)], now + 1_200_000),
+      market(reopened, 85, [candle(end + 1200, 85)], now + 1_200_000),
     ).toMatchObject({
       startedAt: now + 1_200_000,
       outcome: null,
     });
+  });
+
+  it("keeps the newest twenty completed battles in order", () => {
+    const db = database();
+    const interval = 26 * hour;
+    for (let index = 0; index < 22; index++) {
+      const timestamp = end + index * interval;
+      const startedAt = now + index * interval * 1000;
+      market(db, 93, [candle(timestamp - hour, 100), candle(timestamp, 93)], startedAt);
+      market(db, 115, [candle(timestamp + 300, 115)], startedAt + 300_000);
+    }
+
+    expect(readBossHistory(db, pair).map((record) => record.startedAt)).toEqual(
+      Array.from({ length: 20 }, (_, index) => now + (21 - index) * interval * 1000),
+    );
+    expect(readBossHistory(db, "WAL_USDC")).toEqual([]);
   });
 
   it.each(["loss", "safety", "emergency", "manual", "profit"] as const)(
@@ -164,10 +200,12 @@ describe("boss battle", () => {
           timestamp,
         );
       }
+      const result = ["manual", "profit"].includes(event) ? "endured" : "retreated";
       expect(
         market(db, 103, [candle(end + 300, 103)], now + 300_000)?.outcome
           ?.result,
-      ).toBe(["manual", "profit"].includes(event) ? "endured" : "retreated");
+      ).toBe(result);
+      expect(readBossHistory(db, pair)).toMatchObject([{ result }]);
     },
   );
 });

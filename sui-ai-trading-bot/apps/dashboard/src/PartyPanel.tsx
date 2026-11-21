@@ -10,6 +10,13 @@ import partySageIcon from "./assets/party-sage.webp";
 
 type State = BotSnapshot;
 
+const BOSS_HISTORY_DISPLAY_LIMIT = 5;
+const bossHistoryDate = new Intl.DateTimeFormat("ja-JP", {
+  timeZone: "Asia/Tokyo",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 const partyIcons = {
   hero: partyHeroIcon,
   forecast: partySakiyomiIcon,
@@ -50,9 +57,11 @@ const TOGGLE_KEYS = {
  */
 export function Party({
   party,
+  bossHistory = [],
   toggles,
 }: {
   party: State["party"] | undefined;
+  bossHistory?: State["bossHistory"];
   toggles?: PartyToggles;
 }) {
   const [armed, setArmed] = useState(false);
@@ -146,6 +155,30 @@ export function Party({
         <p className="overview-party-note">
           設定に未保存の変更があるため、保存すると切り替えできます
         </p>
+      )}
+      {bossHistory.length > 0 && (
+        <section className="party-boss-history" aria-label="ボス戦の戦績">
+          <h4>ボス戦の戦績</h4>
+          <ul>
+            {bossHistory.slice(0, BOSS_HISTORY_DISPLAY_LIMIT).map((battle) => (
+              <li key={`${battle.startedAt}:${battle.endedAt}`}>
+                <time dateTime={new Date(battle.endedAt).toISOString()}>
+                  {bossHistoryDate.format(battle.endedAt)}
+                </time>
+                <span className="party-boss-history-name" title={battle.name}>
+                  {battle.name}
+                </span>
+                <span>{battle.result === "endured" ? "耐え切った" : "撤退"}</span>
+                <span>−{(battle.drop * 100).toFixed(1)}%</span>
+              </li>
+            ))}
+          </ul>
+          {bossHistory.length > BOSS_HISTORY_DISPLAY_LIMIT && (
+            <p className="overview-party-note">
+              ほか{bossHistory.length - BOSS_HISTORY_DISPLAY_LIMIT}件
+            </p>
+          )}
+        </section>
       )}
     </section>
   );

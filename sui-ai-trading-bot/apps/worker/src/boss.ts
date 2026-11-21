@@ -1,7 +1,7 @@
 import type { BotDatabase } from "../../../packages/database/src/index.ts";
 import { equity } from "../../../packages/portfolio/src/index.ts";
 import type { Fill } from "../../../packages/paper-trading/src/index.ts";
-import type { BossBattleState } from "../../../packages/shared/src/boss.ts";
+import type { BossBattleState, BossHistoryRecord } from "../../../packages/shared/src/boss.ts";
 import type {
   Candle,
   Indicators,
@@ -20,6 +20,15 @@ const atLeast = (value: number, threshold: number) =>
 type StoredBattle = BossBattleState & { openingCandleAt: number };
 
 const key = (pair: TradingPair) => `boss:${pair}`;
+const historyKey = (pair: TradingPair) => `bossHistory:${pair}`;
+const HISTORY_LIMIT = 20;
+
+export function readBossHistory(
+  db: BotDatabase,
+  pair: TradingPair,
+): BossHistoryRecord[] {
+  return db.get<BossHistoryRecord[]>(historyKey(pair)) ?? [];
+}
 
 export function readBoss(
   db: BotDatabase,
@@ -209,5 +218,38 @@ export function refreshBoss(
       outcome: null,
     };
   }
-  db.set(key(pair), boss);
+  const outcome = boss.outcome;
+  if (!outcome) {
+    db.set(key(pair), boss);
+    return;
+  }
+
+  db.transaction(() => {
+    // Recheck the transition under the write lock before recording it.
+    const stored = db.get<StoredBattle>(key(pair));
+    if (
+      !stored ||
+      stored.outcome ||
+      stored.startedAt !== boss.startedAt ||
+      stored.openingCandleAt !== boss.openingCandleAt
+    )
+      return;
+
+    const { startedAt, type, name, strength, drop, recovery } = boss;
+    const record: BossHistoryRecord = {
+      startedAt,
+      endedAt: outcome.at,
+      type,
+      name,
+      strength,
+      result: outcome.result,
+      drop,
+      recovery,
+    };
+    db.set(historyKey(pair), [
+      record,
+      ...readBossHistory(db, pair).slice(0, HISTORY_LIMIT - 1),
+    ]);
+    db.set(key(pair), boss);
+  });
 }

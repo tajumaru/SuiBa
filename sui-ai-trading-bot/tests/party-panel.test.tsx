@@ -49,3 +49,35 @@ it("renders nothing without party data", () => {
   const plain = renderToStaticMarkup(createElement(Party, { party }));
   expect(plain).not.toContain("overview-party-toggle");
 });
+
+const bossHistory: NonNullable<Parameters<typeof Party>[0]["bossHistory"]> =
+  Array.from({ length: 7 }, (_, index) => ({
+    startedAt: Date.UTC(2026, 0, 6 - index, 22),
+    endedAt: Date.UTC(2026, 0, 6 - index, 23),
+    type: "lightning",
+    name: `閃光の投げ売り・${7 - index}`,
+    strength: "通常",
+    result: index === 0 ? "endured" : "retreated",
+    drop: 0.032,
+    recovery: 0.9,
+  }));
+
+it("shows completed battles below the party members", () => {
+  const html = renderToStaticMarkup(createElement(Party, { party, bossHistory: bossHistory.slice(0, 2) }));
+  expect(html.indexOf("ボス戦の戦績")).toBeGreaterThan(html.indexOf("けんじゃ"));
+  expect(html).toMatch(/01\/07<\/time>.*閃光の投げ売り・7<\/span><span>耐え切った<\/span><span>−3\.2%/);
+  expect(html).toMatch(/01\/06<\/time>.*閃光の投げ売り・6<\/span><span>撤退<\/span>/);
+  expect(html).not.toContain("ほか");
+});
+
+it("shows the newest five battles and the remaining count", () => {
+  const html = renderToStaticMarkup(createElement(Party, { party, bossHistory }));
+  expect([...html.matchAll(/<time [^>]+>(.*?)<\/time>/g)].map((match) => match[1]))
+    .toEqual(["01/07", "01/06", "01/05", "01/04", "01/03"]);
+  expect(html).toContain("ほか2件");
+});
+
+it("omits the history block with no completed battles", () => {
+  const html = renderToStaticMarkup(createElement(Party, { party, bossHistory: [] }));
+  expect(html).not.toContain("ボス戦の戦績");
+});

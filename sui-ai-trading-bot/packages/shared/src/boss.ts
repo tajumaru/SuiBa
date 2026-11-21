@@ -15,6 +15,14 @@ export interface BossBattleState {
   outcome: { at: number; result: "endured" | "retreated" } | null;
 }
 
+export type BossHistoryRecord = Pick<
+  BossBattleState,
+  "startedAt" | "type" | "name" | "strength" | "drop" | "recovery"
+> & {
+  endedAt: number;
+  result: NonNullable<BossBattleState["outcome"]>["result"];
+};
+
 export function bossAppearance(boss: BossBattleState) {
   return `${boss.name} が あらわれた！`;
 }
