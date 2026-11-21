@@ -13,6 +13,8 @@ const score = (scoredRecords: number, coveragePct: number | null): ForecastScore
   scoredRecords,
   steps: scoredRecords * 24,
   coveragePct,
+  missUp: 0,
+  missDown: 0,
   dirTotal: 0,
   dirPct: null,
   touchTotal: 0,
