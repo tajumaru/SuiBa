@@ -97,21 +97,21 @@ describe("agent header avatar", () => {
       <AgentHeaderAvatar pose="normal" hardMode />,
     );
     expect(normal).toContain("agent-hard.webp");
-    expect(normal).toContain("ハードモード中");
+    expect(normal).toContain("ハード中");
     const laptop = renderToStaticMarkup(
       <AgentHeaderAvatar pose="laptop" hardMode />,
     );
     expect(laptop).toContain("agent-hard-guitar.webp");
     expect(laptop).toContain("agent-hard-guitar-2.webp");
     expect(laptop).toContain('class="agent-avatar-typing"');
-    expect(laptop).toContain("ハードモード中");
+    expect(laptop).toContain("ハード中");
     // The pointing poses wear hard portraits too (running time is
     // mostly spent pointing), but their pill keeps the state label.
     const point = renderToStaticMarkup(
       <AgentHeaderAvatar pose="point" hardMode />,
     );
     expect(point).toContain("agent-hard-point.webp");
-    expect(point).not.toContain("ハードモード中");
+    expect(point).not.toContain("ハード中");
     const smile = renderToStaticMarkup(
       <AgentHeaderAvatar pose="pointSmile" hardMode />,
     );

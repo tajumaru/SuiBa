@@ -124,20 +124,21 @@ test("recommends safe settings without guessing first use, and reviews without s
   page,
 }) => {
   const api = await openSettings(page);
-  await expect(page.getByLabel("安全重視のおすすめ")).toContainText(
-    "安全重視をおすすめ",
+  await expect(page.getByLabel("けんじゃのおすすめ")).toContainText(
+    "けんじゃのおすすめ",
   );
-  await expect(page.locator("legend")).toContainText("保存済み：カスタム");
+  await expect(page.locator("legend")).toContainText("モード選択");
+  await expect(page.locator("fieldset")).toContainText("いま：マニュアル");
   await expect(maximum(page)).toHaveValue("5");
   await page
-    .getByRole("button", { name: "安全重視の設定を確認する", exact: true })
+    .getByRole("button", { name: "確認する", exact: true })
     .click();
   await expect(modes(page).nth(0)).toHaveAttribute("aria-pressed", "true");
   // The diff lives only in the save review now — no preview box.
   await page
     .getByRole("button", { name: "変更内容を確認", exact: true })
     .click();
-  await expect(review(page)).toContainText("適用予定：安全重視");
+  await expect(review(page)).toContainText("適用予定：イージー");
   await expect(review(page)).toContainText("- 5 USDC");
   await expect(review(page)).toContainText("+ 2 USDC");
   await expect(review(page)).toContainText("- 20 USDC");
@@ -182,13 +183,13 @@ test("confirms, prevents duplicate saving, rereads settings, then starts only on
     .click();
   const release = api.holdSave();
   await review(page)
-    .getByRole("button", { name: "安全重視を適用", exact: true })
+    .getByRole("button", { name: "イージーを適用", exact: true })
     .click();
   await expect(
     page.locator(".easy-settings").getByRole("status"),
   ).toContainText("保存・サーバーへの再確認中");
   await expect(
-    review(page).getByRole("button", { name: "安全重視を適用", exact: true }),
+    review(page).getByRole("button", { name: "イージーを適用", exact: true }),
   ).toBeDisabled();
   await expect(modes(page).nth(1)).toBeDisabled();
   await expect.poll(() => api.writes.length).toBe(1);
@@ -196,7 +197,7 @@ test("confirms, prevents duplicate saving, rereads settings, then starts only on
   release();
   await expect(
     page.locator(".easy-settings").getByRole("status"),
-  ).toContainText("適用済み：安全重視");
+  ).toContainText("適用済み：イージー");
   await expect(saved(page)).toContainText("最大取引額：2 USDC");
   expect(api.state.settings).toMatchObject({
     dailyLossPct: 0.002,
@@ -235,7 +236,7 @@ for (const failure of ["post", "read"] as const)
       .getByRole("button", { name: "変更内容を確認", exact: true })
       .click();
     await review(page)
-      .getByRole("button", { name: "安全重視を適用", exact: true })
+      .getByRole("button", { name: "イージーを適用", exact: true })
       .click();
     await expect(page.getByRole("alert")).toContainText(
       "設定を保存・再確認できませんでした",
@@ -245,11 +246,11 @@ for (const failure of ["post", "read"] as const)
     expect(api.commands).toHaveLength(0);
     api.setFailure("none");
     await review(page)
-      .getByRole("button", { name: "安全重視を適用", exact: true })
+      .getByRole("button", { name: "イージーを適用", exact: true })
       .click();
     await expect(
       page.locator(".easy-settings").getByRole("status"),
-    ).toContainText("適用済み：安全重視");
+    ).toContainText("適用済み：イージー");
   });
 
 test("keeps custom edits until an explicit discard and uses saved settings for mode switches", async ({
@@ -282,13 +283,13 @@ test("keeps custom edits until an explicit discard and uses saved settings for m
   await page
     .getByRole("button", { name: "変更内容を確認", exact: true })
     .click();
-  await expect(review(page)).toContainText("適用予定：カスタム");
+  await expect(review(page)).toContainText("適用予定：マニュアル");
   await review(page)
     .getByRole("button", { name: "変更を保存", exact: true })
     .click();
   await expect(
     page.locator(".easy-settings").getByRole("status"),
-  ).toContainText("適用済み：カスタム");
+  ).toContainText("適用済み：マニュアル");
   expect(api.state.settings.gasUsdc).toBe(0.06);
   await maximum(page).fill("3");
   await modes(page).nth(0).click();
@@ -329,7 +330,7 @@ test("validates values and keeps emergency stop independent during saving", asyn
     .click();
   const release = api.holdSave();
   await review(page)
-    .getByRole("button", { name: "安全重視を適用", exact: true })
+    .getByRole("button", { name: "イージーを適用", exact: true })
     .click();
   await expect(
     page.locator(".easy-settings").getByRole("status"),
@@ -387,7 +388,7 @@ test("fits the viewport with 44px controls, decimal keyboard and wrapping previe
     expect(second.x).toBe(first.x);
   }
   await review(page)
-    .getByRole("button", { name: "安全重視を適用", exact: true })
+    .getByRole("button", { name: "イージーを適用", exact: true })
     .click();
   await expect(page.getByRole("alert")).toContainText(
     "設定を保存・再確認できませんでした",

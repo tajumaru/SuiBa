@@ -185,7 +185,7 @@ it("renders a custom saved configuration without saving or starting", () => {
   const html = renderToStaticMarkup(
     React.createElement(SettingsPage, { data, api, control, onSaved }),
   );
-  expect(html).toContain("保存済み：カスタム");
+  expect(html).toContain("いま：マニュアル");
   expect(html).toContain("PAPER運用開始");
   // The profit-guard state summary is no longer duplicated here:
   // on the merged strategy tab it lives in the strategy view's
@@ -213,8 +213,8 @@ it.each([defaults, { ...defaults, maxOrder: 3, gasUsdc: 0.08 }])(
         onSaved: async () => {},
       }),
     );
-    expect(html).toContain("安全重視をおすすめ");
-    expect(html).toContain("安全重視の設定を確認する");
+    expect(html).toContain("けんじゃのおすすめ");
+    expect(html).toContain("確認する");
     expect(html).not.toContain('role="dialog"');
     expect(html).not.toContain("適用済み：");
     expect(api).not.toHaveBeenCalled();
@@ -239,7 +239,7 @@ it("summarizes the number of saved values that differ from defaults", () => {
   expect(html).toContain("既定と異なる項目: 2件");
 });
 
-describe("ハードモード preset", () => {
+describe("ハード preset", () => {
   it("identifies hard settings and applies only the hard bundle", () => {
     expect(presetName(applyHardPreset(defaults))).toBe("hard");
     const current = {
@@ -277,8 +277,8 @@ describe("ハードモード preset", () => {
         onChange: vi.fn(),
       }),
     );
-    expect(html).toContain("ハードモード");
-    expect(html).toContain("安全重視");
-    expect(html).toContain("カスタム");
+    expect(html).toContain("ハード");
+    expect(html).toContain("イージー");
+    expect(html).toContain("マニュアル");
   });
 });

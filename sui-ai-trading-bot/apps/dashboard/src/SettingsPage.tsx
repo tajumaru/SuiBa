@@ -18,6 +18,7 @@ import {
   type Mode,
 } from "./settingsEditor.ts";
 import { number, errorCode, reason } from "./presentation.ts";
+import partySageIcon from "./assets/party-sage.webp";
 import { DailyBudgetCard } from "./DailyBudget.tsx";
 import {
   isStartRecoveryWait,
@@ -141,10 +142,22 @@ export const formatSettingValue = (s: Settings, f: Field) =>
   typeof s[f.key] === "number"
     ? `${number(Number((Number(s[f.key]) * (f.scale ?? 1)).toPrecision(12)))} ${f.unit ?? ""}`
     : String(s[f.key]);
-const modeCopy: Record<Mode, { label: string; blurb: string }> = {
-  safe: { label: "安全重視", blurb: "小さな金額でPAPER検証" },
-  hard: { label: "ハードモード", blurb: "よく売買する・荒い" },
-  custom: { label: "カスタム", blurb: "自分で設定を調整" },
+const modeCopy: Record<Mode, { label: string; blurb: string; facts: string }> = {
+  safe: {
+    label: "イージー",
+    blurb: "安全重視・小さな金額で検証",
+    facts: "注文最大 2 USDC／日次買い 10／最低純利益 1.5%／ProfitGuard あり",
+  },
+  hard: {
+    label: "ハード",
+    blurb: "よく売買する・荒い",
+    facts: "注文最大 5 USDC／日次買い 20／最低純利益 0.5%／利確 1.5%・損切り 1%",
+  },
+  custom: {
+    label: "マニュアル",
+    blurb: "自分で設定を調整",
+    facts: "下の詳細設定の値がそのまま効く",
+  },
 };
 export function PresetSelector({
   value,
@@ -162,8 +175,12 @@ export function PresetSelector({
           aria-pressed={value === v}
           onClick={() => onChange(v)}
         >
-          <strong>{modeCopy[v].label}</strong>
-          <small>{modeCopy[v].blurb}</small>
+          <span className="preset-row-head">
+            <strong>{modeCopy[v].label}</strong>
+            <small>{modeCopy[v].blurb}</small>
+            {value === v && <span className="preset-selected">選択中</span>}
+          </span>
+          <span className="preset-facts">{modeCopy[v].facts}</span>
         </button>
       ))}
     </div>
@@ -473,14 +490,16 @@ export function SettingsForm({
     <section className="easy-settings" aria-busy={busy}>
       <h2>かんたん設定</h2>
       <fieldset disabled={busy}>
-        <legend>
-          運用スタイル（保存済み：{modeLabel(presetName(saved))}）
-        </legend>
+        <legend>モード選択</legend>
+        <p className="preset-now">いま：{modeLabel(presetName(saved))}</p>
         {selected === "custom" && (
-          <aside className="settings-tip" aria-label="安全重視のおすすめ">
-            <strong>安全重視をおすすめ</strong>
+          <aside className="settings-tip" aria-label="けんじゃのおすすめ">
+            <img className="settings-tip-icon" src={partySageIcon} alt="" />
+            <span>
+              <strong>けんじゃのおすすめ</strong>：イージー（安全重視）
+            </span>
             <button type="button" onClick={() => choose("safe")}>
-              安全重視の設定を確認する
+              確認する
             </button>
           </aside>
         )}
