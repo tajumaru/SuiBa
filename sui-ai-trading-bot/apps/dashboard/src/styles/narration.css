@@ -560,19 +560,21 @@
 .agent-feed-chips {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 6px;
   margin-top: 12px;
 }
 .agent-feed-chips-title {
   font-size: 12px;
   color: #9aafbf;
+  flex: none;
 }
 .agent-feed-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
+  gap: 5px;
+  padding: 3px 8px;
+  white-space: nowrap;
   background: #1a2632;
   border: 1px solid var(--steel);
   border-radius: 999px;
