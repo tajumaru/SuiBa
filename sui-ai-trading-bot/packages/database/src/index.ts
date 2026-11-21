@@ -488,10 +488,13 @@ export class BotDatabase {
     if (!this.get("portfolio")) this.set("portfolio", initialPortfolio());
     if (!this.get("settings")) this.set("settings", defaults);
   }
+  private runtimeStateLookup?: ReturnType<BotDatabase["prepare"]>;
+
   get<T>(key: string): T | undefined {
-    const row = this.prepare(
+    const lookup = (this.runtimeStateLookup ??= this.prepare(
       "SELECT json FROM bot_runtime_state WHERE key=?",
-    ).get(key) as { json: string } | undefined;
+    ));
+    const row = lookup.get(key) as { json: string } | undefined;
     return row ? JSON.parse(row.json) : undefined;
   }
   set(key: string, value: unknown) {

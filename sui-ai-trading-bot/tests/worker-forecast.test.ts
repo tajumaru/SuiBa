@@ -109,10 +109,8 @@ describe("worker forecasts", () => {
           ...old.records,
           forecastRecordFrom(fc, visible.at(-1)!.close),
         ].slice(-288);
-        const expected = calibrationStep(
-          scoreForecasts(records, visible),
-          old.calib,
-        );
+        const expectedScore = scoreForecasts(records, visible);
+        const expected = calibrationStep(expectedScore, old.calib);
         const state = advanceForecast(
           db,
           "SUI_USDC",
@@ -121,7 +119,7 @@ describe("worker forecasts", () => {
           (visible.at(-1)!.timestamp + 300) * 1000,
         );
         expect(state.calib).toEqual(expected.calib);
-        expect(state.score).toEqual(scoreForecasts(records, visible));
+        expect(state.score).toEqual(expectedScore);
         expect(state.answer).toEqual(latestAnswerCheck(records, visible));
       }
       const state = readForecast(db, "SUI_USDC");
