@@ -3,6 +3,7 @@ import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { BossBattleCard } from "./BossBattle.tsx";
 import { BookBar } from "./BookBar.tsx";
 import heroBrave from "./assets/hero-brave-blue.webp";
+import heroStruggling from "./assets/hero-struggling.webp";
 import partyHero from "./assets/party-hero.webp";
 import partySakiyomi from "./assets/party-sakiyomi.webp";
 import partyShield from "./assets/party-shield.webp";
@@ -33,7 +34,6 @@ export function RsiGauge({
   const clipBase = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const heroClip = `${clipBase}-hero`;
   const crystalClip = `${clipBase}-crystal`;
-  const badgeClip = `${clipBase}-badge`;
   if (
     rsi == null ||
     !Number.isFinite(rsi) ||
@@ -91,9 +91,6 @@ export function RsiGauge({
           <clipPath id={crystalClip}>
             <circle cx={lineX} cy="19" r="8" />
           </clipPath>
-          <clipPath id={badgeClip}>
-            <circle cx={rsiX + 11.5} cy="43.5" r="6.5" />
-          </clipPath>
         </defs>
         <rect
           className="rsi-gauge-track"
@@ -150,7 +147,7 @@ export function RsiGauge({
         <circle className="rsi-gauge-dot" cx={rsiX} cy="33" r="5" />
         <image
           className="rsi-gauge-hero"
-          href={below ? partyHero : heroBrave}
+          href={below ? heroStruggling : heroBrave}
           x={rsiX - 13}
           y="20"
           width="26"
@@ -164,18 +161,6 @@ export function RsiGauge({
           cy="33"
           r="14"
         />
-        {below && (
-          <image
-            className="rsi-gauge-badge"
-            href={partyShield}
-            x={rsiX + 5}
-            y="37"
-            width="13"
-            height="13"
-            clipPath={`url(#${badgeClip})`}
-            aria-hidden="true"
-          />
-        )}
         <text
           className="rsi-gauge-current-label"
           x={rsiX}

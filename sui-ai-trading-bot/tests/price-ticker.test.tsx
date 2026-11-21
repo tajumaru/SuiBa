@@ -279,7 +279,10 @@ describe("RSI oversold gauge", () => {
     expect(html).toContain('cx="88.656"');
     expect(html).toContain("相手のターン。");
     expect(html).toContain("線まで あと 1.6");
-    expect(html).toContain("rsi-gauge-badge");
+    // Below the line the hero itself is the struggling portrait
+    // (owner, 2026-11-22): the art already holds the shield, so
+    // the old shield badge no longer rides along.
+    expect(html).not.toContain("rsi-gauge-badge");
     expect(html).toContain("まもりの盾で耐えてる");
   });
 
