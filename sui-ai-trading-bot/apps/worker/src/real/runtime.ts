@@ -10,6 +10,7 @@ import { IndexerGraphqlHistorySource } from "./history-source.ts";
 import { cacheRealBalances } from "./display-balances.ts";
 import { createDeepBookReadOnly } from "./read-only.ts";
 import type { RealEffects, RealIdentity } from "./types.ts";
+import { RealBookParamsCache } from "./book-params-cache.ts";
 import { RealFeeCache } from "./fee-cache.ts";
 
 type LiveProbeName = "snapshot" | "cap" | "history";
@@ -143,6 +144,7 @@ export function createRealTradeCapRuntime(
     executor,
     config,
     feeCache,
+    new RealBookParamsCache(config),
   );
   const history = new IndexerGraphqlHistorySource(
     config.indexerUrl,

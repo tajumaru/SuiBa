@@ -6,6 +6,7 @@ import type {
 } from "../execution-adapter.ts";
 import { RealTradeCapExecutor } from "./execution.ts";
 import type { RealTradeCapConfig } from "../../../../packages/shared/src/index.ts";
+import type { RealBookParamsCache } from "./book-params-cache.ts";
 import { RealFeeCache } from "./fee-cache.ts";
 
 const SUI_ATOMIC = new Decimal(1_000_000_000);
@@ -15,16 +16,20 @@ const SUI_ATOMIC = new Decimal(1_000_000_000);
  * generation fence immediately before every signature/send. */
 export class RealTradeCapExecutionAdapter implements ExecutionAdapter {
   readonly kind = "REAL_TRADECAP" as const;
+  private currentEpoch: number | null = null;
+
   constructor(
     private readonly executor: RealTradeCapExecutor,
     private readonly config: Pick<RealTradeCapConfig, "maxOrderDbusdc"> = {
       maxOrderDbusdc: Infinity,
     },
     private readonly fees?: RealFeeCache,
+    private readonly bookParams?: RealBookParamsCache,
   ) {}
 
   feeEstimate(side: "BUY" | "SELL", currentEpoch: number | null) {
     if (!this.fees) throw Error("REAL_FEE_CACHE_REQUIRED");
+    this.currentEpoch = currentEpoch;
     return this.fees.estimate(side, currentEpoch);
   }
 
@@ -39,14 +44,28 @@ export class RealTradeCapExecutionAdapter implements ExecutionAdapter {
   }
 
   async execute(intent: ExecutionIntent): Promise<ExecutionResult> {
-    const quantityAtomic =
+    const params = await this.bookParams?.get(this.currentEpoch);
+    if (!params)
+      return { status: "REJECTED", errorCode: "REAL_BOOK_PARAMS_UNAVAILABLE" };
+
+    const quotedQuantityAtomic =
       intent.side === "BUY" ? intent.quote.minAmountOut : intent.quote.amountIn;
-    const quantity = new Decimal(quantityAtomic).div(SUI_ATOMIC).toNumber();
-    if (
-      new Decimal(quantity)
-        .mul(intent.markPrice)
-        .greaterThan(this.config.maxOrderDbusdc)
+    const quantityAtomic = new Decimal(quotedQuantityAtomic)
+      .dividedToIntegerBy(params.lotSize)
+      .mul(params.lotSize);
+    if (quantityAtomic.lte(0) || quantityAtomic.lt(params.minSize))
+      return { status: "REJECTED", errorCode: "REAL_QUANTITY_BELOW_MINIMUM" };
+
+    const priceTicks = new Decimal(intent.markPrice)
+      .mul(SUI_ATOMIC)
+      .div(params.tickSize);
+    const price = (
+      intent.side === "BUY" ? priceTicks.floor() : priceTicks.ceil()
     )
+      .mul(params.tickSize)
+      .div(SUI_ATOMIC);
+    const quantity = quantityAtomic.div(SUI_ATOMIC);
+    if (quantity.mul(price).greaterThan(this.config.maxOrderDbusdc))
       return { status: "REJECTED", errorCode: "REAL_MAX_ORDER_EXCEEDED" };
     const result = await this.executor.execute({
       internalOrderId: intent.orderId,
@@ -55,8 +74,8 @@ export class RealTradeCapExecutionAdapter implements ExecutionAdapter {
       ),
       side: intent.side,
       intent: {
-        price: intent.markPrice,
-        quantity,
+        price: price.toNumber(),
+        quantity: quantity.toNumber(),
         expiresAt: intent.quote.expiresAt,
       },
     });
