@@ -11,6 +11,7 @@ import { BotDatabase } from "../packages/database/src/index.ts";
 import { applySafePreset } from "../apps/dashboard/src/settingsPresets.ts";
 import { verifyToken } from "../apps/dashboard/src/verifyToken.ts";
 import { initialPaperSafety } from "../packages/shared/src/paper-recovery.ts";
+import { buildStartupWorker } from "./helpers/startup-worker.ts";
 
 it("keeps PAPER settings, history and stop gates through the real API and restart", async () => {
   const folder = mkdtempSync(join(tmpdir(), "suiba-settings-")),
@@ -49,10 +50,10 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
     child.kill();
     await stopped;
   }
-  async function start() {
+  async function start(workerEntry: string) {
     child = spawn(
       process.execPath,
-      ["--import", "tsx", "apps/worker/src/index.ts"],
+      [workerEntry],
       {
         env: {
           ...process.env,
@@ -104,7 +105,8 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
   await cache.get({ timeframe: 300, from: chartFrom, to: chartTo });
   cache.close();
   try {
-    await start();
+    const workerEntry = await buildStartupWorker(folder);
+    await start(workerEntry);
     const loginRequest: typeof fetch = (path, init) =>
       fetch(`http://127.0.0.1:${port}${path}`, init);
     expect(
@@ -285,7 +287,7 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
       (await api("control", { command: "emergency" })).value,
     ).toMatchObject({ running: false, emergency: true });
     await stop();
-    await start();
+    await start(workerEntry);
     state = (await api("state")).value;
     expect(
       (await api("operations")).value.events.some(
@@ -408,7 +410,7 @@ it("keeps PAPER settings, history and stop gates through the real API and restar
 
     await api("settings", { ...wal.settings, maxOrder: 2 });
     await stop();
-    await start();
+    await start(workerEntry);
     wal = (await api("state")).value;
     expect(wal.pair).toBe("WAL_USDC");
     expect(wal.runtime.running).toBe(false);
