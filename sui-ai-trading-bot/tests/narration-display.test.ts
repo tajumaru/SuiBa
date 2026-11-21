@@ -77,6 +77,17 @@ describe("server narration display switch", () => {
     expect(selectDisplayEntries(entries, [], true)).toEqual(entries);
   });
 
+  it("shows device boss events until the corresponding server events arrive", () => {
+    const opening = device("device-start", "bossStart", "出現");
+    const ending = device("device-end", "bossEnd", "耐え切った", 2000);
+    const recorded = server("server-start", "bossStart", "出現");
+    expect(selectDisplayEntries([opening, ending], [], true)).toEqual([opening, ending]);
+    expect(selectDisplayEntries([opening, ending], [recorded], true)).toEqual([
+      { ...opening, id: "server-start" },
+      ending,
+    ]);
+  });
+
   it("does not queue the initial server window as new arrivals", () => {
     const initialWindow = selectDisplayEntries(
       [],

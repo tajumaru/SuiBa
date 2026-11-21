@@ -299,6 +299,44 @@ try {
       failures.push(`${width}px: horizontal overflow`);
     /* eslint-enable no-undef */
   }
+  fixture.state.indicators = { ...fixture.state.indicators, rsi: 25 };
+  await page.reload();
+  await page.locator(".rsi-gauge").waitFor();
+  fixture.state.boss = {
+    startedAt: Date.now(),
+    type: "lightning",
+    name: "大・閃光の投げ売り",
+    strength: "大",
+    drop: 0.05,
+    windowSeconds: 3600,
+    high: 1,
+    low: 0.95,
+    startingEquity: fixture.state.equity,
+    recovery: 0.25,
+    turn: "boss",
+    latestEvent: null,
+    retreatReason: null,
+    outcome: null,
+  };
+  await page.reload();
+  const bossCard = page.getByRole("button", { name: /大・閃光の投げ売り/ });
+  const battle = page.getByRole("region", { name: "ボス戦" });
+  for (const width of [320, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await bossCard.click();
+    await battle.waitFor();
+    if (
+      (await page.locator(".rsi-gauge").count()) !== 0 ||
+      !(await battle.getByText("Lv. 3").isVisible()) ||
+      !(await battle.getByText("無傷（ポジションなし）").isVisible()) ||
+      (await battle.getByRole("progressbar", { name: "ポタリオのHP" }).getAttribute("aria-valuenow")) !== "100" ||
+      !(await battle.evaluate((sheet) => sheet.scrollWidth <= sheet.clientWidth))
+    )
+      failures.push(`${width}px: battle scene or card layout regressed`);
+    await battle.getByRole("button", { name: "閉じる", exact: true }).click();
+    await battle.waitFor({ state: "hidden" });
+  }
+  await bossCard.click();
   await page
     .getByRole("button", { name: "PAPER運用開始", exact: true })
     .click();
@@ -313,6 +351,11 @@ try {
     .waitFor();
   if (commands.join(",") !== "start,stop")
     failures.push("header control commands changed");
+  fixture.state.boss.outcome = { at: Date.now(), result: "endured" };
+  await page.reload();
+  await page.locator(".rsi-gauge").waitFor();
+  if ((await bossCard.count()) || (await battle.count()))
+    failures.push("finished battle still has a card or scene");
   // Populated monthly report: the longest labels must remain on one line.
   fixture.state.trades = [0.17, -0.24].map((pnl, i) => ({
     orderId: `monthly-smoke-${i}`,

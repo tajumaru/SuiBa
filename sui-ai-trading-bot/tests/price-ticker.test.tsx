@@ -551,3 +551,41 @@ describe("pair switch in the ticker bar", () => {
     expect(html).toContain('class="price-ticker-bar"');
   });
 });
+
+describe("boss battle card", () => {
+  const boss: NonNullable<State["boss"]> = {
+    startedAt: T0 * 1000,
+    type: "lightning",
+    name: "大・閃光の投げ売り",
+    strength: "大",
+    drop: 0.05,
+    windowSeconds: 3600,
+    high: 1,
+    low: 0.95,
+    startingEquity: 100,
+    recovery: 0.25,
+    turn: "hero",
+    latestEvent: null,
+    retreatReason: null,
+    outcome: null,
+  };
+  const props = { price: 0.96, candlesByTimeframe: frames({}), rsi: 25 };
+
+  it("replaces the RSI card only during battle", () => {
+    const markup = renderToStaticMarkup(<PriceTicker {...props} boss={boss} />);
+    expect(markup).toContain("大・閃光の投げ売り");
+    expect(markup).toContain("こちらの攻撃");
+    expect(markup).toContain('aria-valuenow="25"');
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("売られすぎメーター");
+    expect(markup).not.toContain('aria-label="ボス戦"');
+  });
+
+  it("has identical ticker and RSI markup when no battle is active", () => {
+    const original = renderToStaticMarkup(<PriceTicker {...props} />);
+    expect(original).toContain("売られすぎメーター（RSI）");
+    expect(renderToStaticMarkup(
+      <PriceTicker {...props} boss={{ ...boss, outcome: { at: T0 * 1000 + 1, result: "endured" } }} />,
+    )).toBe(original);
+  });
+});

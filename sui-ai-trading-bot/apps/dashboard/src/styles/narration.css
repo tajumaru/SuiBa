@@ -625,6 +625,9 @@
   color: var(--text);
   line-height: 1.55;
 }
+.agent-feed-entry.bossStart p {
+  white-space: pre-line;
+}
 /* Memory entries alone carry the official Walrus line art as a
    clipped decorative watermark. At the full card width it reaches
    228px; on narrow cards the percentage keeps the same balance. */

@@ -16,6 +16,9 @@ import {
 } from "../packages/database/src/index.ts";
 import { withApiTiming } from "../packages/shared/src/api-timing.ts";
 import { OperationMonitor } from "../apps/worker/src/operations.ts";
+import { proactivePrompt } from "../apps/dashboard/src/agentChat.ts";
+import { narrationStateSchema } from "../apps/dashboard/src/narrationStorage.ts";
+import type { BossBattleState } from "../packages/shared/src/boss.ts";
 import { emptyNarrationState } from "../apps/dashboard/src/narration/state.ts";
 import {
   NARRATION_STATE_VERSION,
@@ -167,11 +170,11 @@ describe("narration database migration", () => {
 });
 
 describe("server narration identity", () => {
-  it("keeps the complete stage-1 set fixed and hashes facts independently of text", () => {
-    expect(SERVER_NARRATION_KINDS).toHaveLength(29);
-    expect(new Set(SERVER_NARRATION_KINDS).size).toBe(29);
+  it("registers the complete server set and hashes facts independently of text", () => {
+    expect(SERVER_NARRATION_KINDS).toHaveLength(31);
+    expect(new Set(SERVER_NARRATION_KINDS).size).toBe(31);
     expect(SERVER_NARRATION_KINDS).toEqual(expect.arrayContaining([
-      "levelUp",
+      "levelUp", "bossStart", "bossEnd",
       "nearMiss", "watchHit", "reach", "superReach", "priceLine",
       "priceLineReached", "sellLine", "sellLineCrossing", "review", "alert",
       "monthlyReport",
@@ -263,6 +266,57 @@ describe("server narration identity", () => {
       { kind: "levelUp", json: { text: "主人公が Lv.3 に上がった！" } },
       { kind: "levelUp", json: { text: "ホーリーが Lv.2 に上がった！" } },
     ]);
+  });
+
+  it("narrates the persisted boss transitions once without proactive prompts", () => {
+    vi.stubEnv("SUIBA_NARRATION_GENERATION_ENABLED", "true");
+    const db = new BotDatabase(":memory:");
+    databases.push(db);
+    const pair = "SUI_USDC";
+    const boss: BossBattleState = {
+      startedAt: now - 300_000,
+      type: "lightning",
+      name: "閃光の投げ売り",
+      strength: "通常",
+      drop: 0.03,
+      windowSeconds: 3600,
+      high: 100,
+      low: 97,
+      startingEquity: 100,
+      recovery: 0,
+      turn: "boss",
+      latestEvent: null,
+      retreatReason: null,
+      outcome: null,
+    };
+    const engine = {
+      monitor: new OperationMonitor(db),
+      snapshot: () => ({
+        boss,
+        runtime: db.runtime(), forecast: { records: [], events: [] }, trades: [],
+        btc: null, candlesByTimeframe: { 300: [] }, bookLevels: null,
+        settings: db.settings(), chain: null,
+      }),
+    };
+    const { lastBossStartAt, lastBossEndAt, ...legacy } = emptyNarrationState();
+    expect(narrationStateSchema.parse(legacy)).toMatchObject({
+      lastBossStartAt, lastBossEndAt,
+    });
+    const generate = () => new NarrationGenerator(db, pair, engine as never, () => now).generate();
+    expect(generate()).toBe(1);
+    expect(generate()).toBe(0);
+    boss.outcome = { at: now, result: "retreated" };
+    boss.retreatReason = "emergency";
+    expect(generate()).toBe(1);
+    expect(generate()).toBe(0);
+    expect(db.narrationEntries(pair).entries).toMatchObject([
+      { kind: "bossStart", json: { text: "閃光の投げ売り が あらわれた！\n1時間で価格が 3.0% 下落。" } },
+      { kind: "bossEnd", json: { text: expect.stringContaining("撤退した（緊急停止が発生したため）") } },
+    ]);
+    const saved = db.narrationState(pair)?.json as { narration: unknown };
+    const entries = narrationStateSchema.parse(saved.narration).entries;
+    expect(entries.filter((entry) => entry.kind === "bossStart" || entry.kind === "bossEnd").map(proactivePrompt))
+      .toEqual([null, null]);
   });
 
   it("migrates a valid stage-1a state to version 2 without resetting it", () => {

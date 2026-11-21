@@ -561,3 +561,89 @@ summary {
     bottom: calc(120px + env(safe-area-inset-bottom, 0px));
   }
 }
+.price-ticker-bar.has-boss {
+  flex-wrap: wrap;
+}
+.boss-battle {
+  flex: 1 0 100%;
+  min-width: 0;
+}
+.boss-battle .boss-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 12px;
+  text-align: left;
+  color: var(--text);
+  background: var(--feed-bg);
+  border: 1px solid var(--pine);
+  border-radius: 6px;
+}
+.boss-card img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+.boss-card-details,
+.boss-plate {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.boss-card-details {
+  flex: 1;
+}
+.boss-hp {
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--line);
+}
+.boss-hp > span {
+  display: block;
+  height: 100%;
+  background: var(--mint);
+}
+.boss-sheet {
+  display: grid;
+  gap: 8px;
+  max-width: 640px;
+  margin: 8px auto 0;
+  padding: clamp(8px, 2vw, 16px);
+  background: var(--panel);
+  border: 1px solid var(--pine);
+  border-radius: 8px;
+}
+.boss-close {
+  justify-self: end;
+}
+.boss-arena {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 8px;
+}
+.boss-plate,
+.boss-message {
+  padding: 8px;
+  background: var(--feed-bg);
+  border: 1px solid var(--pine);
+  border-radius: 6px;
+}
+.boss-plate {
+  font-size: 0.85rem;
+}
+.boss-plate strong,
+.boss-message strong {
+  color: var(--mint);
+}
+.boss-portrait {
+  width: 100%;
+  height: clamp(100px, 25vw, 185px);
+  object-fit: contain;
+}
+.boss-message p {
+  margin: 4px 0 0;
+}

@@ -1,3 +1,4 @@
+import { narrateBoss } from "../../dashboard/src/narration/boss.ts";
 import { partyLevel, partyNames } from "../../../packages/shared/src/party.ts";
 import { createHash } from "node:crypto";
 import type { BotDatabase } from "../../../packages/database/src/index.ts";
@@ -24,7 +25,7 @@ export const SERVER_NARRATION_KINDS = [
   "priceLineReached", "sellLine", "sellLineCrossing", "review", "alert",
   "monthlyReport",
   "epoch", "btc", "forecastCall", "forecastHit", "forecastMiss",
-  "forecastTouch", "forecastTouchNear", "bookWall", "forecastCalib", "memory", "levelUp",
+  "forecastTouch", "forecastTouchNear", "bookWall", "forecastCalib", "memory", "levelUp", "bossStart", "bossEnd",
 ] as const satisfies readonly NarrationKind[];
 const serverKinds = new Set<NarrationKind>(SERVER_NARRATION_KINDS);
 export const NARRATION_STATE_VERSION = 2;
@@ -126,6 +127,7 @@ export class NarrationGenerator {
       presetName(snapshot.settings) === "hard",
     );
 
+    next = narrateBoss(next, snapshot.boss);
     const priorIds = new Set(before.entries.map((entry) => entry.id));
     const candidates = next.entries.filter(
       (entry) => !priorIds.has(entry.id) && serverKinds.has(entry.kind),

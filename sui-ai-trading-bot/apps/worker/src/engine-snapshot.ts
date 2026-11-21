@@ -1,3 +1,4 @@
+import { readBoss } from "./boss.ts";
 import { partyLevel, type PartyMember } from "../../../packages/shared/src/party.ts";
 import { readForecast } from "./forecast.ts";
 import {
@@ -108,6 +109,7 @@ export function buildSnapshot(
       network: src.network,
       ...(realBalances ? { realBalances } : {}),
       pair: src.pair,
+      boss: readBoss(src.db, src.pair),
       party: Object.fromEntries(
         src.db.partyRecords().map(({ member, count }) => [member, partyLevel(member, count)]),
       ) as Partial<Record<PartyMember, ReturnType<typeof partyLevel>>>,

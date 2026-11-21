@@ -58,8 +58,13 @@ export function selectDisplayEntries(
   enabled: boolean,
 ): NarrationEntry[] {
   if (!enabled) return [...deviceEntries];
+  const serverBossEvents = new Set(
+    serverEntries.map((entry) => `${entry.kind}:${entry.occurredAt}`),
+  );
   const deviceOnly = deviceEntries.filter((entry) =>
-    DEVICE_ONLY_KINDS.has(entry.kind),
+    DEVICE_ONLY_KINDS.has(entry.kind) ||
+    ((entry.kind === "bossStart" || entry.kind === "bossEnd") &&
+      !serverBossEvents.has(`${entry.kind}:${entry.at}`)),
   );
   return trimNarrationEntries(
     [...serverEntries.map(serverEntryToNarration), ...deviceOnly].sort(
