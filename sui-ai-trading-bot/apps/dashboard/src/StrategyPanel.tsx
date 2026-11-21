@@ -2,7 +2,7 @@ import React from "react";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import type { DecisionTelemetry } from "../../worker/src/operations.ts";
 import type { Settings } from "../../../packages/shared/src/index.ts";
-import { dateTime, fixed4, label, number, percent } from "./presentation.ts";
+import { fixed4, label, number, percent } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
 import { fields, formatSettingValue, type Field } from "./SettingsPage.tsx";
 import { ProfitGuardPanel } from "./ProfitGuardPanel.tsx";
@@ -67,6 +67,19 @@ function CondRow({
   );
 }
 
+/** Judgment time as HH:MM (JST) for the slim result card's meta line. */
+const timeOfDay = (value: string | number) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? null
+    : new Intl.DateTimeFormat("ja-JP", {
+        timeZone: "Asia/Tokyo",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(date);
+};
+
 function ResultPanel({
   decision,
   conditions,
@@ -77,61 +90,55 @@ function ResultPanel({
   price: number | null;
 }) {
   const tone = verdictTone(decision?.action);
+  const reasonCode = decision
+    ? String(decision.reason ?? "STRATEGY_WAIT")
+    : null;
+  // The plain "conditions not met" reason repeats what the dots already
+  // say, so the reason line appears only when it carries real information
+  // (a ProfitGuard block, a held position, a cooldown, …).
+  const plainReason =
+    reasonCode === "STRATEGY_WAIT" || decision?.reason === "条件未成立";
+  // The buy-condition dots matter only while waiting on them: a BUY
+  // verdict already implies all three, and they say nothing about a SELL.
+  const showDots = decision?.action === "WAIT" && conditions.metCount != null;
+  const judgedAt = decision ? timeOfDay(decision.timestamp) : null;
   return (
     <aside className={`strategy-result tone-${tone}`} aria-label="いまの判定">
       <div className="strategy-result-cap">いまの判定</div>
       {decision ? (
         <>
-          <div className="strategy-verdict">
-            取引判定：{label(decision.action)}
-          </div>
-          {conditions.metCount != null && (
-            <div className="strategy-dots" aria-label="成立した買い条件の数">
-              {[0, 1, 2].map((i) => (
-                <span
-                  key={i}
-                  className={
-                    i < conditions.metCount!
-                      ? "strategy-dot on"
-                      : "strategy-dot"
-                  }
-                />
-              ))}
-              <span>買い条件 3つ中 {conditions.metCount}つ成立</span>
-            </div>
-          )}
-          <p className="strategy-summary">
-            理由：
-            <Reason code={String(decision.reason ?? "STRATEGY_WAIT")} />
-          </p>
-          <div className="strategy-chips">
-            <span className="strategy-chip">
-              確信度 <b>{percent(decision.confidence)}</b>
-            </span>
-            <span className="strategy-chip">
-              損切り{" "}
-              <b>
-                {typeof decision.stopLossPct === "number"
-                  ? `-${percent(decision.stopLossPct)}`
-                  : percent(decision.stopLossPct)}
-              </b>
-            </span>
-            <span className="strategy-chip">
-              利確{" "}
-              <b>
-                {typeof decision.takeProfitPct === "number"
-                  ? `+${percent(decision.takeProfitPct)}`
-                  : percent(decision.takeProfitPct)}
-              </b>
-            </span>
-            {price != null && (
-              <span className="strategy-chip">
-                現在価格 <b>{money(price)} USDC</b>
-              </span>
+          <div className="strategy-verdict-row">
+            <div className="strategy-verdict">{label(decision.action)}</div>
+            {showDots && (
+              <div className="strategy-dots" aria-label="成立した買い条件の数">
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={i}
+                    className={
+                      i < conditions.metCount!
+                        ? "strategy-dot on"
+                        : "strategy-dot"
+                    }
+                  />
+                ))}
+                <span>
+                  {conditions.metCount! >= 3
+                    ? "3つ成立"
+                    : `あと${3 - conditions.metCount!}つ`}
+                </span>
+              </div>
             )}
-            <span className="strategy-chip">
-              判定日時 <b>{dateTime(decision.timestamp)}</b>
-            </span>
+          </div>
+          {!plainReason && (
+            <p className="strategy-summary">
+              理由：
+              <Reason code={reasonCode!} />
+            </p>
+          )}
+          <div className="strategy-meta">
+            {price != null && <span>{money(price)} USDC</span>}
+            {price != null && judgedAt && <span aria-hidden="true">・</span>}
+            {judgedAt && <span>{judgedAt} 時点</span>}
             {decision.sellPurpose != null && (
               <span className="strategy-chip">
                 売却目的 <b>{label(decision.sellPurpose)}</b>

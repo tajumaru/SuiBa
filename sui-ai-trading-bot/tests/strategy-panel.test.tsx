@@ -85,14 +85,20 @@ describe("strategy panel: slim condition cards", () => {
     expect(html).toContain("さくせん");
     expect(html.match(/data-state="met"/g)).toHaveLength(2);
     expect(html.match(/data-state="unmet"/g)).toHaveLength(1);
-    expect(html).toContain("買い条件 3つ中 2つ成立");
-    // The exact string the localization e2e asserts on this tab.
-    expect(html).toContain("取引判定：見送り");
-    expect(html).toContain("確信度");
-    expect(html).toContain("55%");
-    expect(html).toContain("損切り");
-    expect(html).toContain("利確");
-    expect(html).toContain("判定日時");
+    expect(html).toContain("あと1つ");
+    expect(html).not.toContain("買い条件 3つ中");
+    // The verdict headline is the action word alone; the localization
+    // e2e asserts it scoped to the result card.
+    expect(html).toContain("strategy-verdict\">見送り");
+    expect(html).not.toContain("取引判定");
+    // The slim result card drops the constant/duplicate chips.
+    expect(html).not.toContain("確信度");
+    expect(html).not.toContain("判定日時");
+    // The plain reason repeats the dots, so no reason line.
+    expect(html).not.toContain("理由：");
+    // Price and judgment time survive as one meta line.
+    expect(html).toContain("2.412 USDC");
+    expect(html).toContain("時点");
     expect(html).toContain("正常");
     expect(html).not.toContain("✓ 正常（異常なし）");
     expect(html).toContain("1.6倍");
@@ -123,7 +129,7 @@ describe("strategy panel: slim condition cards", () => {
     expect(html).toContain("（縮小中）");
     expect(html).not.toContain("今回は差の縮小が続いたため");
     // Still counted as met, from the recorded flag alone.
-    expect(html).toContain("買い条件 3つ中 2つ成立");
+    expect(html).toContain("あと1つ");
   });
 
   it("shows the buy verdict with the buy tone when the decision is BUY", () => {
@@ -131,9 +137,21 @@ describe("strategy panel: slim condition cards", () => {
       data({ ...waitDecision, action: "BUY", confidence: 0.78 }),
       telemetry({ conditions: { histogramImproving: true } }),
     );
-    expect(html).toContain("取引判定：買い");
+    expect(html).toContain("strategy-verdict\">買い");
     expect(html).toContain("strategy-result tone-buy");
-    expect(html).toContain("買い条件 3つ中 3つ成立");
+    // A BUY verdict implies the conditions; the dots step aside.
+    expect(html).not.toContain("strategy-dots");
+  });
+
+  it("shows the reason line only when it carries real information", () => {
+    const blocked = render(
+      data({ ...waitDecision, reason: "ProfitGuardで見送り" }),
+      telemetry(),
+    );
+    expect(blocked).toContain("理由：");
+    expect(blocked).toContain("ProfitGuardで見送り");
+    const plain = render(data(waitDecision), telemetry());
+    expect(plain).not.toContain("理由：");
   });
 
   it("marks every card 未取得 when there is no decision evidence", () => {

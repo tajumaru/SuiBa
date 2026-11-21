@@ -156,7 +156,9 @@ test("Japanese screens preserve actions, ratios and epochs across all viewports"
     await expect(content).toBeVisible();
     await fits();
     if (tab === "戦略")
-      await expect(page.locator("main")).toContainText("取引判定：買い");
+      await expect(
+        page.locator(".strategy-result .strategy-verdict"),
+      ).toHaveText("買い");
     if (tab === "取引履歴") {
       const orders = page.getByRole("table", { name: "注文履歴", exact: true });
       await expect(orders).toContainText("買い");
