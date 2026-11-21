@@ -19,7 +19,10 @@ import {
 } from "./settingsEditor.ts";
 import { number, errorCode, reason } from "./presentation.ts";
 import { DailyBudgetCard } from "./DailyBudget.tsx";
-import { startRejectionReason } from "./operationLabels.ts";
+import {
+  isStartRecoveryWait,
+  startRejectionReason,
+} from "./operationLabels.ts";
 import { OperationIcon } from "./operationIcons.tsx";
 import { stopSettingAdvice } from "./stopSettingAdvice.ts";
 type State = BotSnapshot;
@@ -655,11 +658,14 @@ export function PaperOperationControls({
       ) : (
         <p>開始すると、保存済みの設定で仮想売買を行います。</p>
       )}
-      {startFailure && (
-        <p className="error" role="alert">
-          開始できませんでした。{startRejectionReason(startFailure)}
-        </p>
-      )}
+      {startFailure &&
+        (isStartRecoveryWait(startFailure) ? (
+          <p>{startRejectionReason(startFailure)}</p>
+        ) : (
+          <p className="error" role="alert">
+            開始できませんでした。{startRejectionReason(startFailure)}
+          </p>
+        ))}
       <StopReleaseSection data={data} control={control} />
     </section>
   );

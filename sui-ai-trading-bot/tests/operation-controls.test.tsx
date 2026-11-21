@@ -10,13 +10,20 @@ import {
   PaperOperationControls,
   type SettingsEditor,
 } from "../apps/dashboard/src/SettingsPage.tsx";
-import { startRejectionReason } from "../apps/dashboard/src/operationLabels.ts";
+import {
+  isStartRecoveryWait,
+  startRejectionReason,
+} from "../apps/dashboard/src/operationLabels.ts";
 
 type State = ReturnType<BotEngine["snapshot"]>;
 type Runtime = State["runtime"];
 
 const settingsPage = readFileSync(
   resolve("apps/dashboard/src/SettingsPage.tsx"),
+  "utf8",
+);
+const operationBar = readFileSync(
+  resolve("apps/dashboard/src/OperationBar.tsx"),
   "utf8",
 );
 const shell = readAppShell();
@@ -57,10 +64,10 @@ describe("start rejection reasons (server 409 codes)", () => {
       "市場データの取得が終わっていない",
     );
     expect(startRejectionReason("PAPER_RECOVERY_REQUIRED")).toContain(
-      "通信の安全確認が未完了",
+      "通信の復旧確認中",
     );
     expect(startRejectionReason("PAPER_RECOVERY_REQUIRED")).toContain(
-      "通信診断で復旧状況を確認",
+      "確認が終われば開始できます",
     );
     expect(startRejectionReason("API_BACKOFF")).toContain("再試行待機中");
     expect(startRejectionReason("RESET_REQUIRED")).toContain(
@@ -81,6 +88,34 @@ describe("start rejection reasons (server 409 codes)", () => {
       "ACCOUNTING_CHECK_REQUIRED",
     ].map(startRejectionReason);
     expect(new Set(mapped).size).toBe(6);
+  });
+
+  it("marks only the recovery wait as action-free", () => {
+    // The recovery check completes on its own; every other refusal
+    // has an operator step and keeps the error card + diagnosis.
+    expect(isStartRecoveryWait("PAPER_RECOVERY_REQUIRED")).toBe(true);
+    for (const code of [
+      "MARKET_FETCH_IN_PROGRESS",
+      "API_BACKOFF",
+      "RESET_REQUIRED",
+      "HEALTH_CHECK_REQUIRED",
+      "ACCOUNTING_CHECK_REQUIRED",
+      "REQUEST_FAILED",
+    ]) {
+      expect(isStartRecoveryWait(code)).toBe(false);
+    }
+  });
+
+  it("renders the recovery wait as a plain note, not an error card", () => {
+    // Both start surfaces branch on the wait before the error card,
+    // so the diagnosis button never appears for it.
+    expect(operationBar).toContain("isStartRecoveryWait(startFailure)");
+    expect(operationBar).toContain('className="operation-bar-notice"');
+    expect(settingsPage).toContain("isStartRecoveryWait(startFailure)");
+    const barWaitAt = operationBar.indexOf("isStartRecoveryWait");
+    const barDiagnoseAt = operationBar.indexOf("開始できない理由を診断");
+    expect(barWaitAt).toBeGreaterThan(-1);
+    expect(barDiagnoseAt).toBeGreaterThan(barWaitAt);
   });
 
   it("falls back to a generic retry message for unknown codes", () => {

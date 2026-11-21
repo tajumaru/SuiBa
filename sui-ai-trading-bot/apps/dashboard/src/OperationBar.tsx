@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from "react";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { OperationIcon } from "./operationIcons.tsx";
-import { startRejectionReason } from "./operationLabels.ts";
+import {
+  isStartRecoveryWait,
+  startRejectionReason,
+} from "./operationLabels.ts";
 import type { RecoveryStatus } from "./recoveryState.ts";
 
 type State = BotSnapshot;
@@ -143,16 +146,21 @@ export function OperationBar({
           </ul>
         </div>
       )}
-      {startFailure && (
-        <div className="error operation-bar-failure" role="alert">
-          <p>開始できませんでした。{startRejectionReason(startFailure)}</p>
-          {onDiagnose && (
-            <button type="button" onClick={onDiagnose}>
-              開始できない理由を診断
-            </button>
-          )}
-        </div>
-      )}
+      {startFailure &&
+        (isStartRecoveryWait(startFailure) ? (
+          <div className="operation-bar-notice">
+            <p>{startRejectionReason(startFailure)}</p>
+          </div>
+        ) : (
+          <div className="error operation-bar-failure" role="alert">
+            <p>開始できませんでした。{startRejectionReason(startFailure)}</p>
+            {onDiagnose && (
+              <button type="button" onClick={onDiagnose}>
+                開始できない理由を診断
+              </button>
+            )}
+          </div>
+        ))}
     </>
   );
 }
