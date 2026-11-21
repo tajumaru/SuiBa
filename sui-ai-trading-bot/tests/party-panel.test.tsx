@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
-import { Party } from "../apps/dashboard/src/OverviewTab.tsx";
+import { Party } from "../apps/dashboard/src/PartyPanel.tsx";
 
 const entry = { level: 1, progress: 0, remaining: 5 };
 const party = {

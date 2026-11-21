@@ -3,6 +3,7 @@ import type { BotSnapshot } from "../../worker/src/engine.ts";
 import type { DecisionTelemetry } from "../../worker/src/operations.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
 import { StrategyPanel } from "./StrategyPanel.tsx";
+import { Party } from "./PartyPanel.tsx";
 import {
   SettingsForm,
   StopReleaseSection,
@@ -11,9 +12,10 @@ import {
 } from "./SettingsPage.tsx";
 
 type State = BotSnapshot;
-export type StrategySegment = "rules" | "settings";
+export type StrategySegment = "party" | "rules" | "settings";
 
 const SEGMENTS = [
+  { id: "party", label: "パーティ" },
   { id: "rules", label: "さくせん" },
   { id: "settings", label: "設定" },
 ] as const;
@@ -94,6 +96,14 @@ export function StrategyTab({
             {s.label}
           </button>
         ))}
+      </div>
+      <div
+        role="tabpanel"
+        id="strategy-segment-panel-party"
+        aria-labelledby="strategy-segment-party"
+        hidden={segment !== "party"}
+      >
+        <Party party={data.party} />
       </div>
       <div
         role="tabpanel"
