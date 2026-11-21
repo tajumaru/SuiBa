@@ -180,15 +180,19 @@ try {
     const suiCredit = page.locator(".version-footer").getByRole("link", {
       name: "Sui",
     });
-    await page
-      .getByRole("button", { name: "ダッシュボード", exact: true })
-      .click();
+    // Since 2026-11-21 the party panel lives in the strategy
+    // tab's パーティ segment, not on the overview tab.
+    await page.getByRole("button", { name: "戦略", exact: true }).click();
+    await page.getByRole("tab", { name: "パーティ", exact: true }).click();
     const party = page.getByRole("region", { name: "パーティ" });
     await party.waitFor();
     if ((await party.getByRole("progressbar").count()) !== 4 ||
         !(await party.getByText("次のレベルまで あと13件").isVisible()) ||
         !(await party.evaluate((section) => section.scrollWidth <= section.clientWidth)))
       failures.push(`${width}px: party rows, progress bars or layout missing`);
+    await page
+      .getByRole("button", { name: "ダッシュボード", exact: true })
+      .click();
     await chainStrip.waitFor();
     const chainLayout = await chainStrip.evaluate((strip) => ({
       fits: strip.scrollWidth <= strip.clientWidth,
