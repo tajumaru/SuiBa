@@ -573,6 +573,23 @@ section svg {
   fill: var(--pink);
   opacity: 0.3;
 }
+/* Foe-zone waves (below the line only, 2026-11-22): two sine
+   strokes flowing left, as if the zone were pushing the hero
+   back, plus a pressure strip breathing at the buy line. The
+   motion itself lives in the no-preference block below. */
+.rsi-gauge-waves path {
+  fill: none;
+  stroke: var(--pink);
+  stroke-width: 1.6;
+  opacity: 0.75;
+}
+.rsi-gauge-waves .rsi-gauge-waves-back {
+  opacity: 0.5;
+}
+.rsi-gauge-press {
+  fill: var(--pink);
+  opacity: 0.2;
+}
 .rsi-gauge-hero-ring {
   fill: none;
   stroke: var(--mint);
@@ -781,6 +798,29 @@ section svg {
   }
   .rsi-gauge.is-below .rsi-gauge-line {
     animation: rsi-gauge-line-flash 1.2s ease-in-out infinite;
+  }
+  .rsi-gauge-waves {
+    animation: rsi-gauge-wave-flow 2.2s linear infinite;
+  }
+  .rsi-gauge-press {
+    animation: rsi-gauge-wave-press 2.2s ease-in-out infinite;
+  }
+  @keyframes rsi-gauge-wave-flow {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-48px);
+    }
+  }
+  @keyframes rsi-gauge-wave-press {
+    0%,
+    100% {
+      opacity: 0.2;
+    }
+    50% {
+      opacity: 0.55;
+    }
   }
   @keyframes rsi-gauge-pulse {
     0% {

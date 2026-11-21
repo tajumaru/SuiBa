@@ -269,6 +269,8 @@ describe("RSI oversold gauge", () => {
     expect(html).toContain("反撃の構え");
     expect(html).toContain("clip-path=\"url(#");
     expect(html).toContain("<clipPath");
+    // Above the line the zone stays still: no waves.
+    expect(html).not.toContain("rsi-gauge-waves");
   });
 
   it("places an RSI at or below the line to its left and shows the recovery state", () => {
@@ -284,6 +286,10 @@ describe("RSI oversold gauge", () => {
     // the old shield badge no longer rides along.
     expect(html).not.toContain("rsi-gauge-badge");
     expect(html).toContain("まもりの盾で耐えてる");
+    // The foe zone flows while below the line (owner,
+    // 2026-11-22): waves pushing the hero back.
+    expect(html).toContain("rsi-gauge-waves");
+    expect(html).toContain("rsi-gauge-press");
   });
 
   it("uses an oversold setting of 30 for the line and label", () => {
