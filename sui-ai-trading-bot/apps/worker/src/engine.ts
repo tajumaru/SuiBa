@@ -108,7 +108,12 @@ export class BotEngine {
     this.shadow = new ShadowRecorder(
       db,
       shadowAdapter,
-      undefined,
+      // The host env arms the shadow (key/model live there); the
+      // dashboard setting is the owner's on/off switch on top of
+      // it (パーティ's かげの声 toggle). Both must be on.
+      () =>
+        process.env.SUIBA_SHADOW_ENABLED === "true" &&
+        this.db.settings().shadowEnabled,
       shadowBudget,
     );
     const portfolio = db.portfolio();

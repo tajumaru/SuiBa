@@ -123,6 +123,7 @@ describe("かんたん設定", () => {
         ...fields.map((f) => f.key),
         "strategy",
         "profitGuardEnabled",
+        "shadowEnabled",
         "emaGapShrinkEnabled",
       ]),
     ).toEqual(new Set(Object.keys(defaults)));
@@ -142,8 +143,8 @@ describe("かんたん設定", () => {
     expect(html).toContain("EMAの差が縮小中も成立にする");
     expect(html).toContain("縮小とみなす連続本数");
     expect(html).toContain('value="3"');
-    // Only the profit-guard box is checked under the defaults.
-    expect(html.match(/checked=""/g)).toHaveLength(1);
+    // The profit-guard and shadow boxes are checked under the defaults.
+    expect(html.match(/checked=""/g)).toHaveLength(2);
     const on = renderToStaticMarkup(
       React.createElement(AdvancedSettings, {
         saved: defaults,
@@ -151,7 +152,7 @@ describe("かんたん設定", () => {
         setDraft: () => {},
       }),
     );
-    expect(on.match(/checked=""/g)).toHaveLength(2);
+    expect(on.match(/checked=""/g)).toHaveLength(3);
   });
   it("marks saved differences even when the draft already uses the default", () => {
     const html = renderToStaticMarkup(

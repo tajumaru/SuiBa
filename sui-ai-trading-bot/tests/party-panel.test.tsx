@@ -23,4 +23,21 @@ it("shows an icon for every party member", () => {
 
 it("renders nothing without party data", () => {
   expect(renderToStaticMarkup(createElement(Party, { party: undefined }))).toBe("");
+
+  const toggles = {
+    profitGuardEnabled: true,
+    shadowEnabled: false,
+    onToggle: async () => {},
+  };
+  const wired = renderToStaticMarkup(createElement(Party, { party, toggles }));
+  // Shield and shadow rows become toggle buttons; the OFF member
+  // (shadow here) greys out and says OFF instead of a level.
+  expect(wired.match(/overview-party-toggle/g)).toHaveLength(2);
+  expect(wired).toContain('aria-pressed="true"');
+  expect(wired).toContain('aria-pressed="false"');
+  expect(wired).toContain("data-off");
+  expect(wired).toContain("OFF（タップでON）");
+  // Without the toggles prop the panel stays a plain readout.
+  const plain = renderToStaticMarkup(createElement(Party, { party }));
+  expect(plain).not.toContain("overview-party-toggle");
 });

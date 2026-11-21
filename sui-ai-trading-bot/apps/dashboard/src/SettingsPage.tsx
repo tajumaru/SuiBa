@@ -248,7 +248,7 @@ export function AdvancedSettings(props: {
 }) {
   const different = new Set(defaultDifferentKeys(props.saved));
   const toggle = (
-    key: "profitGuardEnabled" | "emaGapShrinkEnabled",
+    key: "profitGuardEnabled" | "emaGapShrinkEnabled" | "shadowEnabled",
     label: string,
     help: string,
   ) => {
@@ -300,6 +300,11 @@ export function AdvancedSettings(props: {
         "利益条件の設定です。見積もり・費用・数量の検証とリスク制限は常に適用されます。",
       )}
       {toggle(
+        "shadowEnabled",
+        "影（かげの声）を有効にする",
+        "AIの影運用です。売買はせず、判断の記録だけを行います。ホスト側で影が設定されている場合にだけ動きます。",
+      )}
+      {toggle(
         "emaGapShrinkEnabled",
         "EMAの差が縮小中も成立にする",
         "買い条件のEMAは通常「短期（EMA20）が長期（EMA50）より上」で成立します。有効にすると、短期がまだ下でも、差が「縮小とみなす連続本数」だけ縮み続いていれば成立として扱います。既定は無効です。",
@@ -328,13 +333,17 @@ export function SettingsChanges({
         const boolLabel =
           key === "profitGuardEnabled"
             ? "ProfitGuard"
-            : key === "emaGapShrinkEnabled"
+            : key === "shadowEnabled"
+              ? "かげの声"
+              : key === "emaGapShrinkEnabled"
               ? "EMAの差の縮小"
               : "戦略";
         const display = (s: Settings) =>
           field
             ? formatSettingValue(s, field)
-            : key === "profitGuardEnabled" || key === "emaGapShrinkEnabled"
+            : key === "profitGuardEnabled" ||
+                key === "shadowEnabled" ||
+                key === "emaGapShrinkEnabled"
               ? s[key]
                 ? "有効"
                 : "無効"
