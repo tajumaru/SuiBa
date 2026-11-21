@@ -70,7 +70,7 @@ describe("日本語の表示", () => {
     expect(html).toContain("UPSTREAM_HTTP_429");
     expect(reason("FUTURE_ERROR")).toContain("確認できません");
     expect(reason("条件未成立")).toBe("条件未成立");
-    expect(nextStep("UPSTREAM_HTTP_429")).toContain("概要でWorkerの状態");
+    expect(nextStep("UPSTREAM_HTTP_429")).toContain("概要で状態");
     expect(nextStep("PAPER_RECONCILIATION_FAILED")).toContain("履歴で停止理由");
     expect(errorCode(new Error("sensitive arbitrary upstream text"))).toBe(
       "REQUEST_FAILED",

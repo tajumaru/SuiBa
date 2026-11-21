@@ -215,6 +215,10 @@ export class ApiAccess {
       throw Error("MARKET_FETCH_IN_PROGRESS");
     this.states.clear();
     this.caches.clear();
+    if (this === apiAccess) {
+      for (const recovery of failedReads.values()) recovery.succeededAt = null;
+      failedReads.clear();
+    }
   }
   reset() {
     if (
@@ -526,6 +530,29 @@ export class RateLimited extends Error {
 export const apiAccess = new ApiAccess();
 export const rawFetch = globalThis.fetch.bind(globalThis);
 const readSuccesses = new Map<string, number>();
+type ReadRecovery = { failedAt: number; succeededAt: number | null };
+const failedReads = new Map<string, ReadRecovery>();
+const readRecoveryByFailure = new WeakMap<ApiFailure, ReadRecovery>();
+
+export function sameTrackedRead(a: ApiFailure, b: ApiFailure) {
+  const recovery = readRecoveryByFailure.get(a);
+  return recovery !== undefined && recovery === readRecoveryByFailure.get(b);
+}
+
+export function readRecoveryTime(
+  failure: ApiFailure,
+  stoppedAt: number,
+  maxAgeMs: number,
+  now = Date.now(),
+) {
+  const recovery = readRecoveryByFailure.get(failure);
+  return recovery?.succeededAt != null &&
+    recovery.succeededAt > Math.max(stoppedAt, recovery.failedAt) &&
+    now - recovery.succeededAt >= 0 &&
+    now - recovery.succeededAt <= maxAgeMs
+    ? recovery.succeededAt
+    : null;
+}
 export async function apiFetch(
   api: string,
   input: string | URL | Request,
@@ -571,6 +598,19 @@ export async function apiFetch(
         identity.operation +
         ":" +
         (identity.timeframe ?? "");
+      // The route identifies the pair. The timeframe distinguishes candle reads
+      // while allowing their moving time window to advance.
+      const recoveryKey =
+        identity.operation === "HTTP_READ" ||
+        identity.operation === "CETUS_HTTP_READ" ||
+        identity.operation === "SUI_GRPC_READ"
+          ? JSON.stringify([api, key])
+          : JSON.stringify([
+              operationKey,
+              identity.method,
+              new URL(url).origin,
+              new URL(url).pathname,
+            ]);
       let phase: RequestPhase = "HEADERS_OR_CONNECT";
       let status: number | null = null;
       const combined = AbortSignal.any([
@@ -594,7 +634,11 @@ export async function apiFetch(
         }
         phase = "BODY";
         const bytes = await response.arrayBuffer();
-        readSuccesses.set(operationKey, Date.now());
+        const completedAt = Date.now();
+        readSuccesses.set(operationKey, completedAt);
+        const recovery = failedReads.get(recoveryKey);
+        if (recovery && startedAt > recovery.failedAt)
+          recovery.succeededAt = completedAt;
         return {
           bytes,
           status: response.status,
@@ -607,7 +651,7 @@ export async function apiFetch(
           error instanceof RateLimited || error instanceof HttpStatusFailure
             ? { code: error.message, phase: "HTTP" as const, causeCode: null }
             : classifyHttpFailure(error, detail.phase ?? phase, combined);
-        apiAccess.recordFailure({
+        const failure: ApiFailure = {
           ...identity,
           ...classification,
           ...(detail.timings ? { transportTimings: detail.timings } : {}),
@@ -622,7 +666,23 @@ export async function apiFetch(
             : null,
           elapsedMs: Math.round(performance.now() - started),
           occurredAt: Date.now(),
-        });
+        };
+        let recovery = failedReads.get(recoveryKey);
+        if (!recovery && failure.code === "UPSTREAM_HTTP_500") {
+          if (failedReads.size >= 256) {
+            const oldest = failedReads.keys().next().value!;
+            failedReads.get(oldest)!.succeededAt = null;
+            failedReads.delete(oldest);
+          }
+          recovery = { failedAt: failure.occurredAt, succeededAt: null };
+          failedReads.set(recoveryKey, recovery);
+        }
+        if (recovery) {
+          recovery.failedAt = failure.occurredAt;
+          recovery.succeededAt = null;
+          readRecoveryByFailure.set(failure, recovery);
+        }
+        apiAccess.recordFailure(failure);
         if (error instanceof RateLimited || error instanceof HttpStatusFailure)
           throw error;
         throw new Error(classification.code);

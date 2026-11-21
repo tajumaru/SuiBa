@@ -33,7 +33,7 @@ describe("retired validation tab", () => {
     data.lastHeartbeatAt = now - 5000;
     data.timing.lastAnalysisAt = now - 12000;
     const html = renderToStaticMarkup(<WorkerFreshness data={data} />);
-    expect(html).toContain("Workerの心拍");
+    expect(html).not.toContain("Workerの心拍");
     expect(html).toContain("5秒前");
     expect(html).toContain("最終分析");
     expect(html).toContain("12秒前");

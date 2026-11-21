@@ -248,8 +248,6 @@ describe("operation icon buttons", () => {
       'title="緊急停止を解除（再開は手動）"',
     );
     expect(html).toContain('stroke="#edc980"');
-    // The steps point at the button's new position.
-    expect(html).toContain("原因を解消したら「緊急停止を解除」を押します");
     expect(html).not.toContain("下のボタンで停止状態を解除します");
   });
 });
@@ -261,8 +259,10 @@ describe("stop-state release section", () => {
     expect(html).not.toContain("<details");
     expect(html).not.toContain("<summary");
     expect(html).toContain("緊急停止が押され、PAPER運用を止めています。");
-    expect(html).toContain("「緊急停止を解除」を押します");
-    expect(html).toContain("解除だけでは売買を始めません");
+    // No procedural steps: the section carries the reason and the
+    // release button, nothing that narrates them.
+    expect(html).not.toContain("「検証」で停止した原因を確認します");
+    expect(html).not.toContain("解除だけでは売買を始めません");
     expect(html).toContain("緊急停止を解除（再開は手動）");
     // The start area points at the release steps as well.
     expect(html).toContain("先に下の手順で停止状態を解除してください");
@@ -271,7 +271,8 @@ describe("stop-state release section", () => {
   it("keeps the reset release button in a safety stop", () => {
     const html = render({ error: "UPSTREAM_HTTP_504" });
     expect(html).toContain("停止解除（再開は手動）");
-    expect(html).toContain("原因を解消したら「停止を解除」を押します");
+    expect(html).not.toContain("「検証」で停止した原因を確認します");
+    expect(html).not.toContain("停止した原因が残っていると");
     expect(html).not.toContain("緊急停止を解除（再開は手動）");
   });
 

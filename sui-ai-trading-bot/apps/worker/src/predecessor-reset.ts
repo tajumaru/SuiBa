@@ -143,6 +143,70 @@ export class PredecessorReset {
       pending: this.awaitingReset(),
     };
   }
+  currentStatus() {
+    const runtime = this.db.runtime();
+    const pending = !!this.monitor?.currentBootError() && !this.awaitingReset();
+    const recoveredAt = pending
+      ? this.monitor!.currentBootErrorRecoveryTime()
+      : null;
+    const reason = runtime.emergency
+      ? "RESET_EMERGENCY_ACTIVE"
+      : !pending
+        ? null
+        : runtime.running ||
+            recoveredAt === null ||
+            this.monitor!.safety().connectivity !== "HEALTHY"
+          ? "RESET_BUSY"
+          : null;
+    return {
+      version: 1 as const,
+      bootId: this.bootId,
+      pair: this.pair,
+      generation: createHash("sha256")
+        .update(
+          JSON.stringify(["current", this.generation(), recoveredAt, reason]),
+        )
+        .digest("hex"),
+      expectedError: pending ? runtime.error : null,
+      eligible: pending && reason === null,
+      reason,
+      pending,
+    };
+  }
+
+  clearCurrent(expected: unknown) {
+    const {
+      eligible,
+      reason,
+      pending: _pending,
+      ...scope
+    } = this.currentStatus();
+    if (!eligible) return reason ?? "RESET_SCOPE_CHANGED";
+    if (
+      !expected ||
+      typeof expected !== "object" ||
+      Array.isArray(expected) ||
+      Object.keys(expected).length !== 5 ||
+      !Object.entries(scope).every(
+        ([key, value]) =>
+          Object.hasOwn(expected, key) &&
+          (expected as Record<string, unknown>)[key] === value,
+      )
+    )
+      return "RESET_SCOPE_CHANGED";
+
+    this.db.transaction(() => {
+      this.db.set("runtime", {
+        ...this.db.runtime(),
+        running: false,
+        error: null,
+      });
+      this.monitor!.transition("MANUAL_RESET");
+    });
+    this.monitor!.forgetCurrentBootError();
+    return null;
+  }
+
   clear(expected: unknown = this.original) {
     const reason = this.refusal();
     if (reason) return reason;

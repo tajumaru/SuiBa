@@ -245,16 +245,12 @@ try {
     const workerType = await page
       .locator(".worker-freshness")
       .evaluate((card) => ({
-        heading: getComputedStyle(card.querySelector("h3")).fontSize,
-        body: getComputedStyle(card.querySelector("dd")).fontSize,
+        body: getComputedStyle(card.querySelector(".worker-freshness-line"))
+          .fontSize,
         status: getComputedStyle(card.querySelector("p")).fontSize,
       }));
     /* eslint-enable no-undef */
-    if (
-      workerType.heading !== "15px" ||
-      workerType.body !== "13px" ||
-      workerType.status !== "13px"
-    )
+    if (workerType.body !== "13px" || workerType.status !== "13px")
       failures.push(
         `${width}px: Worker typography differs from the overview scale`,
       );

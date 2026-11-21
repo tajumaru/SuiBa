@@ -13,7 +13,11 @@ import {
 } from "../../../packages/shared/src/paper-recovery.ts";
 import type { ApiFailure } from "../../../packages/shared/src/http-errors.ts";
 import { workerBuild } from "./buildInfo.ts";
-import { apiAccess } from "../../../packages/shared/src/api.ts";
+import {
+  apiAccess,
+  readRecoveryTime,
+  sameTrackedRead,
+} from "../../../packages/shared/src/api.ts";
 import { randomUUID } from "node:crypto";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
 import {
@@ -68,6 +72,36 @@ export class OperationMonitor {
   }
   // A failed recovery read cannot grant orders even if stop persistence also fails.
   private recoveryReadFault = false;
+  private cycleStartedAt = 0;
+  private latestReadFailure?: ApiFailure;
+  private currentErrorStop?: {
+    error: string;
+    at: number;
+    failure?: ApiFailure;
+  };
+
+  currentBootError() {
+    const stop = this.currentErrorStop;
+    return stop && stop.error === this.db.runtime().error ? stop : undefined;
+  }
+
+  forgetCurrentBootError() {
+    this.currentErrorStop = undefined;
+  }
+
+  currentBootErrorRecoveryTime(now = Date.now()) {
+    const stop = this.currentBootError();
+    if (
+      this.shutdownRequested ||
+      this.recoveryReadFault ||
+      !stop?.failure ||
+      !this.db.health().healthy ||
+      apiAccess.blocked()
+    )
+      return null;
+    return readRecoveryTime(stop.failure, stop.at, 180_000, now);
+  }
+
   private cycleFailed = false;
   private cycleGeneration = 0;
   private softFailureThisCycle = false;
@@ -284,7 +318,9 @@ export class OperationMonitor {
     if (
       !this.db.health().healthy ||
       finalSafety.generation !== s.generation ||
-      finalRuntime.error ||
+      // A resolved current-boot read failure may leave recovery mode while
+      // stopped. The resume check below still requires a clear runtime.
+      (finalRuntime.error && this.currentBootErrorRecoveryTime(now) === null) ||
       finalRuntime.emergency ||
       this.cycleFailed ||
       this.softFailureThisCycle
@@ -577,6 +613,9 @@ export class OperationMonitor {
     );
   }
   boot(now = Date.now()) {
+    this.currentErrorStop = undefined;
+    this.latestReadFailure = undefined;
+    this.cycleStartedAt = 0;
     const s = this.state();
     const priorSafety = this.safety();
     // After an unclean exit only confirmed heartbeats count; offline time is not PAPER uptime.
@@ -662,6 +701,7 @@ export class OperationMonitor {
     );
   }
   beginCycle() {
+    this.cycleStartedAt = Date.now();
     this.cycleFailed = false;
     this.softFailureThisCycle = false;
     this.recoveryProofUsed = false;
@@ -675,6 +715,7 @@ export class OperationMonitor {
     this.update({ lastAnalysisAt: now });
   }
   apiFailure(failure: ApiFailure) {
+    this.latestReadFailure = failure;
     this.db.set("latest_api_failure", failure);
     this.db.append(
       "operation_events",
@@ -911,6 +952,20 @@ export class OperationMonitor {
         now,
         reason === "PAPER_RECOVERY_EXHAUSTED" ? "EXHAUSTED" : "STOPPED",
       ) ?? undefined;
+    const latestFailure = this.latestReadFailure;
+    const readFailure =
+      reason === "UPSTREAM_HTTP_500" &&
+      latestFailure?.code === reason &&
+      this.cycleStartedAt > 0 &&
+      latestFailure.occurredAt >= this.cycleStartedAt
+        ? latestFailure
+        : undefined;
+    const current = this.currentErrorStop;
+    if (
+      current?.failure &&
+      (!readFailure || !sameTrackedRead(current.failure, readFailure))
+    )
+      current.failure = undefined;
     this.saveSafety({
       resumePending: false,
       generation: this.safety().generation + 1,
@@ -923,6 +978,12 @@ export class OperationMonitor {
         running: false,
         error: r.error ?? code(reason),
       });
+      if (!r.error)
+        this.currentErrorStop = {
+          error: code(reason),
+          at: now,
+          failure: readFailure,
+        };
       this.transition(reason, now, details, undefined, episode);
       if (details)
         console.warn(

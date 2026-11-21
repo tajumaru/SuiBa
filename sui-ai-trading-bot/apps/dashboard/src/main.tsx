@@ -148,7 +148,7 @@ function App() {
   // dashboard, or the retired "運用検証") opens the dashboard.
   const activeTab =
     tab === "Settings" ? "Strategy" : NAV_TABS.includes(tab) ? tab : "Overview";
-  // The strategy tab's segment: ルール by default, or 設定 when
+  // The strategy tab's segment: さくせん by default, or 設定 when
   // arriving through the restored "Settings" value, until the
   // reader picks a segment explicitly.
   const [strategySegmentChoice, setStrategySegmentChoice] =
