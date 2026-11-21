@@ -146,15 +146,46 @@
 /* Three style cards (safe / hard / custom) share one row even on
    narrow screens; the settings grid keeps its two columns. */
 .preset-cards {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: 1fr;
+  gap: 9px;
 }
 .preset-cards button {
-  min-height: 84px;
+  min-height: 44px;
+  margin: 0;
+  padding: 10px 12px;
   text-align: left;
 }
 .preset-cards button[aria-pressed="true"] {
-  border: 2px solid #41d9b0;
+  border: 2px solid var(--gold);
+}
+.preset-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.preset-row-head small {
+  color: var(--dim);
+}
+.preset-selected {
+  margin-left: auto;
+  padding: 2px 9px;
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.preset-facts {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.preset-now {
+  margin: 2px 0 10px;
+  color: var(--dim);
+  font-size: 13px;
 }
 .easy-settings button,
 .easy-settings summary {
@@ -212,11 +243,27 @@
   font-size: 16px;
 }
 .settings-tip {
-  padding: 14px;
-  margin: 16px 0;
-  border-left: 3px solid #64b5ff;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  margin: 12px 0;
+  border: 1px solid var(--gold);
   background: #142536;
-  border-radius: 6px;
+  border-radius: 8px;
+}
+.settings-tip span {
+  flex: 1;
+}
+.settings-tip-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.settings-tip button {
+  margin: 0;
+  white-space: nowrap;
 }
 .settings-saved {
   padding: 16px;

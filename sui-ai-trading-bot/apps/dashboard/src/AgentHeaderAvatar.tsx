@@ -377,7 +377,7 @@ export function AgentHeaderAvatar({
         : speaking
           ? "喋ってる…"
           : hardShown
-            ? "ハードモード中"
+            ? "ハード中"
             : shownPose === "pointSmile" && pointSmileCause === "hit"
               ? "的中しました"
               : POSE_LABEL[shownPose];
