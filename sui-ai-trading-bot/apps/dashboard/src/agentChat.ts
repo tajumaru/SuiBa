@@ -451,20 +451,19 @@ export interface ProactivePrompt {
 }
 
 /**
- * The character speaking up at a narration milestone: a line was
- * declared, a watch hit, a near miss landed, a buy filled, or a
- * sudden move broke in. Returns the prompt and the question chip
- * it offers, or null for entries that are not milestones.
+ * The character speaking up at a narration milestone: a watch hit,
+ * a near miss landed, a buy filled, or a sudden move broke in.
+ * Returns the prompt and the question chip it offers, or null for
+ * entries that are not milestones. A declared line (priceLine) is
+ * NOT a milestone: declarations are frequent and the watch box
+ * already shows the current one, so speaking up at every one was
+ * noise (owner call, 2026-11-21). Asking about the line still
+ * works — the reply side keeps answering ラインまでどれくらい？.
  */
 export function proactivePrompt(
   entry: Pick<NarrationEntry, "kind" | "side">,
 ): ProactivePrompt | null {
   switch (entry.kind) {
-    case "priceLine":
-      return {
-        text: "ライン立ったよ。届くまでどれくらいか、聞く？",
-        chip: "ラインまでどれくらい？",
-      };
     case "watchHit":
       return { text: "宣言、当たったよ！成績、聞く？", chip: "調子は？" };
     case "nearMiss":
