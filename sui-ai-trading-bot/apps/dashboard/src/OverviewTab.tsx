@@ -1,4 +1,4 @@
-import { WorkerFreshness } from "./WorkerFreshness.tsx";
+import { WorkerStaleNote } from "./WorkerStaleNote.tsx";
 import type { OperationsSnapshot } from "./operationsTypes.ts";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { number, percent, label } from "./presentation.ts";
@@ -94,7 +94,7 @@ export function OverviewTab({
   const usdJpy = operations?.fx?.usdJpy ?? null;
   return (
                   <div className="overview-tab">
-                    <WorkerFreshness data={operations ?? null} stale={operationsStale} chain={data.chain ?? null} />
+                    <WorkerStaleNote data={operations ?? null} stale={operationsStale} />
                     <ShadowTodayLine summary={data.shadowToday} />
                     {/* 仮想総資産と保有のカードは資産の中身
                         (PortfolioMix) と同じ数字の二重表示だったため

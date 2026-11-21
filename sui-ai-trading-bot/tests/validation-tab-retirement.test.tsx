@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { OperationMonitor } from "../apps/worker/src/operations.ts";
-import { WorkerFreshness } from "../apps/dashboard/src/WorkerFreshness.tsx";
+import { WorkerStaleNote } from "../apps/dashboard/src/WorkerStaleNote.tsx";
 import { StopHistory } from "../apps/dashboard/src/StopHistory.tsx";
 import { HistoryTab } from "../apps/dashboard/src/HistoryTab.tsx";
 const now = 1_800_000_000_000;
@@ -26,21 +26,32 @@ describe("retired validation tab", () => {
     expect(existsSync("apps/dashboard/src/ValidationControl.tsx")).toBe(false);
     expect(existsSync("apps/dashboard/src/OperationsPanel.tsx")).toBe(false);
   });
-  it("renders heartbeat and analysis evidence without schematic or PAPER explanation cards", () => {
+  it("stays silent for settled states and speaks one line when the feed is stale", () => {
     vi.useFakeTimers();
     vi.setSystemTime(now);
     const data = fixture();
-    data.lastHeartbeatAt = now - 5000;
-    data.timing.lastAnalysisAt = now - 12000;
-    const html = renderToStaticMarkup(<WorkerFreshness data={data} />);
-    expect(html).not.toContain("Workerの心拍");
-    expect(html).toContain("5秒前");
-    expect(html).toContain("最終分析");
-    expect(html).toContain("12秒前");
-    expect(html).not.toMatch(/雫|実資金は使用/);
+    // A stopped bot is the operation bar's story, not this note's:
+    // the old always-on Worker panel is gone (owner, 2026-11-22).
+    expect(renderToStaticMarkup(<WorkerStaleNote data={data} />)).toBe("");
     expect(
-      renderToStaticMarkup(<WorkerFreshness data={data} stale />),
+      renderToStaticMarkup(<WorkerStaleNote data={data} stale />),
     ).toContain("最新情報を取得できません");
+  });
+  it("renders nothing while a running worker's evidence is fresh", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const data = fixture();
+    data.status = "RUNNING";
+    data.safety.botState = "RUNNING";
+    data.safety.connectivity = "HEALTHY";
+    data.safety.ordersAllowed = true;
+    data.timing.transportRecent = true;
+    data.timing.dataStatus = "FRESH";
+    data.timing.lastTransportSuccessAt = now - 1000;
+    data.timing.lastAnalysisAt = now - 1000;
+    data.lastMarketClosedAt = now - 1000;
+    data.lastHeartbeatAt = now - 1000;
+    expect(renderToStaticMarkup(<WorkerStaleNote data={data} />)).toBe("");
   });
   it("keeps a running worker with old evidence unknown", () => {
     vi.useFakeTimers();
@@ -48,7 +59,7 @@ describe("retired validation tab", () => {
     const data = fixture();
     data.status = "RUNNING";
     data.lastHeartbeatAt = now - 60000;
-    expect(renderToStaticMarkup(<WorkerFreshness data={data} />)).toContain(
+    expect(renderToStaticMarkup(<WorkerStaleNote data={data} />)).toContain(
       "状態確認中",
     );
   });
