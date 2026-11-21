@@ -547,18 +547,36 @@ section svg {
   font-size: 11px;
   font-weight: 600;
 }
+.rsi-gauge-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.rsi-gauge-head h2 {
+  margin: 0;
+}
+.rsi-gauge-title-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
 .rsi-gauge-chart {
   display: block;
   width: 100%;
-  height: 50px;
+  height: 64px;
   overflow: visible;
 }
 .rsi-gauge-track {
   fill: #26364b;
 }
 .rsi-gauge-zone {
-  fill: var(--mint);
-  opacity: 0.28;
+  fill: var(--pink);
+  opacity: 0.3;
+}
+.rsi-gauge-hero-ring {
+  fill: none;
+  stroke: var(--mint);
+  stroke-width: 1.5;
 }
 .rsi-gauge-line {
   stroke: var(--gold);
@@ -590,6 +608,12 @@ section svg {
   color: #9fb2c8;
   font-size: 9px;
 }
+.rsi-gauge-end-foe {
+  color: var(--pink);
+}
+.rsi-gauge-end-own {
+  color: var(--mint);
+}
 .rsi-gauge-state {
   margin: 2px 0 0;
   color: #dce8e3;
@@ -600,6 +624,37 @@ section svg {
 .rsi-gauge-state strong {
   color: var(--gold);
   font-weight: 700;
+}
+.rsi-gauge.is-below .rsi-gauge-state strong {
+  color: var(--pink);
+}
+.rsi-gauge-items {
+  display: flex;
+  gap: 5px;
+  margin-top: 4px;
+}
+.rsi-gauge-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px 1px 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--dim);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+.rsi-gauge-item img {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+.rsi-gauge-item.is-on {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+.rsi-gauge-item.is-off {
+  opacity: 0.45;
 }
 /* The buy-run line pill rides at the ticker's right end: gold
    while it counts down, green once the price reaches the line. */

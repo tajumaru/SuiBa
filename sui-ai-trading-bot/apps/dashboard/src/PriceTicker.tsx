@@ -2,6 +2,10 @@ import React from "react";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { BossBattleCard } from "./BossBattle.tsx";
 import { BookBar } from "./BookBar.tsx";
+import heroBrave from "./assets/hero-brave-blue.webp";
+import partyHero from "./assets/party-hero.webp";
+import partySakiyomi from "./assets/party-sakiyomi.webp";
+import partyShield from "./assets/party-shield.webp";
 
 type State = BotSnapshot;
 type Frames = State["candlesByTimeframe"];
@@ -47,7 +51,7 @@ export function RsiGauge({
   const below = rsi <= oversold;
   const near = Math.abs(rsi - oversold) <= 5;
   const current = rsi.toFixed(1);
-  const distance = (rsi - oversold).toFixed(1);
+  const distance = Math.abs(rsi - oversold).toFixed(1);
   const labelAnchor = (value: number) =>
     value <= 18 ? "start" : value >= 82 ? "end" : "middle";
 
@@ -58,17 +62,25 @@ export function RsiGauge({
       }`}
       aria-label={`売られすぎメーター。現在のRSI ${current}、買いの線 ${oversold}`}
     >
-      <h2>売られすぎメーター（RSI）</h2>
+      <div className="rsi-gauge-head">
+        <img
+          className="rsi-gauge-title-icon"
+          src={partyHero}
+          alt=""
+          aria-hidden="true"
+        />
+        <h2>売られすぎメーター（RSI）</h2>
+      </div>
       <svg
         className="rsi-gauge-chart"
-        viewBox={`0 0 ${RSI_GAUGE_WIDTH} 50`}
+        viewBox={`0 0 ${RSI_GAUGE_WIDTH} 64`}
         role="img"
         aria-label={`0から100のうち、買いの線は${oversold}、現在は${current}`}
       >
         <rect
           className="rsi-gauge-track"
           x="8"
-          y="17"
+          y="29"
           width="284"
           height="8"
           rx="4"
@@ -76,7 +88,7 @@ export function RsiGauge({
         <rect
           className="rsi-gauge-zone"
           x={RSI_GAUGE_INSET}
-          y="17"
+          y="29"
           width={Math.max(0, lineX - RSI_GAUGE_INSET)}
           height="8"
           rx="4"
@@ -85,8 +97,8 @@ export function RsiGauge({
           className="rsi-gauge-line"
           x1={lineX}
           x2={lineX}
-          y1="12"
-          y2="30"
+          y1="24"
+          y2="42"
         />
         <text
           className="rsi-gauge-line-label"
@@ -96,41 +108,91 @@ export function RsiGauge({
         >
           買いの線 {oversold}
         </text>
+        <image
+          className="rsi-gauge-crystal"
+          href={partySakiyomi}
+          x={lineX - 8}
+          y="11"
+          width="16"
+          height="16"
+          aria-hidden="true"
+        />
         {near && (
-          <circle className="rsi-gauge-pulse" cx={rsiX} cy="21" r="7" />
+          <circle className="rsi-gauge-pulse" cx={rsiX} cy="33" r="7" />
         )}
         {near && (
           <circle
             className="rsi-gauge-pulse rsi-gauge-pulse-delay"
             cx={rsiX}
-            cy="21"
+            cy="33"
             r="7"
           />
         )}
-        <circle className="rsi-gauge-dot" cx={rsiX} cy="21" r="5" />
+        <circle className="rsi-gauge-dot" cx={rsiX} cy="33" r="5" />
+        <image
+          className="rsi-gauge-hero"
+          href={below ? partyHero : heroBrave}
+          x={rsiX - 13}
+          y="20"
+          width="26"
+          height="26"
+          aria-hidden="true"
+        />
+        <circle
+          className="rsi-gauge-hero-ring"
+          cx={rsiX}
+          cy="33"
+          r="14"
+        />
+        {below && (
+          <image
+            className="rsi-gauge-badge"
+            href={partyShield}
+            x={rsiX + 5}
+            y="37"
+            width="13"
+            height="13"
+            aria-hidden="true"
+          />
+        )}
         <text
           className="rsi-gauge-current-label"
           x={rsiX}
-          y="43"
+          y="60"
           textAnchor={labelAnchor(rsi)}
         >
           いま {current}
         </text>
       </svg>
       <div className="rsi-gauge-ends" aria-hidden="true">
-        <span>売られすぎ</span>
-        <span>買われすぎ</span>
+        <span className="rsi-gauge-end-foe">相手の陣地</span>
+        <span className="rsi-gauge-end-own">こちらの陣地</span>
       </div>
       <p className="rsi-gauge-state">
         {below ? (
           <>
-            いま：<strong>線の下。</strong>
-            <strong>ここから戻して線を上抜けると買い</strong>
+            いま：<strong>相手のターン。</strong>線まで あと {distance}
           </>
         ) : (
-          <>いま：線の少し上。線まで あと {distance}</>
+          <>
+            いま：<strong>こちらのターン。</strong>線まで あと {distance}
+          </>
         )}
       </p>
+      <div className="rsi-gauge-items" aria-hidden="true">
+        <span
+          className={`rsi-gauge-item${below ? " is-off" : " is-on"}`}
+        >
+          <img src={heroBrave} alt="" />
+          反撃の構え
+        </span>
+        <span
+          className={`rsi-gauge-item${below ? " is-on" : " is-off"}`}
+        >
+          <img src={partyShield} alt="" />
+          {below ? "まもりの盾で耐えてる" : "まもりの盾"}
+        </span>
+      </div>
     </section>
   );
 }
