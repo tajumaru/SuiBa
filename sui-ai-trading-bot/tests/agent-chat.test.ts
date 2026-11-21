@@ -297,9 +297,9 @@ describe("agent chat replies", () => {
   });
 
   it("speaks up at milestones with the natural follow-up chip", () => {
-    expect(proactivePrompt({ kind: "priceLine" })?.chip).toBe(
-      "ラインまでどれくらい？",
-    );
+    // A declared line is not a milestone: the character stays quiet
+    // and the watch box carries it (owner call, 2026-11-21).
+    expect(proactivePrompt({ kind: "priceLine" })).toBeNull();
     expect(proactivePrompt({ kind: "watchHit" })?.chip).toBe("調子は？");
     expect(proactivePrompt({ kind: "nearMiss" })?.chip).toBe(
       "あと何が足りない？",
