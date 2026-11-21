@@ -8,7 +8,7 @@ const party = {
   hero: entry,
   forecast: { level: 5, progress: 0.4, remaining: 372 },
   shield: { level: 1, progress: 0.8, remaining: 1 },
-  shadow: { level: 1, progress: 0, remaining: 50 },
+  shadow: { level: 1, progress: 0, remaining: 50, count: 555 },
   healer: { level: 5, progress: 0.05, remaining: 19 },
   sage: { level: 999, progress: 1, remaining: null },
 } as Parameters<typeof Party>[0]["party"];
@@ -23,6 +23,9 @@ it("shows an icon for every party member", () => {
   expect(html).toContain("ホーリー");
   expect(html).toMatch(/けんじゃ<\/span><strong>Lv\.999<\/strong><progress max="1" value="1" aria-label="けんじゃの経験値"><\/progress><small>毎朝の振り返り担当<\/small>/);
   expect(html).toContain("Lv.5");
+  // The shadow's cumulative count lives on its party row
+  // (owner, 2026-11-22): the overview keeps only today's line.
+  expect(html).toContain("累計 555件 ・ 次のレベルまで あと50件");
 });
 
 it("renders nothing without party data", () => {

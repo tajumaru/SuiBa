@@ -122,8 +122,14 @@ export function Party({
                     : on === false
                       ? "OFF（タップでON）"
                       : entry.remaining === null
-                        ? (member === "sage" ? "毎朝の振り返り担当" : "最大レベル")
-                        : `次のレベルまで あと${entry.remaining.toLocaleString("ja-JP")}件`}
+                        ? member === "sage"
+                          ? "毎朝の振り返り担当"
+                          : member === "shadow" && entry.count != null
+                            ? `累計 ${entry.count.toLocaleString("ja-JP")}件 ・ 最大レベル`
+                            : "最大レベル"
+                        : member === "shadow" && entry.count != null
+                          ? `累計 ${entry.count.toLocaleString("ja-JP")}件 ・ 次のレベルまで あと${entry.remaining.toLocaleString("ja-JP")}件`
+                          : `次のレベルまで あと${entry.remaining.toLocaleString("ja-JP")}件`}
               </small>
             </>
           );
