@@ -171,7 +171,11 @@ export function LoginScreen({
               }
             }}
             required
-            autoComplete="off"
+            // The token is an existing credential: let the browser
+            // offer it from the keychain (Face ID) instead of forcing
+            // a paste every time. Owner call, 2026-11-22 — this was
+            // "off" before; the trade is deliberate.
+            autoComplete="current-password"
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
