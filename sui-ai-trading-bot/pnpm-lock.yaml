@@ -13,13 +13,13 @@ importers:
         version: 1.7.5(axios@1.20.0)(typescript@6.0.3)
       '@mysten-incubation/memwal':
         specifier: 0.1.14
-        version: 0.1.14(@mysten/seal@1.1.3(@mysten/sui@2.37.0(typescript@6.0.3)))(@mysten/sui@2.37.0(typescript@6.0.3))(@mysten/walrus@1.1.7(@mysten/sui@2.37.0(typescript@6.0.3)))(zod@4.6.7)
+        version: 0.1.14(@mysten/seal@1.5.1(@mysten/sui@2.37.0(typescript@6.0.3)))(@mysten/sui@2.37.0(typescript@6.0.3))(@mysten/walrus@1.1.7(@mysten/sui@2.37.0(typescript@6.0.3)))(zod@4.6.7)
       '@mysten/deepbook-v3':
         specifier: 2.8.0
         version: 2.8.0(@mysten/sui@2.37.0(typescript@6.0.3))
       '@mysten/seal':
-        specifier: 1.1.3
-        version: 1.1.3(@mysten/sui@2.37.0(typescript@6.0.3))
+        specifier: 1.5.1
+        version: 1.5.1(@mysten/sui@2.37.0(typescript@6.0.3))
       '@mysten/sui':
         specifier: 2.37.0
         version: 2.37.0(typescript@6.0.3)
@@ -487,10 +487,10 @@ packages:
     peerDependencies:
       '@mysten/sui': ^2.37.0
 
-  '@mysten/seal@1.1.3':
-    resolution: {integrity: sha512-HS54mkWEkd6ENl4U94jorwYzahTSSxWiFiDKbYFw+SFEIc4HoqSg2dULKI1WUi6nw8eWYcw/XobeNOlm3Ss5CQ==}
+  '@mysten/seal@1.5.1':
+    resolution: {integrity: sha512-oANgVQfEPe1gi3LVyAvVTKM9LcRov+UJ8vd4RUCbsfYvwEEHyDuKKEpGrCzFRUf4osgZcvTtoOLCTbBej/OJbg==}
     peerDependencies:
-      '@mysten/sui': ^2.16.2
+      '@mysten/sui': ^2.37.0
 
   '@mysten/sui@2.31.2':
     resolution: {integrity: sha512-AarMaFrTlRUZyhHNRh/hrAIaxgrYXupbXypJq0TbGmgouJspwzg+fsk0aH4/67kkCeUC23idueQ2lc7BMyTlMg==}
@@ -1944,9 +1944,9 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@mysten-incubation/memwal@0.1.14(@mysten/seal@1.1.3(@mysten/sui@2.37.0(typescript@6.0.3)))(@mysten/sui@2.37.0(typescript@6.0.3))(@mysten/walrus@1.1.7(@mysten/sui@2.37.0(typescript@6.0.3)))(zod@4.6.7)':
+  '@mysten-incubation/memwal@0.1.14(@mysten/seal@1.5.1(@mysten/sui@2.37.0(typescript@6.0.3)))(@mysten/sui@2.37.0(typescript@6.0.3))(@mysten/walrus@1.1.7(@mysten/sui@2.37.0(typescript@6.0.3)))(zod@4.6.7)':
     dependencies:
-      '@mysten/seal': 1.1.3(@mysten/sui@2.37.0(typescript@6.0.3))
+      '@mysten/seal': 1.5.1(@mysten/sui@2.37.0(typescript@6.0.3))
       '@mysten/sui': 2.37.0(typescript@6.0.3)
       '@noble/ed25519': 2.3.0
       '@noble/hashes': 2.4.0
@@ -1975,7 +1975,7 @@ snapshots:
       - debug
       - supports-color
 
-  '@mysten/seal@1.1.3(@mysten/sui@2.37.0(typescript@6.0.3))':
+  '@mysten/seal@1.5.1(@mysten/sui@2.37.0(typescript@6.0.3))':
     dependencies:
       '@mysten/bcs': 2.1.4
       '@mysten/sui': 2.37.0(typescript@6.0.3)
@@ -1985,7 +1985,7 @@ snapshots:
   '@mysten/sui@2.31.2(typescript@6.0.3)':
     dependencies:
       '@graphql-typed-document-node/core': 3.2.0(graphql@17.0.2)
-      '@mysten/bcs': 2.1.3
+      '@mysten/bcs': 2.1.4
       '@mysten/utils': 0.4.2
       '@noble/curves': 2.4.0
       '@noble/hashes': 2.4.0
