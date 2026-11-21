@@ -180,13 +180,12 @@
 /* Voice input mic in the chat form: quiet until it listens,
    then rose with a slow pulse (stilled for reduced motion). */
 .agent-chat-mic {
-  min-width: 40px;
-  font-size: 16px;
-  line-height: 1;
+  min-width: 32px;
 }
 .agent-chat-mic.listening {
   background: #3a0d18;
   border-color: #ff7d9c;
+  color: #ff7d9c;
   animation: mic-pulse 1.1s ease-in-out infinite;
 }
 @keyframes mic-pulse {
