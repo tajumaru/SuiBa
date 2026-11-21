@@ -711,8 +711,8 @@ export function startBlockedReasons(
 }
 
 /**
- * The stop-state release: reason, confirmation steps and the
- * release button. Renders only in a stopped state (緊急停止 /
+ * The stop-state release: the recorded reason and the release
+ * button. Renders only in a stopped state (緊急停止 /
  * 安全停止). On the strategy tab it sits at the top of the page,
  * outside the segments, now that the full operation panel has
  * been unified into the operation bar — the bar's release icon
@@ -812,22 +812,7 @@ export function StopReleaseSection({
           )}
         </div>
       )}
-      {advice ? (
-        <p>原因を解消したら「停止を解除」→「運用開始」。</p>
-      ) : (
-        <>
-          <ol>
-            <li>「検証」で停止した原因を確認します。</li>
-            <li>
-              原因を解消したら「{emergency ? "緊急停止を解除" : "停止を解除"}」を押します。
-            </li>
-            <li>
-              上の「運用開始」を押すと再開します。解除だけでは売買を始めません。
-            </li>
-          </ol>
-          <p>停止した原因が残っていると、再開しても再び停止します。</p>
-        </>
-      )}
+      {advice && <p>原因を解消したら「停止を解除」→「運用開始」。</p>}
     </section>
   );
 }
