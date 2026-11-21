@@ -137,6 +137,13 @@ export interface ForecastScore {
   scoredRecords: number;
   steps: number;
   coveragePct: number | null;
+  /** Steps whose close landed above the cone / below it.
+   * Recorded since 2026-11-22 (owner-approved review
+   * candidate): coverage alone cannot tell a too-narrow cone
+   * from an off-centre one; the miss direction can. Display
+   * and review only — calibration still learns width only. */
+  missUp: number;
+  missDown: number;
   dirTotal: number;
   dirPct: number | null;
   /** Touch targets whose horizon has closed (or that were
@@ -153,6 +160,8 @@ export function scoreForecasts(
   const closeAt = new Map(candles.map((c) => [c.timestamp, c.close]));
   let steps = 0,
     hits = 0,
+    missUp = 0,
+    missDown = 0,
     scoredRecords = 0,
     dirTotal = 0,
     dirHits = 0;
@@ -164,6 +173,8 @@ export function scoreForecasts(
       own++;
       steps++;
       if (close >= r.lo[j] && close <= r.up[j]) hits++;
+      else if (close > r.up[j]) missUp++;
+      else missDown++;
       if (j === r.up.length - 1 && r.dir !== "flat") {
         dirTotal++;
         if (
@@ -187,6 +198,8 @@ export function scoreForecasts(
     scoredRecords,
     steps,
     coveragePct: steps ? Math.round((hits / steps) * 100) : null,
+    missUp,
+    missDown,
     dirTotal,
     dirPct: dirTotal ? Math.round((dirHits / dirTotal) * 100) : null,
     touchTotal,

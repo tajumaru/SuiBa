@@ -74,12 +74,49 @@ describe("forecast log", () => {
     expect(full.scoredRecords).toBe(1);
     expect(full.steps).toBe(24);
     expect(full.coveragePct).toBe(100);
+    expect(full.missUp).toBe(0);
+    expect(full.missDown).toBe(0);
     // Only the first 6 actuals exist: 6 steps scored, direction pending.
     const partial = scoreForecasts([rec], future.slice(0, 6));
     expect(partial.steps).toBe(6);
     expect(partial.dirTotal).toBe(0);
     // No actuals at all: nothing scored.
     expect(scoreForecasts([rec], []).scoredRecords).toBe(0);
+  });
+
+  it("counts misses by direction: above the cone versus below it", () => {
+    const start = 1_700_000_000;
+    const rec: ForecastRecord = {
+      origin: start + 300,
+      startClose: 100,
+      dir: "flat",
+      up: Array(24).fill(101),
+      lo: Array(24).fill(99),
+    };
+    const mk = (close: number): Candle[] =>
+      Array.from({ length: 24 }, (_, j) => ({
+        timestamp: rec.origin + j * 300,
+        timeframe: 300,
+        open: close,
+        high: close,
+        low: close,
+        close,
+        volume: 10,
+        source: "GeckoTerminal",
+      })) as Candle[];
+    const above = scoreForecasts([rec], mk(102));
+    expect(above.coveragePct).toBe(0);
+    expect(above.missUp).toBe(24);
+    expect(above.missDown).toBe(0);
+    const below = scoreForecasts([rec], mk(98));
+    expect(below.missUp).toBe(0);
+    expect(below.missDown).toBe(24);
+    // Hits and misses partition the scored steps.
+    const mixed = scoreForecasts(
+      [rec],
+      mk(102).map((c, j) => (j % 2 === 0 ? c : { ...c, close: 100 })),
+    );
+    expect(mixed.missUp + mixed.missDown + (mixed.coveragePct! / 100) * mixed.steps).toBe(mixed.steps);
   });
 
   it("scores direction only for named directions, against the final close", () => {
