@@ -26,11 +26,19 @@ describe("dashboard dedup: SUI price lives only in the ticker", () => {
     expect(overview).not.toContain("SUI価格");
     for (const label of [
       "累計損益",
-      "日次損益（日本時間09:00から）",
       "本日の取引（日本時間09:00から）",
-      "未実現損益",
     ])
       expect(overview).toContain(label);
+    // The 詳細の数字 fold (日次損益・未実現損益・最大ドロー
+    // ダウン・勝率・利益と損失の比率) was retired whole on
+    // 2026-11-22 (owner call): the win rate duplicated the
+    // assets card and the rest decided nothing at this scale.
+    for (const label of [
+      "詳細の数字",
+      "日次損益（日本時間09:00から）",
+      "未実現損益",
+    ])
+      expect(overview).not.toContain(label);
     // 仮想総資産と保有は資産の中身（PortfolioMix）と二重表示の
     // ため 2026-11-20 にカードを撤去（オーナー指摘）。
     expect(overview).not.toContain('"仮想総資産"');
