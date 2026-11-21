@@ -35,8 +35,13 @@
   border: none;
   background: transparent;
   color: #e8f1f8;
-  padding: 8px 6px 8px 14px;
+  /* Match the round buttons' 32px box exactly: with padding-only
+     sizing the input grew taller than the buttons and its text
+     sat off-centre (owner report 2026-11-21). */
+  height: 32px;
+  padding: 0 6px 0 14px;
   font-size: 14px;
+  line-height: 32px;
   outline: none;
 }
 .agent-chat-form button {

@@ -526,6 +526,10 @@ summary {
   z-index: 41;
   width: 30px;
   height: 30px;
+  /* The global button rule floors min-height at 44px; without
+     this the disc renders as a 30x44 ellipse (owner report
+     2026-11-21). */
+  min-height: 30px;
   padding: 0;
   display: grid;
   place-items: center;
