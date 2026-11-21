@@ -2,8 +2,9 @@
    were removed by owner request (2026-11-20); the spoken-replies
    toggle moved into the form as a round icon button. */
 .agent-voice-toggle {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
+  color: #cfe6f5;
   padding: 0;
   display: grid;
   place-items: center;
@@ -40,11 +41,12 @@
 }
 .agent-chat-form button {
   flex: none;
-  min-height: 36px;
+  min-height: 32px;
 }
 .agent-chat-mic {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
+  color: #cfe6f5;
   padding: 0;
   display: grid;
   place-items: center;
@@ -53,8 +55,8 @@
   background: transparent;
 }
 .agent-chat-send {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   display: grid;
   place-items: center;

@@ -88,7 +88,30 @@ export function AgentChatComposer({
               disabled={chatThinking}
               onClick={toggleVoiceOut}
             >
-              {voiceOn ? "🔊" : "🔇"}
+              <svg
+                width="17"
+                height="17"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M11 5 6 9H2v6h4l5 4V5Z" />
+                {voiceOn ? (
+                  <>
+                    <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+                    <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+                  </>
+                ) : (
+                  <>
+                    <path d="m16 9 6 6" />
+                    <path d="m22 9-6 6" />
+                  </>
+                )}
+              </svg>
             </button>
           )}
           {voiceSupported && (
@@ -100,7 +123,21 @@ export function AgentChatComposer({
               disabled={chatThinking}
               onClick={toggleVoice}
             >
-              🎤
+              <svg
+                width="17"
+                height="17"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <path d="M12 19v3" />
+              </svg>
             </button>
           )}
           <button
