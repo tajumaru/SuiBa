@@ -165,7 +165,7 @@ export function startRejectionReason(code: string): string {
     MARKET_FETCH_IN_PROGRESS:
       "市場データの取得が終わっていないため開始できませんでした。取得が終わるまで少し待ってから、もう一度開始してください",
     PAPER_RECOVERY_REQUIRED:
-      "通信の安全確認が未完了です。通信診断で復旧状況を確認し、確認完了までお待ちください。",
+      "通信の復旧確認中です。確認が終われば開始できます。",
     API_BACKOFF:
       "APIの再試行待機中のため開始できませんでした。待機が終わってからもう一度開始してください",
     RESET_REQUIRED:
@@ -179,4 +179,17 @@ export function startRejectionReason(code: string): string {
     labels[code] ??
     "サーバーが開始を受け付けませんでした。運用状態を確認してから再試行してください"
   );
+}
+
+/**
+ * The recovery-wait refusal is the one start refusal with no
+ * operator action attached: the communications recovery check
+ * completes on its own once healthy responses continue, and the
+ * diagnosis view would only repeat the same sentence. Surfaces
+ * show it as a plain waiting note — no error card, no diagnosis
+ * button. Every other refusal keeps the error card and the
+ * diagnosis path, where the diagnosis actually adds information.
+ */
+export function isStartRecoveryWait(code: string): boolean {
+  return code === "PAPER_RECOVERY_REQUIRED";
 }
