@@ -267,6 +267,8 @@ describe("RSI oversold gauge", () => {
     expect(html).toContain("rsi-gauge-crystal");
     expect(html).toContain("rsi-gauge-hero");
     expect(html).toContain("反撃の構え");
+    expect(html).toContain("clip-path=\"url(#");
+    expect(html).toContain("<clipPath");
   });
 
   it("places an RSI at or below the line to its left and shows the recovery state", () => {

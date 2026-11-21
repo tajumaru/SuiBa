@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useId } from "react";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { BossBattleCard } from "./BossBattle.tsx";
 import { BookBar } from "./BookBar.tsx";
@@ -27,6 +27,13 @@ export function RsiGauge({
   rsi: number | null | undefined;
   oversold: number;
 }) {
+  // The party portraits are square images whose emblem is an inscribed
+  // circle; clip each one to that circle so the dark square corners
+  // never stick out past the ring drawn around it.
+  const clipBase = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const heroClip = `${clipBase}-hero`;
+  const crystalClip = `${clipBase}-crystal`;
+  const badgeClip = `${clipBase}-badge`;
   if (
     rsi == null ||
     !Number.isFinite(rsi) ||
@@ -77,6 +84,17 @@ export function RsiGauge({
         role="img"
         aria-label={`0から100のうち、買いの線は${oversold}、現在は${current}`}
       >
+        <defs>
+          <clipPath id={heroClip}>
+            <circle cx={rsiX} cy="33" r="13" />
+          </clipPath>
+          <clipPath id={crystalClip}>
+            <circle cx={lineX} cy="19" r="8" />
+          </clipPath>
+          <clipPath id={badgeClip}>
+            <circle cx={rsiX + 11.5} cy="43.5" r="6.5" />
+          </clipPath>
+        </defs>
         <rect
           className="rsi-gauge-track"
           x="8"
@@ -115,6 +133,7 @@ export function RsiGauge({
           y="11"
           width="16"
           height="16"
+          clipPath={`url(#${crystalClip})`}
           aria-hidden="true"
         />
         {near && (
@@ -136,6 +155,7 @@ export function RsiGauge({
           y="20"
           width="26"
           height="26"
+          clipPath={`url(#${heroClip})`}
           aria-hidden="true"
         />
         <circle
@@ -152,6 +172,7 @@ export function RsiGauge({
             y="37"
             width="13"
             height="13"
+            clipPath={`url(#${badgeClip})`}
             aria-hidden="true"
           />
         )}
