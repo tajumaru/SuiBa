@@ -364,7 +364,7 @@ const modeLabel = (mode: Mode) => modeCopy[mode].label;
  * while the form holds unsaved edits, so both pieces read the same
  * editor instance. The strategy tab mounts this hook once and keeps
  * it mounted across segment switches, so unsaved edits survive
- * moving between the ルール and 設定 segments.
+ * moving between the さくせん and 設定 segments.
  */
 export function useSettingsEditor(
   data: State,
