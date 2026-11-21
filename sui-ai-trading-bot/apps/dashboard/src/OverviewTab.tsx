@@ -49,8 +49,8 @@ export function PnlBreakdownLine({
   return (
     <p className="overview-sub">
       閉じた往復 {totals.roundTrips}件 ・ 勝率{" "}
-      {percent(totals.wins / totals.roundTrips)} ・ 1回平均{" "}
-      {money(Number(totals.realizedPnlUsdc) / totals.roundTrips)} USDC
+      {Math.round((totals.wins / totals.roundTrips) * 100)}% ・ 1回平均{" "}
+      {(Number(totals.realizedPnlUsdc) / totals.roundTrips).toFixed(2)} USDC
     </p>
   );
 }
@@ -100,7 +100,10 @@ export function OverviewTab({
                         (PortfolioMix) と同じ数字の二重表示だったため
                         2026-11-20 に撤去（オーナー指摘）。本日の取引も
                         単独カードだと 0 件の日に枠だけ大きいため、
-                        同日さらに累計損益カードの1行へ統合した。 */}
+                        同日さらに累計損益カードの1行へ統合した。
+                        2026-11-22、資産の中身と累計損益を1枚の
+                        資産カードへ統合（オーナー指示）：中身が上、
+                        区切りの下に損益。 */}
                     {real ? (
                       <RealPortfolioMix
                         balances={data.realBalances}
@@ -109,11 +112,34 @@ export function OverviewTab({
                       />
                     ) : (
                       <>
-                        <div className="cards">
-                          <section className="overview-pnl-card">
+                        <section
+                          className="overview-assets-card"
+                          aria-label="資産"
+                        >
+                          <PortfolioMix
+                            embedded
+                            usdc={data.portfolio.usdc}
+                            baseQty={data.portfolio.sui}
+                            price={data.price}
+                            costBasis={data.portfolio.costBasis}
+                            baseSymbol={data.pair === "WAL_USDC" ? "WAL" : "SUI"}
+                            usdJpy={usdJpy}
+                          />
+                          <div className="overview-assets-pnl">
                             <small>累計損益</small>
                             <h2>
-                              {money(data.pnl)} <em>USDC</em>
+                              <span
+                                className={
+                                  data.pnl != null && data.pnl < 0
+                                    ? "pm-down"
+                                    : data.pnl != null && data.pnl > 0
+                                      ? "pm-up"
+                                      : undefined
+                                }
+                              >
+                                {data.pnl == null ? "—" : data.pnl.toFixed(2)}
+                              </span>{" "}
+                              <em>USDC</em>
                               <JpyAmount usdc={data.pnl} usdJpy={usdJpy} />
                             </h2>
                             <PnlBreakdownLine
@@ -124,16 +150,8 @@ export function OverviewTab({
                               本日の取引（日本時間09:00から）{" "}
                               {money(data.todayTrades)} 件
                             </p>
-                          </section>
-                        </div>
-                        <PortfolioMix
-                          usdc={data.portfolio.usdc}
-                          baseQty={data.portfolio.sui}
-                          price={data.price}
-                          costBasis={data.portfolio.costBasis}
-                          baseSymbol={data.pair === "WAL_USDC" ? "WAL" : "SUI"}
-                          usdJpy={usdJpy}
-                        />
+                          </div>
+                        </section>
                         <EquityCurve points={data.equityCurve} />
                       </>
                     )}

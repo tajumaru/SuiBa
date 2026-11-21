@@ -12,7 +12,7 @@ const totals = {
 it("renders closed round-trip count, win rate, and average realized P&L", () => {
   expect(
     renderToStaticMarkup(createElement(PnlBreakdownLine, { totals })),
-  ).toContain("閉じた往復 3件 ・ 勝率 33.3333% ・ 1回平均 -0.0719 USDC");
+  ).toContain("閉じた往復 3件 ・ 勝率 33% ・ 1回平均 -0.07 USDC");
 });
 
 it("hides the breakdown without closed round trips or with stale operations", () => {
