@@ -277,6 +277,21 @@
   color: var(--dim);
 }
 
+.party-boss-history {
+  margin-top: 1rem;
+}
+
+.overview-party .party-boss-history li {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.party-boss-history-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .overview-party progress {
   appearance: none;
   width: 100%;
