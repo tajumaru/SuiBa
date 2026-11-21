@@ -490,7 +490,7 @@ function App() {
                     tab-independent notices below. */}
                 <OperationBar
                   runtime={data.runtime}
-                  mode={data.mode}
+                  mode={data.mode ?? "PAPER"}
                   control={control}
                   onOpenStrategy={() => setTab("Strategy")}
                   startBlocked={startBlocked}
