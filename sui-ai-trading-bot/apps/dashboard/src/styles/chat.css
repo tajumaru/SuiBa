@@ -32,6 +32,11 @@
 .agent-chat-form input {
   flex: 1;
   min-width: 0;
+  /* The global form-field rule's margin-top: 9px leaks in
+     here: the flex row centres the margin box, so the input
+     sat half the margin below centre and its text looked
+     off-centre in the pill (owner report 2026-11-22). */
+  margin: 0;
   border: none;
   background: transparent;
   color: #e8f1f8;

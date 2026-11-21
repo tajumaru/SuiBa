@@ -115,10 +115,25 @@
 }
 
 .overview-party-icon {
-  grid-row: 1 / 3;
+  grid-row: 1 / 4;
   width: 2.75rem;
   height: 2.75rem;
   border-radius: 50%;
+}
+
+/* The note under the bar gets its own full-width row
+   (2026-11-22): as the right column's second-row item it
+   sized that column by its unwrapped text, crushing the
+   name column until names wrapped a character at a time
+   (owner's screenshot: かげの声 and さきよみ). The level
+   alone sizes the right column now. */
+.overview-party ul progress {
+  grid-column: 2 / -1;
+}
+
+.overview-party li > small,
+.overview-party-toggle > small {
+  grid-column: 2 / -1;
 }
 
 .overview-party-skill .overview-party-icon {
