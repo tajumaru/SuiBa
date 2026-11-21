@@ -4,15 +4,17 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { buildStartupWorker } from "./helpers/startup-worker.ts";
 
-it("refuses missing persisted state and a missing pair override before creating trading databases", () => {
+it("refuses missing persisted state and a missing pair override before creating trading databases", async () => {
   const folder = mkdtempSync(join(tmpdir(), "suiba-existing-"));
   try {
+    const workerEntry = await buildStartupWorker(folder);
     const root = join(folder, "bot.sqlite");
     const start = (pair?: string) =>
       spawnSync(
         process.execPath,
-        ["--import", "tsx", "apps/worker/src/index.ts"],
+        [workerEntry],
         {
           env: {
             ...process.env,

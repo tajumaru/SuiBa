@@ -9,6 +9,7 @@ import { randomBytes } from "node:crypto";
 import { acquireInstanceLock } from "../apps/worker/src/deployment-safety.ts";
 import { createPaperBackup } from "../apps/worker/src/paper-backup.ts";
 import { BotDatabase } from "../packages/database/src/index.ts";
+import { buildStartupWorker } from "./helpers/startup-worker.ts";
 
 it("actual loopback deployment maintenance rejects changes and duplicate workers; Linux shutdown proves a stopped backup", async () => {
   const folder = mkdtempSync(join(tmpdir(), "suiba-deployment-api-")),
@@ -22,10 +23,10 @@ it("actual loopback deployment maintenance rejects changes and duplicate workers
   const children: ChildProcess[] = [];
   for (const path of [root, root + ".pairs.sqlite"])
     new BotDatabase(path).close();
-  const start = (workerPort: number) => {
+  const start = (workerEntry: string, workerPort: number) => {
     const child = spawn(
       process.execPath,
-      ["--import", "tsx", "apps/worker/src/index.ts"],
+      [workerEntry],
       {
         env: {
           ...process.env,
@@ -64,7 +65,8 @@ it("actual loopback deployment maintenance rejects changes and duplicate workers
     await exited;
   };
   try {
-    const worker = start(port);
+    const workerEntry = await buildStartupWorker(folder);
+    const worker = start(workerEntry, port);
     let ready = false;
     for (let i = 0; i < 300; i++) {
       if (worker.exitCode !== null) throw Error("FIXTURE_WORKER_EXITED");
@@ -82,7 +84,7 @@ it("actual loopback deployment maintenance rejects changes and duplicate workers
       maintenance: false,
       hasPosition: false,
     });
-    const duplicate = start(0);
+    const duplicate = start(workerEntry, 0);
     let duplicateError = "";
     duplicate.stderr!.on("data", (d) => {
       duplicateError += String(d);
