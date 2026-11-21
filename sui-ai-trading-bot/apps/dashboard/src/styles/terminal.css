@@ -626,6 +626,7 @@ summary {
   gap: 8px;
 }
 .boss-plate,
+.boss-party,
 .boss-message {
   padding: 8px;
   background: var(--feed-bg);
@@ -636,8 +637,28 @@ summary {
   font-size: 0.85rem;
 }
 .boss-plate strong,
+.boss-party strong,
 .boss-message strong {
   color: var(--mint);
+}
+.boss-party,
+.boss-party ul,
+.boss-party li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.boss-party,
+.boss-party ul {
+  flex-wrap: wrap;
+}
+.boss-party ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.boss-party li {
+  gap: 4px;
 }
 .boss-portrait {
   width: 100%;

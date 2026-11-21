@@ -1,10 +1,12 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { readBoss, readBossHistory, refreshBoss } from "../apps/worker/src/boss.ts";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import type { Candle } from "../packages/shared/src/index.ts";
+import type { CandidateAudit } from "../packages/shared/src/operations.ts";
 
 const pair = "SUI_USDC";
 const hour = 3600;
@@ -51,6 +53,16 @@ function opening(db: BotDatabase, close = 93) {
     candle(end - hour, 100),
     candle(end, close),
   ])!;
+}
+
+function shieldAction(db: BotDatabase, id: string) {
+  db.putCandidate({
+    id,
+    timestamp: now,
+    side: "BUY",
+    finalAction: "WAIT",
+    profitGuard: { evaluated: true, allowed: false },
+  } as CandidateAudit);
 }
 
 describe("boss battle", () => {
@@ -101,13 +113,29 @@ describe("boss battle", () => {
     dirs.push(dir);
     const path = join(dir, "bot.sqlite");
     const before = database(path);
+    shieldAction(before, "before");
+    before.refreshParty(5, "test");
     const started = opening(before);
+    expect(before.get(`boss:${pair}`)).toMatchObject({
+      partyBaseline: { forecast: 5, shield: 1, shadow: 0, healer: 0 },
+    });
+    expect(started).not.toHaveProperty("partyBaseline");
+    expect(started.partyActions).toEqual({ forecast: 0, shield: 0, shadow: 0, healer: 0 });
+    shieldAction(before, "first");
+    refreshBoss(before, pair, now);
+    expect(readBoss(before, pair)?.partyActions?.shield).toBe(1);
     expect(readBossHistory(before, pair)).toEqual([]);
     before.close();
     databases.delete(before);
 
     const db = database(path);
-    expect(readBoss(db, pair)).toEqual(started);
+    expect(readBoss(db, pair)?.partyActions?.shield).toBe(1);
+    expect(db.get(`boss:${pair}`)).toMatchObject({
+      partyBaseline: { forecast: 5, shield: 1, shadow: 0, healer: 0 },
+    });
+    using sql = new DatabaseSync(path);
+    sql.exec("UPDATE rpg_party SET count = 3 WHERE member = 'forecast'");
+    shieldAction(db, "second");
     db.set("indicators", { rsi: db.settings().oversold });
     const ongoing = market(
       db,
@@ -122,7 +150,10 @@ describe("boss battle", () => {
       recovery: 0.05,
       turn: "hero",
       outcome: null,
+      partyActions: { forecast: 0, shield: 2, shadow: 0, healer: 0 },
     });
+    db.set("paper_safety", { autoRecoveryCount: 1 });
+    db.refreshParty(3, "test");
     const ended = market(db, 115, [candle(end + 600, 115)], now + 600_000);
     expect(ended).toMatchObject({
       recovery: 1,
@@ -138,6 +169,7 @@ describe("boss battle", () => {
         result: "endured",
         drop: 0.07,
         recovery: 1,
+        partyActions: { forecast: 0, shield: 2, shadow: 0, healer: 1 },
       },
     ]);
     const history = readBossHistory(db, pair);
@@ -155,6 +187,28 @@ describe("boss battle", () => {
     ).toMatchObject({
       startedAt: now + 1_200_000,
       outcome: null,
+    });
+  });
+
+  it("starts older battles at zero and counts subsequent actions even without a fresh price", () => {
+    const db = database();
+    const { partyActions: _partyActions, ...legacy } = opening(db);
+    db.set(`boss:${pair}`, { ...legacy, openingCandleAt: end });
+    db.refreshParty(10, "test");
+    db.set("price", 92);
+
+    refreshBoss(db, pair, now);
+    expect(db.get(`boss:${pair}`)).toMatchObject({
+      partyBaseline: { forecast: 10, shield: 0, shadow: 0, healer: 0 },
+      partyActions: { forecast: 0, shield: 0, shadow: 0, healer: 0 },
+    });
+
+    db.refreshParty(12, "test");
+    refreshBoss(db, pair, now);
+    expect(readBoss(db, pair)).toMatchObject({
+      startedAt: legacy.startedAt,
+      outcome: null,
+      partyActions: { forecast: 2, shield: 0, shadow: 0, healer: 0 },
     });
   });
 

@@ -2,11 +2,17 @@ import React, { useId, useRef, useState } from "react";
 import {
   bossAppearance,
   bossDropText,
+  bossPartyMembers,
   type BossBattleState,
 } from "../../../packages/shared/src/boss.ts";
+import { partyNames } from "../../../packages/shared/src/party.ts";
 import lightning from "./assets/boss-lightning.webp";
 import swamp from "./assets/boss-swamp.webp";
 import hero from "./assets/hero-brave-blue.webp";
+import forecast from "./assets/party-sakiyomi.webp";
+import shield from "./assets/party-shield.webp";
+import shadow from "./assets/party-kage.webp";
+import healer from "./assets/party-healer.webp";
 
 export interface HeroBattleStats {
   level: number;
@@ -16,6 +22,7 @@ export interface HeroBattleStats {
 }
 
 const portraits = { lightning, swamp };
+const partyIcons = { forecast, shield, shadow, healer };
 const percentage = (fraction: number) => Math.round(fraction * 100);
 
 function HpBar({ value, label }: { value: number | null; label: string }) {
@@ -90,7 +97,7 @@ export function BossBattleCard({
   );
 }
 
-function BossBattle({
+export function BossBattle({
   boss,
   stats,
 }: {
@@ -103,6 +110,10 @@ function BossBattle({
       ? null
       : Math.max(0, Math.min(1, stats.equity / boss.startingEquity));
   const pnl = stats.unrealized;
+  const participants = bossPartyMembers.flatMap((member) => {
+    const count = boss.partyActions?.[member] ?? 0;
+    return count >= 1 ? [{ member, count }] : [];
+  });
   const positionText = !stats.hasPosition
     ? "無傷（ポジションなし）"
     : pnl === null
@@ -130,6 +141,19 @@ function BossBattle({
           <span>{positionText}</span>
         </div>
       </div>
+      {participants.length > 0 && (
+        <div className="boss-party">
+          <strong>参戦</strong>
+          <ul>
+            {participants.map(({ member, count }) => (
+              <li key={member}>
+                <img src={partyIcons[member]} alt="" width={24} height={24} />
+                <span>{partyNames[member]} ×{count}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="boss-message">
         <strong>{bossAppearance(boss)}</strong>
         <p>
