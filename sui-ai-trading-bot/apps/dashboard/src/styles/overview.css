@@ -7,8 +7,20 @@
 .overview-tab .cards {
   gap: 10px;
 }
-.overview-tab .overview-pnl-card {
-  grid-column: 1 / -1;
+/* The merged 資産 card (2026-11-22): portfolio mix on top,
+   cumulative PnL below a divider, one panel frame outside. */
+.overview-assets-card {
+  border: 1px solid var(--btn-hover);
+  border-radius: 6px;
+  background: var(--panel);
+}
+.portfolio-mix-embedded {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.overview-assets-pnl {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 10px;
 }
 .overview-tab h2 {
   font-size: 20px;

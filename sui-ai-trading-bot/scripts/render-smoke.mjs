@@ -413,7 +413,9 @@ try {
     await page.getByRole("button", { name: "ダッシュボード", exact: true }).click();
   };
   const paperBackground = await headerBackground();
-  const assets = page.getByRole("region", { name: "資産の中身", exact: true });
+  // The mix and the cumulative PnL share one 資産 card since
+  // 2026-11-22 (owner: one card, not two stacked panels).
+  const assets = page.getByRole("region", { name: "資産", exact: true });
   fixture.state.price = 2;
   await reloadOverview();
   await assets.getByText("99.19（現金）", { exact: false }).waitFor();
@@ -426,8 +428,11 @@ try {
   await reloadOverview();
   const testnet = header.getByText("TESTNET", { exact: true });
   const realBadge = header.getByText("REAL（実売買）", { exact: true });
-  await assets.getByText("≈ 18.00 DBUSDC", { exact: true }).waitFor();
-  await assets.getByText("DEEP 22", { exact: true }).waitFor();
+  // REAL keeps its own 資産の中身 region (BalanceManager balances);
+  // only the PAPER mix merged into the 資産 card.
+  const realAssets = page.getByRole("region", { name: "資産の中身", exact: true });
+  await realAssets.getByText("≈ 18.00 DBUSDC", { exact: true }).waitFor();
+  await realAssets.getByText("DEEP 22", { exact: true }).waitFor();
   if (await page.getByText("累計損益", { exact: true }).count())
     failures.push("REAL shows PAPER cumulative PnL");
   if (await page.getByText("資産の推移", { exact: true }).count())
@@ -446,8 +451,8 @@ try {
   }
   delete fixture.state.realBalances;
   await reloadOverview();
-  await assets.getByText("残高を確認できません", { exact: true }).waitFor();
-  if (await assets.getByText("99.19", { exact: false }).count())
+  await realAssets.getByText("残高を確認できません", { exact: true }).waitFor();
+  if (await realAssets.getByText("99.19", { exact: false }).count())
     failures.push("REAL with unavailable balances shows PAPER cash");
   console.log(
     `five-tab render: 320/375/1280px, header start/stop passed on loopback port ${port}`,

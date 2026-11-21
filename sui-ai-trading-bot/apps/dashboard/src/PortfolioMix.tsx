@@ -21,6 +21,7 @@ export function PortfolioMix({
   costBasis,
   baseSymbol,
   usdJpy = null,
+  embedded = false,
 }: {
   usdc: number;
   baseQty: number;
@@ -28,14 +29,18 @@ export function PortfolioMix({
   costBasis: number;
   baseSymbol: string;
   usdJpy?: number | null;
+  /** Inside the merged 資産 card (2026-11-22): the outer card
+   * carries the panel frame, so this renders bare with the
+   * shorter title. */
+  embedded?: boolean;
 }) {
   const m = portfolioMixModel({ usdc, baseQty, price, costBasis });
   if (!m || price === null) return null;
   const money = (v: number) => v.toFixed(2);
-  return (
-    <section className="portfolio-mix" aria-label="資産の中身">
+  const body = (
+    <>
       <div className="pm-head">
-        <span className="pm-title">資産の中身</span>
+        <span className="pm-title">{embedded ? "資産" : "資産の中身"}</span>
         <span className="pm-total">
           合計 <b>{money(m.total)} USDC</b>
         </span>
@@ -74,6 +79,12 @@ export function PortfolioMix({
           )}
         </div>
       </div>
+    </>
+  );
+  if (embedded) return <div className="portfolio-mix-embedded">{body}</div>;
+  return (
+    <section className="portfolio-mix" aria-label="資産の中身">
+      {body}
     </section>
   );
 }
