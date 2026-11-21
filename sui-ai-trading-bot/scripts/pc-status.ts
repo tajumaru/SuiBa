@@ -155,6 +155,32 @@ export function formatPcStatus(
   ].join("\n");
 }
 
+type PcStatusFailureKind = "refused" | "unresponsive" | "unreachable";
+
+export function pcStatusFailureKind(error: unknown): PcStatusFailureKind {
+  if (typeof error !== "object" || error === null) return "unreachable";
+  const cause = "cause" in error ? error.cause : undefined;
+  if (
+    typeof cause === "object" &&
+    cause !== null &&
+    "code" in cause &&
+    cause.code === "ECONNREFUSED"
+  )
+    return "refused";
+  if (
+    "name" in error &&
+    (error.name === "TimeoutError" || error.name === "AbortError")
+  )
+    return "unresponsive";
+  return "unreachable";
+}
+
+const failureDetails: Record<PcStatusFailureKind, string> = {
+  refused: "Botのプロセスが動いていません（3100番に接続できませんでした）。",
+  unresponsive: "Botのプロセスは応答していません（時間内に返事がありませんでした）。",
+  unreachable: "Botに接続できませんでした。",
+};
+
 export async function runPcStatus(deps: PcStatusDependencies) {
   const unavailable = (detail: string, exitCode: number) => {
     deps.print(`Botが応答しません\n${detail}`);
@@ -163,8 +189,12 @@ export async function runPcStatus(deps: PcStatusDependencies) {
   const token = await deps.readToken().catch(() => undefined);
   if (!token) return unavailable(".env の管理用の鍵を確認してください。", 0);
 
-  const reply = await deps.get("/api/state", token).catch(() => undefined);
-  if (!reply) return unavailable("Botに接続できませんでした。", 1);
+  let reply: Awaited<ReturnType<PcStatusDependencies["get"]>>;
+  try {
+    reply = await deps.get("/api/state", token);
+  } catch (error) {
+    return unavailable(failureDetails[pcStatusFailureKind(error)], 1);
+  }
   if (reply.status === 401 || reply.status === 403)
     return unavailable("Botが管理用の鍵を受け付けませんでした。", 0);
   const state = stateSchema.safeParse(reply.body).data;

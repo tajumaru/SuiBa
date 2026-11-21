@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { runPcStatus } from "../scripts/pc-status.ts";
+import { pcStatusFailureKind, runPcStatus } from "../scripts/pc-status.ts";
 
 const token = "test-admin-token";
 const settings = {
@@ -136,6 +136,42 @@ describe("pc:status", () => {
       "Botが応答しません\nBotに接続できませんでした。",
     );
     expect(deps.runRealResume).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      kind: "refused",
+      error: new TypeError("fetch failed", { cause: { code: "ECONNREFUSED" } }),
+      message: "Botのプロセスが動いていません（3100番に接続できませんでした）。",
+    },
+    {
+      kind: "unresponsive",
+      error: new DOMException("Timed out", "TimeoutError"),
+      message: "Botのプロセスは応答していません（時間内に返事がありませんでした）。",
+    },
+    {
+      kind: "unreachable",
+      error: new TypeError("fetch failed", { cause: { code: "ECONNRESET" } }),
+      message: "Botに接続できませんでした。",
+    },
+  ])(
+    "接続失敗を $kind として表示し終了コード1を返す",
+    async ({ kind, error, message }) => {
+      const deps = setup();
+      deps.get.mockRejectedValue(error);
+      expect(pcStatusFailureKind(error)).toBe(kind);
+      expect(await runPcStatus(deps)).toBe(1);
+      expect(deps.print).toHaveBeenCalledExactlyOnceWith(
+        `Botが応答しません\n${message}`,
+      );
+      expect(deps.runRealResume).not.toHaveBeenCalled();
+    },
+  );
+
+  it("AbortError も応答なしに分類する", () => {
+    expect(pcStatusFailureKind(new DOMException("Aborted", "AbortError"))).toBe(
+      "unresponsive",
+    );
   });
 
   it("管理用の鍵が拒否された場合も終了コード0を返す", async () => {
