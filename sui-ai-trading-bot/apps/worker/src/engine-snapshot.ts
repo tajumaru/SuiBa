@@ -112,8 +112,18 @@ export function buildSnapshot(
       boss: readBoss(src.db, src.pair),
       bossHistory: readBossHistory(src.db, src.pair),
       party: Object.fromEntries(
-        src.db.partyRecords().map(({ member, count }) => [member, partyLevel(member, count)]),
-      ) as Partial<Record<PartyMember, ReturnType<typeof partyLevel>>>,
+        src.db
+          .partyRecords()
+          .map(({ member, count }) => [
+            member,
+            { ...partyLevel(member, count), count },
+          ]),
+      ) as Partial<
+        Record<
+          PartyMember,
+          ReturnType<typeof partyLevel> & { count?: number }
+        >
+      >,
       forecast: readForecast(src.db, src.pair),
       forecastError: src.db.get("forecast_error") ?? null,
       chain: src.chainInfo(),
