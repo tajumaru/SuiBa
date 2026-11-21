@@ -222,6 +222,17 @@ describe("strategy panel: slim condition cards", () => {
     expect(summary).not.toContain("0.076364");
   });
 
+  it("keeps the buy-scenario estimate to three short lines", () => {
+    const html = render(withGuard(buyReport), telemetry());
+    expect(html).toContain("購入試算");
+    expect(html).toContain("往復コスト");
+    expect(html).toContain("利確価格");
+    expect(html).not.toContain("保証しません");
+    expect(html).not.toContain("費用ソースを確認してください");
+    expect(html).not.toContain("購入追加手数料");
+    expect(html).not.toContain("基軸通貨 ／");
+  });
+
   it("keeps the 不明 rendering when the summary values are null", () => {
     const html = render(
       withGuard({ ...buyReport, breakEvenPrice: null, netProfitUsdc: null }),

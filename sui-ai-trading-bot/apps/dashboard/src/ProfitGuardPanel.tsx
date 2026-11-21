@@ -160,25 +160,23 @@ export function ProfitGuardPanel({ data }: { data: State }) {
             </div>
           </div>
           {r.scope === "BUY_SCENARIO" && (
-            <p className="panel-meta">
-              購入予定：{precise(r.purchaseInputUsdc)} ／ 費用込み想定取得単価：
-              {number(r.acquisitionUnitPrice)} USDC / 基軸通貨 ／
-              購入追加手数料：
-              {precise(r.buyCosts?.additionalFeeUsdc)} ／ 購入ガス：
-              {precise(r.buyCosts?.gasUsdc)} ／ 想定往復コスト：
-              {precise(r.roundTripCostUsdc)} ／ 想定利確価格：
-              {number(r.targetPrice)} USDC（想定上昇率の上限
-              {percent(r.targetProfitPct)}
-              、戦略の利確価格が低い場合はそちらを採用）。現在の逆方向見積もりからの推定で、将来の利益を保証しません。
-            </p>
+            <>
+              <p className="panel-meta">
+                購入試算：{number(r.purchaseInputUsdc)} USDC（費用込み単価{" "}
+                {number(r.acquisitionUnitPrice, 4)}）
+              </p>
+              <p className="panel-meta">
+                往復コスト：{number(r.roundTripCostUsdc, 4)} USDC ／
+                利確価格：{number(r.targetPrice, 4)}（+
+                {percent(r.targetProfitPct)}まで）
+              </p>
+            </>
           )}
           <small>
-            見積もり日時：{dateTime(r.asOf)} ·{" "}
-            {stale ? "期限切れ（実行には再見積もりが必要）" : "取得時点の推定"}{" "}
-            · {r.source ?? "取得元不明"} ·{" "}
-            {r.costs?.source === "PAPER_MODEL"
-              ? "手数料・ガスはPAPERモデル値"
-              : "費用ソースを確認してください"}
+            見積もり：{dateTime(r.asOf)} ·{" "}
+            {stale ? "期限切れ" : "取得時点の推定"}
+            {r.costs?.source === "PAPER_MODEL" &&
+              " · 手数料・ガスはPAPERモデル値"}
           </small>
         </>
       ) : (
