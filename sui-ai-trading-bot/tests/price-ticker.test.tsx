@@ -262,7 +262,11 @@ describe("RSI oversold gauge", () => {
     expect(html).toContain('x1="135.8"');
     expect(html).toContain('cx="143.184"');
     expect(html).toContain("いま 47.6");
-    expect(html).toContain("いま：線の少し上。線まで あと 2.6");
+    expect(html).toContain("こちらのターン。");
+    expect(html).toContain("線まで あと 2.6");
+    expect(html).toContain("rsi-gauge-crystal");
+    expect(html).toContain("rsi-gauge-hero");
+    expect(html).toContain("反撃の構え");
   });
 
   it("places an RSI at or below the line to its left and shows the recovery state", () => {
@@ -271,8 +275,10 @@ describe("RSI oversold gauge", () => {
     expect(html).toContain('class="rsi-gauge-pulse"');
     expect(html).toContain('x1="93.2"');
     expect(html).toContain('cx="88.656"');
-    expect(html).toContain("線の下。");
-    expect(html).toContain("ここから戻して線を上抜けると買い");
+    expect(html).toContain("相手のターン。");
+    expect(html).toContain("線まで あと 1.6");
+    expect(html).toContain("rsi-gauge-badge");
+    expect(html).toContain("まもりの盾で耐えてる");
   });
 
   it("uses an oversold setting of 30 for the line and label", () => {
