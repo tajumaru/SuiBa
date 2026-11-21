@@ -573,6 +573,8 @@
   align-items: center;
   gap: 6px;
   padding: 3px 10px;
+  font-family: inherit;
+  cursor: pointer;
   background: #1a2632;
   border: 1px solid var(--steel);
   border-radius: 999px;
@@ -598,6 +600,17 @@
 }
 .agent-feed-chip-label {
   font-weight: 600;
+}
+/* The tapped chip's one-line answer (state word + one number),
+   directly under the chip row. */
+.agent-feed-chip-pop {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  background: #1a2632;
+  border: 1px solid var(--steel);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text);
 }
 .agent-feed-chip.tone-met {
   border-color: #4caf7d;

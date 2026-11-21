@@ -547,6 +547,34 @@ export function currentConditionChips(
   return chips;
 }
 
+/**
+ * The one line shown when a condition chip is tapped: the state
+ * word plus a single number — why the dot has its colour, nothing
+ * more (the full cards live on the strategy tab). Owner's call
+ * 2026-11-21: users read the colours; the tap answers "why".
+ */
+export function chipDetailLine(
+  chip: EntryConditionChip,
+  dec: DecisionTelemetry,
+): string {
+  const signed = (v: number) =>
+    `${v > 0 ? "+" : ""}${fmtNumber(v, 4)}`;
+  if (chip.key === "ema") {
+    const gap = dec.price > 0 ? (dec.ema20 - dec.ema50) / dec.price : 0,
+      pct = `${gap > 0 ? "+" : ""}${fmtPercent(gap)}`;
+    return chip.met ? `EMA 成立：差 ${pct}` : `EMA ${chip.status}：差 ${pct}`;
+  }
+  if (chip.key === "rsi") {
+    if (chip.met) return `RSI 成立：今 ${fmtNumber(dec.rsi, 1)}`;
+    if (chip.detail)
+      return `RSI：今 ${fmtNumber(dec.rsi, 1)}、ラインまで ${chip.detail}`;
+    return `RSI ${chip.status}：今 ${fmtNumber(dec.rsi, 1)}`;
+  }
+  return chip.met
+    ? `MACD 成立：ヒストグラム ${signed(dec.histogram)}`
+    : `MACD ${chip.status}：ヒストグラム ${signed(dec.histogram)}（前回 ${signed(dec.previousHistogram)}）`;
+}
+
 export const JUST_DECLARED_DETAIL: Record<EntryCondKey, string> = {
   emaUp: "宣言したところ。縮んだら声かける",
   rsiRecovery: "宣言したところ。上抜け待ち",
