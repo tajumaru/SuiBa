@@ -528,8 +528,9 @@
 /* Agent narration feed: a chat-style timeline on its own tab. The
    character that used to be staged here now lives at the top of
    the app as a round avatar (see .agent-avatar-dock above); this
-   panel keeps the narration itself — condition chips, the watch
-   strip, the declaration score and the entries. */
+   panel keeps the narration itself — the watch strip and the
+   entries (the condition chips and declaration score left the
+   header on 2026-11-21; the strategy tab carries the conditions). */
 /* The feed panel sets its own type scale: 14px body (entry text),
    12px supporting (chips, strips, timestamps, the closing note)
    and 11px smallest (strip titles, tags, definitions). Nothing in
@@ -553,94 +554,7 @@
   white-space: nowrap;
   border: 0;
 }
-/* Buy-condition chips: the same decision evidence as the narration,
-   compressed to a traffic-light dot per condition (met / close /
-   far / back). Only the RSI countdown ("あと7") survives as text;
-   the precise state word stays in the title and for screen readers. */
-.agent-feed-chips {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: 6px;
-  margin-top: 12px;
-}
-.agent-feed-chips-title {
-  font-size: 12px;
-  color: #9aafbf;
-  flex: none;
-}
-.agent-feed-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  white-space: nowrap;
-  font-family: inherit;
-  cursor: pointer;
-  background: #1a2632;
-  border: 1px solid var(--steel);
-  border-radius: 999px;
-  font-size: 12px;
-  color: var(--text);
-}
-.agent-feed-chip-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex: none;
-  background: #71809a;
-}
-.agent-feed-chip.tone-met .agent-feed-chip-dot {
-  background: #3ecf6f;
-}
-.agent-feed-chip.tone-close .agent-feed-chip-dot {
-  background: #f5c93f;
-}
-.agent-feed-chip.tone-far .agent-feed-chip-dot,
-.agent-feed-chip.tone-back .agent-feed-chip-dot {
-  background: #f0564a;
-}
-.agent-feed-chip-label {
-  font-weight: 600;
-}
-/* The tapped chip's one-line answer (state word + one number),
-   directly under the chip row. */
-.agent-feed-chip-pop {
-  margin: 8px 0 0;
-  padding: 8px 12px;
-  background: #1a2632;
-  border: 1px solid var(--steel);
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--text);
-}
-.agent-feed-chip.tone-met {
-  border-color: #4caf7d;
-}
-.agent-feed-chip.tone-met .agent-feed-chip-status {
-  color: #4caf7d;
-}
-.agent-feed-chip.tone-close {
-  border-color: var(--gold);
-}
-.agent-feed-chip.tone-close .agent-feed-chip-status {
-  color: var(--gold);
-}
-.agent-feed-chip.tone-back {
-  border-color: #e06c75;
-}
-.agent-feed-chip.tone-back .agent-feed-chip-status {
-  color: #e06c75;
-}
-.agent-feed-chip.tone-far .agent-feed-chip-status {
-  color: #9aafbf;
-}
-/* The declared watch target's chip is ringed in gold. */
-.agent-feed-chip.watching {
-  border-color: #ffd166;
-  box-shadow: 0 0 0 1.5px #ffd166;
-}
-/* The "いまの注目" strip under the chips: the one condition the
+/* The "いまの注目" strip at the top of the feed: the one condition the
    narration declared it is watching, its current value, and how it
    has moved since the declaration (or why there is no watch). */
 .agent-feed-watch {
@@ -669,51 +583,6 @@
 .agent-feed-watch-detail {
   font-size: 12px;
   color: #9aafbf;
-}
-/* The declaration score strip under the watch: quiet numbers only,
-   with the counting definitions spelled out next to them. */
-.agent-feed-score {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  margin-top: 8px;
-  padding: 7px 12px;
-  border: 1px solid #2c4356;
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text);
-}
-.agent-feed-score-item small {
-  margin-right: 3px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: #9aafbf;
-}
-.agent-feed-score-item.hit {
-  color: #39d98a;
-}
-.agent-feed-score-item.miss {
-  color: #ff9c9c;
-}
-.agent-feed-score-item.prog {
-  color: #ffd166;
-}
-.agent-feed-score-item.end {
-  color: #9aafbf;
-}
-/* The specialty line under the score strip: the kind the record
-   backs as the character's best, named only once it has settled
-   at least SPECIALTY_MIN_JUDGED times. */
-.agent-feed-specialty {
-  margin-top: 6px;
-  padding: 0 2px;
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--dim);
 }
 .agent-feed-list {
   margin-top: 14px;
