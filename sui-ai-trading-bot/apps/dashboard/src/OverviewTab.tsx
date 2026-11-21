@@ -15,44 +15,9 @@ import type { ForecastAnswerCheck } from "./forecastLog.ts";
 import type { NarrationShadowDiagnostics } from "./narrationShadow.ts";
 import { JpyAmount } from "./JpyAmount.tsx";
 
-import { partyNames } from "../../../packages/shared/src/party.ts";
-import partyHeroIcon from "./assets/party-hero.webp";
-import partySakiyomiIcon from "./assets/party-sakiyomi.webp";
-import partyShieldIcon from "./assets/party-shield.webp";
-import partyKageIcon from "./assets/party-kage.webp";
 
 type State = BotSnapshot;
 
-const partyIcons = {
-  hero: partyHeroIcon,
-  forecast: partySakiyomiIcon,
-  shield: partyShieldIcon,
-  shadow: partyKageIcon,
-} as const;
-
-export function Party({ party }: { party: State["party"] | undefined }) {
-  if (!party || !party.hero) return null;
-  return (
-    <section className="overview-party" aria-label="パーティ">
-      <h3>パーティ</h3>
-      <ul>
-        {(["hero", "forecast", "shield", "shadow"] as const).map((member) => {
-          const entry = party[member];
-          if (!entry) return null;
-          return (
-            <li key={member} className={member === "forecast" ? "overview-party-skill" : undefined}>
-              <img className="overview-party-icon" src={partyIcons[member]} alt="" />
-              <span>{member === "forecast" && <small>主人公の技 </small>}{partyNames[member]}</span>
-              <strong>Lv.{entry.level}</strong>
-              <progress max={1} value={entry.progress} aria-label={`${partyNames[member]}の経験値`} />
-              <small>{entry.remaining === null ? "最大レベル" : `次のレベルまで あと${entry.remaining.toLocaleString("ja-JP")}件`}</small>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-}
 const money = (v: number | null | undefined) => number(v, 4);
 
 export function ShadowTodayLine({
@@ -228,7 +193,6 @@ export function OverviewTab({
                         />
                       </section>
                     )}
-                    <Party party={data.party} />
                     <details className="overview-details">
                       <summary>詳細の数字</summary>
                       <div className="cards">
