@@ -15,14 +15,14 @@ type State = BotSnapshot;
 export type StrategySegment = "rules" | "settings";
 
 const SEGMENTS = [
-  { id: "rules", label: "ルール" },
+  { id: "rules", label: "さくせん" },
   { id: "settings", label: "設定" },
 ] as const;
 
 /**
  * The strategy tab: the rule diagram and the settings editor are
  * different tools, so they live behind a segment switch instead of
- * one long scroll — ルール (how the bot decides) and 設定 (the
+ * one long scroll — さくせん (how the bot decides) and 設定 (the
  * かんたん設定 editor). Both panels stay mounted and are only
  * hidden, like the app's tab panels, so unsaved settings edits
  * survive switching segments. Starting/stopping PAPER operation

@@ -497,7 +497,7 @@ export function StrategyPanel({
   return (
     <>
       <section>
-        <h3>売買ルール</h3>
+        <h3>さくせん</h3>
         <div className="strategy-flow">
           <div className="strategy-conds">
             <div className="strategy-cond-row">

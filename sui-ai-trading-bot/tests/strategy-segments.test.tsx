@@ -86,7 +86,7 @@ describe("strategy tab segments", () => {
     expect(settingsTab).toContain(
       'aria-controls="strategy-segment-panel-settings"',
     );
-    expect(html).toContain("売買ルール");
+    expect(html).toContain("さくせん");
     expect(regions(html).settings).toContain("かんたん設定");
   });
 
