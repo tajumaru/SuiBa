@@ -5,7 +5,11 @@ export type RealBalances = { SUI: number; DBUSDC?: number; USDC?: number; DEEP: 
 
 const refreshIntervalMs = 60_000;
 
-// The display never waits for the chain. Polls share one in-flight refresh.
+// The display never waits for the chain. Polls share one in-flight
+// refresh, and the last good value keeps being served while a refresh
+// runs — clearing it would blank the balances for the whole read.
+// Only a failed refresh clears the value, so stale numbers are never
+// shown as current.
 export function cacheRealBalances(read: ReadBalances) {
   let value: RealBalances | undefined;
   let lastAttempt = -Infinity;
@@ -32,7 +36,6 @@ export function cacheRealBalances(read: ReadBalances) {
     if (!pending && now - lastAttempt >= refreshIntervalMs) {
       lastAttempt = now;
       pending = true;
-      value = undefined;
       void refresh();
     }
     return value;

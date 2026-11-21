@@ -10,7 +10,7 @@ const parts = {
   settledUnclaimed: { SUI: 7, DBUSDC: 8, DEEP: 9 },
 };
 
-it("adds the three kinds of balance, spaces attempts by 60 seconds and omits failures", async () => {
+it("adds the three kinds of balance, spaces attempts by 60 seconds, keeps the last value while refreshing and omits failures", async () => {
   const clock = vi.spyOn(performance, "now").mockReturnValue(0);
   const read = vi.fn().mockResolvedValueOnce(parts).mockRejectedValueOnce(Error("offline"))
     .mockResolvedValueOnce(parts);
@@ -24,8 +24,10 @@ it("adds the three kinds of balance, spaces attempts by 60 seconds and omits fai
     expect(current()).toEqual({ SUI: 12, DBUSDC: 15, DEEP: 18 });
     expect(read).toHaveBeenCalledTimes(1);
     clock.mockReturnValue(60_000);
-    expect(current()).toBeUndefined();
+    // While the second read is in flight the last good value stays.
+    expect(current()).toEqual({ SUI: 12, DBUSDC: 15, DEEP: 18 });
     await Promise.resolve();
+    // The read failed, so the value is omitted rather than stale.
     expect(current()).toBeUndefined();
     expect(read).toHaveBeenCalledTimes(2);
     clock.mockReturnValue(120_000);
