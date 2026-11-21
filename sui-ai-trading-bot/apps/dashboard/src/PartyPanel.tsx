@@ -5,6 +5,8 @@ import partyHeroIcon from "./assets/party-hero.webp";
 import partySakiyomiIcon from "./assets/party-sakiyomi.webp";
 import partyShieldIcon from "./assets/party-shield.webp";
 import partyKageIcon from "./assets/party-kage.webp";
+import partyHealerIcon from "./assets/party-healer.webp";
+import partySageIcon from "./assets/party-sage.webp";
 
 type State = BotSnapshot;
 
@@ -13,6 +15,8 @@ const partyIcons = {
   forecast: partySakiyomiIcon,
   shield: partyShieldIcon,
   shadow: partyKageIcon,
+  healer: partyHealerIcon,
+  sage: partySageIcon,
 } as const;
 
 /**
@@ -90,7 +94,7 @@ export function Party({
     <section className="overview-party" aria-label="パーティ">
       <h3>パーティ</h3>
       <ul>
-        {(["hero", "forecast", "shield", "shadow"] as const).map((member) => {
+        {(["hero", "forecast", "shield", "shadow", "healer", "sage"] as const).map((member) => {
           const entry = party[member];
           if (!entry) return null;
           const key = TOGGLE_KEYS[member as keyof typeof TOGGLE_KEYS];
@@ -109,7 +113,7 @@ export function Party({
                     : on === false
                       ? "OFF（タップでON）"
                       : entry.remaining === null
-                        ? "最大レベル"
+                        ? (member === "sage" ? "毎朝の振り返り担当" : "最大レベル")
                         : `次のレベルまで あと${entry.remaining.toLocaleString("ja-JP")}件`}
               </small>
             </>

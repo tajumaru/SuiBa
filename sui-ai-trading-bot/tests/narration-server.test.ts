@@ -241,6 +241,7 @@ describe("server narration identity", () => {
     const pair = "SUI_USDC";
     const trade = (i: number) => db.append("paper_trades", `trade-${i}`, { pnl: 0 }, now);
     for (let i = 0; i < 14; i++) trade(i);
+    db.set("paper_safety", { autoRecoveryCount: 1 });
     db.refreshParty(0, "shadow-openai-nano-v5");
     const monitor = new OperationMonitor(db);
     const engine = {
@@ -254,11 +255,13 @@ describe("server narration identity", () => {
     const generator = new NarrationGenerator(db, pair, engine as never, () => now);
     expect(generator.generate()).toBe(0);
     trade(14);
+    db.set("paper_safety", { autoRecoveryCount: 2 });
     db.refreshParty(0, "shadow-openai-nano-v5");
-    expect(generator.generate()).toBe(1);
+    expect(generator.generate()).toBe(2);
     expect(new NarrationGenerator(db, pair, engine as never, () => now + 1).generate()).toBe(0);
     expect(db.narrationEntries(pair).entries).toMatchObject([
       { kind: "levelUp", json: { text: "主人公が Lv.3 に上がった！" } },
+      { kind: "levelUp", json: { text: "ホーリーが Lv.2 に上がった！" } },
     ]);
   });
 
