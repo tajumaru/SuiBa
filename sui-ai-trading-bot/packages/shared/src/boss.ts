@@ -1,3 +1,8 @@
+import type { PartyMember } from "./party.ts";
+
+export const bossPartyMembers = ["forecast", "shield", "shadow", "healer"] as const satisfies readonly PartyMember[];
+export type BossPartyActions = Partial<Record<(typeof bossPartyMembers)[number], number>>;
+
 export interface BossBattleState {
   startedAt: number;
   type: "lightning" | "swamp";
@@ -13,11 +18,12 @@ export interface BossBattleState {
   latestEvent: string | null;
   retreatReason: "loss" | "safety" | "emergency" | null;
   outcome: { at: number; result: "endured" | "retreated" } | null;
+  partyActions?: BossPartyActions;
 }
 
 export type BossHistoryRecord = Pick<
   BossBattleState,
-  "startedAt" | "type" | "name" | "strength" | "drop" | "recovery"
+  "startedAt" | "type" | "name" | "strength" | "drop" | "recovery" | "partyActions"
 > & {
   endedAt: number;
   result: NonNullable<BossBattleState["outcome"]>["result"];

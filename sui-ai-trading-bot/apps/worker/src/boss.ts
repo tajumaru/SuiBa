@@ -1,7 +1,12 @@
 import type { BotDatabase } from "../../../packages/database/src/index.ts";
 import { equity } from "../../../packages/portfolio/src/index.ts";
 import type { Fill } from "../../../packages/paper-trading/src/index.ts";
-import type { BossBattleState, BossHistoryRecord } from "../../../packages/shared/src/boss.ts";
+import {
+  bossPartyMembers,
+  type BossBattleState,
+  type BossHistoryRecord,
+  type BossPartyActions,
+} from "../../../packages/shared/src/boss.ts";
 import type {
   Candle,
   Indicators,
@@ -17,7 +22,10 @@ const SWAMP_DROP = 0.05;
 const atLeast = (value: number, threshold: number) =>
   value + Number.EPSILON >= threshold;
 
-type StoredBattle = BossBattleState & { openingCandleAt: number };
+type StoredBattle = BossBattleState & {
+  openingCandleAt: number;
+  partyBaseline?: BossPartyActions;
+};
 
 const key = (pair: TradingPair) => `boss:${pair}`;
 const historyKey = (pair: TradingPair) => `bossHistory:${pair}`;
@@ -36,8 +44,21 @@ export function readBoss(
 ): BossBattleState | null {
   const stored = db.get<StoredBattle>(key(pair));
   if (!stored) return null;
-  const { openingCandleAt: _openingCandleAt, ...battle } = stored;
+  const { openingCandleAt: _openingCandleAt, partyBaseline: _partyBaseline, ...battle } = stored;
   return battle;
+}
+
+function countPartyActions(db: BotDatabase, baseline?: BossPartyActions) {
+  const counts = new Map(db.partyRecords().map(({ member, count }) => [member, count]));
+  const partyBaseline: BossPartyActions = {};
+  const partyActions: BossPartyActions = {};
+  for (const member of bossPartyMembers) {
+    const current = counts.get(member) ?? 0;
+    const start = baseline?.[member] ?? current;
+    partyBaseline[member] = start;
+    partyActions[member] = Math.max(0, current - start);
+  }
+  return { partyBaseline, partyActions };
 }
 
 const closeAt = (candle: Candle) => candle.timestamp + candle.timeframe;
@@ -101,14 +122,18 @@ export function refreshBoss(
   pair: TradingPair,
   now = Date.now(),
 ) {
+  const previous = db.get<StoredBattle>(key(pair));
+  const active = previous && !previous.outcome ? previous : null;
   const fast = db.candles(300);
   const current = fast.at(-1);
   if (
     !current ||
     current.close <= 0 ||
     db.get<number>("price") !== current.close
-  )
+  ) {
+    if (active) db.set(key(pair), { ...active, ...countPartyActions(db, active.partyBaseline) });
     return;
+  }
 
   const recent = [fast, db.candles(900), db.candles(3600)]
     .flat()
@@ -143,10 +168,9 @@ export function refreshBoss(
   const dayDrop = drop(dayRef);
   const lightning = atLeast(hourDrop, FLASH_DROP);
   const triggered = lightning || atLeast(dayDrop, SWAMP_DROP);
-  const previous = db.get<StoredBattle>(key(pair));
-  const active = previous && !previous.outcome ? previous : null;
   if (!active && !triggered) return;
 
+  const party = countPartyActions(db, active?.partyBaseline);
   const rsi = db.get<Indicators>("indicators")?.rsi;
   const turn =
     rsi == null || !Number.isFinite(rsi)
@@ -176,6 +200,7 @@ export function refreshBoss(
     const retreatReason = events.retreatReason ?? active.retreatReason;
     boss = {
       ...active,
+      ...party,
       low,
       recovery,
       turn,
@@ -195,6 +220,7 @@ export function refreshBoss(
         : "通常";
     const base = lightning ? "閃光の投げ売り" : "底なしの沼";
     boss = {
+      ...party,
       startedAt: now,
       openingCandleAt: current.timestamp,
       type: lightning ? "lightning" : "swamp",
@@ -245,6 +271,7 @@ export function refreshBoss(
       result: outcome.result,
       drop,
       recovery,
+      partyActions: boss.partyActions,
     };
     db.set(historyKey(pair), [
       record,
