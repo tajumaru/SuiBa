@@ -1,8 +1,5 @@
-import React from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ChainSampler } from "../apps/worker/src/chainInfo.ts";
-import { ChainReadout } from "../apps/dashboard/src/ChainStrip.tsx";
 import { runChatCommand } from "../apps/dashboard/src/chatCommands.ts";
 import type { AgentChatContext } from "../apps/dashboard/src/agentChat.ts";
 
@@ -35,36 +32,6 @@ describe("ChainSampler", () => {
     expect(next.tps).toBeNull();
   });
 });
-describe("ChainReadout", () => {
-  it("renders only epoch and TPS and hides itself before the first sample", () => {
-    const html = renderToStaticMarkup(
-      React.createElement(ChainReadout, {
-        chain: { epoch: 1024, checkpoint: 182394551, tps: 1208, gasMist: 1000, epochStartMs: Date.now() - 3600000, epochDurationMs: 86400000, validators: 108, at: 1 },
-      }),
-    );
-    expect(html).toContain("EPOCH");
-    expect(html).toContain("1,024");
-    expect(html).toContain("1,208");
-    // Slimmed 2026-11-19: the fuller vitals and the credits left
-    // the readout (the Sui credit moved to the version footer).
-    expect(html).not.toContain("182,394,551");
-    expect(html).not.toContain("GAS");
-    expect(html).not.toContain("NEXT EPOCH");
-    expect(html).not.toContain("VALIDATORS");
-    expect(html).not.toContain("Built on Sui");
-    expect(html).not.toContain("Memory on Walrus");
-    expect(
-      renderToStaticMarkup(React.createElement(ChainReadout, { chain: null })),
-    ).toBe("");
-    const noTps = renderToStaticMarkup(
-      React.createElement(ChainReadout, {
-        chain: { epoch: 1, checkpoint: 5, tps: null, gasMist: null, epochStartMs: null, epochDurationMs: null, validators: null, at: 1 },
-      }),
-    );
-    expect(noTps).toContain("—");
-  });
-});
-
 describe("/status chain row", () => {
   const base: AgentChatContext = {
     dec: null,
@@ -125,18 +92,7 @@ describe("epoch marks", () => {
   });
 });
 
-describe("epochRemainingText", () => {
-  it("counts down from the chain's own duration and lands on まもなく", async () => {
-    const { epochRemainingText } = await import(
-      "../apps/dashboard/src/ChainStrip.tsx"
-    );
-    const start = 1_700_000_000_000,
-      day = 86400000;
-    expect(epochRemainingText(start, day, start + 3600000)).toBe("あと23時間0分");
-    expect(epochRemainingText(start, day, start + day - 30 * 60000)).toBe("あと30分");
-    expect(epochRemainingText(start, day, start + day + 1000)).toBe("まもなく");
-  });
-
+describe("epoch sampling details", () => {
   it("never inherits the previous epoch's start time", () => {
     const s = new ChainSampler();
     const t0 = 1_700_000_000_000;

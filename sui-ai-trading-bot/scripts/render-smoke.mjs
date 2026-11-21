@@ -171,14 +171,11 @@ try {
     const buttons = page.locator("nav button[aria-label]");
     if ((await buttons.count()) !== 4)
       failures.push(`${width}px: expected four tabs`);
-    const chainStrip = page.locator(
-      '.worker-chain[aria-label="Suiチェーン情報"]',
-    );
-    // Since 2026-11-19 the readout carries only EPOCH and TPS; the
-    // Sui credit moved to the version footer and the Walrus
-    // credit was retired with the strip slimming. Since
-    // 2026-11-20 the readout lives in the Worker panel header on
-    // the overview tab, so open that tab before probing it.
+    // The EPOCH/TPS readout and the always-on Worker panel were
+    // retired on 2026-11-22 (owner call): the overview stays
+    // silent while the worker is healthy, so there is no chain
+    // strip left to probe here. The Sui credit lives in the
+    // version footer.
     const suiCredit = page.locator(".version-footer").getByRole("link", {
       name: "Sui",
     });
@@ -202,15 +199,6 @@ try {
     await page
       .getByRole("button", { name: "ダッシュボード", exact: true })
       .click();
-    await chainStrip.waitFor();
-    const chainLayout = await chainStrip.evaluate((strip) => ({
-      fits: strip.scrollWidth <= strip.clientWidth,
-      hasCredits: strip.querySelector("a") !== null,
-    }));
-    if (!chainLayout.fits)
-      failures.push(`${width}px: Sui chain readout overflows`);
-    if (chainLayout.hasCredits)
-      failures.push(`${width}px: Sui chain readout still carries credits`);
     const creditLogo = suiCredit.locator("img");
     if (
       (await suiCredit.getAttribute("href")) !== "https://sui.io" ||
@@ -234,8 +222,8 @@ try {
     await page
       .getByRole("button", { name: "ダッシュボード", exact: true })
       .click();
-    await page.getByRole("region", { name: "Workerの状態" }).waitFor();
     const curve = page.getByRole("region", { name: "資産の推移" });
+    await curve.waitFor();
     for (const range of ["24時間", "7日", "30日"]) {
       await curve.getByRole("button", { name: range, exact: true }).click();
       const text = await curve.textContent();
@@ -248,25 +236,6 @@ try {
         );
     }
     await curve.getByRole("button", { name: "7日", exact: true }).click();
-    if (
-      !(
-        await page.getByRole("region", { name: "Workerの状態" }).textContent()
-      ).includes("最終分析")
-    )
-      failures.push("analysis evidence missing");
-    /* eslint-disable no-undef -- computed typography runs inside Chromium */
-    const workerType = await page
-      .locator(".worker-freshness")
-      .evaluate((card) => ({
-        body: getComputedStyle(card.querySelector(".worker-freshness-line"))
-          .fontSize,
-        status: getComputedStyle(card.querySelector("p")).fontSize,
-      }));
-    /* eslint-enable no-undef */
-    if (workerType.body !== "13px" || workerType.status !== "13px")
-      failures.push(
-        `${width}px: Worker typography differs from the overview scale`,
-      );
     await page.screenshot({ path: `render-smoke-overview-${width}.png` });
     await page.getByRole("button", { name: "取引履歴", exact: true }).click();
     await page.getByRole("region", { name: "過去の停止理由" }).waitFor();
