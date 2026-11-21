@@ -365,7 +365,11 @@ export function createRequestHandler(ctx: WorkerContext) {
         } finally {
           finishSnapshot?.();
         }
-        send(200, snapshot);
+        send(200, {
+          ...snapshot,
+          resetScope: ctx.predecessorReset?.status(),
+          currentResetScope: ctx.predecessorReset?.currentStatus(),
+        });
         return;
       }
       if (req.method === "GET" && url.pathname === "/api/operations") {
@@ -719,7 +723,15 @@ export function createRequestHandler(ctx: WorkerContext) {
           ctx.db.set("runtime", { ...r, emergency: false });
         } else if (command === "stop")
           ctx.db.set("runtime", { ...r, running: false });
-        else if (command === "reset") {
+        else if (command === "reset-current") {
+          const refusal = ctx.predecessorReset.clearCurrent(body.expectedReset);
+          if (refusal) {
+            send(409, { error: refusal });
+            return;
+          }
+          send(200, ctx.db.runtime());
+          return;
+        } else if (command === "reset") {
           const pending = ctx.predecessorReset.needsWarmupAfterReset();
           const refusal = ctx.predecessorReset.clear(body.expectedReset);
           if (refusal) {

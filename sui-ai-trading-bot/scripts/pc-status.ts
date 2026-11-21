@@ -31,6 +31,7 @@ const stateSchema = z.object({
     .partial()
     .optional(),
   resetScope: resetScopeSchema.optional(),
+  currentResetScope: resetScopeSchema.optional(),
 });
 const resumeSchema = z.object({
   checks: z.record(z.string(), z.boolean()).optional(),
@@ -131,7 +132,12 @@ export function formatPcStatus(
   running: boolean,
   resume?: Resume,
 ) {
-  const { runtime, safety, settings, resetScope } = state;
+  const { runtime, safety, settings, currentResetScope } = state;
+  const resetScope = state.resetScope?.pending
+    ? state.resetScope
+    : currentResetScope?.pending
+      ? currentResetScope
+      : state.resetScope;
   return [
     running ? "正常に稼働中です" : "止まっています",
     `稼働：${onOff(running, "稼働中", "停止中")}`,

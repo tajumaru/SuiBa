@@ -104,6 +104,41 @@ describe("pc:resume", () => {
     expect(deps.request.mock.calls[2][2]).toEqual({ command: "start" });
   });
 
+  it("uses the current reset before starting and granting orders", async () => {
+    const { deps, run } = fixture();
+    deps.request
+      .mockReset()
+      .mockResolvedValueOnce({
+        status: 200,
+        body: {
+          running: false,
+          resetScope: { pending: false },
+          currentResetScope: {
+            ...expectedReset,
+            pending: true,
+            eligible: true,
+            reason: null,
+          },
+        },
+      })
+      .mockResolvedValueOnce({ status: 200 })
+      .mockResolvedValueOnce({ status: 200 })
+      .mockResolvedValueOnce({
+        status: 200,
+        body: { running: true, safety: { ordersAllowed: true } },
+      });
+    expect(await run()).toBe(0);
+    expect(deps.request.mock.calls[1][2]).toEqual({
+      command: "reset-current",
+      expectedReset,
+    });
+    expect(deps.request.mock.calls[2][2]).toEqual({ command: "start" });
+    expect(deps.runRealResume.mock.calls).toEqual([
+      [[]],
+      [["--", "--approve", "--reason=PC再開"]],
+    ]);
+  });
+
   it("stops without starting or approving if reset is refused", async () => {
     const { deps, run } = fixture({
       pending: true,
