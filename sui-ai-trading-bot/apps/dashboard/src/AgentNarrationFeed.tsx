@@ -15,7 +15,6 @@ import {
   CELEBRATION_FRESH_MS,
   advanceNarration,
   agentPoseDetails,
-  chipDetailLine,
   currentConditionChips,
   currentWatch,
   currentWatchScore,
@@ -386,7 +385,6 @@ export function AgentNarrationFeed({
   // with the smile pose (from the base poses only — pointing, the
   // blue line and the rest keep their meaning).
   const [chatReplyAt, setChatReplyAt] = useState<number | null>(null);
-  const [openChip, setOpenChip] = useState<string | null>(null);
   const reportedPose: AgentPose =
     chatReplyAt != null &&
     now - chatReplyAt < 3000 &&
@@ -459,8 +457,11 @@ export function AgentNarrationFeed({
       root.classList.remove("chat-bar", "chat-bar-open");
     };
   }, [active, chatOpen]);
-  // Buy-condition chips come from the same fresh decision evidence
-  // as the narration; a stale display shows no chips at all.
+  // Fresh decision evidence, from the same freshness rule as the
+  // narration. The feed header no longer displays the condition chips
+  // or the declaration score (owner call, 2026-11-21: the strategy tab
+  // carries the conditions and the score was furniture); both still
+  // feed the character's chat context below.
   const chips = stale
     ? null
     : currentConditionChips(narration, data.decision, now);
@@ -519,41 +520,6 @@ export function AgentNarrationFeed({
 
   return (
     <section className="agent-feed" aria-label="エージェント実況">
-      {chips && (
-        <>
-          <div className="agent-feed-chips" aria-label="買い条件">
-            <span className="agent-feed-chips-title">買い条件</span>
-            {chips.map((chip) => (
-              <button
-                type="button"
-                key={chip.key}
-                className={`agent-feed-chip tone-${chip.tone}${chip.watching ? " watching" : ""}`}
-                title={`${chip.label}：${chip.status}`}
-                aria-expanded={openChip === chip.key}
-                onClick={() =>
-                  setOpenChip(openChip === chip.key ? null : chip.key)
-                }
-              >
-                <span className="agent-feed-chip-dot" aria-hidden="true" />
-                <span className="agent-feed-chip-label">{chip.label}</span>
-                {chip.detail && (
-                  <span className="agent-feed-chip-status">{chip.detail}</span>
-                )}
-                <span className="sr-only">{chip.status}</span>
-              </button>
-            ))}
-          </div>
-          {openChip &&
-            data.decision &&
-            chips
-              .filter((chip) => chip.key === openChip)
-              .map((chip) => (
-                <p key={chip.key} className="agent-feed-chip-pop">
-                  {chipDetailLine(chip, data.decision!)}
-                </p>
-              ))}
-        </>
-      )}
       {watch && (
         <div className="agent-feed-watch" aria-label="いまの注目">
           <span className="agent-feed-watch-title">いまの注目</span>
@@ -562,38 +528,6 @@ export function AgentNarrationFeed({
             <span className="agent-feed-watch-value">{watch.value}</span>
           )}
           <span className="agent-feed-watch-detail">{watch.detail}</span>
-        </div>
-      )}
-      {score && (
-        <div className="agent-feed-score" aria-label="宣言の成績">
-          <span className="agent-feed-score-item">
-            <small>宣言</small>
-            {score.declared}回
-          </span>
-          <span className="agent-feed-score-item prog">
-            <small>進行中</small>
-            {score.inProgress}
-          </span>
-          <span className="agent-feed-score-item hit">
-            <small>的中</small>
-            {score.hits}
-          </span>
-          <span className="agent-feed-score-item miss">
-            <small>外れ</small>
-            {score.misses}
-          </span>
-          {score.ended > 0 && (
-            <span className="agent-feed-score-item end">
-              <small>終了</small>
-              {score.ended}
-            </span>
-          )}
-        </div>
-      )}
-      {score?.specialty && (
-        <div className="agent-feed-specialty">
-          得意技は{score.specialty.name}（的中{score.specialty.hits}・外れ
-          {score.specialty.judged - score.specialty.hits}）
         </div>
       )}
       {replay && (
