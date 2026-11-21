@@ -1,7 +1,7 @@
 import { WorkerStaleNote } from "./WorkerStaleNote.tsx";
 import type { OperationsSnapshot } from "./operationsTypes.ts";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
-import { number, percent, label } from "./presentation.ts";
+import { number } from "./presentation.ts";
 import { PortfolioMix } from "./PortfolioMix.tsx";
 import { RealPortfolioMix } from "./RealPortfolioMix.tsx";
 import { EquityCurve } from "./EquityCurve.tsx";
@@ -59,9 +59,9 @@ export function PnlBreakdownLine({
  * carries the live state (assets, today's shadow line, the
  * price chart and the long-term map); ふりかえり carries the
  * look-back trio he likes but found buried — the equity
- * curve, the activity grass and the monthly report — plus
- * the detailed-metrics fold. The stale-data note stays above
- * the switch: it must show whichever segment is open.
+ * curve, the activity grass and the monthly report. The
+ * stale-data note stays above the switch: it must show
+ * whichever segment is open.
  */
 export type OverviewSegment = "now" | "review";
 
@@ -74,8 +74,12 @@ const OVERVIEW_SEGMENTS: { id: OverviewSegment; label: string }[] = [
  * The overview tab, extracted from App: asset cards, the
  * portfolio mix, the equity curve, the activity grass and
  * the monthly report, the synchronized price/RSI/MACD chart
- * with its forecast attachments, the long-term map, and the
- * detailed-metrics fold. Pure rendering over the snapshot.
+ * with its forecast attachments and the long-term map.
+ * Pure rendering over the snapshot. (The detailed-metrics
+ * fold — daily/unrealized PnL, max drawdown, win rate,
+ * profit factor — was retired 2026-11-22: the win rate
+ * duplicates the assets card, the rest decided nothing at
+ * this scale, and the morning review judges performance.)
  * (The market weather card was retired 2026-11-22: its three
  * numbers already live on the ticker and the conditions, and
  * nothing acted on the grade.)
@@ -268,50 +272,6 @@ export function OverviewTab({
                         operations?.accounting.totals.roundTrips
                       }
                     />
-                    <details className="overview-details">
-                      <summary>詳細の数字</summary>
-                      <div className="cards">
-                        {[
-                          [
-                            "日次損益（日本時間09:00から）",
-                            data.dailyPnl,
-                            "USDC",
-                          ],
-                          ["未実現損益", data.unrealized, "USDC"],
-                        ].map(([label, value, unit]) => (
-                          <section key={String(label)}>
-                            <small>{label}</small>
-                            <h2>
-                              {money(value as number | null)} <em>{unit}</em>
-                              {label === "日次損益（日本時間09:00から）" && (
-                                <JpyAmount
-                                  usdc={value as number | null}
-                                  usdJpy={usdJpy}
-                                />
-                              )}
-                            </h2>
-                          </section>
-                        ))}
-                        {Object.entries(data.metrics).map(([k, v]) => (
-                          <section key={k}>
-                            <small
-                              title={
-                                k === "maxDrawdown"
-                                  ? "資産の最高値からの最大下落率"
-                                  : k === "profitFactor"
-                                    ? "利益合計を損失合計で割った値"
-                                    : "損益を記録した約定のうち利益が出た割合"
-                              }
-                            >
-                              {label(k)}
-                            </small>
-                            <h2>
-                              {k === "profitFactor" ? money(v) : percent(v)}
-                            </h2>
-                          </section>
-                        ))}
-                      </div>
-                    </details>
                     </div>
                   </div>
   );
