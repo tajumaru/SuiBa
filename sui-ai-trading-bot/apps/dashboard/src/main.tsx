@@ -65,7 +65,6 @@ const tabFallback = (
     読み込み中…
   </p>
 );
-import { useIndicatorHistory } from "./indicatorHistory.ts";
 type State = BotSnapshot;
 const NAV_TABS = ["Live", "Overview", "Strategy", "Trading History"];
 function App() {
@@ -313,11 +312,6 @@ function App() {
     setTab("Overview");
     void refreshStatus();
   }
-  // Short indicator history for the strategy tab's mini charts,
-  // accumulated at the App level so tab switches keep it.
-  const indicatorHistory = useIndicatorHistory(
-    operations.data?.decision ?? null,
-  );
   const refreshingRef = useRef<Promise<void> | null>(null);
   const refreshSnapshot = useCallback(async () => {
     const feed = feedRef.current;
@@ -596,7 +590,6 @@ function App() {
                       onSaved={refresh}
                       control={control}
                       telemetry={operations.data?.decision ?? null}
-                      history={indicatorHistory}
                       segment={strategySegment}
                       onSegmentChange={setStrategySegmentChoice}
                       onStartGateChange={setStartBlocked}

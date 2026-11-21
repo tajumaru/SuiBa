@@ -9,7 +9,6 @@ import type { ProfitReport } from "../packages/profit-guard/src/index.ts";
 import type { BotEngine } from "../apps/worker/src/engine.ts";
 import type { DecisionTelemetry } from "../apps/worker/src/operations.ts";
 import { StrategyPanel } from "../apps/dashboard/src/StrategyPanel.tsx";
-import type { IndicatorPoint } from "../apps/dashboard/src/strategyView.ts";
 
 type State = ReturnType<BotEngine["snapshot"]>;
 
@@ -77,16 +76,10 @@ const waitDecision: TradingDecision = {
   timestamp: new Date(Date.now() - 60_000).toISOString(),
 };
 
-const render = (
-  state: State,
-  dec: DecisionTelemetry | null,
-  history: IndicatorPoint[] = [],
-) =>
-  renderToStaticMarkup(
-    <StrategyPanel data={state} telemetry={dec} history={history} />,
-  );
+const render = (state: State, dec: DecisionTelemetry | null) =>
+  renderToStaticMarkup(<StrategyPanel data={state} telemetry={dec} />);
 
-describe("strategy panel: diagram-first layout", () => {
+describe("strategy panel: slim condition cards", () => {
   it("renders condition cards, the verdict and grouped parameters from real records", () => {
     const html = render(data(waitDecision), telemetry());
     expect(html).toContain("さくせん");
@@ -259,23 +252,12 @@ describe("strategy panel: diagram-first layout", () => {
     expect(summaryOf(html)).not.toContain("12.3456789");
   });
 
-  it("falls back to a level view until history accumulates, then draws the series", () => {
-    const dec = telemetry();
-    expect(render(data(waitDecision), dec)).toContain(
-      "履歴が貯まるまでは、現在値の水準で表示しています",
-    );
-    const history: IndicatorPoint[] = [
-      {
-        evaluatedAt: dec.evaluatedAt - 60_000,
-        price: 2.4,
-        ema20: 2.41,
-        ema50: 2.4,
-        rsi: 38,
-        histogram: -0.002,
-      },
-    ];
-    const withHistory = render(data(waitDecision), dec, history);
-    expect(withHistory).toContain("EMA20とEMA50の推移図");
-    expect(withHistory).not.toContain("履歴が貯まるまでは");
+  it("shows numbers and a one-line note per card, with no diagrams", () => {
+    const html = render(data(waitDecision), telemetry());
+    expect(html).not.toContain("strategy-viz");
+    expect(html).not.toContain("EMA20とEMA50の推移図");
+    expect(html).toContain("買い基準");
+    expect(html).toContain("短期が長期より上なら上向きの流れ");
+    expect(html).toContain("前回より上向いていれば成立");
   });
 });

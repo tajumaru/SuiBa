@@ -71,7 +71,7 @@ describe("merged strategy tab content", () => {
   } as unknown as State;
   const html = renderToStaticMarkup(
     <>
-      <StrategyPanel data={data} telemetry={null} history={[]} />
+      <StrategyPanel data={data} telemetry={null} />
       <SettingsPage
         data={data}
         api={vi.fn()}
