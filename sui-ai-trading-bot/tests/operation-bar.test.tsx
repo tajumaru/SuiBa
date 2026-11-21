@@ -21,6 +21,7 @@ const css = readDashboardCss().replace(/\r\n/g, "\n");
 function render(runtime: Partial<Runtime>, startBlocked: string[] = []) {
   return renderToStaticMarkup(
     <OperationBar
+      mode="PAPER"
       runtime={
         { running: false, emergency: false, error: null, ...runtime } as Runtime
       }
@@ -44,6 +45,27 @@ describe("operation bar states", () => {
     expect(html).not.toContain("<span>PAPER運用停止</span>");
     expect(html).not.toContain("PAPER運用開始");
     expect(html).not.toContain("解除の手順へ");
+  });
+
+  it("names the operation after the REAL mode", () => {
+    const html = renderToStaticMarkup(
+      <OperationBar
+        mode="REAL"
+        runtime={
+          {
+            running: true,
+            emergency: false,
+            error: null,
+          } as Runtime
+        }
+        control={async () => null}
+        onOpenStrategy={() => {}}
+        startBlocked={[]}
+      />,
+    );
+    expect(html).toContain("REAL運用：運用中");
+    expect(html).toContain('aria-label="REAL運用停止"');
+    expect(html).not.toContain("PAPER運用");
   });
 
   it("shows 停止中 with a direct start on the bar", () => {

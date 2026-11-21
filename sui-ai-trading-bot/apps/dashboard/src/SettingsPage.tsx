@@ -617,18 +617,18 @@ export function PaperOperationControls({
   }
   const startBlocked = startBlockedReasons(editor, data.runtime);
   return (
-    <section aria-label="PAPER運用の操作">
+    <section aria-label={`${data.mode}運用の操作`}>
       <hr />
       <div className="paper-operation-head">
         <h3 className={`paper-operation ${running ? "running" : "stopped"}`}>
-          PAPER運用
+          {data.mode}運用
         </h3>
         <div className="paper-operation-actions">
           <button
             type="button"
             className="operation-icon-button start"
-            aria-label="PAPER運用開始"
-            title="PAPER運用開始"
+            aria-label={`${data.mode}運用開始`}
+            title={`${data.mode}運用開始`}
             disabled={
               busy ||
               dirty ||
@@ -645,8 +645,8 @@ export function PaperOperationControls({
           <button
             type="button"
             className="operation-icon-button stop"
-            aria-label="PAPER運用停止"
-            title="PAPER運用停止"
+            aria-label={`${data.mode}運用停止`}
+            title={`${data.mode}運用停止`}
             onClick={() => void control("stop")}
           >
             <OperationIcon kind="stop" />
@@ -795,7 +795,7 @@ export function StopReleaseSection({
       {!advice && (
         <p>
           {emergency
-            ? "緊急停止が押され、PAPER運用を止めています。緊急停止は通常の停止解除では解けません。上のボタンからのみ解除できます。"
+            ? `緊急停止が押され、${data.mode}運用を止めています。緊急停止は通常の停止解除では解けません。上のボタンからのみ解除できます。`
             : `安全停止中です。停止理由：${reason(error ?? "")}`}
         </p>
       )}

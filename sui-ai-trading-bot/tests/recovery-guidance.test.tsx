@@ -139,6 +139,7 @@ describe("recovery guidance grounded in backend safety", () => {
     expect(status.canStart).toBe(false);
     const html = renderToStaticMarkup(
       <OperationBar
+        mode="PAPER"
         runtime={state.runtime}
         recovery={status}
         control={async () => null}
