@@ -35,7 +35,12 @@ const versionAsset: Plugin = {
 };
 export default defineConfig({
   server: { proxy: { "/api": "http://127.0.0.1:3100" } },
-  build: { outDir: "dist" },
+  // Never inline assets as data URIs: iOS Safari failed to render
+  // the small WebP party icons (shield / shadow, under the default
+  // 4 KB inline limit) while the larger file-based ones rendered
+  // fine (observed on device, 2026-11-21). Files also cache and
+  // retry independently of the JS bundle.
+  build: { outDir: "dist", assetsInlineLimit: 0 },
   define: {
     __APP_BUILD__: JSON.stringify(info.build),
     __APP_SUBJECT__: JSON.stringify(info.subject),
