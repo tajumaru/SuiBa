@@ -68,7 +68,7 @@ export function BotVitalSigns({ vital }: { vital: BotVital }) {
   if (live && vital.nextFetchOverdueSeconds != null)
     facts.push(overdueText(vital.nextFetchOverdueSeconds));
   if (vital.heartbeatSecondsAgo != null)
-    facts.push(`Workerの心拍信号 ${ago(vital.heartbeatSecondsAgo)}`);
+    facts.push(`心拍信号 ${ago(vital.heartbeatSecondsAgo)}`);
 
   return (
     <div

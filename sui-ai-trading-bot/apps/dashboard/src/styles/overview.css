@@ -86,17 +86,14 @@
   font-size: 13px;
   line-height: 1.6;
 }
-/* Panel header row: the title left, the chain readout
-   (EPOCH · TPS) right — the readout moved here from its own
-   strip under the ticker (owner, 2026-11-20). */
+/* Panel header row: the chain readout (EPOCH · TPS) alone —
+   it moved here from its own strip under the ticker
+   (owner, 2026-11-20); the title was dropped 2026-11-21. */
 .worker-freshness-head {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 10px;
-}
-.worker-freshness-head h3 {
-  margin: 0;
 }
 .worker-chain {
   font-size: 12px;
@@ -112,22 +109,13 @@
 .worker-freshness p {
   margin: 0 0 8px;
 }
-.worker-freshness dl {
+.worker-freshness-line {
   margin: 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px 16px;
+  overflow-wrap: anywhere;
 }
 .worker-freshness-age {
   display: inline-block;
   white-space: nowrap;
-}
-.worker-freshness dt {
-  color: var(--dim);
-}
-.worker-freshness dd {
-  margin: 0;
-  overflow-wrap: anywhere;
 }
 /* The heartbeat Sui mark behind the worker status (2026-11-19):
    centered watermark; on each fresh heartbeat the svg remounts

@@ -92,12 +92,12 @@ export const reason = (code: string) =>
   /[ぁ-んァ-ヶ一-龠]/.test(code) ? code : operationReason(code);
 export function nextStep(code: string) {
   if (/429|BACKOFF|RETRIES/.test(code))
-    return "概要でWorkerの状態を確認し、接続回復後に設定で停止解除し、PAPER運用を開始してください。";
+    return "概要で状態を確認し、接続回復後に設定で停止解除し、PAPER運用を開始してください。";
   if (/LEDGER|MISMATCH|RECONCILIATION|POSITION|BALANCE/.test(code))
     return "履歴で停止理由を確認し、不整合の原因を解消してから設定で停止解除してください。再開は手動です。";
   if (/PROFIT|MAX_|LIMIT|SLIPPAGE/.test(code))
     return "戦略で見送りの条件を確認してください。条件を満たすまで売買を見送ります。";
-  return "概要でWorkerの状態を確認し、原因を解消してから設定で停止解除し、PAPER運用を開始してください。";
+  return "概要で状態を確認し、原因を解消してから設定で停止解除し、PAPER運用を開始してください。";
 }
 export function errorCode(error: unknown) {
   const message = error instanceof Error ? error.message : "";

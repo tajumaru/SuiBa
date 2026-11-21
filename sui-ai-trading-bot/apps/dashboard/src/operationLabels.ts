@@ -171,7 +171,7 @@ export function startRejectionReason(code: string): string {
     RESET_REQUIRED:
       "停止状態が解除されていないため開始できませんでした。下の手順で停止状態を解除してから開始してください",
     HEALTH_CHECK_REQUIRED:
-      "Sui接続の状態確認が正常でない、または古いため開始できませんでした。「概要」でWorkerの状態を確認してください",
+      "Sui接続の状態確認が正常でない、または古いため開始できませんでした。「概要」で状態を確認してください",
     ACCOUNTING_CHECK_REQUIRED:
       "帳簿の整合性チェックで問題が見つかったため開始できませんでした。「履歴」で停止理由を確認してください",
   };
