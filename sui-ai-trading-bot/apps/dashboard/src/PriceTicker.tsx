@@ -20,6 +20,11 @@ const SPARK_HEIGHT = 24;
 const SPARK_MAX_POINTS = 40;
 const RSI_GAUGE_WIDTH = 300;
 const RSI_GAUGE_INSET = 8;
+/** One sine wave across the foe zone, wide enough to stay
+ * covered while it flows left (the pattern repeats every
+ * 24 units, so a -48 translation loops seamlessly). */
+const gaugeWavePath = (y: number) =>
+  `M -48 ${y} q 6 -4 12 0 ${"t 12 0 ".repeat(31)}`;
 
 export function RsiGauge({
   rsi,
@@ -34,6 +39,7 @@ export function RsiGauge({
   const clipBase = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const heroClip = `${clipBase}-hero`;
   const crystalClip = `${clipBase}-crystal`;
+  const zoneClip = `${clipBase}-zone`;
   if (
     rsi == null ||
     !Number.isFinite(rsi) ||
@@ -91,6 +97,15 @@ export function RsiGauge({
           <clipPath id={crystalClip}>
             <circle cx={lineX} cy="19" r="8" />
           </clipPath>
+          <clipPath id={zoneClip}>
+            <rect
+              x={RSI_GAUGE_INSET}
+              y="29"
+              width={Math.max(0, lineX - RSI_GAUGE_INSET)}
+              height="8"
+              rx="4"
+            />
+          </clipPath>
         </defs>
         <rect
           className="rsi-gauge-track"
@@ -108,6 +123,24 @@ export function RsiGauge({
           height="8"
           rx="4"
         />
+        {below && (
+          <g clipPath={`url(#${zoneClip})`}>
+            <g className="rsi-gauge-waves">
+              <path d={gaugeWavePath(33)} />
+              <path
+                className="rsi-gauge-waves-back"
+                d={gaugeWavePath(31)}
+              />
+            </g>
+            <rect
+              className="rsi-gauge-press"
+              x={lineX - 8}
+              y="29"
+              width="8"
+              height="8"
+            />
+          </g>
+        )}
         <line
           className="rsi-gauge-line"
           x1={lineX}
