@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import type { DecisionTelemetry } from "../../worker/src/operations.ts";
-import type { SettingsApi } from "./settingsPresets.ts";
+import { saveSettings, type SettingsApi } from "./settingsPresets.ts";
 import { StrategyPanel } from "./StrategyPanel.tsx";
 import { Party } from "./PartyPanel.tsx";
 import {
@@ -103,7 +103,18 @@ export function StrategyTab({
         aria-labelledby="strategy-segment-party"
         hidden={segment !== "party"}
       >
-        <Party party={data.party} />
+        <Party
+          party={data.party}
+          toggles={{
+            profitGuardEnabled: data.settings.profitGuardEnabled,
+            shadowEnabled: data.settings.shadowEnabled,
+            disabled: editor.dirty || editor.busy,
+            onToggle: async (key, next) => {
+              await saveSettings(api, { ...data.settings, [key]: next });
+              await onSaved();
+            },
+          }}
+        />
       </div>
       <div
         role="tabpanel"

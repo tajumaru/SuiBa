@@ -397,6 +397,7 @@ export const settingsSchema = z
     feeRate: z.number().min(0).max(0.01),
     gasUsdc: z.number().positive().max(1),
     profitGuardEnabled: z.boolean().default(true),
+    shadowEnabled: z.boolean().default(true),
     minNetProfitUsdc: z.number().min(0).max(5).default(0.05),
     minNetProfitPct: z.number().min(0).max(1).default(0.01),
   })
@@ -420,6 +421,7 @@ export const defaults: Settings = {
   feeRate: PAPER_FEE_RATE,
   gasUsdc: PAPER_GAS_USDC,
   profitGuardEnabled: true,
+  shadowEnabled: true,
   minNetProfitUsdc: 0.05,
   minNetProfitPct: 0.01,
 };
