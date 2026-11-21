@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { expect, it } from "vitest";
+import { partyLevel } from "../packages/shared/src/party.ts";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { SHADOW_PROMPT_VERSION } from "../apps/worker/src/shadow.ts";
 import type { CandidateAudit } from "../packages/shared/src/operations.ts";
@@ -91,5 +92,43 @@ it("keeps the forecast count and counts the current review's valid joined advice
     ).toBe(1);
   } finally {
     db.close();
+  }
+});
+
+
+it("baselines the healer and sage and retains the recovery count", () => {
+  const db = new BotDatabase(":memory:");
+  try {
+    db.set("paper_safety", { autoRecoveryCount: 21 });
+    const records = db.refreshParty(0, SHADOW_PROMPT_VERSION);
+    expect(records).toContainEqual({ member: "healer", count: 21, notifiedLevel: 5 });
+    expect(records).toContainEqual({ member: "sage", count: 0, notifiedLevel: 999 });
+    const healer = records.find((r) => r.member === "healer")!;
+    const sage = records.find((r) => r.member === "sage")!;
+    expect(partyLevel(healer.member, healer.count).level).toBe(5);
+    expect(partyLevel(sage.member, sage.count).level).toBe(999);
+
+    db.set("paper_safety", { autoRecoveryCount: 2 });
+    expect(refresh(db).healer).toBe(21);
+  } finally {
+    db.close();
+  }
+});
+
+it("uses zero recoveries when the safety state is absent or invalid", () => {
+  const dir = mkdtempSync(join(tmpdir(), "suiba-party-"));
+  const path = join(dir, "bot.sqlite");
+  const db = new BotDatabase(path);
+  try {
+    expect(refresh(db).healer).toBe(0);
+    db.set("paper_safety", { autoRecoveryCount: "21" });
+    expect(refresh(db).healer).toBe(0);
+    using sql = new DatabaseSync(path);
+    sql.prepare("UPDATE bot_runtime_state SET json=? WHERE key=?")
+      .run("{broken", "paper_safety");
+    expect(refresh(db).healer).toBe(0);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });

@@ -1037,7 +1037,7 @@ export class BotDatabase {
 
   refreshParty(forecastCount: number, shadowVersion: string) {
     return this.transaction(() => {
-      const counts = this.prepare(
+      const storedCounts = this.prepare(
         `SELECT
            (SELECT COUNT(*) FROM paper_trades
             WHERE json_type(json,'$.pnl') IN ('integer','real')
@@ -1054,7 +1054,21 @@ export class BotDatabase {
               AND json_type(shadow.json,'$.price') IN ('integer','real')
               AND json_extract(shadow.json,'$.price') > 0
               AND json_extract(shadow.json,'$.price') <= 1.7976931348623157e308) AS shadow`,
-      ).get(forecastCount, shadowVersion) as Record<PartyMember, number>;
+      ).get(forecastCount, shadowVersion) as Record<Exclude<PartyMember, "healer" | "sage">, number>;
+      let recoveryCount: unknown;
+      try {
+        recoveryCount = this.get<{ autoRecoveryCount?: unknown }>("paper_safety")
+          ?.autoRecoveryCount;
+      } catch {
+        // A damaged or unreadable safety state contributes no recoveries.
+      }
+      const counts = {
+        ...storedCounts,
+        healer: typeof recoveryCount === "number" && Number.isFinite(recoveryCount)
+          ? recoveryCount
+          : 0,
+        sage: 0,
+      };
       const save = this.prepare(
         `INSERT INTO rpg_party(member,count,notifiedLevel) VALUES(?,?,?)
          ON CONFLICT(member) DO UPDATE SET count = MAX(count,excluded.count),
