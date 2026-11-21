@@ -177,6 +177,7 @@ it("renders a custom saved configuration without saving or starting", () => {
     control = vi.fn(),
     onSaved = vi.fn();
   const data = {
+    mode: "PAPER",
     settings: defaults,
     runtime: { running: false, emergency: false, error: null },
     profitGuard: null,

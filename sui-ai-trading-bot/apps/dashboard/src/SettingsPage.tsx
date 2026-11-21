@@ -604,6 +604,9 @@ export function PaperOperationControls({
 }) {
   const { busy, dirty, conflict, switchTo } = editor;
   const { running, emergency, error } = data.runtime;
+  // Older snapshots and test fixtures may omit the mode; the labels
+  // fall back to PAPER rather than rendering "undefined".
+  const mode = data.mode ?? "PAPER";
   // The server-side start gate can still refuse a start the client
   // expected to pass (a long market fetch, an API backoff, a ledger
   // check...). control() hands its code back, translated below into
@@ -617,18 +620,18 @@ export function PaperOperationControls({
   }
   const startBlocked = startBlockedReasons(editor, data.runtime);
   return (
-    <section aria-label="PAPER運用の操作">
+    <section aria-label={`${mode}運用の操作`}>
       <hr />
       <div className="paper-operation-head">
         <h3 className={`paper-operation ${running ? "running" : "stopped"}`}>
-          PAPER運用
+          {mode}運用
         </h3>
         <div className="paper-operation-actions">
           <button
             type="button"
             className="operation-icon-button start"
-            aria-label="PAPER運用開始"
-            title="PAPER運用開始"
+            aria-label={`${mode}運用開始`}
+            title={`${mode}運用開始`}
             disabled={
               busy ||
               dirty ||
@@ -645,8 +648,8 @@ export function PaperOperationControls({
           <button
             type="button"
             className="operation-icon-button stop"
-            aria-label="PAPER運用停止"
-            title="PAPER運用停止"
+            aria-label={`${mode}運用停止`}
+            title={`${mode}運用停止`}
             onClick={() => void control("stop")}
           >
             <OperationIcon kind="stop" />
@@ -740,6 +743,7 @@ export function StopReleaseSection({
   onReviewSettings?: (field: "maxOrder") => void;
 }) {
   const { emergency, error } = data.runtime;
+  const mode = data.mode ?? "PAPER";
   // The emergency release is a two-step in-place confirmation: the
   // first press arms it, the second sends the dedicated command.
   // The scoped reset refuses emergencies by contract (PR #105), so
@@ -795,7 +799,7 @@ export function StopReleaseSection({
       {!advice && (
         <p>
           {emergency
-            ? "緊急停止が押され、PAPER運用を止めています。緊急停止は通常の停止解除では解けません。上のボタンからのみ解除できます。"
+            ? `緊急停止が押され、${mode}運用を止めています。緊急停止は通常の停止解除では解けません。上のボタンからのみ解除できます。`
             : `安全停止中です。停止理由：${reason(error ?? "")}`}
         </p>
       )}

@@ -480,7 +480,7 @@ function App() {
             )}
             {data && (
               <>
-                {/* The PAPER operation bar rides at the top of the
+                {/* The operation bar rides at the top of the
                     content on every tab and is the single home of
                     the operation state and its start/stop actions
                     (the strategy tab's old panel is gone; the tab
@@ -490,6 +490,7 @@ function App() {
                     tab-independent notices below. */}
                 <OperationBar
                   runtime={data.runtime}
+                  mode={data.mode ?? "PAPER"}
                   control={control}
                   onOpenStrategy={() => setTab("Strategy")}
                   startBlocked={startBlocked}

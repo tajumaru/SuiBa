@@ -10,15 +10,15 @@ import type { RecoveryStatus } from "./recoveryState.ts";
 type State = BotSnapshot;
 
 /**
- * The tab-independent PAPER operation bar: one slim line at the
+ * The tab-independent operation bar: one slim line at the
  * top of the content on every tab while connected. Since the
  * controls were unified here, this bar is the single home of the
  * operation state and its everyday actions — the strategy tab's
  * old full-size panel is gone.
  *
- * - 運用中: 「PAPER運用停止」 stops in place. Stopping is a safety
+ * - 運用中: 「{mode}運用停止」 stops in place. Stopping is a safety
  *   action with no client-side gate.
- * - 停止中: 「PAPER運用開始」 starts in place — the same command
+ * - 停止中: 「{mode}運用開始」 starts in place — the same command
  *   the old panel issued, with the same server-side gate; a
  *   refusal comes back as a code and is spelled out under the bar.
  *   The client-side gate is not bypassed either: while the
@@ -40,6 +40,7 @@ type State = BotSnapshot;
  */
 export function OperationBar({
   runtime,
+  mode,
   control,
   onOpenStrategy,
   startBlocked,
@@ -47,6 +48,7 @@ export function OperationBar({
   onDiagnose,
 }: {
   runtime: State["runtime"];
+  mode: State["mode"];
   control: (c: string) => Promise<string | null>;
   onOpenStrategy: () => void;
   startBlocked: string[];
@@ -99,14 +101,14 @@ export function OperationBar({
       <div className={`operation-bar ${tone}`}>
         <span className="operation-bar-state">
           <span className="operation-bar-dot" aria-hidden="true" />
-          PAPER運用：{state}
+          {mode}運用：{state}
         </span>
         {running ? (
           <button
             type="button"
             className="operation-icon-button stop"
-            aria-label="PAPER運用停止"
-            title="PAPER運用停止"
+            aria-label={`${mode}運用停止`}
+            title={`${mode}運用停止`}
             onClick={() => void control("stop")}
           >
             <OperationIcon kind="stop" />
@@ -126,8 +128,8 @@ export function OperationBar({
           <button
             type="button"
             className="operation-icon-button start"
-            aria-label="PAPER運用開始"
-            title="PAPER運用開始"
+            aria-label={`${mode}運用開始`}
+            title={`${mode}運用開始`}
             disabled={starting || startBlocked.length > 0}
             onClick={() => void start()}
           >

@@ -50,6 +50,9 @@ export function recoveryStatus(
       automatic: false,
     };
   const { runtime, safety: s } = data;
+  // Older snapshots and test fixtures may omit the mode; the labels
+  // fall back to PAPER rather than rendering "undefined".
+  const mode = data.mode ?? "PAPER";
   if (
     runtime.emergency ||
     runtime.error ||
@@ -63,7 +66,7 @@ export function recoveryStatus(
           ? "緊急停止が設定されています。"
           : operationReason(runtime.error ?? s?.lastStopReason ?? "UNKNOWN"),
       safety:
-        "安全停止中です。新規PAPER注文は禁止されています。自動再開しません。",
+        "安全停止中です。新規注文は禁止されています。自動再開しません。",
       next: "通信診断で原因を確認し、「解除の手順へ」から停止を解除してください。その後、手動で開始します。",
       canStart: false,
       automatic: false,
@@ -78,9 +81,9 @@ export function recoveryStatus(
           ? "外部APIへの通信失敗を検出しました。"
           : "通信の復旧後、安全条件を確認しています。",
       safety:
-        "新規PAPER注文は禁止されています。復旧未確認のため開始できません。",
+        "新規注文は禁止されています。復旧未確認のため開始できません。",
       next: automatic
-        ? "自動復旧を待ってください。安全確認後にのみPAPER運用を自動再開します。進捗は通信診断で確認できます。"
+        ? `自動復旧を待ってください。安全確認後にのみ${mode}運用を自動再開します。進捗は通信診断で確認できます。`
         : "通信診断で復旧状況を確認してください。安全確認が完了しても自動再開しません。手動で開始してください。",
       canStart: false,
       automatic,
@@ -110,9 +113,9 @@ export function recoveryStatus(
     return {
       title: "停止中",
       tone: "caution",
-      reason: "PAPER Botは停止しています。",
-      safety: "新規PAPER注文は行いません。通信復旧だけでは自動再開しません。",
-      next: "保存済みの条件を確認し、「PAPER運用開始」を押してください。開始時にもサーバーが安全条件を確認します。",
+      reason: `${mode} Botは停止しています。`,
+      safety: "新規注文は行いません。通信復旧だけでは自動再開しません。",
+      next: `保存済みの条件を確認し、「${mode}運用開始」を押してください。開始時にもサーバーが安全条件を確認します。`,
       canStart: true,
       automatic: false,
     };
@@ -134,7 +137,7 @@ export function recoveryStatus(
     title: "通信確認中",
     tone: "caution",
     reason: "注文に必要なデータ・安全条件を確認しています。",
-    safety: "新規PAPER注文は許可されていません。",
+    safety: "新規注文は許可されていません。",
     next: "次の自動更新をお待ちください。確認が続く場合は通信診断を開いてください。",
     canStart: false,
     automatic: false,
