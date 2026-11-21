@@ -513,6 +513,11 @@ function App() {
                   marketData={data.marketData}
                   now={now}
                   candlesByTimeframe={data.candlesByTimeframe}
+                  boss={data.boss}
+                  heroLevel={data.party?.hero?.level ?? 1}
+                  heroEquity={data.equity}
+                  hasPosition={data.portfolio.sui > 0}
+                  unrealized={data.unrealized}
                   rsi={data.indicators?.rsi ?? null}
                   oversold={data.settings.oversold}
                   bookImbalance={data.bookImbalance}
@@ -542,6 +547,7 @@ function App() {
                       pairLabel={data?.pair === "WAL_USDC" ? "WAL" : "SUI"}
                       chain={data?.chain ?? null}
                       trades={data?.trades ?? []}
+                      boss={data.boss}
                       btc={data?.btc ?? null}
                       book={data?.bookLevels ?? null}
                       forecasts={forecastInput}

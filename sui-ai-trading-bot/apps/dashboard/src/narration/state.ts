@@ -11,6 +11,8 @@ export type NarrationKind =
   | "cycle" // a strategy analysis cycle (WAIT / signal / position watch)
   | "trade" // a PAPER fill was recorded
   | "levelUp"
+  | "bossStart"
+  | "bossEnd"
   | "rejection" // a signal fired but a gate turned it down
   | "warning" // API failure, anomaly, degraded connectivity
   | "stop" // the bot stopped (manual or safety)
@@ -149,6 +151,8 @@ export function emptyWatchKindStats(): WatchKindStats {
 export type SpikeAlertDirection = "up" | "down" | "volume";
 
 export interface NarrationState {
+  lastBossStartAt: number | null;
+  lastBossEndAt: number | null;
   entries: NarrationEntry[];
   nextEntryId: number;
   priceRising: boolean;
@@ -359,6 +363,8 @@ export function freshDecision(dec: DecisionTelemetry | null | undefined, now: nu
 
 export function emptyNarrationState(): NarrationState {
   return {
+    lastBossStartAt: null,
+    lastBossEndAt: null,
     entries: [],
     nextEntryId: 0,
     priceRising: false,

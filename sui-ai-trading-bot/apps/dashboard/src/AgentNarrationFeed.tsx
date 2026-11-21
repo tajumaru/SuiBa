@@ -1,3 +1,5 @@
+import type { BossBattleState } from "../../../packages/shared/src/boss.ts";
+import { narrateBoss } from "./narration/boss.ts";
 import type { OperationsSnapshot } from "./operationsTypes.ts";
 import type {
   AgentPose,
@@ -88,6 +90,7 @@ export function AgentNarrationFeed({
   calibEvent = null,
   book = null,
   hardMode = false,
+  boss = null,
   onListeningChange,
   onSpeakingChange,
   api,
@@ -95,6 +98,7 @@ export function AgentNarrationFeed({
   onShadowDiagnostics,
 }: {
   data: OperationsSnapshot;
+  boss?: BossBattleState | null;
   stale: boolean;
   /** The latest BTC weather sample (display-only), for the
    * character's ambient mutters about the market's weather. */
@@ -265,19 +269,22 @@ export function AgentNarrationFeed({
     // snapshot until fresh records arrive again.
     if (stale) return;
     const prev = narrationRef.current;
-    const next = advanceNarration(
-      prev,
-      data,
-      botVital(data, stale, Date.now(), receivedRef.current).state,
-      Date.now(),
-      trades,
-      btc,
-      forecasts,
-      book,
-      pairLabel,
-      calibEvent,
-      character,
-      hardMode,
+    const next = narrateBoss(
+      advanceNarration(
+        prev,
+        data,
+        botVital(data, stale, Date.now(), receivedRef.current).state,
+        Date.now(),
+        trades,
+        btc,
+        forecasts,
+        book,
+        pairLabel,
+        calibEvent,
+        character,
+        hardMode,
+      ),
+      boss,
     );
     narrationRef.current = next;
     persist(next);
@@ -373,6 +380,7 @@ export function AgentNarrationFeed({
     calibEvent,
     character,
     hardMode,
+    boss,
   ]);
   const vital = botVital(data, stale, now, receivedAt);
   const { pose, pointSmileCause } = agentPoseDetails(

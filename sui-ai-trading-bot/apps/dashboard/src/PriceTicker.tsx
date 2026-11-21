@@ -1,5 +1,6 @@
 import React from "react";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
+import { BossBattleCard } from "./BossBattle.tsx";
 import { BookBar } from "./BookBar.tsx";
 
 type State = BotSnapshot;
@@ -372,8 +373,18 @@ export function PriceTicker({
   rsi = null,
   oversold = 30,
   bookImbalance = null,
+  boss = null,
+  heroLevel = 1,
+  heroEquity = null,
+  hasPosition = false,
+  unrealized = null,
 }: {
   marketData?: State["marketData"];
+  boss?: State["boss"];
+  heroLevel?: number;
+  heroEquity?: number | null;
+  hasPosition?: boolean;
+  unrealized?: number | null;
   now?: number;
   pair?: State["pair"];
   /** Pair switch: when a handler is given, the bar leads with the
@@ -408,6 +419,7 @@ export function PriceTicker({
    * practice (that one needs no position, these need one). */
   sellLines?: { tp: number; sl: number } | null;
 }) {
+  const activeBoss = boss && !boss.outcome ? boss : null;
   const reference = price == null ? referenceTicker(marketData, now) : null;
   const previousPrice =
     price != null &&
@@ -512,7 +524,7 @@ export function PriceTicker({
     tone === "up" ? "#43dfb2" : tone === "down" ? "#ff6b81" : "#9fb2c8";
   return (
     <div
-      className={`price-ticker-bar${onPairSwitch ? " has-switch" : ""}${glow ? " glow" : ""}`}
+      className={`price-ticker-bar${onPairSwitch ? " has-switch" : ""}${glow ? " glow" : ""}${activeBoss ? " has-boss" : ""}`}
     >
       {onPairSwitch && (
         <div
@@ -627,7 +639,15 @@ export function PriceTicker({
         ))}
       </div>
       <BookBar imbalance={bookImbalance} />
-      <RsiGauge rsi={rsi} oversold={oversold} />
+      {activeBoss ? (
+        <BossBattleCard
+          key={`${pair}:${activeBoss.startedAt}`}
+          boss={activeBoss}
+          stats={{ level: heroLevel, equity: heroEquity, hasPosition, unrealized }}
+        />
+      ) : (
+        <RsiGauge rsi={rsi} oversold={oversold} />
+      )}
     </div>
   );
 }

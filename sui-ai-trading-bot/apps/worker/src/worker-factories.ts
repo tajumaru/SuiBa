@@ -1,3 +1,4 @@
+import { refreshBoss } from "./boss.ts";
 import { OpenAIShadowAdapter } from "./shadow-openai.ts";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
@@ -186,6 +187,11 @@ export const createScheduler = (ctx: WorkerContext) => {
         finishCycle?.();
       }
       refreshPartySafely(ctx);
+      try {
+        refreshBoss(ctx.db, ctx.pair);
+      } catch {
+        console.warn(JSON.stringify({ event: "BOSS_REFRESH_FAILED" }));
+      }
       generateNarrationSafely(ctx);
       const maintenance = setImmediate(() => {
         try {

@@ -29,6 +29,8 @@ const trail = z.object({
   rsiLinePrice: nullableNumber,
 });
 export const narrationStateSchema: z.ZodType<NarrationState> = z.object({
+  lastBossStartAt: nullableNumber.default(null),
+  lastBossEndAt: nullableNumber.default(null),
   entries: z
     .array(
       z.object({
@@ -39,6 +41,8 @@ export const narrationStateSchema: z.ZodType<NarrationState> = z.object({
           "trade",
           "rejection",
           "levelUp",
+          "bossStart",
+          "bossEnd",
           "stop",
           "start",
           "warning",
