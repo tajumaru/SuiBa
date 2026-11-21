@@ -93,7 +93,8 @@ describe("strategy panel: slim condition cards", () => {
     expect(html).toContain("損切り");
     expect(html).toContain("利確");
     expect(html).toContain("判定日時");
-    expect(html).toContain("✓ 正常（異常なし）");
+    expect(html).toContain("正常");
+    expect(html).not.toContain("✓ 正常（異常なし）");
     expect(html).toContain("1.6倍");
     // Grouped parameter cards replace the flat settings list.
     expect(html).toContain("買い条件");
@@ -119,9 +120,8 @@ describe("strategy panel: slim condition cards", () => {
         conditions: { emaUp: true, emaGapShrinking: true },
       }),
     );
-    expect(html).toContain(
-      "今回は差の縮小が続いたため、設定により成立として扱っています（短期はまだ長期の下）",
-    );
+    expect(html).toContain("（縮小中）");
+    expect(html).not.toContain("今回は差の縮小が続いたため");
     // Still counted as met, from the recorded flag alone.
     expect(html).toContain("買い条件 3つ中 2つ成立");
   });
@@ -160,7 +160,8 @@ describe("strategy panel: slim condition cards", () => {
 
   it("flags a volume exceedance with the strategy's own limit", () => {
     const html = render(data(waitDecision), telemetry({ volumeChange: 4.5 }));
-    expect(html).toContain("✗ 異常（上限超過・見送り対象）");
+    expect(html).toContain("異常");
+    expect(html).not.toContain("✗ 異常（上限超過・見送り対象）");
     expect(html).toContain('data-state="exceeded"');
   });
 
@@ -263,12 +264,19 @@ describe("strategy panel: slim condition cards", () => {
     expect(summaryOf(html)).not.toContain("12.3456789");
   });
 
-  it("shows numbers and a one-line note per card, with no diagrams", () => {
+  it("shows the conditions as rows in one panel, one key figure each", () => {
     const html = render(data(waitDecision), telemetry());
+    expect(html).toContain("strategy-rows");
     expect(html).not.toContain("strategy-viz");
     expect(html).not.toContain("EMA20とEMA50の推移図");
-    expect(html).toContain("買い基準");
-    expect(html).toContain("短期が長期より上なら上向きの流れ");
-    expect(html).toContain("前回より上向いていれば成立");
+    expect(html).toContain("基準");
+    expect(html).not.toContain("短期が長期より上なら上向きの流れ");
+    expect(html).not.toContain("前回より上向いていれば成立");
+    const rows = html.slice(
+      html.indexOf("strategy-rows"),
+      html.indexOf("strategy-arrow"),
+    );
+    expect(rows).not.toContain("EMA20");
+    expect(rows).not.toContain("ヒストグラム");
   });
 });

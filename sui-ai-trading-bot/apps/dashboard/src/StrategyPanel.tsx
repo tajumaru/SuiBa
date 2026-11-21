@@ -24,8 +24,6 @@ const money = (v: number | null | undefined) => number(v, 4);
     summary block below; the full panel keeps full precision. */
 const precise4 = (v: string | null | undefined) =>
   v == null ? "不明" : `${fixed4(v)} USDC`;
-const signed = (v: number, digits = 4) =>
-  `${v > 0 ? "+" : ""}${number(v, digits)}`;
 const signedPct = (ratio: number) => `${ratio > 0 ? "+" : ""}${percent(ratio)}`;
 
 
@@ -36,31 +34,35 @@ const signedPct = (ratio: number) => `${ratio > 0 ? "+" : ""}${percent(ratio)}`;
 
 const STATE_PILL = { met: "成立", unmet: "未成立", unknown: "未取得" } as const;
 
-function CardShell({
+function CondRow({
   name,
   what,
   state,
+  pillText,
   unknownText,
   children,
 }: {
   name: string;
   what: string;
-  state: "met" | "unmet" | "unknown";
+  state: string;
+  pillText?: string;
   unknownText: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="strategy-cond" data-state={state}>
-      <div className="strategy-cond-head">
+    <div className="strategy-row" data-state={state}>
+      <div className="strategy-row-name">
         <span className="strategy-cond-name">{name}</span>
         <span className="strategy-cond-what">{what}</span>
-        <span className="strategy-pill">{STATE_PILL[state]}</span>
       </div>
       {state === "unknown" ? (
-        <p className="strategy-unknown">{unknownText}</p>
+        <span className="strategy-row-unknown">{unknownText}</span>
       ) : (
-        children
+        <span className="strategy-row-fig">{children}</span>
       )}
+      <span className="strategy-pill">
+        {pillText ?? STATE_PILL[state as keyof typeof STATE_PILL]}
+      </span>
     </div>
   );
 }
@@ -306,87 +308,56 @@ export function StrategyPanel({
       <section>
         <h3>さくせん</h3>
         <div className="strategy-flow">
-          <div className="strategy-conds">
-            <div className="strategy-cond-row">
-              <CardShell
-                name="EMA"
-                what="価格の向き"
-                state={conditions.ema.state}
-                unknownText={unknownText}
-              >
-                <p className="strategy-now">
-                  EMA20 <b>{money(conditions.ema.ema20)}</b> ／ EMA50{" "}
-                  <b>{money(conditions.ema.ema50)}</b>（差{" "}
-                  <b>{signedPct(conditions.ema.gapPct!)}</b>）
-                </p>
-                <p className="strategy-note">
-                  短期が長期より上なら上向きの流れ。
-                  {conditions.ema.viaShrink &&
-                    " 今回は差の縮小が続いたため、設定により成立として扱っています（短期はまだ長期の下）。"}
-                </p>
-              </CardShell>
-              <CardShell
-                name="RSI"
-                what="売られ過ぎからの回復"
-                state={conditions.rsi.state}
-                unknownText={unknownText}
-              >
-                <p className="strategy-now">
-                  現在 <b>{number(conditions.rsi.rsi, 1)}</b>（前回{" "}
-                  {number(conditions.rsi.previousRsi, 1)}）／ 買い基準{" "}
-                  <b>{conditions.rsi.oversold}</b>
-                </p>
-                <p className="strategy-note">
-                  買い基準{conditions.rsi.oversold}
-                  を下回った後、そこから上へ戻れば回復として成立。
-                </p>
-              </CardShell>
-              <CardShell
-                name="MACD"
-                what="勢いの方向"
-                state={conditions.macd.state}
-                unknownText={unknownText}
-              >
-                <p className="strategy-now">
-                  ヒストグラム <b>{signed(conditions.macd.histogram!)}</b>
-                  （前回 {signed(conditions.macd.previousHistogram!)} →{" "}
-                  {conditions.macd.histogram! > conditions.macd.previousHistogram!
-                    ? "上向き"
-                    : conditions.macd.histogram! <
-                        conditions.macd.previousHistogram!
-                      ? "下向き"
-                      : "変わらず"}
-                  ）
-                </p>
-                <p className="strategy-note">
-                  前回より上向いていれば成立。
-                </p>
-              </CardShell>
-            </div>
-            <div className="strategy-vol" data-state={conditions.volume.state}>
-              <span className="strategy-vol-name">出来高チェック</span>
-              {conditions.volume.state === "unknown" ? (
-                <span className="strategy-vol-val">{unknownText}</span>
-              ) : (
-                <>
-                  <span className="strategy-vol-val">
-                    現在の変化 <b>{number(conditions.volume.multiple, 2)}倍</b>{" "}
-                    ／ 上限 <b>{number(conditions.volume.limit)}倍</b>
-                  </span>
-                  <span
-                    className={
-                      conditions.volume.state === "exceeded"
-                        ? "strategy-vol-ng"
-                        : "strategy-vol-ok"
-                    }
-                  >
-                    {conditions.volume.state === "exceeded"
-                      ? "✗ 異常（上限超過・見送り対象）"
-                      : "✓ 正常（異常なし）"}
-                  </span>
-                </>
-              )}
-            </div>
+          <div className="strategy-rows">
+            <CondRow
+              name="EMA"
+              what="価格の向き"
+              state={conditions.ema.state}
+              unknownText={unknownText}
+            >
+              差 <b>{signedPct(conditions.ema.gapPct!)}</b>
+              {conditions.ema.viaShrink && <small>（縮小中）</small>}
+            </CondRow>
+            <CondRow
+              name="RSI"
+              what="売られ過ぎからの回復"
+              state={conditions.rsi.state}
+              unknownText={unknownText}
+            >
+              <b>{number(conditions.rsi.rsi, 1)}</b>
+              <small> ／ 基準 {conditions.rsi.oversold}</small>
+            </CondRow>
+            <CondRow
+              name="MACD"
+              what="勢いの方向"
+              state={conditions.macd.state}
+              unknownText={unknownText}
+            >
+              <b>
+                {conditions.macd.histogram! > conditions.macd.previousHistogram!
+                  ? "上向き"
+                  : conditions.macd.histogram! <
+                      conditions.macd.previousHistogram!
+                    ? "下向き"
+                    : "変わらず"}
+              </b>
+            </CondRow>
+            <CondRow
+              name="出来高"
+              what="チェック"
+              state={conditions.volume.state}
+              pillText={
+                conditions.volume.state === "exceeded"
+                  ? "異常"
+                  : conditions.volume.state === "ok"
+                    ? "正常"
+                    : undefined
+              }
+              unknownText={unknownText}
+            >
+              <b>{number(conditions.volume.multiple, 2)}倍</b>
+              <small> ／ 上限 {number(conditions.volume.limit)}倍</small>
+            </CondRow>
           </div>
           <div className="strategy-arrow" aria-hidden="true">
             →
