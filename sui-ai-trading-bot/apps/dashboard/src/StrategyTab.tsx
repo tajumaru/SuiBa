@@ -1,7 +1,6 @@
 import React, { useEffect } from "react";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import type { DecisionTelemetry } from "../../worker/src/operations.ts";
-import type { IndicatorPoint } from "./strategyView.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
 import { StrategyPanel } from "./StrategyPanel.tsx";
 import {
@@ -39,7 +38,6 @@ export function StrategyTab({
   onSaved,
   control,
   telemetry,
-  history,
   segment,
   onSegmentChange,
   onStartGateChange,
@@ -49,7 +47,6 @@ export function StrategyTab({
   onSaved: () => Promise<void>;
   control: (c: string) => Promise<string | null>;
   telemetry: DecisionTelemetry | null;
-  history: IndicatorPoint[];
   segment: StrategySegment;
   onSegmentChange: (segment: StrategySegment) => void;
   onStartGateChange?: (blocked: string[]) => void;
@@ -104,7 +101,7 @@ export function StrategyTab({
         aria-labelledby="strategy-segment-rules"
         hidden={segment !== "rules"}
       >
-        <StrategyPanel data={data} telemetry={telemetry} history={history} />
+        <StrategyPanel data={data} telemetry={telemetry} />
       </div>
       <div
         role="tabpanel"

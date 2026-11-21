@@ -9,13 +9,10 @@ import { ProfitGuardPanel } from "./ProfitGuardPanel.tsx";
 export { useIndicatorHistory } from "./indicatorHistory.ts";
 import {
   STRATEGY_PARAM_GROUPS,
-  emaVizData,
   isFreshDecision,
-  macdBars,
   paramScale,
   strategyConditions,
   verdictTone,
-  type IndicatorPoint,
   type StrategyConditions,
   type StrategyParamDef,
 } from "./strategyView.ts";
@@ -67,193 +64,6 @@ function CardShell({
     </div>
   );
 }
-
-function EmaViz({
-  history,
-  dec,
-  now,
-}: {
-  history: IndicatorPoint[];
-  dec: DecisionTelemetry | null;
-  now: number;
-}) {
-  const viz = emaVizData(history, dec, now);
-  if (viz.kind === "none") return null;
-  const w = 200,
-    h = 64,
-    pad = 8;
-  if (viz.kind === "levels") {
-    const values = [viz.price, viz.ema20, viz.ema50],
-      min = Math.min(...values),
-      max = Math.max(...values),
-      span = max - min || Math.max(0.01, max * 0.01),
-      y = (v: number) => pad + (1 - (v - min) / span) * (h - pad * 2);
-    const rows = [
-      { label: "価格", value: viz.price, color: "#dbe7f3" },
-      { label: "EMA20", value: viz.ema20, color: "#72d1ff" },
-      { label: "EMA50", value: viz.ema50, color: "#7d93a8" },
-    ];
-    return (
-      <>
-        <svg
-          viewBox={`0 0 ${w} ${h}`}
-          role="img"
-          aria-label="価格とEMA20・EMA50の水準図（履歴が貯まるまでは現在の水準を表示）"
-        >
-          {rows.map((r) => (
-            <g key={r.label}>
-              <line
-                x1="44"
-                x2={w}
-                y1={y(r.value)}
-                y2={y(r.value)}
-                stroke={r.color}
-                strokeWidth="2"
-              />
-              <text x="0" y={y(r.value) + 3} fill="#91a5b6" fontSize="9">
-                {r.label}
-              </text>
-            </g>
-          ))}
-        </svg>
-        <p className="strategy-note">
-          履歴が貯まるまでは、現在値の水準で表示しています。
-        </p>
-      </>
-    );
-  }
-  const all = [...viz.ema20, ...viz.ema50],
-    min = Math.min(...all),
-    max = Math.max(...all),
-    span = max - min || 0.01,
-    x = (i: number) => (i / (viz.ema20.length - 1)) * w,
-    y = (v: number) => pad + (1 - (v - min) / span) * (h - pad * 2),
-    line = (set: number[]) => set.map((v, i) => `${x(i)},${y(v)}`).join(" ");
-  return (
-    <>
-      <svg
-        viewBox={`0 0 ${w} ${h}`}
-        role="img"
-        aria-label="EMA20とEMA50の推移図（記録した判定の履歴）"
-      >
-        <polyline
-          points={line(viz.ema50)}
-          fill="none"
-          stroke="#7d93a8"
-          strokeWidth="2.5"
-        />
-        <polyline
-          points={line(viz.ema20)}
-          fill="none"
-          stroke="#72d1ff"
-          strokeWidth="2.5"
-        />
-      </svg>
-      <div className="strategy-legend">
-        <span>
-          <i className="strategy-swatch ema20" />
-          EMA20（短期）
-        </span>
-        <span>
-          <i className="strategy-swatch ema50" />
-          EMA50（長期）
-        </span>
-      </div>
-    </>
-  );
-}
-
-function RsiScale({
-  rsi,
-  previousRsi,
-  oversold,
-  overbought,
-}: {
-  rsi: number;
-  previousRsi: number;
-  oversold: number;
-  overbought: number;
-}) {
-  return (
-    <>
-      <div
-        className="strategy-rsi-scale"
-        role="img"
-        aria-label={`RSIの目盛り。買い基準${oversold}、売り基準${overbought}、現在${rsi}、前回${previousRsi}`}
-      >
-        <div
-          className="strategy-rsi-track"
-          style={{
-            background: `linear-gradient(90deg,#2e5d50 0%,#2e5d50 ${oversold}%,#22384c ${oversold}%,#22384c ${overbought}%,#4c2f35 ${overbought}%,#4c2f35 100%)`,
-          }}
-        />
-        <div
-          className="strategy-rsi-line"
-          style={{ left: `${oversold}%` }}
-          data-label={`買い基準 ${oversold}`}
-        />
-        <div
-          className="strategy-rsi-prev"
-          style={{ left: `${previousRsi}%` }}
-          title={`前回 ${previousRsi}`}
-        />
-        <div
-          className="strategy-rsi-mark"
-          style={{ left: `${rsi}%` }}
-          data-label={`いま ${rsi}`}
-        />
-      </div>
-      <div className="strategy-rsi-ends">
-        <span>0（売られ過ぎ）</span>
-        <span>100（買われ過ぎ）</span>
-      </div>
-    </>
-  );
-}
-
-function MacdViz({ bars }: { bars: number[] }) {
-  const w = 200,
-    h = 64,
-    midY = 32,
-    max = Math.max(0.0005, ...bars.map((v) => Math.abs(v))),
-    bw = 18,
-    gap = 6,
-    x0 = Math.max(8, (w - (bars.length * bw + (bars.length - 1) * gap)) / 2);
-  return (
-    <svg
-      viewBox={`0 0 ${w} ${h}`}
-      role="img"
-      aria-label="MACDヒストグラムのミニ図（記録した判定の履歴）"
-    >
-      <line
-        x1="0"
-        y1={midY}
-        x2={w}
-        y2={midY}
-        stroke="#33506e"
-        strokeWidth="1"
-      />
-      {bars.map((v, i) => {
-        const bh = Math.max(2, Math.round((Math.abs(v) / max) * 26));
-        return (
-          <rect
-            key={i}
-            x={x0 + i * (bw + gap)}
-            y={v >= 0 ? midY - bh : midY}
-            width={bw}
-            height={bh}
-            rx="2"
-            fill={v >= 0 ? "#43dfb2" : "#8fa6bb"}
-          />
-        );
-      })}
-    </svg>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Result panel                                                        */
-/* ------------------------------------------------------------------ */
 
 function ResultPanel({
   decision,
@@ -475,11 +285,9 @@ function ProfitGuardStatus({ data }: { data: State }) {
 export function StrategyPanel({
   data,
   telemetry,
-  history,
 }: {
   data: State;
   telemetry: DecisionTelemetry | null;
-  history: IndicatorPoint[];
 }) {
   const now = Date.now(),
     fresh = isFreshDecision(telemetry, now),
@@ -492,8 +300,7 @@ export function StrategyPanel({
     unknownText =
       telemetry == null
         ? "判断根拠データがまだありません。"
-        : "判断根拠が古いため、状態を表示していません。",
-    bars = macdBars(history, telemetry, now);
+        : "判断根拠が古いため、状態を表示していません。";
   return (
     <>
       <section>
@@ -507,16 +314,13 @@ export function StrategyPanel({
                 state={conditions.ema.state}
                 unknownText={unknownText}
               >
-                <div className="strategy-viz">
-                  <EmaViz history={history} dec={dec} now={now} />
-                </div>
                 <p className="strategy-now">
                   EMA20 <b>{money(conditions.ema.ema20)}</b> ／ EMA50{" "}
-                  <b>{money(conditions.ema.ema50)}</b>
+                  <b>{money(conditions.ema.ema50)}</b>（差{" "}
+                  <b>{signedPct(conditions.ema.gapPct!)}</b>）
                 </p>
                 <p className="strategy-note">
-                  差 <b>{signedPct(conditions.ema.gapPct!)}</b>
-                  。短期が長期より上なら上向きの流れ。
+                  短期が長期より上なら上向きの流れ。
                   {conditions.ema.viaShrink &&
                     " 今回は差の縮小が続いたため、設定により成立として扱っています（短期はまだ長期の下）。"}
                 </p>
@@ -527,17 +331,10 @@ export function StrategyPanel({
                 state={conditions.rsi.state}
                 unknownText={unknownText}
               >
-                <div className="strategy-viz">
-                  <RsiScale
-                    rsi={conditions.rsi.rsi!}
-                    previousRsi={conditions.rsi.previousRsi!}
-                    oversold={conditions.rsi.oversold!}
-                    overbought={conditions.rsi.overbought!}
-                  />
-                </div>
                 <p className="strategy-now">
                   現在 <b>{number(conditions.rsi.rsi, 1)}</b>（前回{" "}
-                  {number(conditions.rsi.previousRsi, 1)}）
+                  {number(conditions.rsi.previousRsi, 1)}）／ 買い基準{" "}
+                  <b>{conditions.rsi.oversold}</b>
                 </p>
                 <p className="strategy-note">
                   買い基準{conditions.rsi.oversold}
@@ -550,16 +347,19 @@ export function StrategyPanel({
                 state={conditions.macd.state}
                 unknownText={unknownText}
               >
-                <div className="strategy-viz">
-                  <MacdViz bars={bars} />
-                </div>
                 <p className="strategy-now">
                   ヒストグラム <b>{signed(conditions.macd.histogram!)}</b>
+                  （前回 {signed(conditions.macd.previousHistogram!)} →{" "}
+                  {conditions.macd.histogram! > conditions.macd.previousHistogram!
+                    ? "上向き"
+                    : conditions.macd.histogram! <
+                        conditions.macd.previousHistogram!
+                      ? "下向き"
+                      : "変わらず"}
+                  ）
                 </p>
                 <p className="strategy-note">
-                  前回 {signed(conditions.macd.previousHistogram!)} → 現在{" "}
-                  {signed(conditions.macd.histogram!)}
-                  。前回より上向いていれば成立。
+                  前回より上向いていれば成立。
                 </p>
               </CardShell>
             </div>

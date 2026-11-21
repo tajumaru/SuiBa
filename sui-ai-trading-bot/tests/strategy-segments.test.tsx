@@ -35,7 +35,6 @@ function render(segment: "rules" | "settings") {
       onSaved={async () => {}}
       control={async () => null}
       telemetry={null}
-      history={[]}
       segment={segment}
       onSegmentChange={() => {}}
     />,
