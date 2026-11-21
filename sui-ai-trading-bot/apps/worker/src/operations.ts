@@ -34,6 +34,7 @@ import {
 } from "../../../packages/shared/src/operations.ts";
 import type { AccountingCheck } from "../../../packages/paper-trading/src/reconciliation.ts";
 import type { Fill } from "../../../packages/paper-trading/src/index.ts";
+import type { PerfTrace } from "./perf-trace.ts";
 import type { FxRate } from "./fx-rate.ts";
 import {
   buildDecisionTelemetry,
@@ -433,6 +434,7 @@ export class OperationMonitor {
     private monotonicNow: () => number = () => performance.now(),
     private readonly mode: string = "PAPER",
     private readonly fxRateSource: () => FxRate | null = () => null,
+    private readonly perfTrace?: PerfTrace,
   ) {
     if (!db.get("operation_state"))
       db.set("operation_state", {
@@ -701,6 +703,7 @@ export class OperationMonitor {
       if (details) this.stallFailure(details, Date.now());
     }, monitoringLimits.fetchDeadlineMs + 1);
     deadline.unref?.();
+    const finishMarket = this.perfTrace?.start("market");
     try {
       const value = await this.request("MARKET", () =>
         withReadBudget(
@@ -728,10 +731,14 @@ export class OperationMonitor {
           ? null
           : Math.max(0, this.monotonicNow() - this.fetchMono);
       this.fetchMono = null;
-      this.update({
-        fetchStartedAt: null,
-        lastFetchDurationMs: elapsed == null ? null : Math.round(elapsed),
-      });
+      try {
+        this.update({
+          fetchStartedAt: null,
+          lastFetchDurationMs: elapsed == null ? null : Math.round(elapsed),
+        });
+      } finally {
+        finishMarket?.();
+      }
     }
   }
   timing(now = Date.now()) {
