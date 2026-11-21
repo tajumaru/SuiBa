@@ -93,7 +93,6 @@ export function WorkerFreshness({
         />
       </svg>
       <div className="worker-freshness-head">
-        <h3>Workerの状態</h3>
         <ChainReadout chain={chain} />
       </div>
       {/* The status word only earns its place when something is
@@ -114,22 +113,19 @@ export function WorkerFreshness({
           an age only — when analysis stalls its age grows while
           the heartbeat stays fresh, so the failure signal stays
           visible without a second near-identical timestamp. */}
-      <dl>
-        <dt>Workerの心拍</dt>
-        <dd>
-          {data ? dateTime(data.lastHeartbeatAt) : "未取得"}
-          {vital?.heartbeatSecondsAgo != null && (
-            <span className="worker-freshness-age">
-              （{vital.heartbeatSecondsAgo}秒前）
-            </span>
-          )}
-          {vital?.lastAnalysisSecondsAgo != null && (
-            <span className="worker-freshness-age">
-              ・最終分析 {vital.lastAnalysisSecondsAgo}秒前
-            </span>
-          )}
-        </dd>
-      </dl>
+      <p className="worker-freshness-line">
+        {data ? dateTime(data.lastHeartbeatAt) : "未取得"}
+        {vital?.heartbeatSecondsAgo != null && (
+          <span className="worker-freshness-age">
+            （{vital.heartbeatSecondsAgo}秒前）
+          </span>
+        )}
+        {vital?.lastAnalysisSecondsAgo != null && (
+          <span className="worker-freshness-age">
+            ・最終分析 {vital.lastAnalysisSecondsAgo}秒前
+          </span>
+        )}
+      </p>
     </section>
   );
 }
