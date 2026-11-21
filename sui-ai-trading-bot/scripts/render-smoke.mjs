@@ -346,7 +346,12 @@ try {
     await page.screenshot({ path: `render-smoke-monthly-${width}.png` });
   }
   const header = page.locator("header").filter({ hasText: "Potario" });
-  await header.getByText("MAINNET", { exact: true }).waitFor();
+  // PAPER shows no network badge: the worker's network is only the
+  // market-data source there, and a MAINNET badge reads as real trading.
+  if (await header.getByText("MAINNET", { exact: true }).count())
+    failures.push("PAPER shows a network badge");
+  if (await header.getByText("TESTNET", { exact: true }).count())
+    failures.push("PAPER shows a network badge");
   const headerBackground = () =>
     // eslint-disable-next-line no-undef -- runs inside Chromium
     header.evaluate((el) => getComputedStyle(el).backgroundColor);
@@ -355,7 +360,7 @@ try {
     await page.locator(".boot-screen").waitFor({ state: "hidden" });
     await page.getByRole("button", { name: "ダッシュボード", exact: true }).click();
   };
-  const mainnetBackground = await headerBackground();
+  const paperBackground = await headerBackground();
   const assets = page.getByRole("region", { name: "資産の中身", exact: true });
   fixture.state.price = 2;
   await reloadOverview();
@@ -375,8 +380,8 @@ try {
     failures.push("REAL shows PAPER cumulative PnL");
   if (await page.getByText("資産の推移", { exact: true }).count())
     failures.push("REAL shows PAPER asset history");
-  if ((await headerBackground()) === mainnetBackground)
-    failures.push("TESTNET header background matches MAINNET");
+  if ((await headerBackground()) === paperBackground)
+    failures.push("TESTNET header background matches PAPER");
   for (const width of [320, 375, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     const [envBox, modeBox] = await Promise.all([
