@@ -282,6 +282,63 @@ describe("strategy panel: slim condition cards", () => {
     expect(summaryOf(html)).not.toContain("12.3456789");
   });
 
+  // The full panel only: everything before this heading is the
+  // compact summary card, which has its own rendering rules.
+  const panelOf = (html: string) =>
+    html.slice(html.indexOf("ProfitGuard · コスト控除後の利益"));
+
+  it("collapses the detail panel to the verdict when nothing is held and no quote exists", () => {
+    const html = render(
+      withGuard({
+        ...buyReport,
+        reason: "QUOTE_UNAVAILABLE",
+        quantityAtomic: null,
+        purchaseInputUsdc: null,
+        acquisitionUnitPrice: null,
+        netProfitUsdc: null,
+        breakEvenPrice: null,
+        roundTripCostUsdc: null,
+        targetPrice: null,
+      }),
+      telemetry(),
+    );
+    const panel = panelOf(html);
+    expect(panel).toContain("見積もり取得失敗");
+    expect(panel).not.toContain("現在の保有分の取得原価");
+    expect(panel).not.toContain("対象分の取得原価");
+    expect(panel).not.toContain("売却追加手数料");
+    expect(panel).not.toContain("購入試算");
+    expect(panel).not.toContain("不明");
+  });
+
+  it("shows the position fields in the detail panel while holding", () => {
+    const held = {
+      ...withGuard(
+        {
+          ...buyReport,
+          scope: "SELL_QUOTE",
+          allocatedCostUsdc: "6.468000",
+          costs: {
+            additionalFeeUsdc: "0.010000",
+            gasUsdc: "0.005000",
+            dexFeeUsdc: null,
+            source: "PAPER_MODEL",
+          } as ProfitReport["costs"],
+        },
+        "6.468000",
+      ),
+      portfolio: { sui: 10, usdc: 90, costBasis: 6.468 },
+    } as State;
+    const panel = panelOf(render(held, telemetry()));
+    expect(panel).toContain("現在の保有分の取得原価");
+    expect(panel).toContain("平均取得単価 / 現在価格");
+    expect(panel).toContain("対象分の取得原価（按分）");
+    expect(panel).toContain("モデル損益分岐価格");
+    expect(panel).toContain("売却追加手数料");
+    // The null DEX fee stays hidden instead of rendering 内訳不明.
+    expect(panel).not.toContain("DEX手数料");
+  });
+
   it("shows the conditions as rows in one panel, one key figure each", () => {
     const html = render(data(waitDecision), telemetry());
     expect(html).toContain("strategy-rows");
