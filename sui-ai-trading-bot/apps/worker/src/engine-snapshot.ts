@@ -72,6 +72,7 @@ export interface SnapshotSources {
   network: "testnet" | "mainnet";
   realBalances?: () => RealBalances | undefined;
   realReconciliation?: () => { nonTerminalSubmissions: number };
+  realExecution?: () => { orderType: "MARKET" | "IOC_LIMIT" };
   pair: TradingPair;
   db: BotDatabase;
   monitor: OperationMonitor;
@@ -108,10 +109,13 @@ export function buildSnapshot(
     const realBalances = src.mode === "REAL" ? src.realBalances?.() : undefined;
     const realReconciliation =
       src.mode === "REAL" ? src.realReconciliation?.() : undefined;
+    const realExecution =
+      src.mode === "REAL" ? src.realExecution?.() : undefined;
     return {
       network: src.network,
       ...(realBalances ? { realBalances } : {}),
       ...(realReconciliation ? { realReconciliation } : {}),
+      ...(realExecution ? { realExecution } : {}),
       pair: src.pair,
       boss: readBoss(src.db, src.pair),
       bossHistory: readBossHistory(src.db, src.pair),

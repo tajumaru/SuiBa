@@ -82,6 +82,21 @@ describe("pc:status", () => {
     );
   });
 
+  it.each([
+    ["MARKET", "成行"],
+    ["IOC_LIMIT", "指値（IOC）"],
+  ])("注文種別 %s を設定行に %s と表示する", async (orderType, label) => {
+    const deps = setup();
+    deps.get.mockResolvedValueOnce({
+      status: 200,
+      body: { ...runningState, realExecution: { orderType } },
+    });
+    expect(await runPcStatus(deps)).toBe(0);
+    expect(deps.print.mock.calls[0][0]).toContain(
+      `EMA縮小条件 オン（3本）、注文種別 ${label}`,
+    );
+  });
+
   it.each([2, 0])("未確定の送信が %i 件のときの状態を表示する", async (count) => {
     const deps = setup();
     await runPcStatus(deps);

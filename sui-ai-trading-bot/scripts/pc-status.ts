@@ -33,6 +33,9 @@ const stateSchema = z.object({
   realReconciliation: z
     .object({ nonTerminalSubmissions: z.number().int().nonnegative() })
     .optional(),
+  realExecution: z
+    .object({ orderType: z.enum(["MARKET", "IOC_LIMIT"]) })
+    .optional(),
   resetScope: resetScopeSchema.optional(),
   currentResetScope: resetScopeSchema.optional(),
 });
@@ -153,7 +156,7 @@ export function formatPcStatus(
       ? [`未確定の送信：${nonTerminalSubmissions}件（照合待ちで注文が止まっています）`]
       : []),
     `判定：${formatChecks(resume?.checks, reconciliationPending)}`,
-    `設定：売られすぎライン ${setting(settings?.oversold)}、注文上限 ${setting(settings?.maxOrder, " USDC")}、最低純利益 ${setting(settings?.minNetProfitUsdc, " USDC")}、EMA縮小条件 ${onOff(settings?.emaGapShrinkEnabled, "オン", "オフ")}（${setting(settings?.emaGapShrinkCandles, "本")}）`,
+    `設定：売られすぎライン ${setting(settings?.oversold)}、注文上限 ${setting(settings?.maxOrder, " USDC")}、最低純利益 ${setting(settings?.minNetProfitUsdc, " USDC")}、EMA縮小条件 ${onOff(settings?.emaGapShrinkEnabled, "オン", "オフ")}（${setting(settings?.emaGapShrinkCandles, "本")}）${state.realExecution ? `、注文種別 ${state.realExecution.orderType === "MARKET" ? "成行" : "指値（IOC）"}` : ""}`,
     ...(resetScope?.pending
       ? [`エラーの解除待ち：${resetScope.expectedError ?? "エラーの記録なし"}`]
       : resetScope
