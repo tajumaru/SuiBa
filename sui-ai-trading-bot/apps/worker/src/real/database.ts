@@ -110,12 +110,21 @@ export class RealTradeCapDatabase {
       ["generation", "INTEGER NOT NULL DEFAULT 0"],
       ["state", "TEXT NOT NULL DEFAULT 'SUBMITTING'"],
       ["terminal_at", "INTEGER"],
+      ["side", "TEXT"],
+      ["reflected_at", "INTEGER"],
     ] as const) {
       if (!submissionColumns.has(name))
         this.db.exec(
           `ALTER TABLE real_submission_intents ADD COLUMN ${name} ${definition}`,
         );
     }
+    if (!submissionColumns.has("side"))
+      this.db.exec(`UPDATE real_submission_intents
+        SET side=json_extract(intent_json, '$.side')
+        WHERE operation='PLACE' AND json_extract(intent_json, '$.side') IN ('BUY','SELL')`);
+    if (!submissionColumns.has("reflected_at"))
+      this.db.exec(`UPDATE real_submission_intents
+        SET reflected_at=terminal_at WHERE state='FAILED'`);
   }
 
   registerIdentity(identity: RealIdentity, now = Date.now()) {
@@ -138,6 +147,7 @@ export class RealTradeCapDatabase {
     identity: RealIdentity;
     intent: unknown;
     operation?: RealOperation;
+    side?: "BUY" | "SELL";
     targetOrderId?: string;
     generation?: number;
     now?: number;
@@ -150,8 +160,8 @@ export class RealTradeCapDatabase {
       .prepare(
         `INSERT INTO real_submission_intents
       (digest,tx_bytes_hash,internal_order_id,client_order_id,identity_key,intent_json,persisted_at,
-       operation,target_order_id,generation)
-      VALUES(?,?,?,?,?,?,?,?,?,?)`,
+       operation,target_order_id,generation,side)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
         input.digest,
@@ -164,6 +174,7 @@ export class RealTradeCapDatabase {
         input.operation ?? "PLACE",
         input.targetOrderId ?? null,
         input.generation ?? this.control(input.identity).generation,
+        input.operation === "CANCEL" ? null : input.side ?? null,
       );
     return hash;
   }
@@ -287,9 +298,11 @@ export class RealTradeCapDatabase {
   ) {
     this.db
       .prepare(
-        `UPDATE real_submission_intents SET state=?,terminal_at=? WHERE digest=?`,
+        `UPDATE real_submission_intents SET state=?,terminal_at=?,
+         reflected_at=CASE WHEN ? = 'FAILED' THEN COALESCE(reflected_at, ?) ELSE reflected_at END
+         WHERE digest=?`,
       )
-      .run(state, state === "UNKNOWN" ? null : now, digest);
+      .run(state, state === "UNKNOWN" ? null : now, state, now, digest);
   }
   hasNonTerminalSubmission(identity: RealIdentity) {
     return !!this.db
@@ -299,6 +312,34 @@ export class RealTradeCapDatabase {
       )
       .get(identityKey(identity));
   }
+  hasUnreflectedBuy(identity: RealIdentity) {
+    return !!this.db.prepare(
+      `SELECT 1 FROM real_submission_intents
+       WHERE identity_key=? AND operation='PLACE' AND side='BUY'
+       AND state='SUCCEEDED' AND reflected_at IS NULL LIMIT 1`,
+    ).get(identityKey(identity));
+  }
+
+  markTradeReflected(identity: RealIdentity, event: RealHistoryEvent, now = Date.now()) {
+    if (event.kind !== "TRADE_FILL" || !event.clientOrderId ||
+        identityKey(event.identity) !== identityKey(identity)) return;
+    const key = identityKey(identity);
+    this.db.prepare(
+      `UPDATE real_submission_intents SET reflected_at=?
+       WHERE identity_key=? AND digest=? AND client_order_id=? AND reflected_at IS NULL
+       AND EXISTS (SELECT 1 FROM real_ledger
+         WHERE identity_key=? AND chain=? AND digest=? AND event_sequence=? AND kind='TRADE_FILL')`,
+    ).run(now, key, event.digest, event.clientOrderId, key, event.chain, event.digest, event.eventSequence);
+  }
+
+  markTerminalReflected(identity: RealIdentity, checkedAfter: number, now = Date.now()) {
+    this.db.prepare(
+      `UPDATE real_submission_intents SET reflected_at=?
+       WHERE identity_key=? AND state IN ('SUCCEEDED','FAILED') AND terminal_at < ?
+       AND reflected_at IS NULL`,
+    ).run(now, identityKey(identity), checkedAfter);
+  }
+
   nonTerminalSubmissions(identity: RealIdentity) {
     return this.db
       .prepare(
@@ -445,13 +486,27 @@ export class RealTradeCapDatabase {
         add("fee_atomic", event.feeAtomic),
         add(
           "gas_mist",
-          event.gasMist && this.isBotSubmission(key, event.digest)
+          event.gasMist && this.isBotSubmission(key, event.digest) &&
+            !this.hasOtherEffectsGas(key, event)
             ? event.gasMist
             : undefined,
         ),
         key,
         asset,
       );
+  }
+
+  private hasOtherEffectsGas(key: string, event: RealHistoryEvent) {
+    if (event.kind !== "TX_EFFECTS" ||
+        (event.eventSequence !== "effects:0" && event.eventSequence !== "effects:history"))
+      return false;
+    return !!this.db.prepare(
+      `SELECT 1 FROM real_ledger
+       WHERE identity_key=? AND chain=? AND digest=? AND event_sequence=?
+       AND kind='TX_EFFECTS' AND json_extract(event_json, '$.asset')='SUI'
+       AND json_extract(event_json, '$.gasMist') IS NOT NULL`,
+    ).get(key, event.chain, event.digest,
+      event.eventSequence === "effects:0" ? "effects:history" : "effects:0");
   }
 
   private isBotSubmission(key: string, digest: string) {
@@ -480,6 +535,13 @@ export class RealTradeCapDatabase {
         .all(identityKey(identity)) as { eventJson: string }[]
     ).map((row) => JSON.parse(row.eventJson) as RealHistoryEvent);
   }
+  appliedTradeFeeCount(identity: RealIdentity) {
+    const row = this.db.prepare(
+      "SELECT COUNT(*) AS n FROM real_ledger WHERE identity_key=? AND kind='TRADE_FEE'",
+    ).get(identityKey(identity));
+    return Number(row?.n);
+  }
+
   balanceLedger(identity: RealIdentity) {
     return this.db
       .prepare(

@@ -36,6 +36,7 @@ export class RealReconciler {
     private readonly db: RealTradeCapDatabase,
     private readonly identity: RealIdentity,
     private readonly source: RealHistorySource,
+    private readonly balanceCheck?: () => Promise<boolean>,
   ) {}
 
   async reconcileAllPages() {
@@ -81,6 +82,7 @@ export class RealReconciler {
         });
         events += this.db.ledgerCount() - before;
       }
+      for (const event of page.events) this.db.markTradeReflected(this.identity, event);
       pages++;
       if (page.nextCursor === null) {
         for (const submission of this.db.nonTerminalSubmissions(
@@ -90,6 +92,11 @@ export class RealReconciler {
             submission.digest,
           );
           if (status) this.db.markSubmission(submission.digest, status);
+        }
+        if (this.balanceCheck) {
+          const checkedAfter = Date.now();
+          if (await this.balanceCheck())
+            this.db.markTerminalReflected(this.identity, checkedAfter);
         }
         return {
           pages,

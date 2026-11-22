@@ -1,3 +1,4 @@
+import { atomic, PHASE1_DECIMALS } from "./balance-evidence.ts";
 import type {
   HistoryPage,
   RealHistoryEvent,
@@ -43,6 +44,86 @@ interface IndexedOrder {
   last_updated_at: number;
   original_quantity: number;
   remaining_quantity: number;
+}
+
+interface IndexedTrade {
+  trade_id: string;
+  digest: string;
+  taker_client_order_id: string;
+  taker_balance_manager_id: string;
+  taker_is_bid: boolean;
+  base_volume: number | string;
+  quote_volume: number | string;
+  taker_fee: number | string;
+  taker_fee_is_deep: boolean;
+}
+
+const HISTORY_TRADE_LIMIT = 10_000;
+
+function tradeAtomic(value: string | number, decimals: number) {
+  const text = String(value);
+  // JSON numbers below 1e-6 are stringified in exponential notation.
+  const scientific = /^(\d)(?:\.(\d+))?e-([1-9]\d?)$/.exec(text);
+  if (!scientific) return atomic(text, decimals);
+  const [, whole, fraction = "", exponent] = scientific;
+  if (Number(exponent) > decimals)
+    throw Error("REAL_BALANCE_PRECISION_INVALID");
+  return atomic(
+    `0.${"0".repeat(Number(exponent) - 1)}${whole}${fraction}`,
+    decimals,
+  );
+}
+
+function tradeEvents(
+  trade: IndexedTrade,
+  identity: RealIdentity,
+): RealHistoryEvent[] {
+  if (
+    trade.taker_balance_manager_id !== identity.balanceManagerId ||
+    !trade.trade_id ||
+    !trade.digest ||
+    typeof trade.taker_is_bid !== "boolean" ||
+    typeof trade.taker_client_order_id !== "string" ||
+    !/^\d+$/.test(trade.taker_client_order_id) ||
+    trade.taker_fee_is_deep !== true
+  )
+    throw Error("REAL_HISTORY_TRADE_INVALID");
+  const direction = trade.taker_is_bid ? 1n : -1n;
+  const base = tradeAtomic(trade.base_volume, PHASE1_DECIMALS.SUI);
+  const quote = tradeAtomic(trade.quote_volume, PHASE1_DECIMALS.DBUSDC);
+  const fee = tradeAtomic(trade.taker_fee, PHASE1_DECIMALS.DEEP);
+  const common = {
+    chain: "sui:testnet" as const,
+    checkpoint: "0",
+    digest: trade.digest,
+    identity,
+    clientOrderId: trade.taker_client_order_id,
+    raw: trade,
+  };
+  return [
+    {
+      ...common,
+      kind: "TRADE_FILL",
+      asset: "SUI",
+      eventSequence: `trade:${trade.trade_id}:SUI`,
+      availableAtomicDelta: String(direction * base),
+    },
+    {
+      ...common,
+      kind: "TRADE_FILL",
+      asset: "DBUSDC",
+      eventSequence: `trade:${trade.trade_id}:DBUSDC`,
+      availableAtomicDelta: String(-direction * quote),
+    },
+    {
+      ...common,
+      kind: "TRADE_FEE",
+      asset: "DEEP",
+      eventSequence: `trade-fee:${trade.trade_id}`,
+      availableAtomicDelta: String(-fee),
+      feeAtomic: String(fee),
+    },
+  ];
 }
 
 const post = async (url: string, body: unknown) => {
@@ -117,8 +198,19 @@ export class IndexerGraphqlHistorySource implements RealHistorySource {
     );
     orderUrl.searchParams.set("limit", "10000");
     orderUrl.searchParams.set("status", "Placed,Canceled,Filled");
-    const [indexedOrders, graphql] = await Promise.all([
+    const tradeUrl = new URL(
+      `/trades/${this.identity.poolKey}`,
+      this.indexerUrl,
+    );
+    tradeUrl.searchParams.set(
+      "taker_balance_manager_id",
+      this.identity.balanceManagerId,
+    );
+    tradeUrl.searchParams.set("start_time", "1");
+    tradeUrl.searchParams.set("limit", String(HISTORY_TRADE_LIMIT));
+    const [indexedOrders, indexedTrades, graphql] = await Promise.all([
       get<IndexedOrder[]>(orderUrl.toString()),
+      get<IndexedTrade[]>(tradeUrl.toString()),
       post(this.graphqlUrl, {
         query: HISTORY_QUERY,
         variables: { after: cursor, address: this.identity.balanceManagerId },
@@ -126,6 +218,11 @@ export class IndexerGraphqlHistorySource implements RealHistorySource {
     ]);
     const connection = graphql.data?.transactions;
     if (!connection) throw Error("REAL_HISTORY_TRANSACTIONS_MISSING");
+    if (
+      !Array.isArray(indexedTrades) ||
+      indexedTrades.length >= HISTORY_TRADE_LIMIT
+    )
+      throw Error("REAL_HISTORY_TRADES_INCOMPLETE");
     const effects = connection.nodes ?? [];
     const normalized: RealHistoryEvent[] = [
       ...indexedOrders.map((order) => ({
@@ -145,11 +242,12 @@ export class IndexerGraphqlHistorySource implements RealHistorySource {
         remainingAtomic: String(order.remaining_quantity),
         raw: order,
       })),
+      ...indexedTrades.flatMap((trade) => tradeEvents(trade, this.identity)),
       ...effects.map((node) => ({
         chain: "sui:testnet" as const,
         checkpoint: String(node.effects?.checkpoint?.sequenceNumber ?? "0"),
         digest: node.digest,
-        eventSequence: "effects:0",
+        eventSequence: "effects:history",
         kind: "TX_EFFECTS" as const,
         identity: this.identity,
         asset: "SUI" as const,

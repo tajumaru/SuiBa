@@ -1,3 +1,8 @@
+import trades from "./fixtures/real-testnet-sui-dbusdc-trades-20261122.json";
+import effects from "./fixtures/real-testnet-sui-dbusdc-effects-20261122.json";
+import { balanceEvidence } from "../apps/worker/src/real/balance-evidence.ts";
+import { RealTradeCapDatabase } from "../apps/worker/src/real/database.ts";
+import { RealReconciler } from "../apps/worker/src/real/reconciler.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   HISTORY_QUERY,
@@ -23,7 +28,7 @@ describe("REAL history source", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string | URL) => {
-        if (String(input).includes("/orders/"))
+        if (/\/(orders|trades)\//.test(String(input)))
           return { ok: true, json: async () => [] };
         graphqlCall++;
         return {
@@ -74,7 +79,7 @@ describe("REAL history source", () => {
     const first = await source.page(null);
     const empty = await source.page(null);
     expect(first.events[0]).toMatchObject({
-      eventSequence: "effects:0",
+      eventSequence: "effects:history",
       asset: "SUI",
       gasMist: "7",
     });
@@ -104,7 +109,7 @@ describe("REAL history source", () => {
       vi.stubGlobal(
         "fetch",
         vi.fn(async (input: string | URL) =>
-          String(input).includes("/orders/")
+          /\/(orders|trades)\//.test(String(input))
             ? ({ ok: true, json: async () => [] } as Response)
             : ({ ok: true, json: async () => payload } as Response),
         ),
@@ -117,4 +122,132 @@ describe("REAL history source", () => {
       await expect(source.page(null)).rejects.toThrow(/REAL_HISTORY_GRAPHQL/);
     },
   );
+});
+
+it("reconciles the six observed trade legs and five testnet transactions from genesis", async () => {
+  const db = new RealTradeCapDatabase(":memory:");
+  const actualIdentity = {
+    ...identity,
+    balanceManagerId: trades[0].taker_balance_manager_id,
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: string | URL) => {
+      const url = new URL(input);
+      if (url.pathname.startsWith("/orders/")) return Response.json([]);
+      if (url.pathname.startsWith("/trades/")) {
+        expect(url.pathname).toBe("/trades/SUI_DBUSDC");
+        expect(url.searchParams.get("taker_balance_manager_id")).toBe(
+          actualIdentity.balanceManagerId,
+        );
+        return Response.json(trades);
+      }
+      return Response.json({ data: { transactions: { nodes: effects } } });
+    }),
+  );
+  const bucket = (availableAtomic: string) => ({
+    availableAtomic,
+    lockedAtomic: "0",
+    settledUnclaimedAtomic: "0",
+    owedAtomic: "0",
+  });
+  db.recordBalanceBaseline(actualIdentity, {
+    assets: {
+      SUI: bucket("5000000000"),
+      DBUSDC: bucket("9890000"),
+      DEEP: bucket("114000000"),
+    },
+    botGasSuiMist: "54066086793",
+  });
+  for (const tx of effects) {
+    const checkpoint = String(tx.effects.checkpoint.sequenceNumber);
+    const checkpointHash = tx.effects.checkpoint.digest;
+    db.persistBeforeSend({
+      digest: tx.digest,
+      txBytes: new Uint8Array(),
+      internalOrderId: tx.digest,
+      clientOrderId: "17953512001",
+      identity: actualIdentity,
+      intent: {},
+      side: "BUY",
+    });
+    db.applyEffects(actualIdentity, {
+      digest: tx.digest,
+      success: true,
+      checkpoint,
+      checkpointHash,
+      events: [
+        {
+          chain: "sui:testnet",
+          checkpoint,
+          digest: tx.digest,
+          eventSequence: "effects:0",
+          kind: "TX_EFFECTS",
+          identity: actualIdentity,
+          raw: {},
+        },
+      ],
+    });
+  }
+  const history = new IndexerGraphqlHistorySource(
+    "https://indexer.invalid",
+    "https://graphql.invalid",
+    actualIdentity,
+  );
+  const reconciler = new RealReconciler(db, actualIdentity, history);
+  expect(db.hasUnreflectedBuy(actualIdentity)).toBe(true);
+  await expect(reconciler.reconcileAllPages()).resolves.toMatchObject({
+    events: 23,
+  });
+  await expect(reconciler.reconcileAllPages()).resolves.toMatchObject({
+    events: 0,
+  });
+  expect(db.hasUnreflectedBuy(actualIdentity)).toBe(false);
+  const fees = db
+    .ledgerEvents(actualIdentity)
+    .filter((event) => event.kind === "TRADE_FEE");
+  expect(fees.map((event) => event.feeAtomic)).toEqual([
+    "46331",
+    "46331",
+    "46331",
+    "46331",
+    "18532",
+    "41600",
+  ]);
+  expect(fees.map((event) => event.eventSequence)).toEqual(
+    trades.map((trade) => `trade-fee:${trade.trade_id}`),
+  );
+  const count = db.appliedTradeFeeCount(actualIdentity);
+  expect(count).toBe(6);
+  const rows = db.balanceLedger(actualIdentity);
+  expect(rows.find((row) => row.asset === "SUI")?.gasMist).toBe("4043856");
+  const compare = (deep: string, feeCount = count) =>
+    balanceEvidence(
+      rows,
+      {
+        balances: { SUI: "12.5", DBUSDC: "1.9352", DEEP: deep },
+        locked: {},
+        settledUnclaimed: {},
+        botGasSuiMist: "54062042937",
+      },
+      db.balanceBaseline(actualIdentity),
+      feeCount,
+    );
+  const evidence = compare("113.754543");
+  expect(evidence.explained).toBe(true);
+  expect(evidence.differences["DEEP.available"]).toBe("-1");
+  expect(
+    Object.entries(evidence.differences).filter(
+      ([key, value]) => key !== "DEEP.available" && value !== "0",
+    ),
+  ).toEqual([]);
+  expect(compare("113.754537")).toMatchObject({
+    explained: false,
+    differences: { "DEEP.available": "-7" },
+  });
+  expect(compare("113.754545")).toMatchObject({
+    explained: false,
+    differences: { "DEEP.available": "1" },
+  });
+  expect(compare("113.754543", 0).explained).toBe(false);
 });
