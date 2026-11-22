@@ -124,7 +124,7 @@ export function operationReason(code: string): string {
     FILL_LEDGER_COUNT_MISMATCH: "約定と照合記録の件数が一致しません",
     UNKNOWN_COST_BASIS: "取得原価を確認できません",
     DATA_OR_EXECUTION_FAILURE:
-      "データ取得またはPAPER処理でエラーが発生しました",
+      "データ取得または処理でエラーが発生しました",
     DEPLOYMENT_MAINTENANCE: "配置メンテナンス中のため取引を見送りました",
     NARRATION_GENERATION_FAILED: "実況メッセージの生成に失敗しました",
   };

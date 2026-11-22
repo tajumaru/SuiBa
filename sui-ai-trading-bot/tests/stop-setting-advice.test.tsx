@@ -7,8 +7,9 @@ import { stopSettingAdvice } from "../apps/dashboard/src/stopSettingAdvice.ts";
 import { StopReleaseSection } from "../apps/dashboard/src/SettingsPage.tsx";
 type State = ReturnType<BotEngine["snapshot"]>;
 const now = 1_800_000_000_000;
-function snapshot(error = "THIN_ORDERBOOK"): State {
+function snapshot(error = "THIN_ORDERBOOK", mode = "PAPER"): State {
   return {
+    mode,
     runtime: { running: false, emergency: false, error },
     settings: { ...defaults, maxOrder: 5 },
     marketData: {
@@ -69,5 +70,31 @@ describe("actionable stop-setting advice", () => {
     expect(html).toContain("詳しい条件");
     expect(html).not.toContain("安全停止中です。停止理由：");
     expect(JSON.stringify(data)).toBe(original);
+  });
+});
+
+describe("stop release panel by mode", () => {
+  const render = (data: State) =>
+    renderToStaticMarkup(
+      <StopReleaseSection data={data} control={async () => null} />,
+    );
+  it("offers the dashboard reset in PAPER", () => {
+    const html = render(snapshot("DATA_OR_EXECUTION_FAILURE"));
+    expect(html).toContain("停止を解除");
+  });
+  it("shows no release button in REAL and points at the PC approval procedure", () => {
+    const html = render(snapshot("DATA_OR_EXECUTION_FAILURE", "REAL"));
+    expect(html).not.toContain("停止を解除");
+    expect(html).toContain("この画面からは解除できません");
+    expect(html).toContain("再開はPCでの承認手順が必要です");
+    expect(html).toContain("データ取得または処理でエラーが発生しました");
+    expect(html).not.toContain("PAPER処理");
+  });
+  it("keeps the emergency clear in REAL but says it does not resume trading", () => {
+    const data = snapshot("DATA_OR_EXECUTION_FAILURE", "REAL");
+    data.runtime.emergency = true;
+    const html = render(data);
+    expect(html).toContain("緊急停止を解除");
+    expect(html).toContain("解除してもREAL運用は再開しません");
   });
 });

@@ -772,11 +772,17 @@ export function StopReleaseSection({
     if (!emergency) setClearArmed(false);
   }, [emergency]);
   if (!emergency && !error) return null;
-  const advice = stopSettingAdvice(data);
+  const isReal = mode === "REAL";
+  // A REAL stop is released only through the PC approval procedure
+  // (real:resume); the dashboard reset cannot clear it, and the
+  // settings advice describes the PAPER release flow. In REAL the
+  // section is therefore informational: reason plus where the
+  // release actually happens, with no button that cannot work.
+  const advice = isReal ? null : stopSettingAdvice(data);
   return (
     <section className="stop-release">
       <div className="stop-release-head">
-        <h4>{advice?.title ?? "停止状態の解除"}</h4>
+        <h4>{isReal && !emergency ? "安全停止中" : advice?.title ?? "停止状態の解除"}</h4>
         {emergency ? (
           <button
             type="button"
@@ -797,7 +803,7 @@ export function StopReleaseSection({
               {clearArmed ? "本当に解除する" : "緊急停止を解除"}
             </span>
           </button>
-        ) : (
+        ) : isReal ? null : (
           <button
             type="button"
             className="operation-icon-button release"
@@ -818,8 +824,10 @@ export function StopReleaseSection({
       {!advice && (
         <p>
           {emergency
-            ? `緊急停止が押され、${mode}運用を止めています。緊急停止は通常の停止解除では解けません。上のボタンからのみ解除できます。`
-            : `安全停止中です。停止理由：${reason(error ?? "")}`}
+            ? `緊急停止が押され、${mode}運用を止めています。緊急停止は通常の停止解除では解けません。上のボタンからのみ解除できます。${isReal ? "解除してもREAL運用は再開しません。再開にはPCでの承認手順が別途必要です。" : ""}`
+            : isReal
+              ? `安全停止中です。停止理由：${reason(error ?? "")}。REAL運用の停止はこの画面からは解除できません。再開はPCでの承認手順が必要です。`
+              : `安全停止中です。停止理由：${reason(error ?? "")}`}
         </p>
       )}
       {advice && (
