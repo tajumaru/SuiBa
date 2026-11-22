@@ -10,6 +10,7 @@ const slowMs = {
   state: 500,
   snapshot: 250,
   cycle: 5_000,
+  realSubmit: 5_000,
   market: 2_000,
   analysis: 500,
   saveCandles: 250,
@@ -19,6 +20,15 @@ const maxQueuedLines = 256;
 
 type Metric = keyof typeof slowMs;
 type Totals = { count: number; totalMs: number; maxMs: number };
+type RealSubmitOutcome = "SUBMITTED" | "REJECTED" | "UNKNOWN" | "ERROR";
+type Details = {
+  timing?: ApiTiming;
+  statusCode?: number;
+  completed?: boolean;
+  marketStages?: MarketTimings;
+  key?: string;
+  outcome?: RealSubmitOutcome;
+};
 type Span = { metric: Metric; startedAt: number; start: number };
 
 export function eventLoopDelay(expected: number, actual: number) {
@@ -50,18 +60,29 @@ export class PerfTrace {
   }
 
   start(
-    metric: Exclude<Metric, "eventLoop" | "sqlite">,
+    metric: Exclude<Metric, "eventLoop" | "sqlite" | "realSubmit">,
     marketStages?: MarketTimings,
   ) {
-    const span = { metric, startedAt: Date.now(), start: performance.now() };
-    this.active.add(span);
-    return (timing?: ApiTiming, statusCode?: number, completed?: boolean) => {
-      const elapsed = performance.now() - span.start;
-      this.active.delete(span);
-      this.record(metric, elapsed, span.startedAt, Date.now(), undefined, {
+    const finish = this.startSpan(metric);
+    return (timing?: ApiTiming, statusCode?: number, completed?: boolean) =>
+      finish({
         ...(timing && { timing, statusCode, completed }),
         marketStages,
       });
+  }
+
+  startRealSubmit() {
+    const finish = this.startSpan("realSubmit");
+    return (outcome: RealSubmitOutcome) => finish({ outcome });
+  }
+
+  private startSpan(metric: Metric) {
+    const span = { metric, startedAt: Date.now(), start: performance.now() };
+    this.active.add(span);
+    return (details: Details) => {
+      const elapsed = performance.now() - span.start;
+      this.active.delete(span);
+      this.record(metric, elapsed, span.startedAt, Date.now(), undefined, details);
     };
   }
 
@@ -88,13 +109,7 @@ export class PerfTrace {
     startedAt: number,
     endedAt: number,
     method?: string,
-    details?: {
-      timing?: ApiTiming;
-      statusCode?: number;
-      completed?: boolean;
-      marketStages?: MarketTimings;
-      key?: string;
-    },
+    details?: Details,
   ) {
     const map = method === undefined ? this.totals : this.sqlite;
     const key = method ?? metric;
@@ -106,7 +121,18 @@ export class PerfTrace {
     stats.count++;
     stats.totalMs += durationMs;
     stats.maxMs = Math.max(stats.maxMs, durationMs);
-    if (durationMs > slowMs[metric]) {
+    if (durationMs <= slowMs[metric]) {
+      if (metric === "realSubmit") {
+        this.enqueue({
+          kind: "completed",
+          metric,
+          startedAt,
+          endedAt,
+          durationMs,
+          ...details,
+        });
+      }
+    } else {
       const active: Pick<Span, "metric" | "startedAt">[] = [];
       for (const { metric, startedAt } of this.active) {
         active.push({ metric, startedAt });

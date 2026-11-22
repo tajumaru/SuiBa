@@ -191,3 +191,35 @@ it("includes the runtime key only in slow SQLite set events", async () => {
     expect(rows[0]).not.toHaveProperty("value");
   });
 });
+
+it("records every REAL submit outcome and includes its duration in the summary", async () => {
+  vi.useFakeTimers();
+  trace = startPerfTrace(directory, "1")!;
+  const attempts = [
+    { outcome: "SUBMITTED", durationMs: 5_001, kind: "slow" },
+    { outcome: "REJECTED", durationMs: 1, kind: "completed" },
+    { outcome: "UNKNOWN", durationMs: 50, kind: "completed" },
+    { outcome: "ERROR", durationMs: 10, kind: "completed" },
+  ] as const;
+  for (const { outcome, durationMs } of attempts) {
+    const finish = trace.startRealSubmit();
+    vi.advanceTimersByTime(durationMs);
+    finish(outcome);
+  }
+  expect(trace.summary().metrics.realSubmit).toEqual({
+    count: 4,
+    totalMs: 5_062,
+    maxMs: 5_001,
+  });
+
+  vi.useRealTimers();
+  await vi.waitFor(() => {
+    const rows = readFileSync(join(directory, "perf-trace.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(rows).toMatchObject(
+      attempts.map((attempt) => ({ metric: "realSubmit", ...attempt })),
+    );
+  });
+});
