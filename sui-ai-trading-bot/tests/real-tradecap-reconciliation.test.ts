@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { RealTradeCapDatabase } from "../apps/worker/src/real/database.ts";
+import { startRealTradeCapReconciliation } from "../apps/worker/src/real/runtime.ts";
 import { RealReconciler } from "../apps/worker/src/real/reconciler.ts";
 import { realConfigFromEnv } from "../apps/worker/src/real/config.ts";
 import { reconcileRealReadOnlyOnce } from "../apps/worker/src/real/index.ts";
@@ -41,6 +42,68 @@ const source = (pages: HistoryPage[]) => ({
   async page(cursor: string | null) {
     return pages[cursor === null ? 0 : Number(cursor)]!;
   },
+});
+
+describe("REAL TradeCap periodic reconciliation", () => {
+  it("retries after a failed scan and resolves only submissions with a known status", async () => {
+    vi.useFakeTimers();
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const db = new RealTradeCapDatabase(":memory:");
+    const identity = id();
+    for (const [index, digest] of ["success", "failure", "pending"].entries()) {
+      db.persistBeforeSend({
+        digest,
+        txBytes: new Uint8Array([index]),
+        internalOrderId: `order-${index}`,
+        clientOrderId: String(index),
+        identity,
+        intent: {},
+      });
+    }
+    db.markSubmission("failure", "UNKNOWN");
+    db.markSubmission("pending", "UNKNOWN");
+    const page = vi.fn().mockRejectedValueOnce(Error("offline test"))
+      .mockResolvedValue({
+        events: [],
+        nextCursor: null,
+        checkpoint: "42",
+        checkpointHash: "h42",
+      });
+    const submissionStatus = vi.fn(async (digest: string) => {
+      if (digest === "success") return "SUCCEEDED" as const;
+      if (digest === "failure") return "FAILED" as const;
+      return null;
+    });
+    const stop = startRealTradeCapReconciliation(
+      new RealReconciler(db, identity, { page, submissionStatus }),
+    );
+    try {
+      expect(page).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(error).toHaveBeenCalledWith("REAL_TRADECAP_RECONCILIATION_FAILED");
+      expect(db.nonTerminalSubmissions(identity)).toHaveLength(3);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(submissionStatus).toHaveBeenCalledTimes(3);
+      expect(db.nonTerminalSubmissions(identity)).toEqual([
+        { digest: "pending", state: "UNKNOWN" },
+      ]);
+      expect(info).toHaveBeenCalledWith(JSON.stringify({
+        event: "REAL_TRADECAP_RECONCILED",
+        pages: 1,
+        events: 0,
+      }));
+      stop();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(page).toHaveBeenCalledTimes(2);
+    } finally {
+      stop();
+      db.close();
+      info.mockRestore();
+      error.mockRestore();
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("REAL TradeCap read-only reconciliation", () => {

@@ -11,6 +11,7 @@ import { cacheRealBalances } from "./display-balances.ts";
 import { createDeepBookReadOnly } from "./read-only.ts";
 import type { RealEffects, RealIdentity } from "./types.ts";
 import { RealBookParamsCache } from "./book-params-cache.ts";
+import { RealReconciler } from "./reconciler.ts";
 import { RealFeeCache } from "./fee-cache.ts";
 
 type LiveProbeName = "snapshot" | "cap" | "history";
@@ -47,6 +48,31 @@ export async function continueAfterRealLiveProbe<T>(
 ) {
   await runtime?.liveProbe();
   return continueStartup();
+}
+
+export function startRealTradeCapReconciliation(reconciler: RealReconciler) {
+  let running = false;
+  const reconcile = async () => {
+    if (running) return;
+    running = true;
+    try {
+      const { pages, events } = await reconciler.reconcileAllPages();
+      console.info(JSON.stringify({
+        event: "REAL_TRADECAP_RECONCILED",
+        pages,
+        events,
+      }));
+    } catch {
+      console.error("REAL_TRADECAP_RECONCILIATION_FAILED");
+    } finally {
+      running = false;
+    }
+  };
+
+  void reconcile();
+  const timer = setInterval(() => void reconcile(), 60_000);
+  timer.unref();
+  return () => clearInterval(timer);
 }
 
 /** Constructs the REAL-only execution boundary. No PAPER key or sender is
@@ -152,8 +178,13 @@ export function createRealTradeCapRuntime(
     identity,
     db.checkpoint(),
   );
+  const reconciler = new RealReconciler(db, identity, history);
   return {
     executionAdapter,
+    startReconciliation: () => startRealTradeCapReconciliation(reconciler),
+    realReconciliation: () => ({
+      nonTerminalSubmissions: db.nonTerminalSubmissions(identity).length,
+    }),
     realBalances: cacheRealBalances(reader.readBalances),
     liveProbe: () =>
       runRealLiveProbe({

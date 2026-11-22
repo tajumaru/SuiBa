@@ -100,7 +100,10 @@ export class BotEngine {
     shadowBudget?: ShadowBudget,
     private readonly executionAdapter?: ExecutionAdapter,
     fxRateSource: () => FxRate | null = () => null,
-    private readonly snapshotDisplay: Pick<SnapshotSources, "network" | "realBalances"> = {
+    private readonly snapshotDisplay: Pick<
+      SnapshotSources,
+      "network" | "realBalances" | "realReconciliation"
+    > = {
       network: "mainnet",
     },
     private readonly perfTrace?: PerfTrace,

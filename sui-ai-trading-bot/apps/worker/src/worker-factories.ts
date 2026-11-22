@@ -93,6 +93,7 @@ export function createEngine(
         {
           network: ctx.suiGrpcEndpoints.network,
           realBalances: realRuntime?.realBalances,
+          realReconciliation: realRuntime?.realReconciliation,
         },
         ctx.perfTrace,
       ),

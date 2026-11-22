@@ -30,6 +30,9 @@ const stateSchema = z.object({
     })
     .partial()
     .optional(),
+  realReconciliation: z
+    .object({ nonTerminalSubmissions: z.number().int().nonnegative() })
+    .optional(),
   resetScope: resetScopeSchema.optional(),
   currentResetScope: resetScopeSchema.optional(),
 });
@@ -113,16 +116,15 @@ function formatBalance(differences: Record<string, string> | undefined) {
   ].join("\n");
 }
 
-function formatChecks(checks: Resume["checks"]) {
-  if (!checks) return unknown;
-  const failed = Object.entries(checks)
+function formatChecks(checks: Resume["checks"], reconciliationPending: boolean) {
+  const failed = Object.entries(checks ?? {})
     .filter(([, passed]) => !passed)
     .map(([key]) =>
       Object.hasOwn(checkLabels, key) ? checkLabels[key as Check] : key,
     );
-  const complete = Object.keys(checkLabels).every((key) =>
-    Object.hasOwn(checks, key),
-  );
+  if (reconciliationPending) failed.push("未確定の送信");
+  const complete =
+    checks && Object.keys(checkLabels).every((key) => Object.hasOwn(checks, key));
   if (!failed.length) return complete ? "全チェックOK" : unknown;
   return `問題あり（${failed.join("、")}）${complete ? "" : "。一部は確認できません"}`;
 }
@@ -133,6 +135,8 @@ export function formatPcStatus(
   resume?: Resume,
 ) {
   const { runtime, safety, settings, currentResetScope } = state;
+  const nonTerminalSubmissions = state.realReconciliation?.nonTerminalSubmissions ?? 0;
+  const reconciliationPending = nonTerminalSubmissions > 0;
   const resetScope = state.resetScope?.pending
     ? state.resetScope
     : currentResetScope?.pending
@@ -145,7 +149,10 @@ export function formatPcStatus(
     `緊急停止：${onOff(runtime?.emergency, "あり", "なし")}`,
     `エラー：${runtime ? (runtime.error ? `あり（${runtime.error}）` : "なし") : unknown}`,
     `残高：${formatBalance(resume?.evidence?.balances.differences)}`,
-    `判定：${formatChecks(resume?.checks)}`,
+    ...(reconciliationPending
+      ? [`未確定の送信：${nonTerminalSubmissions}件（照合待ちで注文が止まっています）`]
+      : []),
+    `判定：${formatChecks(resume?.checks, reconciliationPending)}`,
     `設定：売られすぎライン ${setting(settings?.oversold)}、注文上限 ${setting(settings?.maxOrder, " USDC")}、最低純利益 ${setting(settings?.minNetProfitUsdc, " USDC")}、EMA縮小条件 ${onOff(settings?.emaGapShrinkEnabled, "オン", "オフ")}（${setting(settings?.emaGapShrinkCandles, "本")}）`,
     ...(resetScope?.pending
       ? [`エラーの解除待ち：${resetScope.expectedError ?? "エラーの記録なし"}`]

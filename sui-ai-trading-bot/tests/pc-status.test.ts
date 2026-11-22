@@ -82,6 +82,27 @@ describe("pc:status", () => {
     );
   });
 
+  it.each([2, 0])("未確定の送信が %i 件のときの状態を表示する", async (count) => {
+    const deps = setup();
+    await runPcStatus(deps);
+    const original = deps.print.mock.calls[0][0];
+    deps.print.mockClear();
+    deps.get.mockResolvedValueOnce({
+      status: 200,
+      body: {
+        ...runningState,
+        realReconciliation: { nonTerminalSubmissions: count },
+      },
+    });
+    expect(await runPcStatus(deps)).toBe(0);
+    expect(deps.print.mock.calls[0][0]).toBe(count
+      ? original.replace(
+          "判定：全チェックOK",
+          "未確定の送信：2件（照合待ちで注文が止まっています）\n判定：問題あり（未確定の送信）",
+        )
+      : original);
+  });
+
   it("停止中のエラーと別の読み取り先にある解除待ちを表示する", async () => {
     const deps = setup();
     const stopped = {
