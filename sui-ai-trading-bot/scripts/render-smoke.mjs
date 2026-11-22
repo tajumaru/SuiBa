@@ -272,6 +272,9 @@ try {
     /* eslint-enable no-undef */
   }
   fixture.state.indicators = { ...fixture.state.indicators, rsi: 25 };
+  // The oversold meter only renders while the bot is running
+  // (owner's rule: a stopped bot shows no frozen RSI).
+  fixture.state.runtime.running = true;
   await page.reload();
   await page.locator(".rsi-gauge").waitFor();
   fixture.state.boss = {
@@ -308,7 +311,12 @@ try {
     await battle.getByRole("button", { name: "閉じる", exact: true }).click();
     await battle.waitFor({ state: "hidden" });
   }
-  await bossCard.click();
+  // While stopped, the whole meter slot (boss card included) is
+  // hidden; the start/stop command check runs from that state.
+  fixture.state.runtime.running = false;
+  await page.reload();
+  if ((await bossCard.count()) !== 0)
+    failures.push("boss card still visible while stopped");
   await page
     .getByRole("button", { name: "PAPER運用開始", exact: true })
     .click();
@@ -324,6 +332,7 @@ try {
   if (commands.join(",") !== "start,stop")
     failures.push("header control commands changed");
   fixture.state.boss.outcome = { at: Date.now(), result: "endured" };
+  fixture.state.runtime.running = true;
   await page.reload();
   await page.locator(".rsi-gauge").waitFor();
   if ((await bossCard.count()) || (await battle.count()))

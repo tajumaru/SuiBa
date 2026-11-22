@@ -471,6 +471,7 @@ export function PriceTicker({
   now = Date.now(),
   pairDisabled = false,
   onPairSwitch,
+  stopped = false,
   rsi = null,
   oversold = 30,
   bookImbalance = null,
@@ -495,6 +496,9 @@ export function PriceTicker({
    * interactive and reachable. */
   pairDisabled?: boolean;
   onPairSwitch?: (pair: State["pair"]) => void;
+  /** While the bot is stopped the RSI is frozen at its last value
+   * and no battle is live, so the meter slot renders nothing. */
+  stopped?: boolean;
   /** Current RSI and the active saved oversold setting. The gauge
    * fails closed when RSI is unavailable. */
   rsi?: number | null;
@@ -740,15 +744,16 @@ export function PriceTicker({
         ))}
       </div>
       <BookBar imbalance={bookImbalance} />
-      {activeBoss ? (
-        <BossBattleCard
-          key={`${pair}:${activeBoss.startedAt}`}
-          boss={activeBoss}
-          stats={{ level: heroLevel, equity: heroEquity, hasPosition, unrealized }}
-        />
-      ) : (
-        <RsiGauge rsi={rsi} oversold={oversold} />
-      )}
+      {!stopped &&
+        (activeBoss ? (
+          <BossBattleCard
+            key={`${pair}:${activeBoss.startedAt}`}
+            boss={activeBoss}
+            stats={{ level: heroLevel, equity: heroEquity, hasPosition, unrealized }}
+          />
+        ) : (
+          <RsiGauge rsi={rsi} oversold={oversold} />
+        ))}
     </div>
   );
 }

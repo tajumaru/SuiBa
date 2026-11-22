@@ -195,6 +195,30 @@ describe("price ticker rendering", () => {
     );
   });
 
+  it("hides the oversold meter while the bot is stopped", () => {
+    const framesArg = frames({ 3600: hourly(25, 1.0, 1.1) });
+    const running = renderToStaticMarkup(
+      <PriceTicker
+        price={1.1}
+        candlesByTimeframe={framesArg}
+        rsi={50}
+        oversold={45}
+      />,
+    );
+    expect(running).toContain("売られすぎメーター");
+    const stopped = renderToStaticMarkup(
+      <PriceTicker
+        price={1.1}
+        candlesByTimeframe={framesArg}
+        rsi={50}
+        oversold={45}
+        stopped
+      />,
+    );
+    expect(stopped).not.toContain("売られすぎメーター");
+    expect(stopped).toContain("$1.10");
+  });
+
   it("colours a falling change and its sparkline red", () => {
     const html = renderToStaticMarkup(
       <PriceTicker
