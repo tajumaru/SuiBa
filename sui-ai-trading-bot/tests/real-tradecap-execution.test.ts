@@ -1,3 +1,6 @@
+import { OrderType, SelfMatchingOptions } from "@mysten/deepbook-v3";
+import { Transaction } from "@mysten/sui/transactions";
+import type { RealTradeCapConfig } from "../packages/shared/src/index.ts";
 import { describe, expect, it, vi } from "vitest";
 import { RealTradeCapDatabase } from "../apps/worker/src/real/database.ts";
 import { RealTradeCapExecutor } from "../apps/worker/src/real/execution.ts";
@@ -15,6 +18,20 @@ const identity: RealIdentity = {
   tradeCapId: `0x${"2".repeat(64)}`,
   signerAddress: `0x${"3".repeat(64)}`,
   sessionId: "phase1",
+};
+const marketConfig: RealTradeCapConfig = {
+  network: "testnet",
+  balanceManagerId: identity.balanceManagerId,
+  poolKey: identity.poolKey,
+  tradeCapId: identity.tradeCapId,
+  signerAddress: identity.signerAddress,
+  sessionId: identity.sessionId,
+  indexerUrl: "https://indexer.invalid",
+  graphqlUrl: "https://graphql.invalid",
+  grpcUrl: "https://grpc.invalid",
+  maxOrderDbusdc: 0.1,
+  orderType: "MARKET",
+  signingEnabled: true,
 };
 const checks = Object.fromEntries(
   [
@@ -95,11 +112,12 @@ const buy = {
 const adapterFixtures = (
   maxOrderDbusdc = 1,
   fetchPools = vi.fn(async () => bookResponse()),
+  config: RealTradeCapConfig = { ...marketConfig, orderType: "IOC_LIMIT" },
 ) => {
   const execute = vi.fn(async () => ({ status: "SUCCEEDED", digest: "d" }));
   const adapter = new RealTradeCapExecutionAdapter(
     { execute } as unknown as RealTradeCapExecutor,
-    { maxOrderDbusdc },
+    { ...config, maxOrderDbusdc },
     new RealFeeCache(async () => ({
       tradeParams: { takerFee: 0, makerFee: 0, stakeRequired: 0 },
     })),
@@ -380,25 +398,84 @@ describe("REAL TradeCap execution and stop/resume gate", () => {
     },
   );
 
-  it("fails explicitly when MARKET is configured", async () => {
+  it("checks the MARKET reference notional and passes the aligned intent", async () => {
+    const { adapter, execute } = adapterFixtures(0.960864, undefined, marketConfig);
+    await expect(adapter.execute({ ...buy, markPrice: 0.6005400045 })).resolves.toEqual({
+      status: "SUBMITTED",
+      digest: "d",
+    });
+    expect(execute).toHaveBeenCalledExactlyOnceWith({
+      internalOrderId: "o",
+      clientOrderId: "11",
+      side: "BUY",
+      intent: { price: 0.60054, quantity: 1.6, expiresAt: 2 },
+    });
+    await expect(adapter.execute({ ...buy, markPrice: 0.60054002 })).resolves.toEqual({
+      status: "REJECTED",
+      errorCode: "REAL_MAX_ORDER_EXCEEDED",
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["MARKET", "IOC_LIMIT"] as const)("builds a %s order with the SDK", async (orderType) => {
+    const placeMarketOrder = vi.fn(() => () => {});
+    const placeLimitOrder = vi.fn(() => () => {});
+    const client = {
+      $extend: () => ({ deepbook: { deepBook: { placeMarketOrder, placeLimitOrder } } }),
+    } as never;
+    const bytes = new Uint8Array([1]);
+    const build = vi.spyOn(Transaction.prototype, "build").mockResolvedValue(bytes);
+    const digest = vi.spyOn(Transaction.prototype, "getDigest").mockResolvedValue("digest-1");
+    try {
+      const builder = createDeepBookTransactionBuilder(client, { ...marketConfig, orderType });
+      const quantity = 1.6;
+      const limit = { price: 0.6, quantity, expiresAt: 2 };
+      await expect(builder.place({
+        ...intent,
+        intent: orderType === "MARKET" ? { quantity } : limit,
+      })).resolves.toEqual({ bytes, digest: "digest-1" });
+      const common = {
+        poolKey: identity.poolKey,
+        balanceManagerKey: "PHASE1",
+        clientOrderId: intent.clientOrderId,
+        quantity,
+        isBid: true,
+        selfMatchingOption: SelfMatchingOptions.CANCEL_TAKER,
+        payWithDeep: true,
+      };
+      if (orderType === "MARKET") {
+        expect(placeMarketOrder).toHaveBeenCalledExactlyOnceWith(common);
+        expect(placeLimitOrder).not.toHaveBeenCalled();
+      } else {
+        expect(placeLimitOrder).toHaveBeenCalledExactlyOnceWith({
+          ...common,
+          price: limit.price,
+          expiration: limit.expiresAt,
+          orderType: OrderType.IMMEDIATE_OR_CANCEL,
+        });
+        expect(placeMarketOrder).not.toHaveBeenCalled();
+      }
+    } finally {
+      build.mockRestore();
+      digest.mockRestore();
+    }
+  });
+
+  it.each([undefined, "1", NaN, Infinity, 0, -1])("rejects invalid MARKET quantity %s", async (quantity) => {
+    const client = { $extend: () => ({}) } as never;
+    const builder = createDeepBookTransactionBuilder(client, marketConfig);
+    await expect(builder.place({ ...intent, intent: { quantity } })).rejects.toThrow(
+      "REAL_MARKET_INTENT_INVALID",
+    );
+  });
+
+  it("rejects an unsupported order type", async () => {
     const client = { $extend: () => ({}) } as never;
     const builder = createDeepBookTransactionBuilder(client, {
-      network: "testnet",
-      balanceManagerId: identity.balanceManagerId,
-      poolKey: identity.poolKey,
-      tradeCapId: identity.tradeCapId,
-      signerAddress: identity.signerAddress,
-      sessionId: identity.sessionId,
-      indexerUrl: "https://indexer.invalid",
-      graphqlUrl: "https://graphql.invalid",
-      grpcUrl: "https://grpc.invalid",
-      maxOrderDbusdc: 0.1,
-      orderType: "MARKET",
-      signingEnabled: true,
+      ...marketConfig,
+      orderType: "UNSUPPORTED" as RealTradeCapConfig["orderType"],
     });
-    await expect(builder.place(intent)).rejects.toThrow(
-      "REAL_ORDER_TYPE_UNSUPPORTED",
-    );
+    await expect(builder.place(intent)).rejects.toThrow("REAL_ORDER_TYPE_UNSUPPORTED");
   });
 
   it("applies duplicate effects only once", () => {

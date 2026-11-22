@@ -65,6 +65,8 @@ export class RealTradeCapExecutionAdapter implements ExecutionAdapter {
       .mul(params.tickSize)
       .div(SUI_ATOMIC);
     const quantity = quantityAtomic.div(SUI_ATOMIC);
+    // For MARKET this cap check uses the reference price saved in the intent.
+    // The order book determines the actual execution price.
     if (quantity.mul(price).greaterThan(this.config.maxOrderDbusdc))
       return { status: "REJECTED", errorCode: "REAL_MAX_ORDER_EXCEEDED" };
     const result = await this.executor.execute({

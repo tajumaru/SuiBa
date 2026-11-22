@@ -48,7 +48,29 @@ export function createDeepBookTransactionBuilder(
   };
   return {
     async place(input: RealExecutionIntent) {
-      if (config.orderType === "MARKET")
+      if (config.orderType === "MARKET") {
+        const quantity = (input.intent as { quantity?: unknown } | null)?.quantity;
+        if (
+          typeof quantity !== "number" ||
+          !Number.isFinite(quantity) ||
+          quantity <= 0
+        )
+          throw Error("REAL_MARKET_INTENT_INVALID");
+        const tx = new Transaction();
+        tx.add(
+          extended.deepbook.deepBook.placeMarketOrder({
+            poolKey: config.poolKey,
+            balanceManagerKey: "PHASE1",
+            clientOrderId: input.clientOrderId,
+            quantity,
+            isBid: input.side === "BUY",
+            selfMatchingOption: SelfMatchingOptions.CANCEL_TAKER,
+            payWithDeep: true,
+          }),
+        );
+        return finish(tx);
+      }
+      if (config.orderType !== "IOC_LIMIT")
         throw Error("REAL_ORDER_TYPE_UNSUPPORTED");
       const order = limit(input.intent);
       const tx = new Transaction();
