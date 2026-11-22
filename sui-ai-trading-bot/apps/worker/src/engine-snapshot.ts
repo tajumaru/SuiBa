@@ -71,6 +71,7 @@ export interface SnapshotSources {
   mode: "PAPER" | "REAL";
   network: "testnet" | "mainnet";
   realBalances?: () => RealBalances | undefined;
+  realReconciliation?: () => { nonTerminalSubmissions: number };
   pair: TradingPair;
   db: BotDatabase;
   monitor: OperationMonitor;
@@ -105,9 +106,12 @@ export function buildSnapshot(
       values = snapshots.map((x) => x.equity),
       indicators = src.db.get<Indicators>("indicators") ?? null;
     const realBalances = src.mode === "REAL" ? src.realBalances?.() : undefined;
+    const realReconciliation =
+      src.mode === "REAL" ? src.realReconciliation?.() : undefined;
     return {
       network: src.network,
       ...(realBalances ? { realBalances } : {}),
+      ...(realReconciliation ? { realReconciliation } : {}),
       pair: src.pair,
       boss: readBoss(src.db, src.pair),
       bossHistory: readBossHistory(src.db, src.pair),

@@ -1,5 +1,35 @@
-import type { RealHistorySource, RealIdentity } from "./types.ts";
+import { createHash } from "node:crypto";
+import type {
+  RealHistoryEvent,
+  RealHistorySource,
+  RealIdentity,
+} from "./types.ts";
 import { RealTradeCapDatabase } from "./database.ts";
+
+const ledgerKey = (event: RealHistoryEvent) =>
+  JSON.stringify([event.chain, event.digest, event.eventSequence]);
+
+const eventHash = (event: RealHistoryEvent) =>
+  createHash("sha256").update(JSON.stringify(event)).digest("hex");
+
+function isAtOrBefore(event: RealHistoryEvent, applied: RealHistoryEvent) {
+  const checkpoint = BigInt(event.checkpoint) - BigInt(applied.checkpoint);
+  if (checkpoint !== 0n) return checkpoint < 0n;
+  if (event.eventSequence !== applied.eventSequence)
+    return event.eventSequence < applied.eventSequence;
+  return event.digest <= applied.digest;
+}
+
+function isReplay(events: RealHistoryEvent[], ledger: RealHistoryEvent[]) {
+  const last = events.at(-1);
+  if (!last || !ledger.some((applied) => isAtOrBefore(last, applied)))
+    return false;
+  const appliedByKey = new Map(ledger.map((event) => [ledgerKey(event), event]));
+  return events.every((event) => {
+    const applied = appliedByKey.get(ledgerKey(event));
+    return applied !== undefined && eventHash(event) === eventHash(applied);
+  });
+}
 
 export class RealReconciler {
   constructor(
@@ -9,13 +39,12 @@ export class RealReconciler {
   ) {}
 
   async reconcileAllPages() {
-    const stored = this.db.checkpoint();
-    let cursor = stored?.cursor ?? null;
-    let checkpoint = stored;
+    let cursor = this.db.checkpoint()?.cursor ?? null;
     let pages = 0;
     let events = 0;
     for (;;) {
       const page = await this.source.page(cursor);
+      const checkpoint = this.db.checkpoint();
       if (
         checkpoint &&
         page.checkpoint === checkpoint.checkpoint &&
@@ -28,24 +57,31 @@ export class RealReconciler {
         );
         throw Error("REAL_CHECKPOINT_HASH_MISMATCH");
       }
-      if (
+      const replay =
         checkpoint &&
-        BigInt(page.checkpoint) < BigInt(checkpoint.checkpoint)
-      ) {
-        this.db.latch(
-          this.identity,
-          "REAL_CHECKPOINT_REGRESSION",
-          `${checkpoint.checkpoint}:${page.checkpoint}`,
-        );
-        throw Error("REAL_CHECKPOINT_REGRESSION");
+        page.events.length > 0 &&
+        isReplay(page.events, this.db.ledgerEvents(this.identity));
+      if (!replay) {
+        if (
+          checkpoint &&
+          BigInt(page.checkpoint) < BigInt(checkpoint.checkpoint)
+        ) {
+          this.db.latch(
+            this.identity,
+            "REAL_CHECKPOINT_REGRESSION",
+            `${checkpoint.checkpoint}:${page.checkpoint}`,
+          );
+          throw Error("REAL_CHECKPOINT_REGRESSION");
+        }
+        const before = this.db.ledgerCount();
+        this.db.applyPage(this.identity, page.events, {
+          cursor: page.nextCursor,
+          checkpoint: page.checkpoint,
+          checkpointHash: page.checkpointHash,
+        });
+        events += this.db.ledgerCount() - before;
       }
-      this.db.applyPage(this.identity, page.events, {
-        cursor: page.nextCursor,
-        checkpoint: page.checkpoint,
-        checkpointHash: page.checkpointHash,
-      });
       pages++;
-      events += page.events.length;
       if (page.nextCursor === null) {
         for (const submission of this.db.nonTerminalSubmissions(
           this.identity,
@@ -64,11 +100,6 @@ export class RealReconciler {
       if (page.nextCursor === cursor)
         throw Error("REAL_RECONCILIATION_CURSOR_STALLED");
       cursor = page.nextCursor;
-      checkpoint = {
-        cursor,
-        checkpoint: page.checkpoint,
-        checkpointHash: page.checkpointHash,
-      };
     }
   }
 }

@@ -216,6 +216,7 @@ const server = createServer((req, res) => {
     ctx.inFlightRequests--;
   });
 });
+const stopRealReconciliation = realRuntime?.startReconciliation();
 server.listen(
   Number(process.env.PORT ?? 3100),
   process.env.HOST ?? "127.0.0.1",
@@ -230,6 +231,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
     ctx.stopping = true;
     ctx.engine.monitor.beginShutdown();
     ctx.scheduler.stop();
+    stopRealReconciliation?.();
     ctx.memwal?.stop();
     ctx.liquidation?.stop();
     const chartClosed = ctx.chartHistory.close();
