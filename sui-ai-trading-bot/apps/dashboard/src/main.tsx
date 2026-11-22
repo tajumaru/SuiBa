@@ -518,6 +518,7 @@ function App() {
                 <PriceTicker
                   pair={data.pair}
                   price={data.price}
+                  stopped={!data.runtime.running}
                   marketData={data.marketData}
                   now={now}
                   candlesByTimeframe={data.candlesByTimeframe}
