@@ -102,7 +102,7 @@ export class BotEngine {
     fxRateSource: () => FxRate | null = () => null,
     private readonly snapshotDisplay: Pick<
       SnapshotSources,
-      "network" | "realBalances" | "realReconciliation"
+      "network" | "realBalances" | "realReconciliation" | "realExecution"
     > = {
       network: "mainnet",
     },

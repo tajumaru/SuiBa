@@ -52,9 +52,11 @@ it("includes the network and exposes cached balances only in REAL snapshots", ()
     }, sui);
     const realBalances = vi.fn(() => parts.balances);
     const realReconciliation = vi.fn(() => ({ nonTerminalSubmissions: 2 }));
+    const realExecution = vi.fn(() => ({ orderType: "MARKET" as const }));
     const sources: SnapshotSources = {
       mode: "PAPER", network: "mainnet", pair: "SUI_USDC",
       db, monitor: engine.monitor, market, sui, realBalances, realReconciliation,
+      realExecution,
       chainInfo: () => null, btcInfo: () => null, bookImbalance: () => null,
       bookLevels: () => null, longTermDaily: () => null,
     };
@@ -62,12 +64,15 @@ it("includes the network and exposes cached balances only in REAL snapshots", ()
     expect(paper).toMatchObject({ mode: "PAPER", network: "mainnet" });
     expect(paper).not.toHaveProperty("realBalances");
     expect(paper).not.toHaveProperty("realReconciliation");
+    expect(paper).not.toHaveProperty("realExecution");
     expect(realReconciliation).not.toHaveBeenCalled();
+    expect(realExecution).not.toHaveBeenCalled();
     expect(realBalances).not.toHaveBeenCalled();
     const real = { ...sources, mode: "REAL", network: "testnet" } as const;
     expect(buildSnapshot(real, { light: true })).toMatchObject({
       mode: "REAL", network: "testnet", realBalances: parts.balances,
       realReconciliation: { nonTerminalSubmissions: 2 },
+      realExecution: { orderType: "MARKET" },
     });
     expect(buildSnapshot({ ...real, realBalances: () => undefined }))
       .not.toHaveProperty("realBalances");
