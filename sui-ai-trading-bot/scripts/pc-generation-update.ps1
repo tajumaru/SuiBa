@@ -159,7 +159,16 @@ if (!$oldProcess.WaitForExit(10000) -or @(Get-PortOwners).Count -ne 0) { throw $
 $stage = 'git pull'
 Write-Host ""
 $failure = 'git pull に失敗しました。'
-if ((Invoke-Native { git pull --ff-only}) -ne 0) { throw $failure}
+# 終了コードだけで合否を決めない。実績（2026-11-23）では pull 自体は
+# 成功して HEAD が最新に届いていたのに、終了コードが異常で失敗扱いに
+# なった。届くべきコミットと現在の HEAD の一致で判定する。
+[void](Invoke-Native { git fetch origin main })
+$expected = @(& git rev-parse origin/main 2>$null)
+$pullExit = Invoke-Native { git pull --ff-only }
+$actual = @(& git rev-parse HEAD 2>$null)
+$reached = $expected.Count -eq 1 -and $actual.Count -eq 1 -and $expected[0].Trim() -eq $actual[0].Trim()
+if ($pullExit -ne 0 -and !$reached) { throw $failure}
+if ($pullExit -ne 0) { Write-Host 'pull の終了コードは異常でしたが、最新のコミットに届いているため続行します。'}
 
 $stage = '.env の変更'
 Write-Host ""
