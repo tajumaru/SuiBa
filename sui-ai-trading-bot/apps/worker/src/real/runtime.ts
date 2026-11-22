@@ -182,7 +182,7 @@ export function createRealTradeCapRuntime(
   const reconciler = new RealReconciler(db, identity, history, async () => {
     const baseline = db.balanceBaseline(identity);
     if (!baseline) return false;
-    const snapshot = await reader.readBalances();
+    const snapshot = await reader.snapshot();
     return balanceEvidence(
       db.balanceLedger(identity),
       snapshot,
