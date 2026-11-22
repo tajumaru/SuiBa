@@ -312,9 +312,18 @@ export function StrategyPanel({
         : "判断根拠が古いため、状態を表示していません。";
   return (
     <>
+      {/* With no fresh telemetry every condition is unknown and the
+          verdict is not a judgement at all, so the whole flow is
+          hidden; the parameter groups below still carry information. */}
+      {conditions.metCount !== null && (
       <section>
         <h3>さくせん</h3>
         <div className="strategy-flow">
+          <ResultPanel
+            decision={data.decision}
+            conditions={conditions}
+            price={dec ? dec.price : data.price}
+          />
           <div className="strategy-rows">
             <CondRow
               name="EMA"
@@ -366,16 +375,9 @@ export function StrategyPanel({
               <small> ／ 上限 {number(conditions.volume.limit)}倍</small>
             </CondRow>
           </div>
-          <div className="strategy-arrow" aria-hidden="true">
-            →
-          </div>
-          <ResultPanel
-            decision={data.decision}
-            conditions={conditions}
-            price={dec ? dec.price : data.price}
-          />
         </div>
       </section>
+      )}
       <h3 className="strategy-params-title">戦略パラメータ</h3>
       <div className="strategy-groups">
         {STRATEGY_PARAM_GROUPS.map((group) => (
