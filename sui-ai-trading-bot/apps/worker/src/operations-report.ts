@@ -273,6 +273,41 @@ export function computeReport(
   };
 }
 
+/**
+ * Buy-signal funnel over the trailing 24 hours, from the recorded
+ * decision evidence: how many evaluations ran, how often each buy
+ * condition held on its own, how many decisions missed by exactly one
+ * condition, and how many became BUY signals. Read-only diagnostics —
+ * it answers "the market is quiet" vs "the conditions keep failing"
+ * without touching any trading path.
+ */
+export function computeSignalFunnel(db: BotDatabase, now: number) {
+  const rows = db.range<TradingDecision>(
+    "strategy_decisions",
+    now - 24 * 60 * 60 * 1000,
+    now,
+  );
+  let evaluations = 0,
+    buySignals = 0,
+    nearMiss = 0;
+  const conditionPass = { ema: 0, rsi: 0, macd: 0 };
+  for (const d of rows) {
+    const cond =
+      d.evidence?.version === 1 ? d.evidence.conditions : undefined;
+    if (!cond) continue;
+    evaluations++;
+    const ema = cond.emaUp === true || cond.emaGapShrinking === true,
+      rsi = cond.rsiRecovery === true,
+      macd = cond.histogramImproving === true;
+    if (ema) conditionPass.ema++;
+    if (rsi) conditionPass.rsi++;
+    if (macd) conditionPass.macd++;
+    if ((ema ? 1 : 0) + (rsi ? 1 : 0) + (macd ? 1 : 0) === 2) nearMiss++;
+    if (d.action === "BUY") buySignals++;
+  }
+  return { windowHours: 24, evaluations, buySignals, nearMiss, conditionPass };
+}
+
   /** Optional display data only. SQL faults are latched by BotDatabase.sql;
    * returning null here never clears that latch or grants order permission. */
 export function readDisplayDecision(

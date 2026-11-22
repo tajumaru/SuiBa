@@ -8,6 +8,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 export const deploymentMode = (mode = process.env.MODE) =>
   mode === "REAL_TRADECAP" || mode === "REAL_READONLY" ? mode : "PAPER";
 import { DashboardService, acceptsGzip } from "./dashboard-feed.ts";
+import { computeSignalFunnel } from "./operations-report.ts";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
 import { ValidationRecorder } from "./validation.ts";
 import { sessionMutationAllowed } from "./browser-session.ts";
@@ -375,6 +376,7 @@ export function createRequestHandler(ctx: WorkerContext) {
       if (req.method === "GET" && url.pathname === "/api/operations") {
         send(200, {
           ...timeAggregation(() => ctx.engine.monitor.snapshot()),
+          signalFunnel: computeSignalFunnel(ctx.db, Date.now()),
           // The effective execution environment, for the operations
           // view and the diagnostic export: a configuration mistake
           // (wrong pair, provider or paper-check token) should be
