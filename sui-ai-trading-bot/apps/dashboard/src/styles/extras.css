@@ -962,6 +962,11 @@
 .pm-down {
   color: #ff7d9c;
 }
+.pm-empty-warning {
+  color: var(--pink);
+  font-size: 12.5px;
+  margin: 8px 0 0;
+}
 @media (prefers-reduced-motion: reduce) {
   .pm-usdc,
   .pm-base {

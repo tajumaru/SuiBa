@@ -29,6 +29,15 @@ export function RealPortfolioMix({
     );
   }
 
+  if (cash === 0 && sui === 0 && deep === 0) {
+    return (
+      <section className="portfolio-mix" aria-label="資産の中身">
+        <span className="pm-title">資産の中身</span>
+        <p className="pm-empty-warning">残高不足：資産がすべて 0 です</p>
+      </section>
+    );
+  }
+
   const suiValue = price !== null && price > 0 ? sui * price : NaN;
   const total = cash + suiValue;
   const hasTotal = Number.isFinite(total);
