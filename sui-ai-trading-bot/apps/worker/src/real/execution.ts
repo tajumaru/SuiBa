@@ -89,6 +89,9 @@ export class RealTradeCapExecutor {
     } catch {
       return { status: "REJECTED", errorCode: "REAL_SIGNING_HALTED" };
     }
+    const side = operation === "PLACE" ? (intent as RealExecutionIntent).side : undefined;
+    if (side === "BUY" && this.db.hasUnreflectedBuy(this.identity))
+      return { status: "REJECTED", errorCode: "REAL_REFLECTION_PENDING" };
     const built =
       operation === "PLACE"
         ? await this.builder.place(intent as RealExecutionIntent)
@@ -102,6 +105,7 @@ export class RealTradeCapExecutor {
       identity: this.identity,
       intent: intent.intent,
       operation,
+      side,
       targetOrderId:
         "targetOrderId" in intent ? intent.targetOrderId : undefined,
       generation,

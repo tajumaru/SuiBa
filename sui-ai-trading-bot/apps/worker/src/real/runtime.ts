@@ -1,3 +1,4 @@
+import { balanceEvidence } from "./balance-evidence.ts";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { GrpcWebFetchTransport, SuiGrpcClient } from "@mysten/sui/grpc";
 import { realConfigFromEnv } from "./config.ts";
@@ -178,7 +179,17 @@ export function createRealTradeCapRuntime(
     identity,
     db.checkpoint(),
   );
-  const reconciler = new RealReconciler(db, identity, history);
+  const reconciler = new RealReconciler(db, identity, history, async () => {
+    const baseline = db.balanceBaseline(identity);
+    if (!baseline) return false;
+    const snapshot = await reader.snapshot();
+    return balanceEvidence(
+      db.balanceLedger(identity),
+      snapshot,
+      baseline,
+      db.appliedTradeFeeCount(identity),
+    ).explained;
+  });
   return {
     executionAdapter,
     startReconciliation: () => startRealTradeCapReconciliation(reconciler),

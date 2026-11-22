@@ -20,7 +20,9 @@ export type RealEventKind =
   | "ORDER_PLACED"
   | "ORDER_FILLED"
   | "ORDER_CANCELLED"
-  | "ASSET_MOVED";
+  | "ASSET_MOVED"
+  | "TRADE_FILL"
+  | "TRADE_FEE";
 
 export interface RealHistoryEvent {
   chain: "sui:testnet";

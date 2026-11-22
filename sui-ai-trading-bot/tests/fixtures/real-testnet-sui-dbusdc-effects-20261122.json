@@ -1,0 +1,82 @@
+[
+  {
+    "digest": "FbdNQuw93woqLyjEYCAtbDUu9W7F9BrrhLhv2BodFx1m",
+    "effects": {
+      "checkpoint": {
+        "sequenceNumber": 409445245,
+        "digest": "CB46jnQiEtVwhS47Y2EKyg7hFhn6DDhgJKmtDqHaYqNF"
+      },
+      "gasEffects": {
+        "gasSummary": {
+          "computationCost": 1000000,
+          "storageCost": 78234400,
+          "storageRebate": 78226577
+        }
+      }
+    }
+  },
+  {
+    "digest": "3mLS8j9tNUeY3VuobwWJuvGgdpjtwDzZQHfQrLYoyH1u",
+    "effects": {
+      "checkpoint": {
+        "sequenceNumber": 409445493,
+        "digest": "GXin6aymtJrPbeZgpuuxMfFvLMez87iHTqeQ58QwNLsN"
+      },
+      "gasEffects": {
+        "gasSummary": {
+          "computationCost": 1000000,
+          "storageCost": 78234400,
+          "storageRebate": 78226577
+        }
+      }
+    }
+  },
+  {
+    "digest": "DSdeCfFgz9MVyt9eE7121R8taZtRQgkZY3g4SAsfmLJK",
+    "effects": {
+      "checkpoint": {
+        "sequenceNumber": 409445752,
+        "digest": "J33uGAWZY2uzpnzJvbbPZ5fKTPShdMkR1ciHMgiRn3Uj"
+      },
+      "gasEffects": {
+        "gasSummary": {
+          "computationCost": 1000000,
+          "storageCost": 78234400,
+          "storageRebate": 78226577
+        }
+      }
+    }
+  },
+  {
+    "digest": "8sYPiyARrfYoQVYFmuy6KcmaTvUeFUaMhj6niYLM1cnd",
+    "effects": {
+      "checkpoint": {
+        "sequenceNumber": 409446014,
+        "digest": "CHpVqXVX6NWfHMxXCGm55qhnMbhS4ppjhJqMSgMeKTHM"
+      },
+      "gasEffects": {
+        "gasSummary": {
+          "computationCost": 1000000,
+          "storageCost": 78234400,
+          "storageRebate": 78226577
+        }
+      }
+    }
+  },
+  {
+    "digest": "3cyLfUAcPgHW64fscMZTcybCETcC2BfAKUxVvxyYdDnQ",
+    "effects": {
+      "checkpoint": {
+        "sequenceNumber": 409446265,
+        "digest": "6QEXMez9dquvGg8Hwn1FwPCZiiBD4o8AUmc8koigQCrC"
+      },
+      "gasEffects": {
+        "gasSummary": {
+          "computationCost": 1000000,
+          "storageCost": 80643600,
+          "storageRebate": 81631036
+        }
+      }
+    }
+  }
+]

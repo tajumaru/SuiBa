@@ -1,3 +1,4 @@
+import { RealReconciler } from "../apps/worker/src/real/reconciler.ts";
 import { OrderType, SelfMatchingOptions } from "@mysten/deepbook-v3";
 import { Transaction } from "@mysten/sui/transactions";
 import type { RealTradeCapConfig } from "../packages/shared/src/index.ts";
@@ -130,6 +131,111 @@ const adapterFixtures = (
 };
 
 describe("REAL TradeCap execution and stop/resume gate", () => {
+  it("blocks another buy until its own fill is applied and lets a sell through", async () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    open(db);
+    const f = fixtures();
+    const executor = new RealTradeCapExecutor(
+      db,
+      identity,
+      f.builder,
+      f.signer,
+      f.sender,
+    );
+    expect(await executor.execute(intent)).toMatchObject({
+      status: "SUCCEEDED",
+    });
+    const next = { ...intent, clientOrderId: "2" };
+    expect(await executor.execute(next)).toEqual({
+      status: "REJECTED",
+      errorCode: "REAL_REFLECTION_PENDING",
+    });
+    f.builder.place.mockResolvedValueOnce({
+      digest: "sell",
+      bytes: new Uint8Array([2]),
+    });
+    f.sender.send.mockResolvedValueOnce({
+      digest: "sell",
+      success: true,
+      checkpoint: "43",
+      checkpointHash: "h43",
+      events: [],
+    });
+    expect(await executor.execute({ ...next, side: "SELL" })).toMatchObject({
+      status: "SUCCEEDED",
+    });
+
+    const reconciler = new RealReconciler(db, identity, {
+      page: async () => ({
+        checkpoint: "43",
+        checkpointHash: "h43",
+        nextCursor: null,
+        events: [
+          {
+            chain: "sui:testnet",
+            checkpoint: "43",
+            digest: "digest-1",
+            eventSequence: "trade:1:SUI",
+            kind: "TRADE_FILL",
+            asset: "SUI",
+            availableAtomicDelta: "1",
+            clientOrderId: intent.clientOrderId,
+            identity,
+            raw: {},
+          },
+        ],
+      }),
+    });
+    await reconciler.reconcileAllPages();
+    f.builder.place.mockResolvedValueOnce({
+      digest: "buy-2",
+      bytes: new Uint8Array([3]),
+    });
+    f.sender.send.mockResolvedValueOnce({
+      digest: "buy-2",
+      success: true,
+      checkpoint: "43",
+      checkpointHash: "h43",
+      events: [],
+    });
+    expect(await executor.execute(next)).toMatchObject({ status: "SUCCEEDED" });
+  });
+
+  it("releases an unfilled buy only after the final balance check passes", async () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    db.persistBeforeSend({
+      digest: "unfilled",
+      identity,
+      txBytes: new Uint8Array(),
+      internalOrderId: "unfilled",
+      clientOrderId: "1",
+      intent: {},
+      side: "BUY",
+    });
+    db.markSubmission("unfilled", "SUCCEEDED", 1);
+    const balanceCheck = vi
+      .fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    const reconciler = new RealReconciler(
+      db,
+      identity,
+      {
+        page: async () => ({
+          checkpoint: "43",
+          checkpointHash: "h43",
+          events: [],
+          nextCursor: null,
+        }),
+      },
+      balanceCheck,
+    );
+    await reconciler.reconcileAllPages();
+    expect(db.hasUnreflectedBuy(identity)).toBe(true);
+    await reconciler.reconcileAllPages();
+    expect(db.hasUnreflectedBuy(identity)).toBe(false);
+  });
+
   it("does not sign or send when pre-send persistence fails", async () => {
     const db = new RealTradeCapDatabase(":memory:");
     open(db);
