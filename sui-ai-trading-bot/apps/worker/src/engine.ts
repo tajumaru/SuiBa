@@ -859,18 +859,24 @@ export class BotEngine {
       return;
     }
     if (this.executionAdapter) {
-      const result = await this.executionAdapter.execute({
-        orderId: id,
-        candidateId: audit.id,
-        side,
-        quote: q,
-        portfolio: p,
-        settings: executionSettings,
-        profitGuard: profit,
-        markPrice: price,
-        now: executionNow,
-        candleTimestamp: last.timestamp,
-      });
+      const finishSubmit = this.perfTrace?.startRealSubmit();
+      let result;
+      try {
+        result = await this.executionAdapter.execute({
+          orderId: id,
+          candidateId: audit.id,
+          side,
+          quote: q,
+          portfolio: p,
+          settings: executionSettings,
+          profitGuard: profit,
+          markPrice: price,
+          now: executionNow,
+          candleTimestamp: last.timestamp,
+        });
+      } finally {
+        finishSubmit?.(result?.status ?? "ERROR");
+      }
       if (result.status === "REJECTED") {
         this.monitor.finishCandidate({
           ...audit,
