@@ -21,11 +21,28 @@ it("shows an icon for every party member", () => {
   expect(html).toContain("まもりの盾");
   expect(html).toContain("かげの声");
   expect(html).toContain("ホーリー");
-  expect(html).toMatch(/けんじゃ<\/span><strong>Lv\.999<\/strong><progress max="1" value="1" aria-label="けんじゃの経験値"><\/progress><small>毎朝の振り返り担当<\/small>/);
+  expect(html).toMatch(/けんじゃ<span class="party-sage-title">大賢者<\/span><\/span><strong>Lv\.999<\/strong><progress max="1" value="1" aria-label="けんじゃの経験値"><\/progress><small>毎朝の振り返り担当<\/small>/);
+  // Without sageWork the verification card stays hidden.
+  expect(html).not.toContain("party-sage-work");
   expect(html).toContain("Lv.5");
   // The shadow's cumulative count lives on its party row
   // (owner, 2026-11-22): the overview keeps only today's line.
   expect(html).toContain("累計 555件 ・ 次のレベルまで あと50件");
+});
+
+it("shows the sage's live verification card when sageWork is present", () => {
+  const sageWork = {
+    decisions30d: 2752,
+    verification: { title: "下降・横ばいでは買わない", target: 30, down: 3, range: 20 },
+  } as Parameters<typeof Party>[0]["sageWork"];
+  const html = renderToStaticMarkup(createElement(Party, { party, sageWork }));
+  expect(html).toContain("直近30日の判断 2,752件");
+  expect(html).toContain("検証中");
+  expect(html).toContain("下降・横ばいでは買わない");
+  expect(html).toContain("買い合図 3 / 30 件");
+  expect(html).toContain("買い合図 20 / 30 件");
+  expect(html).toContain("67%");
+  expect(html).toContain("overview-party-sage");
 });
 
 it("renders nothing without party data", () => {

@@ -115,6 +115,51 @@ it("baselines the healer and sage and retains the recovery count", () => {
   }
 });
 
+it("counts the sage's decisions and full buy signals per regime over 30 days", () => {
+  const db = new BotDatabase(":memory:");
+  const now = 1_800_000_000_000;
+  const day = 24 * 60 * 60 * 1000;
+  const full = {
+    emaUp: true,
+    rsiRecovery: true,
+    histogramImproving: true,
+    latestVolumePositive: true,
+    previousVolumePositive: true,
+    volumeChangeExceeded: false,
+  };
+  const seed = (
+    id: string,
+    conditions: Record<string, boolean>,
+    regime: string,
+    at: number,
+  ) =>
+    db.append(
+      "strategy_decisions",
+      id,
+      { action: "WAIT", evidence: { conditions, regime } },
+      at,
+    );
+  try {
+    seed("a", full, "down", now - day);
+    seed("b", full, "range", now - 2 * day);
+    seed("c", full, "range", now - 3 * day);
+    seed("d", full, "up", now - day);
+    // Volume gate failed -> not a full signal.
+    seed("e", { ...full, latestVolumePositive: false }, "down", now - day);
+    // Core condition missing -> not a full signal.
+    seed("f", { ...full, rsiRecovery: false }, "range", now - day);
+    // Outside the 30-day window -> excluded everywhere.
+    seed("g", full, "down", now - 31 * day);
+    expect(db.sageWorkCounts(now)).toEqual({
+      decisions: 6,
+      downSignals: 1,
+      rangeSignals: 2,
+    });
+  } finally {
+    db.close();
+  }
+});
+
 it("uses zero recoveries when the safety state is absent or invalid", () => {
   const dir = mkdtempSync(join(tmpdir(), "suiba-party-"));
   const path = join(dir, "bot.sqlite");

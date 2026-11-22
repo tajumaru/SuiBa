@@ -106,6 +106,7 @@ export function StrategyTab({
         <Party
           party={data.party}
           bossHistory={data.bossHistory}
+          sageWork={data.sageWork}
           toggles={{
             profitGuardEnabled: data.settings.profitGuardEnabled,
             shadowEnabled: data.settings.shadowEnabled,

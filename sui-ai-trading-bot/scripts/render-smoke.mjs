@@ -131,6 +131,10 @@ try {
     healer: { count: 21, level: 5, remaining: 19, progress: 1 / 20 },
     sage: { count: 0, level: 999, remaining: null, progress: 1 },
   };
+  fixture.state.sageWork = {
+    decisions30d: 2752,
+    verification: { title: "下降・横ばいでは買わない", target: 30, down: 3, range: 20 },
+  };
   fixture.state.chain = {
     epoch: 1024,
     checkpoint: 182394551,
@@ -191,8 +195,9 @@ try {
       .evaluate((el) => el.click());
     const party = page.getByRole("region", { name: "パーティ" });
     await party.waitFor();
-    if ((await party.getByRole("progressbar").count()) !== 6 ||
+    if ((await party.getByRole("progressbar").count()) !== 8 ||
         !(await party.getByText("毎朝の振り返り担当").isVisible()) ||
+        !(await party.getByText("買い合図 20 / 30 件").isVisible()) ||
         !(await party.getByText("次のレベルまで あと13件").isVisible()) ||
         !(await party.evaluate((section) => section.scrollWidth <= section.clientWidth)))
       failures.push(`${width}px: party rows, progress bars or layout missing`);
