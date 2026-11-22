@@ -108,6 +108,21 @@ class ShapeTests(unittest.TestCase):
         self.assertIn('WATCHDOG_RUN_MISMATCH', combine(status, {**watch, 'run_id': 'b'*32}, 2000)['reasons'])
         self.assertIn('STATUS_INCONSISTENT', combine(status, {'at': 2000, 'run_id': None, 'verdict': 'not_started', 'reasons': [], 'shadow': status['shadow']}, 2000)['reasons'])
 
+    def test_different_run_record_is_checked_from_the_run_start(self):
+        status, watch = healthy()
+        status['run']['started'] = 1998000
+        watch['run_id'] = 'b'*32
+        for at, reasons in (
+            (1099, ['WATCHDOG_STALE']),
+            (1997, []),
+            (1998, ['WATCHDOG_RUN_MISMATCH']),
+            (1999, ['WATCHDOG_RUN_MISMATCH']),
+        ):
+            with self.subTest(at=at):
+                result = combine(status, {**watch, 'at': at}, 2000)
+                self.assertEqual(result['reasons'], reasons)
+                self.assertEqual(result['verdict'], 'attention' if reasons else 'ok')
+
     def test_live_status_can_raise_attention_even_if_last_watchdog_was_normal(self):
         status, watch = healthy()
         status['worker'] = {'reachable': False, 'reason': 'WORKER_UNREACHABLE'}

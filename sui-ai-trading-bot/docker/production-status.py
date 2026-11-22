@@ -168,7 +168,8 @@ def combine(prod, now, prod_read=True):
             result['watchdog_at'] = watch['at']
         if not -60 <= now-watch['at'] <= CONTRACT['watchdog_max_age']:
             reasons.add('WATCHDOG_STALE')
-        if watch['run_id'] != result['run_id']: reasons.add('WATCHDOG_RUN_MISMATCH')
+        if watch['run_id'] != result['run_id'] and (run is None or watch['at'] * 1000 >= run['started']):
+            reasons.add('WATCHDOG_RUN_MISMATCH')
         if watch['verdict'] == 'not_started' and run is not None: reasons.add('STATUS_INCONSISTENT')
         reasons.update(watch['reasons'])
     if prod.get('failure') is not None:
