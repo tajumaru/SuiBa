@@ -154,26 +154,23 @@ describe("strategy panel: slim condition cards", () => {
     expect(plain).not.toContain("理由：");
   });
 
-  it("marks every card 未取得 when there is no decision evidence", () => {
+  it("renders no decision flow when there is no decision evidence", () => {
     const html = render(data(null), null);
-    // Three condition cards plus the volume bar.
-    expect(html.match(/data-state="unknown"/g)).toHaveLength(4);
-    expect(html).toContain("判断根拠データがまだありません");
-    expect(html).not.toContain("買い条件 3つ中");
-    expect(html).toContain(
-      "判定はまだありません。市場データの取得をお待ちください。",
-    );
+    expect(html).not.toContain('data-state="unknown"');
+    expect(html).not.toContain("判断根拠データがまだありません");
+    expect(html).not.toContain("いまの判定");
+    expect(html).toContain("戦略パラメータ");
   });
 
-  it("does not colour stale evidence as if it were current", () => {
+  it("renders no decision flow from stale evidence", () => {
     const stale = telemetry({
       evaluatedAt: Date.now() - 400_000,
       candleTimestamp: Date.now() - 400_000,
     });
     const html = render(data(waitDecision), stale);
-    // Three condition cards plus the volume bar.
-    expect(html.match(/data-state="unknown"/g)).toHaveLength(4);
-    expect(html).toContain("判断根拠が古いため、状態を表示していません");
+    expect(html).not.toContain('data-state="unknown"');
+    expect(html).not.toContain("判断根拠が古いため、状態を表示していません");
+    expect(html).not.toContain("いまの判定");
   });
 
   it("flags a volume exceedance with the strategy's own limit", () => {
@@ -349,9 +346,30 @@ describe("strategy panel: slim condition cards", () => {
     expect(html).not.toContain("前回より上向いていれば成立");
     const rows = html.slice(
       html.indexOf("strategy-rows"),
-      html.indexOf("strategy-arrow"),
+      html.indexOf("戦略パラメータ"),
     );
     expect(rows).not.toContain("EMA20");
     expect(rows).not.toContain("ヒストグラム");
+    // One panel: the verdict comes first, the conditions below it.
+    expect(html.indexOf("strategy-result")).toBeLessThan(
+      html.indexOf("strategy-rows"),
+    );
+    expect(html).not.toContain("strategy-arrow");
+  });
+});
+
+describe("strategy panel: nothing to judge yet", () => {
+  it("hides the whole decision flow when telemetry is missing", () => {
+    const html = render(data(waitDecision), null);
+    expect(html).not.toContain("いまの判定");
+    expect(html).not.toContain("未取得");
+    expect(html).not.toContain("判断根拠データがまだありません。");
+    expect(html).toContain("戦略パラメータ");
+  });
+  it("hides the flow when telemetry is stale", () => {
+    const stale = telemetry({ evaluatedAt: Date.now() - 3_600_000 });
+    const html = render(data(waitDecision), stale);
+    expect(html).not.toContain("いまの判定");
+    expect(html).toContain("戦略パラメータ");
   });
 });

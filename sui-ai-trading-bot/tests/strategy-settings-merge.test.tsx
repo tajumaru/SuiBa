@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { readAppShell } from "./helpers/source";
 import { defaults } from "../packages/shared/src/index.ts";
 import type { BotEngine } from "../apps/worker/src/engine.ts";
+import type { DecisionTelemetry } from "../apps/worker/src/operations.ts";
 import { StrategyPanel } from "../apps/dashboard/src/StrategyPanel.tsx";
 import { SettingsPage } from "../apps/dashboard/src/SettingsPage.tsx";
 import {
@@ -69,9 +70,45 @@ describe("merged strategy tab content", () => {
     price: 2.412,
     runtime: { running: false, emergency: true, error: null },
   } as unknown as State;
+  // Fresh telemetry: with no decision evidence the strategy panel
+  // hides its diagram entirely (owner's rule), which is covered by
+  // strategy-panel.test.tsx; this composition test needs the diagram.
+  const now = Date.now();
+  const telemetry = {
+    evaluatedAt: now - 60_000,
+    candleTimestamp: now - 300_000,
+    action: "WAIT",
+    reason: "条件未成立",
+    selectedRule: "NO_SIGNAL",
+    sellPurpose: null,
+    price: 2.412,
+    entryPrice: null,
+    ema20: 2.438,
+    ema50: 2.421,
+    rsi: 41,
+    previousRsi: 28,
+    histogram: -0.0012,
+    previousHistogram: -0.0015,
+    atr: 0.02,
+    volumeChange: 0.6,
+    oversold: 30,
+    overbought: 70,
+    stopLossPct: 0.02,
+    takeProfitPct: 0.04,
+    rsiLinePrice: null,
+    conditions: {
+      emaUp: true,
+      emaGapShrinking: false,
+      rsiRecovery: true,
+      histogramImproving: false,
+      hasPosition: false,
+      stopLoss: false,
+      takeProfit: false,
+    },
+  } as unknown as DecisionTelemetry;
   const html = renderToStaticMarkup(
     <>
-      <StrategyPanel data={data} telemetry={null} />
+      <StrategyPanel data={data} telemetry={telemetry} />
       <SettingsPage
         data={data}
         api={vi.fn()}
