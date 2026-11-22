@@ -59,10 +59,12 @@ export function Party({
   party,
   bossHistory = [],
   toggles,
+  sageWork,
 }: {
   party: State["party"] | undefined;
   bossHistory?: State["bossHistory"];
   toggles?: PartyToggles;
+  sageWork?: State["sageWork"];
 }) {
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -111,7 +113,7 @@ export function Party({
           const inner = (
             <>
               <img className="overview-party-icon" src={partyIcons[member]} alt="" />
-              <span>{member === "forecast" && <small>主人公の技 </small>}{partyNames[member]}</span>
+              <span>{member === "forecast" && <small>主人公の技 </small>}{partyNames[member]}{member === "sage" && <span className="party-sage-title">大賢者</span>}</span>
               <strong>{on === false ? "OFF" : `Lv.${entry.level}`}</strong>
               <progress max={1} value={entry.progress} aria-label={`${partyNames[member]}の経験値`} />
               <small>
@@ -123,7 +125,9 @@ export function Party({
                       ? "OFF（タップでON）"
                       : entry.remaining === null
                         ? member === "sage"
-                          ? "毎朝の振り返り担当"
+                          ? sageWork
+                            ? `毎朝の振り返り担当 ・ 直近30日の判断 ${sageWork.decisions30d.toLocaleString("ja-JP")}件`
+                            : "毎朝の振り返り担当"
                           : member === "shadow" && entry.count != null
                             ? `累計 ${entry.count.toLocaleString("ja-JP")}件 ・ 最大レベル`
                             : "最大レベル"
@@ -131,12 +135,58 @@ export function Party({
                           ? `累計 ${entry.count.toLocaleString("ja-JP")}件 ・ 次のレベルまで あと${entry.remaining.toLocaleString("ja-JP")}件`
                           : `次のレベルまで あと${entry.remaining.toLocaleString("ja-JP")}件`}
               </small>
+              {member === "sage" && sageWork && (
+                <div className="party-sage-work">
+                  <span className="party-sage-badge">
+                    <span className="party-sage-dot" />
+                    検証中
+                  </span>
+                  <p className="party-sage-work-title">{sageWork.verification.title}</p>
+                  <div className="party-sage-chips">
+                    {(
+                      [
+                        { label: "下降", count: sageWork.verification.down },
+                        { label: "横ばい", count: sageWork.verification.range },
+                      ] as const
+                    ).map((chip) => (
+                      <div className="party-sage-chip" key={chip.label}>
+                        <div className="party-sage-chip-head">
+                          <span>{chip.label}</span>
+                          <span className="party-sage-pct">
+                            {Math.min(
+                              100,
+                              Math.round(
+                                (chip.count / sageWork.verification.target) * 100,
+                              ),
+                            )}
+                            %
+                          </span>
+                        </div>
+                        <progress
+                          max={sageWork.verification.target}
+                          value={Math.min(chip.count, sageWork.verification.target)}
+                          aria-label={`${chip.label}の買い合図の検証進捗`}
+                        />
+                        <span className="party-sage-chip-count">
+                          買い合図 {chip.count} / {sageWork.verification.target} 件
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           );
           return (
             <li
               key={member}
-              className={member === "forecast" ? "overview-party-skill" : undefined}
+              className={
+                member === "forecast"
+                  ? "overview-party-skill"
+                  : member === "sage"
+                    ? "overview-party-sage"
+                    : undefined
+              }
               data-off={on === false || undefined}
             >
               {key && toggles ? (

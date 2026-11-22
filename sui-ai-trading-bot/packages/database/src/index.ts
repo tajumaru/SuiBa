@@ -1044,6 +1044,46 @@ export class BotDatabase {
     ).all() as PartyRecord[];
   }
 
+  /**
+   * The sage's live workload for the party panel: how many decisions
+   * the daily review has to chew on (trailing 30 days), and how many
+   * full buy signals (the live rule: core conditions plus the volume
+   * gate, same definition as docker/run-review.py's pred_base) fired
+   * in the down / range regimes — the sample size of the accepted
+   * 2026-11-23 verification "do not buy in down / range regimes".
+   * The regime is the decision's own evidence tag.
+   */
+  sageWorkCounts(now: number) {
+    const since = now - 30 * 24 * 60 * 60 * 1000;
+    const fullSignal = `
+      json_extract(json, '$.evidence.conditions.emaUp') = 1
+      AND json_extract(json, '$.evidence.conditions.rsiRecovery') = 1
+      AND json_extract(json, '$.evidence.conditions.histogramImproving') = 1
+      AND json_extract(json, '$.evidence.conditions.latestVolumePositive') = 1
+      AND json_extract(json, '$.evidence.conditions.previousVolumePositive') = 1
+      AND COALESCE(json_extract(json, '$.evidence.conditions.volumeChangeExceeded'), 0) = 0`;
+    const row = this.prepare(
+      `SELECT
+         COUNT(*) AS decisions,
+         COALESCE(SUM(CASE WHEN ${fullSignal}
+           AND json_extract(json, '$.evidence.regime') = 'down'
+           THEN 1 ELSE 0 END), 0) AS downSignals,
+         COALESCE(SUM(CASE WHEN ${fullSignal}
+           AND json_extract(json, '$.evidence.regime') = 'range'
+           THEN 1 ELSE 0 END), 0) AS rangeSignals
+       FROM strategy_decisions WHERE timestamp >= ?`,
+    ).get(since) as {
+      decisions: number;
+      downSignals: number;
+      rangeSignals: number;
+    };
+    return {
+      decisions: Number(row.decisions),
+      downSignals: Number(row.downSignals),
+      rangeSignals: Number(row.rangeSignals),
+    };
+  }
+
   refreshParty(forecastCount: number, shadowVersion: string) {
     return this.transaction(() => {
       const storedCounts = this.prepare(

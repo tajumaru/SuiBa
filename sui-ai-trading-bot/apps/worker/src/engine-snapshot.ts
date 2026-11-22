@@ -132,6 +132,18 @@ export function buildSnapshot(
           ReturnType<typeof partyLevel> & { count?: number }
         >
       >,
+      sageWork: (() => {
+        const counts = src.db.sageWorkCounts(Date.now());
+        return {
+          decisions30d: counts.decisions,
+          verification: {
+            title: "下降・横ばいでは買わない",
+            target: 30,
+            down: counts.downSignals,
+            range: counts.rangeSignals,
+          },
+        };
+      })(),
       forecast: readForecast(src.db, src.pair),
       forecastError: src.db.get("forecast_error") ?? null,
       chain: src.chainInfo(),
