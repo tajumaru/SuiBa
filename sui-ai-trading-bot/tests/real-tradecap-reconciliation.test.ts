@@ -154,6 +154,126 @@ describe("REAL TradeCap read-only reconciliation", () => {
     db.close();
   });
 
+  it("replays two applied pages without latching and still resolves an UNKNOWN submission", async () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    try {
+      const first = { ...event("TX_EFFECTS", "1"), checkpoint: "41" };
+      const second = event("TX_EFFECTS", "2");
+      const reconciler = new RealReconciler(db, id(), {
+        ...source([
+          { events: [first], nextCursor: "1", checkpoint: "41", checkpointHash: "h41" },
+          { events: [second], nextCursor: null, checkpoint: "42", checkpointHash: "h42" },
+        ]),
+        submissionStatus: async () => "SUCCEEDED" as const,
+      });
+      await expect(reconciler.reconcileAllPages()).resolves.toMatchObject({
+        pages: 2, events: 2,
+      });
+      db.persistBeforeSend({
+        digest: "pending",
+        txBytes: new Uint8Array([1]),
+        internalOrderId: "o1",
+        clientOrderId: "1",
+        identity: id(),
+        intent: {},
+      });
+      db.markSubmission("pending", "UNKNOWN");
+      const applyPage = vi.spyOn(db, "applyPage");
+      await expect(reconciler.reconcileAllPages()).resolves.toMatchObject({
+        pages: 2, events: 0,
+      });
+      expect(applyPage).not.toHaveBeenCalled();
+      expect(db.hasLatch(id())).toBe(false);
+      expect(db.ledgerCount()).toBe(2);
+      expect(db.nonTerminalSubmissions(id())).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it.each(["missing", "changed"])(
+    "latches an older page with a %s ledger event even when its last event matches",
+    async (caseName) => {
+      const db = new RealTradeCapDatabase(":memory:");
+      try {
+        const first = { ...event("TX_EFFECTS", "1"), checkpoint: "41" };
+        const last = { ...event("TX_EFFECTS", "2"), checkpoint: "41" };
+        const applied = caseName === "missing"
+          ? [last]
+          : [{ ...first, raw: { changed: true } }, last];
+        db.applyPage(id(), applied, {
+          cursor: null, checkpoint: "42", checkpointHash: "h42",
+        });
+        const reconciler = new RealReconciler(db, id(), source([{
+          events: [first, last],
+          nextCursor: null,
+          checkpoint: "41",
+          checkpointHash: "h41",
+        }]));
+        await expect(reconciler.reconcileAllPages()).rejects.toThrow(
+          "REAL_CHECKPOINT_REGRESSION",
+        );
+        expect(db.latchInfo(id(), "REAL_CHECKPOINT_REGRESSION")).toBeTruthy();
+        expect(db.ledgerEvents(id())).toEqual(applied);
+      } finally {
+        db.close();
+      }
+    },
+  );
+
+  it("applies only new ledger entries and balance deltas on an overlapping page", async () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    try {
+      const existing = event("ORDER_FILLED", "1");
+      const next = { ...event("ORDER_FILLED", "2"), checkpoint: "43" };
+      db.applyPage(id(), [existing], {
+        cursor: null, checkpoint: "42", checkpointHash: "h42",
+      });
+      const reconciler = new RealReconciler(db, id(), source([{
+        events: [existing, next],
+        nextCursor: null,
+        checkpoint: "43",
+        checkpointHash: "h43",
+      }]));
+      await expect(reconciler.reconcileAllPages()).resolves.toMatchObject({
+        pages: 1, events: 1,
+      });
+      expect(db.ledgerEvents(id())).toEqual([existing, next]);
+      expect(db.balanceLedger(id())).toMatchObject([
+        { asset: "SUI", availableAtomic: "20", settledUnclaimedAtomic: "6" },
+      ]);
+      expect(db.checkpoint()?.checkpoint).toBe("43");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("checks the fresh checkpoint hash after fetching, even for identical ledger events", async () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    try {
+      const applied = event("TX_EFFECTS", "1");
+      const reconciler = new RealReconciler(db, id(), {
+        async page() {
+          db.applyPage(id(), [applied], {
+            cursor: null, checkpoint: "42", checkpointHash: "h42",
+          });
+          return {
+            events: [applied],
+            nextCursor: null,
+            checkpoint: "42",
+            checkpointHash: "different",
+          };
+        },
+      });
+      await expect(reconciler.reconcileAllPages()).rejects.toThrow(
+        "REAL_CHECKPOINT_HASH_MISMATCH",
+      );
+      expect(db.latchInfo(id(), "REAL_CHECKPOINT_HASH_MISMATCH")).toBeTruthy();
+    } finally {
+      db.close();
+    }
+  });
+
   it("charges gas only for a digest persisted as this bot's submission", () => {
     const db = new RealTradeCapDatabase(":memory:");
     db.persistBeforeSend({
