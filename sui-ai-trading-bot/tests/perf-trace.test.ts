@@ -7,6 +7,11 @@ import {
   startPerfTrace,
   type PerfTrace,
 } from "../apps/worker/src/perf-trace.ts";
+import {
+  startMarketStage,
+  withMarketTiming,
+  type MarketTimings,
+} from "../packages/market-data/src/market-timing.ts";
 import { BotDatabase } from "../packages/database/src/index.ts";
 
 let directory: string;
@@ -49,8 +54,18 @@ it("writes a one-minute summary with separate inclusive SQLite method totals", a
   trace.recordSqlite("get", 4);
   trace.recordSqlite("set", 7);
   const finishCycle = trace.start("cycle");
-  const finishMarket = trace.start("market");
-  vi.advanceTimersByTime(2_500);
+  const stages: MarketTimings = {};
+  const finishMarket = trace.start("market", stages);
+  withMarketTiming(stages, () => {
+    const finishHealth = startMarketStage("sui.health");
+    vi.advanceTimersByTime(500);
+    finishHealth?.();
+    for (let i = 0; i < 2; i++) {
+      const finishRead = startMarketStage("deepbook.read.minutePages");
+      vi.advanceTimersByTime(1_000);
+      finishRead?.();
+    }
+  });
   finishMarket();
   finishCycle();
   vi.advanceTimersByTime(57_500);
@@ -94,6 +109,14 @@ it("writes a one-minute summary with separate inclusive SQLite method totals", a
         startedAt: 1_000,
         endedAt: 3_500,
         durationMs: 2_500,
+        marketStages: {
+          "sui.health": { count: 1, totalMs: 500, maxMs: 500 },
+          "deepbook.read.minutePages": {
+            count: 2,
+            totalMs: 2_000,
+            maxMs: 1_000,
+          },
+        },
         active: [{ metric: "cycle", startedAt: 1_000 }],
       },
       expected,
@@ -123,4 +146,48 @@ it("times actual database reads, writes and failed calls without changing their 
   } finally {
     db.close();
   }
+});
+
+it("includes the runtime key only in slow SQLite set events", async () => {
+  vi.useFakeTimers();
+  const recorder = (trace = startPerfTrace(directory, "1")!);
+  BotDatabase.methodTimingSink = (method, elapsed, key) =>
+    recorder.recordSqlite(method, elapsed, key);
+  const db = new BotDatabase(":memory:");
+  try {
+    db.set("fast", true);
+    db.set("slow_at_limit", {
+      toJSON() {
+        vi.advanceTimersByTime(100);
+        return "test value";
+      },
+    });
+    db.set("slow_above_limit", {
+      toJSON() {
+        vi.advanceTimersByTime(101);
+        return "test value";
+      },
+    });
+    expect(db.get("slow_above_limit")).toBe("test value");
+    expect(recorder.summary().sqlite).not.toHaveProperty("slow_above_limit");
+  } finally {
+    db.close();
+  }
+  vi.useRealTimers();
+  await vi.waitFor(() => {
+    const rows = readFileSync(join(directory, "perf-trace.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(rows).toMatchObject([
+      {
+        kind: "slow",
+        metric: "sqlite",
+        method: "set",
+        key: "slow_above_limit",
+        durationMs: 101,
+      },
+    ]);
+    expect(rows[0]).not.toHaveProperty("value");
+  });
 });

@@ -249,7 +249,7 @@ const timedMethods = [
 
 export class BotDatabase {
   static methodTimingSink:
-    | ((method: string, durationMs: number) => void)
+    | ((method: string, durationMs: number, key?: string) => void)
     | undefined;
 
   private timeMethods(sink: NonNullable<typeof BotDatabase.methodTimingSink>) {
@@ -264,7 +264,13 @@ export class BotDatabase {
             return Reflect.apply(method, this, args);
           } finally {
             try {
-              sink(name, performance.now() - start);
+              sink(
+                name,
+                performance.now() - start,
+                name === "set" && typeof args[0] === "string"
+                  ? args[0]
+                  : undefined,
+              );
             } catch {
               // A recording failure must never affect the database call.
             }

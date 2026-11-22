@@ -104,8 +104,8 @@ const bootId = randomUUID();
 recordLifecycle(rootDatabasePath, bootId, "running");
 const perfTrace = startPerfTrace(dirname(rootDatabasePath));
 if (perfTrace)
-  BotDatabase.methodTimingSink = (method, elapsed) =>
-    perfTrace.recordSqlite(method, elapsed);
+  BotDatabase.methodTimingSink = (method, elapsed, key) =>
+    perfTrace.recordSqlite(method, elapsed, key);
 const selectionDb = new BotDatabase(rootDatabasePath + ".pairs.sqlite");
 const pair = tradingPair(
   process.env.TRADING_PAIR ?? selectionDb.get("selected_pair") ?? "SUI_USDC",
