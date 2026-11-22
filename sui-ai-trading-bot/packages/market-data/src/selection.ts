@@ -1,6 +1,7 @@
 import { safeFailure } from "../../shared/src/index.ts";
 import type { Timeframe } from "../../shared/src/index.ts";
 import type { IndexerLatencyDrain } from "../../shared/src/operations.ts";
+import { startMarketStage, timeMarketStage } from "./market-timing.ts";
 import { validateCandles } from "./validation.ts";
 import type { Frames, MarketDataProvider, MarketStatus } from "./provider.ts";
 export class MarketSelection implements MarketDataProvider {
@@ -23,7 +24,9 @@ export class MarketSelection implements MarketDataProvider {
         spread: number;
       } | null;
       imbalance?(now: number): number | null;
-      levels?(now: number): import("../../shared/src/index.ts").BookLevels | null;
+      levels?(
+        now: number,
+      ): import("../../shared/src/index.ts").BookLevels | null;
     },
   ) {
     this.value = {
@@ -72,11 +75,17 @@ export class MarketSelection implements MarketDataProvider {
   async candles(tf: Timeframe, now = Date.now()) {
     return (await this.frames(now))[tf];
   }
-  private async collect(provider: MarketDataProvider, now: number) {
+  private async collect(
+    provider: MarketDataProvider,
+    now: number,
+    stage: "gecko" | "deepbook",
+  ) {
     const result: Frames = {};
     for (const tf of [300, 900, 3600] as const)
       result[tf] = validateCandles(
-        await provider.candles(tf, now),
+        await timeMarketStage(`${stage}.candles.${tf}`, () =>
+          provider.candles(tf, now),
+        ),
         tf,
         Date.now(),
       );
@@ -90,15 +99,22 @@ export class MarketSelection implements MarketDataProvider {
     try {
       let frames: Frames;
       if (this.mode === "geckoterminal") {
-        frames = await this.collect(this.gecko, now);
+        frames = await this.collect(this.gecko, now, "gecko");
         this.selected = this.gecko;
         this.value.source = "GeckoTerminal";
         this.value.fallback = false;
       } else {
         try {
-          await this.deep.prepare(now);
-          frames = await this.collect(this.deep, now);
-          await this.deep.finalize?.();
+          await timeMarketStage("deepbook.prepare", () =>
+            this.deep.prepare(now),
+          );
+          frames = await this.collect(this.deep, now, "deepbook");
+          const finishFinalize = startMarketStage("deepbook.finalize");
+          try {
+            await this.deep.finalize?.();
+          } finally {
+            finishFinalize?.();
+          }
           this.deep.assertReady?.(Date.now());
           this.selected = this.deep;
           this.value.source = "DeepBook";
@@ -123,7 +139,9 @@ export class MarketSelection implements MarketDataProvider {
           ].includes(reason);
           if (this.mode !== "auto" || !eligible) throw e;
           this.value.reason = reason;
-          frames = await this.collect(this.gecko, Date.now());
+          frames = await timeMarketStage("gecko.fallback", () =>
+            this.collect(this.gecko, Date.now(), "gecko"),
+          );
           this.selected = this.gecko;
           this.value.source = "GeckoTerminal";
           this.value.fallback = true;

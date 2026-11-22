@@ -1,3 +1,4 @@
+import { startMarketStage } from "./market-timing.ts";
 import { deepBookTransport } from "./deepbook-transport.ts";
 import { withReadBudget } from "../../shared/src/read-budget-node.ts";
 import { abortable, currentReadBudget } from "../../shared/src/read-budget.ts";
@@ -471,6 +472,14 @@ export class DeepBookMarketData {
   private async checkedRead(path: string, ttl = 0) {
     const budget = currentReadBudget();
     budget?.signal.throwIfAborted();
+    const kind = latencyKindOf(path);
+    const stage =
+      path.startsWith("/ohclv/") && path.includes("?interval=1m&")
+        ? "minutePages"
+        : path.startsWith("/trades/")
+          ? "tradeProofs"
+          : kind;
+    const finishRead = startMarketStage(`deepbook.read.${stage}`);
     const began = performance.now();
     try {
       const result = await this.read(path, ttl);
@@ -483,7 +492,7 @@ export class DeepBookMarketData {
       // records its caller-visible duration, on success and
       // failure alike. Retries, aborts and timeouts are
       // untouched.
-      const kind = latencyKindOf(path);
+      finishRead?.();
       if (this.takeCacheHitMark(path)) {
         this.latencyCachedPending[kind] += 1;
       } else {
@@ -563,6 +572,9 @@ export class DeepBookMarketData {
     ) {
       this.refreshAfterCandles = true;
       const reconstructionStarted = Date.now();
+      const finishReconstruction = startMarketStage(
+        `deepbook.reconstruction.${tf}`,
+      );
       try {
         // Reuse still-valid empty proofs; never reuse unproven missing intervals.
         if (holes.length > 64) throw new Error("CANDLE_GAP");
@@ -656,6 +668,7 @@ export class DeepBookMarketData {
         return validateCandles(result.candles, tf, Date.now());
       } finally {
         quality.reconstructionMs = Date.now() - reconstructionStarted;
+        finishReconstruction?.();
       }
     }
     const original = c.map((x) => ({

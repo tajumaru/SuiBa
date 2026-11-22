@@ -38,6 +38,10 @@ import {
 } from "../../../packages/shared/src/operations.ts";
 import type { AccountingCheck } from "../../../packages/paper-trading/src/reconciliation.ts";
 import type { Fill } from "../../../packages/paper-trading/src/index.ts";
+import {
+  withMarketTiming,
+  type MarketTimings,
+} from "../../../packages/market-data/src/market-timing.ts";
 import type { PerfTrace } from "./perf-trace.ts";
 import type { FxRate } from "./fx-rate.ts";
 import {
@@ -744,13 +748,20 @@ export class OperationMonitor {
       if (details) this.stallFailure(details, Date.now());
     }, monitoringLimits.fetchDeadlineMs + 1);
     deadline.unref?.();
-    const finishMarket = this.perfTrace?.start("market");
+    const marketStages: MarketTimings | undefined = this.perfTrace
+      ? {}
+      : undefined;
+    const finishMarket = this.perfTrace?.start("market", marketStages);
     try {
       const value = await this.request("MARKET", () =>
         withReadBudget(
           controller.signal,
           this.safety().connectivity !== "HEALTHY",
-          () => abortable(fn(), controller.signal),
+          () =>
+            abortable(
+              marketStages ? withMarketTiming(marketStages, fn) : fn(),
+              controller.signal,
+            ),
           cycleId,
         ),
       );

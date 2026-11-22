@@ -4,6 +4,7 @@ import {
   type ShadowBudget,
 } from "./shadow.ts";
 import { advanceForecast } from "./forecast.ts";
+import { timeMarketStage } from "../../../packages/market-data/src/market-timing.ts";
 import { quoteBookReason } from "../../../packages/market-data/src/quote-book.ts";
 import type { MarketDataProvider } from "../../../packages/market-data/src/provider.ts";
 import { apiAccess } from "../../../packages/shared/src/api.ts";
@@ -185,7 +186,9 @@ export class BotEngine {
     let frames: Record<number, Candle[]>;
     try {
       frames = await this.monitor.acquisition(async () => {
-        await this.monitor.request("HEALTH", () => this.sui.health(recovering));
+        await timeMarketStage("sui.health", () =>
+          this.monitor.request("HEALTH", () => this.sui.health(recovering)),
+        );
         if (this.market.frames) return this.market.frames(now);
         const result: Record<number, Candle[]> = {};
         for (const tf of [300, 900, 3600] as const)

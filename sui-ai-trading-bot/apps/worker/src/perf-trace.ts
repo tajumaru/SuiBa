@@ -1,5 +1,6 @@
 import { appendFile } from "node:fs";
 import { join } from "node:path";
+import type { MarketTimings } from "../../../packages/market-data/src/market-timing.ts";
 import type { ApiTiming } from "../../../packages/shared/src/api-timing.ts";
 
 const sampleMs = 250;
@@ -48,26 +49,25 @@ export class PerfTrace {
     this.reporter = setInterval(() => this.report(), windowMs).unref();
   }
 
-  start(metric: Exclude<Metric, "eventLoop" | "sqlite">) {
+  start(
+    metric: Exclude<Metric, "eventLoop" | "sqlite">,
+    marketStages?: MarketTimings,
+  ) {
     const span = { metric, startedAt: Date.now(), start: performance.now() };
     this.active.add(span);
     return (timing?: ApiTiming, statusCode?: number, completed?: boolean) => {
       const elapsed = performance.now() - span.start;
       this.active.delete(span);
-      this.record(
-        metric,
-        elapsed,
-        span.startedAt,
-        Date.now(),
-        undefined,
-        timing && { timing, statusCode, completed },
-      );
+      this.record(metric, elapsed, span.startedAt, Date.now(), undefined, {
+        ...(timing && { timing, statusCode, completed }),
+        marketStages,
+      });
     };
   }
 
-  recordSqlite(method: string, elapsed: number) {
+  recordSqlite(method: string, elapsed: number, key?: string) {
     const endedAt = Date.now();
-    this.record("sqlite", elapsed, endedAt - elapsed, endedAt, method);
+    this.record("sqlite", elapsed, endedAt - elapsed, endedAt, method, { key });
   }
 
   summary(endedAt = Date.now()) {
@@ -88,7 +88,13 @@ export class PerfTrace {
     startedAt: number,
     endedAt: number,
     method?: string,
-    details?: { timing: ApiTiming; statusCode?: number; completed?: boolean },
+    details?: {
+      timing?: ApiTiming;
+      statusCode?: number;
+      completed?: boolean;
+      marketStages?: MarketTimings;
+      key?: string;
+    },
   ) {
     const map = method === undefined ? this.totals : this.sqlite;
     const key = method ?? metric;
