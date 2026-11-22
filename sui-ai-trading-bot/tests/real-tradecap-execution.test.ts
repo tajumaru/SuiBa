@@ -171,6 +171,10 @@ describe("REAL TradeCap execution and stop/resume gate", () => {
       f.sender,
     );
     expect((await executor.execute(intent)).status).toBe("UNKNOWN");
+    expect(await executor.execute(intent)).toEqual({
+      status: "REJECTED",
+      errorCode: "REAL_RECONCILIATION_PENDING",
+    });
     expect(await executor.execute({ ...intent, clientOrderId: "2" })).toEqual({
       status: "REJECTED",
       errorCode: "REAL_RECONCILIATION_PENDING",
@@ -287,7 +291,7 @@ describe("REAL TradeCap execution and stop/resume gate", () => {
       );
       expect(persist).toHaveBeenCalledWith(
         expect.objectContaining({
-          intent: { price: 0.60054, quantity: 1.6, expiresAt: 2 },
+          intent: { price: 0.60054, quantity: 1.6, expiresAt: 301_000 },
         }),
       );
     } finally {
@@ -353,7 +357,7 @@ describe("REAL TradeCap execution and stop/resume gate", () => {
     expect(fetchPools).toHaveBeenCalledTimes(2);
     expect(execute).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        intent: { price: 0.60054, quantity: 1.6, expiresAt: 2 },
+        intent: { price: 0.60054, quantity: 1.6, expiresAt: 301_000 },
       }),
     );
   });
@@ -374,9 +378,42 @@ describe("REAL TradeCap execution and stop/resume gate", () => {
       expect(execute).toHaveBeenCalledWith(
         expect.objectContaining({
           side,
-          intent: { price, quantity: side === "BUY" ? 1.6 : 1.4, expiresAt: 2 },
+          clientOrderId: side === "BUY" ? "11" : "12",
+          intent: { price, quantity: side === "BUY" ? 1.6 : 1.4, expiresAt: 301_000 },
         }),
       );
+    },
+  );
+
+  it.each([
+    { cutoff: "candle end", side: "BUY", candleTimestamp: 1_800, ttl: 180_000 },
+    { cutoff: "later quote", side: "BUY", candleTimestamp: 1_500, ttl: 15_000 },
+    { cutoff: "five minutes", side: "SELL", candleTimestamp: 2_100, ttl: 300_000 },
+  ] as const)(
+    "sets REAL expiration at $cutoff",
+    async ({ side, candleTimestamp, ttl }) => {
+      const now = 1_920_000;
+      const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+      try {
+        const { adapter, execute } = adapterFixtures();
+        await adapter.execute({
+          ...buy,
+          side,
+          candleTimestamp,
+          quote: {
+            ...buy.quote,
+            amountIn: "1600000000",
+            expiresAt: now + 15_000,
+          },
+        });
+        expect(execute).toHaveBeenCalledWith(
+          expect.objectContaining({
+            intent: expect.objectContaining({ expiresAt: now + ttl }),
+          }),
+        );
+      } finally {
+        clock.mockRestore();
+      }
     },
   );
 

@@ -9,6 +9,8 @@ import type { RealTradeCapConfig } from "../../../../packages/shared/src/index.t
 import type { RealBookParamsCache } from "./book-params-cache.ts";
 import { RealFeeCache } from "./fee-cache.ts";
 
+const CANDLE_SECONDS = 300;
+const REAL_ORDER_MAX_TTL_MS = 300_000;
 const SUI_ATOMIC = new Decimal(1_000_000_000);
 
 /** Maps an already-approved engine intent to DeepBook. It does not make a new
@@ -76,7 +78,13 @@ export class RealTradeCapExecutionAdapter implements ExecutionAdapter {
       intent: {
         price: price.toNumber(),
         quantity: quantity.toNumber(),
-        expiresAt: intent.quote.expiresAt,
+        expiresAt: Math.max(
+          intent.quote.expiresAt,
+          Math.min(
+            Date.now() + REAL_ORDER_MAX_TTL_MS,
+            (intent.candleTimestamp + CANDLE_SECONDS) * 1000,
+          ),
+        ),
       },
     });
     if (result.status === "SUCCEEDED")
