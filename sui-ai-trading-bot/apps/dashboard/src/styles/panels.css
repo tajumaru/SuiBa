@@ -196,10 +196,17 @@
   cursor: pointer;
   padding: 12px 0;
 }
+/* The global input rule (display:block; width:100%; padding; margin-top)
+   is written for text fields and leaks into checkboxes: the box renders
+   as a full-width block on its own line above the label. Reset it for
+   settings checkboxes so the box sits inline, centred on the label. */
+.settings-toggle input[type="checkbox"],
 .easy-settings input[type="checkbox"] {
   display: inline-block;
   width: auto;
-  margin-right: 12px;
+  padding: 0;
+  margin: 0 12px 0 0;
+  vertical-align: middle;
 }
 .settings-review {
   padding: 16px;
