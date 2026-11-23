@@ -12,7 +12,14 @@ if (!action) throw Error("OWNER_ACTION_REQUIRED");
 const signer = Ed25519Keypair.fromSecretKey(key);
 const owner = signer.toSuiAddress();
 const manager = process.env.REAL_BALANCE_MANAGER_ID;
-const bot = process.env.REAL_BOT_ADDRESS;
+// Bot の宛先は環境変数が無ければ Bot 鍵から導出する（宛先は公開情報）。
+const bot =
+  process.env.REAL_BOT_ADDRESS ??
+  (process.env.REAL_BOT_PRIVATE_KEY
+    ? Ed25519Keypair.fromSecretKey(
+        process.env.REAL_BOT_PRIVATE_KEY,
+      ).toSuiAddress()
+    : undefined);
 const cap = process.env.REAL_TRADE_CAP_ID;
 const grpc =
   process.env.REAL_SUI_GRPC_URL ?? "https://fullnode.testnet.sui.io:443";
@@ -90,6 +97,11 @@ const result = await signer.signAndExecuteTransaction({
   transaction: tx,
   client,
 });
+// gRPC クライアントの結果は Transaction / FailedTransaction のどちらかに
+// 実行済み tx が入る（小文字の transaction ではないため、以前は常に null だった）。
+const executed = result.Transaction ?? result.FailedTransaction;
 console.info(
-  JSON.stringify({ action, digest: result.transaction?.digest ?? null, owner }),
+  JSON.stringify({ action, digest: executed?.digest ?? null, owner }),
 );
+if (result.$kind === "FailedTransaction")
+  throw Error("OWNER_TRANSACTION_FAILED");
