@@ -9,6 +9,7 @@ import type {
 interface GraphNode {
   digest: string;
   effects?: {
+    timestamp?: string | null;
     checkpoint?: { sequenceNumber?: string; digest?: string };
     gasEffects?: {
       gasSummary?: {
@@ -48,6 +49,7 @@ interface IndexedOrder {
 
 interface IndexedTrade {
   trade_id: string;
+  timestamp: number;
   digest: string;
   taker_client_order_id: string;
   taker_balance_manager_id: string;
@@ -96,6 +98,7 @@ function tradeEvents(
     chain: "sui:testnet" as const,
     checkpoint: "0",
     digest: trade.digest,
+    timestampMs: trade.timestamp,
     identity,
     clientOrderId: trade.taker_client_order_id,
     raw: trade,
@@ -243,17 +246,21 @@ export class IndexerGraphqlHistorySource implements RealHistorySource {
         raw: order,
       })),
       ...indexedTrades.flatMap((trade) => tradeEvents(trade, this.identity)),
-      ...effects.map((node) => ({
-        chain: "sui:testnet" as const,
-        checkpoint: String(node.effects?.checkpoint?.sequenceNumber ?? "0"),
-        digest: node.digest,
-        eventSequence: "effects:history",
-        kind: "TX_EFFECTS" as const,
-        identity: this.identity,
-        asset: "SUI" as const,
-        gasMist: String(netGasUsage(node.effects?.gasEffects?.gasSummary)),
-        raw: node,
-      })),
+      ...effects.map((node): RealHistoryEvent => {
+        const timestampMs = Date.parse(node.effects?.timestamp ?? "");
+        return {
+          chain: "sui:testnet" as const,
+          checkpoint: String(node.effects?.checkpoint?.sequenceNumber ?? "0"),
+          digest: node.digest,
+          eventSequence: "effects:history",
+          kind: "TX_EFFECTS" as const,
+          identity: this.identity,
+          asset: "SUI" as const,
+          gasMist: String(netGasUsage(node.effects?.gasEffects?.gasSummary)),
+          timestampMs: Number.isFinite(timestampMs) ? timestampMs : undefined,
+          raw: node,
+        };
+      }),
     ];
     const pageInfo = connection.pageInfo;
     const nextCursor = pageInfo?.hasNextPage

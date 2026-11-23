@@ -29,6 +29,7 @@ export interface RealHistoryEvent {
   checkpoint: string;
   digest: string;
   eventSequence: string;
+  timestampMs?: number;
   kind: RealEventKind;
   identity: RealIdentity;
   internalOrderId?: string;

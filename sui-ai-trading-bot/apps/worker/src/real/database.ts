@@ -418,6 +418,8 @@ export class RealTradeCapDatabase {
     const expected = identityKey(identity);
     this.db.exec("BEGIN IMMEDIATE");
     try {
+      const baseline = this.balanceBaseline(identity);
+      let offsetsChanged = false;
       for (const event of events) {
         if (identityKey(event.identity) !== expected) {
           this.latch(
@@ -442,8 +444,22 @@ export class RealTradeCapDatabase {
             JSON.stringify(event),
             Date.now(),
           );
-        if (inserted.changes === 0) continue;
-        if (event.asset) this.applyBalanceDelta(expected, event);
+        if (inserted.changes === 0 || !event.asset) continue;
+        const offset =
+          baseline?.ledgerOffsets &&
+          event.timestampMs !== undefined &&
+          event.timestampMs <= baseline.recordedAt
+            ? baseline.ledgerOffsets[event.asset]
+            : undefined;
+        this.applyBalanceDelta(expected, event, offset);
+        if (offset) offsetsChanged = true;
+      }
+      if (offsetsChanged) {
+        this.db
+          .prepare(
+            "UPDATE real_balance_baseline SET baseline_json=? WHERE identity_key=?",
+          )
+          .run(JSON.stringify(baseline), expected);
       }
       this.db
         .prepare(
@@ -459,7 +475,13 @@ export class RealTradeCapDatabase {
     }
   }
 
-  private applyBalanceDelta(key: string, event: RealHistoryEvent) {
+  private applyBalanceDelta(
+    key: string,
+    event: RealHistoryEvent,
+    offset?: NonNullable<RealBalanceBaseline["ledgerOffsets"]>[NonNullable<
+      RealHistoryEvent["asset"]
+    >],
+  ) {
     const asset = event.asset!;
     this.db
       .prepare(
@@ -474,26 +496,48 @@ export class RealTradeCapDatabase {
       .get(key, asset) as Record<string, string>;
     const add = (name: string, delta?: string) =>
       (BigInt(row[name]) + BigInt(delta ?? "0")).toString();
+    const available = add("available_atomic", event.availableAtomicDelta);
+    const locked = add("order_locked_atomic", event.orderLockedAtomicDelta);
+    const settled = add(
+      "settled_unclaimed_atomic",
+      event.settledUnclaimedAtomicDelta,
+    );
+    const fee = add("fee_atomic", event.feeAtomic);
+    const gas = add(
+      "gas_mist",
+      event.gasMist &&
+        this.isBotSubmission(key, event.digest) &&
+        !this.hasOtherEffectsGas(key, event)
+        ? event.gasMist
+        : undefined,
+    );
     this.db
       .prepare(
         `UPDATE real_balance_ledger SET available_atomic=?,order_locked_atomic=?,
       settled_unclaimed_atomic=?,fee_atomic=?,gas_mist=? WHERE identity_key=? AND asset=?`,
       )
-      .run(
-        add("available_atomic", event.availableAtomicDelta),
-        add("order_locked_atomic", event.orderLockedAtomicDelta),
-        add("settled_unclaimed_atomic", event.settledUnclaimedAtomicDelta),
-        add("fee_atomic", event.feeAtomic),
-        add(
-          "gas_mist",
-          event.gasMist && this.isBotSubmission(key, event.digest) &&
-            !this.hasOtherEffectsGas(key, event)
-            ? event.gasMist
-            : undefined,
-        ),
-        key,
-        asset,
+      .run(available, locked, settled, fee, gas, key, asset);
+    if (offset) {
+      const advance = (value: string, column: string, updated: string) =>
+        (BigInt(value) + (BigInt(updated) - BigInt(row[column]))).toString();
+      offset.availableAtomic = advance(
+        offset.availableAtomic,
+        "available_atomic",
+        available,
       );
+      offset.lockedAtomic = advance(
+        offset.lockedAtomic,
+        "order_locked_atomic",
+        locked,
+      );
+      offset.settledUnclaimedAtomic = advance(
+        offset.settledUnclaimedAtomic,
+        "settled_unclaimed_atomic",
+        settled,
+      );
+      offset.feeAtomic = advance(offset.feeAtomic, "fee_atomic", fee);
+      offset.gasMist = advance(offset.gasMist, "gas_mist", gas);
+    }
   }
 
   private hasOtherEffectsGas(key: string, event: RealHistoryEvent) {
