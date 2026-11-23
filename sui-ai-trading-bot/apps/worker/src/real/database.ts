@@ -535,6 +535,13 @@ export class RealTradeCapDatabase {
         .all(identityKey(identity)) as { eventJson: string }[]
     ).map((row) => JSON.parse(row.eventJson) as RealHistoryEvent);
   }
+  allLedgerEvents() {
+    return (
+      this.db
+        .prepare("SELECT event_json AS eventJson FROM real_ledger ORDER BY applied_at")
+        .all() as { eventJson: string }[]
+    ).map((row) => JSON.parse(row.eventJson) as RealHistoryEvent);
+  }
   appliedTradeFeeCount(identity: RealIdentity) {
     const row = this.db.prepare(
       "SELECT COUNT(*) AS n FROM real_ledger WHERE identity_key=? AND kind='TRADE_FEE'",

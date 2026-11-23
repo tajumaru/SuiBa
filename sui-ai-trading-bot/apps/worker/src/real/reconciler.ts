@@ -9,7 +9,7 @@ import { RealTradeCapDatabase } from "./database.ts";
 const ledgerKey = (event: RealHistoryEvent) =>
   JSON.stringify([event.chain, event.digest, event.eventSequence]);
 
-const eventHash = (event: RealHistoryEvent) =>
+const eventHash = ({ identity, ...event }: RealHistoryEvent) =>
   createHash("sha256").update(JSON.stringify(event)).digest("hex");
 
 function isAtOrBefore(event: RealHistoryEvent, applied: RealHistoryEvent) {
@@ -61,7 +61,7 @@ export class RealReconciler {
       const replay =
         checkpoint &&
         page.events.length > 0 &&
-        isReplay(page.events, this.db.ledgerEvents(this.identity));
+        isReplay(page.events, this.db.allLedgerEvents());
       if (!replay) {
         if (
           checkpoint &&
