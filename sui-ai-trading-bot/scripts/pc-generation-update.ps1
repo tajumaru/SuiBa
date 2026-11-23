@@ -180,7 +180,15 @@ foreach ($task in @('install', 'build')) {
 $stage = "pnpm $task"
 Write-Host ""
 $failure = "pnpm $task に失敗しました。"
-if ((Invoke-Native { pnpm $task}) -ne 0) { throw $failure}
+if ((Invoke-Native { pnpm $task}) -ne 0) {
+# install の失敗には Bot 停止直後のファイルロック等の一時的なものが
+# ある（実績 2026-11-23：手動の再実行で成功した）。install だけ、
+# 少し待って1回だけやり直す。build の失敗は本物のエラーのため対象外。
+if ($task -ne 'install') { throw $failure }
+Write-Host 'pnpm install が失敗したため、5秒待って1回だけやり直します。'
+Start-Sleep -Seconds 5
+if ((Invoke-Native { pnpm install }) -ne 0) { throw $failure }
+}
 }
 
 $stage = 'Bot の起動'
