@@ -179,6 +179,12 @@ export function recoverableReadFailure(
       "ERR_HTTP2_STREAM_ERROR",
       "ERR_HTTP2_GOAWAY_SESSION",
     ].includes(f.causeCode ?? "");
+  if (f.code === "UPSTREAM_HTTP_500")
+    return (
+      (f.api === "DeepBook Indexer" || f.api === "GeckoTerminal") &&
+      f.phase === "HTTP" &&
+      f.status === 500
+    );
   if (
     ["UPSTREAM_HTTP_502", "UPSTREAM_HTTP_503", "UPSTREAM_HTTP_504"].includes(
       f.code,

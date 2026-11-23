@@ -30,6 +30,54 @@ export const failure = (patch: Partial<ApiFailure> = {}): ApiFailure => ({
   occurredAt: Date.now(),
   ...patch,
 });
+const httpFailure = (status: number, patch: Partial<ApiFailure> = {}) =>
+  failure({
+    code: `UPSTREAM_HTTP_${status}`,
+    phase: "HTTP",
+    status,
+    timeoutType: null,
+    ...patch,
+  });
+
+it.each([
+  ["DeepBook", {}, true],
+  ["wrong host", { host: "example.com" }, false],
+  ["wrong status", { status: 502 }, false],
+  ["wrong phase", { phase: "BODY" }, false],
+  ["Sui gRPC", { api: "Sui gRPC", host: "example.com" }, false],
+  [
+    "GeckoTerminal",
+    { api: "GeckoTerminal", host: "api.geckoterminal.com" },
+    true,
+  ],
+  [
+    "GeckoTerminal with wrong host",
+    { api: "GeckoTerminal", host: "example.com" },
+    false,
+  ],
+] satisfies [string, Partial<ApiFailure>, boolean][])(
+  "classifies HTTP 500 evidence for %s",
+  (_name, patch, expected) => {
+    expect(recoverableReadFailure(httpFailure(500, patch))).toBe(expected);
+  },
+);
+
+it.each([502, 503, 504])(
+  "keeps HTTP %i recoverable for all approved APIs",
+  (status) => {
+    for (const [api, host] of [
+      ["DeepBook Indexer", "deepbook-indexer.mainnet.mystenlabs.com"],
+      ["GeckoTerminal", "api.geckoterminal.com"],
+      ["Sui gRPC", "example.com"],
+    ]) {
+      const f = httpFailure(status, { api, host });
+      expect(recoverableReadFailure(f)).toBe(true);
+      expect(recoverableReadFailure({ ...f, status: 500 })).toBe(false);
+      expect(recoverableReadFailure({ ...f, phase: "BODY" })).toBe(false);
+    }
+  },
+);
+
 const databases: BotDatabase[] = [];
 const folders: string[] = [];
 function setup() {
@@ -404,32 +452,78 @@ it("stops immediately on a 429 that arrives during a candle-stale pause", () => 
   expect(db.runtime().error).toBe("UPSTREAM_HTTP_429");
   expect(monitor.safety().resumePending).toBe(false);
 });
-it.each([429, 500])(
-  "never auto-resumes an HTTP %i hard stop",
-  (status) => {
-    const { db, monitor } = setup(),
-      start = Date.now(),
-      f = failure({
-        code: `UPSTREAM_HTTP_${status}`,
-        phase: "HTTP",
-        status,
-        timeoutType: null,
-        occurredAt: start,
-      });
-    monitor.transientFailure(f.api, f.code, f, start);
-    expect(db.runtime().error).toBe(`UPSTREAM_HTTP_${status}`);
-    expect(monitor.safety().resumePending).toBe(false);
-    monitor.market(start, start);
-    for (const at of [start + 1000, start + 61000]) {
-      monitor.beginCycle();
-      expect(monitor.recoveryCycle({ market: true, sui: true }, at)).toBe(false);
-    }
-    expect(db.runtime()).toMatchObject({
-      running: false,
-      error: `UPSTREAM_HTTP_${status}`,
-    });
-  },
-);
+it.each([
+  [429, "DeepBook Indexer", "deepbook-indexer.mainnet.mystenlabs.com"],
+  [500, "Sui gRPC", "example.com"],
+])("never auto-resumes an HTTP %i hard stop from %s", (status, api, host) => {
+  const { db, monitor } = setup(),
+    start = Date.now(),
+    f = httpFailure(status, { api, host, occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  expect(db.runtime().error).toBe(`UPSTREAM_HTTP_${status}`);
+  expect(monitor.safety().resumePending).toBe(false);
+  monitor.market(start, start);
+  for (const at of [start + 1000, start + 61000]) {
+    monitor.beginCycle();
+    expect(monitor.recoveryCycle({ market: true, sui: true }, at)).toBe(false);
+  }
+  expect(db.runtime()).toMatchObject({
+    running: false,
+    error: `UPSTREAM_HTTP_${status}`,
+  });
+});
+it("automatically resumes after a temporary DeepBook HTTP 500", () => {
+  const { db, monitor } = setup();
+  const start = Date.now();
+  const f = httpFailure(500, { occurredAt: start });
+  monitor.transientFailure(f.api, f.code, f, start);
+  expect(monitor.transientCycleFailure(f.code)).toBe(true);
+  expect(monitor.safety()).toMatchObject({
+    connectivity: "DEGRADED",
+    resumePending: true,
+  });
+  expect(db.runtime()).toMatchObject({ running: false, error: null });
+
+  const firstHealthyAt = start + 1000;
+  const confirmedAt = firstHealthyAt + 60000;
+  monitor.beginCycle();
+  monitor.market(firstHealthyAt, firstHealthyAt);
+  expect(
+    monitor.recoveryCycle({ market: true, sui: true }, firstHealthyAt),
+  ).toBe(false);
+  monitor.beginCycle();
+  monitor.market(confirmedAt, confirmedAt);
+  expect(monitor.recoveryCycle({ market: true, sui: true }, confirmedAt)).toBe(
+    true,
+  );
+  expect(monitor.safety()).toMatchObject({
+    connectivity: "HEALTHY",
+    resumePending: false,
+  });
+  expect(db.runtime()).toMatchObject({ running: true, error: null });
+});
+
+it("stops at the standard deadline when DeepBook HTTP 500 persists", () => {
+  const { db, monitor } = setup();
+  const start = Date.now();
+  const deadline = start + 180000;
+  for (let at = start; at < deadline; at += 30000) {
+    monitor.beginCycle();
+    const f = httpFailure(500, { occurredAt: at });
+    monitor.transientFailure(f.api, f.code, f, at);
+    expect(db.runtime()).toMatchObject({ running: false, error: null });
+    expect(monitor.safety().resumePending).toBe(true);
+  }
+  monitor.beginCycle();
+  const f = httpFailure(500, { occurredAt: deadline });
+  monitor.transientFailure(f.api, f.code, f, deadline);
+  expect(db.runtime()).toMatchObject({
+    running: false,
+    error: "PAPER_RECOVERY_EXHAUSTED",
+  });
+  expect(monitor.safety().resumePending).toBe(false);
+});
+
 it("restores the standard deadline when another failure joins a stale episode", () => {
   const { db, monitor } = setup(),
     start = Date.now();
