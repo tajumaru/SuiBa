@@ -31,18 +31,16 @@ $ErrorActionPreference = $previous
 }
 }
 
-# Invoke-Native と同じ呼び出し方だが、標準エラーをファイルに残す。
-# 失敗したコマンドの理由を画面で確認するために使う（呼び出し側が
-# 末尾を表示する）。成功時の出力先は Invoke-Native と同じ。
-function Invoke-NativeLogged([scriptblock]$Command, [string]$LogPath) {
-$previous = $ErrorActionPreference
-$ErrorActionPreference = 'Continue'
-try {
-& $Command 2>$LogPath
-return $LASTEXITCODE
-} finally {
-$ErrorActionPreference = $previous
-}
+# pnpm の install / build 専用の実行関数。PowerShell 5.1 のパイプライン
+# 経由（2>ファイル）では、スクリプト内の install だけが繰り返し失敗し、
+# 標準エラーの記録は空で理由が残らなかった（実績 2026-11-23、4回）。
+# 対話コンソールで成功する経路（cmd.exe から pnpm.cmd を実行し、Bot の
+# 起動でも使っている形）と同じにし、標準出力と標準エラーの両方を
+# cmd 自身のリダイレクトでログへ書き、終了コードで判定する。
+function Invoke-PnpmLogged([string]$Task, [string]$LogPath) {
+$argLine = "pnpm $Task > `"$LogPath`" 2>&1"
+$proc = Start-Process -FilePath $env:ComSpec -ArgumentList '/d', '/c', $argLine -WorkingDirectory $app -Wait -PassThru -NoNewWindow
+return $proc.ExitCode
 }
 
 function Get-PortOwners {
@@ -212,13 +210,11 @@ if ($task -eq 'install') { $attempts = 3 }
 $waits = @(5, 20)
 $done = $false
 for ($attempt = 1; $attempt -le $attempts; $attempt++) {
-if ((Invoke-NativeLogged { pnpm $task } $logPath) -eq 0) { $done = $true; break }
-# 失敗のたびに標準エラーの末尾を画面に残す。従来は標準エラーを捨てて
-# いたため、失敗の理由が分からなかった（実績 2026-11-23：スクリプト内
-# の install だけが繰り返し失敗し、単独実行は成功したが、理由を
-# 特定できなかった）。
+if ((Invoke-PnpmLogged $task $logPath) -eq 0) { $done = $true; break }
+# 失敗のたびに出力の末尾を画面に残す。ログには標準出力と標準エラー
+# の両方が入るため、失敗の理由が必ず残る。
 if (Test-Path -LiteralPath $logPath) {
-Write-Host "pnpm $task のエラー出力（末尾）："
+Write-Host "pnpm $task の出力（末尾）："
 Get-Content -LiteralPath $logPath -Encoding UTF8 -Tail 30 | ForEach-Object { Write-Host $_ }
 }
 if ($attempt -lt $attempts) {
