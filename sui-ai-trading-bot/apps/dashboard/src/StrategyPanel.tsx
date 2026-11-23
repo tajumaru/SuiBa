@@ -1,21 +1,19 @@
 import React from "react";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import type { DecisionTelemetry } from "../../worker/src/operations.ts";
-import type { Settings } from "../../../packages/shared/src/index.ts";
 import { fixed4, label, number, percent } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
-import { fields, formatSettingValue, type Field } from "./SettingsPage.tsx";
 import { ProfitGuardPanel } from "./ProfitGuardPanel.tsx";
-import { ParameterRadar } from "./ParameterRadar.tsx";
+import {
+  ParameterRadar,
+  SellParameterRadar,
+} from "./ParameterRadar.tsx";
 export { useIndicatorHistory } from "./indicatorHistory.ts";
 import {
-  STRATEGY_PARAM_GROUPS,
   isFreshDecision,
-  paramScale,
   strategyConditions,
   verdictTone,
   type StrategyConditions,
-  type StrategyParamDef,
 } from "./strategyView.ts";
 
 type State = BotSnapshot;
@@ -153,61 +151,6 @@ function ResultPanel({
         </p>
       )}
     </aside>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Parameter groups                                                    */
-/* ------------------------------------------------------------------ */
-
-const formatRawValue = (field: Field, raw: number) =>
-  `${number(Number((raw * (field.scale ?? 1)).toPrecision(12)))} ${field.unit ?? ""}`.trim();
-
-function ParamRow({
-  settings,
-  def,
-}: {
-  settings: Settings;
-  def: StrategyParamDef;
-}) {
-  const field = fields.find((f) => f.key === def.key);
-  if (!field) return null;
-  const scale = paramScale(settings, def);
-  return (
-    <div className="strategy-param">
-      <div className="strategy-param-row">
-        <span className="strategy-param-label">{field.label}</span>
-        <span className="strategy-param-value">
-          {formatSettingValue(settings, field)}
-        </span>
-      </div>
-      {def.bar && (
-        <>
-          <div
-            className="strategy-bar"
-            role="img"
-            aria-label={`選べる範囲は${formatRawValue(field, scale.domainMin)}から${formatRawValue(field, scale.domainMax)}、現在の値は${formatSettingValue(settings, field)}`}
-          >
-            <div
-              className="strategy-bar-range"
-              style={{
-                left: `${scale.bandLeft * 100}%`,
-                width: `${scale.bandWidth * 100}%`,
-              }}
-            />
-            <div
-              className="strategy-bar-mark"
-              style={{ left: `${scale.marker * 100}%` }}
-            />
-          </div>
-          <div className="strategy-bar-ends">
-            <span>{formatRawValue(field, scale.domainMin)}</span>
-            <span>{formatRawValue(field, scale.domainMax)}</span>
-          </div>
-        </>
-      )}
-      <p className="strategy-param-help">{field.help}</p>
-    </div>
   );
 }
 
@@ -381,41 +324,29 @@ export function StrategyPanel({
       )}
       <h3 className="strategy-params-title">戦略パラメータ</h3>
       <ParameterRadar settings={data.settings} />
-      <div className="strategy-groups">
-        {STRATEGY_PARAM_GROUPS.map((group) => (
-          <section
-            key={group.id}
-            className="strategy-group"
-            aria-label={`${group.title}グループ`}
+      <SellParameterRadar settings={data.settings} />
+      <section className="strategy-group" aria-label="ProfitGuardグループ">
+        <div className="strategy-group-head">
+          <h4>ProfitGuard</h4>
+          <span
+            className={
+              data.settings.profitGuardEnabled
+                ? "strategy-pg-on"
+                : "strategy-pg-off"
+            }
           >
-            <div className="strategy-group-head">
-              <h4>{group.title}</h4>
-              {group.id === "profit-guard" && (
-                <span
-                  className={
-                    data.settings.profitGuardEnabled
-                      ? "strategy-pg-on"
-                      : "strategy-pg-off"
-                  }
-                >
-                  {data.settings.profitGuardEnabled ? "有効" : "無効"}
-                </span>
-              )}
-            </div>
-            <p className="strategy-group-desc">{group.description}</p>
-            {group.id === "profit-guard" && <ProfitGuardStatus data={data} />}
-            {group.params.map((def) => (
-              <ParamRow key={def.key} settings={data.settings} def={def} />
-            ))}
-            {group.id === "profit-guard" && (
-              <details className="strategy-pg-details">
-                <summary>ProfitGuardの詳細（コスト内訳・見積もり）</summary>
-                <ProfitGuardPanel data={data} />
-              </details>
-            )}
-          </section>
-        ))}
-      </div>
+            {data.settings.profitGuardEnabled ? "有効" : "無効"}
+          </span>
+        </div>
+        <p className="strategy-group-desc">
+          コストを引いても利益が残る時だけ売る仕組み
+        </p>
+        <ProfitGuardStatus data={data} />
+        <details className="strategy-pg-details">
+          <summary>ProfitGuardの詳細（コスト内訳・見積もり）</summary>
+          <ProfitGuardPanel data={data} />
+        </details>
+      </section>
     </>
   );
 }
