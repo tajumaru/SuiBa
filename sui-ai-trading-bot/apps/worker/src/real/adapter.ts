@@ -8,6 +8,7 @@ import { RealTradeCapExecutor } from "./execution.ts";
 import type { RealTradeCapConfig } from "../../../../packages/shared/src/index.ts";
 import type { RealBookParamsCache } from "./book-params-cache.ts";
 import { RealFeeCache } from "./fee-cache.ts";
+import { capVenueQuantity, type RealVenueBookCache } from "./venue-book.ts";
 
 const SUI_ATOMIC = new Decimal(1_000_000_000);
 
@@ -20,11 +21,13 @@ export class RealTradeCapExecutionAdapter implements ExecutionAdapter {
 
   constructor(
     private readonly executor: RealTradeCapExecutor,
-    private readonly config: Pick<RealTradeCapConfig, "maxOrderDbusdc"> = {
+    private readonly config: Pick<RealTradeCapConfig, "maxOrderDbusdc"> &
+      Partial<Pick<RealTradeCapConfig, "orderType">> = {
       maxOrderDbusdc: Infinity,
     },
     private readonly fees?: RealFeeCache,
     private readonly bookParams?: RealBookParamsCache,
+    private readonly venueBook?: RealVenueBookCache,
   ) {}
 
   feeEstimate(side: "BUY" | "SELL", currentEpoch: number | null) {
@@ -44,7 +47,8 @@ export class RealTradeCapExecutionAdapter implements ExecutionAdapter {
   }
 
   async execute(intent: ExecutionIntent): Promise<ExecutionResult> {
-    const params = await this.bookParams?.get(this.currentEpoch);
+    const epoch = this.currentEpoch;
+    const params = await this.bookParams?.get(epoch);
     if (!params)
       return { status: "REJECTED", errorCode: "REAL_BOOK_PARAMS_UNAVAILABLE" };
 
@@ -64,11 +68,29 @@ export class RealTradeCapExecutionAdapter implements ExecutionAdapter {
     )
       .mul(params.tickSize)
       .div(SUI_ATOMIC);
-    const quantity = quantityAtomic.div(SUI_ATOMIC);
+    let quantity = quantityAtomic.div(SUI_ATOMIC);
     // For MARKET this cap check uses the reference price saved in the intent.
     // The order book determines the actual execution price.
     if (quantity.mul(price).greaterThan(this.config.maxOrderDbusdc))
       return { status: "REJECTED", errorCode: "REAL_MAX_ORDER_EXCEEDED" };
+    if (this.config.orderType === "MARKET") {
+      const book = await this.venueBook?.get(epoch, intent.side);
+      if (!book)
+        return { status: "REJECTED", errorCode: "REAL_VENUE_BOOK_UNAVAILABLE" };
+
+      const cappedQuantity = capVenueQuantity(
+        intent.side,
+        quantity,
+        book,
+        new Decimal(this.config.maxOrderDbusdc),
+        new Decimal(params.lotSize).div(SUI_ATOMIC),
+        new Decimal(params.minSize).div(SUI_ATOMIC),
+      );
+      if (!cappedQuantity)
+        return { status: "REJECTED", errorCode: "REAL_MAX_ORDER_EXCEEDED" };
+      quantity = cappedQuantity;
+    }
+
     const result = await this.executor.execute({
       internalOrderId: intent.orderId,
       clientOrderId: String(

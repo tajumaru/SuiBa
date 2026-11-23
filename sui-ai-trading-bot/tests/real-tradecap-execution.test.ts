@@ -7,6 +7,7 @@ import { RealTradeCapDatabase } from "../apps/worker/src/real/database.ts";
 import { RealTradeCapExecutor } from "../apps/worker/src/real/execution.ts";
 import { RealTradeCapExecutionAdapter } from "../apps/worker/src/real/adapter.ts";
 import { RealBookParamsCache } from "../apps/worker/src/real/book-params-cache.ts";
+import { RealVenueBookCache } from "../apps/worker/src/real/venue-book.ts";
 import { RealFeeCache } from "../apps/worker/src/real/fee-cache.ts";
 import type { ExecutionIntent } from "../apps/worker/src/execution-adapter.ts";
 import { createDeepBookTransactionBuilder } from "../apps/worker/src/real/deepbook-execution.ts";
@@ -110,10 +111,21 @@ const buy = {
   quote: { minAmountOut: "1664401674", amountIn: "1", expiresAt: 2 },
 } as ExecutionIntent;
 
+const venueBook = (
+  asks: [number, number][] = [],
+  bids: [number, number][] = [],
+) => ({
+  ask_prices: asks.map(([price]) => price),
+  ask_quantities: asks.map(([, quantity]) => quantity),
+  bid_prices: bids.map(([price]) => price),
+  bid_quantities: bids.map(([, quantity]) => quantity),
+});
+
 const adapterFixtures = (
   maxOrderDbusdc = 1,
   fetchPools = vi.fn(async () => bookResponse()),
   config: RealTradeCapConfig = { ...marketConfig, orderType: "IOC_LIMIT" },
+  readBook?: () => Promise<ReturnType<typeof venueBook>>,
 ) => {
   const execute = vi.fn(async () => ({ status: "SUCCEEDED", digest: "d" }));
   const adapter = new RealTradeCapExecutionAdapter(
@@ -126,6 +138,7 @@ const adapterFixtures = (
       { indexerUrl, poolKey: identity.poolKey },
       fetchPools,
     ),
+    readBook && new RealVenueBookCache(readBook),
   );
   return { adapter, execute, fetchPools };
 };
@@ -505,7 +518,10 @@ describe("REAL TradeCap execution and stop/resume gate", () => {
   );
 
   it("checks the MARKET reference notional and passes the aligned intent", async () => {
-    const { adapter, execute } = adapterFixtures(0.960864, undefined, marketConfig);
+    const readBook = vi.fn(async () => venueBook([[0.60054, 10]]));
+    const { adapter, execute } = adapterFixtures(
+      0.960864, undefined, marketConfig, readBook,
+    );
     await expect(adapter.execute({ ...buy, markPrice: 0.6005400045 })).resolves.toEqual({
       status: "SUBMITTED",
       digest: "d",
@@ -521,6 +537,90 @@ describe("REAL TradeCap execution and stop/resume gate", () => {
       errorCode: "REAL_MAX_ORDER_EXCEEDED",
     });
     expect(execute).toHaveBeenCalledTimes(1);
+    expect(readBook).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["November 22", "BUY", "1500000000", 0.65, 1, venueBook([[1.001, 10]]), null],
+    ["one ask", "BUY", "3000000000", 0.65, 2, venueBook([[1.001, 10]]), 1.9],
+    ["multiple asks", "BUY", "1500000000", 0.65, 1.2, venueBook([[1.498, 5], [1.001, 0.6]]), 1],
+    ["sell proceeds", "SELL", "2000000000", 0.5, 1, venueBook([], [[0.9, 5]]), 1.1],
+    ["within cap", "BUY", "1500000000", 0.65, 1, venueBook([[0.65, 10]]), 1.5],
+    ["limited depth", "BUY", "1500000000", 0.65, 1, venueBook([[0.65, 1.19]]), 1.1],
+    ["depth below minimum", "BUY", "1500000000", 0.65, 1, venueBook([[0.65, 0.99]]), null],
+  ] as const)(
+    "prices a MARKET order using the venue book (%s)",
+    async (_name, side, amount, markPrice, cap, book, expected) => {
+      const { adapter, execute } = adapterFixtures(
+        cap, undefined, marketConfig, async () => book,
+      );
+      const result = await adapter.execute({
+        ...buy,
+        side,
+        markPrice,
+        quote: { ...buy.quote, minAmountOut: amount, amountIn: amount },
+      });
+      if (expected === null) {
+        expect(result).toEqual({
+          status: "REJECTED",
+          errorCode: "REAL_MAX_ORDER_EXCEEDED",
+        });
+        expect(execute).not.toHaveBeenCalled();
+      } else {
+        expect(result.status).toBe("SUBMITTED");
+        expect(execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+          side,
+          intent: { price: markPrice, quantity: expected, expiresAt: 2 },
+        }));
+      }
+    },
+  );
+
+  const failedBookRead = async () => { throw Error("Book unavailable"); };
+
+  it.each([undefined, failedBookRead, async () => venueBook()])(
+    "rejects MARKET when the book is unavailable",
+    async (readBook) => {
+      const { adapter, execute } = adapterFixtures(
+        1, undefined, marketConfig, readBook,
+      );
+      await expect(adapter.execute(buy)).resolves.toEqual({
+        status: "REJECTED",
+        errorCode: "REAL_VENUE_BOOK_UNAVAILABLE",
+      });
+      expect(execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not read the venue book for IOC_LIMIT", async () => {
+    const readBook = vi.fn(failedBookRead);
+    const { adapter, execute } = adapterFixtures(1, undefined, undefined, readBook);
+    await expect(adapter.execute(buy)).resolves.toMatchObject({ status: "SUBMITTED" });
+    expect(readBook).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      intent: { price: 0.60054, quantity: 1.6, expiresAt: 2 },
+    }));
+  });
+
+  it("reuses the venue book within an epoch and falls back after a failed refresh", async () => {
+    const readBook = vi.fn(async () => venueBook([[0.6, 10]]));
+    const { adapter } = adapterFixtures(1, undefined, marketConfig, readBook);
+    await adapter.feeEstimate("BUY", 10);
+    await expect(adapter.execute(buy)).resolves.toMatchObject({ status: "SUBMITTED" });
+    await expect(adapter.execute(buy)).resolves.toMatchObject({ status: "SUBMITTED" });
+    expect(readBook).toHaveBeenCalledTimes(1);
+
+    await adapter.feeEstimate("BUY", 11);
+    readBook.mockImplementationOnce(failedBookRead);
+    await expect(adapter.execute(buy)).resolves.toMatchObject({ status: "SUBMITTED" });
+    expect(readBook).toHaveBeenCalledTimes(2);
+
+    readBook.mockResolvedValueOnce(venueBook([[1.001, 10]]));
+    await expect(adapter.execute(buy)).resolves.toEqual({
+      status: "REJECTED",
+      errorCode: "REAL_MAX_ORDER_EXCEEDED",
+    });
+    expect(readBook).toHaveBeenCalledTimes(3);
   });
 
   it.each(["MARKET", "IOC_LIMIT"] as const)("builds a %s order with the SDK", async (orderType) => {
