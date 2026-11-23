@@ -91,9 +91,13 @@ export function ForecastOverlay({
  * RSI would reach its line — the same value the ticker pill
  * counts down to — drawn only while it sits inside the visible
  * price range, so the chart itself shows where the buy run
- * starts. The label chip wears the pill's colours. */
+ * starts. The label chip wears the pill's colours and carries
+ * the remaining distance from the current price. The current
+ * price itself is drawn as a solid line with its own chip, so
+ * the gap between the two can be read off the chart. */
 export function BuyLineOverlay({
   linePrice,
+  currentPrice,
   min,
   max,
   y,
@@ -101,61 +105,115 @@ export function BuyLineOverlay({
   right,
 }: {
   linePrice: number | null;
+  currentPrice?: number | null;
   min: number;
   max: number;
   y: Scale;
   left: number;
   right: number;
 }) {
-  if (
-    linePrice == null ||
-    !Number.isFinite(linePrice) ||
-    linePrice <= 0 ||
-    linePrice < min ||
-    linePrice > max
-  )
-    return null;
-  const ly = y(linePrice);
-  const text = `ライン ${linePrice >= 10 ? linePrice.toFixed(2) : linePrice.toFixed(4)}`;
-  const textWidth = [...text].reduce(
-    (sum, ch) => sum + (ch.charCodeAt(0) > 0x2000 ? 11 : 6.4),
-    0,
-  );
-  const chipW = textWidth + 16,
-    chipH = 18,
-    chipX = right - chipW,
-    chipY = Math.min(215 - chipH, Math.max(30, ly - chipH / 2));
+  const inRange = (v: number | null | undefined): v is number =>
+    v != null && Number.isFinite(v) && v > 0 && v >= min && v <= max;
+  const showLine = inRange(linePrice);
+  const showCurrent = inRange(currentPrice);
+  if (!showLine && !showCurrent) return null;
+  const fmt = (v: number) => (v >= 10 ? v.toFixed(2) : v.toFixed(4));
+  const chipW = (text: string) =>
+    [...text].reduce(
+      (sum, ch) => sum + (ch.charCodeAt(0) > 0x2000 ? 11 : 6.4),
+      0,
+    ) + 16;
+  const chipH = 18;
+  const clampChipY = (cy: number) =>
+    Math.min(215 - chipH, Math.max(30, cy - chipH / 2));
+  const gap =
+    showLine &&
+    currentPrice != null &&
+    Number.isFinite(currentPrice) &&
+    currentPrice > 0
+      ? (linePrice / currentPrice - 1) * 100
+      : null;
+  const lineText = showLine
+    ? `ライン ${fmt(linePrice)}${gap != null ? `（あと ${gap >= 0 ? "+" : "−"}${Math.abs(gap).toFixed(2)}%）` : ""}`
+    : "";
+  const lineY = showLine ? y(linePrice) : 0;
+  const lineChipY = showLine ? clampChipY(lineY) : 0;
+  const curText = showCurrent ? `現在 ${fmt(currentPrice)}` : "";
+  const curY = showCurrent ? y(currentPrice) : 0;
+  let curChipY = showCurrent ? clampChipY(curY) : 0;
+  if (showLine && showCurrent && Math.abs(curChipY - lineChipY) < 20)
+    curChipY = Math.min(
+      215 - chipH,
+      Math.max(30, lineChipY + (curY >= lineY ? 20 : -20)),
+    );
   return (
-    <g className="chart-buy-line" aria-label="買い走りライン">
-      <line
-        x1={left}
-        x2={right}
-        y1={ly}
-        y2={ly}
-        stroke="#64b5ff"
-        strokeWidth="1.4"
-        strokeDasharray="7 4"
-      />
-      <rect
-        x={chipX}
-        y={chipY}
-        width={chipW}
-        height={chipH}
-        rx="4"
-        fill="#10325c"
-        stroke="#62b2ff"
-        strokeOpacity="0.6"
-      />
-      <text
-        x={chipX + chipW / 2}
-        y={chipY + 13}
-        fill="#bfe0ff"
-        fontSize="11"
-        fontWeight="700"
-        textAnchor="middle"
-      >
-        {text}
-      </text>
+    <g>
+      {showCurrent && (
+        <g className="chart-current-price" aria-label="現在価格">
+          <line
+            x1={left}
+            x2={right}
+            y1={curY}
+            y2={curY}
+            stroke="#e6eef2"
+            strokeWidth="1.2"
+            opacity="0.85"
+          />
+          <rect
+            x={right - chipW(curText)}
+            y={curChipY}
+            width={chipW(curText)}
+            height={chipH}
+            rx="4"
+            fill="#22303a"
+            stroke="#b0c1cf"
+            strokeOpacity="0.7"
+          />
+          <text
+            x={right - chipW(curText) / 2}
+            y={curChipY + 13}
+            fill="#e6eef2"
+            fontSize="11"
+            fontWeight="700"
+            textAnchor="middle"
+          >
+            {curText}
+          </text>
+        </g>
+      )}
+      {showLine && (
+        <g className="chart-buy-line" aria-label="買い走りライン">
+          <line
+            x1={left}
+            x2={right}
+            y1={lineY}
+            y2={lineY}
+            stroke="#64b5ff"
+            strokeWidth="1.4"
+            strokeDasharray="7 4"
+          />
+          <rect
+            x={right - chipW(lineText)}
+            y={lineChipY}
+            width={chipW(lineText)}
+            height={chipH}
+            rx="4"
+            fill="#10325c"
+            stroke="#62b2ff"
+            strokeOpacity="0.6"
+          />
+          <text
+            x={right - chipW(lineText) / 2}
+            y={lineChipY + 13}
+            fill="#bfe0ff"
+            fontSize="11"
+            fontWeight="700"
+            textAnchor="middle"
+          >
+            {lineText}
+          </text>
+        </g>
+      )}
     </g>
   );
 }

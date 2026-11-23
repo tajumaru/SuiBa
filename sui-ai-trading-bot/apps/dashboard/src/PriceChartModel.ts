@@ -364,6 +364,7 @@ export function usePriceChartModel({
     ghost,
     crossingMarks,
     linePrice: linePrice ?? null,
+    currentPrice: latest?.close ?? null,
     oversold: oversold ?? null,
     fcCone,
     fcMid,
