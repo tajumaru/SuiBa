@@ -143,6 +143,8 @@ export function Chart(props: {
   forecast?: import("./chartForecast.ts").ChartForecast | null;
   bookImbalance?: number | null;
   sellLines?: { tp: number; sl: number } | null;
+  linePrice?: number | null;
+  oversold?: number | null;
   answerCheck?: ForecastAnswerCheck | null;
 }) {
   return props.kind === "Price" ? (

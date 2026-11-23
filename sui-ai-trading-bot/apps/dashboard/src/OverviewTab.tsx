@@ -100,6 +100,7 @@ export function OverviewTab({
   forecastBandScale,
   forecastAnswer,
   sellLines,
+  linePrice,
   narrationShadow,
 }: {
   segment: OverviewSegment;
@@ -116,6 +117,7 @@ export function OverviewTab({
   forecastBandScale: number;
   forecastAnswer: ForecastAnswerCheck | null;
   sellLines: { tp: number; sl: number } | null;
+  linePrice: number | null;
   narrationShadow?: NarrationShadowDiagnostics | null;
 }) {
   const real = data.mode === "REAL";
@@ -243,6 +245,8 @@ export function OverviewTab({
                         answerCheck={forecastAnswer}
                         bookImbalance={data.bookImbalance}
                         sellLines={sellLines}
+                        linePrice={linePrice}
+                        oversold={data.settings.oversold}
                       />
                     </section>
                     {data.longTermDaily && data.longTermDaily.length >= 30 && (
