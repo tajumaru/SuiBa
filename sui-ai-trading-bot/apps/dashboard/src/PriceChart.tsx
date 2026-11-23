@@ -69,6 +69,7 @@ export function PriceChart(props: PriceChartProps) {
     ghost,
     crossingMarks,
     linePrice,
+    currentPrice,
     oversold,
     fcCone,
     fcPalette,
@@ -389,6 +390,7 @@ export function PriceChart(props: PriceChartProps) {
             )}
             <BuyLineOverlay
               linePrice={linePrice}
+              currentPrice={currentPrice}
               min={min}
               max={max}
               y={y}

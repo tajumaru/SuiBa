@@ -61,7 +61,20 @@ export function IndicatorPanel({
       lineValue <= max
         ? y(lineValue)
         : null,
-    lineText = lineY != null ? `${lineLabel ?? "買いライン"} ${lineValue}` : "",
+    lastValue =
+      lineY != null
+        ? ([...(sets[0] ?? [])]
+            .reverse()
+            .find((v): v is number => v != null) ?? null)
+        : null,
+    gapValue =
+      lineY != null && lastValue != null && lineValue != null
+        ? lineValue - lastValue
+        : null,
+    lineText =
+      lineY != null
+        ? `${lineLabel ?? "買いライン"} ${lineValue}${gapValue != null ? `（あと ${gapValue >= 0 ? "+" : "−"}${Math.abs(gapValue).toFixed(1)}）` : ""}`
+        : "",
     lineChipW =
       [...lineText].reduce(
         (sum, ch) => sum + (ch.charCodeAt(0) > 0x2000 ? 11 : 6.4),
