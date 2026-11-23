@@ -83,28 +83,26 @@ export function dailyBudgetView(data: State): DailyBudgetView {
 }
 
 /**
- * The 今日の残り card on the strategy tab's settings segment,
- * rendered with the saved-settings summary: today's consumption
- * of the buy budget and the loss cap, and whether a buy could
- * still go through. Display only — limits stay enforced by the
+ * The 今日の残り strip at the top of the narration feed, under
+ * いまの注目: how many more buys fit today and how much loss
+ * headroom is left, in one thin row the owner sees every time
+ * the feed opens. The verdict is shown only when a buy cannot
+ * go through — while buying is possible the numbers speak for
+ * themselves. Display only — limits stay enforced by the
  * worker exactly as before.
  */
-export function DailyBudgetCard({ data }: { data: State }) {
+export function DailyBudgetStrip({ data }: { data: State }) {
   const v = dailyBudgetView(data);
   return (
-    <div className="daily-budget" aria-label="今日の残り">
-      <h3>今日の残り</h3>
-      <p>
-        今日の購入：{number(v.usedUsdc, 4)} / {number(v.buyLimitUsdc, 4)}{" "}
-        USDC（あと {number(v.remainingUsdc, 4)} USDC・最大あと{" "}
-        {v.moreBuys ?? "—"} 回）
-      </p>
-      <p>
-        日次損失：{number(v.dailyPnlUsdc, 4)} USDC（損失上限 −
-        {number(v.lossCapUsdc, 4)} USDC まであと{" "}
-        {number(v.lossHeadroomUsdc, 4)} USDC）
-      </p>
-      <p>購入可否：{v.verdict}</p>
+    <div className="agent-feed-budget" aria-label="今日の残り">
+      <span className="agent-feed-budget-title">今日の残り</span>
+      <span>
+        購入 あと {v.moreBuys ?? "—"} 回（{number(v.remainingUsdc, 4)} USDC）
+      </span>
+      <span>損失 あと {number(v.lossHeadroomUsdc, 4)} USDC</span>
+      {v.verdict !== "買える（シグナル待ち）" && (
+        <strong className="agent-feed-budget-verdict">{v.verdict}</strong>
+      )}
     </div>
   );
 }

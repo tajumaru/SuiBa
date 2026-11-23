@@ -569,6 +569,7 @@ function App() {
                       api={narrationShadowApi}
                       pair={data.pair}
                       onShadowDiagnostics={setNarrationShadow}
+                      budgetData={data}
                     />
                   ) : (
                     <p role="status">

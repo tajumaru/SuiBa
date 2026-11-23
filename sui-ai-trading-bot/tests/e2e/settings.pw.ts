@@ -114,8 +114,6 @@ const modes = (page: Page) =>
     .getByRole("button");
 const maximum = (page: Page) =>
   page.getByRole("spinbutton", { name: /^1回の最大取引額/ });
-const saved = (page: Page) =>
-  page.getByLabel("保存済みの設定", { exact: true });
 const review = (page: Page) =>
   page.getByRole("group", { name: "保存前の変更内容確認", exact: true });
 
@@ -149,7 +147,7 @@ test("recommends safe settings without guessing first use, and reviews without s
     .getByRole("button", { name: "編集に戻る", exact: true })
     .click();
   await expect(maximum(page)).toHaveValue("2");
-  await expect(saved(page)).toContainText("最大取引額：5 USDC");
+  expect(api.state.settings.maxOrder).toBe(5);
   await expect(
     page.getByRole("button", { name: "PAPER運用開始", exact: true }),
   ).toBeDisabled();
@@ -198,7 +196,7 @@ test("confirms, prevents duplicate saving, rereads settings, then starts only on
   await expect(
     page.locator(".easy-settings").getByRole("status"),
   ).toContainText("適用済み：イージー");
-  await expect(saved(page)).toContainText("最大取引額：2 USDC");
+  expect(api.state.settings.maxOrder).toBe(2);
   expect(api.state.settings).toMatchObject({
     dailyLossPct: 0.002,
     maxHoldingRatio: 0.08,
@@ -242,7 +240,7 @@ for (const failure of ["post", "read"] as const)
       "設定を保存・再確認できませんでした",
     );
     await expect(page.locator(".settings-success")).toHaveCount(0);
-    await expect(saved(page)).toContainText("最大取引額：5 USDC");
+    expect(api.state.settings.maxOrder).toBe(5);
     expect(api.commands).toHaveLength(0);
     api.setFailure("none");
     await review(page)

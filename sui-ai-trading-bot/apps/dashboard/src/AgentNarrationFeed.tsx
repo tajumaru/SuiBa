@@ -8,6 +8,7 @@ import type {
   PointSmileCause,
 } from "./agentNarration.ts";
 import { agentDisplayName } from "./agentName.ts";
+import { DailyBudgetStrip } from "./DailyBudget.tsx";
 import { greetingText } from "./narration/voice.ts";
 import { useAgentCharacter } from "./agentCharacter.ts";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -96,8 +97,12 @@ export function AgentNarrationFeed({
   api,
   pair,
   onShadowDiagnostics,
+  budgetData = null,
 }: {
   data: OperationsSnapshot;
+  /** The engine snapshot (display-only), for the 今日の残り
+   * strip under いまの注目. */
+  budgetData?: import("../../worker/src/engine.ts").BotSnapshot | null;
   boss?: BossBattleState | null;
   stale: boolean;
   /** The latest BTC weather sample (display-only), for the
@@ -538,6 +543,7 @@ export function AgentNarrationFeed({
           <span className="agent-feed-watch-detail">{watch.detail}</span>
         </div>
       )}
+      {budgetData && <DailyBudgetStrip data={budgetData} />}
       {replay && (
         <Suspense fallback={null}>
           <HighlightReplay highlight={replay} onClose={() => setReplay(null)} />

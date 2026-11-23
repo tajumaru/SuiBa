@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { defaults, type Settings } from "../packages/shared/src/index.ts";
 import type { BotEngine } from "../apps/worker/src/engine.ts";
 import {
-  DailyBudgetCard,
+  DailyBudgetStrip,
   dailyBudgetView,
 } from "../apps/dashboard/src/DailyBudget.tsx";
 
@@ -51,7 +51,7 @@ function data(
 }
 
 const render = (state: State) =>
-  renderToStaticMarkup(<DailyBudgetCard data={state} />);
+  renderToStaticMarkup(<DailyBudgetStrip data={state} />);
 
 describe("今日の残り (daily budget view)", () => {
   it("shows the remaining budget and buy count when a buy can still go through", () => {
@@ -66,11 +66,10 @@ describe("今日の残り (daily budget view)", () => {
     expect(view.verdict).toBe("買える（シグナル待ち）");
     const html = render(state);
     expect(html).toContain("今日の残り");
-    expect(html).toContain("今日の購入：5 / 20 USDC（あと 15 USDC・最大あと 3 回）");
-    expect(html).toContain(
-      "日次損失：-0.1377 USDC（損失上限 −1 USDC まであと 0.8623 USDC）",
-    );
-    expect(html).toContain("購入可否：買える（シグナル待ち）");
+    expect(html).toContain("購入 あと 3 回（15 USDC）");
+    expect(html).toContain("損失 あと 0.8623 USDC");
+    // The verdict stays silent while a buy can still go through.
+    expect(html).not.toContain("買える（シグナル待ち）");
   });
 
   it("reports the buy limit once the daily budget is spent", () => {
@@ -79,7 +78,7 @@ describe("今日の残り (daily budget view)", () => {
     expect(view.remainingUsdc).toBe(0);
     expect(view.moreBuys).toBe(0);
     expect(view.verdict).toBe("購入上限に到達");
-    expect(render(state)).toContain("購入可否：購入上限に到達");
+    expect(render(state)).toContain("購入上限に到達");
   });
 
   it("reports the buy limit when the remainder fits no full-size order", () => {
@@ -96,7 +95,7 @@ describe("今日の残り (daily budget view)", () => {
     const view = dailyBudgetView(state);
     expect(view.lossHeadroomUsdc).toBeCloseTo(-0.2);
     expect(view.verdict).toBe("日次損失上限に到達");
-    expect(render(state)).toContain("購入可否：日次損失上限に到達");
+    expect(render(state)).toContain("日次損失上限に到達");
   });
 
   it("reports the holding cap when the position already sits at it", () => {
