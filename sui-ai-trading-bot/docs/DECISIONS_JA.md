@@ -462,3 +462,7 @@ follow-up が成功した場合だけ START へ進み、closeout できない場
 ## 2026-11-18 相場データの既定を DeepBook＋verified に変更
 
 ローカル実行で既定だったGeckoTerminal無料APIがHTTP 429を繰り返し、testnet Botを安全停止させた。何も指定しない環境を本番の安定構成と揃えるため、`MARKET_DATA_PROVIDER`の既定を`deepbook`、`DEEPBOOK_RECONSTRUCT_CANDLES`の既定を`verified`へ変更する。DeepBook Indexerの欠損足は公式Indexerの根拠がある場合だけ再構成し、未解決の欠損による全取得失敗を避ける。明示的な環境変数は引き続き優先し、GeckoTerminal provider、`auto`、取得・再試行・キャッシュのロジックは変更しない。
+
+## 2026-11-24 相場データ取得時の HTTP 500 を自動復旧の対象にする
+
+11月23日、DeepBook Indexer が一度 HTTP 500 を返しただけで本番が停止し、手動での再開が必要になった（Issue #486）。同様の一時的な障害が繰り返されているため、DeepBook Indexer と GeckoTerminal の相場データ取得で、固定ホストと HTTP ステータスの証拠が一致する 500 は、一時停止と健全確認を経て自動復旧する。障害が続けば既存の上限で停止する。対象は相場データ取得に限り、Sui gRPC の読み取りと注文・執行は範囲外とする。
