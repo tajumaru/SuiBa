@@ -416,7 +416,7 @@ function App() {
       return null;
     } catch (e) {
       const code = errorCode(e);
-      if (command !== "start" && command !== "force-close") setBannerError(code);
+      if (command !== "start") setBannerError(code);
       return code;
     }
   }
