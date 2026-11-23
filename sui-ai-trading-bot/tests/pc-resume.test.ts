@@ -260,7 +260,7 @@ describe("pc:resume", () => {
         status: 200,
         body: { running: true, resetScope: { pending: false } },
       })
-      .mockResolvedValueOnce({
+      .mockResolvedValue({
         status: 200,
         body: { running: true, safety: { ordersAllowed: false } },
       });
@@ -268,6 +268,26 @@ describe("pc:resume", () => {
     expect(deps.print).toHaveBeenCalledWith(
       expect.stringContaining("再開を確認できませんでした"),
     );
+  });
+
+  it("waits for the final state to reflect the opened gate", async () => {
+    const { deps, run } = fixture();
+    deps.request
+      .mockReset()
+      .mockResolvedValueOnce({
+        status: 200,
+        body: { running: true, resetScope: { pending: false } },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        body: { running: true, safety: { ordersAllowed: false } },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        body: { running: true, safety: { ordersAllowed: true } },
+      });
+    expect(await run()).toBe(0);
+    expect(deps.print).toHaveBeenCalledWith("再開しました");
   });
 
   it("appends a success line to the ops log", async () => {

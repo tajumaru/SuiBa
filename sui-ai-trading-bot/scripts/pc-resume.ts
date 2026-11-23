@@ -216,14 +216,23 @@ export async function runPcResume(argv: string[], deps: PcResumeDependencies) {
   if (!approval?.success || parseResult(approval.stdout)?.opened !== true)
     return await fail("再開できませんでした。注文の許可を出す処理に失敗しました。");
 
-  const final = await request("/api/state");
-  const finalState = final?.body as State | undefined;
-  if (
-    !final ||
-    !ok(final) ||
-    (finalState?.running ?? finalState?.runtime?.running) !== true ||
-    finalState?.safety?.ordersAllowed !== true
-  )
+  // 許可を開いた直後は、状態表示への反映がエンジンの周期ぶん遅れる
+  // ことがある（実績 2026-11-23：更新スクリプト内の pc:resume がこの
+  // 確認だけで失敗し、直後の pc:status では全チェックOKだった）。
+  // 1 回の読みで決めず、間隔を空けて読み直す。
+  let confirmed = false;
+  for (let attempt = 0; attempt < 12 && !confirmed; attempt++) {
+    if (attempt > 0) await deps.wait(5_000);
+    const final = await request("/api/state");
+    const finalState = final?.body as State | undefined;
+    confirmed = Boolean(
+      final &&
+        ok(final) &&
+        (finalState?.running ?? finalState?.runtime?.running) === true &&
+        finalState?.safety?.ordersAllowed === true,
+    );
+  }
+  if (!confirmed)
     return await fail(
       "再開を確認できませんでした。Botの稼働と注文の許可を両方確認できません。",
     );
