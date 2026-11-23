@@ -129,9 +129,10 @@ describe("merged strategy tab content", () => {
     expect(html).toContain("緊急停止を解除（再開は手動）");
     // The full save flow stays available on the merged tab. The
     // always-on preview box is gone — the diff shows only in the
-    // save review — while the saved values stay on the page.
+    // save review — and the saved-settings summary is gone too:
+    // the form itself holds the saved values.
     expect(html).not.toContain("適用予定の設定");
-    expect(html).toContain("保存済みの設定");
+    expect(html).not.toContain("保存済みの設定");
     expect(html).toContain("PAPER運用開始");
   });
 

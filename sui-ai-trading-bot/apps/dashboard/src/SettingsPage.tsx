@@ -19,7 +19,6 @@ import {
 } from "./settingsEditor.ts";
 import { number, errorCode, reason } from "./presentation.ts";
 import partySageIcon from "./assets/party-sage.webp";
-import { DailyBudgetCard } from "./DailyBudget.tsx";
 import {
   isStartRecoveryWait,
   startRejectionReason,
@@ -461,13 +460,7 @@ export function useSettingsEditor(
   };
 }
 export type SettingsEditor = ReturnType<typeof useSettingsEditor>;
-export function SettingsForm({
-  editor,
-  data,
-}: {
-  editor: SettingsEditor;
-  data: State;
-}) {
+export function SettingsForm({ editor }: { editor: SettingsEditor }) {
   const {
     saved,
     draft,
@@ -588,18 +581,10 @@ export function SettingsForm({
           {error}
         </p>
       )}
-      <DailyBudgetCard data={data} />
-      <div className="settings-saved" aria-label="保存済みの設定">
-        <h3>保存済みの設定</h3>
-        <p>
-          最大取引額：{number(saved.maxOrder)} USDC ／ 1日の購入上限：
-          {number(saved.dailyBuyLimit)} USDC
-        </p>
-        {/* The profit-guard state (enabled flag, minimums and the
-            latest verdict) is shown once on this tab, in the
-            strategy view's ProfitGuard card and detail panel;
-            the toggle stays in the advanced settings. */}
-      </div>
+      {/* The profit-guard state (enabled flag, minimums and the
+          latest verdict) is shown once on this tab, in the
+          strategy view's ProfitGuard card and detail panel;
+          the toggle stays in the advanced settings. */}
     </section>
   );
 }
@@ -877,7 +862,7 @@ export function SettingsPage({
   const editor = useSettingsEditor(data, api, onSaved);
   return (
     <>
-      <SettingsForm editor={editor} data={data} />
+      <SettingsForm editor={editor} />
       <PaperOperationControls data={data} editor={editor} control={control} />
     </>
   );
