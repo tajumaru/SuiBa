@@ -11,6 +11,7 @@ import { IndexerGraphqlHistorySource } from "./history-source.ts";
 import { cacheRealBalances } from "./display-balances.ts";
 import { createDeepBookReadOnly } from "./read-only.ts";
 import type { RealEffects, RealIdentity } from "./types.ts";
+import { RealVenueBookCache } from "./venue-book.ts";
 import { RealBookParamsCache } from "./book-params-cache.ts";
 import { RealReconciler } from "./reconciler.ts";
 import { RealFeeCache } from "./fee-cache.ts";
@@ -172,6 +173,7 @@ export function createRealTradeCapRuntime(
     config,
     feeCache,
     new RealBookParamsCache(config),
+    new RealVenueBookCache(reader.readBook),
   );
   const history = new IndexerGraphqlHistorySource(
     config.indexerUrl,

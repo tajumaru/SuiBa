@@ -128,7 +128,9 @@ export function createDeepBookReadOnly(
       account.settled_balances,
     ),
   });
+  const readBook = () => client.deepbook.getLevel2TicksFromMid(config.poolKey, 50);
   return {
+    readBook,
     async readBalances() {
       return balanceParts(await Promise.all(balanceReads()));
     },
@@ -147,7 +149,7 @@ export function createDeepBookReadOnly(
         ...balanceReads(),
         client.deepbook.accountOpenOrders(config.poolKey, "PHASE1"),
         client.deepbook.getAccountOrderDetails(config.poolKey, "PHASE1"),
-        client.deepbook.getLevel2TicksFromMid(config.poolKey, 50),
+        readBook(),
         // Fee discovery is fail-closed for entries in the engine, but must not
         // make the whole balance/open-order snapshot unavailable: exits have a
         // separately audited last-known/assumption fallback.
