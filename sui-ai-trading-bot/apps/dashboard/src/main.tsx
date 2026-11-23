@@ -589,6 +589,7 @@ function App() {
                     timeframe={timeframe}
                     setTimeframe={setTimeframe}
                     api={api}
+                    control={control}
                     forecastScoreLine={forecastScoreLine}
                     forecastTouchLine={forecastTouchLine}
                     forecastBandScale={forecastCalib.scale}

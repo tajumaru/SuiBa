@@ -1286,3 +1286,50 @@ it("concurrent cancelled reads during shutdown do not trip the API error counter
   );
   expect(t.db.runtime()).toMatchObject({ running: false, error: null });
 });
+
+it("force-closes at a loss in capped PAPER fills and clears the request on the final fill", async () => {
+  const { db, engine, tick } = fixture();
+  const analyze = vi.mocked(RuleBasedStrategy.prototype.analyze);
+  analyze.mockResolvedValueOnce({
+    action: "BUY", confidence: 1, reason: "fixture", timestamp: "fixture",
+    stopLossPct: 0.02, takeProfitPct: 0.3,
+  });
+  db.updateSettings({ ...db.settings(), maxOrder: 10, profitGuardEnabled: false });
+  await tick();
+  const position = db.portfolio().sui;
+  expect(position).toBeGreaterThan(2.5);
+
+  db.updateSettings({ ...db.settings(), maxOrder: 5, profitGuardEnabled: true });
+  const request = { requestedAt: Date.now() };
+  db.set("forceClose", request);
+  await tick();
+  expect(engine.snapshot().forceClose).toEqual(request);
+  expect(engine.snapshot().latestManualFill).toBeNull();
+
+  await tick(300_000);
+  const partial = engine.snapshot();
+  expect(partial.latestManualFill).toMatchObject({ sellPurpose: "MANUAL", quantity: 2.5 });
+  expect(partial.latestManualFill!.pnl).toBeLessThan(0);
+  expect(partial.latestManualFill!.costs).toMatchObject({ source: "PAPER_MODEL" });
+  expect(partial.portfolio.sui).toBeCloseTo(position - 2.5);
+  expect(partial.forceClose).toEqual(request);
+
+  await tick(300_000);
+  expect(db.portfolio().sui).toBe(0);
+  expect(db.get("forceClose")).toBeNull();
+  expect(engine.snapshot().latestManualFill).toMatchObject({ sellPurpose: "MANUAL" });
+});
+
+it.each(["expired", "emergency", "stopped"])(
+  "does not execute a force-close request when %s",
+  async (state) => {
+    const { db, tick } = fixture();
+    db.set("portfolio", { ...db.portfolio(), sui: 1, costBasis: 2 });
+    db.set("runtime", { ...db.runtime(), running: false, emergency: state === "emergency" });
+    const request = { requestedAt: Date.now() - (state === "expired" ? 600_001 : 0) };
+    db.set("forceClose", request);
+    await tick();
+    expect(db.history("paper_trades")).toHaveLength(0);
+    expect(db.get("forceClose")).toEqual(state === "stopped" ? request : null);
+  },
+);

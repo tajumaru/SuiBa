@@ -259,6 +259,8 @@ export function cycleNarrationText(
           : `損切りのラインに触れたよ。価格は${price(dec.price)}だね`;
       case "STRATEGY_EXIT":
         return `売りシグナルが出たよ。価格は${price(dec.price)}だね`;
+      case "MANUAL":
+        return `強制決済の売り判定だよ。価格は${price(dec.price)}だね`;
       case "RISK_REDUCTION":
       case "EMERGENCY_EXIT":
         return `リスクを減らす売り判定だよ。価格は${price(dec.price)}だね`;

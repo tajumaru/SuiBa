@@ -1268,6 +1268,8 @@ export class BotDatabase {
         throw new Error("BOT_STOPPED");
       this.append("paper_orders", id, order, trade.timestamp);
       this.append("paper_trades", id, trade, trade.timestamp);
+      if (trade.sellPurpose === "MANUAL" && portfolio.sui === 0)
+        this.set("forceClose", null);
       this.set("portfolio", portfolio);
       this.set("runtime", runtime);
       if (verification?.validation)

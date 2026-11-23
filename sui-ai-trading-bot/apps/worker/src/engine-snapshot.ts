@@ -8,6 +8,7 @@ import {
   type ChainInfo,
   type DailyCandle,
   type Indicators,
+  type ForceCloseRequest,
   type TradingPair,
 } from "../../../packages/shared/src/index.ts";
 import { marketWeather } from "./market-weather.ts";
@@ -69,6 +70,7 @@ export function downsampleEquityCurve(
  */
 export interface SnapshotSources {
   mode: "PAPER" | "REAL";
+  forceClose?: ForceCloseRequest | null;
   network: "testnet" | "mainnet";
   realBalances?: () => RealBalances | undefined;
   realReconciliation?: () => { nonTerminalSubmissions: number };
@@ -163,6 +165,10 @@ export function buildSnapshot(
       marketQuality: src.db.get("market_quality") ?? null,
       mode: src.mode,
       runtime: src.db.runtime(),
+      forceClose: src.forceClose ?? null,
+      latestManualFill:
+        trades.find((trade) => trade.sellPurpose === "MANUAL") ?? null,
+      latestTradeAt: trades[0]?.timestamp ?? null,
       safety: src.monitor.safetySnapshot(),
       connection: src.sui.status,
       price,

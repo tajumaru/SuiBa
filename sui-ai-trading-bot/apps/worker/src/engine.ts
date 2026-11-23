@@ -11,6 +11,8 @@ import { apiAccess } from "../../../packages/shared/src/api.ts";
 import { randomUUID } from "node:crypto";
 import {
   atomic,
+  FORCE_CLOSE_TTL_MS,
+  type ForceCloseRequest,
   profitConfigOf,
   tradingPairs,
   type TradingPair,
@@ -287,7 +289,6 @@ export class BotEngine {
       this.db.set("portfolio", p);
     }
     const s = this.db.settings(),
-      runtime = this.db.runtime(),
       current = calculate(c),
       previous = calculate(c.slice(0, -1));
     const reg = new StrategyRegistry();
@@ -389,7 +390,7 @@ export class BotEngine {
         }),
       );
     }
-    return { recoveryTransition, p, s, runtime, decision, sellPreview };
+    return { recoveryTransition, p, s, decision, sellPreview };
   }
 
   /**
@@ -835,6 +836,8 @@ export class BotEngine {
       pending: 0,
     });
     if (contextChanged) finalReasons.push("EXECUTION_CONTEXT_CHANGED");
+    if (decision.sellPurpose === "MANUAL" && !this.pendingForceClose())
+      finalReasons.push("FORCE_CLOSE_REQUEST_INACTIVE");
     if (!finalProfit.allowed)
       finalReasons.push("PROFIT_GUARD_" + finalProfit.reason);
     if (finalReasons.length) {
@@ -920,6 +923,7 @@ export class BotEngine {
       executionSettings,
       executionNow,
     );
+    if (decision.sellPurpose === "MANUAL") fill.trade.sellPurpose = "MANUAL";
     const check = reconcileFill(
       p,
       fill.portfolio,
@@ -973,8 +977,9 @@ export class BotEngine {
 
   async tick() {
     this.db.assertHealthy();
-    if (this.deploymentStopped()) return;
     if (this.busy) return;
+    this.clearInactiveForceClose();
+    if (this.deploymentStopped()) return;
     this.busy = true;
     let audit: CandidateAudit | null = null;
     const fillState = { committed: false };
@@ -1043,8 +1048,19 @@ export class BotEngine {
       } finally {
         finishAnalysis?.();
       }
-      const { recoveryTransition, p, s, runtime, decision, sellPreview } =
-        analysis;
+      const { recoveryTransition, p, s, sellPreview } = analysis;
+      const runtime = this.db.runtime();
+      const decision: TradingDecision =
+        p.sui > 0 && this.pendingForceClose()
+          ? {
+              ...analysis.decision,
+              evidence: undefined,
+              action: "SELL",
+              sellPurpose: "MANUAL",
+              reason: "MANUAL",
+              confidence: 1,
+            }
+          : analysis.decision;
       measuredAction = decision.action;
       if (
         this.gateStopsCycle(
@@ -1156,6 +1172,7 @@ export class BotEngine {
         reasons: [code],
       });
     } finally {
+      this.clearInactiveForceClose();
       const quality = this.market.status?.()?.quality;
       if (quality) this.db.set("market_quality", quality);
       if (!this.monitor.shuttingDown) this.monitor.healthy();
@@ -1250,11 +1267,32 @@ export class BotEngine {
       this.db.set("runtime", { ...this.db.runtime(), lastCandle: candle });
     });
   }
+  get executionMode() {
+    return this.executionAdapter ? "REAL" : "PAPER";
+  }
+
+  pendingForceClose(now = Date.now()): ForceCloseRequest | null {
+    const request = this.db.get<ForceCloseRequest>("forceClose");
+    if (!request || this.executionMode !== "PAPER") return null;
+    const runtime = this.db.runtime();
+    return !runtime.emergency &&
+      this.db.portfolio().sui > 0 &&
+      now - request.requestedAt <= FORCE_CLOSE_TTL_MS
+      ? request
+      : null;
+  }
+
+  private clearInactiveForceClose() {
+    if (this.db.get<ForceCloseRequest>("forceClose") && !this.pendingForceClose())
+      this.db.set("forceClose", null);
+  }
+
   snapshot(options: { light?: boolean } = {}) {
     return buildSnapshot(
       {
         ...this.snapshotDisplay,
-        mode: this.executionAdapter ? "REAL" : "PAPER",
+        mode: this.executionMode,
+        forceClose: this.pendingForceClose(),
         pair: this.pair,
         db: this.db,
         monitor: this.monitor,
