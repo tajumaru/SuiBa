@@ -18,7 +18,7 @@ import {
   type TradingStrategy,
   type Portfolio,
 } from "../../shared/src/index.ts";
-import { calculate } from "../../indicators/src/index.ts";
+import { calculateSeries } from "../../indicators/src/index.ts";
 import { validateCandles } from "../../market-data/src/index.ts";
 import { RuleBasedStrategy } from "../../strategy-engine/src/index.ts";
 import { assessRisk } from "../../risk-engine/src/index.ts";
@@ -223,6 +223,7 @@ async function run(
   o: ComparisonOptions,
   settings: Settings,
   enabled: boolean,
+  indicators: ReturnType<typeof calculateSeries>,
   deps: Dependencies,
 ): Promise<RunResult> {
   const s = { ...settings, profitGuardEnabled: enabled },
@@ -257,11 +258,13 @@ async function run(
         dailyBought: 0,
         dayStartEquity: equity(p, price),
       };
-    // Analyze only completed candles. The current bar's open is used only AFTER the decision.
+    // history is the prefix before i. Give each analysis its own copies of
+    // the cached indicators, just like the copied candles.
+    // The current bar's open is used only AFTER the decision.
     const decision = await strategy.analyze({
       candles: history,
-      current: calculate(history),
-      previous: calculate(history.slice(0, -1)),
+      current: { ...indicators[i - 1]! },
+      previous: { ...indicators[i - 2]! },
       entryPrice: p.sui ? p.costBasis / p.sui : null,
       now: (previous.timestamp + previous.timeframe) * 1000,
     });
@@ -437,8 +440,9 @@ export async function compareBacktests(
     minNetProfitUsdc: o.minNetProfitUsdc,
     minNetProfitPct: o.minNetProfitPct,
   });
-  const off = await run(c, o, s, false, deps),
-    on = await run(c, o, s, true, deps);
+  const indicators = calculateSeries(c),
+    off = await run(c, o, s, false, indicators, deps),
+    on = await run(c, o, s, true, indicators, deps);
   return {
     version: 2,
     mode: "PAPER" as const,

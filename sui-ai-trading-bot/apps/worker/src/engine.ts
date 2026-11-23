@@ -51,7 +51,7 @@ import {
 import { BotDatabase } from "../../../packages/database/src/index.ts";
 import { buildSnapshot, type SnapshotSources } from "./engine-snapshot.ts";
 export { downsampleEquityCurve } from "./engine-snapshot.ts";
-import { calculate } from "../../../packages/indicators/src/index.ts";
+import { calculateSeries } from "../../../packages/indicators/src/index.ts";
 import {
   RuleBasedStrategy,
   StrategyRegistry,
@@ -289,8 +289,10 @@ export class BotEngine {
       this.db.set("portfolio", p);
     }
     const s = this.db.settings(),
-      current = calculate(c),
-      previous = calculate(c.slice(0, -1));
+      indicators = calculateSeries(c),
+      current = indicators.at(-1),
+      previous = indicators.at(-2);
+    if (!current || !previous) throw new Error("INSUFFICIENT_DATA");
     const reg = new StrategyRegistry();
     reg.register("rule-based", new RuleBasedStrategy(s));
     const decision = await reg.get(s.strategy).analyze({

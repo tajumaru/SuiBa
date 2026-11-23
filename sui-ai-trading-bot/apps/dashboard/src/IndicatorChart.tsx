@@ -1,4 +1,7 @@
-import { calculate, ema } from "../../../packages/indicators/src/index.ts";
+import {
+  calculateSeries,
+  ema,
+} from "../../../packages/indicators/src/index.ts";
 import type { Candle } from "../../../packages/shared/src/index.ts";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import type { ForecastAnswerCheck } from "./forecastLog.ts";
@@ -41,9 +44,7 @@ export function IndicatorChart({
     min = Math.min(...c.map((x) => x.low));
     max = Math.max(...c.map((x) => x.high));
   } else {
-    const indicators = candles
-      .map((_, i) => (i >= 59 ? calculate(candles.slice(0, i + 1)) : null))
-      .slice(-100);
+    const indicators = calculateSeries(candles).slice(-100);
     sets =
       kind === "RSI"
         ? [indicators.map((x) => x?.rsi ?? null)]
