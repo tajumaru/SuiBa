@@ -168,9 +168,12 @@
   min-height: 0;
 }
 
+/* A locked toggle (unsaved form edits, or a save in flight) must not
+   dim the row: dimming is the OFF look (li[data-off] below), and an ON
+   member rendered at 60% opacity reads as if it had been switched off
+   too. The note under the list already explains the lock. */
 .overview-party-toggle:disabled {
   cursor: default;
-  opacity: 0.6;
 }
 
 .overview-party li[data-off] .overview-party-icon {
