@@ -191,6 +191,66 @@ describe("REAL TradeCap read-only reconciliation", () => {
     }
   });
 
+  it("replays applied pages after replacing the TradeCap and applies new events", async () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    try {
+      const oldIdentity = id();
+      const newIdentity = { ...oldIdentity, tradeCapId: `0x${"4".repeat(64)}` };
+      const pages = [
+        {
+          events: [{ ...event("ORDER_FILLED", "1", oldIdentity), checkpoint: "41" }],
+          nextCursor: "1",
+          checkpoint: "41",
+          checkpointHash: "h41",
+        },
+        {
+          events: [event("ORDER_FILLED", "2", oldIdentity)],
+          nextCursor: null,
+          checkpoint: "42",
+          checkpointHash: "h42",
+        },
+      ];
+      await new RealReconciler(db, oldIdentity, source(pages)).reconcileAllPages();
+      const checkpoint = { cursor: null, checkpoint: "42", checkpointHash: "h42" };
+      expect(db.checkpoint()).toEqual(checkpoint);
+      expect(db.ledgerCount()).toBe(2);
+
+      const replayPages = pages.map((page) => ({
+        ...page,
+        events: page.events.map((entry) => ({ ...entry, identity: newIdentity })),
+      }));
+      const reconciler = new RealReconciler(db, newIdentity, source(replayPages));
+      await expect(reconciler.reconcileAllPages()).resolves.toMatchObject({
+        pages: 2, events: 0,
+      });
+      expect(db.ledgerCount()).toBe(2);
+      expect(db.checkpoint()).toEqual(checkpoint);
+      expect(db.hasLatch(newIdentity)).toBe(false);
+
+      const next = { ...event("ORDER_FILLED", "3", newIdentity), checkpoint: "43" };
+      replayPages[1]!.nextCursor = "2";
+      replayPages.push({
+        events: [next],
+        nextCursor: null,
+        checkpoint: "43",
+        checkpointHash: "h43",
+      });
+      await expect(reconciler.reconcileAllPages()).resolves.toMatchObject({
+        pages: 3, events: 1,
+      });
+      expect(db.ledgerCount()).toBe(3);
+      expect(db.ledgerEvents(newIdentity)).toEqual([next]);
+      expect(db.balanceLedger(newIdentity)).toMatchObject([
+        { asset: "SUI", availableAtomic: "10", settledUnclaimedAtomic: "3" },
+      ]);
+      expect(db.checkpoint()).toEqual({
+        cursor: null, checkpoint: "43", checkpointHash: "h43",
+      });
+    } finally {
+      db.close();
+    }
+  });
+
   it.each(["missing", "changed"])(
     "latches an older page with a %s ledger event even when its last event matches",
     async (caseName) => {
