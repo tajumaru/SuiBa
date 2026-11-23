@@ -29,7 +29,8 @@ export type Purpose =
   | "STOP_LOSS"
   | "STRATEGY_EXIT"
   | "RISK_REDUCTION"
-  | "EMERGENCY_EXIT";
+  | "EMERGENCY_EXIT"
+  | "MANUAL";
 export interface ProfitReport {
   allowed: boolean;
   action: "BUY" | "SELL" | "WAIT";
@@ -252,6 +253,7 @@ export function evaluateSell(r: {
     "STRATEGY_EXIT",
     "EMERGENCY_EXIT",
     "RISK_REDUCTION",
+    "MANUAL",
   ].includes(r.purpose);
   let failure = "INVALID_PROFIT_CONFIG";
   try {

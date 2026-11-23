@@ -12,6 +12,7 @@ import { Chart } from "./IndicatorChart.tsx";
 import type { SettingsApi } from "./settingsPresets.ts";
 import type { ForecastAnswerCheck } from "./forecastLog.ts";
 import type { NarrationShadowDiagnostics } from "./narrationShadow.ts";
+import { ForceClose } from "./ForceClose.tsx";
 import { JpyAmount } from "./JpyAmount.tsx";
 
 
@@ -93,6 +94,7 @@ export function OverviewTab({
   timeframe,
   setTimeframe,
   api,
+  control,
   forecastScoreLine,
   forecastTouchLine,
   forecastBandScale,
@@ -108,6 +110,7 @@ export function OverviewTab({
   timeframe: 300 | 900 | 3600;
   setTimeframe: (tf: 300 | 900 | 3600) => void;
   api: SettingsApi;
+  control: (command: string) => Promise<string | null>;
   forecastScoreLine: string | null;
   forecastTouchLine: string | null;
   forecastBandScale: number;
@@ -174,6 +177,11 @@ export function OverviewTab({
                             costBasis={data.portfolio.costBasis}
                             baseSymbol={data.pair === "WAL_USDC" ? "WAL" : "SUI"}
                             usdJpy={usdJpy}
+                          />
+                          <ForceClose
+                            key={data.pair}
+                            data={data}
+                            control={control}
                           />
                           <div className="overview-assets-pnl">
                             <small>累計損益</small>

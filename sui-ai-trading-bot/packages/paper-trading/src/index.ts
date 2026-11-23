@@ -8,6 +8,7 @@ import {
   type Portfolio,
   type QuoteResult,
   type Settings,
+  type TradingDecision,
 } from "../../shared/src/index.ts";
 import {
   recordAcquisition,
@@ -24,6 +25,7 @@ export interface Fill {
   price: number;
   fee: number;
   pnl: number | null;
+  sellPurpose?: TradingDecision["sellPurpose"];
   slippage: number;
   priceImpact: number;
   costs?: Costs;
@@ -51,7 +53,7 @@ export class PaperTrading implements TradingExecutor {
     p: Portfolio,
     s: Settings,
     now: number,
-  ) {
+  ): { portfolio: Portfolio; trade: Fill } {
     const base = p.baseCoin ?? SUI;
     if (
       coin(side === "BUY" ? q.to : q.from) !== base ||

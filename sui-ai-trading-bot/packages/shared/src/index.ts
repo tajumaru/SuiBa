@@ -245,8 +245,13 @@ export interface TradingDecision {
     | "STOP_LOSS"
     | "STRATEGY_EXIT"
     | "RISK_REDUCTION"
-    | "EMERGENCY_EXIT";
+    | "EMERGENCY_EXIT"
+    | "MANUAL";
 }
+export interface ForceCloseRequest {
+  requestedAt: number;
+}
+export const FORCE_CLOSE_TTL_MS = 10 * 60_000;
 export interface MarketContext {
   candles: Candle[];
   current: Indicators;

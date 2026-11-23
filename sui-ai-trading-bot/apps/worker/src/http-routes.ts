@@ -697,13 +697,35 @@ export function createRequestHandler(ctx: WorkerContext) {
       if (url.pathname === "/api/control") {
         const command = body.command;
         const r = ctx.db.runtime();
+        if (command === "force-close") {
+          if (
+            deploymentMode() !== "PAPER" ||
+            ctx.engine.executionMode === "REAL"
+          ) {
+            send(409, { error: "FORCE_CLOSE_PAPER_ONLY" });
+          } else if (r.emergency || r.error) {
+            send(409, { error: "RESET_REQUIRED" });
+          } else if (ctx.db.portfolio().sui <= 0) {
+            send(409, { error: "FORCE_CLOSE_NO_POSITION" });
+          } else {
+            const request = ctx.engine.pendingForceClose() ?? {
+              requestedAt: Date.now(),
+            };
+            ctx.db.set("forceClose", request);
+            send(200, request);
+          }
+          return;
+        }
         if (command === "stop" || command === "emergency")
           ctx.engine.acceptExecutionStop(
             command === "emergency" ? "EMERGENCY_STOP" : "OWNER_STOP",
           );
-        if (command === "emergency")
-          ctx.db.set("runtime", { ...r, running: false, emergency: true });
-        else if (command === "clear-emergency") {
+        if (command === "emergency") {
+          ctx.db.transaction(() => {
+            ctx.db.set("runtime", { ...r, running: false, emergency: true });
+            ctx.db.set("forceClose", null);
+          });
+        } else if (command === "clear-emergency") {
           // The owner's dedicated release for an owner-latched emergency
           // (PR #105 left this path unbuilt: the scoped reset refuses
           // emergencies by contract, and nothing else could clear one).

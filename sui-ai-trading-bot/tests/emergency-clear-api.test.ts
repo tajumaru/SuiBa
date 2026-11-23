@@ -125,3 +125,33 @@ it("the scoped reset still refuses an emergency (PR #105 contract)", async () =>
   expect(res.value).toMatchObject({ error: "RESET_EMERGENCY_ACTIVE" });
   expect(db.runtime().emergency).toBe(true);
 });
+
+it.each([
+  ["PAPER", {}, 0, "FORCE_CLOSE_NO_POSITION"],
+  ["REAL_TRADECAP", {}, 1, "FORCE_CLOSE_PAPER_ONLY"],
+  ["REAL_READONLY", {}, 1, "FORCE_CLOSE_PAPER_ONLY"],
+  ["PAPER", { emergency: true }, 1, "RESET_REQUIRED"],
+  ["PAPER", { error: "UPSTREAM_HTTP_500" }, 1, "RESET_REQUIRED"],
+] as const)("rejects force-close in %s with runtime %j and position %i", async (mode, runtime, sui, error) => {
+  vi.stubEnv("MODE", mode);
+  try {
+    const { db, control } = await fixture(runtime);
+    db.set("portfolio", { ...db.portfolio(), sui });
+    expect(await control({ command: "force-close" })).toEqual({ status: 409, value: { error } });
+    expect(db.get("forceClose")).toBeUndefined();
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+it("queues force-close without trading, preserves the expiry on retry, and clears it on emergency", async () => {
+  const { db, control } = await fixture({});
+  db.set("portfolio", { ...db.portfolio(), sui: 1 });
+  const queued = await control({ command: "force-close" });
+  expect(queued).toEqual({ status: 200, value: { requestedAt: expect.any(Number) } });
+  expect(await control({ command: "force-close" })).toEqual(queued);
+  expect(db.get("forceClose")).toEqual(queued.value);
+  expect(db.history("paper_trades")).toHaveLength(0);
+  expect((await control({ command: "emergency" })).status).toBe(200);
+  expect(db.get("forceClose")).toBeNull();
+});

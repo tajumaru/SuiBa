@@ -398,6 +398,7 @@ export function buildDecisionTelemetry(
         "STRATEGY_EXIT",
         "RISK_REDUCTION",
         "EMERGENCY_EXIT",
+        "MANUAL",
       ].includes(d.sellPurpose))
   )
     return null;

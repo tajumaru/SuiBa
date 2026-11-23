@@ -33,7 +33,7 @@ it.each(["geckoterminal", "deepbook", "auto"])(
         child.once("error", reject);
       });
       expect(exit).not.toBe(0);
-      expect(stderr).toContain("ONLY_PAPER_SUPPORTED");
+      expect(stderr).toContain("UNSUPPORTED_EXECUTION_MODE");
       expect(existsSync(path)).toBe(false);
     } finally {
       rmSync(folder, { recursive: true, force: true });

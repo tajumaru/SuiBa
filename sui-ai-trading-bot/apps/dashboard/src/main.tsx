@@ -416,7 +416,7 @@ function App() {
       return null;
     } catch (e) {
       const code = errorCode(e);
-      if (command !== "start") setBannerError(code);
+      if (command !== "start" && command !== "force-close") setBannerError(code);
       return code;
     }
   }
@@ -589,6 +589,7 @@ function App() {
                     timeframe={timeframe}
                     setTimeframe={setTimeframe}
                     api={api}
+                    control={control}
                     forecastScoreLine={forecastScoreLine}
                     forecastTouchLine={forecastTouchLine}
                     forecastBandScale={forecastCalib.scale}

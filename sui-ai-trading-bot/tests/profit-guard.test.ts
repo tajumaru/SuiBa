@@ -148,7 +148,7 @@ describe("ProfitGuard contract (test-first)", () => {
     expect(r.netProfitUsdc).toBe("-0.090600");
     expect(r.action).toBe("WAIT");
   });
-  it.each(["STOP_LOSS", "EMERGENCY_EXIT", "RISK_REDUCTION"] as const)(
+  it.each(["STOP_LOSS", "EMERGENCY_EXIT", "RISK_REDUCTION", "MANUAL"] as const)(
     "does not block %s at a loss",
     (purpose) => {
       const r = evaluateSell({
