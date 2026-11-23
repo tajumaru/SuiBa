@@ -86,6 +86,43 @@ describe("independent indicator fixtures", () => {
     expect(x.atr).toBeCloseTo(0.2);
     expect(x.priceChange).toBe(0);
   });
+  it("MACD matches an independently computed fixture at two lengths", () => {
+    // Fixed deterministic close series; expected values were computed
+    // independently of this implementation (textbook MACD: SMA-seeded
+    // EMA12/EMA26, signal = SMA-seeded EMA9 of the MACD line). Pins the
+    // definition so a future refactor cannot drift silently.
+    const closes = [
+      102.4089, 103.8075, 104.3426, 104.2322, 103.8748, 103.6996, 104.0087,
+      104.8657, 106.0675, 107.2107, 107.8283, 107.5535, 106.2518, 104.0795,
+      101.4471, 98.8984, 96.9466, 95.9202, 95.8708, 96.572, 97.609, 98.5289,
+      98.9997, 98.9252, 98.4757, 98.0256, 98.0184, 98.8051, 100.5108, 102.9752,
+      105.7883, 108.4092, 110.3299, 111.2296, 111.0684, 110.0894, 108.7299,
+      107.4705, 106.6744, 106.4702, 106.7169, 107.064, 107.0838, 106.4326,
+      104.9846, 102.8926, 100.5556, 98.5006, 97.2207, 97.0204, 97.9215, 99.6598,
+      101.7738, 103.7554, 105.213, 105.991, 106.208, 106.1994, 106.3869,
+      107.1179, 108.5301, 110.4883, 112.6152, 114.4059, 115.3891, 115.2814,
+      114.0815, 112.0745, 109.744, 107.6201,
+    ];
+    const series = (n: number): Candle[] =>
+      closes.slice(0, n).map((close, i) => ({
+        timestamp: 1799900100 + i * 300,
+        open: close,
+        high: close + 0.1,
+        low: close - 0.1,
+        close,
+        volume: 100000,
+        source: "fixture",
+        timeframe: 300,
+      }));
+    const at60 = calculate(series(60));
+    expect(at60.macd).toBeCloseTo(0.5292253132, 6);
+    expect(at60.signal).toBeCloseTo(-0.1605952894, 6);
+    expect(at60.histogram).toBeCloseTo(0.6898206026, 6);
+    const at70 = calculate(series(70));
+    expect(at70.macd).toBeCloseTo(2.0343204474, 6);
+    expect(at70.signal).toBeCloseTo(2.0646645184, 6);
+    expect(at70.histogram).toBeCloseTo(-0.030344071, 6);
+  });
   it("monotonic prices and decimal boundaries", () => {
     expect(rsi([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])).toBe(100);
     expect(atomic("0.000000001", SUI)).toBe("1");
