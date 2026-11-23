@@ -31,6 +31,20 @@ $ErrorActionPreference = $previous
 }
 }
 
+# Invoke-Native と同じ呼び出し方だが、標準エラーをファイルに残す。
+# 失敗したコマンドの理由を画面で確認するために使う（呼び出し側が
+# 末尾を表示する）。成功時の出力先は Invoke-Native と同じ。
+function Invoke-NativeLogged([scriptblock]$Command, [string]$LogPath) {
+$previous = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+& $Command 2>$LogPath
+return $LASTEXITCODE
+} finally {
+$ErrorActionPreference = $previous
+}
+}
+
 function Get-PortOwners {
 Get-NetTCPConnection | Where-Object { $_.State -eq 'Listen' -and $_.LocalPort -eq 3100} |
 Select-Object -ExpandProperty OwningProcess -Unique
@@ -115,16 +129,27 @@ if (!$Yes -and (Read-Host '更新を開始しますか？ (y/n)') -ne 'y') { thr
 
 $stage = 'Bot の停止'
 Write-Host ""
-$failure = '3100 番ポートの Bot プロセスを一意に確認できません。'
 $owners = @(Get-PortOwners)
+# プロセスがいない場合は「すでに停止済み」として、停止と終了の工程を
+# 飛ばす。前回の更新が途中で失敗して Bot が停止したままになっても、
+# 同じコマンドの再実行で復旧できるようにするため（実績 2026-11-23：
+# install の失敗で停止したまま残り、再実行は入口で失敗した）。
+# 複数いる場合とシステム側のプロセスの場合は、今までどおり止まる。
+$alreadyStopped = $owners.Count -eq 0
+if (!$alreadyStopped) {
+$failure = '3100 番ポートの Bot プロセスを一意に確認できません。'
 if ($owners.Count -ne 1 -or $owners[0] -le 4) { throw $failure}
 $oldProcess = Get-Process -Id $owners[0]
 # 終了確認で同じプロセスを追跡するため、先にハンドルを取得する。
 $null = $oldProcess.Handle
+}
 
 $failure = '対象のアプリフォルダに移動できません。'
 Push-Location -LiteralPath $app
 try {
+if ($alreadyStopped) {
+Write-Host 'Bot はすでに停止しています。停止と終了の工程を飛ばして続行します。'
+} else {
 $failure = '対象の.env から管理用の鍵を読み取れません。'
 $token = 'const token = require("dotenv").parse(require("node:fs").readFileSync(".env")).ADMIN_TOKEN; if (token) process.stdout.write(token); else process.exitCode = 1;' | & node - 2>$null
 if ($LASTEXITCODE -ne 0 -or!$token -or $token -isnot [string]) { throw $failure}
@@ -155,6 +180,7 @@ if ($oldProcess.HasExited -or $owners.Count -ne 1 -or $owners[0] -ne $oldProcess
 $failure = 'Bot を終了して 3100 番ポートを解放できません。'
 Stop-Process -InputObject $oldProcess -Force
 if (!$oldProcess.WaitForExit(10000) -or @(Get-PortOwners).Count -ne 0) { throw $failure}
+}
 
 $stage = 'git pull'
 Write-Host ""
@@ -180,15 +206,32 @@ foreach ($task in @('install', 'build')) {
 $stage = "pnpm $task"
 Write-Host ""
 $failure = "pnpm $task に失敗しました。"
-if ((Invoke-Native { pnpm $task}) -ne 0) {
-# install の失敗には Bot 停止直後のファイルロック等の一時的なものが
-# ある（実績 2026-11-23：手動の再実行で成功した）。install だけ、
-# 少し待って1回だけやり直す。build の失敗は本物のエラーのため対象外。
-if ($task -ne 'install') { throw $failure }
-Write-Host 'pnpm install が失敗したため、5秒待って1回だけやり直します。'
-Start-Sleep -Seconds 5
-if ((Invoke-Native { pnpm install }) -ne 0) { throw $failure }
+$logPath = Join-Path $env:TEMP "suiba-pc-update-$task.log"
+$attempts = 1
+if ($task -eq 'install') { $attempts = 3 }
+$waits = @(5, 20)
+$done = $false
+for ($attempt = 1; $attempt -le $attempts; $attempt++) {
+if ((Invoke-NativeLogged { pnpm $task } $logPath) -eq 0) { $done = $true; break }
+# 失敗のたびに標準エラーの末尾を画面に残す。従来は標準エラーを捨てて
+# いたため、失敗の理由が分からなかった（実績 2026-11-23：スクリプト内
+# の install だけが繰り返し失敗し、単独実行は成功したが、理由を
+# 特定できなかった）。
+if (Test-Path -LiteralPath $logPath) {
+Write-Host "pnpm $task のエラー出力（末尾）："
+Get-Content -LiteralPath $logPath -Encoding UTF8 -Tail 30 | ForEach-Object { Write-Host $_ }
 }
+if ($attempt -lt $attempts) {
+# install の失敗には Bot 停止直後のファイルロック等の一時的なものが
+# ある（実績 2026-11-23：5秒後の再試行でも失敗し、時間を置いた手動の
+# 再実行で成功した）。install だけ、間隔を広げて最大2回までやり直す。
+# build の失敗は本物のエラーのため対象外。
+$wait = $waits[$attempt - 1]
+Write-Host "pnpm install が失敗したため、$wait 秒待ってやり直します。"
+Start-Sleep -Seconds $wait
+}
+}
+if (!$done) { throw $failure }
 }
 
 $stage = 'Bot の起動'
