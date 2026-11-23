@@ -9,8 +9,40 @@ import { RealTradeCapDatabase } from "./database.ts";
 const ledgerKey = (event: RealHistoryEvent) =>
   JSON.stringify([event.chain, event.digest, event.eventSequence]);
 
-const eventHash = ({ identity, ...event }: RealHistoryEvent) =>
-  createHash("sha256").update(JSON.stringify(event)).digest("hex");
+// キーの並び順に依存しない文字列化（入れ子のキーもそろえる）。
+const stableStringify = (value: unknown): string => {
+  if (value === null || typeof value !== "object")
+    return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value))
+    return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entry]) => entry !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : 1));
+  return `{${entries
+    .map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`)
+    .join(",")}}`;
+};
+
+// 「同じ出来事か」は台帳の中身だけで比べる。identity は Cap 交換で変わり、
+// timestampMs は後から足された付随情報で、旧コードが保存した出来事には無い。
+// どちらも判定から外さないと、保存済みの出来事を再取得しただけで別物になる。
+const eventHash = ({ identity, timestampMs, ...event }: RealHistoryEvent) =>
+  createHash("sha256").update(stableStringify(event)).digest("hex");
+
+function firstUnmatchedKey(
+  events: RealHistoryEvent[],
+  ledger: RealHistoryEvent[],
+) {
+  const appliedByKey = new Map(
+    ledger.map((event) => [ledgerKey(event), event]),
+  );
+  for (const event of events) {
+    const applied = appliedByKey.get(ledgerKey(event));
+    if (!applied || eventHash(event) !== eventHash(applied))
+      return ledgerKey(event);
+  }
+  return "order";
+}
 
 function isAtOrBefore(event: RealHistoryEvent, applied: RealHistoryEvent) {
   const checkpoint = BigInt(event.checkpoint) - BigInt(applied.checkpoint);
@@ -58,10 +90,11 @@ export class RealReconciler {
         );
         throw Error("REAL_CHECKPOINT_HASH_MISMATCH");
       }
+      const ledgerEvents = this.db.allLedgerEvents();
       const replay =
         checkpoint &&
         page.events.length > 0 &&
-        isReplay(page.events, this.db.allLedgerEvents());
+        isReplay(page.events, ledgerEvents);
       if (!replay) {
         if (
           checkpoint &&
@@ -70,7 +103,7 @@ export class RealReconciler {
           this.db.latch(
             this.identity,
             "REAL_CHECKPOINT_REGRESSION",
-            `${checkpoint.checkpoint}:${page.checkpoint}`,
+            `${checkpoint.checkpoint}:${page.checkpoint}:${firstUnmatchedKey(page.events, ledgerEvents)}`,
           );
           throw Error("REAL_CHECKPOINT_REGRESSION");
         }
