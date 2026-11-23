@@ -6,6 +6,7 @@ import { fixed4, label, number, percent } from "./presentation.ts";
 import { Reason } from "./Reason.tsx";
 import { fields, formatSettingValue, type Field } from "./SettingsPage.tsx";
 import { ProfitGuardPanel } from "./ProfitGuardPanel.tsx";
+import { ParameterRadar } from "./ParameterRadar.tsx";
 export { useIndicatorHistory } from "./indicatorHistory.ts";
 import {
   STRATEGY_PARAM_GROUPS,
@@ -379,6 +380,7 @@ export function StrategyPanel({
       </section>
       )}
       <h3 className="strategy-params-title">戦略パラメータ</h3>
+      <ParameterRadar settings={data.settings} />
       <div className="strategy-groups">
         {STRATEGY_PARAM_GROUPS.map((group) => (
           <section
