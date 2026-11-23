@@ -262,8 +262,9 @@
 .strategy-params-title {
   margin-top: 26px;
 }
-/* The パラメータ radar card: the shape of the current settings,
-   above the slider groups that edit them. */
+/* The パラメータ radar cards: the shape of the current settings
+   (mint = buy side, gold = sell side). Editing lives in the
+   settings form; these cards are display only. */
 .param-radar {
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -339,14 +340,32 @@
   font-size: 12px;
   line-height: 1.55;
 }
-.strategy-groups {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  align-items: start;
+/* The sell radar is gold (the buy radar stays mint); its type
+   chip is an outline so the two chips do not read as one. */
+.param-radar-sell .param-radar-shape {
+  fill: color-mix(in srgb, var(--gold) 25%, transparent);
+  stroke: var(--gold);
 }
-.strategy-groups > section {
-  margin-bottom: 0;
+.param-radar-sell .param-radar-dots circle {
+  fill: var(--gold);
+}
+.param-radar-sell .param-radar-axis-val {
+  fill: var(--gold);
+}
+.param-radar-sell .param-radar-type {
+  background: none;
+  border: 1px solid var(--gold);
+  color: var(--gold);
+}
+/* The ProfitGuard block under the radars keeps the card look
+   the parameter groups had. */
+.strategy-group {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 14px;
+  margin-bottom: 12px;
+  min-width: 0;
 }
 .strategy-group-head {
   display: flex;
@@ -362,58 +381,6 @@
   color: var(--dim);
   font-size: 11.5px;
   margin: 4px 0 12px;
-}
-.strategy-param {
-  padding: 9px 0;
-  border-top: 1px dashed #1c3045;
-}
-.strategy-param-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.strategy-param-label {
-  font-size: 13px;
-}
-.strategy-param-value {
-  margin-left: auto;
-  font-weight: 700;
-  font-size: 15px;
-  white-space: nowrap;
-}
-.strategy-bar {
-  position: relative;
-  height: 6px;
-  background: #1a2c40;
-  border-radius: 3px;
-  margin: 8px 0 3px;
-}
-.strategy-bar-range {
-  position: absolute;
-  top: 0;
-  height: 6px;
-  background: rgba(114, 209, 255, 0.22);
-  border-radius: 3px;
-}
-.strategy-bar-mark {
-  position: absolute;
-  top: -3px;
-  width: 3px;
-  height: 12px;
-  background: #72d1ff;
-  border-radius: 2px;
-  transform: translateX(-50%);
-}
-.strategy-bar-ends {
-  display: flex;
-  justify-content: space-between;
-  font-size: 10px;
-  color: #5f7488;
-}
-.strategy-param-help {
-  color: var(--dim);
-  font-size: 11px;
-  margin: 3px 0 0;
 }
 .strategy-pg-on,
 .strategy-pg-off {
@@ -469,11 +436,7 @@
     transition: all 0.25s ease;
   }
 }
-@media (max-width: 1000px) {
-  .strategy-groups {
-    grid-template-columns: 1fr;
-  }
-}
+
 /* Very narrow screens: the narration panel trades a little of
    its side padding for content room (kept last so it wins over
    the base .agent-feed rule by source order). */

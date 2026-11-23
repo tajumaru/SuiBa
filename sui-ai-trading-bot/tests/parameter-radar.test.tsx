@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 import { defaults, type Settings } from "../packages/shared/src/index.ts";
 import {
   ParameterRadar,
+  SellParameterRadar,
   parameterRadarView,
+  sellParameterRadarView,
 } from "../apps/dashboard/src/ParameterRadar.tsx";
 
 const settings = (overrides: Partial<Settings> = {}): Settings => ({
@@ -79,9 +81,55 @@ describe("parameter radar view", () => {
     const html = renderToStaticMarkup(
       <ParameterRadar settings={production} />,
     );
-    expect(html).toContain("パラメータ");
+    expect(html).toContain("買いパラメータ");
     expect(html).toContain("速攻型");
     expect(html).toContain("RSIの買い基準");
     expect(html).toContain("5 USDC");
+  });
+});
+
+describe("sell parameter radar view", () => {
+  it("places each sell setting inside its schema range", () => {
+    const view = sellParameterRadarView(settings());
+    const byLabel = new Map(view.axes.map((a) => [a.label, a]));
+    expect(byLabel.get("買われすぎ")?.ratio).toBeCloseTo(15 / 35);
+    expect(byLabel.get("買われすぎ")?.valueText).toBe("70");
+    expect(byLabel.get("利確ライン")?.ratio).toBeCloseTo(0.04 / 0.3);
+    expect(byLabel.get("利確ライン")?.valueText).toBe("4 %");
+    expect(byLabel.get("最低純利益")?.ratio).toBeCloseTo(0.01);
+    expect(byLabel.get("最低純利益")?.valueText).toBe("0.05 USDC");
+    expect(byLabel.get("スリッページ上限")?.ratio).toBe(1);
+    expect(byLabel.get("スリッページ上限")?.valueText).toBe("0.3 %");
+    expect(byLabel.get("最大保有比率")?.ratio).toBe(1);
+    expect(byLabel.get("最大保有比率")?.valueText).toBe("20 %");
+    expect(byLabel.get("損切りライン")?.ratio).toBeCloseTo(0.2);
+    expect(byLabel.get("損切りライン")?.valueText).toBe("2 %");
+  });
+
+  it("names the default shape バランス型", () => {
+    expect(sellParameterRadarView(settings()).type).toBe("バランス型");
+  });
+
+  it("names a patient shape 粘り型 and a quick-exit shape 早抜け型", () => {
+    expect(
+      sellParameterRadarView(
+        settings({ overbought: 88, takeProfitPct: 0.25, stopLossPct: 0.09 }),
+      ).type,
+    ).toBe("粘り型");
+    expect(
+      sellParameterRadarView(
+        settings({ overbought: 56, takeProfitPct: 0.01, stopLossPct: 0.005 }),
+      ).type,
+    ).toBe("早抜け型");
+  });
+
+  it("renders the gold sell card with its axes", () => {
+    const html = renderToStaticMarkup(
+      <SellParameterRadar settings={settings()} />,
+    );
+    expect(html).toContain("売りパラメータ");
+    expect(html).toContain("param-radar-sell");
+    expect(html).toContain("買われすぎ");
+    expect(html).toContain("スリッページ上限");
   });
 });

@@ -102,12 +102,13 @@ describe("strategy panel: slim condition cards", () => {
     expect(html).toContain("正常");
     expect(html).not.toContain("✓ 正常（異常なし）");
     expect(html).toContain("1.6倍");
-    // Grouped parameter cards replace the flat settings list.
-    expect(html).toContain("買い条件");
-    expect(html).toContain("売り・リスク");
+    // The parameter panel is the two radars plus ProfitGuard;
+    // the value rows are gone (editing lives in the form).
+    expect(html).toContain("買いパラメータ");
+    expect(html).toContain("売りパラメータ");
     expect(html).toContain("ProfitGuard");
     expect(html).toContain("RSIの買い基準");
-    expect(html).toContain("出来高変化の上限");
+    expect(html).toContain("出来高上限");
     expect(html).toContain("最低純利益");
     expect(html).toContain("ProfitGuardの詳細（コスト内訳・見積もり）");
     expect(html).not.toContain("DeepSeek");
