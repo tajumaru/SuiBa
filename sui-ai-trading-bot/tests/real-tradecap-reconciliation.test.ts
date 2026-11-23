@@ -251,6 +251,49 @@ describe("REAL TradeCap read-only reconciliation", () => {
     }
   });
 
+  it("replays pages applied before timestampMs existed, after a TradeCap change", async () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    try {
+      const oldIdentity = id();
+      const newIdentity = { ...oldIdentity, tradeCapId: `0x${"4".repeat(64)}` };
+      // 旧コードが保存した形：timestampMs を持たないイベント。
+      const stored = [
+        {
+          events: [{ ...event("ORDER_FILLED", "1", oldIdentity), checkpoint: "41" }],
+          nextCursor: "1",
+          checkpoint: "41",
+          checkpointHash: "h41",
+        },
+        {
+          events: [event("TX_EFFECTS", "2", oldIdentity)],
+          nextCursor: null,
+          checkpoint: "42",
+          checkpointHash: "h42",
+        },
+      ];
+      await new RealReconciler(db, oldIdentity, source(stored)).reconcileAllPages();
+      expect(db.ledgerCount()).toBe(2);
+
+      // 新コードの再取得：同じ出来事に timestampMs が付き、identity も新しい。
+      const fresh = stored.map((page) => ({
+        ...page,
+        events: page.events.map((entry) => ({
+          ...entry,
+          identity: newIdentity,
+          timestampMs: 1763800000000,
+        })),
+      }));
+      const reconciler = new RealReconciler(db, newIdentity, source(fresh));
+      await expect(reconciler.reconcileAllPages()).resolves.toMatchObject({
+        pages: 2, events: 0,
+      });
+      expect(db.ledgerCount()).toBe(2);
+      expect(db.hasLatch(newIdentity)).toBe(false);
+    } finally {
+      db.close();
+    }
+  });
+
   it.each(["missing", "changed"])(
     "latches an older page with a %s ledger event even when its last event matches",
     async (caseName) => {
