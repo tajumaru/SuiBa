@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
-import { ema, rsi, calculate } from "../packages/indicators/src/index.ts";
+import { createHash } from "node:crypto";
+import {
+  ema,
+  rsi,
+  calculate,
+  calculateSeries,
+} from "../packages/indicators/src/index.ts";
 import {
   coin,
   SUI,
@@ -85,6 +91,37 @@ describe("independent indicator fixtures", () => {
     expect(x.ema50).toBe(2);
     expect(x.atr).toBeCloseTo(0.2);
     expect(x.priceChange).toBe(0);
+  });
+  it("matches every prefix exactly, including the pre-refactor outputs", () => {
+    const bars = candles(150).map((bar, i) => {
+      const close = 2 + ((i * 37) % 113) / 200 + i / 1000;
+      const open = close + ((i % 7) - 3) / 300;
+      return {
+        ...bar,
+        close,
+        open,
+        high: Math.max(open, close) + (i % 11) / 200,
+        low: Math.min(open, close) - (i % 13) / 300,
+        volume: i % 19 === 0 ? 0 : 100000 + (i % 23) * 123,
+      };
+    });
+    const series = calculateSeries(bars);
+    expect(series).toHaveLength(150);
+    expect(series.slice(0, 59)).toEqual(Array(59).fill(null));
+    expect(calculateSeries(bars.slice(0, 59))).toEqual(Array(59).fill(null));
+    expect(() => calculate(bars.slice(0, 59))).toThrow("INSUFFICIENT_DATA");
+    for (let n = 60; n <= bars.length; n++) {
+      expect(series[n - 1], `prefix length ${n}`).toEqual(
+        calculate(bars.slice(0, n)),
+      );
+    }
+    // Captured from the original calculate for the same 91 prefixes.
+    const serialized = JSON.stringify(series.slice(59), (_, value) =>
+      Object.is(value, -0) ? "-0" : value,
+    );
+    expect(createHash("sha256").update(serialized).digest("hex")).toBe(
+      "c2de5196c5fe43e4f0e2d46048387988f8278426ca7b225038523beb54041602",
+    );
   });
   it("MACD matches an independently computed fixture at two lengths", () => {
     // Fixed deterministic close series; expected values were computed
