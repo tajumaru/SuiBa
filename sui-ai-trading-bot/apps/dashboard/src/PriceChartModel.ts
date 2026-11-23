@@ -34,6 +34,13 @@ export interface PriceChartProps {
   /** The open position's real sell lines (same prices the
    * ticker counts down to), for forecast crossing marks. */
   sellLines?: { tp: number; sl: number } | null;
+  /** The buy-run line from the decision telemetry (the next
+   * close at which RSI would reach its line; the same value
+   * the ticker pill counts down to), drawn on the price pane. */
+  linePrice?: number | null;
+  /** The saved oversold setting: the RSI level the buy run
+   * starts from, drawn on the RSI pane. */
+  oversold?: number | null;
   /** The newest finished forecast, for the answer-check view
    * (the recorded cone laid over what actually happened). */
   answerCheck?: ForecastAnswerCheck | null;
@@ -51,6 +58,8 @@ export function usePriceChartModel({
   forecastTouchText,
   forecast,
   sellLines,
+  linePrice,
+  oversold,
   answerCheck,
   answerDefaultOn = false,
 }: PriceChartProps) {
@@ -354,6 +363,8 @@ export function usePriceChartModel({
     y,
     ghost,
     crossingMarks,
+    linePrice: linePrice ?? null,
+    oversold: oversold ?? null,
     fcCone,
     fcMid,
     fcPalette,

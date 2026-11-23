@@ -87,6 +87,79 @@ export function ForecastOverlay({
   );
 }
 
+/** The buy-run line on the price pane: the next close at which
+ * RSI would reach its line — the same value the ticker pill
+ * counts down to — drawn only while it sits inside the visible
+ * price range, so the chart itself shows where the buy run
+ * starts. The label chip wears the pill's colours. */
+export function BuyLineOverlay({
+  linePrice,
+  min,
+  max,
+  y,
+  left,
+  right,
+}: {
+  linePrice: number | null;
+  min: number;
+  max: number;
+  y: Scale;
+  left: number;
+  right: number;
+}) {
+  if (
+    linePrice == null ||
+    !Number.isFinite(linePrice) ||
+    linePrice <= 0 ||
+    linePrice < min ||
+    linePrice > max
+  )
+    return null;
+  const ly = y(linePrice);
+  const text = `ライン ${linePrice >= 10 ? linePrice.toFixed(2) : linePrice.toFixed(4)}`;
+  const textWidth = [...text].reduce(
+    (sum, ch) => sum + (ch.charCodeAt(0) > 0x2000 ? 11 : 6.4),
+    0,
+  );
+  const chipW = textWidth + 16,
+    chipH = 18,
+    chipX = right - chipW,
+    chipY = Math.min(215 - chipH, Math.max(30, ly - chipH / 2));
+  return (
+    <g className="chart-buy-line" aria-label="買い走りライン">
+      <line
+        x1={left}
+        x2={right}
+        y1={ly}
+        y2={ly}
+        stroke="#64b5ff"
+        strokeWidth="1.4"
+        strokeDasharray="7 4"
+      />
+      <rect
+        x={chipX}
+        y={chipY}
+        width={chipW}
+        height={chipH}
+        rx="4"
+        fill="#10325c"
+        stroke="#62b2ff"
+        strokeOpacity="0.6"
+      />
+      <text
+        x={chipX + chipW / 2}
+        y={chipY + 13}
+        fill="#bfe0ff"
+        fontSize="11"
+        fontWeight="700"
+        textAnchor="middle"
+      >
+        {text}
+      </text>
+    </g>
+  );
+}
+
 /** Keep forecast text outside the plot so nearby prices cannot overlap labels. */
 export function ForecastDetails({
   fc,

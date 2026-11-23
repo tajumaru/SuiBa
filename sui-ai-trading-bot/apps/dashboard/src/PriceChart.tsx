@@ -18,6 +18,7 @@ import { usePriceChartModel, type PriceChartProps } from "./PriceChartModel.ts";
 import {
   AnswerGhostOverlay,
   AnswerDetails,
+  BuyLineOverlay,
   ForecastOverlay,
   ForecastDetails,
   HoverReadout,
@@ -67,6 +68,8 @@ export function PriceChart(props: PriceChartProps) {
     y,
     ghost,
     crossingMarks,
+    linePrice,
+    oversold,
     fcCone,
     fcPalette,
     fcLabel,
@@ -384,6 +387,14 @@ export function PriceChart(props: PriceChartProps) {
                 latestEnd={latestEnd}
               />
             )}
+            <BuyLineOverlay
+              linePrice={linePrice}
+              min={min}
+              max={max}
+              y={y}
+              left={left}
+              right={right}
+            />
             {ghost && <AnswerGhostOverlay ghost={ghost} />}
             {chosen && (
               <line
@@ -451,6 +462,8 @@ export function PriceChart(props: PriceChartProps) {
                 end={xFinish}
                 dataEnd={finish}
                 selected={chosen?.timestamp ?? null}
+                lineValue={oversold}
+                lineLabel="買いライン"
               />
               <IndicatorPanel
                 interaction={interactions}

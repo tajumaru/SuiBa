@@ -599,6 +599,7 @@ function App() {
                         ? sellLinesOf(operations.data.decision)
                         : null
                     }
+                    linePrice={operations.data?.decision?.rsiLinePrice ?? null}
                     narrationShadow={narrationShadow}
                   />
                 )}

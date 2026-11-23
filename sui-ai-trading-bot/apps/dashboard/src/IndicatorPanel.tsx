@@ -14,6 +14,8 @@ export function IndicatorPanel({
   end,
   dataEnd,
   selected,
+  lineValue,
+  lineLabel,
 }: {
   interaction?: React.SVGProps<SVGSVGElement>;
   onZoom?: (factor: number) => void;
@@ -26,6 +28,11 @@ export function IndicatorPanel({
   /** End of the historical window, excluding the forecast-only space. */
   dataEnd: number;
   selected: number | null;
+  /** A reference level drawn across the pane (the RSI pane
+   * passes the oversold setting: the level the buy run starts
+   * from). Drawn only when it sits inside the pane's range. */
+  lineValue?: number | null;
+  lineLabel?: string;
 }) {
   const svg = useRef<SVGSVGElement>(null);
   useEffect(() => {
@@ -47,6 +54,21 @@ export function IndicatorPanel({
     y = (v: number) => 120 - ((v - min) / (max - min || 1)) * 90;
   const index = candles.findIndex((c) => c.timestamp === selected),
     names = kind === "RSI" ? ["RSI14"] : ["MACD", "シグナル", "ヒストグラム"];
+  const lineY =
+      lineValue != null &&
+      Number.isFinite(lineValue) &&
+      lineValue >= min &&
+      lineValue <= max
+        ? y(lineValue)
+        : null,
+    lineText = lineY != null ? `${lineLabel ?? "買いライン"} ${lineValue}` : "",
+    lineChipW =
+      [...lineText].reduce(
+        (sum, ch) => sum + (ch.charCodeAt(0) > 0x2000 ? 11 : 6.4),
+        0,
+      ) + 16,
+    lineChipX = width - 22 - lineChipW,
+    lineChipY = lineY != null ? Math.min(125 - 18, Math.max(25, lineY - 9)) : 0;
   return (
     <section
       className="linked-indicator chart-meta"
@@ -86,6 +108,39 @@ export function IndicatorPanel({
               points={points}
             />
           )),
+        )}
+        {lineY != null && (
+          <g className="chart-buy-line" aria-label="買いライン">
+            <line
+              x1={22}
+              x2={width - 22}
+              y1={lineY}
+              y2={lineY}
+              stroke="#64b5ff"
+              strokeWidth="1.4"
+              strokeDasharray="7 4"
+            />
+            <rect
+              x={lineChipX}
+              y={lineChipY}
+              width={lineChipW}
+              height={18}
+              rx="4"
+              fill="#10325c"
+              stroke="#62b2ff"
+              strokeOpacity="0.6"
+            />
+            <text
+              x={lineChipX + lineChipW / 2}
+              y={lineChipY + 13}
+              fill="#bfe0ff"
+              fontSize="11"
+              fontWeight="700"
+              textAnchor="middle"
+            >
+              {lineText}
+            </text>
+          </g>
         )}
         {selected != null && (
           <line
