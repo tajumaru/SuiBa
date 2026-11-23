@@ -110,7 +110,7 @@ describe("strategy panel: slim condition cards", () => {
     expect(html).toContain("出来高変化の上限");
     expect(html).toContain("最低純利益");
     expect(html).toContain("ProfitGuardの詳細（コスト内訳・見積もり）");
-    expect(html).toContain("DeepSeek：未実装（拡張用インターフェースのみ）");
+    expect(html).not.toContain("DeepSeek");
     // No editable inputs on this read-only tab.
     expect(html).not.toContain("<input");
     // The cross-route EMA card carries no shrink note.

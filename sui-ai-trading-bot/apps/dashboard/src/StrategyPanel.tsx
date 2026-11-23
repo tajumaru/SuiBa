@@ -414,9 +414,6 @@ export function StrategyPanel({
           </section>
         ))}
       </div>
-      <p className="strategy-foot">
-        DeepSeek：未実装（拡張用インターフェースのみ）
-      </p>
     </>
   );
 }
