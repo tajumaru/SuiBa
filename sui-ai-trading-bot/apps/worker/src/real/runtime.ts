@@ -198,7 +198,10 @@ export function createRealTradeCapRuntime(
     realReconciliation: () => ({
       nonTerminalSubmissions: db.nonTerminalSubmissions(identity).length,
     }),
-    realExecution: () => ({ orderType: config.orderType }),
+    realExecution: () => ({
+      orderType: config.orderType,
+      maxOrderDbusdc: config.maxOrderDbusdc,
+    }),
     realBalances: cacheRealBalances(reader.readBalances),
     liveProbe: () =>
       runRealLiveProbe({

@@ -77,7 +77,10 @@ export interface SnapshotSources {
   network: "testnet" | "mainnet";
   realBalances?: () => RealBalances | undefined;
   realReconciliation?: () => { nonTerminalSubmissions: number };
-  realExecution?: () => { orderType: "MARKET" | "IOC_LIMIT" };
+  realExecution?: () => {
+    orderType: "MARKET" | "IOC_LIMIT";
+    maxOrderDbusdc?: number;
+  };
   pair: TradingPair;
   db: BotDatabase;
   cache?: SnapshotCache;
