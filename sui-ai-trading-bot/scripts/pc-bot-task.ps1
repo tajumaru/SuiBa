@@ -1,7 +1,9 @@
 # POTARIO PC Bot の裏起動タスク（タスクスケジューラ）を管理する。
-# Install で「ログオン時に窓なしで Bot を起動」を登録する。
-# タスクの実体は pc-bot-hidden.vbs（wscript）で、.cmd を直接登録すると
-# 対話セッションではコンソール窓が残るため、窓を隠すラッパーを挟む。
+# Install で「ログオンしていなくても Bot を起動」を登録する。
+# タスクは画面のないセッション（セッション0）で動くため、コンソール
+# 窓は原理的に出ない。対話セッションで .cmd を直接起動すると窓が残り、
+# wscript（VBScript）経由の窓隠しは Microsoft の廃止予定（2027年ごろ
+# 既定オフ、その後削除）に当たるため、どちらも使わない。
 # Bot 本体の起動は pc-bot-launcher.cmd が担い、出力は
 # data\logs\bot-console.log に追記される。
 param(
@@ -12,7 +14,6 @@ param(
 $ErrorActionPreference = 'Stop'
 $taskName = 'PotarioBot'
 $launcher = Join-Path $PSScriptRoot 'pc-bot-launcher.cmd'
-$hidden = Join-Path $PSScriptRoot 'pc-bot-hidden.vbs'
 
 function Get-BotTask {
 Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -23,19 +24,30 @@ switch ($Action) {
 if (!(Test-Path -LiteralPath $launcher -PathType Leaf)) {
 throw "ランチャーが見つかりません: $launcher"
 }
-if (!(Test-Path -LiteralPath $hidden -PathType Leaf)) {
-throw "窓なしラッパーが見つかりません: $hidden"
-}
-$taskAction = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('"' + $hidden + '"')
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$taskAction = New-ScheduledTaskAction -Execute $launcher
+# 起動のきっかけは「PC 起動時」と「ログオン時」の両方。ログオン前から
+# 動けるのがセッション0方式の利点で、二重に発火しても既定の
+# MultipleInstances（IgnoreNew）で二重起動にはならない。
+$trigger = @(
+New-ScheduledTaskTrigger -AtStartup
+New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+)
 # ExecutionTimeLimit は無制限（[TimeSpan]::Zero = PT0S。既定の3日で Bot が
 # 止まらないように）。文字列 'PT0S' は Windows PowerShell 5.1 が受け付けない
 # ため TimeSpan で渡す（実地確認 2026-11-25）。
 # 失敗時は1分間隔で最大3回まで自動で立て直す。
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-$principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
-Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
-Write-Host "登録しました: $taskName（ログオン時に窓なしで起動します）"
+# 「ユーザーがログオンしているかどうかにかかわらず実行する」方式。
+# 登録にはこの PC のログインパスワードが要る（Windows がタスク側に
+# 保存する。このスクリプトは表示も送信もしない）。パスワードを
+# 変更したら、そのままでは起動しなくなるので Install をやり直す。
+$principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Password -RunLevel Limited
+$cred = Get-Credential -UserName "$env:USERDOMAIN\$env:USERNAME" -Message 'Bot をログオンなしで起動するため、この PC のログインパスワードを入力してください（Windows がタスクに保存します）'
+if ($null -eq $cred) {
+throw 'パスワードが入力されなかったため、登録を中止しました'
+}
+Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $trigger -Settings $settings -Principal $principal -User $cred.UserName -Password $cred.GetNetworkCredential().Password -Force | Out-Null
+Write-Host "登録しました: $taskName（ログオンしていなくても窓なしで起動します）"
 }
 'Uninstall' {
 if (Get-BotTask) {

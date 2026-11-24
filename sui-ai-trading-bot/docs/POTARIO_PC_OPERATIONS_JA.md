@@ -14,11 +14,16 @@ PC の Codex は作業前にこの文書を読むこと。世代ごとの状態�
 
 ## 裏起動（タスクスケジューラ）
 - `scripts/pc-bot-task.ps1 -Action Install` で、タスク `PotarioBot` を登録する。
-  ログオン時に `scripts/pc-bot-hidden.vbs`（wscript、窓スタイル0）が
-  `scripts/pc-bot-launcher.cmd` を窓なしで起動して `pnpm dev` が立ち上がり、
-  出力は `data\logs\bot-console.log` に追記される。誤って窓を閉じて止まる事故がなくなる。
-  （.cmd をタスクへ直接登録すると対話セッションではコンソール窓が残るため、
-  wscript のラッパーを挟む。2026-11-25 実地の指摘で追加。）
+  タスクは「ユーザーがログオンしているかどうかにかかわらず実行する」方式で、
+  画面のないセッション（セッション0）で `scripts/pc-bot-launcher.cmd` が
+  `pnpm dev` を起動する。コンソール窓は原理的に出ず、出力は
+  `data\logs\bot-console.log` に追記される。
+  登録時にはこの PC のログインパスワードの入力が要る（Windows がタスク側に
+  保存する）。パスワードを変更したら Install をやり直すこと。起動のきっかけは
+  PC 起動時とログオン時の両方。
+  （経緯：対話セッションで .cmd を直接起動すると窓が残った。wscript
+  （VBScript）で窓を隠す方式は Microsoft の廃止予定（2027年ごろ既定オフ、
+  その後削除）に当たるため採らず、セッション0方式に統一した。2026-11-25。）
 - 状態確認・開始・停止・削除は同じスクリプトの `-Action Status|Start|Stop|Uninstall`。
   Stop でプロセスが残る場合は、3100番ポートの所有者を終了する。
 - コード更新（`pc-generation-update.ps1`）は、タスクが登録されていれば停止・起動を
