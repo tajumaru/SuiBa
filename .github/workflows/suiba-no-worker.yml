@@ -282,16 +282,20 @@ jobs:
     # scenarios (persistence / worker-abort / helper), instead of one
     # sequential step that alone set the CI wall time. fail-fast stays off
     # so one leg's failure never hides the other legs' verdicts.
+    # The light scenarios are dealt to balance the legs' measured
+    # validation times (2026-11-25: the old deal left the legs at
+    # ~170 s / ~75 s / ~163 s, so the wall was one leg's time; the
+    # balanced deal targets ~140 s / ~132 s / ~132 s).
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: crash-group
-            scenarios: persistence,normal,crash,timer,signal-failure
+          - name: persistence-group
+            scenarios: persistence,normal-cutoff
           - name: abort-group
-            scenarios: worker-abort
+            scenarios: worker-abort,signal-survive,normal,crash,timer
           - name: helper-group
-            scenarios: helper,signal-survive,normal-cutoff
+            scenarios: helper,signal-failure
     defaults:
       run:
         working-directory: sui-ai-trading-bot
