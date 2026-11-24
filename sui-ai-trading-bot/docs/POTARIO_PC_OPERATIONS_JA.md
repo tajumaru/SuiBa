@@ -14,8 +14,11 @@ PC の Codex は作業前にこの文書を読むこと。世代ごとの状態�
 
 ## 裏起動（タスクスケジューラ）
 - `scripts/pc-bot-task.ps1 -Action Install` で、タスク `PotarioBot` を登録する。
-  ログオン時に `scripts/pc-bot-launcher.cmd` が窓なしで `pnpm dev` を起動し、
+  ログオン時に `scripts/pc-bot-hidden.vbs`（wscript、窓スタイル0）が
+  `scripts/pc-bot-launcher.cmd` を窓なしで起動して `pnpm dev` が立ち上がり、
   出力は `data\logs\bot-console.log` に追記される。誤って窓を閉じて止まる事故がなくなる。
+  （.cmd をタスクへ直接登録すると対話セッションではコンソール窓が残るため、
+  wscript のラッパーを挟む。2026-11-25 実地の指摘で追加。）
 - 状態確認・開始・停止・削除は同じスクリプトの `-Action Status|Start|Stop|Uninstall`。
   Stop でプロセスが残る場合は、3100番ポートの所有者を終了する。
 - コード更新（`pc-generation-update.ps1`）は、タスクが登録されていれば停止・起動を
