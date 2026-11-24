@@ -97,6 +97,21 @@ describe("pc:status", () => {
     );
   });
 
+  it("安全上限があるとき設定行に表示する", async () => {
+    const deps = setup();
+    deps.get.mockResolvedValueOnce({
+      status: 200,
+      body: {
+        ...runningState,
+        realExecution: { orderType: "MARKET", maxOrderDbusdc: 2 },
+      },
+    });
+    expect(await runPcStatus(deps)).toBe(0);
+    expect(deps.print.mock.calls[0][0]).toContain(
+      "注文種別 成行、安全上限 2 USDC",
+    );
+  });
+
   it.each([2, 0])("未確定の送信が %i 件のときの状態を表示する", async (count) => {
     const deps = setup();
     await runPcStatus(deps);
