@@ -12,6 +12,15 @@ PC の Codex は作業前にこの文書を読むこと。世代ごとの状態�
 - 状態： `pnpm pc:status`
   読み取り専用。正しい数字だけを出す（稼働・注文許可・残高差分・設定）。
 
+## 裏起動（タスクスケジューラ）
+- `scripts/pc-bot-task.ps1 -Action Install` で、タスク `PotarioBot` を登録する。
+  ログオン時に `scripts/pc-bot-launcher.cmd` が窓なしで `pnpm dev` を起動し、
+  出力は `data\logs\bot-console.log` に追記される。誤って窓を閉じて止まる事故がなくなる。
+- 状態確認・開始・停止・削除は同じスクリプトの `-Action Status|Start|Stop|Uninstall`。
+  Stop でプロセスが残る場合は、3100番ポートの所有者を終了する。
+- コード更新（`pc-generation-update.ps1`）は、タスクが登録されていれば停止・起動を
+  タスク経由で行う（未登録なら従来どおり新しいコンソールで起動する）。
+
 ## 読み取りの正しい方法
 - `GET http://localhost:3100/api/state` には `Authorization: Bearer <ADMIN_TOKEN>` が必須
   （.env の ADMIN_TOKEN。値は出力しない）。トークンなしの 401 は異常ではない。
