@@ -65,6 +65,9 @@ const tasks = {
   lint: [
     [
       "node_modules/eslint/bin/eslint.js",
+      "--cache",
+      "--cache-location",
+      "node_modules/.eslintcache",
       "apps",
       "packages",
       "tests",
