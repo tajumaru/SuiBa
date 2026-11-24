@@ -599,6 +599,7 @@ export class OperationMonitor {
     recoveryProof?: PaperRecoveryProof,
     episode?: EpisodeSummary,
     failureDetail?: string,
+    apiFailure?: ApiFailure,
   ) {
     this.db.append(
       "operation_events",
@@ -612,6 +613,7 @@ export class OperationMonitor {
         ...(recoveryProof ? { recoveryProof } : {}),
         ...(episode ? { episode } : {}),
         ...(failureDetail ? { failureDetail } : {}),
+        ...(apiFailure ? { apiFailure } : {}),
       } satisfies OperationEvent,
       now,
     );
@@ -665,6 +667,7 @@ export class OperationMonitor {
     details?: MarketStallDetails,
     recoveryProof?: PaperRecoveryProof,
     episode?: EpisodeSummary,
+    apiFailure?: ApiFailure,
   ) {
     if (
       [
@@ -702,6 +705,8 @@ export class OperationMonitor {
       details,
       recoveryProof,
       episode,
+      undefined,
+      apiFailure,
     );
   }
   beginCycle() {
@@ -955,6 +960,22 @@ export class OperationMonitor {
       lastHeartbeatAt: now,
     });
   }
+  /**
+   * The read failure tracked for this cycle whose code matches a stop
+   * reason. Recording only: attaching it to the ERROR/STOP events keeps
+   * the failing api/host visible in the exported operation log for any
+   * hard-stopping read failure, not just HTTP 500 (whose tracked
+   * failure additionally feeds the boot-error recovery path in stop()).
+   */
+  private trackedReadFailure(reason: string): ApiFailure | undefined {
+    const f = this.latestReadFailure;
+    return f &&
+      f.code === reason &&
+      this.cycleStartedAt > 0 &&
+      f.occurredAt >= this.cycleStartedAt
+      ? f
+      : undefined;
+  }
   stop(reason: string, now = Date.now(), details?: MarketStallDetails) {
     const r = this.db.runtime();
     const episode =
@@ -963,14 +984,8 @@ export class OperationMonitor {
         now,
         reason === "PAPER_RECOVERY_EXHAUSTED" ? "EXHAUSTED" : "STOPPED",
       ) ?? undefined;
-    const latestFailure = this.latestReadFailure;
-    const readFailure =
-      reason === "UPSTREAM_HTTP_500" &&
-      latestFailure?.code === reason &&
-      this.cycleStartedAt > 0 &&
-      latestFailure.occurredAt >= this.cycleStartedAt
-        ? latestFailure
-        : undefined;
+    const tracked = this.trackedReadFailure(reason);
+    const readFailure = reason === "UPSTREAM_HTTP_500" ? tracked : undefined;
     const current = this.currentErrorStop;
     if (
       current?.failure &&
@@ -995,7 +1010,7 @@ export class OperationMonitor {
           at: now,
           failure: readFailure,
         };
-      this.transition(reason, now, details, undefined, episode);
+      this.transition(reason, now, details, undefined, episode, tracked);
       if (details)
         console.warn(
           JSON.stringify({ event: "MARKET_DATA_STALLED", ...details }),
@@ -1005,7 +1020,18 @@ export class OperationMonitor {
   failCycle(reason: string, now = Date.now(), details?: MarketStallDetails) {
     const runtime = this.db.runtime();
     const alreadyStopped = !runtime.running && !!runtime.error;
-    if (!this.cycleFailed) this.event("ERROR", reason, now, false, details);
+    if (!this.cycleFailed)
+      this.event(
+        "ERROR",
+        reason,
+        now,
+        false,
+        details,
+        undefined,
+        undefined,
+        undefined,
+        this.trackedReadFailure(reason),
+      );
     this.cycleFailed = true;
     // Keep failed polling evidence without presenting every poll as a new stop.
     this.event("ANOMALY", reason, now, !alreadyStopped, details);

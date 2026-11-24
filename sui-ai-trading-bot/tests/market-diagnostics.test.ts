@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { requestIdentity } from "../packages/shared/src/http-errors.ts";
+import type { ApiFailure } from "../packages/shared/src/http-errors.ts";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { OperationMonitor } from "../apps/worker/src/operations.ts";
 import type { OperationEvent } from "../packages/shared/src/operations.ts";
@@ -131,4 +132,78 @@ it("keeps HTTP statuses separate and does not treat a 503 as a timeout", async (
     retryCount: 0,
     lastSuccessAt: null,
   });
+});
+
+function readFailure(overrides: Partial<ApiFailure>): ApiFailure {
+  return {
+    api: "DeepBook Indexer",
+    url: base + "/[redacted]",
+    host: "deepbook-indexer.mainnet.mystenlabs.com",
+    operation: "OHLCV_FETCH",
+    method: "GET",
+    code: "UPSTREAM_HTTP_503",
+    causeCode: null,
+    phase: "HTTP",
+    status: 503,
+    elapsedMs: 120,
+    occurredAt: Date.now(),
+    ...overrides,
+  };
+}
+function eventsOf(db: BotDatabase, kind: OperationEvent["kind"]) {
+  return db
+    .range<OperationEvent>("operation_events", 0, Date.now() + 1000)
+    .filter((e) => e.kind === kind);
+}
+it("attaches the tracked read failure to the ERROR and STOP events of a hard stop", () => {
+  const db = new BotDatabase(":memory:");
+  const monitor = new OperationMonitor(db);
+  db.set("runtime", { ...db.runtime(), running: true });
+  monitor.beginCycle();
+  monitor.apiFailure(readFailure({ occurredAt: Date.now() }));
+  monitor.failCycle("UPSTREAM_HTTP_503");
+  const errors = eventsOf(db, "ERROR").filter(
+    (e) => e.code === "UPSTREAM_HTTP_503",
+  );
+  expect(errors).toHaveLength(1);
+  expect(errors[0].apiFailure).toMatchObject({
+    api: "DeepBook Indexer",
+    host: "deepbook-indexer.mainnet.mystenlabs.com",
+    operation: "OHLCV_FETCH",
+    status: 503,
+  });
+  const stops = eventsOf(db, "STOP").filter(
+    (e) => e.code === "UPSTREAM_HTTP_503",
+  );
+  expect(stops).toHaveLength(1);
+  expect(stops[0].apiFailure).toMatchObject({
+    api: "DeepBook Indexer",
+    host: "deepbook-indexer.mainnet.mystenlabs.com",
+  });
+  db.close();
+});
+it("does not attach a stale or mismatched read failure to stop events", () => {
+  const db = new BotDatabase(":memory:");
+  const monitor = new OperationMonitor(db);
+  db.set("runtime", { ...db.runtime(), running: true });
+  monitor.beginCycle();
+  // Failure from before this cycle: not this stop's cause.
+  monitor.apiFailure(readFailure({ occurredAt: Date.now() - 60_000 }));
+  monitor.stop("UPSTREAM_HTTP_503");
+  const staleStops = eventsOf(db, "STOP").filter(
+    (e) => e.code === "UPSTREAM_HTTP_503",
+  );
+  expect(staleStops).toHaveLength(1);
+  expect(staleStops[0].apiFailure).toBeUndefined();
+  // A failure whose code differs from the stop reason is not attached.
+  db.set("runtime", { ...db.runtime(), running: true, error: null });
+  monitor.beginCycle();
+  monitor.apiFailure(readFailure({ occurredAt: Date.now() }));
+  monitor.stop("UPSTREAM_HTTP_500");
+  const mismatched = eventsOf(db, "STOP").filter(
+    (e) => e.code === "UPSTREAM_HTTP_500",
+  );
+  expect(mismatched).toHaveLength(1);
+  expect(mismatched[0].apiFailure).toBeUndefined();
+  db.close();
 });
