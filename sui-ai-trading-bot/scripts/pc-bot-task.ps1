@@ -49,7 +49,10 @@ $cred = Get-Credential -UserName "$env:USERDOMAIN\$env:USERNAME" -Message 'Bot �
 if ($null -eq $cred) {
 throw 'パスワードが入力されなかったため、登録を中止しました'
 }
-Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $trigger -Settings $settings -User $cred.UserName -Password $cred.GetNetworkCredential().Password -RunLevel Limited -Force | Out-Null
+# -ErrorAction Stop: 登録失敗（アクセス拒否など）を非終了エラーのまま流すと
+# 成功メッセージまで進んでしまう（実地確認 2026-11-25：登録失敗でも
+# 「登録しました」と表示された）。失敗時はここで止める。
+Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $trigger -Settings $settings -User $cred.UserName -Password $cred.GetNetworkCredential().Password -RunLevel Limited -Force -ErrorAction Stop | Out-Null
 Write-Host "登録しました: $taskName（ログオンしていなくても窓なしで起動します）"
 }
 'Uninstall' {
