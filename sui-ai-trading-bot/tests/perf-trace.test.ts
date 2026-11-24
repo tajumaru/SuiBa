@@ -176,7 +176,7 @@ it("times actual database reads, writes and failed calls without changing their 
   try {
     const before = trace.summary().sqlite;
     db.set("perf_test", { value: 42 });
-    db.append("risk_events", Date.now(), { value: 42 });
+    db.append("risk_events", String(Date.now()), { value: 42 });
     expect(db.get("perf_test")).toEqual({ value: 42 });
     expect(() =>
       db.transaction(() => {
