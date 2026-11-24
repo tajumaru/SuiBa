@@ -52,7 +52,7 @@ it("writes a one-minute summary with separate inclusive SQLite method totals", a
   expect(existsSync(file)).toBe(false);
   trace.recordSqlite("get", 2);
   trace.recordSqlite("get", 4);
-  trace.recordSqlite("set", 7);
+  trace.recordSqlite("set", 7, "runtime");
   const finishCycle = trace.start("cycle");
   const stages: MarketTimings = {};
   const finishMarket = trace.start("market", stages);
@@ -87,6 +87,10 @@ it("writes a one-minute summary with separate inclusive SQLite method totals", a
       get: { count: 2, totalMs: 6, maxMs: 4 },
       set: { count: 1, totalMs: 7, maxMs: 7 },
     },
+    sqliteBreakdown: {
+      set: { runtime: { count: 1, avgMs: 7, maxMs: 7 } },
+      append: {},
+    },
     droppedLines: 0,
   };
   expect(current).toMatchObject({
@@ -95,6 +99,7 @@ it("writes a one-minute summary with separate inclusive SQLite method totals", a
     droppedLines: 0,
   });
   expect(current.sqlite).toEqual({});
+  expect(current.sqliteBreakdown).toEqual({ set: {}, append: {} });
   expect(current.metrics.cycle).toBeUndefined();
   vi.useRealTimers();
   await vi.waitFor(() => {
@@ -124,15 +129,54 @@ it("writes a one-minute summary with separate inclusive SQLite method totals", a
   });
 });
 
+it("groups SQLite writes by key or table and skips missing labels", () => {
+  trace = startPerfTrace(directory, "1")!;
+  trace.recordSqlite("set", 2, "runtime");
+  trace.recordSqlite("set", 6, "runtime");
+  trace.recordSqlite("set", 9, "settings");
+  trace.recordSqlite("set", 30);
+  trace.recordSqlite("append", 3, "decisions");
+  trace.recordSqlite("append", 7, "decisions");
+  trace.recordSqlite("append", 8, "fills");
+  trace.recordSqlite("append", 30);
+  trace.recordSqlite("get", 1, "runtime");
+  expect(trace.summary().sqliteBreakdown).toEqual({
+    set: {
+      runtime: { count: 2, avgMs: 4, maxMs: 6 },
+      settings: { count: 1, avgMs: 9, maxMs: 9 },
+    },
+    append: {
+      decisions: { count: 2, avgMs: 5, maxMs: 7 },
+      fills: { count: 1, avgMs: 8, maxMs: 8 },
+    },
+  });
+});
+
+it("keeps at most 20 keys and 20 tables, ranked by write count", () => {
+  trace = startPerfTrace(directory, "1")!;
+  for (const method of ["set", "append"] as const) {
+    for (let i = 0; i < 20; i++) {
+      trace.recordSqlite(method, 10, `item-${String(i).padStart(2, "0")}`);
+    }
+    trace.recordSqlite(method, 1, "popular");
+    trace.recordSqlite(method, 3, "popular");
+    const breakdown = trace.summary().sqliteBreakdown[method];
+    expect(Object.keys(breakdown)).toHaveLength(20);
+    expect(breakdown.popular).toEqual({ count: 2, avgMs: 2, maxMs: 3 });
+    expect(breakdown["item-19"]).toBeUndefined();
+  }
+});
+
 it("times actual database reads, writes and failed calls without changing their result", () => {
   trace = startPerfTrace(directory, "1")!;
   const recorder = trace;
-  BotDatabase.methodTimingSink = (method, elapsed) =>
-    recorder.recordSqlite(method, elapsed);
+  BotDatabase.methodTimingSink = (method, elapsed, keyOrTable) =>
+    recorder.recordSqlite(method, elapsed, keyOrTable);
   const db = new BotDatabase(":memory:");
   try {
     const before = trace.summary().sqlite;
     db.set("perf_test", { value: 42 });
+    db.append("risk_events", String(Date.now()), { value: 42 });
     expect(db.get("perf_test")).toEqual({ value: 42 });
     expect(() =>
       db.transaction(() => {
@@ -143,12 +187,26 @@ it("times actual database reads, writes and failed calls without changing their 
     expect(after.get.count - before.get.count).toBe(1);
     expect(after.set.count - before.set.count).toBe(1);
     expect(after.transaction.count - before.transaction.count).toBe(1);
+    expect(trace.summary().sqliteBreakdown.set.perf_test.count).toBe(1);
+    expect(trace.summary().sqliteBreakdown.append.risk_events.count).toBe(1);
   } finally {
     db.close();
   }
 });
 
-it("includes the runtime key only in slow SQLite set events", async () => {
+it("saves and reads data with both performance sinks disabled", () => {
+  expect(BotDatabase.perfSink).toBeNull();
+  expect(BotDatabase.methodTimingSink).toBeUndefined();
+  const db = new BotDatabase(":memory:");
+  try {
+    db.set("perf_disabled_test", { value: 42 });
+    expect(db.get("perf_disabled_test")).toEqual({ value: 42 });
+  } finally {
+    db.close();
+  }
+});
+
+it("includes the runtime key in slow SQLite set events", async () => {
   vi.useFakeTimers();
   const recorder = (trace = startPerfTrace(directory, "1")!);
   BotDatabase.methodTimingSink = (method, elapsed, key) =>
