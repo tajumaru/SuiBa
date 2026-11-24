@@ -249,7 +249,7 @@ const timedMethods = [
 
 export class BotDatabase {
   static methodTimingSink:
-    | ((method: string, durationMs: number, key?: string) => void)
+    | ((method: string, durationMs: number, keyOrTable?: string) => void)
     | undefined;
 
   private timeMethods(sink: NonNullable<typeof BotDatabase.methodTimingSink>) {
@@ -267,7 +267,7 @@ export class BotDatabase {
               sink(
                 name,
                 performance.now() - start,
-                name === "set" && typeof args[0] === "string"
+                (name === "set" || name === "append") && typeof args[0] === "string"
                   ? args[0]
                   : undefined,
               );

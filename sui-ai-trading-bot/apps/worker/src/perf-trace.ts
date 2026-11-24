@@ -17,6 +17,7 @@ const slowMs = {
   sqlite: 100,
 } as const;
 const maxQueuedLines = 256;
+const maxSqliteBreakdownEntries = 20;
 
 type Metric = keyof typeof slowMs;
 type Totals = { count: number; totalMs: number; maxMs: number };
@@ -31,6 +32,32 @@ type Details = {
 };
 type Span = { metric: Metric; startedAt: number; start: number };
 
+function addTiming(map: Map<string, Totals>, key: string, durationMs: number) {
+  let stats = map.get(key);
+  if (!stats) {
+    stats = { count: 0, totalMs: 0, maxMs: 0 };
+    map.set(key, stats);
+  }
+  stats.count++;
+  stats.totalMs += durationMs;
+  stats.maxMs = Math.max(stats.maxMs, durationMs);
+}
+
+function summarizeSqliteBreakdown(map: Map<string, Totals>) {
+  return Object.fromEntries(
+    [...map]
+      .sort(
+        ([leftKey, left], [rightKey, right]) =>
+          right.count - left.count || leftKey.localeCompare(rightKey),
+      )
+      .slice(0, maxSqliteBreakdownEntries)
+      .map(([key, { count, totalMs, maxMs }]) => [
+        key,
+        { count, avgMs: totalMs / count, maxMs },
+      ]),
+  );
+}
+
 export function eventLoopDelay(expected: number, actual: number) {
   return Math.max(0, actual - expected);
 }
@@ -39,6 +66,8 @@ export class PerfTrace {
   private windowStartedAt = Date.now();
   private readonly totals = new Map<string, Totals>();
   private readonly sqlite = new Map<string, Totals>();
+  private readonly sqliteSetKeys = new Map<string, Totals>();
+  private readonly sqliteAppendTables = new Map<string, Totals>();
   private readonly active = new Set<Span>();
   private readonly lines: string[] = [];
   private writing = false;
@@ -86,9 +115,17 @@ export class PerfTrace {
     };
   }
 
-  recordSqlite(method: string, elapsed: number, key?: string) {
+  recordSqlite(method: string, elapsed: number, keyOrTable?: string) {
     const endedAt = Date.now();
-    this.record("sqlite", elapsed, endedAt - elapsed, endedAt, method, { key });
+    if (typeof keyOrTable === "string") {
+      if (method === "set") addTiming(this.sqliteSetKeys, keyOrTable, elapsed);
+      if (method === "append") {
+        addTiming(this.sqliteAppendTables, keyOrTable, elapsed);
+      }
+    }
+    this.record("sqlite", elapsed, endedAt - elapsed, endedAt, method, {
+      key: method === "append" ? undefined : keyOrTable,
+    });
   }
 
   summary(endedAt = Date.now()) {
@@ -99,6 +136,10 @@ export class PerfTrace {
       endedAt,
       metrics: copy(this.totals),
       sqlite: copy(this.sqlite),
+      sqliteBreakdown: {
+        set: summarizeSqliteBreakdown(this.sqliteSetKeys),
+        append: summarizeSqliteBreakdown(this.sqliteAppendTables),
+      },
       droppedLines: this.droppedLines,
     };
   }
@@ -113,14 +154,7 @@ export class PerfTrace {
   ) {
     const map = method === undefined ? this.totals : this.sqlite;
     const key = method ?? metric;
-    let stats = map.get(key);
-    if (!stats) {
-      stats = { count: 0, totalMs: 0, maxMs: 0 };
-      map.set(key, stats);
-    }
-    stats.count++;
-    stats.totalMs += durationMs;
-    stats.maxMs = Math.max(stats.maxMs, durationMs);
+    addTiming(map, key, durationMs);
     if (durationMs <= slowMs[metric]) {
       if (metric === "realSubmit") {
         this.enqueue({
@@ -157,6 +191,8 @@ export class PerfTrace {
     this.windowStartedAt = endedAt;
     this.totals.clear();
     this.sqlite.clear();
+    this.sqliteSetKeys.clear();
+    this.sqliteAppendTables.clear();
   }
 
   private enqueue(record: object) {
