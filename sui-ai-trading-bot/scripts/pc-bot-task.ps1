@@ -22,9 +22,11 @@ throw "ランチャーが見つかりません: $launcher"
 }
 $taskAction = New-ScheduledTaskAction -Execute $launcher
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-# ExecutionTimeLimit PT0S = 無制限（既定の3日で Bot が止まらないように）。
+# ExecutionTimeLimit は無制限（[TimeSpan]::Zero = PT0S。既定の3日で Bot が
+# 止まらないように）。文字列 'PT0S' は Windows PowerShell 5.1 が受け付けない
+# ため TimeSpan で渡す（実地確認 2026-11-25）。
 # 失敗時は1分間隔で最大3回まで自動で立て直す。
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 'PT0S' -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
 Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
 Write-Host "登録しました: $taskName（ログオン時に窓なしで起動します）"
