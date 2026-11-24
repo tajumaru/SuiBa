@@ -1,5 +1,7 @@
 # POTARIO PC Bot の裏起動タスク（タスクスケジューラ）を管理する。
 # Install で「ログオン時に窓なしで Bot を起動」を登録する。
+# タスクの実体は pc-bot-hidden.vbs（wscript）で、.cmd を直接登録すると
+# 対話セッションではコンソール窓が残るため、窓を隠すラッパーを挟む。
 # Bot 本体の起動は pc-bot-launcher.cmd が担い、出力は
 # data\logs\bot-console.log に追記される。
 param(
@@ -10,6 +12,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $taskName = 'PotarioBot'
 $launcher = Join-Path $PSScriptRoot 'pc-bot-launcher.cmd'
+$hidden = Join-Path $PSScriptRoot 'pc-bot-hidden.vbs'
 
 function Get-BotTask {
 Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -20,7 +23,10 @@ switch ($Action) {
 if (!(Test-Path -LiteralPath $launcher -PathType Leaf)) {
 throw "ランチャーが見つかりません: $launcher"
 }
-$taskAction = New-ScheduledTaskAction -Execute $launcher
+if (!(Test-Path -LiteralPath $hidden -PathType Leaf)) {
+throw "窓なしラッパーが見つかりません: $hidden"
+}
+$taskAction = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('"' + $hidden + '"')
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 # ExecutionTimeLimit は無制限（[TimeSpan]::Zero = PT0S。既定の3日で Bot が
 # 止まらないように）。文字列 'PT0S' は Windows PowerShell 5.1 が受け付けない
