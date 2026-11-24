@@ -127,6 +127,16 @@ if (!$Yes -and (Read-Host '更新を開始しますか？ (y/n)') -ne 'y') { thr
 
 $stage = 'Bot の停止'
 Write-Host ""
+# 裏起動タスク（PotarioBot）があれば先に止める。タスク側の自動再起動が、
+# 更新途中で Bot を蘇らせて 3100 番を再占有しないため。開始の工程では
+# コンソールではなくこのタスク経由で起動する。
+$botTask = Get-ScheduledTask -TaskName 'PotarioBot' -ErrorAction SilentlyContinue
+$useTask = $null -ne $botTask
+if ($useTask -and $botTask.State -eq 'Running') {
+Stop-ScheduledTask -TaskName 'PotarioBot'
+Start-Sleep -Seconds 2
+Write-Host '裏起動タスクを停止しました。'
+}
 $owners = @(Get-PortOwners)
 # プロセスがいない場合は「すでに停止済み」として、停止と終了の工程を
 # 飛ばす。前回の更新が途中で失敗して Bot が停止したままになっても、
@@ -232,19 +242,26 @@ if (!$done) { throw $failure }
 
 $stage = 'Bot の起動'
 Write-Host ""
+$console = $null
+if ($useTask) {
+$failure = '裏起動タスクを開始できません。'
+Start-ScheduledTask -TaskName 'PotarioBot'
+Write-Host '裏起動タスクで Bot を起動しました（コンソール窓は出ません）。'
+} else {
 $failure = '新しいコンソールを起動できません。'
 $console = Start-Process -FilePath $env:ComSpec -ArgumentList '/d /c pnpm dev' -WorkingDirectory $app -PassThru
+}
 $failure = 'Bot の画面から 120 秒以内に HTTP 200 を確認できません。'
 $timer = [Diagnostics.Stopwatch]::StartNew()
 $ready = $false
-while ($timer.Elapsed.TotalSeconds -lt 120 -and!$console.HasExited) {
+while ($timer.Elapsed.TotalSeconds -lt 120 -and ($null -eq $console -or !$console.HasExited)) {
 $response = $null
 try {
 $response = Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/" -TimeoutSec 2 -MaximumRedirection 0
 } catch {
 # 起動中の接続失敗は制限時間内で再確認する。
 }
-if ($response.StatusCode -eq 200 -and!$console.HasExited -and $timer.Elapsed.TotalSeconds -lt 120) {
+if ($response.StatusCode -eq 200 -and ($null -eq $console -or !$console.HasExited) -and $timer.Elapsed.TotalSeconds -lt 120) {
 $ready = $true
 break
 }
