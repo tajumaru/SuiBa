@@ -441,7 +441,7 @@ export const realTradeCapConfigSchema = z
     indexerUrl: z.string().url(),
     graphqlUrl: z.string().url(),
     grpcUrl: z.string().url(),
-    maxOrderDbusdc: z.number().positive().max(1).default(0.1),
+    maxOrderDbusdc: z.number().positive().max(10).default(0.1),
     orderType: z.enum(["MARKET", "IOC_LIMIT"]).default("IOC_LIMIT"),
     signingEnabled: z.boolean().default(false),
   })
