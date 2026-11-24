@@ -1,0 +1,66 @@
+[
+  {
+    "events": [
+      {
+        "chain": "sui:testnet",
+        "checkpoint": "41",
+        "digest": "digest-1",
+        "eventSequence": "1",
+        "kind": "ORDER_FILLED",
+        "identity": {
+          "network": "testnet",
+          "balanceManagerId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+          "poolKey": "SUI_DBUSDC",
+          "tradeCapId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+          "signerAddress": "0x3333333333333333333333333333333333333333333333333333333333333333",
+          "sessionId": "phase1"
+        },
+        "internalOrderId": "real:testnet:1:BUY:1",
+        "clientOrderId": "1",
+        "asset": "SUI",
+        "availableAtomicDelta": "10",
+        "orderLockedAtomicDelta": "0",
+        "settledUnclaimedAtomicDelta": "3",
+        "gasMist": "0",
+        "raw": {
+          "fixture": "ORDER_FILLED"
+        }
+      }
+    ],
+    "nextCursor": "1",
+    "checkpoint": "41",
+    "checkpointHash": "h41"
+  },
+  {
+    "events": [
+      {
+        "chain": "sui:testnet",
+        "checkpoint": "42",
+        "digest": "digest-2",
+        "eventSequence": "2",
+        "kind": "TX_EFFECTS",
+        "identity": {
+          "network": "testnet",
+          "balanceManagerId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+          "poolKey": "SUI_DBUSDC",
+          "tradeCapId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+          "signerAddress": "0x3333333333333333333333333333333333333333333333333333333333333333",
+          "sessionId": "phase1"
+        },
+        "internalOrderId": "real:testnet:1:BUY:1",
+        "clientOrderId": "1",
+        "asset": "SUI",
+        "availableAtomicDelta": "0",
+        "orderLockedAtomicDelta": "0",
+        "settledUnclaimedAtomicDelta": "0",
+        "gasMist": "5",
+        "raw": {
+          "fixture": "TX_EFFECTS"
+        }
+      }
+    ],
+    "nextCursor": null,
+    "checkpoint": "42",
+    "checkpointHash": "h42"
+  }
+]

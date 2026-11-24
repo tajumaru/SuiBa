@@ -9,6 +9,7 @@ import type {
   RealHistoryEvent,
   RealIdentity,
 } from "../apps/worker/src/real/types.ts";
+import legacyPages from "./fixtures/real-history-pages-legacy.json";
 
 const id = (suffix = "1"): RealIdentity => ({
   network: "testnet",
@@ -289,6 +290,84 @@ describe("REAL TradeCap read-only reconciliation", () => {
       });
       expect(db.ledgerCount()).toBe(2);
       expect(db.hasLatch(newIdentity)).toBe(false);
+    } finally {
+      db.close();
+    }
+  });
+
+  // 凍結 fixture（tests/fixtures/real-history-pages-legacy.json）は
+  // timestampMs が付く前の形で保存された出来事の写し。テスト内の
+  // builder で作り直すと、将来フィールドが増えた時に保存側まで
+  // 新しい形に化けてしまうため、ファイルから読むこと。再生成しない。
+  it("keeps the frozen legacy fixture free of fields added later", () => {
+    const pages = legacyPages as unknown as HistoryPage[];
+    expect(pages).toHaveLength(2);
+    for (const page of pages)
+      for (const entry of page.events)
+        expect(entry).not.toHaveProperty("timestampMs");
+  });
+
+  it("replays the frozen legacy pages against current-shape events", async () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    try {
+      const oldIdentity = id();
+      const newIdentity = { ...oldIdentity, tradeCapId: `0x${"4".repeat(64)}` };
+      const stored = legacyPages as unknown as HistoryPage[];
+      await new RealReconciler(db, oldIdentity, source(stored)).reconcileAllPages();
+      expect(db.ledgerCount()).toBe(2);
+
+      // 新コードの再取得：timestampMs が付き、identity が新しい Cap に
+      // なり、キーの並びも違う。それでも同じ出来事として扱われる。
+      const fresh: HistoryPage[] = stored.map((page) => ({
+        ...page,
+        events: page.events.map((entry) =>
+          Object.fromEntries(
+            Object.entries({
+              ...entry,
+              identity: newIdentity,
+              timestampMs: 1763800000000,
+            }).reverse(),
+          ) as unknown as RealHistoryEvent,
+        ),
+      }));
+      const reconciler = new RealReconciler(db, newIdentity, source(fresh));
+      await expect(reconciler.reconcileAllPages()).resolves.toMatchObject({
+        pages: 2, events: 0,
+      });
+      expect(db.ledgerCount()).toBe(2);
+      expect(db.hasLatch(newIdentity)).toBe(false);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("still latches when a frozen legacy event's amount changes", async () => {
+    const db = new RealTradeCapDatabase(":memory:");
+    try {
+      const oldIdentity = id();
+      const newIdentity = { ...oldIdentity, tradeCapId: `0x${"4".repeat(64)}` };
+      const stored = legacyPages as unknown as HistoryPage[];
+      await new RealReconciler(db, oldIdentity, source(stored)).reconcileAllPages();
+      expect(db.ledgerCount()).toBe(2);
+
+      const fresh: HistoryPage[] = stored.map((page) => ({
+        ...page,
+        events: page.events.map((entry) => ({
+          ...entry,
+          identity: newIdentity,
+          timestampMs: 1763800000000,
+          ...(entry.kind === "ORDER_FILLED"
+            ? { availableAtomicDelta: "11" }
+            : {}),
+        })),
+      }));
+      const reconciler = new RealReconciler(db, newIdentity, source(fresh));
+      await expect(reconciler.reconcileAllPages()).rejects.toThrow(
+        "REAL_CHECKPOINT_REGRESSION",
+      );
+      expect(
+        db.latchInfo(newIdentity, "REAL_CHECKPOINT_REGRESSION"),
+      ).toBeTruthy();
     } finally {
       db.close();
     }
