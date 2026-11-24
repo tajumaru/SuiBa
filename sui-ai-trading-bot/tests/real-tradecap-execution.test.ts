@@ -2,6 +2,7 @@ import { RealReconciler } from "../apps/worker/src/real/reconciler.ts";
 import { OrderType, SelfMatchingOptions } from "@mysten/deepbook-v3";
 import { Transaction } from "@mysten/sui/transactions";
 import type { RealTradeCapConfig } from "../packages/shared/src/index.ts";
+import { realTradeCapConfigSchema } from "../packages/shared/src/index.ts";
 import { describe, expect, it, vi } from "vitest";
 import { RealTradeCapDatabase } from "../apps/worker/src/real/database.ts";
 import { RealTradeCapExecutor } from "../apps/worker/src/real/execution.ts";
@@ -35,6 +36,23 @@ const marketConfig: RealTradeCapConfig = {
   orderType: "MARKET",
   signingEnabled: true,
 };
+describe("real trade cap config schema", () => {
+  it("accepts an order cap above 1 up to 10 DBUSDC", () => {
+    expect(
+      realTradeCapConfigSchema.parse({ ...marketConfig, maxOrderDbusdc: 2 })
+        .maxOrderDbusdc,
+    ).toBe(2);
+    expect(
+      realTradeCapConfigSchema.parse({ ...marketConfig, maxOrderDbusdc: 10 })
+        .maxOrderDbusdc,
+    ).toBe(10);
+  });
+  it("rejects an order cap above 10 DBUSDC", () => {
+    expect(() =>
+      realTradeCapConfigSchema.parse({ ...marketConfig, maxOrderDbusdc: 10.5 }),
+    ).toThrow();
+  });
+});
 const checks = Object.fromEntries(
   [
     "allTransactionsTerminal",
