@@ -894,51 +894,128 @@ export class BotDatabase {
     }
   }
   saveCandles(c: Candle[]) {
-    if (!BotDatabase.perfSink) {
-      this.transaction(() => {
-        const st = this.prepare(
-          "INSERT INTO market_candles VALUES(?,?,?,?) ON CONFLICT DO UPDATE SET json=excluded.json",
-        );
-        for (const x of c)
-          st.run(x.timeframe, x.timestamp, x.source, JSON.stringify(x));
-      });
-      return;
+    const draft = BotDatabase.perfSink
+      ? this.perfDraft("saveCandles", Date.now())
+      : undefined;
+    const t0 = draft ? performance.now() : 0;
+    if (draft) {
+      draft.table = "market_candles";
+      draft.rows = c.length;
+      draft.jsonMs = 0;
+      draft.sqlMs = 0;
     }
-    // Instrumented path: identical statements and values; the per-row
-    // JSON.stringify time and statement execution time are accumulated
-    // separately so a slow saveCandles can be attributed to conversion
-    // vs SQLite execution (the enclosing transaction is timed as well).
-    const draft = this.perfDraft("saveCandles", Date.now()),
-      t0 = performance.now();
-    draft.table = "market_candles";
-    draft.rows = c.length;
-    let jsonMs = 0,
-      sqlMs = 0;
     try {
+      this.writeChangedCandles(c, draft);
+    } catch (error) {
+      if (draft) {
+        draft.ok = false;
+        draft.errorCode = this.perfErrorCode(error);
+      }
+      throw error;
+    } finally {
+      if (draft) this.perfFinish(draft, t0);
+    }
+  }
+  private writeChangedCandles(
+    candles: Candle[],
+    draft: ReturnType<BotDatabase["perfDraft"]> | undefined,
+  ) {
+    if (candles.length === 0) return;
+
+    type Series = {
+      first: number;
+      last: number;
+      saved: Map<number, string | undefined>;
+    };
+    const series = new Map<
+      Candle["timeframe"],
+      Map<Candle["source"], Series>
+    >();
+    const entries = candles.map((candle) => {
+      const { timeframe, source, timestamp } = candle;
+      let sources = series.get(timeframe);
+      if (!sources) series.set(timeframe, (sources = new Map()));
+      let group = sources.get(source);
+      if (!group) {
+        group = { first: timestamp, last: timestamp, saved: new Map() };
+        sources.set(source, group);
+      }
+      group.first = Math.min(group.first, timestamp);
+      group.last = Math.max(group.last, timestamp);
+      return { candle, group };
+    });
+
+    const readStart = draft ? performance.now() : 0;
+    const readVersion = () => {
+      try {
+        return this.displayVersion();
+      } catch {
+        return undefined;
+      }
+    };
+    let version = readVersion();
+    try {
+      const select = this.prepare(
+        "SELECT timestamp, json FROM market_candles WHERE timeframe=? AND source=? AND timestamp BETWEEN ? AND ?",
+      );
+      for (const [timeframe, sources] of series) {
+        for (const [source, group] of sources) {
+          for (const row of select.all(
+            timeframe,
+            source,
+            group.first,
+            group.last,
+          )) {
+            if (
+              typeof row.timestamp === "number" &&
+              typeof row.json === "string"
+            )
+              group.saved.set(row.timestamp, row.json);
+          }
+        }
+      }
+    } catch {
+      // If the comparison cannot be trusted, replay the original upserts.
+      version = undefined;
+    } finally {
+      if (draft)
+        draft.sqlMs = (draft.sqlMs ?? 0) + (performance.now() - readStart);
+    }
+
+    let hasChanges = false;
+    const rows = entries.map(({ candle, group }) => {
+      const jsonStart = draft ? performance.now() : 0;
+      const json = JSON.stringify(candle);
+      if (draft)
+        draft.jsonMs = (draft.jsonMs ?? 0) + (performance.now() - jsonStart);
+      const changed =
+        json === undefined || group.saved.get(candle.timestamp) !== json;
+      if (changed) {
+        hasChanges = true;
+        // Later entries for the same key must see earlier entries in this batch.
+        group.saved.set(candle.timestamp, json);
+      }
+      return { candle, json, changed };
+    });
+    const sqlStart = draft ? performance.now() : 0;
+    try {
+      if (!hasChanges && version !== undefined && readVersion() === version)
+        return;
       this.transaction(() => {
-        const st = this.prepare(
+        // Another connection may have committed since the comparison.
+        const writeAll = version === undefined || readVersion() !== version;
+        const upsert = this.prepare(
           "INSERT INTO market_candles VALUES(?,?,?,?) ON CONFLICT DO UPDATE SET json=excluded.json",
         );
-        for (const x of c) {
-          const j0 = performance.now();
-          const json = JSON.stringify(x);
-          jsonMs += performance.now() - j0;
-          const s0 = performance.now();
-          st.run(x.timeframe, x.timestamp, x.source, json);
-          sqlMs += performance.now() - s0;
+        for (const { candle, json, changed } of rows) {
+          if (writeAll || changed)
+            upsert.run(candle.timeframe, candle.timestamp, candle.source, json);
         }
       });
-    } catch (error) {
-      draft.ok = false;
-      draft.errorCode = this.perfErrorCode(error);
-      draft.jsonMs = jsonMs;
-      draft.sqlMs = sqlMs;
-      this.perfFinish(draft, t0);
-      throw error;
+    } finally {
+      if (draft)
+        draft.sqlMs = (draft.sqlMs ?? 0) + (performance.now() - sqlStart);
     }
-    draft.jsonMs = jsonMs;
-    draft.sqlMs = sqlMs;
-    this.perfFinish(draft, t0);
   }
   candles(timeframe = 300): Candle[] {
     return (
