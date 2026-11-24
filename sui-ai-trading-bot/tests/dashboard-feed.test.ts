@@ -1,7 +1,12 @@
-import { it, expect } from "vitest";
+import { it, expect, vi } from "vitest";
 import { gzipSync } from "node:zlib";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import { BotEngine } from "../apps/worker/src/engine.ts";
+import {
+  buildSnapshot,
+  createSnapshotCache,
+  type SnapshotSources,
+} from "../apps/worker/src/engine-snapshot.ts";
 import {
   DashboardService,
   acceptsGzip,
@@ -34,6 +39,104 @@ function fixture() {
   const service = new DashboardService(engine, db);
   return { db, engine, service };
 }
+it("reuses stored aggregates separately for light and full snapshots", () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  const { db, engine } = fixture();
+  try {
+    const sageWork = vi.spyOn(db, "sageWorkCounts");
+    const light = engine.snapshot({ light: true });
+    const full = engine.snapshot();
+    expect(light.candles).toHaveLength(0);
+    expect(full.candles.length).toBeGreaterThan(0);
+    expect(engine.snapshot({ light: true })).toEqual(light);
+    expect(engine.snapshot()).toEqual(full);
+    expect(sageWork).toHaveBeenCalledTimes(2);
+  } finally {
+    db.close();
+    vi.useRealTimers();
+  }
+});
+
+it("refreshes stored aggregates after a write and when the hour changes", () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-24T12:59:59Z"));
+  const { db, engine } = fixture();
+  try {
+    const sageWork = vi.spyOn(db, "sageWorkCounts");
+    const options = { light: true };
+    expect(engine.snapshot(options).latestTradeAt).toBeNull();
+    const timestamp = Date.now();
+    db.append(
+      "paper_trades",
+      "new",
+      { timestamp, side: "BUY", pnl: null },
+      timestamp,
+    );
+    expect(engine.snapshot(options).latestTradeAt).toBe(timestamp);
+
+    vi.setSystemTime(timestamp + 1000);
+    expect(engine.snapshot(options).latestTradeAt).toBe(timestamp);
+    expect(sageWork).toHaveBeenCalledTimes(3);
+  } finally {
+    db.close();
+    vi.useRealTimers();
+  }
+});
+
+it("refreshes chain and safety without repeating the stored aggregates", () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  const { db, engine } = fixture();
+  try {
+    const status = { healthy: true, checkedAt: Date.now(), failures: 0 };
+    const chainInfo = vi
+      .fn<SnapshotSources["chainInfo"]>()
+      .mockReturnValue(null);
+    const sources: SnapshotSources = {
+      mode: "PAPER",
+      network: "testnet",
+      pair: "SUI_USDC",
+      db,
+      monitor: engine.monitor,
+      market: { candles: async () => [] },
+      sui: { health: async () => status, status },
+      chainInfo,
+      btcInfo: () => null,
+      bookImbalance: () => null,
+      bookLevels: () => null,
+      longTermDaily: () => null,
+    };
+    const sageWork = vi.spyOn(db, "sageWorkCounts");
+    const uncached = buildSnapshot(sources);
+    expect(buildSnapshot(sources)).toEqual(uncached);
+    expect(sageWork).toHaveBeenCalledTimes(2);
+
+    sources.cache = createSnapshotCache();
+    const first = buildSnapshot(sources);
+    expect(first).toEqual(uncached);
+    const chain = {
+      epoch: 1,
+      checkpoint: 42,
+      tps: null,
+      gasMist: null,
+      epochStartMs: null,
+      epochDurationMs: null,
+      validators: null,
+      at: Date.now(),
+    };
+    const safety = {
+      ...first.safety,
+      marketUpdating: !first.safety.marketUpdating,
+    };
+    chainInfo.mockReturnValue(chain);
+    vi.spyOn(engine.monitor, "safetySnapshot").mockReturnValue(safety);
+    expect(buildSnapshot(sources)).toEqual({ ...first, chain, safety });
+    expect(sageWork).toHaveBeenCalledTimes(3);
+  } finally {
+    db.close();
+    vi.useRealTimers();
+  }
+});
+
 function localApi(service: DashboardService) {
   const calls: string[] = [];
   const api = async (path: string) => {
