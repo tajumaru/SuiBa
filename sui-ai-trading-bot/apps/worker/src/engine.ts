@@ -49,7 +49,11 @@ import {
   type ProfitReport,
 } from "../../../packages/profit-guard/src/index.ts";
 import { BotDatabase } from "../../../packages/database/src/index.ts";
-import { buildSnapshot, type SnapshotSources } from "./engine-snapshot.ts";
+import {
+  buildSnapshot,
+  createSnapshotCache,
+  type SnapshotSources,
+} from "./engine-snapshot.ts";
 export { downsampleEquityCurve } from "./engine-snapshot.ts";
 import { calculateSeries } from "../../../packages/indicators/src/index.ts";
 import {
@@ -1289,10 +1293,13 @@ export class BotEngine {
       this.db.set("forceClose", null);
   }
 
+  private readonly snapshotCache = createSnapshotCache();
+
   snapshot(options: { light?: boolean } = {}) {
     return buildSnapshot(
       {
         ...this.snapshotDisplay,
+        cache: this.snapshotCache,
         mode: this.executionMode,
         forceClose: this.pendingForceClose(),
         pair: this.pair,
