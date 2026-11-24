@@ -41,12 +41,15 @@ $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) 
 # 登録にはこの PC のログインパスワードが要る（Windows がタスク側に
 # 保存する。このスクリプトは表示も送信もしない）。パスワードを
 # 変更したら、そのままでは起動しなくなるので Install をやり直す。
-$principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Password -RunLevel Limited
+# Register-ScheduledTask は -User/-Password 指定時（パスワードログオンの
+# パラメータセット）に -Principal を併用できない（併用すると
+# "Parameter set cannot be resolved" で失敗する。実地確認 2026-11-25）。
+# -User/-Password/-RunLevel の指定だけでパスワードログオンの登録になる。
 $cred = Get-Credential -UserName "$env:USERDOMAIN\$env:USERNAME" -Message 'Bot をログオンなしで起動するため、この PC のログインパスワードを入力してください（Windows がタスクに保存します）'
 if ($null -eq $cred) {
 throw 'パスワードが入力されなかったため、登録を中止しました'
 }
-Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $trigger -Settings $settings -Principal $principal -User $cred.UserName -Password $cred.GetNetworkCredential().Password -Force | Out-Null
+Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $trigger -Settings $settings -User $cred.UserName -Password $cred.GetNetworkCredential().Password -RunLevel Limited -Force | Out-Null
 Write-Host "登録しました: $taskName（ログオンしていなくても窓なしで起動します）"
 }
 'Uninstall' {
