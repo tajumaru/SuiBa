@@ -51,7 +51,7 @@ FILES=(
   'suiba-memwal-runtime|523f942e7105d945f85d398713b07b1d30b0d4bde605ae34e44683f6d64edf93|/usr/local/sbin/suiba-memwal-runtime|755'
   'suiba-memwal-runtime.sudoers|7edfbd82b607b46f600c2d90a04fcfc2dd71f3344681b72620f0ebd3d3470af1|/etc/sudoers.d/suiba-memwal-runtime|440'
   'export_snapshot.py|dc0e5f8cfa953bc1a16e928c39f2b73f0b478bf9db5f02c21b4ebc96f7521254|/usr/local/libexec/suiba-paper-export.py|755'
-  'controller.py|035293508ab5f6d15b88bcd74bbfcbec227c7d20b229be8f074426275002120b|/usr/local/libexec/suiba-paper-check.py|755'
+  'controller.py|070cfa5110b77208598dc42b29f2e0f9795b53eeaea4f0dd554a5510de388a44|/usr/local/libexec/suiba-paper-check.py|755'
   'suiba-paper-check|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-check|755'
   'suiba-paper-check.sudoers|54d64fdadf0b38749008c112fc12761e03f633538e526ebe6f37eb4b1ec38607|/etc/sudoers.d/suiba-paper-check|440'
   'suiba-paper-observe|583c298737449e7ce7a8b42dc424d0c891d12101bef1adee0ebc4daa07010e22|/usr/local/sbin/suiba-paper-observe|755'
