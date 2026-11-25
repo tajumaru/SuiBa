@@ -1,6 +1,16 @@
-import React, { useId } from "react";
+import React, { useId, useState } from "react";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { BossBattleCard } from "./BossBattle.tsx";
+import { BtcMark, BtcPanel, BTC_ORANGE } from "./BtcPanel.tsx";
+import {
+  changeTone,
+  formatChangePct,
+  sparklinePoints,
+  SPARK_HEIGHT,
+  SPARK_WIDTH,
+} from "./presentation.ts";
+
+export { changeTone, formatChangePct, sparklinePoints } from "./presentation.ts";
 import { BookBar } from "./BookBar.tsx";
 import heroBrave from "./assets/hero-brave-blue.webp";
 import heroStruggling from "./assets/hero-struggling.webp";
@@ -15,9 +25,6 @@ type Candle = Frames[300][number];
 const DAY_SECONDS = 86400;
 /** Coarsest first: the hourly frame is the canonical 24h source. */
 const TIMEFRAMES = [3600, 900, 300] as const;
-const SPARK_WIDTH = 80;
-const SPARK_HEIGHT = 24;
-const SPARK_MAX_POINTS = 40;
 const RSI_GAUGE_WIDTH = 300;
 const RSI_GAUGE_INSET = 8;
 /** One sine wave across the foe zone, wide enough to stay
@@ -280,17 +287,6 @@ export function formatTickerPrice(price: number | null | undefined): string {
   return `$${whole}.${(fraction + "00").slice(0, Math.max(2, fraction.length))}`;
 }
 
-export function formatChangePct(pct: number): string {
-  const text = `${Math.abs(pct * 100).toFixed(2)}%`;
-  if (pct > 0) return `+${text}`;
-  if (pct < 0) return `-${text}`;
-  return text;
-}
-
-export function changeTone(pct: number): "up" | "down" | "flat" {
-  return pct > 0 ? "up" : pct < 0 ? "down" : "flat";
-}
-
 function spanLabel(seconds: number): string {
   if (seconds >= 48 * 3600) return `${Math.round(seconds / DAY_SECONDS)}日`;
   if (seconds >= 3600) return `${Math.round(seconds / 3600)}時間`;
@@ -373,44 +369,7 @@ export function tickerChange(frames: Frames): TickerChange | null {
   };
 }
 
-function downsample(values: number[], max: number): number[] {
-  if (values.length <= max) return values;
-  const out: number[] = [];
-  const step = (values.length - 1) / (max - 1);
-  for (let i = 0; i < max; i++) out.push(values[Math.round(i * step)]);
-  return out;
-}
 
-/**
- * Polyline points for the sparkline, or null when fewer than
- * two finite values remain. A flat series draws on the midline.
- */
-export function sparklinePoints(
-  values: number[],
-  width = SPARK_WIDTH,
-  height = SPARK_HEIGHT,
-  maxPoints = SPARK_MAX_POINTS,
-): string | null {
-  const pts = downsample(
-    values.filter((v) => Number.isFinite(v)),
-    maxPoints,
-  );
-  if (pts.length < 2) return null;
-  const min = Math.min(...pts);
-  const max = Math.max(...pts);
-  const pad = 2;
-  const round1 = (n: number) => Math.round(n * 10) / 10;
-  return pts
-    .map((v, i) => {
-      const x = round1((i / (pts.length - 1)) * width);
-      const y =
-        max === min
-          ? height / 2
-          : round1(pad + (1 - (v - min) / (max - min)) * (height - pad * 2));
-      return `${x},${y}`;
-    })
-    .join(" ");
-}
 
 /** Display-only midpoint. Never feeds engine pricing, positions or order checks. */
 export function referenceTicker(
@@ -460,7 +419,49 @@ export function referenceTicker(
   };
 }
 
-export function PriceTicker({
+const SUI_BLUE = "#4da2ff";
+
+type PriceTickerProps = Parameters<typeof TradingPriceTicker>[0] & {
+  btcShadowSummary?: State["btcShadowSummary"];
+};
+
+export function PriceTicker({ btcShadowSummary = null, ...props }: PriceTickerProps) {
+  const [asset, setAsset] = useState<"SUI" | "BTC">("SUI");
+  return (
+    <div>
+      <div className="price-ticker-mark-switch" role="group" aria-label="表示銘柄">
+        <button
+          type="button"
+          aria-pressed={asset === "SUI"}
+          style={asset === "SUI" ? { borderColor: SUI_BLUE } : undefined}
+          onClick={() => setAsset("SUI")}
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+            <path d="M12 3c3.2 4.1 6 7.9 6 11a6 6 0 1 1-12 0c0-3.1 2.8-6.9 6-11z" fill={SUI_BLUE} />
+          </svg>
+          SUI
+        </button>
+        <button
+          type="button"
+          aria-pressed={asset === "BTC"}
+          style={asset === "BTC" ? { borderColor: BTC_ORANGE } : undefined}
+          onClick={() => setAsset("BTC")}
+        >
+          <BtcMark /> BTC
+        </button>
+      </div>
+      {asset === "SUI" ? (
+        <TradingPriceTicker {...props} />
+      ) : (
+        <div className="price-ticker-bar">
+          <BtcPanel summary={btcShadowSummary} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TradingPriceTicker({
   pair = "SUI_USDC",
   price,
   candlesByTimeframe,

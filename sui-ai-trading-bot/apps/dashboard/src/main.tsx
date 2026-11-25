@@ -517,6 +517,7 @@ function App() {
                     it; restoring is re-passing onPairSwitch here. */}
                 <PriceTicker
                   pair={data.pair}
+                  btcShadowSummary={data.btcShadowSummary}
                   price={data.price}
                   stopped={!data.runtime.running}
                   marketData={data.marketData}
