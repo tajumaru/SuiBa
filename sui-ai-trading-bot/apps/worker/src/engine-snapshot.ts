@@ -1,3 +1,4 @@
+import type { BtcShadowSummary } from "./memwal.ts";
 import { readBoss, readBossHistory } from "./boss.ts";
 import {
   partyLevel,
@@ -147,6 +148,7 @@ function buildDatabaseSnapshot(
       };
     })(),
     forecast: readForecast(src.db, src.pair),
+    btcShadowSummary: src.db.get<BtcShadowSummary>("btc_shadow_summary") ?? null,
     forecastError: src.db.get("forecast_error") ?? null,
     marketQuality: src.db.get("market_quality") ?? null,
     mode: src.mode,
