@@ -121,6 +121,29 @@ it("does not omit unknown DBs or overwrite an existing backup", async () => {
   expect(verifyPaperBackup(t.backup).databases).toHaveLength(4);
 });
 
+it("includes the BTC chart-history DB in the backup set", async () => {
+  const t = fixture();
+  const btcHistory = new DatabaseSync(
+    t.root + ".XBTC_USDC.chart-history.sqlite",
+  );
+  btcHistory.exec(
+    "CREATE TABLE candles(value TEXT); INSERT INTO candles VALUES('btc-history');",
+  );
+  btcHistory.close();
+  const manifest = await createPaperBackup(t.root, t.backup);
+  expect(manifest.databases).toHaveLength(5);
+  expect(
+    manifest.databases.some(
+      (d) => d.name === "bot.sqlite.XBTC_USDC.chart-history.sqlite",
+    ),
+  ).toBe(true);
+  const target = join(t.folder, "restored");
+  restorePaperBackup(t.backup, target);
+  expect(
+    existsSync(join(target, "bot.sqlite.XBTC_USDC.chart-history.sqlite")),
+  ).toBe(true);
+});
+
 it("rejects modified bytes, injected WAL and path traversal manifests before restore", async () => {
   const t = fixture();
   await createPaperBackup(t.root, t.backup);
