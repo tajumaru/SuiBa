@@ -257,6 +257,7 @@ it("detects a repeated identical error write, and does not reclassify a revisite
 it("holds predecessor-blocked warmup until the scoped reset, without starting orders", async () => {
   const t = await fixture();
   t.ctx.chartHistory = { cancel: () => {} } as never;
+  t.ctx.btcChartHistory = t.ctx.chartHistory;
   const tick = vi.spyOn(t.engine, "tick").mockResolvedValue();
   const cold = createScheduler(t.ctx);
   t.ctx.scheduler = cold;

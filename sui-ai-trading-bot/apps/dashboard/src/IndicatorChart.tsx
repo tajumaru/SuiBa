@@ -131,7 +131,8 @@ export function IndicatorChart({
   );
 }
 export function Chart(props: {
-  pair?: State["pair"];
+  pair?: State["pair"] | "XBTC_USDC";
+  hidden?: boolean;
   candles: Candle[];
   kind: string;
   trades: State["trades"];
@@ -154,6 +155,10 @@ export function Chart(props: {
       {...props}
     />
   ) : (
-    <IndicatorChart {...props} />
+    <IndicatorChart
+      candles={props.candles}
+      kind={props.kind}
+      trades={props.trades}
+    />
   );
 }

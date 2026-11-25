@@ -1,9 +1,10 @@
 import { Worker } from "node:worker_threads";
+import type { Candle } from "../../../packages/shared/src/index.ts";
 import type {
-  Candle,
-  TradingPair,
-} from "../../../packages/shared/src/index.ts";
-import type { HistoryQuery, HistoryResult } from "./chart-history.ts";
+  ChartHistoryPair,
+  HistoryQuery,
+  HistoryResult,
+} from "./chart-history.ts";
 export class ChartHistoryClient {
   private worker: Worker | null = null;
   private pending: {
@@ -16,7 +17,7 @@ export class ChartHistoryClient {
   constructor(
     private path: string,
     private allowed: () => boolean,
-    private pair: TradingPair = "SUI_USDC",
+    private pair: ChartHistoryPair = "SUI_USDC",
   ) {}
   cancel() {
     this.worker?.postMessage({ kind: "cancel" });

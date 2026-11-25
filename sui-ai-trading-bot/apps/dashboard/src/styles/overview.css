@@ -569,3 +569,19 @@
   .force-close-slash { display: none; }
   .force-close-result strong { animation: none; }
 }
+
+.chart-asset-switch {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.chart-asset-switch button {
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid var(--line);
+}
+
+.chart-asset-switch button[aria-pressed="true"] {
+  border-color: var(--mint);
+}

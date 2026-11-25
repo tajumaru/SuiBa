@@ -442,6 +442,119 @@ try {
   await realAssets.getByText("残高を確認できません", { exact: true }).waitFor();
   if (await realAssets.getByText("99.19", { exact: false }).count())
     failures.push("REAL with unavailable balances shows PAPER cash");
+  await page.setViewportSize({ width: 375, height: 900 });
+  const makeChartCandles = (from, to, timeframe, pair) =>
+    Array.from({ length: (to - from) / timeframe }, (_, i) => {
+      const timestamp = from + i * timeframe;
+      const tick = timestamp / timeframe;
+      const base = pair === "XBTC_USDC" ? 96000 : 2.15;
+      const open = base * (1 + 0.008 * Math.sin(tick / 9) + 0.002 * Math.sin(tick / 2));
+      const close = open * (1 + 0.0012 * Math.sin(tick));
+      return {
+        timestamp,
+        timeframe,
+        open,
+        close,
+        high: Math.max(open, close) * 1.0006,
+        low: Math.min(open, close) * 0.9994,
+        volume: 10,
+        source: `DeepBook:${pair}:USDC`,
+      };
+    });
+  const end = Math.floor(Date.now() / 300_000) * 300;
+  const suiCandles = makeChartCandles(end - 86400, end, 300, "SUI_USDC");
+  const lastClose = suiCandles.at(-1).close;
+  const forecast = {
+    points: Array.from({ length: 24 }, (_, i) => ({
+      timestamp: end + i * 300,
+      mid: lastClose * (1 + i * 0.0002),
+      upper: lastClose * (1 + i * 0.0006),
+      lower: lastClose * (1 - i * 0.0004),
+    })),
+    driftPct: 0.0046,
+    bandPct: 0.012,
+    direction: "up",
+    directionWord: "上向き",
+    bookTiltPct: 0,
+    touch: null,
+  };
+  fixture.state.mode = "PAPER";
+  fixture.state.candlesByTimeframe[300] = suiCandles;
+  fixture.state.trades.at(-1).timestamp = (end - 3600) * 1000;
+  fixture.state.forecast.cones[300] = forecast;
+  const historyRequests = [];
+  await page.route("**/api/chart/history?*", async (route) => {
+    const query = new URL(route.request().url()).searchParams;
+    const timeframe = Number(query.get("timeframe"));
+    const from = Number(query.get("from"));
+    const to = Number(query.get("to"));
+    const pair = query.get("pair") ?? "SUI_USDC";
+    historyRequests.push({ pair, timeframe, from, to });
+    await route.fulfill({
+      json: { candles: makeChartCandles(from, to, timeframe, pair), timeframe, missing: 0, error: null },
+    });
+  });
+  await reloadOverview();
+  await page.locator("#overview-segment-now").click();
+  const chartSwitch = page.getByRole("group", { name: "チャートの表示銘柄" });
+  const suiChart = page.locator('.price-chart[aria-label="SUI/USDC価格表示"]');
+  const btcChart = page.locator('.price-chart[aria-label="BTC/USDC価格表示"]');
+  const manualHistory = suiChart.getByRole("button", { name: "DeepBookの7日履歴を取得" });
+  const overlaySelectors = ".chart-forecast, .chart-buy-line, svg text:has(title)";
+  await manualHistory.waitFor();
+  if (
+    historyRequests.length !== 0 ||
+    (await chartSwitch.getByRole("button", { name: "SUI" }).getAttribute("aria-pressed")) !== "true" ||
+    (await suiChart.locator(overlaySelectors).count()) < 3
+  )
+    failures.push("default SUI chart changed its manual loading or Bot overlays");
+  await manualHistory.click();
+  await suiChart.getByText(/本取得 ／ 欠損0本/).waitFor();
+  if (historyRequests[0]?.pair !== "SUI_USDC")
+    failures.push("SUI manual history request did not use the existing pair");
+
+  const expectBtcHistory = async (action, timeframe, hours) => {
+    const response = page.waitForResponse((r) => {
+      const url = new URL(r.url());
+      return url.pathname === "/api/chart/history" &&
+        url.searchParams.get("pair") === "XBTC_USDC" &&
+        url.searchParams.get("timeframe") === String(timeframe);
+    });
+    await action();
+    await response;
+    const request = historyRequests.at(-1);
+    if (request.to - request.from !== hours * 3600 + 120 * timeframe)
+      failures.push("BTC request range did not follow the chart controls");
+    await btcChart.getByRole("img", { name: "RSIチャート" }).waitFor();
+    await btcChart.getByRole("img", { name: "MACDチャート" }).waitFor();
+  };
+  const btcButton = chartSwitch.getByRole("button", { name: "BTC" });
+  const size = await btcButton.boundingBox();
+  if (!size || size.width < 44 || size.height < 44)
+    failures.push("BTC switch target is smaller than 44px");
+  await expectBtcHistory(() => btcButton.click(), 300, 6);
+  await btcChart.getByText("BTC / USDC · 5分足", { exact: true }).waitFor();
+  if (
+    (await btcChart.locator(overlaySelectors).count()) !== 0 ||
+    (await btcChart.locator(".chart-history-button").count()) !== 0 ||
+    (await suiChart.isVisible())
+  )
+    failures.push("BTC chart shows Bot overlays, the manual history button or the SUI chart");
+
+  const timeframeSelect = page.getByLabel("時間足");
+  await expectBtcHistory(() => timeframeSelect.selectOption("900"), 900, 6);
+  await expectBtcHistory(
+    () => btcChart.getByRole("button", { name: "24時間", exact: true }).click(),
+    900,
+    24,
+  );
+  await chartSwitch.getByRole("button", { name: "SUI" }).click();
+  await manualHistory.waitFor();
+  if ((await timeframeSelect.inputValue()) !== "300" ||
+      !(await suiChart.getByText(/本取得 ／ 欠損0本/).isVisible()) ||
+      historyRequests.length !== 4)
+    failures.push("returning to SUI changed its timeframe or manual history");
+  console.log("SUI/BTC chart switch passed at 375px");
   console.log(
     `five-tab render: 320/375/1280px, header start/stop passed on loopback port ${port}`,
   );
