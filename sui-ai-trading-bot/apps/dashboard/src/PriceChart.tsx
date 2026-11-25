@@ -23,6 +23,7 @@ import {
   ForecastDetails,
   HoverReadout,
   HoverMarker,
+  isLineApproaching,
 } from "./PriceChartOverlays.tsx";
 
 export function PriceChart(props: PriceChartProps) {
@@ -99,6 +100,18 @@ export function PriceChart(props: PriceChartProps) {
   const periodText = hours === 168 ? "7日" : `${hours}時間`;
   const signedPct = (value: number) =>
     `${value >= 0 ? "+" : ""}${(value * 100).toFixed(2)}%`;
+  // The buy-run line's full staging is earned only while the
+  // price is actually moving toward the line, or sits at/under
+  // it (owner, 2026-11-26). Otherwise the line stays a quiet
+  // landmark so a constant countdown cannot cry wolf.
+  const lineHot =
+    linePrice != null &&
+    currentPrice != null &&
+    (currentPrice <= linePrice ||
+      isLineApproaching(
+        data.candles.map((cd) => cd.close),
+        linePrice,
+      ));
   return (
     <div
       className="price-chart"
@@ -401,6 +414,7 @@ export function PriceChart(props: PriceChartProps) {
             )}
             <BuyLineOverlay
               linePrice={linePrice}
+              hot={lineHot}
               currentPrice={currentPrice}
               min={min}
               max={max}
