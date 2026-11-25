@@ -134,8 +134,15 @@ $botTask = Get-ScheduledTask -TaskName 'PotarioBot' -ErrorAction SilentlyContinu
 $useTask = $null -ne $botTask
 if ($useTask -and $botTask.State -eq 'Running') {
 Stop-ScheduledTask -TaskName 'PotarioBot'
-Start-Sleep -Seconds 2
 Write-Host '裏起動タスクを停止しました。'
+# タスクを止めても Bot プロセスの終了には数秒かかることがある。
+# ポートが空くまで待ってから所有者を見ないと、終了途中のプロセスへ
+# 停止 API を送って失敗する（実績 2026-11-25：タスク停止の直後に
+# 「停止 API が失敗しました」で更新が止まり、手作業の復旧が必要になった）。
+for ($waited = 0; $waited -lt 30; $waited++) {
+if (@(Get-PortOwners).Count -eq 0) { break }
+Start-Sleep -Seconds 1
+}
 }
 $owners = @(Get-PortOwners)
 # プロセスがいない場合は「すでに停止済み」として、停止と終了の工程を
