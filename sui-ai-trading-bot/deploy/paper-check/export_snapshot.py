@@ -74,7 +74,7 @@ SHADOW_MODEL = re.compile(r'gpt-5\.4-(?:nano|mini)')
 NARRATION_KINDS = frozenset('''cycle trade rejection stop start warning recovery nearMiss watchHit
 reach superReach priceLine priceLineReached sellLine sellLineCrossing review alert monthlyReport
 epoch btc forecastCall forecastHit forecastMiss forecastTouch forecastTouchNear bookWall
-forecastCalib memory levelUp'''.split())
+forecastCalib memory levelUp bossStart bossEnd'''.split())
 
 
 class ExportError(RuntimeError):

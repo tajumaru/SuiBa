@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import runpy
 import sqlite3
 import subprocess
@@ -526,6 +527,44 @@ class ExportTests(unittest.TestCase):
             self.assertEqual(row['episode']['outcome'], 'EXHAUSTED')
             self.assertEqual(row['episode']['tally'], {'MarketData/SPREAD_TOO_WIDE': 1})
             self.assertEqual(row['episode']['lastFailureAt'], 3000)
+
+    def test_boss_narration_kinds_survive_the_public_export(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root/'bot.sqlite'
+            db = sqlite3.connect(path)
+            db.execute('CREATE TABLE narration_entries('
+                       'seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,'
+                       'pair TEXT NOT NULL,source_key TEXT NOT NULL,kind TEXT NOT NULL,'
+                       'occurred_at INTEGER NOT NULL,created_at INTEGER NOT NULL,json TEXT NOT NULL)')
+            db.executemany(
+                'INSERT INTO narration_entries(id,pair,source_key,kind,occurred_at,created_at,json) '
+                'VALUES(?,?,?,?,?,?,?)',
+                ((f'narration-{kind}', 'SUI_USDC', f'source-{kind}', kind,
+                  NOW_MS - 1000, NOW_MS, json.dumps({'text': 'boss narration body'}))
+                 for kind in ('bossStart', 'bossEnd')))
+            db.commit(); db.close()
+            stream = io.BytesIO()
+            with tarfile.open(fileobj=stream, mode='w') as archive:
+                archive.add(path, arcname='./bot.sqlite')
+            raw = stream.getvalue()
+            record = {'id': 'a'*32, 'status': 'in_progress', 'started': NOW_MS, 'sha': 'b'*40}
+            package = e.build_live_export(io.BytesIO(raw), record, hashlib.sha256(raw).hexdigest())
+            with zipfile.ZipFile(io.BytesIO(package)) as archive:
+                out_path = root/'exported.sqlite'
+                out_path.write_bytes(archive.read('SUI_USDC.sqlite'))
+                exported = sqlite3.connect(out_path)
+                kinds = [row[0] for row in exported.execute(
+                    'SELECT kind FROM narration_entries ORDER BY occurred_at,seq')]
+                exported.close()
+            self.assertEqual(kinds, ['bossStart', 'bossEnd'])
+
+    def test_every_worker_narration_kind_is_exportable(self):
+        source = (HERE.parents[1]/'apps/worker/src/narration-generator.ts').read_text()
+        block = source.split('SERVER_NARRATION_KINDS = [', 1)[1].split(']', 1)[0]
+        worker_kinds = set(re.findall(r'"([A-Za-z]+)"', block))
+        self.assertTrue(worker_kinds)
+        self.assertLessEqual(worker_kinds, e.NARRATION_KINDS)
 
     def test_wal_is_recovered_only_in_the_disposable_copy(self):
         with tempfile.TemporaryDirectory() as tmp:
