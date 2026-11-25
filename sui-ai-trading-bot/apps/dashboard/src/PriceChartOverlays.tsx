@@ -87,16 +87,43 @@ export function ForecastOverlay({
   );
 }
 
+/** Whether the recent closes are actually moving toward the
+ * line: the latest close sits closer to it than the first of the
+ * last few closes did. This gates the buy-run line's staging
+ * (owner, 2026-11-26): a constant "あと −X%" countdown while the
+ * price walks away reads as "about to buy" for hours and teaches
+ * the reader to ignore the chip, so the full staging is earned
+ * only while the price approaches the line (or has reached it).
+ * The line itself is only declared when every other buy
+ * condition already holds, so approach is the honest last gate. */
+export function isLineApproaching(
+  closes: readonly number[],
+  linePrice: number,
+): boolean {
+  if (!Number.isFinite(linePrice) || linePrice <= 0) return false;
+  const recent = closes
+    .filter((v) => Number.isFinite(v) && v > 0)
+    .slice(-4);
+  if (recent.length < 2) return false;
+  const first = recent[0];
+  const last = recent[recent.length - 1];
+  return Math.abs(last - linePrice) < Math.abs(first - linePrice);
+}
+
 /** The buy-run line on the price pane: the next close at which
  * RSI would reach its line — the same value the ticker pill
  * counts down to — drawn only while it sits inside the visible
  * price range, so the chart itself shows where the buy run
- * starts. The label chip wears the pill's colours and carries
- * the remaining distance from the current price. The current
- * price itself is drawn as a solid line with its own chip, so
- * the gap between the two can be read off the chart. */
+ * starts. The current price itself is drawn as a solid line
+ * with its own chip, so the gap between the two can be read off
+ * the chart. Staging (owner, 2026-11-26): while `hot` — the
+ * price approaching the line, or at/under it — the chip wears
+ * the pill's colours and carries the remaining distance.
+ * Otherwise the line and chip stay quiet (thin, muted, price
+ * only): a landmark, not a countdown. */
 export function BuyLineOverlay({
   linePrice,
+  hot = false,
   currentPrice,
   min,
   max,
@@ -105,6 +132,7 @@ export function BuyLineOverlay({
   right,
 }: {
   linePrice: number | null;
+  hot?: boolean;
   currentPrice?: number | null;
   min: number;
   max: number;
@@ -134,7 +162,9 @@ export function BuyLineOverlay({
       ? (linePrice / currentPrice - 1) * 100
       : null;
   const lineText = showLine
-    ? `ライン ${fmt(linePrice)}${gap != null ? `（あと ${gap >= 0 ? "+" : "−"}${Math.abs(gap).toFixed(2)}%）` : ""}`
+    ? hot && gap != null
+      ? `ライン ${fmt(linePrice)}（あと ${gap >= 0 ? "+" : "−"}${Math.abs(gap).toFixed(2)}%）`
+      : `ライン ${fmt(linePrice)}`
     : "";
   const lineY = showLine ? y(linePrice) : 0;
   const lineChipY = showLine ? clampChipY(lineY) : 0;
@@ -188,9 +218,10 @@ export function BuyLineOverlay({
             x2={right}
             y1={lineY}
             y2={lineY}
-            stroke="#64b5ff"
-            strokeWidth="1.4"
+            stroke={hot ? "#64b5ff" : "#54708c"}
+            strokeWidth={hot ? "1.4" : "1"}
             strokeDasharray="7 4"
+            opacity={hot ? undefined : "0.55"}
           />
           <rect
             x={right - chipW(lineText)}
@@ -198,16 +229,16 @@ export function BuyLineOverlay({
             width={chipW(lineText)}
             height={chipH}
             rx="4"
-            fill="#10325c"
-            stroke="#62b2ff"
+            fill={hot ? "#10325c" : "#1b2836"}
+            stroke={hot ? "#62b2ff" : "#54708c"}
             strokeOpacity="0.6"
           />
           <text
             x={right - chipW(lineText) / 2}
             y={lineChipY + 13}
-            fill="#bfe0ff"
+            fill={hot ? "#bfe0ff" : "#9db4c6"}
             fontSize="11"
-            fontWeight="700"
+            fontWeight={hot ? "700" : "400"}
             textAnchor="middle"
           >
             {lineText}
