@@ -112,6 +112,7 @@ function App() {
     // mounted (unsaved edits and friends), and clears them when
     // the tab closes, so the bar never starts past an open editor.
     [startBlocked, setStartBlocked] = useState<string[]>([]);
+  const [asset, setAsset] = useState<"SUI" | "BTC">("SUI");
   const [receivedAt, setReceivedAt] = useState<number | null>(null);
   const [narrationShadow, setNarrationShadow] =
     useState<NarrationShadowDiagnostics | null>(null);
@@ -518,6 +519,8 @@ function App() {
                 <PriceTicker
                   pair={data.pair}
                   btcShadowSummary={data.btcShadowSummary}
+                  asset={asset}
+                  onAssetChange={setAsset}
                   price={data.price}
                   stopped={!data.runtime.running}
                   marketData={data.marketData}
@@ -603,6 +606,7 @@ function App() {
                     }
                     linePrice={operations.data?.decision?.rsiLinePrice ?? null}
                     narrationShadow={narrationShadow}
+                    asset={asset}
                   />
                 )}
                 {activeTab === "Strategy" && (

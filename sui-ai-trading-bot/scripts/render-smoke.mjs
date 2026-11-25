@@ -496,7 +496,7 @@ try {
   });
   await reloadOverview();
   await page.locator("#overview-segment-now").click();
-  const chartSwitch = page.getByRole("group", { name: "チャートの表示銘柄" });
+  const chartSwitch = page.getByRole("group", { name: "表示銘柄" });
   const suiChart = page.locator('.price-chart[aria-label="SUI/USDC価格表示"]');
   const btcChart = page.locator('.price-chart[aria-label="BTC/USDC価格表示"]');
   const manualHistory = suiChart.getByRole("button", { name: "DeepBookの7日履歴を取得" });

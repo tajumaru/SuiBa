@@ -104,6 +104,7 @@ export function OverviewTab({
   sellLines,
   linePrice,
   narrationShadow,
+  asset = "SUI",
 }: {
   segment: OverviewSegment;
   onSegmentChange: (segment: OverviewSegment) => void;
@@ -122,10 +123,10 @@ export function OverviewTab({
   sellLines: { tp: number; sl: number } | null;
   linePrice: number | null;
   narrationShadow?: NarrationShadowDiagnostics | null;
+  asset?: "SUI" | "BTC";
 }) {
-  const [chartAsset, setChartAsset] = useState<"SUI" | "BTC">("SUI");
   const [btcTimeframe, setBtcTimeframe] = useState<300 | 900 | 3600>(300);
-  const btcChart = chartAsset === "BTC";
+  const btcChart = asset === "BTC";
   const real = data.mode === "REAL";
   const usdJpy = operations?.fx?.usdJpy ?? null;
   return (
@@ -236,18 +237,6 @@ export function OverviewTab({
                     </label>
                     <section>
                       <h3>価格・RSI・MACD（共通時間軸）</h3>
-                      <div className="chart-asset-switch" role="group" aria-label="チャートの表示銘柄">
-                        {(["SUI", "BTC"] as const).map((asset) => (
-                          <button
-                            key={asset}
-                            type="button"
-                            aria-pressed={chartAsset === asset}
-                            onClick={() => setChartAsset(asset)}
-                          >
-                            {asset}
-                          </button>
-                        ))}
-                      </div>
                       {btcChart && (
                         <Chart
                           key="btc"
