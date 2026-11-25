@@ -28,7 +28,12 @@ it("has no circular source imports or transaction execution/signing entrypoints"
       );
     graph.set(
       file,
-      [...content.matchAll(/from\s+["']([^"']+)["']/g)]
+      [
+        ...content.matchAll(/from\s+["']([^"']+)["']/g),
+        // Side-effect imports (import "./x") carry no `from` but still
+        // close an import cycle, so they belong in the graph too.
+        ...content.matchAll(/^\s*import\s+["']([^"']+)["']/gm),
+      ]
         .map((m) => resolve(dirname(file), m[1]))
         .filter((p) => all.has(p)),
     );
