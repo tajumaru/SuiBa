@@ -1,5 +1,5 @@
 import { apiAccess } from "../packages/shared/src/api.ts";
-import { it, expect } from "vitest";
+import { it, expect, vi } from "vitest";
 import {
   ChartHistoryStore,
   historyQuery,
@@ -8,6 +8,10 @@ import { ChartHistoryClient } from "../apps/worker/src/chart-history-client.ts";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:http";
+import { withApiTiming } from "../packages/shared/src/api-timing.ts";
+import { createRequestHandler } from "../apps/worker/src/http-routes.ts";
+import type { WorkerContext } from "../apps/worker/src/worker-context.ts";
 const to = Date.UTC(2026, 9, 30) / 1000,
   from = to - 7 * 86400,
   q = { timeframe: 300 as const, from, to };
@@ -256,4 +260,101 @@ it("authoritative original rows supersede cached no-trade reconstructions", asyn
   expect(r.candles[0].provenance?.origin).toBe("ORIGINAL");
   expect(r.candles[0].volume).toBe(10);
   store.close();
+});
+
+it.each(["SUI_USDC", "XBTC_USDC"])("accepts the display pair %s", (pair) => {
+  const params = new URLSearchParams(
+    `timeframe=300&from=${from}&to=${to}&pair=${pair}`,
+  );
+  expect(historyQuery(params, to * 1000)).toEqual({ ...q, pair });
+});
+
+it.each(["", "WAL_USDC", "BTC_USDC"])(
+  "rejects the explicit pair %j",
+  (pair) => {
+    const params = new URLSearchParams(
+      `timeframe=300&from=${from}&to=${to}&pair=${pair}`,
+    );
+    expect(() => historyQuery(params, to * 1000)).toThrow(
+      "INVALID_CHART_RANGE",
+    );
+  },
+);
+
+it("fetches and labels XBTC candles from the XBTC pool", async () => {
+  const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+    Response.json({ candles: rows.slice(0, 1) }),
+  );
+  const store = new ChartHistoryStore(
+    ":memory:",
+    {
+      now: () => to * 1000,
+      sleep: async () => {},
+      gate: async () => true,
+      fetch,
+    },
+    "XBTC_USDC",
+  );
+  try {
+    const result = await store.get({ ...q, to: from + 300 });
+    expect(fetch.mock.calls[0][0]).toContain("/ohclv/XBTC_USDC?");
+    expect(result.candles).toMatchObject([
+      {
+        source: "DeepBook:XBTC_USDC:USDC",
+        provenance: { pair: "XBTC_USDC" },
+      },
+    ]);
+  } finally {
+    store.close();
+  }
+});
+
+it("routes BTC without reading Bot candles and keeps both SUI requests on the original client", async () => {
+  const seed = [{ timestamp: 1 }];
+  const candles = vi.fn(() => seed);
+  const sui = vi.fn(async () => ({ source: "sui" }));
+  const btc = vi.fn(async () => ({ source: "btc" }));
+  const handler = createRequestHandler({
+    db: { candles },
+    pair: "SUI_USDC",
+    chartHistory: { get: sui },
+    btcChartHistory: { get: btc },
+    browserSessions: {
+      bearer: () => true,
+      valid: () => false,
+      readonlyBearer: () => false,
+    },
+  } as unknown as WorkerContext);
+  const server = createServer((req, res) => {
+    void withApiTiming(() => handler(req, res));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const to = Math.floor(Date.now() / 300_000) * 300;
+  const from = to - 3600;
+  const query = { timeframe: 300, from, to };
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/chart/history?timeframe=300&from=${from}&to=${to}`;
+  try {
+    const btcResponse = await fetch(url + "&pair=XBTC_USDC");
+    expect(btcResponse.status).toBe(200);
+    expect(await btcResponse.json()).toEqual({ source: "btc" });
+    expect(btc).toHaveBeenCalledExactlyOnceWith(query, []);
+    expect(candles).not.toHaveBeenCalled();
+    for (const path of [url, url + "&pair=SUI_USDC"]) {
+      const res = await fetch(path);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ source: "sui" });
+    }
+    expect(sui.mock.calls).toEqual([
+      [query, seed],
+      [query, seed],
+    ]);
+    expect(candles.mock.calls).toEqual([[300], [300]]);
+    const invalid = await fetch(url + "&pair=WAL_USDC");
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toEqual({ error: "INVALID_CHART_RANGE" });
+    expect(sui).toHaveBeenCalledTimes(2);
+    expect(btc).toHaveBeenCalledTimes(1);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });

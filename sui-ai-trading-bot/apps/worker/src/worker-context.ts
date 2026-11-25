@@ -76,6 +76,7 @@ export class WorkerContext {
   validation: ValidationRecorder | undefined;
   dashboard!: DashboardService;
   chartHistory!: ChartHistoryClient;
+  btcChartHistory!: ChartHistoryClient;
   scheduler!: MarketScheduler;
   stopping = false;
   switching = false;

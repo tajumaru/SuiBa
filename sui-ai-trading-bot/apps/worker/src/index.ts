@@ -204,6 +204,7 @@ const watchdog = setInterval(() => {
 }, 15000);
 watchdog.unref();
 ctx.chartHistory = createChartHistory(ctx);
+ctx.btcChartHistory = createChartHistory(ctx, true);
 ctx.scheduler = createScheduler(ctx);
 ctx.dashboard = new DashboardService(ctx.engine, ctx.db);
 ctx.memwal = startMemwalFlusher(ctx.db, process.env, ctx.generateNarration);
@@ -235,6 +236,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
     ctx.memwal?.stop();
     ctx.liquidation?.stop();
     const chartClosed = ctx.chartHistory.close();
+    const btcChartClosed = ctx.btcChartHistory.close();
     apiAccess.cancel();
     deepBookTransport.close();
     clearInterval(watchdog);
@@ -242,7 +244,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
     ctx.db.set("runtime", { ...ctx.db.runtime(), running: false });
     ctx.engine.monitor.transition("PROCESS_SHUTDOWN");
     server.close(() => {
-      void Promise.all([ctx.activeTick, chartClosed])
+      void Promise.all([ctx.activeTick, chartClosed, btcChartClosed])
         .then(() => {
           try {
             validationHeartbeat(ctx, true);

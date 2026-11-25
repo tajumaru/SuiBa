@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { WorkerStaleNote } from "./WorkerStaleNote.tsx";
 import type { OperationsSnapshot } from "./operationsTypes.ts";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
@@ -94,6 +95,7 @@ export function OverviewTab({
   timeframe,
   setTimeframe,
   api,
+  btcHistoryApi,
   control,
   forecastScoreLine,
   forecastTouchLine,
@@ -111,6 +113,7 @@ export function OverviewTab({
   timeframe: 300 | 900 | 3600;
   setTimeframe: (tf: 300 | 900 | 3600) => void;
   api: SettingsApi;
+  btcHistoryApi: SettingsApi;
   control: (command: string) => Promise<string | null>;
   forecastScoreLine: string | null;
   forecastTouchLine: string | null;
@@ -120,6 +123,9 @@ export function OverviewTab({
   linePrice: number | null;
   narrationShadow?: NarrationShadowDiagnostics | null;
 }) {
+  const [chartAsset, setChartAsset] = useState<"SUI" | "BTC">("SUI");
+  const [btcTimeframe, setBtcTimeframe] = useState<300 | 900 | 3600>(300);
+  const btcChart = chartAsset === "BTC";
   const real = data.mode === "REAL";
   const usdJpy = operations?.fx?.usdJpy ?? null;
   return (
@@ -216,9 +222,9 @@ export function OverviewTab({
                     <label>
                       時間足
                       <select
-                        value={timeframe}
+                        value={btcChart ? btcTimeframe : timeframe}
                         onChange={(e) =>
-                          setTimeframe(
+                          (btcChart ? setBtcTimeframe : setTimeframe)(
                             Number(e.target.value) as 300 | 900 | 3600,
                           )
                         }
@@ -230,7 +236,33 @@ export function OverviewTab({
                     </label>
                     <section>
                       <h3>価格・RSI・MACD（共通時間軸）</h3>
+                      <div className="chart-asset-switch" role="group" aria-label="チャートの表示銘柄">
+                        {(["SUI", "BTC"] as const).map((asset) => (
+                          <button
+                            key={asset}
+                            type="button"
+                            aria-pressed={chartAsset === asset}
+                            onClick={() => setChartAsset(asset)}
+                          >
+                            {asset}
+                          </button>
+                        ))}
+                      </div>
+                      {btcChart && (
+                        <Chart
+                          key="btc"
+                          pair="XBTC_USDC"
+                          timeframe={btcTimeframe}
+                          candles={[]}
+                          kind="Price"
+                          trades={[]}
+                          synchronized
+                          historyApi={btcHistoryApi}
+                        />
+                      )}
                       <Chart
+                        hidden={btcChart}
+                        key="sui"
                         pair={data.pair}
                         timeframe={timeframe}
                         candles={data.candlesByTimeframe[timeframe]}

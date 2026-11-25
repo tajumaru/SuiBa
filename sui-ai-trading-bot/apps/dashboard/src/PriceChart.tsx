@@ -89,6 +89,8 @@ export function PriceChart(props: PriceChartProps) {
     anchor,
     plot,
   } = usePriceChartModel(props);
+  const btc = pair === "XBTC_USDC";
+  const displayPair = btc ? "BTC_USDC" : pair;
   const markerRows = new Map<string, number>();
   const viewingAdjusted = span !== hours * 3600 || anchor != null;
   const displayMissing = c.length
@@ -101,11 +103,12 @@ export function PriceChart(props: PriceChartProps) {
     <div
       className="price-chart"
       ref={host}
-      aria-label={`${pair.replace("_", "/")}価格表示`}
+      hidden={props.hidden}
+      aria-label={`${displayPair.replace("_", "/")}価格表示`}
     >
       <p>
         <strong>
-          {pair.replace("_", " / ")} · {tf / 60}分足
+          {displayPair.replace("_", " / ")} · {tf / 60}分足
         </strong>
       </p>
       {fc && (
@@ -175,18 +178,22 @@ export function PriceChart(props: PriceChartProps) {
       </div>
       {historyApi && (
         <div className="chart-history">
-          <button
-            className="chart-history-button"
-            disabled={historyBusy}
-            onClick={() => void loadHistory()}
-          >
-            {historyBusy ? "履歴取得中…" : "DeepBookの7日履歴を取得"}
-          </button>
+          {!btc && (
+            <button
+              className="chart-history-button"
+              disabled={historyBusy}
+              onClick={() => void loadHistory()}
+            >
+              {historyBusy ? "履歴取得中…" : "DeepBookの7日履歴を取得"}
+            </button>
+          )}
           <p className="chart-meta" role="status">
-            {historyNotice}
+            {btc && historyBusy ? "履歴取得中…" : historyNotice}
           </p>
           <small>
-            表示専用のDeepBook市場履歴です。Botの市場データ・判断は変更しません。履歴は10秒ごとに再取得しません。
+            {btc
+              ? "表示専用のDeepBook市場履歴です。"
+              : "表示専用のDeepBook市場履歴です。Botの市場データ・判断は変更しません。履歴は10秒ごとに再取得しません。"}
           </small>
         </div>
       )}
@@ -203,14 +210,18 @@ export function PriceChart(props: PriceChartProps) {
         </p>
       ) : (
         <p className="chart-meta" role="status">
-          期間を取得できません。表示可能なローソク足がありません。未取得の場合は次の画面更新を待ってください。
+          {btc
+            ? historyBusy
+              ? "ローソク足を読み込んでいます。"
+              : "表示可能なローソク足がありません。"
+            : "期間を取得できません。表示可能なローソク足がありません。未取得の場合は次の画面更新を待ってください。"}
         </p>
       )}
       {data.candles.length > 0 && available < hours * 3600 && (
         <p className="chart-warning chart-meta" role="status">
           データ不足：選択した期間の全データはありません。取得済みの最大
           {number(available / 3600, 2)}
-          時間の範囲で表示します。追加のAPI取得は行いません。
+          時間の範囲で表示します。{!btc && "追加のAPI取得は行いません。"}
         </p>
       )}
       {c.length > 0 && (

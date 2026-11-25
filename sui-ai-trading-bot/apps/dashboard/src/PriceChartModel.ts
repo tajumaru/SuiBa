@@ -11,13 +11,14 @@ import type { ForecastAnswerCheck } from "./forecastLog.ts";
 import { chartSeries } from "./chartIndicators.ts";
 import type { SettingsApi } from "./settingsPresets.ts";
 import type { HistoryResult } from "../../worker/src/chart-history.ts";
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useEffectEvent, useRef } from "react";
 import type { Candle } from "../../../packages/shared/src/index.ts";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { chartData, chartWindow } from "./chartPresentation.ts";
 
 export interface PriceChartProps {
-  pair?: BotSnapshot["pair"];
+  pair?: BotSnapshot["pair"] | "XBTC_USDC";
+  hidden?: boolean;
   candles: Candle[];
   trades: BotSnapshot["trades"];
   timeframe?: number;
@@ -47,6 +48,26 @@ export interface PriceChartProps {
   answerDefaultOn?: boolean;
 }
 
+async function readHistory(
+  api: SettingsApi,
+  pair: NonNullable<PriceChartProps["pair"]>,
+  tf: number,
+  from: number,
+  to: number,
+) {
+  const pairQuery = pair === "XBTC_USDC" ? "&pair=XBTC_USDC" : "";
+  const raw = (await api(
+    `chart/history?timeframe=${tf}&from=${from}&to=${to}${pairQuery}`,
+  )) as HistoryResult;
+  if (
+    !Array.isArray(raw.candles) ||
+    raw.timeframe !== tf ||
+    raw.candles.some((c) => !c.source.startsWith(`DeepBook:${pair}:USDC`))
+  )
+    throw Error("INVALID_CHART_HISTORY");
+  return raw;
+}
+
 export function usePriceChartModel({
   pair = "SUI_USDC",
   candles,
@@ -63,10 +84,11 @@ export function usePriceChartModel({
   answerCheck,
   answerDefaultOn = false,
 }: PriceChartProps) {
+  const btc = pair === "XBTC_USDC";
   const [gapTime, setGapTime] = useState<number | null>(null);
   const [answerOn, setAnswerOn] = useState(answerDefaultOn);
   const [history, setHistory] = useState<HistoryResult | null>(null),
-    [historyBusy, setHistoryBusy] = useState(false),
+    [historyBusy, setHistoryBusy] = useState(btc),
     [historyNotice, setHistoryNotice] = useState("");
   const input = useMemo(() => {
     if (!history) return candles;
@@ -140,7 +162,7 @@ export function usePriceChartModel({
     setSpan((v) =>
       Math.min(
         Math.max(tf, Math.min(v, available) * factor),
-        Math.max(tf, available),
+        Math.max(tf, btc ? Math.min(available, 7 * 86400) : available),
       ),
     );
   const move = (delta: number) => {
@@ -229,6 +251,61 @@ export function usePriceChartModel({
     );
     setSelected(nearest.timestamp);
   };
+  const requestBtcHistory = useEffectEvent((from: number, to: number) =>
+    readHistory(historyApi!, "XBTC_USDC", timeframe, from, to),
+  );
+  const hasHistoryApi = historyApi != null;
+  const btcSpan = Math.ceil(span / timeframe) * timeframe;
+  const btcAnchor =
+    anchor == null ? undefined : Math.ceil(anchor / timeframe) * timeframe;
+  useEffect(() => {
+    if (!btc || !hasHistoryApi) return;
+    let cancelled = false;
+    const now = Math.floor(Date.now() / 1000 / timeframe) * timeframe;
+    const to = Math.min(btcAnchor ?? now, now);
+    // Extra candles supply the moving averages and indicators with prior data.
+    const from = Math.max(to - btcSpan - 120 * timeframe, now - 13 * 86400);
+    if (from >= to) return;
+    const load = async () => {
+      setHistoryBusy(true);
+      setHistoryNotice("");
+      try {
+        const raw = await requestBtcHistory(from, to);
+        if (cancelled) return;
+        setHistory((previous) => {
+          const merged = new Map(
+            previous?.candles.map((c) => [c.timestamp, c]),
+          );
+          for (const candle of raw.candles)
+            merged.set(candle.timestamp, candle);
+          return { ...raw, candles: [...merged.values()] };
+        });
+        setHistoryNotice(raw.error ? "履歴の一部を取得できませんでした。" : "");
+      } catch (error) {
+        if (cancelled) return;
+        if (
+          error instanceof Error &&
+          error.message === "CHART_BUSY" &&
+          attempts++ < 35
+        ) {
+          timer = window.setTimeout(() => void load(), 1000);
+          return;
+        }
+        setHistoryNotice(
+          "履歴を取得できません。表示範囲を切り替えると再取得します。",
+        );
+      } finally {
+        if (!cancelled) setHistoryBusy(false);
+      }
+    };
+    let attempts = 0;
+    let timer = window.setTimeout(() => void load(), 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [btc, hasHistoryApi, timeframe, btcAnchor, btcSpan]);
+
   const loadHistory = async () => {
     if (!historyApi || historyBusy) return;
     setHistoryBusy(true);
@@ -236,15 +313,7 @@ export function usePriceChartModel({
     const to = Math.floor(Date.now() / 1000 / tf) * tf,
       from = to - 7 * 86400 - 120 * tf;
     try {
-      const raw = (await historyApi(
-        `chart/history?timeframe=${tf}&from=${from}&to=${to}`,
-      )) as HistoryResult;
-      if (
-        !Array.isArray(raw.candles) ||
-        raw.timeframe !== tf ||
-        raw.candles.some((c) => !c.source.startsWith(`DeepBook:${pair}:USDC`))
-      )
-        throw Error("INVALID_CHART_HISTORY");
+      const raw = await readHistory(historyApi, pair, tf, from, to);
       setHistory(raw);
       setHistoryNotice(
         `表示専用履歴（準備用の過去足を含む）：${raw.candles.length}本取得 ／ 欠損${raw.missing}本${raw.error ? ` ／ 取得未完了（${raw.error}）。市場データ取得を優先しています。後で手動で再取得してください。` : ""}`,

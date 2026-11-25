@@ -301,7 +301,7 @@ function App() {
     },
     [token, connection],
   );
-  const narrationShadowApi = useCallback(
+  const silentApi = useCallback(
     (path: string, body?: unknown) => api(path, body, false, true),
     [api],
   );
@@ -567,7 +567,7 @@ function App() {
                       agentName={agentName}
                       onListeningChange={setVoiceListening}
                       onSpeakingChange={setAgentSpeaking}
-                      api={narrationShadowApi}
+                      api={silentApi}
                       pair={data.pair}
                       onShadowDiagnostics={setNarrationShadow}
                       budgetData={data}
@@ -590,6 +590,7 @@ function App() {
                     timeframe={timeframe}
                     setTimeframe={setTimeframe}
                     api={api}
+                    btcHistoryApi={silentApi}
                     control={control}
                     forecastScoreLine={forecastScoreLine}
                     forecastTouchLine={forecastTouchLine}

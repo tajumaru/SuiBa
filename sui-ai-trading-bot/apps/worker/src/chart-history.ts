@@ -4,11 +4,11 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseDeepBook } from "../../../packages/market-data/src/deepbook.ts";
 import { retryAfter } from "../../../packages/shared/src/api.ts";
-import type {
-  Candle,
-  Timeframe,
-  TradingPair,
-} from "../../../packages/shared/src/index.ts";
+import type { Candle, Timeframe } from "../../../packages/shared/src/index.ts";
+export type DisplayHistoryPair = "SUI_USDC" | "XBTC_USDC";
+// Existing Bot chart history also supports WAL.
+export type ChartHistoryPair = DisplayHistoryPair | "WAL_USDC";
+
 export interface HistoryQuery {
   timeframe: Timeframe;
   from: number;
@@ -17,11 +17,13 @@ export interface HistoryQuery {
 export function historyQuery(
   params: URLSearchParams,
   now = Date.now(),
-): HistoryQuery {
+): HistoryQuery & { pair?: DisplayHistoryPair } {
+  const pair = params.get("pair");
   const timeframe = Number(params.get("timeframe")),
     from = Number(params.get("from")),
     to = Number(params.get("to"));
   if (
+    (pair !== null && pair !== "SUI_USDC" && pair !== "XBTC_USDC") ||
     ![300, 900, 3600].includes(timeframe) ||
     ![from, to].every(Number.isSafeInteger) ||
     from <= 0 ||
@@ -33,7 +35,12 @@ export function historyQuery(
     to % timeframe
   )
     throw Error("INVALID_CHART_RANGE");
-  return { timeframe: timeframe as Timeframe, from, to };
+  return {
+    timeframe: timeframe as Timeframe,
+    from,
+    to,
+    ...(pair === null ? {} : { pair }),
+  };
 }
 export interface HistoryResult {
   candles: Candle[];
@@ -64,7 +71,7 @@ export class ChartHistoryStore {
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
       gate: async () => true,
     },
-    readonly pair: TradingPair = "SUI_USDC",
+    readonly pair: ChartHistoryPair = "SUI_USDC",
   ) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
@@ -167,7 +174,7 @@ export class ChartHistoryStore {
                 await response.json(),
                 q.timeframe,
                 this.deps.now(),
-                this.pair,
+                this.pair === "XBTC_USDC" ? undefined : this.pair,
               );
               break;
             } catch (e) {
@@ -195,6 +202,7 @@ export class ChartHistoryStore {
             for (const c of data) {
               const candle = {
                 ...c,
+                source: `DeepBook:${this.pair}:USDC`,
                 provenance: {
                   origin: "ORIGINAL",
                   upstream: "DeepBook Indexer",

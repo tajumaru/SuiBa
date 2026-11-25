@@ -299,11 +299,10 @@ export function createRequestHandler(ctx: WorkerContext) {
       }
       if (req.method === "GET" && url.pathname === "/api/chart/history") {
         try {
-          const query = historyQuery(url.searchParams);
-          const result = await ctx.chartHistory.get(
-            query,
-            ctx.db.candles(query.timeframe),
-          );
+          const { pair, ...query } = historyQuery(url.searchParams);
+          const result = pair === "XBTC_USDC"
+            ? await ctx.btcChartHistory.get(query, [])
+            : await ctx.chartHistory.get(query, ctx.db.candles(query.timeframe));
           send(200, result);
         } catch (e) {
           const code = e instanceof Error ? e.message : "CHART_HISTORY_FAILED";

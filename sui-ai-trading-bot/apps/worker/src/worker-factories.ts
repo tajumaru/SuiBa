@@ -140,9 +140,11 @@ export function generateNarrationSafely(ctx: WorkerContext) {
   }
 }
 
-export const createChartHistory = (ctx: WorkerContext) =>
+export const createChartHistory = (ctx: WorkerContext, btc = false) =>
   new ChartHistoryClient(
-    ctx.pairPath(ctx.pair) + ".chart-history.sqlite",
+    btc
+      ? ctx.rootDatabasePath + ".XBTC_USDC.chart-history.sqlite"
+      : ctx.pairPath(ctx.pair) + ".chart-history.sqlite",
     () => {
       const timing = ctx.engine.monitor.timing();
       return (
@@ -155,7 +157,7 @@ export const createChartHistory = (ctx: WorkerContext) =>
         (timing.nextFetchAt == null || timing.nextFetchAt - Date.now() > 12000)
       );
     },
-    ctx.pair,
+    btc ? "XBTC_USDC" : ctx.pair,
   );
 
 function refreshPartySafely(ctx: WorkerContext) {
@@ -180,6 +182,7 @@ export const createScheduler = (ctx: WorkerContext) => {
       // Orders remain stopped; only an explicitly scoped reset releases warmup.
       if (ctx.predecessorReset.awaitingReset()) return;
       ctx.chartHistory.cancel();
+      ctx.btcChartHistory.cancel();
       const finishCycle = ctx.perfTrace?.start("cycle");
       try {
         ctx.activeTick = ctx.engine.tick();
