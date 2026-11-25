@@ -8,7 +8,7 @@ import { ChartHistoryClient } from "../apps/worker/src/chart-history-client.ts";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createServer } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { withApiTiming } from "../packages/shared/src/api-timing.ts";
 import { createRequestHandler } from "../apps/worker/src/http-routes.ts";
 import type { WorkerContext } from "../apps/worker/src/worker-context.ts";
@@ -325,36 +325,50 @@ it("routes BTC without reading Bot candles and keeps both SUI requests on the or
       readonlyBearer: () => false,
     },
   } as unknown as WorkerContext);
-  const server = createServer((req, res) => {
-    void withApiTiming(() => handler(req, res));
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const to = Math.floor(Date.now() / 300_000) * 300;
   const from = to - 3600;
   const query = { timeframe: 300, from, to };
-  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/chart/history?timeframe=300&from=${from}&to=${to}`;
-  try {
-    const btcResponse = await fetch(url + "&pair=XBTC_USDC");
-    expect(btcResponse.status).toBe(200);
-    expect(await btcResponse.json()).toEqual({ source: "btc" });
-    expect(btc).toHaveBeenCalledExactlyOnceWith(query, []);
-    expect(candles).not.toHaveBeenCalled();
-    for (const path of [url, url + "&pair=SUI_USDC"]) {
-      const res = await fetch(path);
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ source: "sui" });
-    }
-    expect(sui.mock.calls).toEqual([
-      [query, seed],
-      [query, seed],
-    ]);
-    expect(candles.mock.calls).toEqual([[300], [300]]);
-    const invalid = await fetch(url + "&pair=WAL_USDC");
-    expect(invalid.status).toBe(400);
-    expect(await invalid.json()).toEqual({ error: "INVALID_CHART_RANGE" });
-    expect(sui).toHaveBeenCalledTimes(2);
-    expect(btc).toHaveBeenCalledTimes(1);
-  } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-  }
+  const url = `/api/chart/history?timeframe=300&from=${from}&to=${to}`;
+  const request = async (suffix = "") => {
+    const req = {
+      method: "GET",
+      url: url + suffix,
+      headers: {},
+    } as IncomingMessage;
+    const writeHead = vi.fn();
+    const end = vi.fn<(body: string) => void>();
+    const res = {
+      setHeader: vi.fn(),
+      writeHead,
+      end,
+    } as unknown as ServerResponse;
+    await withApiTiming(() => handler(req, res));
+    return {
+      status: writeHead.mock.calls[0]?.[0],
+      body: JSON.parse(end.mock.calls[0][0]),
+    };
+  };
+
+  expect(await request("&pair=XBTC_USDC")).toEqual({
+    status: 200,
+    body: { source: "btc" },
+  });
+  expect(btc).toHaveBeenCalledExactlyOnceWith(query, []);
+  expect(candles).not.toHaveBeenCalled();
+  for (const suffix of ["", "&pair=SUI_USDC"])
+    expect(await request(suffix)).toEqual({
+      status: 200,
+      body: { source: "sui" },
+    });
+  expect(sui.mock.calls).toEqual([
+    [query, seed],
+    [query, seed],
+  ]);
+  expect(candles.mock.calls).toEqual([[300], [300]]);
+  expect(await request("&pair=WAL_USDC")).toEqual({
+    status: 400,
+    body: { error: "INVALID_CHART_RANGE" },
+  });
+  expect(sui).toHaveBeenCalledTimes(2);
+  expect(btc).toHaveBeenCalledTimes(1);
 });
