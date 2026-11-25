@@ -1,6 +1,6 @@
 import React from "react";
 import { parseBtcShadowSummary } from "./btcSummary.ts";
-import { changeTone, formatChangePct, sparklinePoints } from "./PriceTicker.tsx";
+import { changeTone, formatChangePct, sparklinePoints } from "./presentation.ts";
 
 export const BTC_ORANGE = "#f7931a";
 

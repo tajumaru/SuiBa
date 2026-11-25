@@ -104,3 +104,57 @@ export function errorCode(error: unknown) {
   const message = error instanceof Error ? error.message : "";
   return /^[A-Z][A-Z0-9_]{0,100}$/.test(message) ? message : "REQUEST_FAILED";
 }
+
+export const SPARK_WIDTH = 80;
+export const SPARK_HEIGHT = 24;
+export const SPARK_MAX_POINTS = 40;
+
+export function formatChangePct(pct: number): string {
+  const text = `${Math.abs(pct * 100).toFixed(2)}%`;
+  if (pct > 0) return `+${text}`;
+  if (pct < 0) return `-${text}`;
+  return text;
+}
+
+export function changeTone(pct: number): "up" | "down" | "flat" {
+  return pct > 0 ? "up" : pct < 0 ? "down" : "flat";
+}
+
+function downsample(values: number[], max: number): number[] {
+  if (values.length <= max) return values;
+  const out: number[] = [];
+  const step = (values.length - 1) / (max - 1);
+  for (let i = 0; i < max; i++) out.push(values[Math.round(i * step)]);
+  return out;
+}
+
+/**
+ * Polyline points for the sparkline, or null when fewer than
+ * two finite values remain. A flat series draws on the midline.
+ */
+export function sparklinePoints(
+  values: number[],
+  width = SPARK_WIDTH,
+  height = SPARK_HEIGHT,
+  maxPoints = SPARK_MAX_POINTS,
+): string | null {
+  const pts = downsample(
+    values.filter((v) => Number.isFinite(v)),
+    maxPoints,
+  );
+  if (pts.length < 2) return null;
+  const min = Math.min(...pts);
+  const max = Math.max(...pts);
+  const pad = 2;
+  const round1 = (n: number) => Math.round(n * 10) / 10;
+  return pts
+    .map((v, i) => {
+      const x = round1((i / (pts.length - 1)) * width);
+      const y =
+        max === min
+          ? height / 2
+          : round1(pad + (1 - (v - min) / (max - min)) * (height - pad * 2));
+      return `${x},${y}`;
+    })
+    .join(" ");
+}
