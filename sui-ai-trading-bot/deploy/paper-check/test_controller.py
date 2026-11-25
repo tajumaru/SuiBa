@@ -2460,6 +2460,67 @@ class ProductionTests(unittest.TestCase):
                         ctl.prod_stop()
                     self.assertEqual(ctl.current()['status'], 'failed_requires_review')
 
+    def wedge_monitoring_db_failure(self, ctl):
+        code = 'DB_OR_MAINTENANCE_UNCONFIRMED'
+        record = self.wedge_admitted(ctl, faults=(code, 'LATCHED_FAILURE'))
+        FakeBroker.atomic(ctl.folder(record)/'failure.json',
+                          {'id': record['id'], 'stage': 'monitoring', 'code': code})
+        ctl.receipt(record, 'failed_state_unknown', ['LATCHED_FAILURE'])
+        self.with_started_at(ctl, self.started_at_during(record))
+        return record
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_prod_stop_closes_a_reverified_monitoring_db_failure(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_monitoring_db_failure(ctl)
+            self.assertTrue(ctl.admitted_closeout_eligible(record))
+            self.assertEqual(ctl.prod_stop(), {'status': 'completed'})
+            self.assertFalse(ctl.faults(record))
+            self.assertEqual(ctl.prod_stop(), {'status': 'completed'})
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_admitted_closeout_requires_matching_monitoring_db_failure_evidence(self):
+        for artifact, change in (
+                ('failure.json', {'stage': 'paper-start'}),
+                ('failure.json', {'code': 'UPSTREAM_HTTP_500'}),
+                ('mutation.json', {'pending': 'paper-start'}),
+                ('fault-concrete.json', {'error': 'UNCLEAN_OR_UNKNOWN'})):
+            with self.subTest(artifact=artifact, change=change), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                record = self.wedge_monitoring_db_failure(ctl)
+                path = ctl.folder(record)/artifact
+                evidence = json.loads(path.read_bytes()) if path.exists() else {'id': record['id']}
+                FakeBroker.atomic(path, {**evidence, **change})
+                self.assertFalse(ctl.admitted_closeout_eligible(record))
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_admitted_closeout_requires_both_monitoring_db_failure_receipts(self):
+        for location in ('run', 'state'):
+            for change in (
+                    {'id': 'another-run'},
+                    {'status': 'clean_stopped'},
+                    {'errors': 'LATCHED_FAILURE'},
+                    {'errors': ['LATCHED_FAILURE', 'UNCLEAN_OR_UNKNOWN']}):
+                with self.subTest(location=location, change=change), tempfile.TemporaryDirectory() as root:
+                    ctl = self.make(root)
+                    record = self.wedge_monitoring_db_failure(ctl)
+                    path = (ctl.folder(record) if location == 'run' else ctl.state)/'stop.json'
+                    receipt = json.loads(path.read_bytes())
+                    FakeBroker.atomic(path, {**receipt, **change})
+                    self.assertFalse(ctl.admitted_closeout_eligible(record))
+
+    @unittest.skipIf(os.name == 'nt', 'Linux flock')
+    def test_admitted_closeout_rejects_monitoring_db_failure_when_helper_verify_fails(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_monitoring_db_failure(ctl)
+            helper, image = ctl.helper()
+            with patch.object(helper, 'helper', side_effect=RuntimeError('fixture verification failure')) as verify, \
+                    patch.object(ctl, 'helper', return_value=(helper, image)):
+                self.assertFalse(ctl.admitted_closeout_eligible(record))
+                verify.assert_called_once_with(image, 'verify')
+
     @unittest.skipIf(os.name == 'nt', 'Linux flock')
     def test_prod_stop_refuses_an_admitted_failure_with_an_unclean_exit(self):
         for overrides in ({'ExitCode': 1}, {'OOMKilled': True}):

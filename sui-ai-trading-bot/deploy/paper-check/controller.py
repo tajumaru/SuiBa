@@ -2493,7 +2493,7 @@ class ProductionController(Controller):
             # evidence above (failure.json naming this record, the
             # container's clean exit, the database verification),
             # so these codes add no failure information of their
-            # own; any other fault code refuses.
+            # own.
             accepted = ('LATCHED_FAILURE', 'CONTROLLER_EXIT_UNCONFIRMED',
                         'STOP_LOCK_OR_STATE_UNKNOWN',
                         'CLEANUP_LOCK_OR_STATE_UNKNOWN')
@@ -2509,14 +2509,34 @@ class ProductionController(Controller):
                 # a pending that did not match) it keeps refusing,
                 # as does any other code.
                 accepted += ('OPERATION_COMPLETION_UNCONFIRMED',)
+            monitoring_db_failure = (
+                pending is None and failure.get('stage') == 'monitoring' and
+                failure.get('code') == 'DB_OR_MAINTENANCE_UNCONFIRMED')
+            needs_stop_receipts = False
             for fault in folder.glob('fault-*.json'):
-                if self.b.decode(self.b.read_trusted(fault)).get('error') \
-                        not in accepted:
+                code = self.b.decode(self.b.read_trusted(fault)).get('error')
+                if code in accepted:
+                    continue
+                if not monitoring_db_failure or code != 'DB_OR_MAINTENANCE_UNCONFIRMED':
                     return False
+                needs_stop_receipts = True
             latch = self.state/'failed.json'
             if os.path.lexists(latch) and \
                     self.b.decode(self.b.read_trusted(latch)).get('id') != record['id']:
                 return False
+            if needs_stop_receipts:
+                # The fresh maintenance and database checks above
+                # resolve the monitoring failure's earlier uncertainty.
+                # Both stop receipts must tie to this run and show that
+                # cleanup recorded only the already-latched failure.
+                for path in (folder/'stop.json', self.state/'stop.json'):
+                    stop = self.b.decode(self.b.read_trusted(path))
+                    errors = stop.get('errors')
+                    if stop.get('id') != record['id'] or \
+                            stop.get('status') != 'failed_state_unknown' or \
+                            type(errors) is not list or \
+                            not set(errors) <= {'LATCHED_FAILURE'}:
+                        return False
             return True
         except Exception:
             return False
