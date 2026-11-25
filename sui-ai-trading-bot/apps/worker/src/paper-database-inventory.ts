@@ -8,6 +8,7 @@ export const paperDatabaseSuffixes = [
   ".WAL_USDC.sqlite",
   ".chart-history.sqlite",
   ".WAL_USDC.sqlite.chart-history.sqlite",
+  ".XBTC_USDC.chart-history.sqlite",
 ] as const;
 
 export function requireRegularDatabase(path: string) {
