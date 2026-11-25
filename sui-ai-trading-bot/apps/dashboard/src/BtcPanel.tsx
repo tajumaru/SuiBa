@@ -56,3 +56,29 @@ export function BtcPanel({ summary }: { summary: { text: string } | null }) {
     </section>
   );
 }
+
+/**
+ * The BTC look-back for the overview's ふりかえり segment
+ * (owner, 2026-11-26): in BTC mode the segment shows the
+ * shadow's grading — decisions taken and how the +4h scores
+ * came out — instead of SUI's trading trio (equity curve,
+ * activity grass, monthly report), which is SUI's look-back
+ * and reads as the wrong face under a BTC switch. The body
+ * is the same MemWal summary the ticker panel shows; only
+ * the place differs.
+ */
+export function BtcReviewCard({ summary }: { summary: { text: string } | null }) {
+  if (!summary) return <p className="btc-panel-body">BTCの影の記録はまだ届いていません</p>;
+
+  const { at, body } = parseBtcShadowSummary(summary.text);
+  return (
+    <section className="btc-panel" aria-label="BTCの影 ふりかえり">
+      <h2><BtcMark /> BTCの影 ふりかえり</h2>
+      <p className="btc-panel-body">{body}</p>
+      <small>
+        MemWal経由の参照表示
+        {at && <> <time dateTime={at}>{at.slice(11, 16)}</time></>}
+      </small>
+    </section>
+  );
+}
