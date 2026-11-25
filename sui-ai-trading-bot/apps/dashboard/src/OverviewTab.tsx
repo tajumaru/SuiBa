@@ -14,6 +14,7 @@ import type { SettingsApi } from "./settingsPresets.ts";
 import type { ForecastAnswerCheck } from "./forecastLog.ts";
 import type { NarrationShadowDiagnostics } from "./narrationShadow.ts";
 import { ForceClose } from "./ForceClose.tsx";
+import { BtcReviewCard } from "./BtcPanel.tsx";
 import { JpyAmount } from "./JpyAmount.tsx";
 
 
@@ -295,16 +296,26 @@ export function OverviewTab({
                       aria-labelledby="overview-segment-review"
                       hidden={segment !== "review"}
                     >
-                    {!real && <EquityCurve points={data.equityCurve} />}
-                    <ActivityGrass orders={data.orders} />
-                    <MonthlyReportCard
-                      pair={data.pair}
-                      trades={data.trades}
-                      orders={data.orders}
-                      cumulativeRoundTrips={
-                        operations?.accounting.totals.roundTrips
-                      }
-                    />
+                    {/* In BTC mode the look-back is the shadow's
+                        grading, not SUI's trading trio (owner,
+                        2026-11-26: the trio under a BTC switch
+                        reads as the wrong face). */}
+                    {asset === "BTC" ? (
+                      <BtcReviewCard summary={data.btcShadowSummary} />
+                    ) : (
+                      <>
+                        {!real && <EquityCurve points={data.equityCurve} />}
+                        <ActivityGrass orders={data.orders} />
+                        <MonthlyReportCard
+                          pair={data.pair}
+                          trades={data.trades}
+                          orders={data.orders}
+                          cumulativeRoundTrips={
+                            operations?.accounting.totals.roundTrips
+                          }
+                        />
+                      </>
+                    )}
                     </div>
                   </div>
   );
