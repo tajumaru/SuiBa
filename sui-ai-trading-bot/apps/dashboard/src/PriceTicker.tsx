@@ -423,10 +423,19 @@ const SUI_BLUE = "#4da2ff";
 
 type PriceTickerProps = Parameters<typeof TradingPriceTicker>[0] & {
   btcShadowSummary?: State["btcShadowSummary"];
+  asset?: "SUI" | "BTC";
+  onAssetChange?: (asset: "SUI" | "BTC") => void;
 };
 
-export function PriceTicker({ btcShadowSummary = null, ...props }: PriceTickerProps) {
-  const [asset, setAsset] = useState<"SUI" | "BTC">("SUI");
+export function PriceTicker({
+  btcShadowSummary = null,
+  asset: assetProp,
+  onAssetChange,
+  ...props
+}: PriceTickerProps) {
+  const [ownAsset, setOwnAsset] = useState<"SUI" | "BTC">("SUI");
+  const asset = assetProp ?? ownAsset;
+  const setAsset = onAssetChange ?? setOwnAsset;
   return (
     <div>
       <div className="price-ticker-mark-switch" role="group" aria-label="表示銘柄">
