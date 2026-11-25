@@ -37,22 +37,21 @@ New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 # ため TimeSpan で渡す（実地確認 2026-11-25）。
 # 失敗時は1分間隔で最大3回まで自動で立て直す。
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-# 「ユーザーがログオンしているかどうかにかかわらず実行する」方式。
-# 登録にはこの PC のログインパスワードが要る（Windows がタスク側に
-# 保存する。このスクリプトは表示も送信もしない）。パスワードを
-# 変更したら、そのままでは起動しなくなるので Install をやり直す。
+# 「ユーザーがログオンしているかどうかにかかわらず実行する」方式のうち、
+# パスワードを保存しない S4U ログオンで登録する。以前のパスワード方式は、
+# 普段 PIN や指紋でサインインしている環境ではアカウントのパスワードが
+# 通らず登録できなかった（実地確認 2026-11-25：2回失敗）。S4U はパスワード
+# 不要で、パスワードを変更しても登録が壊れない。ネットワークの資格情報は
+# 持たないが、Bot の通信は公開エンドポイントへの HTTPS だけなので影響しない。
 # Register-ScheduledTask は -User/-Password 指定時（パスワードログオンの
 # パラメータセット）に -Principal を併用できない（併用すると
 # "Parameter set cannot be resolved" で失敗する。実地確認 2026-11-25）。
-# -User/-Password/-RunLevel の指定だけでパスワードログオンの登録になる。
-$cred = Get-Credential -UserName "$env:USERDOMAIN\$env:USERNAME" -Message 'Bot をログオンなしで起動するため、この PC のログインパスワードを入力してください（Windows がタスクに保存します）'
-if ($null -eq $cred) {
-throw 'パスワードが入力されなかったため、登録を中止しました'
-}
+# S4U はパスワードを使わないため、-Principal 単独の指定で登録する。
+$principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Limited
 # -ErrorAction Stop: 登録失敗（アクセス拒否など）を非終了エラーのまま流すと
 # 成功メッセージまで進んでしまう（実地確認 2026-11-25：登録失敗でも
 # 「登録しました」と表示された）。失敗時はここで止める。
-Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $trigger -Settings $settings -User $cred.UserName -Password $cred.GetNetworkCredential().Password -RunLevel Limited -Force -ErrorAction Stop | Out-Null
+Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $trigger -Settings $settings -Principal $principal -Force -ErrorAction Stop | Out-Null
 Write-Host "登録しました: $taskName（ログオンしていなくても窓なしで起動します）"
 }
 'Uninstall' {
