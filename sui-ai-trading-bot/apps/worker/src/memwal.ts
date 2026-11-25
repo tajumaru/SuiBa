@@ -10,6 +10,7 @@ import {
 export interface MemwalClient {
   remember(text: string, idempotencyKey: string): Promise<{ id: string }>;
   recall?(query: string): Promise<string | null>;
+  recallMany?(query: string, limit: number, namespace?: string): Promise<string[]>;
 }
 
 export interface MemwalConfig {
@@ -43,6 +44,12 @@ export function createMemwalClient(config: MemwalConfig): MemwalClient {
     async remember(text, idempotencyKey) {
       const job = await client.remember(text, { idempotencyKey });
       return { id: job.job_id };
+    },
+    async recallMany(query, limit, namespace) {
+      const result = await client.recall({ query, limit, namespace });
+      return result.results.flatMap(({ text }) =>
+        typeof text === "string" ? [text] : [],
+      );
     },
     async recall(query) {
       const result = await client.recall({ query, limit: 1 });
@@ -94,7 +101,14 @@ export function startMemwalFlusher(
   const client = config ? createMemwalClient(config) : null;
   const flusher = new MemwalFlusher(db, client);
   let recallFor = "";
+  let btcSummaryPending = false;
   const run = async () => {
+    if (client?.recallMany && !btcSummaryPending) {
+      btcSummaryPending = true;
+      void refreshBtcShadowSummary(db, client).finally(() => {
+        btcSummaryPending = false;
+      });
+    }
     try {
       enqueueSettledShadowEpisodes(db);
       const statistic = refreshSituationMemory(db);
@@ -119,6 +133,43 @@ export function startMemwalFlusher(
   timer.unref();
   setImmediate(run);
   return { flusher, stop: () => clearInterval(timer) };
+}
+
+export type BtcShadowSummary = { text: string; fetchedAt: number };
+
+const btcSummaryPrefix =
+  /^\[btc-shadow-summary\]\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))\s+(?=\S)/;
+
+export function pickLatestBtcShadowSummary(hits: string[]): string | null {
+  let latest: string | null = null;
+  let latestAt = -Infinity;
+  for (const text of hits) {
+    const match = btcSummaryPrefix.exec(text);
+    if (!match) continue;
+    const at = Date.parse(match[1]);
+    if (at > latestAt) {
+      latest = text;
+      latestAt = at;
+    }
+  }
+  return latest;
+}
+
+async function refreshBtcShadowSummary(db: BotDatabase, client: MemwalClient) {
+  try {
+    const hits = await client.recallMany?.(
+      "btc-shadow-summary BTC 影 概要",
+      10,
+      "potario",
+    );
+    if (!hits) return;
+    const text = pickLatestBtcShadowSummary(hits);
+    if (text && text !== db.get<BtcShadowSummary>("btc_shadow_summary")?.text) {
+      db.set("btc_shadow_summary", { text, fetchedAt: Date.now() });
+    }
+  } catch {
+    /* Keep the previous summary if recall or storage is unavailable. */
+  }
 }
 
 async function attachRecall(

@@ -57,6 +57,23 @@ it("reuses stored aggregates separately for light and full snapshots", () => {
   }
 });
 
+it("includes a newly stored BTC shadow summary in light and full snapshots", () => {
+  const { db, engine } = fixture();
+  try {
+    expect(engine.snapshot({ light: true }).btcShadowSummary).toBeNull();
+    expect(engine.snapshot().btcShadowSummary).toBeNull();
+    const summary = {
+      text: "[btc-shadow-summary] 2026-11-25T03:56:07.612Z XBTC_USDC: 判断2件",
+      fetchedAt: Date.now(),
+    };
+    db.set("btc_shadow_summary", summary);
+    expect(engine.snapshot({ light: true }).btcShadowSummary).toEqual(summary);
+    expect(engine.snapshot().btcShadowSummary).toEqual(summary);
+  } finally {
+    db.close();
+  }
+});
+
 it("refreshes stored aggregates after a write and when the hour changes", () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-11-24T12:59:59Z"));

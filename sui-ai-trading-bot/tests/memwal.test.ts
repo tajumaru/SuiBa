@@ -1,3 +1,4 @@
+import { MemWal } from "@mysten-incubation/memwal";
 import { describe, expect, it, vi } from "vitest";
 import { BotDatabase } from "../packages/database/src/index.ts";
 import {
@@ -7,6 +8,8 @@ import {
   memwalConfig,
   narrationEpisode,
   shadowEpisode,
+  pickLatestBtcShadowSummary,
+  startMemwalFlusher,
   type MemwalClient,
 } from "../apps/worker/src/memwal.ts";
 
@@ -140,5 +143,62 @@ describe("MemWal mirror", () => {
     ).toMatchInlineSnapshot(
       `"[narration/watchHit] 1970-01-01T00:00:00.000Z SUI_USDC: 注目条件が成立した。"`,
     );
+  });
+});
+
+const older = "[btc-shadow-summary] 2026-11-25T03:00:00.000Z XBTC_USDC: 判断1件";
+const newer = "[btc-shadow-summary] 2026-11-25T03:56:07.612Z XBTC_USDC: 判断2件";
+
+describe("BTC shadow summary", () => {
+  it("selects the latest timestamp regardless of the recall ranking", () => {
+    expect(pickLatestBtcShadowSummary([older, newer])).toBe(newer);
+    expect(pickLatestBtcShadowSummary([newer, older])).toBe(newer);
+  });
+
+  it("skips unrelated and malformed hits", () => {
+    expect(pickLatestBtcShadowSummary([
+      "[shadow] 2026-11-26T00:00:00.000Z SUI_USDC",
+      " quoted " + newer,
+      "[btc-shadow-summary] 2026-99-25T03:56:07.612Z invalid",
+      "[btc-shadow-summary] missing date",
+      "[btc-shadow-summary] 2026-11-26T00:00:00.000Z",
+    ])).toBeNull();
+    expect(pickLatestBtcShadowSummary([])).toBeNull();
+  });
+
+  it("polls multiple hits and only saves changed summaries", async () => {
+    vi.useFakeTimers();
+    const db = new BotDatabase(":memory:");
+    const recall = vi.fn()
+      .mockResolvedValueOnce({ results: [{ text: older }, { text: newer }, {}] })
+      .mockResolvedValueOnce({ results: [{ text: newer }] })
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue({ results: [] });
+    const remember = vi.fn();
+    const create = vi.spyOn(MemWal, "create").mockReturnValue(
+      { recall, remember } as unknown as ReturnType<typeof MemWal.create>,
+    );
+    const { stop } = startMemwalFlusher(db, configured);
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      const saved = db.get("btc_shadow_summary");
+      expect(recall).toHaveBeenCalledExactlyOnceWith({
+        query: "btc-shadow-summary BTC 影 概要",
+        limit: 10,
+        namespace: "potario",
+      });
+      expect(saved).toEqual({ text: newer, fetchedAt: Date.now() });
+      const set = vi.spyOn(db, "set");
+      await vi.advanceTimersByTimeAsync(180_000);
+      expect(recall).toHaveBeenCalledTimes(4);
+      expect(db.get("btc_shadow_summary")).toEqual(saved);
+      expect(set.mock.calls.some(([key]) => key === "btc_shadow_summary")).toBe(false);
+      expect(remember).not.toHaveBeenCalled();
+    } finally {
+      stop();
+      create.mockRestore();
+      db.close();
+      vi.useRealTimers();
+    }
   });
 });
