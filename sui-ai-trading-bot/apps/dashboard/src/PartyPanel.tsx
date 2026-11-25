@@ -60,13 +60,11 @@ export function Party({
   bossHistory = [],
   toggles,
   sageWork,
-  btcShadowSummary,
 }: {
   party: State["party"] | undefined;
   bossHistory?: State["bossHistory"];
   toggles?: PartyToggles;
   sageWork?: State["sageWork"];
-  btcShadowSummary?: State["btcShadowSummary"];
 }) {
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -236,13 +234,6 @@ export function Party({
               ほか{bossHistory.length - BOSS_HISTORY_DISPLAY_LIMIT}件
             </p>
           )}
-        </section>
-      )}
-      {btcShadowSummary && (
-        <section className="party-btc-summary" aria-label="BTCの影">
-          <h4>BTCの影</h4>
-          <p>{btcShadowSummary.text.replace(/^\[btc-shadow-summary\]\s+\S+\s+/, "")}</p>
-          <small>MemWal経由の参照表示</small>
         </section>
       )}
     </section>

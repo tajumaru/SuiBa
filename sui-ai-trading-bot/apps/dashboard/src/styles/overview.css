@@ -322,18 +322,61 @@
   text-overflow: ellipsis;
 }
 
-.party-btc-summary {
-  margin-top: 1rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--line);
+.price-ticker-mark-switch {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
-.party-btc-summary h4,
-.party-btc-summary p {
-  margin: 0 0 0.35rem;
+.price-ticker-mark-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  border: 1px solid var(--line);
 }
 
-.party-btc-summary p {
+.btc-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.btc-panel {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.btc-panel h2,
+.btc-panel-body {
+  margin: 0;
+}
+
+.btc-panel h2,
+.btc-panel-price,
+.btc-panel-range {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btc-panel h2 {
+  font-size: 1rem;
+}
+
+.btc-panel > svg {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+}
+
+.btc-panel-body {
   color: var(--text);
   font-size: 0.875rem;
   line-height: 1.5;

@@ -1,6 +1,7 @@
-import React, { useId } from "react";
+import React, { useId, useState } from "react";
 import type { BotSnapshot } from "../../worker/src/engine.ts";
 import { BossBattleCard } from "./BossBattle.tsx";
+import { BtcMark, BtcPanel, BTC_ORANGE } from "./BtcPanel.tsx";
 import { BookBar } from "./BookBar.tsx";
 import heroBrave from "./assets/hero-brave-blue.webp";
 import heroStruggling from "./assets/hero-struggling.webp";
@@ -460,7 +461,49 @@ export function referenceTicker(
   };
 }
 
-export function PriceTicker({
+const SUI_BLUE = "#4da2ff";
+
+type PriceTickerProps = Parameters<typeof TradingPriceTicker>[0] & {
+  btcShadowSummary?: State["btcShadowSummary"];
+};
+
+export function PriceTicker({ btcShadowSummary = null, ...props }: PriceTickerProps) {
+  const [asset, setAsset] = useState<"SUI" | "BTC">("SUI");
+  return (
+    <div>
+      <div className="price-ticker-mark-switch" role="group" aria-label="表示銘柄">
+        <button
+          type="button"
+          aria-pressed={asset === "SUI"}
+          style={asset === "SUI" ? { borderColor: SUI_BLUE } : undefined}
+          onClick={() => setAsset("SUI")}
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+            <path d="M12 3c3.2 4.1 6 7.9 6 11a6 6 0 1 1-12 0c0-3.1 2.8-6.9 6-11z" fill={SUI_BLUE} />
+          </svg>
+          SUI
+        </button>
+        <button
+          type="button"
+          aria-pressed={asset === "BTC"}
+          style={asset === "BTC" ? { borderColor: BTC_ORANGE } : undefined}
+          onClick={() => setAsset("BTC")}
+        >
+          <BtcMark /> BTC
+        </button>
+      </div>
+      {asset === "SUI" ? (
+        <TradingPriceTicker {...props} />
+      ) : (
+        <div className="price-ticker-bar">
+          <BtcPanel summary={btcShadowSummary} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TradingPriceTicker({
   pair = "SUI_USDC",
   price,
   candlesByTimeframe,

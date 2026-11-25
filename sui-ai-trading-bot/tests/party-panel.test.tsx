@@ -102,17 +102,8 @@ it("omits the history block with no completed battles", () => {
   expect(html).not.toContain("ボス戦の戦績");
 });
 
-it("shows the BTC summary body and source only when available", () => {
-  expect(renderToStaticMarkup(createElement(Party, { party }))).not.toContain("BTCの影");
-  const html = renderToStaticMarkup(createElement(Party, {
-    party,
-    btcShadowSummary: {
-      text: "[btc-shadow-summary] 2026-11-25T03:56:07.612Z XBTC_USDC: 判断2件",
-      fetchedAt: 1,
-    },
-  }));
-  expect(html).toContain("<h4>BTCの影</h4>");
-  expect(html).toContain("<p>XBTC_USDC: 判断2件</p>");
-  expect(html).toContain("MemWal経由の参照表示");
-  expect(html).not.toContain("2026-11-25");
+it("does not show the BTC shadow in the party panel", () => {
+  const html = renderToStaticMarkup(createElement(Party, { party }));
+  expect(html).not.toContain("BTCの影");
+  expect(html).not.toContain("MemWal経由の参照表示");
 });

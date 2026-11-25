@@ -1,7 +1,7 @@
 import { readDashboardCss } from "./helpers/dashboard-css";
-import React from "react";
+import React, { useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readAppShell } from "./helpers/source";
 import type { BotEngine } from "../apps/worker/src/engine.ts";
 import {
@@ -14,6 +14,11 @@ import {
   sparklinePoints,
   tickerChange,
 } from "../apps/dashboard/src/PriceTicker.tsx";
+
+vi.mock("react", async (importOriginal) => {
+  const react = await importOriginal<typeof import("react")>();
+  return { ...react, useState: vi.fn(react.useState) };
+});
 
 type State = ReturnType<BotEngine["snapshot"]>;
 type Frames = State["candlesByTimeframe"];
@@ -628,5 +633,37 @@ describe("boss battle card", () => {
     expect(renderToStaticMarkup(
       <PriceTicker {...props} boss={{ ...boss, outcome: { at: T0 * 1000 + 1, result: "endured" } }} />,
     )).toBe(original);
+  });
+});
+
+describe("overview asset switch", () => {
+  const props = {
+    price: 0.92,
+    candlesByTimeframe: frames({}),
+    rsi: 32,
+    btcShadowSummary: {
+      text: "[btc-shadow-summary] 2026-11-25T10:43:21.757Z XBTC_USDC: 判断49件。 動き: price=58943 chg24=-1.37 hi=60251 lo=58727 pts=59668,58943",
+      fetchedAt: 1,
+    },
+  };
+
+  it("defaults to SUI and renders the RSI gauge", () => {
+    const html = renderToStaticMarkup(<PriceTicker {...props} />);
+    expect(html).toContain('aria-pressed="true" style="border-color:#4da2ff"');
+    expect(html).toContain('class="rsi-gauge');
+    expect(html).not.toContain('class="btc-panel"');
+  });
+
+  it("renders the BTC panel without the RSI gauge when BTC is selected", () => {
+    vi.mocked(useState).mockReturnValueOnce(["BTC", vi.fn()]);
+    const html = renderToStaticMarkup(<PriceTicker {...props} />);
+    expect(html).toContain('aria-pressed="true" style="border-color:#f7931a"');
+    expect(html).not.toContain('class="rsi-gauge');
+    expect(html).toContain('class="btc-panel"');
+    expect(html).toContain("$58,943");
+    expect(html).toContain("24時間 −1.37%");
+    expect(html).toContain("<polyline");
+    expect(html).toContain("MemWal経由の参照表示");
+    expect(html).toContain(">10:43</time>");
   });
 });
