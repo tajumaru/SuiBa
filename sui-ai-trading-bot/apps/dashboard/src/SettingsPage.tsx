@@ -746,7 +746,7 @@ export function StopReleaseSection({
   ) => Promise<string | null>;
   onReviewSettings?: (field: "maxOrder") => void;
 }) {
-  const { emergency, error } = data.runtime;
+  const { emergency, error, failureDetail } = data.runtime;
   const mode = data.mode ?? "PAPER";
   // The emergency release is a two-step in-place confirmation: the
   // first press arms it, the second sends the dedicated command.
@@ -815,6 +815,7 @@ export function StopReleaseSection({
               : `安全停止中です。停止理由：${reason(error ?? "")}`}
         </p>
       )}
+      {error && failureDetail && <p>詳細：{failureDetail}</p>}
       {advice && (
         <div className="stop-setting-advice">
           <p>{advice.message}</p>

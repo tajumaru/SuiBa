@@ -17,6 +17,7 @@ const stateSchema = z.object({
       running: z.boolean(),
       emergency: z.boolean(),
       error: z.string().nullish(),
+      failureDetail: z.string().optional(),
     })
     .optional(),
   safety: z.object({ ordersAllowed: z.boolean() }).optional(),
@@ -154,6 +155,9 @@ export function formatPcStatus(
     `注文許可：${onOff(safety?.ordersAllowed, "あり", "なし")}`,
     `緊急停止：${onOff(runtime?.emergency, "あり", "なし")}`,
     `エラー：${runtime ? (runtime.error ? `あり（${runtime.error}）` : "なし") : unknown}`,
+    ...(!running && runtime?.error && runtime.failureDetail
+      ? [`エラーの詳細：${runtime.failureDetail}`]
+      : []),
     `残高：${formatBalance(resume?.evidence?.balances.differences)}`,
     ...(reconciliationPending
       ? [`未確定の送信：${nonTerminalSubmissions}件（照合待ちで注文が止まっています）`]

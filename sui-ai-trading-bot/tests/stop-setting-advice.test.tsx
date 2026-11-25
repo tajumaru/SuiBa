@@ -82,6 +82,16 @@ describe("stop release panel by mode", () => {
     const html = render(snapshot("DATA_OR_EXECUTION_FAILURE"));
     expect(html).toContain("停止を解除");
   });
+  it("adds only the detail line when the stop has a recorded detail", () => {
+    const data = snapshot("DATA_OR_EXECUTION_FAILURE", "REAL");
+    const original = render(data);
+    expect(original).not.toContain("詳細：");
+    data.runtime.failureDetail = "Unexpected <response> format";
+    const line = "<p>詳細：Unexpected &lt;response&gt; format</p>";
+    const updated = render(data);
+    expect(updated).toContain(line);
+    expect(updated.replace(line, "")).toBe(original);
+  });
   it("shows no release button in REAL and points at the PC approval procedure", () => {
     const html = render(snapshot("DATA_OR_EXECUTION_FAILURE", "REAL"));
     expect(html).not.toContain("停止を解除");

@@ -82,6 +82,34 @@ describe("pc:status", () => {
     );
   });
 
+  it("エラー停止時は保存された詳細がある場合だけ一行追加する", async () => {
+    const runtime = {
+      running: false,
+      emergency: false,
+      error: "DATA_OR_EXECUTION_FAILURE",
+    };
+    const read = async (failureDetail?: string) => {
+      const deps = setup();
+      deps.get.mockResolvedValueOnce({
+        status: 200,
+        body: {
+          ...runningState,
+          runtime: failureDetail ? { ...runtime, failureDetail } : runtime,
+        },
+      });
+      expect(await runPcStatus(deps)).toBe(0);
+      return deps.print.mock.calls[0][0];
+    };
+
+    const original = await read();
+    const errorLine = "エラー：あり（DATA_OR_EXECUTION_FAILURE）";
+    expect(original).toContain(`${errorLine}\n残高：`);
+    expect(original).not.toContain("エラーの詳細：");
+    expect(await read("Unexpected response format")).toBe(
+      original.replace(errorLine, `${errorLine}\nエラーの詳細：Unexpected response format`),
+    );
+  });
+
   it.each([
     ["MARKET", "成行"],
     ["IOC_LIMIT", "指値（IOC）"],

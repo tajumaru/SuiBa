@@ -541,6 +541,7 @@ export class BotDatabase {
         ...(this.lastRuntime ?? { emergency: false, lastCandle: null }),
         running: false,
         error: "DATABASE_UNAVAILABLE",
+        failureDetail: undefined,
       };
     this.lastRuntime = this.get<Runtime>("runtime")!;
     return this.lastRuntime;

@@ -182,6 +182,34 @@ it("attaches the tracked read failure to the ERROR and STOP events of a hard sto
   });
   db.close();
 });
+it.each([true, false])(
+  "records the generic stop detail and only attaches a read from this cycle (%s)",
+  (inCycle) => {
+    const db = new BotDatabase(":memory:");
+    try {
+      const monitor = new OperationMonitor(db);
+      db.set("runtime", { ...db.runtime(), running: true });
+      monitor.beginCycle();
+      monitor.apiFailure(readFailure({ occurredAt: Date.now() - 60_000 }));
+      const latest = readFailure({ operation: "ORDERBOOK_FETCH" });
+      if (inCycle) monitor.apiFailure(latest);
+
+      const code = "DATA_OR_EXECUTION_FAILURE";
+      const failureDetail = "Unexpected response format";
+      monitor.failCycle(code, Date.now(), undefined, failureDetail);
+      for (const kind of ["ERROR", "STOP"] as const) {
+        const events = eventsOf(db, kind).filter((event) => event.code === code);
+        expect(events).toHaveLength(1);
+        expect(events[0].failureDetail).toBe(failureDetail);
+        expect(events[0].apiFailure).toEqual(inCycle ? latest : undefined);
+      }
+      expect(db.runtime()).toMatchObject({ error: code, failureDetail });
+      expect(monitor.currentBootError()?.failure).toBeUndefined();
+    } finally {
+      db.close();
+    }
+  },
+);
 it("does not attach a stale or mismatched read failure to stop events", () => {
   const db = new BotDatabase(":memory:");
   const monitor = new OperationMonitor(db);

@@ -1166,7 +1166,7 @@ export class BotEngine {
         !this.monitor.staleThrowToStall(code) &&
         !this.monitor.bookGuardThrowToEpisode(code)
       ) {
-        this.monitor.failCycle(code);
+        this.monitor.failCycle(code, undefined, undefined, detail);
         this.db.set("runtime", {
           ...this.db.runtime(),
           running: false,
@@ -1235,6 +1235,7 @@ export class BotEngine {
           ...this.db.runtime(),
           running: false,
           error: "VALIDATION_RECORD_FAILED",
+          failureDetail: undefined,
         });
         // eslint-disable-next-line no-unsafe-finally -- deliberate: a failed validation record must fail the cycle closed, not slip through the outer finally
         throw new Error("VALIDATION_RECORD_FAILED");

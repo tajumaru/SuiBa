@@ -668,6 +668,7 @@ export class OperationMonitor {
     recoveryProof?: PaperRecoveryProof,
     episode?: EpisodeSummary,
     apiFailure?: ApiFailure,
+    failureDetail?: string,
   ) {
     if (
       [
@@ -705,7 +706,7 @@ export class OperationMonitor {
       details,
       recoveryProof,
       episode,
-      undefined,
+      failureDetail,
       apiFailure,
     );
   }
@@ -961,8 +962,8 @@ export class OperationMonitor {
     });
   }
   /**
-   * The read failure tracked for this cycle whose code matches a stop
-   * reason. Recording only: attaching it to the ERROR/STOP events keeps
+   * Attach the latest read failure from this cycle when its code matches
+   * the stop reason or the reason is generic. This keeps
    * the failing api/host visible in the exported operation log for any
    * hard-stopping read failure, not just HTTP 500 (whose tracked
    * failure additionally feeds the boot-error recovery path in stop()).
@@ -970,13 +971,18 @@ export class OperationMonitor {
   private trackedReadFailure(reason: string): ApiFailure | undefined {
     const f = this.latestReadFailure;
     return f &&
-      f.code === reason &&
+      (f.code === reason || reason === "DATA_OR_EXECUTION_FAILURE") &&
       this.cycleStartedAt > 0 &&
       f.occurredAt >= this.cycleStartedAt
       ? f
       : undefined;
   }
-  stop(reason: string, now = Date.now(), details?: MarketStallDetails) {
+  stop(
+    reason: string,
+    now = Date.now(),
+    details?: MarketStallDetails,
+    failureDetail?: string,
+  ) {
     const r = this.db.runtime();
     const episode =
       episodeSummaryOf(
@@ -1003,6 +1009,7 @@ export class OperationMonitor {
         ...r,
         running: false,
         error: r.error ?? code(reason),
+        failureDetail: r.error ? r.failureDetail : failureDetail || undefined,
       });
       if (!r.error)
         this.currentErrorStop = {
@@ -1010,14 +1017,27 @@ export class OperationMonitor {
           at: now,
           failure: readFailure,
         };
-      this.transition(reason, now, details, undefined, episode, tracked);
+      this.transition(
+        reason,
+        now,
+        details,
+        undefined,
+        episode,
+        tracked,
+        failureDetail,
+      );
       if (details)
         console.warn(
           JSON.stringify({ event: "MARKET_DATA_STALLED", ...details }),
         );
     }
   }
-  failCycle(reason: string, now = Date.now(), details?: MarketStallDetails) {
+  failCycle(
+    reason: string,
+    now = Date.now(),
+    details?: MarketStallDetails,
+    failureDetail?: string,
+  ) {
     const runtime = this.db.runtime();
     const alreadyStopped = !runtime.running && !!runtime.error;
     if (!this.cycleFailed)
@@ -1029,13 +1049,13 @@ export class OperationMonitor {
         details,
         undefined,
         undefined,
-        undefined,
+        failureDetail,
         this.trackedReadFailure(reason),
       );
     this.cycleFailed = true;
     // Keep failed polling evidence without presenting every poll as a new stop.
     this.event("ANOMALY", reason, now, !alreadyStopped, details);
-    this.stop(reason, now, details);
+    this.stop(reason, now, details, failureDetail);
   }
   /**
    * A market-data stall used to latch an immediate safety stop.
