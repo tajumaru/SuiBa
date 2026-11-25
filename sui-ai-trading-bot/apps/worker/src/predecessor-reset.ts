@@ -200,6 +200,7 @@ export class PredecessorReset {
         ...this.db.runtime(),
         running: false,
         error: null,
+        failureDetail: undefined,
       });
       this.monitor!.transition("MANUAL_RESET");
     });
@@ -238,6 +239,7 @@ export class PredecessorReset {
         ...this.db.runtime(),
         running: false,
         error: null,
+        failureDetail: undefined,
       });
       this.monitor!.transition("MANUAL_RESET");
     });

@@ -1254,6 +1254,33 @@ it.each(["API_CANCELLED", "CANDLE_GAP", "VALIDATION_RECORD_FAILED"])(
   },
 );
 
+it("passes an unlisted early-cycle error to the monitor and exposes its detail in the snapshot", async () => {
+  const t = fixture();
+  const failureDetail = "Unexpected response format";
+  // This runtime record uses the original format without a detail field.
+  expect(t.db.get("runtime")).not.toHaveProperty("failureDetail");
+  expect(t.engine.snapshot().runtime).not.toHaveProperty("failureDetail");
+  const failCycle = vi.spyOn(t.engine.monitor, "failCycle");
+  t.inject(() => {
+    throw Error(`${failureDetail} https://example.invalid/private`);
+  });
+
+  await t.tick();
+
+  const code = "DATA_OR_EXECUTION_FAILURE";
+  expect(failCycle).toHaveBeenCalledExactlyOnceWith(
+    code,
+    undefined,
+    undefined,
+    failureDetail,
+  );
+  expect(t.engine.snapshot().runtime).toMatchObject({
+    running: false,
+    error: code,
+    failureDetail,
+  });
+});
+
 it("a real failure during shutdown still latches an error", async () => {
   const t = fixture();
   t.inject(() => {

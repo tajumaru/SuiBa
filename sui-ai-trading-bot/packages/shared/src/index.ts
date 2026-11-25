@@ -328,6 +328,7 @@ export interface Runtime {
   running: boolean;
   emergency: boolean;
   error: string | null;
+  failureDetail?: string;
   lastCandle: number | null;
 }
 /** A display-only sample of the Sui chain itself (epoch, latest

@@ -283,7 +283,7 @@ async function currentStop() {
   const read = (path = "read") =>
     apiFetch("Test market", t.base + "/upstream/" + path);
   await expect(read()).rejects.toThrow("UPSTREAM_HTTP_500");
-  t.engine.monitor.stop("UPSTREAM_HTTP_500");
+  t.engine.monitor.stop("UPSTREAM_HTTP_500", undefined, undefined, "HTTP 500");
   const scope = async () => {
     const state = await t.request(undefined, undefined, "/api/state");
     expect(state.status).toBe(200);
@@ -329,6 +329,7 @@ it("requires a later successful read of the failed route, then clears and audits
     200,
   );
   expect(t.db.runtime()).toMatchObject({ running: false, error: null });
+  expect(t.db.runtime()).not.toHaveProperty("failureDetail");
   expect(await t.scope()).toMatchObject({ pending: false, eligible: false });
   expect(
     t.db
