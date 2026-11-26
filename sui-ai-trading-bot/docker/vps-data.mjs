@@ -76,7 +76,7 @@ export function verify(root) {
         result[0].integrity_check !== "ok" ||
         db.prepare("PRAGMA foreign_key_check").all().length
       )
-        throw Error("VPS_INTEGRITY_FAILED");
+        throw Error(`VPS_INTEGRITY_FAILED:${name}`);
       if (
         name === basename(root) ||
         name === basename(root) + ".WAL_USDC.sqlite"
@@ -85,7 +85,7 @@ export function verify(root) {
           .prepare("SELECT json FROM bot_runtime_state WHERE key='runtime'")
           .get();
         if (!row || JSON.parse(String(row.json)).running !== false)
-          throw Error("VPS_RUNTIME_NOT_STOPPED");
+          throw Error(`VPS_RUNTIME_NOT_STOPPED:${name}`);
       }
     } finally {
       db.close();
@@ -94,7 +94,7 @@ export function verify(root) {
   for (const name of readdirSync(dirname(root))) {
     const stat = lstatSync(join(dirname(root), name));
     if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1)
-      throw Error("VPS_UNSAFE_BACKUP_ENTRY");
+      throw Error(`VPS_UNSAFE_BACKUP_ENTRY:${name}`);
     if (isUnknownDatabase(name, basename(root), names))
       throw Error("VPS_UNKNOWN_DATABASE");
   }

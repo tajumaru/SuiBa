@@ -73,12 +73,15 @@ def stop_codes(value, limit):
             all(stop_string(code, r'[A-Z][A-Z_]{2,47}') for code in value))
 
 
+def stop_filename(value):
+    return stop_string(value, r'[A-Za-z0-9._-]+\.sqlite') and len(value) <= 128
+
+
 def valid_verify_details(value):
-    return (type(value) is dict and set(value) == {'error', 'unknown_files'} and
+    return (type(value) is dict and set(value) in ({'error', 'unknown_files'}, {'error', 'name', 'unknown_files'}) and
             (value['error'] is None or stop_string(value['error'], r'VPS_[A-Z_]{2,48}')) and
             type(value['unknown_files']) is list and len(value['unknown_files']) <= 16 and
-            all(stop_string(name, r'[A-Za-z0-9._-]+\.sqlite') and len(name) <= 128
-                for name in value['unknown_files']))
+            all(stop_filename(name) for name in value['unknown_files']))
 
 
 def valid_stop_diagnosis(value):
@@ -91,7 +94,7 @@ def valid_stop_diagnosis(value):
     if not details:
         return True
     if stage == 'verify':
-        return valid_verify_details(details)
+        return valid_verify_details(details) and ('name' not in details or stop_filename(details['name']))
     return (stage == 'verify_sui' and set(details) == {'actual'} and
             stop_string(details['actual'], r'[A-Z][A-Z0-9_]{0,31}'))
 
@@ -120,13 +123,18 @@ def production(value, now):
         require(set(value) == {'run', 'requires_review', 'watchdog'}, 'status.keys', 'not_started_status', value)
         return value
     require({'run', 'requires_review', 'worker', 'controller_alive', 'watchdog', 'shadow'} <= set(value) <=
-            {'run', 'requires_review', 'worker', 'controller_alive', 'watchdog', 'shadow', 'failure', 'stop'} and
+            {'run', 'requires_review', 'worker', 'controller_alive', 'watchdog', 'shadow', 'failure', 'stop', 'closeout'} and
             type(value['controller_alive']) is bool and type(run) is dict and
             set(run) == {'id', 'status', 'started', 'stopped', 'sha', 'stage', 'admitted'}, 'status.keys', 'running_status', value)
     if 'failure' in value:
         failure_summary(value['failure'], run)
     if 'stop' in value:
         stop_summary(value['stop'])
+    if 'closeout' in value:
+        closeout = value['closeout']
+        require(type(closeout) is dict and set(closeout) == {'preflight', 'admitted'} and
+                all(code is None or code in CONTRACT['closeout_reasons'] for code in closeout.values()),
+                'closeout', 'closeout_summary', closeout)
     shadow(value['shadow'], now)
     require(hex_id(run['id']) and run['status'] in CONTRACT['prod_states'][2:] and
             type(run['started']) is int and 0 <= run['started'] <= (now+60)*1000 and
@@ -166,6 +174,11 @@ def watchdog(value, now):
     require((value['verdict'] == 'attention') == bool(value['reasons']))
     require(value['verdict'] != 'not_started' or value['run_id'] is None)
     require(value['verdict'] != 'ok' or hex_id(value['run_id']))
+    if 'closeout' in value:
+        closeout = value['closeout']
+        require(type(closeout) is dict and set(closeout) == {'preflight', 'admitted'} and
+                all(code is None or code in CONTRACT['closeout_reasons'] for code in closeout.values()),
+                'closeout', 'closeout_summary', closeout)
     shadow(value['shadow'], now)
     return value
 
@@ -220,6 +233,8 @@ def combine(prod, now, prod_read=True):
         result['failure'] = prod['failure']
     if 'stop' in prod:
         result['stop'] = prod['stop']
+    if 'closeout' in prod:
+        result['closeout'] = prod['closeout']
     result.update(verdict='attention' if reasons else 'ok', reasons=sorted(reasons))
     return result
 

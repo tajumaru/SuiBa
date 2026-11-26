@@ -6,10 +6,16 @@ import { isUnknownDatabase, verify } from "./vps-data.mjs";
 
 export function diagnoseVerify(root) {
   let error = null;
+  let name = null;
   try {
     verify(root);
   } catch (cause) {
-    const token = cause instanceof Error ? cause.message.split(/\s+/, 1)[0] : "";
+    const message = cause instanceof Error ? cause.message : "";
+    const separator = message.indexOf(":");
+    const token = separator < 0 ? message : message.slice(0, separator);
+    const filename = separator < 0 ? "" : message.slice(separator + 1);
+    if (filename.length <= 128 && /^[A-Za-z0-9._-]+\.sqlite$/.test(filename))
+      name = filename;
     if (/^VPS_[A-Z_]+$/.test(token)) error = token;
   }
 
@@ -28,7 +34,7 @@ export function diagnoseVerify(root) {
   } catch {
     // The verify error may still be available when the inventory is unreadable.
   }
-  return { error, unknown_files };
+  return { error, name, unknown_files };
 }
 
 if (process.argv[1]?.replaceAll("\\", "/").endsWith("/docker/verify-diagnosis.mjs")) {

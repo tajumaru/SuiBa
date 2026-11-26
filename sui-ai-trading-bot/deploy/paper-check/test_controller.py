@@ -1728,6 +1728,9 @@ class ProductionTests(unittest.TestCase):
         valid = {'error': 'VPS_UNKNOWN_DATABASE', 'unknown_files': ['extra.sqlite']}
         cases = (
             ('verify', valid, valid),
+            ('verify', {**valid, 'name': 'bot.sqlite'}, {**valid, 'name': 'bot.sqlite'}),
+            ('verify', {**valid, 'name': None}, valid),
+            ('verify', {**valid, 'name': '../bot.sqlite'}, valid),
             ('verify', None, {}),
             ('verify', {**valid, 'unknown_files': ['../extra.sqlite']}, {}),
             ('verify', {**valid, 'extra': 'fixture'}, {}),
@@ -1776,7 +1779,8 @@ class ProductionTests(unittest.TestCase):
             path.write_text('invalid json')
             self.assertNotIn('stop', ctl.prod_status())
             code = 'DB_OR_MAINTENANCE_UNCONFIRMED'
-            diagnosis = {'stage': 'verify', 'error': 'VPS_UNKNOWN_DATABASE', 'unknown_files': ['extra.sqlite']}
+            diagnosis = {'stage': 'verify', 'error': 'VPS_UNKNOWN_DATABASE', 'unknown_files': ['extra.sqlite'],
+                         'name': 'bot.sqlite'}
             ctl.receipt(record, 'failed_state_unknown', [code], diagnosis)
             for fault in ('STOP_UNKNOWN', code, 'STOP_UNKNOWN'):
                 ctl.fault(record, fault)
@@ -2540,8 +2544,10 @@ class ProductionTests(unittest.TestCase):
                     ctl.fault(record, code)
                 self.running = False
                 self.with_started_at(ctl, self.started_at_during(record))
+                path = folder/'closeout-diagnosis.json'
                 if closes:
                     self.assertEqual(ctl.prod_stop(), {'status': 'completed'})
+                    self.assertFalse(path.exists())
                     self.assertEqual(ctl.current()['status'], 'completed')
                     # The close-out's record of why the run failed
                     # stays in the folder, code included.
@@ -2552,6 +2558,50 @@ class ProductionTests(unittest.TestCase):
                     with self.assertRaises(Exception):
                         ctl.prod_stop()
                     self.assertEqual(ctl.current()['status'], 'failed_requires_review')
+                    diagnosis = json.loads(path.read_bytes())
+                    self.assertEqual(diagnosis, {
+                        'id': record['id'], 'at': diagnosis['at'],
+                        'preflight': 'failure_mismatch', 'admitted': 'fault_not_accepted',
+                    })
+                    self.assertEqual(ctl.prod_status()['closeout'], {
+                        'preflight': 'failure_mismatch', 'admitted': 'fault_not_accepted',
+                    })
+
+    def test_prod_status_omits_invalid_closeout_diagnosis(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.admit(ctl)
+            path = ctl.folder(record)/'closeout-diagnosis.json'
+            self.assertNotIn('closeout', ctl.prod_status())
+            path.write_text('invalid json')
+            self.assertNotIn('closeout', ctl.prod_status())
+            valid = {'id': record['id'], 'at': int(time.time()),
+                     'preflight': None, 'admitted': 'verify_failed'}
+            for change in ({'id': 'another-run'}, {'at': True}, {'at': -1},
+                           {'admitted': 'arbitrary_code'}, {'preflight': []}, {'extra': None}):
+                with self.subTest(change=change):
+                    FakeBroker.atomic(path, {**valid, **change})
+                    self.assertNotIn('closeout', ctl.prod_status())
+            FakeBroker.atomic(path, valid)
+            self.assertEqual(ctl.prod_status()['closeout'], {'preflight': None, 'admitted': 'verify_failed'})
+
+    def test_closeout_refusal_records_first_failed_check(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.wedge_monitoring_db_failure(ctl)
+            failure = ctl.folder(record)/'failure.json'
+            self.assertFalse(ctl.preflight_closeout_eligible(record))
+            self.assertEqual(ctl._closeout_refusal, ('preflight', 'failure_mismatch'))
+            FakeBroker.atomic(failure, {'id': 'another-run', 'stage': 'preflight'})
+            self.assertFalse(ctl.admitted_closeout_eligible(record))
+            self.assertEqual(ctl._closeout_refusal, ('admitted', 'failure_mismatch'))
+            FakeBroker.atomic(failure, {'id': record['id'], 'stage': 'preflight'})
+            self.with_started_at(ctl, '0001-01-01T00:00:00Z')
+            self.assertFalse(ctl.preflight_closeout_eligible(record))
+            self.assertEqual(ctl._closeout_refusal, ('preflight', 'fault_not_accepted'))
+            with patch.object(ctl, 'inspect', side_effect=RuntimeError('unreadable')):
+                self.assertFalse(ctl.admitted_closeout_eligible(record))
+            self.assertEqual(ctl._closeout_refusal, ('admitted', 'evidence_unreadable'))
 
     def wedge_monitoring_db_failure(self, ctl):
         code = 'DB_OR_MAINTENANCE_UNCONFIRMED'
@@ -2602,6 +2652,7 @@ class ProductionTests(unittest.TestCase):
                     receipt = json.loads(path.read_bytes())
                     FakeBroker.atomic(path, {**receipt, **change})
                     self.assertFalse(ctl.admitted_closeout_eligible(record))
+                    self.assertEqual(ctl._closeout_refusal, ('admitted', 'db_closeout_shape'))
 
     @unittest.skipIf(os.name == 'nt', 'Linux flock')
     def test_admitted_closeout_rejects_monitoring_db_failure_when_helper_verify_fails(self):
@@ -2612,6 +2663,7 @@ class ProductionTests(unittest.TestCase):
             with patch.object(helper, 'helper', side_effect=RuntimeError('fixture verification failure')) as verify, \
                     patch.object(ctl, 'helper', return_value=(helper, image)):
                 self.assertFalse(ctl.admitted_closeout_eligible(record))
+                self.assertEqual(ctl._closeout_refusal, ('admitted', 'verify_failed'))
                 verify.assert_called_once_with(image, 'verify')
 
     @unittest.skipIf(os.name == 'nt', 'Linux flock')
@@ -2622,6 +2674,8 @@ class ProductionTests(unittest.TestCase):
                 record = self.wedge_admitted(ctl)
                 self.with_started_at(ctl, self.started_at_during(record))
                 self.with_inspect_state(ctl, **overrides)
+                self.assertFalse(ctl.admitted_closeout_eligible(record))
+                self.assertEqual(ctl._closeout_refusal, ('admitted', 'container_not_clean'))
                 with self.assertRaises(Exception): ctl.prod_stop()
                 self.assertEqual(ctl.current()['status'], 'failed_requires_review')
                 self.assertTrue((ctl.state/'failed.json').exists())

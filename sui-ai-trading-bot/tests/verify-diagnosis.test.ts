@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -29,7 +29,7 @@ function diagnose(root: string) {
 
 it("reports the verify token and up to 16 safe unknown DB names", () => {
   const { folder, root } = fixture();
-  expect(diagnose(root)).toEqual({ error: null, unknown_files: [] });
+  expect(diagnose(root)).toEqual({ error: null, name: null, unknown_files: [] });
   const safe = Array.from({ length: 18 }, (_, index) =>
     `orphan-${String(index).padStart(2, "0")}.sqlite`,
   );
@@ -38,6 +38,7 @@ it("reports the verify token and up to 16 safe unknown DB names", () => {
   }
   expect(diagnose(root)).toEqual({
     error: "VPS_UNKNOWN_DATABASE",
+    name: null,
     unknown_files: safe.slice(0, 16),
   });
 });
@@ -46,5 +47,19 @@ it("withholds non-VPS exception details while still reporting unknown DB names",
   const { folder, root } = fixture();
   rmSync(root + ".lifecycle.json");
   writeFileSync(join(folder, "orphan.sqlite"), "");
-  expect(diagnose(root)).toEqual({ error: null, unknown_files: ["orphan.sqlite"] });
+  expect(diagnose(root)).toEqual({ error: null, name: null, unknown_files: ["orphan.sqlite"] });
+});
+
+it.each([
+  ["unsafe.sqlite", "unsafe.sqlite"],
+  ["unsafe:extra.sqlite", null],
+  ["a".repeat(122) + ".sqlite", null],
+])("validates the filename in a colon-delimited error for %s", (entry, name) => {
+  const { folder, root } = fixture();
+  mkdirSync(join(folder, entry));
+  expect(diagnose(root)).toEqual({
+    error: "VPS_UNSAFE_BACKUP_ENTRY",
+    name,
+    unknown_files: name === null ? [] : [name],
+  });
 });

@@ -70,6 +70,9 @@ const codes = (value, limit) =>
   Array.isArray(value) && value.length <= limit &&
   value.every((code) => text(code, /^[A-Z][A-Z_]{2,47}$/));
 
+const sqliteName = (value) =>
+  text(value, /^[A-Za-z0-9._-]+\.sqlite$/) && value.length <= 128;
+
 function stopDiagnosis(value) {
   if (!object(value)) return false;
   const shape = keys(value);
@@ -78,12 +81,11 @@ function stopDiagnosis(value) {
       return shape === "stage";
     case "verify":
       return shape === "stage" || (
-        shape === "error,stage,unknown_files" &&
+        (shape === "error,stage,unknown_files" ||
+          (shape === "error,name,stage,unknown_files" && sqliteName(value.name))) &&
         (value.error === null || text(value.error, /^VPS_[A-Z_]{2,48}$/)) &&
         Array.isArray(value.unknown_files) && value.unknown_files.length <= 16 &&
-        value.unknown_files.every((name) =>
-          text(name, /^[A-Za-z0-9._-]+\.sqlite$/) && name.length <= 128,
-        )
+        value.unknown_files.every(sqliteName)
       );
     case "verify_sui":
       return shape === "stage" || (shape === "actual,stage" &&
@@ -100,16 +102,24 @@ const stopShape = (value) =>
   value.faults.every((code, i) => i === 0 || value.faults[i - 1] < code) &&
   (value.diagnosis === null || stopDiagnosis(value.diagnosis));
 
+const closeoutShape = (value) =>
+  object(value) && Object.keys(value).length === 2 &&
+  ["preflight", "admitted"].every((phase) =>
+    Object.hasOwn(value, phase) &&
+    (value[phase] === null || contract.closeout_reasons.includes(value[phase])),
+  );
+
 const codeList = (values) => values.map((value) => `\`${value}\``).join(", ");
 
 function stopLines({ status, errors, faults, diagnosis }) {
   const lines = [`- 停止領収書: \`${status}\`（エラー: ${codeList(errors) || "なし"}）`];
   if (faults.length) lines.push(`- 残存 fault: ${codeList(faults)}`);
   if (diagnosis) {
-    const { stage, error, unknown_files, actual } = diagnosis;
+    const { stage, error, name, unknown_files, actual } = diagnosis;
     let line = `- 検証で落ちた段: \`${stage}\``;
     if (error) line += `（\`${error}\`）`;
-    if (unknown_files?.length) line += ` 対象ファイル: ${codeList(unknown_files)}`;
+    if (name) line += ` 対象ファイル: ${codeList([name])}`;
+    if (unknown_files?.length) line += ` 未登録DB: ${codeList(unknown_files)}`;
     if (actual) line += ` 実際の値: \`${actual}\``;
     lines.push(line);
   }
@@ -118,10 +128,11 @@ function stopLines({ status, errors, faults, diagnosis }) {
 
 export function validateReport(value, now = Date.now() / 1000) {
   require(object(value));
-  const { failure, stop, ...base } = value;
+  const { failure, stop, closeout, ...base } = value;
   require(keys(base) === "at,detail,prod_state,reasons,run_id,verdict,watchdog_at");
   if (Object.hasOwn(value, "failure")) require(failureShape(failure));
   if (Object.hasOwn(value, "stop")) require(stopShape(stop));
+  if (Object.hasOwn(value, "closeout")) require(closeoutShape(closeout));
   require(integer(value.at) && value.at <= now + 60);
   require(["ok", "attention", "not_started"].includes(value.verdict));
   require(contract.prod_states.includes(value.prod_state));
@@ -239,6 +250,8 @@ export async function syncIssues(
     }
     if (items.length < 100) break;
   }
+  const { preflight, admitted } = report.closeout ?? {};
+  const refusalLabel = (code) => code === null ? "なし" : `\`${code}\``;
   const body = [
     MARKER,
     "",
@@ -265,6 +278,9 @@ export async function syncIssues(
         ]
       : []),
     ...(report.verdict === "attention" && report.stop ? stopLines(report.stop) : []),
+    ...(report.verdict === "attention" && report.closeout && (preflight !== null || admitted !== null)
+      ? [`- 自動 closeout の拒否理由: preflight=${refusalLabel(preflight)} admitted=${refusalLabel(admitted)}`]
+      : []),
     `- [チェック実行](https://github.com/${repo}/actions/runs/${runId})`,
   ].join("\n");
   if (report.verdict === "ok") {
