@@ -47,6 +47,14 @@ export function maintenance(root) {
   }
 }
 
+export function isUnknownDatabase(name, rootName, names) {
+  return (
+    name.endsWith(".sqlite") &&
+    name !== rootName + ".instance.sqlite" &&
+    !names.has(name)
+  );
+}
+
 export function verify(root) {
   const names = existingPaperDatabases(dirname(root), basename(root));
   assertInitializedPaperState(dirname(root), basename(root), names);
@@ -87,11 +95,7 @@ export function verify(root) {
     const stat = lstatSync(join(dirname(root), name));
     if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1)
       throw Error("VPS_UNSAFE_BACKUP_ENTRY");
-    if (
-      name.endsWith(".sqlite") &&
-      name !== basename(root) + ".instance.sqlite" &&
-      !names.has(name)
-    )
+    if (isUnknownDatabase(name, basename(root), names))
       throw Error("VPS_UNKNOWN_DATABASE");
   }
 }

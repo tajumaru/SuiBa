@@ -392,6 +392,38 @@ def export_backup_name(record):
     return None
 
 
+def stop_string(value, pattern):
+    return type(value) is str and re.fullmatch(pattern, value) is not None
+
+
+def stop_codes(value, limit):
+    return (type(value) is list and len(value) <= limit and
+            all(stop_string(code, r'[A-Z][A-Z_]{2,47}') for code in value))
+
+
+def valid_verify_details(value):
+    return (type(value) is dict and set(value) == {'error', 'unknown_files'} and
+            (value['error'] is None or stop_string(value['error'], r'VPS_[A-Z_]{2,48}')) and
+            type(value['unknown_files']) is list and len(value['unknown_files']) <= 16 and
+            all(stop_string(name, r'[A-Za-z0-9._-]+\.sqlite') and len(name) <= 128
+                for name in value['unknown_files']))
+
+
+def valid_stop_diagnosis(value):
+    if type(value) is not dict:
+        return False
+    stage = value.get('stage')
+    if stage not in ('maintenance', 'verify', 'verify_sui'):
+        return False
+    details = {key: item for key, item in value.items() if key != 'stage'}
+    if not details:
+        return True
+    if stage == 'verify':
+        return valid_verify_details(details)
+    return (stage == 'verify_sui' and set(details) == {'actual'} and
+            stop_string(details['actual'], r'[A-Z][A-Z0-9_]{0,31}'))
+
+
 class Controller:
     session_mode = 'sui-30m'
 
@@ -1320,14 +1352,42 @@ class Controller:
         require(not self.docker.call(['ps', '-aq', '--no-trunc', '--filter', 'name=^/'+name+'$'], timeout=10))
         self.b.atomic(path, {'id': record['id'], 'name': name, 'retired': True})
 
-    def verify_sui(self):
-        helper, image = self.helper()
-        # Fixed read-only SQL; existing verify still checks all DBs/clean receipt.
-        self.docker.call(['run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL',
+    def offline_node(self, *args, read_only):
+        _, image = self.helper()
+        return self.docker.call(['run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL',
             '--security-opt', 'no-new-privileges', '--user', '1000:1000', '--memory', '128m',
-            '--memory-swap', '128m', '--pids-limit', '32', '-v', self.b.DATA+':/app/data',
-            '--entrypoint', '/usr/local/bin/node', image, '-e',
-            'const {DatabaseSync}=require("node:sqlite");const d=new DatabaseSync("/app/data/bot.sqlite.pairs.sqlite",{readOnly:true});try{const r=d.prepare("SELECT json FROM bot_runtime_state WHERE key=?").get("selected_pair");if(!r||JSON.parse(r.json)!=="SUI_USDC")throw Error("SUI_SELECTION_REQUIRED")}finally{d.close()}'], timeout=20)
+            '--memory-swap', '128m', '--pids-limit', '32',
+            '-v', self.b.DATA+':/app/data'+(':ro' if read_only else ''),
+            '--entrypoint', '/usr/local/bin/node', image, *args], timeout=20)
+
+    def read_selected_pair(self, *, diagnose=False):
+        # Both modes use the same fixed, read-only SQL.
+        return self.offline_node('-e',
+            'const {DatabaseSync}=require("node:sqlite");const d=new DatabaseSync("/app/data/bot.sqlite.pairs.sqlite",{readOnly:true});try{const r=d.prepare("SELECT json FROM bot_runtime_state WHERE key=?").get("selected_pair");const pair=r?JSON.parse(r.json):null;'
+            + ('console.log(JSON.stringify(pair))' if diagnose else 'if(pair!=="SUI_USDC")throw Error("SUI_SELECTION_REQUIRED")')
+            + '}finally{d.close()}', read_only=diagnose)
+
+    def verify_sui(self):
+        self.read_selected_pair()
+
+    def verify_diagnosis(self):
+        try:
+            value = self.b.decode(self.offline_node('--import', 'tsx', 'docker/verify-diagnosis.mjs',
+                                                   '/app/data/bot.sqlite', read_only=True))
+            if valid_verify_details(value):
+                return value
+        except Exception:
+            pass
+        return None
+
+    def verify_sui_diagnosis(self):
+        try:
+            actual = self.b.decode(self.read_selected_pair(diagnose=True))
+            if stop_string(actual, r'[A-Z][A-Z0-9_]{0,31}'):
+                return {'actual': actual}
+        except Exception:
+            pass
+        return {}
 
     def wait_ready(self, cutoff):
         self.readiness = {}
@@ -1675,15 +1735,18 @@ class Controller:
             return False
         return request.get('id') == record['id'] and request.get('source') == 'normal'
 
-    def receipt(self, record, status, errors):
+    def receipt(self, record, status, errors, diagnosis=None):
         self.current(record['id'])
         value = {'id': record['id'], 'status': status, 'errors': errors, 'at': int(time.time())}
+        if diagnosis is not None:
+            value['diagnosis'] = diagnosis
         self.b.atomic(self.folder(record)/'stop.json', value)
         self.b.atomic(self.state/'stop.json', value)
 
     def stop_checks(self, record, own):
         self.receipt(record, 'stopping_state_unknown', [])
         errors = []
+        diagnosis = None
         if record.get('admitted'):
             errors.extend(self.stop_worker())
             try:
@@ -1692,10 +1755,21 @@ class Controller:
             except Exception: errors.append('UNCLEAN_OR_UNKNOWN')
             try:
                 self.maintenance(True)
-                helper, image = self.helper()
-                helper.helper(image, 'verify')
-                self.verify_sui()
-            except Exception: errors.append('DB_OR_MAINTENANCE_UNCONFIRMED')
+            except Exception:
+                diagnosis = {'stage': 'maintenance'}
+            if diagnosis is None:
+                try:
+                    helper, image = self.helper()
+                    helper.helper(image, 'verify')
+                except Exception:
+                    diagnosis = {'stage': 'verify', **(self.verify_diagnosis() or {})}
+            if diagnosis is None:
+                try:
+                    self.verify_sui()
+                except Exception:
+                    diagnosis = {'stage': 'verify_sui', **self.verify_sui_diagnosis()}
+            if diagnosis is not None:
+                errors.append('DB_OR_MAINTENANCE_UNCONFIRMED')
         else:
             errors.append('PREFLIGHT_INCOMPLETE')
         pending_path = self.folder(record)/'mutation.json'
@@ -1705,7 +1779,7 @@ class Controller:
         if not own and not self.exited(record): errors.append('CONTROLLER_ALIVE')
         for error in errors: self.fault(record, error)
         self.receipt(record, 'failed_state_unknown' if errors else
-                     'worker_stopped_pending_controller_exit' if own else 'clean_stopped', errors)
+                     'worker_stopped_pending_controller_exit' if own else 'clean_stopped', errors, diagnosis=diagnosis)
         return errors
 
     def cleanup(self, record, own, source):
@@ -2910,6 +2984,32 @@ class ProductionController(Controller):
             summary['stage'] = record['stage']
         return summary
 
+    def stop_summary(self, record):
+        folder = self.folder(record)
+        try:
+            receipt = self.b.decode(self.b.read_trusted(folder/'stop.json'))
+            status, errors = receipt['status'], receipt['errors']
+            require(stop_string(status, r'[a-z_]{3,48}') and stop_codes(errors, 8))
+            with self.b.directory(folder) as fd:
+                names = os.listdir(folder if fd is None else fd)
+            faults = set()
+            for name in names:
+                if not (name.startswith('fault-') and name.endswith('.json')):
+                    continue
+                try:
+                    fault = self.b.decode(self.b.read_trusted(folder/name))
+                except Exception:
+                    continue
+                code = fault.get('error') if type(fault) is dict else None
+                require(stop_string(code, r'[A-Z][A-Z_]{2,47}'))
+                faults.add(code)
+                require(len(faults) <= 32)
+            diagnosis = receipt.get('diagnosis')
+            return {'status': status, 'errors': errors, 'faults': sorted(faults),
+                    'diagnosis': diagnosis if valid_stop_diagnosis(diagnosis) else None}
+        except Exception:
+            return None
+
     def prod_status(self):
         # Read-only even before first use: no mkdir, locks, helpers or writes.
         watchdog = self.watchdog_status()
@@ -2951,6 +3051,9 @@ class ProductionController(Controller):
         failure = self.failure_summary(record)
         if failure is not None:
             result['failure'] = failure
+        stop = self.stop_summary(record)
+        if stop is not None:
+            result['stop'] = stop
         return result
 
     @staticmethod

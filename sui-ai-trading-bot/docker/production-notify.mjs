@@ -61,15 +61,67 @@ const failureShape = (value) => {
   return ["confirmed", "unconfirmed", "unknown"].includes(value.backup);
 };
 
+const object = (value) =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+const keys = (value) => Object.keys(value).sort().join(",");
+const text = (value, pattern) =>
+  typeof value === "string" && pattern.test(value);
+const codes = (value, limit) =>
+  Array.isArray(value) && value.length <= limit &&
+  value.every((code) => text(code, /^[A-Z][A-Z_]{2,47}$/));
+
+function stopDiagnosis(value) {
+  if (!object(value)) return false;
+  const shape = keys(value);
+  switch (value.stage) {
+    case "maintenance":
+      return shape === "stage";
+    case "verify":
+      return shape === "stage" || (
+        shape === "error,stage,unknown_files" &&
+        (value.error === null || text(value.error, /^VPS_[A-Z_]{2,48}$/)) &&
+        Array.isArray(value.unknown_files) && value.unknown_files.length <= 16 &&
+        value.unknown_files.every((name) =>
+          text(name, /^[A-Za-z0-9._-]+\.sqlite$/) && name.length <= 128,
+        )
+      );
+    case "verify_sui":
+      return shape === "stage" || (shape === "actual,stage" &&
+        text(value.actual, /^[A-Z][A-Z0-9_]{0,31}$/));
+    default:
+      return false;
+  }
+}
+
+const stopShape = (value) =>
+  object(value) && keys(value) === "diagnosis,errors,faults,status" &&
+  text(value.status, /^[a-z_]{3,48}$/) &&
+  codes(value.errors, 8) && codes(value.faults, 32) &&
+  value.faults.every((code, i) => i === 0 || value.faults[i - 1] < code) &&
+  (value.diagnosis === null || stopDiagnosis(value.diagnosis));
+
+const codeList = (values) => values.map((value) => `\`${value}\``).join(", ");
+
+function stopLines({ status, errors, faults, diagnosis }) {
+  const lines = [`- 停止領収書: \`${status}\`（エラー: ${codeList(errors) || "なし"}）`];
+  if (faults.length) lines.push(`- 残存 fault: ${codeList(faults)}`);
+  if (diagnosis) {
+    const { stage, error, unknown_files, actual } = diagnosis;
+    let line = `- 検証で落ちた段: \`${stage}\``;
+    if (error) line += `（\`${error}\`）`;
+    if (unknown_files?.length) line += ` 対象ファイル: ${codeList(unknown_files)}`;
+    if (actual) line += ` 実際の値: \`${actual}\``;
+    lines.push(line);
+  }
+  return lines;
+}
+
 export function validateReport(value, now = Date.now() / 1000) {
-  require(value && typeof value === "object" && !Array.isArray(value));
-  require(
-    [
-      "at,detail,prod_state,reasons,run_id,verdict,watchdog_at",
-      "at,detail,failure,prod_state,reasons,run_id,verdict,watchdog_at",
-    ].includes(Object.keys(value).sort().join(",")),
-  );
-  if (value.failure !== undefined) require(failureShape(value.failure));
+  require(object(value));
+  const { failure, stop, ...base } = value;
+  require(keys(base) === "at,detail,prod_state,reasons,run_id,verdict,watchdog_at");
+  if (Object.hasOwn(value, "failure")) require(failureShape(failure));
+  if (Object.hasOwn(value, "stop")) require(stopShape(stop));
   require(integer(value.at) && value.at <= now + 60);
   require(["ok", "attention", "not_started"].includes(value.verdict));
   require(contract.prod_states.includes(value.prod_state));
@@ -212,6 +264,7 @@ export async function syncIssues(
           `- バックアップ: ${report.failure.backup === "confirmed" ? "確認済み" : report.failure.backup === "unconfirmed" ? "未確認" : "不明"}`,
         ]
       : []),
+    ...(report.verdict === "attention" && report.stop ? stopLines(report.stop) : []),
     `- [チェック実行](https://github.com/${repo}/actions/runs/${runId})`,
   ].join("\n");
   if (report.verdict === "ok") {
