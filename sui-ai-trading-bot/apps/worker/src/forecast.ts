@@ -97,6 +97,7 @@ export function advanceForecast(
   imbalance: number | null,
   now: number,
   frames: Record<number, Candle[]> = { 300: candles },
+  { clearError = false }: { clearError?: boolean } = {},
 ) {
   const before = readForecast(db, pair);
   const latest = chartForecast(
@@ -219,6 +220,7 @@ export function advanceForecast(
     if (event)
       db.append("forecast_calibrations", event.id!, { pair, ...event }, now);
     db.set(key(pair), state);
+    if (clearError) db.set("forecast_error", null);
   });
   return state;
 }

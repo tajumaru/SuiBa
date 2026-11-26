@@ -183,6 +183,13 @@ export class BotEngine {
       /* Display-grade telemetry; a recording fault changes nothing. */
     }
   }
+  // A burst must finish on this stack before HTTP handlers, timers or
+  // network continuations can write on the shared connection.
+  private paperWriteBurst(write: () => undefined) {
+    if (this.executionMode === "PAPER") this.db.transaction(write);
+    else write();
+  }
+
   private async acquireFrames(
     cycle: CycleEvidence,
     began: number,
@@ -221,19 +228,22 @@ export class BotEngine {
       throw new Error("MARKET_PAIR_MISMATCH");
     const previousSource =
       this.db.get<string>("market_source") ?? this.db.candles().at(-1)?.source;
+    const sourceChanged = !!previousSource && previousSource !== source;
     const finishSave = this.perfTrace?.start("saveCandles");
     try {
-      for (const rows of Object.values(frames)) this.db.saveCandles(rows);
-      this.db.set("market_source", source);
+      this.paperWriteBurst(() => {
+        for (const rows of Object.values(frames)) this.db.saveCandles(rows);
+        this.db.set("market_source", source);
+        if (sourceChanged) {
+          this.db.set("price", null);
+          this.db.set("indicators", null);
+          this.db.set("profitGuard", null);
+        }
+      });
     } finally {
       finishSave?.();
     }
-    if (previousSource && previousSource !== source) {
-      this.db.set("price", null);
-      this.db.set("indicators", null);
-      this.db.set("profitGuard", null);
-      throw new Error("MARKET_SOURCE_CHANGED");
-    }
+    if (sourceChanged) throw new Error("MARKET_SOURCE_CHANGED");
     return frames;
   }
 
@@ -344,15 +354,17 @@ export class BotEngine {
         this.monitor.safety().connectivity === "HEALTHY" &&
         this.marketStatus()?.healthy === true,
     }));
-    this.monitor.analysis();
-    this.db.set("price", price);
-    this.db.append(
-      "portfolio_snapshots",
-      randomUUID(),
-      { timestamp: now, equity: equity(p, price) },
-      now,
-    );
-    this.monitor.valuation(price, now);
+    this.paperWriteBurst(() => {
+      this.monitor.analysis();
+      this.db.set("price", price);
+      this.db.append(
+        "portfolio_snapshots",
+        randomUUID(),
+        { timestamp: now, equity: equity(p, price) },
+        now,
+      );
+      this.monitor.valuation(price, now);
+    });
     let sellPreview: QuoteResult | null = null;
     if (p.sui > 0) {
       try {
@@ -435,8 +447,10 @@ export class BotEngine {
     }
     if (decision.action === "WAIT") {
       cycle.outcome = "STRATEGY_WAIT";
-      this.monitor.wait(now);
-      this.db.set("runtime", { ...runtime, lastCandle: last.timestamp });
+      this.paperWriteBurst(() => {
+        this.monitor.wait(now);
+        this.db.set("runtime", { ...runtime, lastCandle: last.timestamp });
+      });
       return true;
     }
     return false;
@@ -1020,15 +1034,13 @@ export class BotEngine {
       validateCandles(c, 300, Date.now());
       // Forecast failures must never change trading or safety decisions.
       try {
-        advanceForecast(
-          this.db,
-          this.pair,
-          c,
-          this.market.bookImbalance?.(now) ?? this.bookImbalanceSource(),
-          now,
-          frames,
-        );
-        this.db.set("forecast_error", null);
+        const imbalance =
+          this.market.bookImbalance?.(now) ?? this.bookImbalanceSource();
+        const paper = this.executionMode === "PAPER";
+        advanceForecast(this.db, this.pair, c, imbalance, now, frames, {
+          clearError: paper,
+        });
+        if (!paper) this.db.set("forecast_error", null);
       } catch {
         try {
           this.db.set("forecast_error", {
@@ -1180,8 +1192,12 @@ export class BotEngine {
     } finally {
       this.clearInactiveForceClose();
       const quality = this.market.status?.()?.quality;
-      if (quality) this.db.set("market_quality", quality);
-      if (!this.monitor.shuttingDown) this.monitor.healthy();
+      if (quality || !this.monitor.shuttingDown) {
+        this.paperWriteBurst(() => {
+          if (quality) this.db.set("market_quality", quality);
+          if (!this.monitor.shuttingDown) this.monitor.healthy();
+        });
+      }
       try {
         if (this.executionAdapter) {
           const marketHealthy = this.marketStatus()?.healthy;
@@ -1204,31 +1220,33 @@ export class BotEngine {
         }
         if (audit && !fillState.committed && !measuredError)
           cycle.outcome = "CANDIDATE_REJECTED";
-        this.db.append(
-          "cycle_audits",
-          randomUUID(),
-          {
-            ...cycle,
-            phase: "END",
-            endedAt: Date.now(),
-            runningAtEnd: this.db.runtime().running,
-            action: measuredAction,
-            error: measuredError,
-            ...(failureDetail ? { failureDetail } : {}),
-            candidateId: audit?.id ?? null,
-            orderId: audit?.orderId ?? null,
-          },
-          Date.now(),
-        );
-        this.validation?.cycle(
-          this.marketStatus(),
-          measuredFrames,
-          measuredAction,
-          measuredError,
-          began,
-          Date.now(),
-          cycle,
-        );
+        this.paperWriteBurst(() => {
+          this.db.append(
+            "cycle_audits",
+            randomUUID(),
+            {
+              ...cycle,
+              phase: "END",
+              endedAt: Date.now(),
+              runningAtEnd: this.db.runtime().running,
+              action: measuredAction,
+              error: measuredError,
+              ...(failureDetail ? { failureDetail } : {}),
+              candidateId: audit?.id ?? null,
+              orderId: audit?.orderId ?? null,
+            },
+            Date.now(),
+          );
+          this.validation?.cycle(
+            this.marketStatus(),
+            measuredFrames,
+            measuredAction,
+            measuredError,
+            began,
+            Date.now(),
+            cycle,
+          );
+        });
       } catch {
         this.validation?.fault("VALIDATION_RECORD_FAILED");
         this.db.set("runtime", {

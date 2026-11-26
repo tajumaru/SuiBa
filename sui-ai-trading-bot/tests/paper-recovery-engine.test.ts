@@ -1,10 +1,13 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { BotEngine } from "../apps/worker/src/engine.ts";
-import { BotDatabase } from "../packages/database/src/index.ts";
+import {
+  BotDatabase,
+  type SqlitePerfRecord,
+} from "../packages/database/src/index.ts";
 import { apiAccess } from "../packages/shared/src/api.ts";
 import type { ApiFailure } from "../packages/shared/src/http-errors.ts";
 import type { MarketStatus } from "../packages/market-data/src/provider.ts";
@@ -355,6 +358,127 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
+it("commits each synchronous PAPER write burst once in tick order", async () => {
+  const t = fixture();
+  const validation = new ValidationRecorder(t.db);
+  t.db.set("runtime", { ...t.db.runtime(), running: false });
+  validation.begin();
+  t.db.set("runtime", { ...t.db.runtime(), running: true });
+  t.engine.validation = validation;
+  const records: SqlitePerfRecord[] = [];
+  const sink = BotDatabase.perfSink;
+  BotDatabase.perfSink = (record) => records.push(record);
+  try {
+    await t.tick();
+  } finally {
+    BotDatabase.perfSink = sink;
+  }
+
+  const writesAndCommits = records.flatMap((record) => {
+    if (record.op === "transaction")
+      return record.commitMs === null ? [] : ["COMMIT"];
+    return [record.key ?? record.table ?? record.op];
+  });
+  const bursts = [
+    ["market_candles", "market_candles", "market_candles", "market_source"],
+    ["forecast.v1:SUI_USDC", "forecast_error"],
+    ["strategy_decisions", "technical_indicators", "decision", "indicators"],
+    ["operation_state", "price", "portfolio_snapshots"],
+    ["operation_events", "runtime"],
+    ["market_quality", "operation_state", "operation_state"],
+    ["cycle_audits", "validation_events"],
+  ];
+  let index = 0;
+  for (const burst of bursts) {
+    const sql = [...burst, "COMMIT"];
+    const start = writesAndCommits.findIndex(
+      (_write, pos) =>
+        pos >= index &&
+        sql.every((expected, offset) => writesAndCommits[pos + offset] === expected),
+    );
+    expect(start, sql.join(" → ")).toBeGreaterThanOrEqual(index);
+    index = start + sql.length;
+  }
+  expect(records.filter((record) => record.commitMs !== null)).toHaveLength(7);
+  expect(t.db.get("price")).toBe(2);
+  expect(t.db.history("portfolio_snapshots")).toHaveLength(1);
+  expect(t.db.history<CycleAuditRow>("cycle_audits")).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ phase: "START" }),
+      expect.objectContaining({ phase: "END", outcome: "STRATEGY_WAIT" }),
+    ]),
+  );
+});
+
+it("commits controls during market I/O and rolls back only the later failing burst", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "suiba-paper-burst-"));
+  const path = join(dir, "bot.sqlite");
+  const t = fixture(new BotDatabase(path));
+  const reader = new DatabaseSync(path, { readOnly: true });
+  const read = (key: string) => {
+    const row = reader
+      .prepare("SELECT json FROM bot_runtime_state WHERE key = ?")
+      .get(key);
+    return row ? JSON.parse(String(row.json)) : undefined;
+  };
+  const originalFrames = t.market.frames.getMockImplementation()!;
+  let releaseFrames!: () => void;
+  const pendingFrames = new Promise<void>((resolve) => {
+    releaseFrames = resolve;
+  });
+  let framesRequested!: () => void;
+  const waitingForFrames = new Promise<void>((resolve) => {
+    framesRequested = resolve;
+  });
+  t.market.frames.mockImplementationOnce(async () => {
+    framesRequested();
+    await pendingFrames;
+    return originalFrames();
+  });
+  const append = t.db.append.bind(t.db);
+  vi.spyOn(t.db, "append").mockImplementation((table, id, value, now) => {
+    if (table === "portfolio_snapshots") throw Error("snapshot write failed");
+    append(table, id, value, now);
+  });
+  const tick = t.tick();
+  try {
+    await Promise.race([waitingForFrames, tick]);
+    t.db.updateSettings({ ...t.db.settings(), takeProfitPct: 0.25 });
+    t.db.transaction(() => {
+      t.db.set("runtime", { ...t.db.runtime(), running: false, emergency: true });
+      t.db.set("forceClose", null);
+    });
+    expect(read("settings").takeProfitPct).toBe(0.25);
+    expect(read("runtime")).toMatchObject({ running: false, emergency: true });
+    releaseFrames();
+    await tick;
+    expect(read("settings").takeProfitPct).toBe(0.25);
+    expect(read("runtime")).toMatchObject({ running: false, emergency: true });
+    expect(read("market_source")).toBeTruthy();
+    expect(read("operation_state").lastAnalysisAt).toBeNull();
+    expect(read("price")).toBeUndefined();
+    expect(t.db.history("strategy_decisions")).toHaveLength(1);
+    expect(t.db.history("portfolio_snapshots")).toHaveLength(0);
+    expect(t.db.history<CycleAuditRow>("cycle_audits")).toContainEqual(
+      expect.objectContaining({
+        phase: "END",
+        outcome: "FAILED",
+        failureDetail: "snapshot write failed",
+      }),
+    );
+  } finally {
+    releaseFrames();
+    try {
+      await tick;
+    } finally {
+      reader.close();
+      dbs.splice(dbs.indexOf(t.db), 1);
+      t.db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 it.each([false, true])(
   "integrates actual Sui health/observations with guarded recovery (manual stop=%s)",
   async (manuallyStopped) => {
