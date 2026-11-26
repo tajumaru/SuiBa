@@ -64,6 +64,46 @@ def failure_summary(value, run):
     return value
 
 
+def stop_string(value, pattern):
+    return type(value) is str and re.fullmatch(pattern, value) is not None
+
+
+def stop_codes(value, limit):
+    return (type(value) is list and len(value) <= limit and
+            all(stop_string(code, r'[A-Z][A-Z_]{2,47}') for code in value))
+
+
+def valid_verify_details(value):
+    return (type(value) is dict and set(value) == {'error', 'unknown_files'} and
+            (value['error'] is None or stop_string(value['error'], r'VPS_[A-Z_]{2,48}')) and
+            type(value['unknown_files']) is list and len(value['unknown_files']) <= 16 and
+            all(stop_string(name, r'[A-Za-z0-9._-]+\.sqlite') and len(name) <= 128
+                for name in value['unknown_files']))
+
+
+def valid_stop_diagnosis(value):
+    if type(value) is not dict:
+        return False
+    stage = value.get('stage')
+    if stage not in ('maintenance', 'verify', 'verify_sui'):
+        return False
+    details = {key: item for key, item in value.items() if key != 'stage'}
+    if not details:
+        return True
+    if stage == 'verify':
+        return valid_verify_details(details)
+    return (stage == 'verify_sui' and set(details) == {'actual'} and
+            stop_string(details['actual'], r'[A-Z][A-Z0-9_]{0,31}'))
+
+
+def stop_summary(value):
+    require(type(value) is dict and set(value) == {'status', 'errors', 'faults', 'diagnosis'} and
+            stop_string(value['status'], r'[a-z_]{3,48}') and stop_codes(value['errors'], 8) and
+            stop_codes(value['faults'], 32) and value['faults'] == sorted(set(value['faults'])) and
+            (value['diagnosis'] is None or valid_stop_diagnosis(value['diagnosis'])),
+            'stop', 'stop_summary', value)
+
+
 def production(value, now):
     require(type(value) is dict, 'status', 'object', value)
     require(type(value.get('requires_review')) is bool, 'requires_review', 'boolean', value.get('requires_review'))
@@ -80,11 +120,13 @@ def production(value, now):
         require(set(value) == {'run', 'requires_review', 'watchdog'}, 'status.keys', 'not_started_status', value)
         return value
     require({'run', 'requires_review', 'worker', 'controller_alive', 'watchdog', 'shadow'} <= set(value) <=
-            {'run', 'requires_review', 'worker', 'controller_alive', 'watchdog', 'shadow', 'failure'} and
+            {'run', 'requires_review', 'worker', 'controller_alive', 'watchdog', 'shadow', 'failure', 'stop'} and
             type(value['controller_alive']) is bool and type(run) is dict and
             set(run) == {'id', 'status', 'started', 'stopped', 'sha', 'stage', 'admitted'}, 'status.keys', 'running_status', value)
     if 'failure' in value:
         failure_summary(value['failure'], run)
+    if 'stop' in value:
+        stop_summary(value['stop'])
     shadow(value['shadow'], now)
     require(hex_id(run['id']) and run['status'] in CONTRACT['prod_states'][2:] and
             type(run['started']) is int and 0 <= run['started'] <= (now+60)*1000 and
@@ -176,6 +218,8 @@ def combine(prod, now, prod_read=True):
         # Validated above; carried through so the alert can name the
         # stage and code instead of only that the run failed.
         result['failure'] = prod['failure']
+    if 'stop' in prod:
+        result['stop'] = prod['stop']
     result.update(verdict='attention' if reasons else 'ok', reasons=sorted(reasons))
     return result
 

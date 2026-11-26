@@ -132,6 +132,78 @@ class ShapeTests(unittest.TestCase):
         status['run']['status'] = 'failed_requires_review'; status['requires_review'] = True
         self.assertTrue({'REVIEW_REQUIRED', 'RUN_FAILED'} <= set(combine(status, watch, 2000)['reasons']))
 
+    def test_stop_summary_passes_through_without_affecting_verdict(self):
+        status, watch = healthy()
+        baseline = combine(status, watch, 2000)
+        self.assertNotIn('stop', baseline)
+        self.assertEqual(baseline['verdict'], 'ok')
+        stop = {'status': 'failed_state_unknown', 'errors': ['STOP_UNKNOWN'],
+                'faults': ['STOP_UNKNOWN'], 'diagnosis': {'stage': 'maintenance'}}
+        self.assertEqual(combine({**status, 'stop': stop}, watch, 2000), {**baseline, 'stop': stop})
+
+    def test_malformed_stop_summary_has_fixed_shape_error(self):
+        status, watch = healthy()
+        stop = {'status': 'failed_state_unknown', 'errors': [], 'faults': [], 'diagnosis': None}
+        for bad in (
+            None, {**stop, 'extra': True}, {**stop, 'status': 'RUNNING'},
+            {**stop, 'errors': ['STOP_UNKNOWN'] * 9}, {**stop, 'errors': ['STOP_UNKNOWN\n']},
+            {**stop, 'faults': ['STOP_UNKNOWN', 'STOP_UNKNOWN']},
+            {**stop, 'faults': ['STOP_UNKNOWN', 'CLEAN_UNKNOWN']},
+            {**stop, 'diagnosis': {'stage': 'verify', 'error': None}},
+            {**stop, 'diagnosis': {'stage': 'verify', 'error': None, 'unknown_files': ['a.sqlite\n']}},
+            {**stop, 'diagnosis': {'stage': 'verify_sui', 'actual': 'WAL/USDC'}},
+            {**stop, 'diagnosis': {'stage': 'maintenance', 'actual': 'WAL_USDC'}},
+        ):
+            with self.subTest(stop=bad):
+                result = combine({**status, 'stop': bad}, watch, 2000)
+                self.assertEqual(result['reasons'], ['PROD_STATUS_INVALID'])
+                self.assertEqual(result['detail']['check'], 'stop')
+                self.assertEqual(result['detail']['expected'], 'stop_summary')
+                self.assertNotIn('stop', result)
+
+    def test_notify_validates_stop_and_renders_diagnosis_in_attention_issue(self):
+        status, watch = healthy()
+        status['requires_review'] = True
+        report = combine(status, watch, 2000)
+        stop = {'status': 'failed_state_unknown', 'errors': ['DB_OR_MAINTENANCE_UNCONFIRMED'],
+                'faults': ['DB_OR_MAINTENANCE_UNCONFIRMED', 'STOP_UNKNOWN'],
+                'diagnosis': {'stage': 'verify', 'error': 'VPS_UNKNOWN_DATABASE',
+                              'unknown_files': ['extra.sqlite', 'other.sqlite']}}
+        script = """
+import assert from 'node:assert/strict';
+import { LABEL, MARKER, TITLE, syncIssues, validateReport } from './production-notify.mjs';
+const { report, stop } = JSON.parse(process.argv[1]);
+const bodies = [];
+const fetch = async (_, options) => {
+  if (options.method === 'GET') return { ok: true, json: async () => [
+    { number: 2, title: TITLE, body: MARKER + '\\n', labels: [{ name: LABEL }] },
+  ] };
+  bodies.push(JSON.parse(options.body).body);
+  return { ok: true, json: async () => ({}) };
+};
+const run = (value) => syncIssues(value, { repo: 'fixture/repo', runId: '1', token: 'fixture', now: 2000, fetch });
+await run(report);
+await run({ ...report, stop });
+await run({ ...report, stop: { ...stop, errors: [], faults: [],
+  diagnosis: { stage: 'verify_sui', actual: 'WAL_USDC' } } });
+await run({ ...report, stop, verdict: 'ok', reasons: [] });
+assert.throws(() => validateReport({ ...report, stop: { ...stop,
+  diagnosis: { ...stop.diagnosis, unknown_files: ['extra.sqlite\\n'] } } }, 2000));
+console.log(JSON.stringify(bodies));
+"""
+        result = subprocess.run(['node', '--input-type=module', '-e', script, json.dumps({'report': report, 'stop': stop})],
+                                cwd=HERE, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        legacy, verify, pair, recovered = json.loads(result.stdout)
+        self.assertNotIn('停止領収書', legacy)
+        self.assertIn('- 停止領収書: `failed_state_unknown`（エラー: `DB_OR_MAINTENANCE_UNCONFIRMED`）', verify)
+        self.assertIn('- 残存 fault: `DB_OR_MAINTENANCE_UNCONFIRMED`, `STOP_UNKNOWN`', verify)
+        self.assertIn('- 検証で落ちた段: `verify`（`VPS_UNKNOWN_DATABASE`） 対象ファイル: `extra.sqlite`, `other.sqlite`', verify)
+        self.assertIn('（エラー: なし）', pair)
+        self.assertIn('- 検証で落ちた段: `verify_sui` 実際の値: `WAL_USDC`', pair)
+        self.assertNotIn('残存 fault', pair)
+        self.assertNotIn('停止領収書', recovered)
+
     def test_failure_summary_is_projected_into_the_report(self):
         status, watch = healthy()
         status['run'].update(status='failed_requires_review', stage='backup')

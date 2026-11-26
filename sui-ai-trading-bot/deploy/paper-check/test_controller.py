@@ -1696,6 +1696,99 @@ class ProductionTests(unittest.TestCase):
                 'watchdog': {'record': None, 'code': 'WATCHDOG_RECORD_MISSING'},
             })
 
+    def test_stop_checks_records_first_failed_stage_and_keeps_clean_receipt_shape(self):
+        from types import SimpleNamespace
+        for stage in ('maintenance', 'verify', 'verify_sui', None):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                record = self.admit(ctl); record['admitted'] = True
+                FakeBroker.atomic(ctl.record, record)
+                stages = []
+                def run(name):
+                    stages.append(name)
+                    if name == stage:
+                        raise RuntimeError('fixture failure')
+                ctl.maintenance = lambda enabled: run('maintenance')
+                ctl.helper = lambda: (SimpleNamespace(helper=lambda *_: run('verify')), 'fixture')
+                ctl.verify_sui = lambda: run('verify_sui')
+                errors = ctl.stop_checks(record, False)
+                order = ['maintenance', 'verify', 'verify_sui']
+                self.assertEqual(stages, order if stage is None else order[:order.index(stage)+1])
+                receipt = json.loads((ctl.folder(record)/'stop.json').read_bytes())
+                self.assertEqual(receipt, json.loads((ctl.state/'stop.json').read_bytes()))
+                if stage is None:
+                    self.assertEqual(errors, [])
+                    self.assertEqual(set(receipt), {'id', 'status', 'errors', 'at'})
+                else:
+                    self.assertEqual(errors, ['DB_OR_MAINTENANCE_UNCONFIRMED'])
+                    self.assertEqual(receipt['diagnosis'], {'stage': stage})
+
+    def test_stop_checks_carries_only_valid_offline_diagnosis(self):
+        from types import SimpleNamespace
+        valid = {'error': 'VPS_UNKNOWN_DATABASE', 'unknown_files': ['extra.sqlite']}
+        cases = (
+            ('verify', valid, valid),
+            ('verify', None, {}),
+            ('verify', {**valid, 'unknown_files': ['../extra.sqlite']}, {}),
+            ('verify', {**valid, 'extra': 'fixture'}, {}),
+            ('verify_sui', 'WAL_USDC', {'actual': 'WAL_USDC'}),
+            ('verify_sui', 'WAL_USDC\n', {}),
+        )
+        for stage, result, expected in cases:
+            with self.subTest(stage=stage, result=result), tempfile.TemporaryDirectory() as root:
+                ctl = self.make(root)
+                record = self.admit(ctl); record['admitted'] = True
+                FakeBroker.atomic(ctl.record, record)
+                ctl.b.DATA = 'fixture-volume'
+                original = ctl.docker.call
+                def fail(*args):
+                    raise RuntimeError('fixture failure')
+                if stage == 'verify':
+                    ctl.helper = lambda: (SimpleNamespace(helper=fail), 'fixture')
+                else:
+                    ctl.verify_sui = fail
+                def docker(args, **kwargs):
+                    if args[0] != 'run':
+                        return original(args, **kwargs)
+                    self.assertIn('fixture-volume:/app/data:ro', args)
+                    self.assertIn('--read-only', args)
+                    self.assertIn('no-new-privileges', args)
+                    if stage == 'verify':
+                        self.assertEqual(args[-4:], ['--import', 'tsx', 'docker/verify-diagnosis.mjs', '/app/data/bot.sqlite'])
+                    else:
+                        self.assertIn('SELECT json FROM bot_runtime_state WHERE key=?', args[-1])
+                    if result is None:
+                        raise RuntimeError('old helper image')
+                    return json.dumps(result)
+                ctl.docker.call = patch_docker = unittest.mock.Mock(side_effect=docker)
+                self.assertEqual(ctl.stop_checks(record, False), ['DB_OR_MAINTENANCE_UNCONFIRMED'])
+                receipt = json.loads((ctl.folder(record)/'stop.json').read_bytes())
+                self.assertEqual(receipt['diagnosis'], {'stage': stage, **expected})
+                self.assertEqual(sum(call.args[0][0] == 'run' for call in patch_docker.call_args_list), 1)
+
+    def test_prod_status_projects_stop_receipt_and_readable_faults(self):
+        with tempfile.TemporaryDirectory() as root:
+            ctl = self.make(root)
+            record = self.admit(ctl)
+            folder = ctl.folder(record)
+            path = folder/'stop.json'
+            self.assertNotIn('stop', ctl.prod_status())
+            path.write_text('invalid json')
+            self.assertNotIn('stop', ctl.prod_status())
+            code = 'DB_OR_MAINTENANCE_UNCONFIRMED'
+            diagnosis = {'stage': 'verify', 'error': 'VPS_UNKNOWN_DATABASE', 'unknown_files': ['extra.sqlite']}
+            ctl.receipt(record, 'failed_state_unknown', [code], diagnosis)
+            for fault in ('STOP_UNKNOWN', code, 'STOP_UNKNOWN'):
+                ctl.fault(record, fault)
+            (folder/'fault-unreadable.json').write_text('invalid json')
+            expected = {'status': 'failed_state_unknown', 'errors': [code],
+                        'faults': [code, 'STOP_UNKNOWN'], 'diagnosis': diagnosis}
+            self.assertEqual(ctl.prod_status()['stop'], expected)
+            ctl.receipt(record, expected['status'], expected['errors'], {**diagnosis, 'extra': 'secret'})
+            self.assertEqual(ctl.prod_status()['stop'], {**expected, 'diagnosis': None})
+            ctl.fault(record, 'invalid code')
+            self.assertNotIn('stop', ctl.prod_status())
+
     def test_prod_status_reports_the_failure_summary_for_a_failed_run(self):
         # The diagnosis the owner otherwise needs a root terminal
         # for: the failed run's stage, its recorded fault code, the

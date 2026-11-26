@@ -12,6 +12,7 @@ COPY scripts ./scripts
 RUN node scripts/verify-node-version.mjs
 COPY docker/healthcheck.mjs ./docker/healthcheck.mjs
 COPY docker/vps-data.mjs ./docker/vps-data.mjs
+COPY docker/verify-diagnosis.mjs ./docker/verify-diagnosis.mjs
 RUN pnpm install --frozen-lockfile && pnpm build && mkdir -p /app/data /app/validation /app/reports && chown -R node:node /app/data /app/validation /app/reports
 ENV HOST=0.0.0.0 MODE=PAPER DATABASE_PATH=/app/data/bot.sqlite
 USER node
