@@ -141,6 +141,22 @@ class ShapeTests(unittest.TestCase):
                 'faults': ['STOP_UNKNOWN'], 'diagnosis': {'stage': 'maintenance'}}
         self.assertEqual(combine({**status, 'stop': stop}, watch, 2000), {**baseline, 'stop': stop})
 
+    def test_closeout_summary_passes_through_without_affecting_verdict(self):
+        status, watch = healthy()
+        baseline = combine(status, watch, 2000)
+        self.assertNotIn('closeout', baseline)
+        closeout = {'preflight': None, 'admitted': 'verify_failed'}
+        self.assertEqual(combine({**status, 'closeout': closeout}, watch, 2000),
+                         {**baseline, 'closeout': closeout})
+        for bad in (None, {}, {**closeout, 'extra': None}, {**closeout, 'admitted': []},
+                    {**closeout, 'preflight': 'unknown_reason'}):
+            with self.subTest(closeout=bad):
+                result = combine({**status, 'closeout': bad}, watch, 2000)
+                self.assertEqual(result['reasons'], ['PROD_STATUS_INVALID'])
+                self.assertEqual(result['detail']['check'], 'closeout')
+                self.assertEqual(result['detail']['expected'], 'closeout_summary')
+                self.assertNotIn('closeout', result)
+
     def test_malformed_stop_summary_has_fixed_shape_error(self):
         status, watch = healthy()
         stop = {'status': 'failed_state_unknown', 'errors': [], 'faults': [], 'diagnosis': None}
@@ -168,11 +184,13 @@ class ShapeTests(unittest.TestCase):
         stop = {'status': 'failed_state_unknown', 'errors': ['DB_OR_MAINTENANCE_UNCONFIRMED'],
                 'faults': ['DB_OR_MAINTENANCE_UNCONFIRMED', 'STOP_UNKNOWN'],
                 'diagnosis': {'stage': 'verify', 'error': 'VPS_UNKNOWN_DATABASE',
-                              'unknown_files': ['extra.sqlite', 'other.sqlite']}}
+                              'name': 'bot.sqlite', 'unknown_files': ['extra.sqlite', 'other.sqlite']}}
+        closeout = {'preflight': None, 'admitted': 'verify_failed'}
+        self.assertEqual(combine({**status, 'stop': stop}, watch, 2000)['stop'], stop)
         script = """
 import assert from 'node:assert/strict';
 import { LABEL, MARKER, TITLE, syncIssues, validateReport } from './production-notify.mjs';
-const { report, stop } = JSON.parse(process.argv[1]);
+const { report, stop, closeout } = JSON.parse(process.argv[1]);
 const bodies = [];
 const fetch = async (_, options) => {
   if (options.method === 'GET') return { ok: true, json: async () => [
@@ -183,26 +201,33 @@ const fetch = async (_, options) => {
 };
 const run = (value) => syncIssues(value, { repo: 'fixture/repo', runId: '1', token: 'fixture', now: 2000, fetch });
 await run(report);
-await run({ ...report, stop });
-await run({ ...report, stop: { ...stop, errors: [], faults: [],
+await run({ ...report, stop, closeout });
+await run({ ...report, closeout: { preflight: null, admitted: null },
+  stop: { ...stop, errors: [], faults: [],
   diagnosis: { stage: 'verify_sui', actual: 'WAL_USDC' } } });
-await run({ ...report, stop, verdict: 'ok', reasons: [] });
+await run({ ...report, stop, closeout, verdict: 'ok', reasons: [] });
+assert.throws(() => validateReport({ ...report, closeout: { ...closeout, admitted: 'unknown' } }, 2000));
+assert.throws(() => validateReport({ ...report, stop: { ...stop,
+  diagnosis: { ...stop.diagnosis, name: '../bot.sqlite' } } }, 2000));
 assert.throws(() => validateReport({ ...report, stop: { ...stop,
   diagnosis: { ...stop.diagnosis, unknown_files: ['extra.sqlite\\n'] } } }, 2000));
 console.log(JSON.stringify(bodies));
 """
-        result = subprocess.run(['node', '--input-type=module', '-e', script, json.dumps({'report': report, 'stop': stop})],
+        result = subprocess.run(['node', '--input-type=module', '-e', script, json.dumps({'report': report, 'stop': stop, 'closeout': closeout})],
                                 cwd=HERE, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         legacy, verify, pair, recovered = json.loads(result.stdout)
         self.assertNotIn('停止領収書', legacy)
         self.assertIn('- 停止領収書: `failed_state_unknown`（エラー: `DB_OR_MAINTENANCE_UNCONFIRMED`）', verify)
         self.assertIn('- 残存 fault: `DB_OR_MAINTENANCE_UNCONFIRMED`, `STOP_UNKNOWN`', verify)
-        self.assertIn('- 検証で落ちた段: `verify`（`VPS_UNKNOWN_DATABASE`） 対象ファイル: `extra.sqlite`, `other.sqlite`', verify)
+        self.assertIn('- 検証で落ちた段: `verify`（`VPS_UNKNOWN_DATABASE`） 対象ファイル: `bot.sqlite` 未登録DB: `extra.sqlite`, `other.sqlite`', verify)
         self.assertIn('（エラー: なし）', pair)
         self.assertIn('- 検証で落ちた段: `verify_sui` 実際の値: `WAL_USDC`', pair)
         self.assertNotIn('残存 fault', pair)
         self.assertNotIn('停止領収書', recovered)
+        self.assertIn('- 自動 closeout の拒否理由: preflight=なし admitted=`verify_failed`', verify)
+        for body in (legacy, pair, recovered):
+            self.assertNotIn('自動 closeout の拒否理由', body)
 
     def test_failure_summary_is_projected_into_the_report(self):
         status, watch = healthy()

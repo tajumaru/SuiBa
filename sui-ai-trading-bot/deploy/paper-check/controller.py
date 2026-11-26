@@ -392,6 +392,14 @@ def export_backup_name(record):
     return None
 
 
+CLOSEOUT_REASONS = {
+    'failure_mismatch', 'pending_present', 'container_running', 'container_started',
+    'fault_not_accepted', 'latch_mismatch', 'evidence_unreadable', 'not_admitted',
+    'pending_mismatch', 'container_not_clean', 'started_at_window', 'maintenance_failed',
+    'verify_failed', 'verify_sui_failed', 'controller_still_alive', 'db_closeout_shape',
+}
+
+
 def stop_string(value, pattern):
     return type(value) is str and re.fullmatch(pattern, value) is not None
 
@@ -401,12 +409,15 @@ def stop_codes(value, limit):
             all(stop_string(code, r'[A-Z][A-Z_]{2,47}') for code in value))
 
 
+def stop_filename(value):
+    return stop_string(value, r'[A-Za-z0-9._-]+\.sqlite') and len(value) <= 128
+
+
 def valid_verify_details(value):
-    return (type(value) is dict and set(value) == {'error', 'unknown_files'} and
+    return (type(value) is dict and set(value) in ({'error', 'unknown_files'}, {'error', 'name', 'unknown_files'}) and
             (value['error'] is None or stop_string(value['error'], r'VPS_[A-Z_]{2,48}')) and
             type(value['unknown_files']) is list and len(value['unknown_files']) <= 16 and
-            all(stop_string(name, r'[A-Za-z0-9._-]+\.sqlite') and len(name) <= 128
-                for name in value['unknown_files']))
+            all(stop_filename(name) for name in value['unknown_files']))
 
 
 def valid_stop_diagnosis(value):
@@ -419,7 +430,7 @@ def valid_stop_diagnosis(value):
     if not details:
         return True
     if stage == 'verify':
-        return valid_verify_details(details)
+        return valid_verify_details(details) and ('name' not in details or stop_filename(details['name']))
     return (stage == 'verify_sui' and set(details) == {'actual'} and
             stop_string(details['actual'], r'[A-Z][A-Z0-9_]{0,31}'))
 
@@ -1375,6 +1386,8 @@ class Controller:
             value = self.b.decode(self.offline_node('--import', 'tsx', 'docker/verify-diagnosis.mjs',
                                                    '/app/data/bot.sqlite', read_only=True))
             if valid_verify_details(value):
+                if not stop_filename(value.get('name')):
+                    value.pop('name', None)
                 return value
         except Exception:
             pass
@@ -2408,6 +2421,10 @@ class ProductionController(Controller):
             epoch -= offset if zone[0] == '+' else -offset
         return epoch
 
+    def refuse_closeout(self, phase, code):
+        self._closeout_refusal = (phase, code)
+        return False
+
     def preflight_closeout_eligible(self, record):
         # Fail-closed evidence check for the one production failure
         # the normal stop path can never close: a run that died in
@@ -2429,23 +2446,27 @@ class ProductionController(Controller):
         # fault, a pending mutation, a container that ran at or
         # after this session began — keeps the record in manual
         # reconciliation.
+        self._closeout_refusal = None
+        unreadable = 'evidence_unreadable'
         try:
             folder = self.folder(record)
+            unreadable = 'failure_mismatch'
             failure = self.b.decode(self.b.read_trusted(folder/'failure.json'))
             if failure.get('id') != record['id'] or failure.get('stage') != 'preflight':
-                return False
+                return self.refuse_closeout('preflight', 'failure_mismatch')
+            unreadable = 'evidence_unreadable'
             pending = folder/'mutation.json'
             if pending.exists() and \
                     self.b.decode(self.b.read_trusted(pending)).get('pending') is not None:
-                return False
+                return self.refuse_closeout('preflight', 'pending_present')
             state = self.inspect()['State']
             if state.get('Running'):
-                return False
+                return self.refuse_closeout('preflight', 'container_running')
             started_at = state.get('StartedAt')
             if started_at != '0001-01-01T00:00:00Z':
                 epoch = self.started_at_epoch(started_at)
                 if epoch is None or epoch >= record['started']/1000:
-                    return False
+                    return self.refuse_closeout('preflight', 'container_started')
             # LATCHED_FAILURE is a derived code, not an independent
             # failure: stop_checks appends it whenever a stop attempt
             # observes a failure that is already latched, and faults
@@ -2464,14 +2485,14 @@ class ProductionController(Controller):
             for fault in folder.glob('fault-*.json'):
                 if self.b.decode(self.b.read_trusted(fault)).get('error') \
                         not in ('PREFLIGHT_INCOMPLETE', 'LATCHED_FAILURE'):
-                    return False
+                    return self.refuse_closeout('preflight', 'fault_not_accepted')
             latch = self.state/'failed.json'
             if os.path.lexists(latch) and \
                     self.b.decode(self.b.read_trusted(latch)).get('id') != record['id']:
-                return False
+                return self.refuse_closeout('preflight', 'latch_mismatch')
             return True
         except Exception:
-            return False
+            return self.refuse_closeout('preflight', unreadable)
 
     def admitted_closeout_eligible(self, record):
         # Fail-closed evidence check for the production failure the
@@ -2495,13 +2516,15 @@ class ProductionController(Controller):
         # unreadable evidence, an unclean exit, a failed
         # verification, an unexpected fault — keeps the record in
         # manual reconciliation.
+        self._closeout_refusal = None
+        unreadable = 'evidence_unreadable'
         try:
             if record.get('admitted') is not True:
-                return False
+                return self.refuse_closeout('admitted', 'not_admitted')
             folder = self.folder(record)
             failure = self.b.decode(self.b.read_trusted(folder/'failure.json'))
             if failure.get('id') != record['id']:
-                return False
+                return self.refuse_closeout('admitted', 'failure_mismatch')
             # A guarded operation that dies on a non-4xx error
             # leaves its pending marker in mutation.json (guard
             # clears it only on success or a definitive 4xx
@@ -2525,11 +2548,11 @@ class ProductionController(Controller):
             if pending is not None:
                 if type(pending) is not str or \
                         GUARD_STAGE_OPERATIONS.get(failure.get('stage')) != pending:
-                    return False
+                    return self.refuse_closeout('admitted', 'pending_mismatch')
                 pending_closeout = True
             state = self.inspect()['State']
             if state.get('Running') or state.get('ExitCode') != 0 or state.get('OOMKilled'):
-                return False
+                return self.refuse_closeout('admitted', 'container_not_clean')
             if pending_closeout and failure.get('stage') in ('backup', 'maintenance-release'):
                 # Both stages run before the worker starts, so the
                 # not-in-effect proof is the preflight one: the
@@ -2542,17 +2565,21 @@ class ProductionController(Controller):
                 if started_at != '0001-01-01T00:00:00Z':
                     epoch = self.started_at_epoch(started_at)
                     if epoch is None or epoch >= record['started']/1000:
-                        return False
+                        return self.refuse_closeout('admitted', 'started_at_window')
             else:
                 epoch = self.started_at_epoch(state.get('StartedAt'))
                 if epoch is None or epoch < record['started']/1000 - 60:
-                    return False
+                    return self.refuse_closeout('admitted', 'started_at_window')
+            unreadable = 'maintenance_failed'
             self.maintenance(True)
+            unreadable = 'verify_failed'
             helper, image = self.helper()
             helper.helper(image, 'verify')
+            unreadable = 'verify_sui_failed'
             self.verify_sui()
+            unreadable = 'evidence_unreadable'
             if not self.exited(record):
-                return False
+                return self.refuse_closeout('admitted', 'controller_still_alive')
             # The four accepted codes are produced by the stop
             # machinery itself when it closes a run whose controller
             # is already gone, and none of them records an
@@ -2584,20 +2611,22 @@ class ProductionController(Controller):
                 # as does any other code.
                 accepted += ('OPERATION_COMPLETION_UNCONFIRMED',)
             monitoring_db_failure = (
-                pending is None and failure.get('stage') == 'monitoring' and
+                failure.get('stage') == 'monitoring' and
                 failure.get('code') == 'DB_OR_MAINTENANCE_UNCONFIRMED')
             needs_stop_receipts = False
             for fault in folder.glob('fault-*.json'):
                 code = self.b.decode(self.b.read_trusted(fault)).get('error')
                 if code in accepted:
                     continue
-                if not monitoring_db_failure or code != 'DB_OR_MAINTENANCE_UNCONFIRMED':
-                    return False
+                if code != 'DB_OR_MAINTENANCE_UNCONFIRMED' or not monitoring_db_failure:
+                    return self.refuse_closeout('admitted', 'fault_not_accepted')
+                if pending is not None:
+                    return self.refuse_closeout('admitted', 'db_closeout_shape')
                 needs_stop_receipts = True
             latch = self.state/'failed.json'
             if os.path.lexists(latch) and \
                     self.b.decode(self.b.read_trusted(latch)).get('id') != record['id']:
-                return False
+                return self.refuse_closeout('admitted', 'latch_mismatch')
             if needs_stop_receipts:
                 # The fresh maintenance and database checks above
                 # resolve the monitoring failure's earlier uncertainty.
@@ -2610,10 +2639,10 @@ class ProductionController(Controller):
                             stop.get('status') != 'failed_state_unknown' or \
                             type(errors) is not list or \
                             not set(errors) <= {'LATCHED_FAILURE'}:
-                        return False
+                        return self.refuse_closeout('admitted', 'db_closeout_shape')
             return True
         except Exception:
-            return False
+            return self.refuse_closeout('admitted', unreadable)
 
     def retire_orphan_latch(self):
         # Audit F-7: a production failed.json with no record at
@@ -2675,6 +2704,7 @@ class ProductionController(Controller):
                         record['stage'] = 'stopped'
                         self.b.atomic(self.record, record)
                         return {'status': 'completed'}
+                    preflight = self._closeout_refusal
                     if self.admitted_closeout_eligible(record):
                         # Close the post-admission failure out as a
                         # clean stop: the worker already stopped on
@@ -2697,6 +2727,13 @@ class ProductionController(Controller):
                         record['stage'] = 'stopped'
                         self.b.atomic(self.record, record)
                         return {'status': 'completed'}
+                    admitted = self._closeout_refusal
+                    with contextlib.suppress(Exception):
+                        self.b.atomic(self.folder(record)/'closeout-diagnosis.json', {
+                            'id': record['id'], 'at': int(time.time()),
+                            'preflight': preflight[1] if preflight else None,
+                            'admitted': admitted[1] if admitted else None,
+                        })
             if record['status'] != 'completed':
                 self.accept_stop(record, 'prod-stop')
             with contextlib.suppress(Exception):
@@ -3010,6 +3047,19 @@ class ProductionController(Controller):
         except Exception:
             return None
 
+    def closeout_summary(self, record):
+        try:
+            value = self.b.decode(self.b.read_trusted(self.folder(record)/'closeout-diagnosis.json'))
+            require(type(value) is dict and set(value) == {'id', 'at', 'preflight', 'admitted'} and
+                    value['id'] == record['id'] and
+                    type(value['at']) is int and 0 <= value['at'] <= int(time.time()) + 60)
+            summary = {key: value[key] for key in ('preflight', 'admitted')}
+            require(all(code is None or type(code) is str and code in CLOSEOUT_REASONS
+                        for code in summary.values()))
+            return summary
+        except Exception:
+            return None
+
     def prod_status(self):
         # Read-only even before first use: no mkdir, locks, helpers or writes.
         watchdog = self.watchdog_status()
@@ -3054,6 +3104,9 @@ class ProductionController(Controller):
         stop = self.stop_summary(record)
         if stop is not None:
             result['stop'] = stop
+        closeout = self.closeout_summary(record)
+        if closeout is not None:
+            result['closeout'] = closeout
         return result
 
     @staticmethod

@@ -1,8 +1,9 @@
 {
   "watchdog_max_age": 900,
   "shape_kinds": ["null", "boolean", "integer", "number", "string", "array", "object", "other"],
-  "detail_checks": ["production_status", "status", "status.keys", "requires_review", "run", "run.stopped", "run.sha", "watchdog", "watchdog.code", "worker", "shadow", "failure", "stop"],
-  "detail_expected": ["valid", "object", "boolean", "present", "watchdog", "watchdog_code", "null", "not_started_status", "running_status", "production_run", "worker_or_unreachable", "null_when_stopped", "shadow_or_null", "timestamp_or_null", "sha40_or_null", "failure_summary", "stop_summary"],
+  "closeout_reasons": ["failure_mismatch", "pending_present", "container_running", "container_started", "fault_not_accepted", "latch_mismatch", "evidence_unreadable", "not_admitted", "pending_mismatch", "container_not_clean", "started_at_window", "maintenance_failed", "verify_failed", "verify_sui_failed", "controller_still_alive", "db_closeout_shape"],
+  "detail_checks": ["production_status", "status", "status.keys", "requires_review", "run", "run.stopped", "run.sha", "watchdog", "watchdog.code", "worker", "shadow", "failure", "stop", "closeout"],
+  "detail_expected": ["valid", "object", "boolean", "present", "watchdog", "watchdog_code", "null", "not_started_status", "running_status", "production_run", "worker_or_unreachable", "null_when_stopped", "shadow_or_null", "timestamp_or_null", "sha40_or_null", "failure_summary", "stop_summary", "closeout_summary"],
   "host_reasons": [
     "REVIEW_REQUIRED",
     "RUN_FAILED",
