@@ -321,7 +321,7 @@ export class ShadowRecorder {
   constructor(
     private db: Pick<
       BotDatabase,
-      "append" | "reserveShadowCall" | "shadowLastCall"
+      "append" | "reserveShadowCall" | "shadowLastCall" | "transaction"
     >,
     private adapter?: ShadowAdapter,
     private enabled = () => process.env.SUIBA_SHADOW_ENABLED === "true",
@@ -424,6 +424,8 @@ export class ShadowRecorder {
         );
         return;
       }
+      // The budget reservation commits before invoking the provider so a
+      // timeout, crash or later write failure cannot refund a dispatched call.
       if (!this.budget.reserveShadowCall(dayKey(now), now)) {
         this.db.append(
           "shadow_decisions",
@@ -494,7 +496,9 @@ export class ShadowRecorder {
           latencyMs: performance.now() - began,
         };
       }
-      this.db.append("shadow_decisions", s.cycleId, record, now);
+      this.db.transaction(() => {
+        this.db.append("shadow_decisions", s.cycleId, record, now);
+      });
     } catch {
       /* Storage failure is isolated too; never log adapter errors/raw data. */
     } finally {

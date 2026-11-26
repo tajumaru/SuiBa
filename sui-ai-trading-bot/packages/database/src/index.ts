@@ -169,8 +169,9 @@ function compactCycleAudit(value: Record<string, unknown>) {
  * audit's own cycleId/phase, which are correlation keys, not secrets.
  * Phase split: append/set/saveCandles separate JSON.stringify time
  * (jsonMs) from statement execution time (sqlMs); transaction separates
- * BEGIN (beginMs), callback body (bodyMs) and COMMIT/ROLLBACK
- * (commitMs/rollbackMs). A transaction record's duration INCLUDES the
+ * BEGIN/SAVEPOINT (beginMs), callback body (bodyMs), COMMIT (commitMs)
+ * and rollback (rollbackMs). RELEASE does not commit, so nested records
+ * keep commitMs null. A transaction record's duration INCLUDES the
  * nested append/set/saveCandles records emitted inside it; the views
  * overlap by design and must never be added together.
  */
@@ -386,6 +387,7 @@ export class BotDatabase {
       },
     });
   }
+  private transactionDepth = 0;
   private transactionVersion = 0;
   /** Display-only invalidation token. Covers local SQL, rollback and other writers. */
   displayVersion() {
@@ -579,70 +581,70 @@ export class BotDatabase {
     });
   }
   transaction<T>(fn: () => T): T {
-    if (!BotDatabase.perfSink) {
+    const depth = this.transactionDepth;
+    const savepoint = `bot_transaction_${depth}`;
+    const draft = BotDatabase.perfSink
+      ? this.perfDraft("transaction", Date.now())
+      : null;
+    const t0 = draft ? performance.now() : 0;
+    let segment = t0;
+    try {
       this.assertHealthy();
-      this.sql(() => this.db.exec("BEGIN IMMEDIATE"));
+      this.sql(() =>
+        this.db.exec(depth === 0 ? "BEGIN IMMEDIATE" : `SAVEPOINT ${savepoint}`),
+      );
+      this.transactionDepth++;
+      if (draft) {
+        draft.beginMs = performance.now() - segment;
+        segment = performance.now();
+      }
       try {
         const result = fn();
-        this.sql(() => this.db.exec("COMMIT"));
+        if (draft) {
+          draft.bodyMs = performance.now() - segment;
+          segment = performance.now();
+        }
+        this.sql(() =>
+          this.db.exec(depth === 0 ? "COMMIT" : `RELEASE ${savepoint}`),
+        );
+        if (draft && depth === 0) draft.commitMs = performance.now() - segment;
         return result;
       } catch (error) {
+        if (draft) {
+          draft.bodyMs ??= performance.now() - segment;
+          segment = performance.now();
+        }
         try {
           // Rollback must remain possible after a statement has latched a fault.
-          this.sql(() => this.db.exec("ROLLBACK"));
+          this.sql(() => {
+            if (depth === 0) {
+              this.db.exec("ROLLBACK");
+            } else {
+              this.db.exec(`ROLLBACK TO ${savepoint}`);
+              this.db.exec(`RELEASE ${savepoint}`);
+            }
+          });
         } catch (rollbackError) {
           throw new AggregateError(
             [error, rollbackError],
             "DATABASE_ROLLBACK_FAILED",
           );
+        } finally {
+          if (draft) draft.rollbackMs = performance.now() - segment;
         }
         throw error;
       } finally {
+        this.transactionDepth--;
         this.transactionVersion++;
       }
-    }
-    // Instrumented path: identical control flow, with BEGIN / body /
-    // COMMIT / ROLLBACK timed as separate segments.
-    const draft = this.perfDraft("transaction", Date.now()),
-      t0 = performance.now();
-    let segment = t0,
-      failed = false;
-    try {
-      this.assertHealthy();
-      this.sql(() => this.db.exec("BEGIN IMMEDIATE"));
-      draft.beginMs = performance.now() - segment;
-      segment = performance.now();
-      try {
-        const result = fn();
-        draft.bodyMs = performance.now() - segment;
-        segment = performance.now();
-        this.sql(() => this.db.exec("COMMIT"));
-        draft.commitMs = performance.now() - segment;
-        return result;
-      } catch (error) {
-        if (draft.bodyMs === null) draft.bodyMs = performance.now() - segment;
-        segment = performance.now();
-        try {
-          // Rollback must remain possible after a statement has latched a fault.
-          this.sql(() => this.db.exec("ROLLBACK"));
-        } catch (rollbackError) {
-          draft.rollbackMs = performance.now() - segment;
-          throw new AggregateError(
-            [error, rollbackError],
-            "DATABASE_ROLLBACK_FAILED",
-          );
-        }
-        draft.rollbackMs = performance.now() - segment;
-        throw error;
-      }
     } catch (error) {
-      failed = true;
-      draft.errorCode = this.perfErrorCode(error);
+      if (draft) {
+        draft.ok = false;
+        draft.errorCode = this.perfErrorCode(error);
+      }
       throw error;
     } finally {
-      this.transactionVersion++;
-      draft.ok = !failed;
-      this.perfFinish(draft, t0);
+      if (draft) this.perfFinish(draft, t0);
     }
   }
   append(table: EventTable, id: string, value: unknown, now = Date.now()) {

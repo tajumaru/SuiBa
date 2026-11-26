@@ -471,7 +471,12 @@ it("OFF never checks readiness, evaluates/freeze inputs or invokes a configured 
       throw Error("unexpected");
     });
   new ShadowRecorder(
-    { append: vi.fn(), reserveShadowCall: vi.fn(), shadowLastCall: vi.fn() },
+    {
+      append: vi.fn(),
+      reserveShadowCall: vi.fn(),
+      shadowLastCall: vi.fn(),
+      transaction: (write) => write(),
+    },
     adapter,
     () => false,
   ).offer(input);

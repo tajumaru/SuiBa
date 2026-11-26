@@ -114,12 +114,22 @@ it("OFF and missing adapter never evaluate input or freeze/append/reserve", () =
     throw Error("must not read");
   });
   new ShadowRecorder(
-    { append: vi.fn(), reserveShadowCall: vi.fn(), shadowLastCall: vi.fn() },
+    {
+      append: vi.fn(),
+      reserveShadowCall: vi.fn(),
+      shadowLastCall: vi.fn(),
+      transaction: (write) => write(),
+    },
     { complete: vi.fn() },
     () => false,
   ).offer(read);
   new ShadowRecorder(
-    { append: vi.fn(), reserveShadowCall: vi.fn(), shadowLastCall: vi.fn() },
+    {
+      append: vi.fn(),
+      reserveShadowCall: vi.fn(),
+      shadowLastCall: vi.fn(),
+      transaction: (write) => write(),
+    },
     undefined,
     () => true,
   ).offer(read);
@@ -561,7 +571,9 @@ it("storage and adapter failures cannot escape offer or mutate strategy/portfoli
     db.runtime(),
     db.history("strategy_decisions"),
   ];
-  const append = vi.spyOn(db, "append").mockImplementation(() => {
+  const write = db.append.bind(db);
+  const append = vi.spyOn(db, "append").mockImplementation((...args) => {
+    write(...args);
     throw Error("disk failure");
   });
   const r = new ShadowRecorder(
@@ -582,6 +594,8 @@ it("storage and adapter failures cannot escape offer or mutate strategy/portfoli
     expect.objectContaining({ status: "ERROR" }),
     input.now,
   );
+  expect(rows(db)).toEqual([]);
+  expect(db.shadowLastCall()).toBe(input.now);
   expect([
     db.portfolio(),
     db.settings(),
