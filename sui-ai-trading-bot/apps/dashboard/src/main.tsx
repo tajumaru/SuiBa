@@ -534,6 +534,7 @@ function App() {
                   rsi={data.indicators?.rsi ?? null}
                   oversold={data.settings.oversold}
                   bookImbalance={data.bookImbalance}
+                  bookLevels={data.bookLevels}
                   glow={buyCelebration}
                   linePrice={operations.data?.decision?.rsiLinePrice ?? null}
                   sellLines={
