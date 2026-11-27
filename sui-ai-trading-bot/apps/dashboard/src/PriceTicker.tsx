@@ -11,7 +11,9 @@ import {
 } from "./presentation.ts";
 
 export { changeTone, formatChangePct, sparklinePoints } from "./presentation.ts";
-import { BookBar } from "./BookBar.tsx";
+import { BookBar, bookBarModel } from "./BookBar.tsx";
+import { BookDepthChart } from "./BookDepthChart.tsx";
+import type { BookLevels } from "../../../packages/shared/src/index.ts";
 import heroBrave from "./assets/hero-brave-blue.webp";
 import heroStruggling from "./assets/hero-struggling.webp";
 import partyHero from "./assets/party-hero.webp";
@@ -485,6 +487,7 @@ function TradingPriceTicker({
   rsi = null,
   oversold = 30,
   bookImbalance = null,
+  bookLevels = null,
   boss = null,
   heroLevel = 1,
   heroEquity = null,
@@ -517,6 +520,7 @@ function TradingPriceTicker({
    * this panel (owner's call 2026-11-20) instead of living in
    * its own strip below. Null hides the meter. */
   bookImbalance?: number | null;
+  bookLevels?: BookLevels | null;
   price: State["price"];
   candlesByTimeframe: Frames;
   /** Buy celebration: while true the ticker carries the glow
@@ -534,6 +538,16 @@ function TradingPriceTicker({
    * practice (that one needs no position, these need one). */
   sellLines?: { tp: number; sl: number } | null;
 }) {
+  const [bookView, setBookView] = useState<"imbalance" | "depth">("imbalance");
+  const freshBook =
+    bookLevels &&
+    Number.isFinite(bookLevels.at) &&
+    now >= bookLevels.at &&
+    now - bookLevels.at <= 120_000;
+  const balanced =
+    bookImbalance != null &&
+    Number.isFinite(bookImbalance) &&
+    bookBarModel(bookImbalance).side === "even";
   const activeBoss = boss && !boss.outcome ? boss : null;
   const reference = price == null ? referenceTicker(marketData, now) : null;
   const previousPrice =
@@ -753,7 +767,39 @@ function TradingPriceTicker({
           </span>
         ))}
       </div>
-      <BookBar imbalance={bookImbalance} />
+      {freshBook && (
+        <section className="ticker-book" aria-label="板">
+          <div className="ticker-book-header">
+            <span>板</span>
+            <div className="ticker-book-switch" role="group" aria-label="板の表示">
+              {([
+                ["imbalance", "偏り"],
+                ["depth", "グラフ"],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={bookView === value}
+                  onClick={() => setBookView(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {bookView === "depth" ? (
+            <BookDepthChart
+              levels={bookLevels}
+              base={pair.split("_")[0]!}
+              formatPrice={formatTickerPrice}
+            />
+          ) : balanced ? (
+            <div className="ticker-book-balanced">均衡</div>
+          ) : (
+            <BookBar imbalance={bookImbalance} />
+          )}
+        </section>
+      )}
       {!stopped &&
         (activeBoss ? (
           <BossBattleCard

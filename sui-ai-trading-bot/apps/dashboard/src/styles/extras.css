@@ -1057,3 +1057,91 @@
 main[data-connection-stale="true"] .price-ticker {
   filter: grayscale(1);
 }
+
+.ticker-book {
+  flex-basis: 100%;
+  min-width: 0;
+}
+
+.ticker-book-header,
+.ticker-book-switch,
+.book-depth-row {
+  display: flex;
+  align-items: center;
+}
+
+.ticker-book-header {
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ticker-book-switch {
+  border: 1px solid var(--steel);
+  border-radius: 6px;
+}
+
+.ticker-book-switch button {
+  min-height: 28px;
+  padding: 2px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--dim);
+  font-size: inherit;
+}
+
+.ticker-book-switch button[aria-pressed="true"] {
+  background: var(--btn-hover);
+  color: var(--mint);
+}
+
+.ticker-book-switch button:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 1px;
+}
+
+.ticker-book .book-bar-label {
+  display: none;
+}
+
+.ticker-book-balanced,
+.book-depth {
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.ticker-book-balanced {
+  text-align: center;
+}
+
+.book-depth {
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.book-depth svg {
+  display: block;
+  width: 100%;
+  height: 100px;
+}
+
+.book-depth-row {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.book-depth-totals {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.book-depth-totals span:first-child {
+  color: var(--mint);
+}
+
+.book-depth-totals span:last-child {
+  color: var(--pink);
+  text-align: right;
+}
